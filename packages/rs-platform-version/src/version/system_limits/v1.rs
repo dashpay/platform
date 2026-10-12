@@ -1,6 +1,8 @@
 use crate::version::system_limits::SystemLimits;
 
 pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
+    credit_pool_nullifier_backfill_page_size: 0,
+    credit_pool_nullifier_backfill_batch_size: 0,
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
     max_document_value_depth: None,
@@ -42,7 +44,10 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     retry_signing_expired_withdrawal_documents_per_block_limit: 1,
     max_withdrawal_amount: 50_000_000_000_000, //500 Dash
     daily_withdrawal_limit_percent: None,      // relative daily withdrawal limit arrives in v14
-    max_daily_withdrawal_amount: None,
+    core_credit_pool_unlock_limit_percent: None,
+    core_credit_pool_unlock_limit_floor: None,
+    core_credit_pool_window_blocks: None,
+    regtest_core_credit_pool_window_blocks: None,
     // = dpp MIN_WITHDRAWAL_AMOUNT: ASSET_UNLOCK_TX_SIZE(190) * MIN_CORE_FEE_PER_BYTE(1)
     // * CREDITS_PER_DUFF(1000) = 190_000 credits = 190 duffs.
     min_withdrawal_amount: 190_000,
@@ -84,6 +89,7 @@ pub const SYSTEM_LIMITS_V1: SystemLimits = SystemLimits {
     max_document_ttl_seconds: None,
     max_document_expirations_per_block: 0,
     max_document_expiration_weight_per_block: 0,
-    minimum_grovedb_proof_envelope_version: 0, // V0 envelopes stay accepted until v14
     max_contested_summed_value_magnitude: None, // read only by parser generation 3 (v14)
+    max_expiring_signed_summed_value_magnitude: None, // read only by parser generation 3 (v14)
+    max_rekey_batch_moves: None,                // read only by the protocol version 14 upgrade
 };

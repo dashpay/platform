@@ -44,7 +44,9 @@
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::{read_data_at_path, RepeatedKey};
 use crate::data_contract::document_type::property::generated_from::{HashFunction, SystemFunction};
-use crate::data_contract::document_type::property::reference_lookup::schema_property_is_fixed_once_written;
+use crate::data_contract::document_type::property::reference_lookup::{
+    clearable_once_its_document_is_deleted, schema_property_is_fixed_once_written,
+};
 use crate::data_contract::document_type::property::{
     is_transient, DocumentPropertyType, PropertyReference, ReferenceHolder,
 };
@@ -245,6 +247,16 @@ impl LookupHashKey {
                      when the document is created only, so every stored value it reads must be \
                      fixed once written (make the type immutable or list the property under \
                      `immutable`)"
+                ));
+            }
+            if !is_transient(declaring, path)
+                && clearable_once_its_document_is_deleted(declaring, path)
+            {
+                return Some(format!(
+                    "param \"{path}\" is an optional `deletableDocument` reference a replace can \
+                     clear once its document is deleted: the key is checked when the document is \
+                     created only, so every stored value it reads must be fixed once written \
+                     (make the reference required)"
                 ));
             }
         }
@@ -527,7 +539,7 @@ pub fn first_unrevealable_lookup_key(
                 let computed = target.leaves().into_iter().any(|leaf| {
                     leaf.as_any_document_reference()
                         .and_then(|declaration| declaration.lookup)
-                        .is_some_and(|lookup| lookup.is_checked_on_create_only())
+                        .is_some_and(|lookup| lookup.hash_key().is_some())
                 });
                 match read_data_at_path(document_data, path) {
                     Err(RepeatedKey) if computed => {
@@ -699,10 +711,23 @@ mod tests {
         )]));
         let owner = Identifier::from([1; 32]);
         assert_eq!(
-            lookup.key_values(owner, &document, owner, Some(&hash)),
+            lookup.key_values(
+                &Value::Identifier(owner.to_buffer()),
+                &document,
+                owner,
+                Some(&hash)
+            ),
             Some(BTreeMap::from([("saltedDomainHash".to_string(), hash)]))
         );
-        assert_eq!(lookup.key_values(owner, &document, owner, None), None);
+        assert_eq!(
+            lookup.key_values(
+                &Value::Identifier(owner.to_buffer()),
+                &document,
+                owner,
+                None
+            ),
+            None
+        );
     }
 
     #[test]

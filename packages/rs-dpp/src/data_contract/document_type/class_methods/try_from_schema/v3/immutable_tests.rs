@@ -19,6 +19,9 @@ use super::*;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use crate::data_contract::document_type::property_constraints::{
+    DocumentSystemValues, STORED_DOCUMENT_KEY,
+};
 use crate::data_contract::errors::DataContractError;
 use platform_value::platform_value;
 use std::collections::BTreeSet;
@@ -546,6 +549,70 @@ fn should_refuse_a_stored_read_in_a_property_constraints_rule() {
         parse_with(schema, PlatformVersion::latest(), false),
         "rule \"keepsMeta\" reads \"$old.meta\", but only a condition judging a replace (an \
          `immutable` entry's, or `retractedWhen`) reads the stored document",
+    );
+}
+
+/// A `countPresent` in a condition judging a replace counts the stored
+/// document's properties through `$old.` and the written one's without it:
+/// `meta` frozen once both hold a `meta.tag` holds only when each does.
+/// The same paths in a `propertyConstraints` rule, which judges creates too,
+/// are refused.
+#[test]
+fn should_count_stored_and_written_properties_in_a_condition() {
+    let when = platform_value!({
+        "equal": [{ "countPresent": ["$old.meta.tag", "meta.tag"] }, 2]
+    });
+    let tagged = || platform_value!({ "tag": "news" });
+    for full_validation in [false, true] {
+        let document_type = parse_with(
+            post_schema_with_meta_condition(when.clone()),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .unwrap_or_else(|error| {
+            panic!("the condition should parse (full_validation: {full_validation}): {error}")
+        });
+        let condition = &document_type.immutable_field_conditions()["meta"];
+        // Whether it holds for a written and a stored `meta`, each given or left out
+        for (written, stored, expected) in [
+            (Some(tagged()), Some(tagged()), true),
+            (Some(tagged()), None, false),
+            (None, Some(tagged()), false),
+            (None, None, false),
+        ] {
+            let mut stored_entries = vec![(
+                Value::Text("author".to_string()),
+                Value::Text("ann".to_string()),
+            )];
+            let mut entries = stored_entries.clone();
+            if let Some(meta) = written.clone() {
+                entries.push((Value::Text("meta".to_string()), meta));
+            }
+            if let Some(meta) = stored.clone() {
+                stored_entries.push((Value::Text("meta".to_string()), meta));
+            }
+            entries.push((
+                Value::Text(STORED_DOCUMENT_KEY.to_string()),
+                Value::Map(stored_entries),
+            ));
+            assert_eq!(
+                condition.holds(&Value::Map(entries), &DocumentSystemValues::default()),
+                Ok(expected),
+                "written {written:?}, stored {stored:?}"
+            );
+        }
+    }
+
+    let schema = post_schema_with(
+        "propertyConstraints",
+        platform_value!({ "keepsTag": { "equal": [{ "countPresent": ["$old.meta.tag", "meta.tag"] }, 2] } }),
+    );
+    // The meta-schema's path pattern refuses it first under full validation;
+    // the parse refuses it on the stored path as well
+    assert!(parse_with(schema.clone(), PlatformVersion::latest(), true).is_err());
+    expect_structure_error(
+        parse_with(schema, PlatformVersion::latest(), false),
+        "rule \"keepsTag\" reads \"$old.meta.tag\", but only a condition judging a replace",
     );
 }
 

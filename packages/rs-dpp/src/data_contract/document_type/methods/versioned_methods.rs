@@ -1,10 +1,11 @@
 use crate::consensus::basic::document::DocumentPropertyConstraintViolatedError;
+use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::property_constraints::{
-    DocumentSystemValues, PropertyConstraint, SystemChange,
+    data_with_referenced_documents, DocumentSystemValues, PropertyConstraint, SystemChange,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -786,6 +787,68 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         }
     }
 
+    /// The type of the property an index key names, when it is one whose key
+    /// generation 1 changes: a property, or a derived index property, keyed
+    /// as an unsigned integer. `None` for the `$` system fields, which keep
+    /// their encoding, for a property that ends a `rangeSummable` index
+    /// ([`Index::ends_range_summable_with`]), which keeps generation 0's keys
+    /// in every index naming it, and for every other name.
+    ///
+    /// The answer can't change for a stored document type after the upgrade
+    /// reads it: an update can't change its indexes, and from protocol
+    /// version 14 can't change any integer property's width or signedness
+    /// (`validate_integer_encoding_stability`).
+    fn unsigned_integer_tree_key_property_type(&self, key: &str) -> Option<&DocumentPropertyType> {
+        if key.starts_with('$') {
+            return None;
+        }
+        self.flattened_properties()
+            .get(key)
+            .map(|property| &property.property_type)
+            .or_else(|| self.derived_index_property_type(key))
+            .filter(|property_type| property_type.has_unsigned_integer_tree_key())
+            .filter(|_| {
+                !self
+                    .indexes()
+                    .values()
+                    .any(|index| index.ends_range_summable_with(key))
+            })
+    }
+
+    /// Generation 1 keys a property or derived index property of an unsigned
+    /// integer type by its plain big-endian bytes
+    /// ([`DocumentPropertyType::encode_value_for_tree_keys_v1`]), so its keys
+    /// sort as its values do, except one that keeps generation 0's keys
+    /// because it ends a `rangeSummable` index
+    /// ([`Self::unsigned_integer_tree_key_property_type`]). Every other key is
+    /// generation 0's, the `$` system fields included: the timestamps and
+    /// heights they hold never
+    /// reach the top bit that generation 0 flips, so their keys already sort
+    /// as their values do (a query bound past that bit still sorts out of
+    /// place, as before).
+    fn serialize_value_for_key_v1(
+        &self,
+        key: &str,
+        value: &Value,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        match self.unsigned_integer_tree_key_property_type(key) {
+            Some(property_type) => property_type.encode_value_for_tree_keys_v1(value),
+            None => self.serialize_value_for_key_v0(key, value),
+        }
+    }
+
+    /// Reads a key [`Self::serialize_value_for_key_v1`] wrote.
+    fn deserialize_value_for_key_v1(
+        &self,
+        key: &str,
+        value: &[u8],
+    ) -> Result<Value, ProtocolError> {
+        match self.unsigned_integer_tree_key_property_type(key) {
+            Some(property_type) => property_type.decode_value_for_tree_keys_v1(value),
+            None => self.deserialize_value_for_key_v0(key, value),
+        }
+    }
+
     fn deserialize_value_for_key_v0(
         &self,
         key: &str,
@@ -887,11 +950,92 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     where
         Self: DocumentTypeV2Getters,
     {
-        for (name, constraint) in self.property_constraints() {
+        // A rule reading a referenced document waits for the values, and no
+        // total of it is read before
+        for (name, constraint) in self
+            .property_constraints()
+            .iter()
+            .filter(|(_, constraint)| constraint.is_judged_with(system))
+        {
             self.expect_every_aggregate_read(name, constraint, system)?;
             if let Some(violation) = constraint.violation(data, system) {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     DocumentPropertyConstraintViolatedError::new(
+                        self.name().clone(),
+                        name.clone(),
+                        violation,
+                    )
+                    .into(),
+                ));
+            }
+        }
+        Ok(SimpleConsensusValidationResult::default())
+    }
+
+    /// `validate_referencing_property_constraints` version 0: every rule of the document
+    /// type's `propertyConstraints` reading a document one of its references points at is
+    /// evaluated, in name order, against `data` with `referenced` under `$referenced`
+    /// ([`data_with_referenced_documents`]), and the first one broken is reported. The data
+    /// is copied only when such a rule exists. The type's other rules are not judged again.
+    /// A rule reading a total consensus did not read is an error.
+    fn validate_referencing_property_constraints_v0(
+        &self,
+        data: &BTreeMap<String, Value>,
+        referenced: BTreeMap<String, Value>,
+        system: &DocumentSystemValues,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        let mut rules = self
+            .property_constraints()
+            .iter()
+            .filter(|(_, constraint)| constraint.reads_referenced())
+            .peekable();
+        if rules.peek().is_none() {
+            return Ok(SimpleConsensusValidationResult::default());
+        }
+        let data = data_with_referenced_documents(data, referenced)?;
+        // The values the rules read are now in the data
+        let system = DocumentSystemValues {
+            referenced_documents: true,
+            ..system.clone()
+        };
+        for (name, constraint) in rules {
+            self.expect_every_aggregate_read(name, constraint, &system)?;
+            if let Some(violation) = constraint.violation(&data, &system) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    DocumentPropertyConstraintViolatedError::new(
+                        self.name().clone(),
+                        name.clone(),
+                        violation,
+                    )
+                    .into(),
+                ));
+            }
+        }
+        Ok(SimpleConsensusValidationResult::default())
+    }
+
+    /// `validate_delete_constraints` version 0: every rule of the document type's
+    /// `deleteConstraints` is evaluated against the stored document's `data` with `system`,
+    /// in name order, and the first one broken is reported. A rule reading a total consensus
+    /// did not read ([`PropertyConstraint::unread_aggregate`]) is an error.
+    fn validate_delete_constraints_v0(
+        &self,
+        document_id: Identifier,
+        data: &Value,
+        system: &DocumentSystemValues,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        for (name, constraint) in self.delete_constraints() {
+            self.expect_every_aggregate_read(name, constraint, system)?;
+            if let Some(violation) = constraint.violation(data, system) {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    DocumentDeleteConstraintViolatedError::new(
+                        document_id,
                         self.name().clone(),
                         name.clone(),
                         violation,
@@ -939,7 +1083,9 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         let mut changed_rules = self
             .property_constraints()
             .iter()
-            .filter(|(_, constraint)| constraint.reads_change(change))
+            .filter(|(_, constraint)| {
+                constraint.reads_change(change) && constraint.is_judged_with(system)
+            })
             .peekable();
         if changed_rules.peek().is_none() {
             return Ok(SimpleConsensusValidationResult::default());

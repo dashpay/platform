@@ -10,16 +10,18 @@ use crate::drive::document::expiration::paths::encode_expiration_time;
 use crate::drive::document::expiration::pricing::document_expires_at;
 use crate::drive::document::expiration::DocumentExpirationEntry;
 use crate::drive::document::index_level_tree_types::{
-    continuation_contributes_zero, index_level_tree_types_with_continuation_demotion,
-    index_only_level_skips_when_absent, level_counts_continuations, level_reaches_entry_by,
-    takes_part_in_index_by, terminal_member_tree_type, zero_contribution_wrapper,
+    continuation_contributes_zero, document_carries,
+    index_level_tree_types_with_continuation_demotion, index_only_level_skips_when_absent,
+    level_reaches_entry_by, takes_part_in_index_by, terminal_member_tree_type,
+    zero_contribution_wrapper,
 };
 use crate::drive::document::layout::{index_ending_at, index_paths, indexes_through, LayoutRole};
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::document::{
     bound_value_fits_referring_property, encode_index_only_entry_payload, index_only_member_key,
     index_only_row_commitment, make_document_reference, make_document_reference_with_sum_item,
-    read_document_sum_contribution,
+    preallocation_bindings_targeting, read_document_sum_contribution,
+    referenced_tree_key_for_referring_property,
 };
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -177,11 +179,32 @@ fn flags_len(flags: Option<&StorageFlags>) -> Option<u32> {
     flags.map(|flags| flags.serialized_size())
 }
 
+/// A `summableOffCountIndex` index's counter, a sum item carrying `flags`.
+fn counter(flags: Option<&StorageFlags>) -> PricedElement {
+    PricedElement::SumItem {
+        flags_len: flags_len(flags),
+    }
+}
+
 fn empty_tree(tree_type: TreeType, wrapped: bool, flags: Option<&StorageFlags>) -> PricedElement {
     PricedElement::Tree {
         tree_type,
         wrapped,
         flags_len: flags_len(flags),
+    }
+}
+
+/// Whether `document` carries `property`, a skip property (the walkers'
+/// `document_carries`). A derived index property's value is read from the
+/// document a reference points at, which the caller may not have put in: it is
+/// then carried while the reference is, its key priced at the field's typical
+/// size ([`Context::raw`]), and absent with the reference.
+fn carries(document_type: DocumentTypeRef, document: &Document, property: &str) -> bool {
+    match document_type.derived_index_properties().get(property) {
+        Some(derived) if !document.properties().contains_key(property) => {
+            document_carries(document, &derived.reference_property)
+        }
+        _ => document_carries(document, property),
     }
 }
 
@@ -210,7 +233,7 @@ pub(crate) fn document_writes(
             !index
                 .skip_if_absent_properties
                 .iter()
-                .all(|property| document.properties().contains_key(property))
+                .all(|property| carries(document_type, document, property))
         })
         .map(|index| index.name.clone())
         .collect();
@@ -255,7 +278,12 @@ impl Context<'_> {
     }
 
     /// The document's contribution to the sum of its value trees at `level`.
+    /// A chain carrying a `summableOffCountIndex` index's sums gains one at
+    /// every level, as the document's counter does (`counter_write`).
     fn sum_contribution(&self, level: &IndexLevel) -> Result<i64, Error> {
+        if level.chain_carries_sums() {
+            return Ok(1);
+        }
         match level
             .has_index_with_type()
             .and_then(|info| info.summable.as_deref())
@@ -339,7 +367,7 @@ impl Context<'_> {
     /// `skip_set` (the walkers' `document_takes_part_in_index`).
     fn takes_part(&self, skip_set: &[String]) -> Result<bool, Error> {
         takes_part_in_index_by(skip_set, &mut |property| {
-            Ok(self.document.properties().contains_key(property))
+            Ok(carries(self.document_type, self.document, property))
         })
     }
 
@@ -356,7 +384,7 @@ impl Context<'_> {
     /// `level_reaches_entry`): only then do they build the level.
     fn reaches_entry(&self, level: &IndexLevel) -> Result<bool, Error> {
         level_reaches_entry_by(level, &mut |property| {
-            Ok(self.document.properties().contains_key(property))
+            Ok(carries(self.document_type, self.document, property))
         })
     }
 
@@ -536,6 +564,17 @@ impl Context<'_> {
         } else {
             self.index_flags.clone()
         };
+        // A summableOffCountIndex index never ends at its first property: it
+        // holds every property of its source and at least one the source
+        // fixes, so one property would repeat its source's levels
+        // (`DuplicateIndexError`). Drive's top-level walk keeps no counter
+        // either (`add_reference_for_index_level_for_contract_operations`
+        // refuses one).
+        if level.summable_off_count_index_info().is_some() {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a summableOffCountIndex index ends at its first property",
+            )));
+        }
         for key in keys {
             self.push(Write {
                 path: path.clone(),
@@ -611,7 +650,7 @@ impl Context<'_> {
                 )?;
             }
         }
-        let parent_counts_continuations = level_counts_continuations(level);
+        let parent_counts_continuations = level.is_ranked_chain_level();
         for (sub_key, sub_level) in level.sub_levels() {
             // A sub-level under which the document writes no entry is not
             // built.
@@ -654,6 +693,20 @@ impl Context<'_> {
             let null = raw.is_empty();
             let mut property_path = path.to_vec();
             property_path.push(sub_key.as_bytes().to_vec());
+            if sub_level.summable_off_count_index_info().is_some() {
+                let indexes = self.writing_indexes(&sub_names);
+                self.counter_write(
+                    &property_path,
+                    raw,
+                    sub_tree_types.property_name_tree_type,
+                    &sub_tree_types.ranked_axes,
+                    indexes,
+                    1,
+                    flags,
+                    ephemeral,
+                )?;
+                continue;
+            }
             self.push(Write {
                 path: property_path.clone(),
                 key: raw.clone(),
@@ -691,6 +744,43 @@ impl Context<'_> {
             )?;
         }
         Ok(())
+    }
+
+    /// A `summableOffCountIndex` index's counter at `key` under the
+    /// property-name tree at `path`, holding `sum`: inserted the first time,
+    /// rewritten in place (at its fixed size, adding no storage) after that,
+    /// so it adds storage only when absent; the processing of the rewrite is
+    /// counted whether or not it is absent (`processing_costs`). Its ranking
+    /// rows hold the group's one count and `sum`: a document's entry adds one,
+    /// a preallocated counter starts at zero. A document reaches it only when
+    /// the index does not skip it (`reaches_entry`).
+    #[allow(clippy::too_many_arguments)]
+    fn counter_write(
+        &mut self,
+        path: &[Vec<u8>],
+        key: Vec<u8>,
+        property_name_tree_type: TreeType,
+        ranked_axes: &[IndexAxis],
+        indexes: Vec<String>,
+        sum: i64,
+        flags: Option<&StorageFlags>,
+        ephemeral: bool,
+    ) -> Result<(), Error> {
+        self.push(Write {
+            path: path.to_vec(),
+            key: key.clone(),
+            element: counter(flags),
+            parent: property_name_tree_type,
+            role: LayoutRole::IndexValue,
+            indexes: indexes.clone(),
+            if_absent: true,
+            ephemeral,
+            ranking: None,
+            referring_type: None,
+            expiration: false,
+            flagged: flags.is_some(),
+        });
+        self.ranking_rows(path, &key, ranked_axes, 1, sum, &indexes, ephemeral)
     }
 
     /// A document with a `ttl`'s entry in the documents expirations tree:
@@ -752,28 +842,11 @@ impl Context<'_> {
             .document_flags
             .clone()
             .filter(|_| contract.config().can_be_deleted());
-        for referring in contract.document_types().values() {
-            let referring = referring.as_ref();
-            if !referring.index_only() {
-                continue;
-            }
-            for index in referring
-                .indexes()
-                .values()
-                .filter(|index| index.preallocated)
-            {
-                for binding in index.preallocation_bindings_for_target(
-                    referring.flattened_properties(),
-                    contract.id(),
-                    target,
-                ) {
-                    self.referring_type = Some(referring.name().clone());
-                    let result =
-                        self.preallocation(referring, index, &binding.key_sources, flags.as_ref());
-                    self.referring_type = None;
-                    result?;
-                }
-            }
+        for (referring, index, binding) in preallocation_bindings_targeting(contract, target) {
+            self.referring_type = Some(referring.name().clone());
+            let result = self.preallocation(referring, index, &binding.key_sources, flags.as_ref());
+            self.referring_type = None;
+            result?;
         }
         Ok(())
     }
@@ -817,6 +890,17 @@ impl Context<'_> {
                         return Ok(());
                     }
                     self.raw(referenced)?
+                        .map(|raw| {
+                            referenced_tree_key_for_referring_property(
+                                raw,
+                                self.document_type,
+                                referenced,
+                                referring,
+                                name,
+                                self.platform_version,
+                            )
+                        })
+                        .transpose()?
                 }
             };
             // A value the document does not carry, or a null one: no entry
@@ -870,6 +954,22 @@ impl Context<'_> {
                 });
             }
             path.push(name.as_bytes().to_vec());
+            // A `summableOffCountIndex` index's counter, created at zero in
+            // place of the value tree and its empty terminal: it counts one
+            // group and nothing towards the sum.
+            if info.is_summable_off_count_index() && position + 1 == index.properties.len() {
+                // A preallocated index is never under a time window.
+                return self.counter_write(
+                    &path,
+                    raw,
+                    tree_types.property_name_tree_type,
+                    &tree_types.ranked_axes,
+                    indexes.clone(),
+                    0,
+                    flags,
+                    false,
+                );
+            }
             self.push(Write {
                 path: path.clone(),
                 key: raw.clone(),
@@ -898,7 +998,7 @@ impl Context<'_> {
             )?;
             path.push(raw);
             parent_value_tree_type = tree_types.value_tree_type;
-            parent_counts_continuations = level_counts_continuations(sub_level);
+            parent_counts_continuations = sub_level.is_ranked_chain_level();
         }
         self.push(Write {
             path,

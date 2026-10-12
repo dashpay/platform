@@ -13,11 +13,21 @@ use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::util::storage_flags::StorageFlags;
 #[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentPropertyType;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::{DocumentType, Index, PreallocationBinding};
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::DataContract;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::document_methods::DocumentMethodsV0;
 #[cfg(any(feature = "server", feature = "verify"))]
@@ -116,6 +126,10 @@ pub(crate) mod time_range_ttl;
 #[cfg(feature = "server")]
 pub mod index_only;
 
+/// The counter a summableOffCountIndex index keeps per group
+#[cfg(feature = "server")]
+pub(crate) mod summable_off_count_counter;
+
 /// Unbilled reads of how an index entry is stored, for the walkers that
 /// remove or refresh entries earlier protocol versions laid out otherwise
 #[cfg(feature = "server")]
@@ -176,6 +190,48 @@ pub(crate) fn index_only_member_key(
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
+/// Every preallocated index whose binding targets `target_document_type`,
+/// with the indexOnly referring type holding it and the binding: what an
+/// insert of a `target_document_type` document preallocates, in the order it
+/// does. Shared by the preallocation path, the batch methods' counter refusal
+/// and `drive::document::cost`.
+pub(crate) fn preallocation_bindings_targeting<'a>(
+    contract: &'a DataContract,
+    target_document_type: DocumentTypeRef<'a>,
+) -> impl Iterator<Item = (DocumentTypeRef<'a>, &'a Index, PreallocationBinding<'a>)> + 'a {
+    contract
+        .document_types()
+        .values()
+        // `preallocated` is only valid on indexOnly document types, so this
+        // filter also keeps the per-insert scan trivially cheap for contracts
+        // without the feature.
+        .filter(|referring_type| referring_type.index_only())
+        .flat_map(move |referring_type: &'a DocumentType| {
+            referring_type
+                .indexes()
+                .values()
+                .filter(|index| index.preallocated)
+                .flat_map(move |index| {
+                    // Target-filtered derivation: candidates naming other
+                    // target types are rejected before any binding plan is
+                    // allocated — this runs on every document insert. Through
+                    // a moderatedDocument reference, only a binding every key
+                    // of which the inserted document's removal record would
+                    // keep (registration makes sure each preallocated index
+                    // has one).
+                    index
+                        .preallocation_bindings_for_target(
+                            referring_type.flattened_properties(),
+                            contract.id(),
+                            target_document_type,
+                        )
+                        .into_iter()
+                        .map(move |binding| (referring_type.as_ref(), index, binding))
+                })
+        })
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
 /// Whether `document`'s value of `referenced_property`, which a
 /// `where` binds to a referring index property of
 /// `referring_property_type`, is no wider as a tree key than a value of that
@@ -208,6 +264,31 @@ pub(crate) fn bound_value_fits_referring_property(
         .encode_value_for_tree_keys(value)?
         .len();
     Ok(width <= usize::from(max_width))
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// `key`, which `target` wrote for its `referenced_property`, as `referring`
+/// writes the same value for its `referring_property`. Registration pairs the
+/// two with one property type, but an unsigned integer can still be keyed in
+/// a different generation on each side (a property ending an index that
+/// is `rangeSummable` keeps generation 0), so the key is
+/// carried through generation 0 from one codec to the other.
+/// Shared by the preallocation path and `drive::document::cost`.
+pub(crate) fn referenced_tree_key_for_referring_property(
+    key: Vec<u8>,
+    target: DocumentTypeRef,
+    referenced_property: &str,
+    referring: DocumentTypeRef,
+    referring_property: &str,
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, Error> {
+    let key_in_generation_0 =
+        target.tree_key_into_generation_0(referenced_property, key, platform_version)?;
+    Ok(referring.tree_key_from_generation_0(
+        referring_property,
+        &key_in_generation_0,
+        platform_version,
+    )?)
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]

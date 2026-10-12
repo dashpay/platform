@@ -77,17 +77,14 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    (`SYSTEM_LIMITS_V4.daily_withdrawal_limit_percent`, read by
 ///    `daily_withdrawal_limit` v2 through `DPP_METHOD_VERSIONS_V3`), never below
 ///    one maximal withdrawal (`max_withdrawal_amount`) so every accepted
-///    withdrawal eventually fits and cannot block the pooling queue. The base is
-///    capped at `max_daily_withdrawal_amount` (4000 Dash, Core's unlock capacity
-///    per day under V24 as written); the credit inflows of the active window —
-///    every credit mint, recorded per block by
-///    `record_credit_inflows_for_withdrawals` in the credit inflows sum tree —
-///    are added after the cap, so the limit counts net outflow and a matching
-///    deposit -> withdraw cycle does not consume the capped budget of other
-///    users (#4471). Outflow funded by same-window deposits may therefore
-///    exceed the cap; this mirrors the net credit-pool rule Core adopts for V24
-///    alongside this change (tracked in #4471), which must land before V24
-///    activates. Both the inflows and the pooled reservations count over the
+///    withdrawal eventually fits and cannot block the pooling queue. The base has
+///    no fixed cap: what Core will mine bounds pooling through the Core-anchored
+///    limit of note 74 instead. The credit inflows of the active window — every
+///    credit mint, recorded per block by `record_credit_inflows_for_withdrawals`
+///    in the credit inflows sum tree — are added to the base, so the limit
+///    counts net outflow and a matching deposit -> withdraw cycle does not
+///    consume the budget of other users (#4471), mirroring Core v24's net
+///    credit-pool rule. Both the inflows and the pooled reservations count over the
 ///    interval after the base snapshot only — an entry the snapshot already
 ///    reflects is neither added nor subtracted again. The base is
 ///    the total credits recorded at the latest block at least 24 hours before
@@ -105,9 +102,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    already pooled in the last 24 hours keep counting against the maximum
 ///    exactly as before. Pre-V24 Core caps unlocks at `LimitAmountV22` (2000
 ///    Dash) per *block*, with the amount checked only at block level, so any
-///    daily total is still minable across blocks; V24's 4000 Dash per 576-block
-///    window matches the capped base and is raised to the same net rule before
-///    activation (see above).
+///    daily total is still minable across blocks; V24 limits the net drop of
+///    its credit pool per 576-block window, which note 74 follows.
 /// 5. **Time-range indexes**: an index can declare a `timeRange` transform
 ///    that buckets a required system timestamp (`$createdAt` /
 ///    `$updatedAt` / `$transferredAt`) into fixed-length, regularly-spaced,
@@ -226,14 +222,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   lookups are ever needed. Reads dispatch on the byte prefix, so
 ///   formats 0–2 (all pre-v14 documents) deserialize exactly as before with
 ///   an unstamped (pre-annotation) layout.
-/// 7. **Client-side GroveDB proof envelope floor**:
-///    `SYSTEM_LIMITS_V4.minimum_grovedb_proof_envelope_version` becomes 1, so
-///    a client verifying with v14 tables rejects the legacy V0 proof
-///    envelope before its bytes reach Drive (`drive-proof-verifier`,
-///    `wasm-drive-verify`, and the nested compacted address proofs). V0's
-///    item binding lets a prover return different item bytes under the same
-///    authenticated root; every live network has emitted V1 envelopes since
-///    v13 (grove version 3), so no honest response is affected.
+/// 7. **Client-side GroveDB proof envelope floor (not a version-table
+///    entry)**: clients refuse the legacy V0 proof envelope at every protocol
+///    version through
+///    `drive::verify::grovedb_proof_envelope::MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION`,
+///    so nothing about it is gated on v14. The note keeps its number so the
+///    later notes keep theirs.
 /// 8. **Epoch-based perpetual distribution claims stop wrapping**:
 ///    `RewardDistributionType::max_cycle_moment` (the cap on how far one claim
 ///    may redeem, selected by
@@ -554,11 +548,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     of the masternode vote) and always ends with a winner. Its end date is
 ///     the end of the join window until a second contender joins, when
 ///     `add_contested_document_for_contract_operations` 1 moves it to the full
-///     poll duration, so a contest with a single contender is awarded without
-///     the vote window. `check_for_ended_vote_polls` 1 awards a tie to the
+///     poll duration, removing the join window's end date when no other contest
+///     ends then, so a contest with a single contender is awarded without the
+///     vote window. `check_for_ended_vote_polls` 1 awards a tie to the
 ///     **earliest** contender (creation time, block height, core height,
 ///     document id) for every resolution, where the shipped rule awarded the
 ///     latest; DPNS contests ending from this version on follow the new rule.
+///     Before reading the contests due, it removes any end date left with no
+///     contest among the first `maximum_vote_polls_to_process` due, since each
+///     would take a slot of that read and end nothing.
 ///
 /// 24. **Contract references may require elected moderation, a minimum age, a
 ///     minimum time since the last update, an owner relation to the writer or
@@ -761,55 +759,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     document. A changed
 ///     element `refersTo` is an incompatible schema change on update.
 ///
-/// 31. **Token shielded pools**: a token configuration in format version 1
-///     (`TokenConfiguration::V1`, admitted by `CONTRACT_VERSIONS_V6`'s
-///     `token_configuration_format` bounds) can set `hasShieldedPool`, which
-///     gives the token its own Orchard pool under
-///     `[Tokens, TOKEN_SHIELDED_POOLS_KEY, token_id]` laid out like the credit
-///     pool. A pooled token must leave its freeze, unfreeze and destroy-frozen-
-///     funds rules unassigned, since notes have no owner to freeze. Seven batch
-///     token transitions (`TokenShield`, `TokenUnshield`,
-///     `TokenShieldedTransfer`, `TokenMintToPool`, `TokenBurnFromPool`,
-///     `TokenClaimToPool` and `TokenDirectPurchaseToPool`, validated through
-///     `DRIVE_ABCI_VALIDATION_VERSIONS_V10` and gated by
-///     `TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION`) move tokens between an
-///     identity balance, the supply and the pool or inside it; the identity
-///     signs and pays the fee in credits, and every bundle binds its pool into
-///     the Orchard sighash, since all pools share the empty-tree anchor an
-///     unbound bundle would verify against: a spend bundle binds the token id
-///     and the batch owner (a burn binds the burner: the batch owner, or the
-///     proposer of a group action), plus the recipient and amount where tokens
-///     leave the pool; an outputs-only bundle (`TokenShield`,
-///     `TokenMintToPool`, `TokenClaimToPool`, `TokenDirectPurchaseToPool`),
-///     whose anchor is never checked against a pool, binds a per-kind tag,
-///     the token id and the batch owner (for a group action mint, the
-///     proposer).
-///     A batch carrying any of these bundles, or a document whose token cost
-///     is paid out of a pool, has to hold the compute fee the bundles will be
-///     charged (`compute_shielded_verification_fee` per bundle-carrying
-///     sub-transition): the batch minimum balance pre-check v1
-///     (`identity_minimum_balance_pre_check`) reserves it on top of the flat
-///     per-sub-transition minimum, which is orders of magnitude smaller. A
-///     batch without a bundle is asked for the flat minimum, unchanged, and
-///     one that asks the contract owner to pay its gas is asked for its
-///     principal alone as in item 11, the compute fee being gas. The floor
-///     refuses only what fee validation would refuse later, but it refuses it
-///     before the Halo 2 work: `TokenClaimToPool`'s proof is skipped in check
-///     tx, since its claimable amount is only known against state, so without
-///     the floor a signer between the two numbers cleared the mempool with no
-///     verification run and every validator then did the verification inside
-///     block validation, only to refuse the batch unpaid, leaving the same
-///     bytes replayable. The same holds for the bundle of a group action's
-///     non-proposing signer, whose proof check tx also skips.
-///     The pool balances are a term of the token conservation check
-///     (`calculate_total_tokens_balance` v1 in `DRIVE_TOKEN_METHOD_VERSIONS_V2`).
-///     `record_token_shielded_pool_anchors`
-///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`) records and prunes the anchors of the
-///     pools a block touched. The pools root tree is inserted by
-///     `transition_to_version_14` and by `create_initial_state_structure` v4;
-///     the six shielded queries accept an optional `token_id` to target a token
-///     pool.
-///
 /// 32. **Document references resolved through a unique index**: a
 ///     `permanentDocument` `refersTo`, on an identifier property or on the
 ///     elements of a typed array (item 31), may carry a `lookup`
@@ -836,8 +785,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     no `timeRange` and is not on an indexOnly type, the keys cover it
 ///     exactly, every source shares its index property's value kind, and the
 ///     key cannot move off the document it found: its schema properties are
-///     immutable, and `$ownerId` is only a part on a type that is neither
-///     transferable nor tradeable), and the contract reference validation
+///     immutable, none an optional `deletableDocument` reference by id, which
+///     a replace may clear once its document is deleted (item 73), and
+///     `$ownerId` is only a part on a type that is neither transferable nor
+///     tradeable), and the contract reference validation
 ///     checks one into another contract, refusing it with
 ///     `ReferencedDocumentLookupInvalidError` (40137). The document
 ///     reference validation (generation 0, reached only from this version)
@@ -1106,7 +1057,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `abs` over one, and sizes: `length` and `byteLength`, the characters and
 ///     UTF-8 bytes of a string property, and `count`, the items
 ///     of an array or byte array property, each 0 for a property the document
-///     leaves out, and the system times and heights `$createdAt`, `$updatedAt`
+///     leaves out, `countPresent`, how many of two or more distinct properties
+///     of any type the document holds, each as `present` tests it, so a rule
+///     bounds how many of a group are set, and the system times and heights `$createdAt`, `$updatedAt`
 ///     and `$transferredAt` (block times in milliseconds), each also with
 ///     `BlockHeight` or `CoreBlockHeight` appended, of the document's creation,
 ///     last update (create, replace, price update) and last transfer (create,
@@ -1166,11 +1119,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (none on an indexOnly type), every path compared with identifiers an
 ///     identifier property, every path compared with strings a string property
 ///     (whose `enum`, if it declares one, lists every constant it is compared
-///     with), and every path `present` or `absent` tests a property of any
-///     type, none transient nor inside a transient object; that every
+///     with), and every path `present`, `absent` or `countPresent` tests a
+///     property of any type, none transient nor inside a transient object; that every
 ///     comparison and `in` reads a property or the owner; that nothing is
 ///     compared with itself; that strings and identifiers are only compared for
-///     equality, and never with each other; that no `in` lists a value twice;
+///     equality, and never with each other; that no `in` lists a value twice
+///     and no `countPresent` a path twice;
 ///     that an `anyOf` or `allOf` holds none directly of its own kind and a
 ///     `not` no `not` or `notIn`; that an indexOnly type, whose deletes carry
 ///     no owner, reads no `$ownerId`; and that no condition or operand nests
@@ -1179,7 +1133,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     validation it holds the limits `SystemLimits::max_property_constraints`
 ///     (16 rules) and `max_property_constraint_nodes` (32 per rule, every
 ///     comparison, `in`, listed value, `const`, presence test and logical
-///     operator counting as one), and that no `anyOf` or `allOf` lists the same
+///     operator counting as one, a `countPresent` as one plus one per path), and that no `anyOf` or `allOf` lists the same
 ///     condition twice, and at most `max_property_constraint_aggregates` (4)
 ///     distinct totals per type; once every type is parsed, that a tree keeps
 ///     each total (`documentsCountable` or `documentsSummable`, or an index
@@ -1210,6 +1164,41 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `submittedCharter`'s `rewardSplit` members add up to 100, replacing the
 ///     charter-specific check, whose error 11001 keeps its place in
 ///     `BasicError` but is never produced.
+///     A rule may also read a value of the document a reference of the type
+///     points at, `{ "referenced": [reference, field] }`, wherever a path
+///     stands: `field` is a property path of the referenced type, its `$id`,
+///     `$ownerId` or `$creatorId`, or a time or height it requires, read as
+///     that property is; one the parse cannot type (a schema field of another
+///     type, maybe another contract's) compared with a string constant or
+///     another such field is read as what it holds (a string, an identifier
+///     the constant spells base58, a byte array it spells hex, two fields by
+///     value), one node. `reference` is the dotted path of a stored property of
+///     the type, a nested one included. The parser (`parse_property_constraints`
+///     0 and meta-schema v3, in place) reads it as the path
+///     `$referenced.<reference>.$.<field>`; generation 3 refuses it, under full
+///     validation, outside `propertyConstraints`, on an indexOnly type,
+///     through anything but a stored property holding one reference
+///     to one document by id or by a `findBy` without a function, beside what
+///     a transfer, a purchase or a price update of a type that has them
+///     changes, beside a field moderators change, read or deciding a total
+///     over the type's own documents, and beside any total over the type's
+///     own documents where a moderator's restore can bring one back (10231);
+///     and
+///     `create_document_types_from_document_schemas` 1, in place, checks what
+///     it reads of a type of the same contract (10231: the field exists, is
+///     stored and of the kind read, a time or `$creatorId` the type records, a
+///     constant its `enum` lists and that spells a value of the field's type,
+///     two fields compared hold one kind, through a `moderatedDocument` only
+///     `$id`, `$ownerId` and kept fields). Such a rule is not judged with the others,
+///     and no total it reads is read for a write that does not judge it:
+///     `PropertyConstraint::violation` leaves it unjudged unless
+///     `DocumentSystemValues::referenced_documents`, so the structure
+///     validation, transfers, purchases, price updates, moderator restores and
+///     changes of fields and the SDK pre-checks pass over it; document create
+///     state validation 2 and replace state validation 1 (in place) judge it
+///     after the references hold (`validate_referencing_property_constraints`,
+///     versioned with `validate_property_constraints`, 0), on the values the
+///     reference check read (item 63).
 ///
 /// 40. **Elected moderation teams moderate from their stored charter**: seating
 ///     writes nothing. Awarding the contest of item 37 writes the winning
@@ -1652,17 +1641,33 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`LookupKeySource::Hash`). The function is `SystemFunction::Hash`, a
 ///     `sys.hash` namespace beside the string transformations of
 ///     `generatedFrom`, which refuses it. A string or byte array property may
-///     now carry a `refersTo` whose function reads its value
-///     (`DocumentProperty::revealed_reference`, `PropertyReference::Revealed`);
-///     the property keeps its type. The document such a key finds is a
+///     now carry a `refersTo` whose `findBy` reads its value
+///     (`DocumentProperty::revealed_reference`, `PropertyReference::Revealed`):
+///     through a function, or as `"."`, which fills an index property holding
+///     the same kind of value (`DocumentReferenceLookup::referenced_side_error`,
+///     told the property carrying the reference) and is judged as an
+///     identifier's value is, on a create and on the replaces that re-validate
+///     it (`key_values` and the write-time fetch read `"."` as a `Value`; a
+///     refusal carries an all-zero entity id, the value being no id, and a
+///     `deletableDocument` one may not sit under an `immutable` property). The
+///     document an index finds must hold each string or byte array part of the
+///     key exactly, since the key encoding reads the empty string as `"\0"` and
+///     an empty byte array as no value, and a key part no index entry can hold
+///     (longer than 255 bytes) finds nothing without a read, for a property
+///     source of those kinds too (`fetch_document_through_lookup`); the
+///     property keeps its type. The document a function's key finds is a
 ///     commitment made earlier, so the reference is judged when the document is
 ///     created only: its params may be transient or optional, every stored value
 ///     it reads must be fixed once written, and a replace leaves it alone.
 ///     Document create structure validation 1 refuses a create missing a param,
 ///     repeating a key on the way to one, or whose variable-length param holds
 ///     the one-byte separator that must follow it
-///     (`DocumentReferencePreimageInvalidError`, 10423). Beside a `findBy`
-///     function the reference may declare `minimumAgeBlocks`, judged by
+///     (`DocumentReferencePreimageInvalidError`, 10423). A reference judged
+///     on the create alone (`DocumentReferenceLookup::is_checked_on_create_only`:
+///     beside a `findBy` function, or any `findBy` on a document type whose
+///     documents are never replaced, `documentsMutable: false`, since a replace
+///     is the one write that judges a reference again), and not beside
+///     `inList`, may declare `minimumAgeBlocks`, judged by
 ///     document create state validation 2 against the found document's
 ///     `$createdAtBlockHeight` (`ReferencedDocumentRequirementNotMetError`,
 ///     40142), and `consume`, which deletes the found document with the create
@@ -1671,7 +1676,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     billed as `ValidationOperation::DoubleSha256` by the blocks it hashes,
 ///     beside the document fetch. Such a `deletableDocument` reference, judged
 ///     on the create alone, may sit on an `immutable` property, which
-///     `validate_no_immutable_deletable_element_references` otherwise refuses.
+///     `validate_no_immutable_deletable_element_references` otherwise refuses,
+///     and its `findBy` may read `$ownerId` on a transferable or tradeable
+///     referring type (item 32 refuses that otherwise): a transfer or a
+///     purchase moves the writer part of its key, but no later write judges it.
 ///     A `where` entry `{"$ownerId": "$ownerId"}` makes the commitment the
 ///     writer's own, and `consume` requires it, into the declaring contract,
 ///     on a type whose owners may delete, that keeps no history, declares no
@@ -1686,7 +1694,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     transient; on a mutable type such a reference may not be an `anyOf`
 ///     operand; and no property a function reads may be listed under
 ///     `moderatorAbilities.changeFields` (57). `creatorRefersTo` takes a
-///     `deletableDocument` target through a function, and the `findBy` of an
+///     `deletableDocument` target judged on the create alone, and the `findBy` of an
 ///     `ownerRefersTo` or `creatorRefersTo` may leave the value out beside
 ///     one. The declaration reproduces the DPNS preorder hash of a name under
 ///     a parent byte for byte; the DPNS contract and its create trigger are
@@ -1733,6 +1741,37 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     moderation charters system contract is written in the new keywords;
 ///     the parsed declarations, and so validation and execution, are
 ///     unchanged.
+///     A `where` entry may instead hold a condition (`WhereCondition`, parsed
+///     into `where_conditions` beside `property_agreement`, a field appended
+///     to every document reference variant and `ListElementReference`): `{
+///     "const": v }`, `{ "notEqual": b }` (a referring property, `"$ownerId"`
+///     or a `const`), `{ "in": [...] }` (two to thirty literals of one kind)
+///     or an ordering (`greaterThan`, `greaterThanOrEqual`, `lessThan`,
+///     `lessThanOrEqual`) of an integer by an integer property, an integer
+///     `const` or a time or height of the referring document; a literal reads
+///     as the referenced property's type says. Document reference validation
+///     0 (in place) checks them against the document found, or the removal
+///     record for one asked about again (every entry when a rule reads
+///     through the reference), refusing with 40127 whose referring property is
+///     the condition as written; one bounded by the writer or the last update
+///     or transfer is asked about on every replace, and none of those may sit
+///     beside a `findBy` function (10231). Contract create and update state
+///     validation (data contract reference validation 0, in place) refuses one
+///     that cannot hold with 40126: a literal no value of the referenced
+///     property equals (its kind, `enum`, length, size or range), an `in`
+///     repeating a value once read, a `notEqual` bounded by the reference
+///     property itself, an ordering no value of the property meets, and an
+///     entry of a `moderatedDocument` reference a rule reads through that
+///     reads what a removal record does not keep. The same validation checks
+///     every reference a `propertyConstraints` rule reads through (item 39) on
+///     every replace, the existence check's read, billed as before, a foreign
+///     contract fetched and billed once per write, and records for the rule
+///     the values it reads of the document found, or of a kept
+///     `moderatedDocument`'s removal record, so a rule adds no read; and
+///     registration refuses a rule reading a field another contract's type
+///     does not give it, or comparing two fields of different kinds, with
+///     `ReferencedDocumentRuleReadInvalidError` (40148, appended to
+///     `StateError`).
 /// 64. **`refersTo: moderatedDocument`**: a third kind of document reference,
 ///     between `permanentDocument` and `deletableDocument` and disjoint from
 ///     both (`DocumentReferenceKind`, `DocumentTypeV2Getters::document_reference_kind`),
@@ -1794,11 +1833,16 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     through `moderatedDocument`, `$ownerId` or a schema property the referenced type keeps
 ///     under `moderatorAbilities.deleteKeepsFields` (a kept path or one inside a kept object,
 ///     `is_path_listed`, checked in every build); not `$id`; not in a unique or contested
-///     index, as a `timeRange` or `integerRange` source or a `skipIfAbsent` property; not on
-///     an indexOnly type. A `startAt` or `startAfter` cursor, placed by what the named
-///     document stores, is refused on an index whose derived properties the query does not fix
-///     with `==`. Every step is inert without a derived index property, which only generation 3
-///     declares.
+///     index, or as a `timeRange` or `integerRange` source; not on an indexOnly type. A
+///     `skipIfAbsent` array may name one (`reads_through_reference`), which `skipIfAbsent:
+///     true` leaves out; `resolve_derived_index_properties` refuses one that is never absent
+///     (a required reference reading `$ownerId`, `$creatorId`, or a field required with every
+///     object around it) or a byte array that may be empty. The v2 walkers, update 1 and the
+///     SDK cost walker count a null skip value as absent (`document_carries`), as a derived
+///     value is when its reference or field is. A `startAt` or `startAfter` cursor, placed by
+///     what the named document stores, is refused on an index whose derived properties the
+///     query does not fix with `==`. Every step is inert without a derived index property,
+///     which only generation 3 declares.
 ///
 /// 66. **Properties frozen under a condition**: an `immutable` entry of
 ///     meta-schema v3 and parser generation 3, in place, may be
@@ -1927,7 +1971,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     the key of an index a delete clears that skips nothing, so no two
 ///     documents in state share one of its entries. Inert for every contract
 ///     without the keyword, which every earlier grammar refuses.
-///
 /// 70. **A contested type sums only small values**: parser generation 3, in
 ///     place, refuses under full validation a document type with a contested
 ///     index and a summed property (`summable`, `averageable`,
@@ -1938,6 +1981,27 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     into the type's sums with no transition to refuse, so the values must be
 ///     small enough that the sums stay in `i64`, which they do short of 2^36
 ///     documents. A stored contract still parses.
+/// 71. **Documents deleted only when consumed (`canBeDeleted:
+///     "onlyWhenConsumed"`)**: a third `canBeDeleted` value of meta-schema v3
+///     and parser generation 3, in place
+///     (`parse_can_be_deleted_only_when_consumed_keyword`, passed to the core
+///     parse as `indexOnly` is, `false` for generations 1 and 2;
+///     `DocumentTypeV2Getters::documents_deleted_only_when_consumed`). The
+///     owner's delete reads it as `false` (document delete advanced structure
+///     validation refuses it, 10404), and a `refersTo` with `consume` may
+///     target the type (`DocumentReferenceLookup::referenced_side_error`,
+///     which refused every type its owner can not delete). Its documents can
+///     leave state, so the type is a `deletableDocument` target, never a
+///     `permanentDocument` or `moderatedDocument` one
+///     (`documents_can_disappear`, `document_reference_kind`). A consumed
+///     document is deleted without its owner's `canBeDeleted` guard
+///     (`ForceDeleteDocument` beside a contested create,
+///     `force_delete_document_for_contract_operations` in
+///     `AddDocumentAndDeleteConsumed`), so Drive's delete guard stays strict
+///     for the owner's delete. Refused on a type that keeps history or is
+///     indexOnly (10231), and fixed on update (`validate_update` v1, 40212).
+///     Inert for every contract without the value, which every earlier grammar
+///     refuses.
 ///
 /// 72. **A barred author may still retract (`retractedWhen`)**: a document
 ///     type of meta-schema v3 and parser generation 3, in place, may declare
@@ -1954,6 +2018,407 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     faults. Every other rule of the type still judges the replace. So an
 ///     author whose documents can not be deleted can still take one back. Inert
 ///     before this version: the gate and the keyword exist only here.
+///
+/// 73. **An index that counts another index's entries
+///     (`summableOffCountIndex`)**: an index keyword of meta-schema v3 and
+///     parser generation 3, in place (`Index::summable_off_count_index`,
+///     `IndexLevelTypeInfo::summable_off_count_index`), admitted only on an
+///     indexOnly type with `rangeSummable`, naming a source index of the type
+///     that holds every document once; its other properties must be fixed by
+///     the source through unchanging `where` values of same-contract
+///     `permanentDocument` or `moderatedDocument` references
+///     (`validate_summable_off_count_indexes_lossless`, judging a value as a
+///     lookup's key part is judged, `why_value_can_change`: an optional
+///     `deletableDocument` reference by id a replace may clear once its
+///     document is deleted is not fixed, and from this version neither is a
+///     findBy key part, a findBy function's param or a `where` value beside
+///     one), and one summed value per type is kept. Such an index keeps one `Element::SumItem` per group
+///     in place of a value tree and entries: the index walkers (insert and
+///     delete index level 2) move it by one per document, preallocation
+///     creates it at zero, and document create state validation 1, document index-only delete
+///     state validation 0, the within-batch collision tracker and the proof
+///     index never use it. `rankedSummable` and `rankedAverageable` gain the
+///     `{ "at": ... }` form on such an index only, stamped on the index
+///     levels (`IndexLevel::ranked_sum_grouping`, `ranked_average_grouping`,
+///     `sum_propagating`) and laid out by Drive as sum chains, count-and-sum
+///     chains where an average ranking or `rangeCountable` adds counts
+///     (`property_name_tree_type_and_ranked_axes_for_level`,
+///     `ranked_chain_value_tree_type`); its `rankedCountable` is parsed into
+///     that Sum ranking, since a document count there is its sums (no
+///     `rangeCountable` needed). Sum, average and ranked queries name
+///     the source index for the summed value, and a count query reads such
+///     an index's sums, its document counts: a point read
+///     (`document_count_of_element`), and a ranked or having-range read on
+///     its Sum secondaries (`read_axis_for`), and a range read through the
+///     sum surface's range forms (`counter_sums_query`). A range total
+///     through any index whose path passes through a ranked level (its own,
+///     or one another index ranks at a shared level) is refused cleanly
+///     (`refuse_a_range_total_through_a_ranked_index`). Drive's batch methods,
+///     `apply_drive_operations` and `convert_drive_operations_to_grove_operations`
+///     at version 1, refuse a batch moving one document type's counters for
+///     more than one document (`refuse_repeated_counter_moves`). Needs
+///     grovedb's `GROVE_V4`, which admits a bare `SumItem` under a
+///     `ProvableCountProvableSumIndexedTree`. Inert for every contract without
+///     the keyword, which every earlier grammar refuses. For any index, the
+///     range-total verifiers at version 1 (`DRIVE_VERIFY_METHOD_VERSIONS_V3`:
+///     `verify_aggregate_count_proof`, `verify_carrier_aggregate_count_proof`,
+///     `verify_aggregate_sum_proof`, `verify_carrier_aggregate_sum_proof`,
+///     `verify_aggregate_count_and_sum_proof` and
+///     `verify_carrier_aggregate_count_and_sum_proof`) verify a proof showing
+///     the range holds nothing (an equality value no document holds, or an
+///     empty tree of a kind the read does not aggregate), which grovedb's
+///     aggregate verifiers refuse, as a zero total or no carrier branch
+///     (`or_empty_range_total`), and the unproven range totals, keyed on the
+///     same verifier versions, read an absent value as zero
+///     (`aggregate_or_zero_when_absent`); and
+///     `verify_composite_documents_proof` 1 reads the sum-bearing items of a
+///     `documentsSummable` type as documents. Their
+///     version 0, which every earlier protocol version selects, refuses both
+///     proofs, and the unproven total fails, as released; the prover is
+///     unchanged.
+///
+/// 74. **Withdrawals also fit a Core-anchored limit**: pooling
+///     (`pool_withdrawals_into_transactions_queue` 2, which reuses version 1's
+///     pooling through a shared helper) admits withdrawals up to the smaller of
+///     the daily withdrawal limit (note 4) and
+///     `calculate_core_anchored_withdrawal_limit`, a stricter copy of Core v24's
+///     relative net unlock rule (dash#7712) read from Core's own credit pool
+///     balances at chain locked heights: the pool may drop by at most
+///     `core_credit_pool_unlock_limit_percent` (15; Core allows 20) of its
+///     highest balance at a window start Core may use for the unlock (Core's
+///     window, `core_credit_pool_window_blocks` 576 or
+///     `regtest_core_credit_pool_window_blocks` 100, back from the chain locked
+///     height, up to Core's asset unlock validity, `core_expiration_blocks` 48,
+///     later), at least
+///     `core_credit_pool_unlock_limit_floor` (1500 Dash; Core's floor is 2000),
+///     less what is queued or broadcast and not completed yet. The formula is
+///     `core_credit_pool_unlock_limit` 0 in `DPP_METHOD_VERSIONS_V3`. Before
+///     pooling, `scan_core_blocks_for_withdrawals` reads the Core blocks the
+///     chain locked height passed (at most `core_blocks_scanned_per_block_limit`,
+///     32, per block) and records each one's credit pool balance, read from the
+///     block's coinbase alone (`getspecialtxes`), under the withdrawals tree. The
+///     Platform-side accounting can grant more than Core will mine (an asset lock published to
+///     Platform after Core mined it, a whole epoch of Core rewards minted in one
+///     block); over Core's limit an unlock waits unmined and is re-signed, and
+///     while Core's mempool holds more than the limit Core InstantSend-locks no
+///     withdrawal at all. The balance tree is created at genesis and by
+///     `transition_to_version_14`, and `cleanup_expired_locks_of_withdrawal_amounts`
+///     1 prunes it by Core height.
+///
+/// 75. **No reference by id to an indexOnly document type**: the contract
+///     reference validation 0 (`validate_data_contract_references`), in place,
+///     refuses a `permanentDocument`, `deletableDocument` or
+///     `moderatedDocument` reference without `findBy` (or with `inList`) whose
+///     referenced document type, in the declaring contract or another, is
+///     indexOnly (`ReferencedDocumentTypeIndexOnlyError`, 40146, StateError
+///     discriminant 171). Such a type's documents exist only as index entries,
+///     and Drive refuses to fetch one by id, so every write resolving the
+///     reference failed with an internal error, dropped unpaid. A `findBy`
+///     into one keeps its own refusal (40137, or 10231 in the declaring
+///     contract). Inert before this version: only parser generation 3 admits
+///     an indexOnly document type.
+///
+/// 76. **Every revealed nullifier is recorded once**: each action of an
+///     outputs-only Orchard bundle reveals a nullifier (that of a dummy spend,
+///     which becomes the new note's `rho`). The spends already recorded and
+///     checked theirs; now `Shield`, `ShieldFromAssetLock` and
+///     `ShieldFromIdentity` do too. `transform_into_action` 1 of the shield and
+///     the shield from asset lock (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`), and
+///     `transform_into_action` 0 of the shield from identity in place, refuse a
+///     nullifier repeated inside the bundle or already recorded, with
+///     `NullifierAlreadySpentError`: unpaid for the first two, as for the
+///     spends, and a paid nonce bump for the identity-signed one. The
+///     high-level operations of the shield and the shield from asset lock 1
+///     (`DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V4`), and of the shield from
+///     identity 0 in place, record the nullifiers. Recording them is metered
+///     storage for the shield and the shield from identity; the shield from
+///     asset lock's flat pool fee already prices a note and a nullifier write
+///     per action. The shield from identity's admission floor
+///     (`compute_shielded_identity_balance_write_fee` 0, the client's estimate
+///     of its complete fee) uses versioned allowances of 400 effective bytes
+///     per action and 500 flat bytes, covering the complete execution-event
+///     admission estimate. Actual fees remain metered. Before the first PV14
+///     candidate's transitions, the activation transaction adds the rho of
+///     every retained CREDIT note to the permanent nullifier set, including
+///     historical shielding outputs. Existing entries and their flags remain
+///     unchanged. The protocol upgrade ladder runs this one-time migration
+///     when crossing into PV14, with 2048 notes per page and 2048 inserts per
+///     batch; token pools are not backfilled.
+///
+/// 77. **Owner identities for shared and extended-address masternodes**: from
+///     v24 on, Dash Core lists shared masternodes, which have no owner, payout
+///     or collateral address, and extended-address masternodes, which have a
+///     `payouts` list instead of a `payoutAddress`. `create_owner_identity` 1
+///     needs both addresses and fails on such a masternode with
+///     `DashCoreBadResponseError`, which fails the block. With
+///     `create_owner_identity` 2 and `update_masternode_identities` 1
+///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`), a masternode without an owner
+///     address gets no owner identity, only its voter and operator identities;
+///     one with an owner address and either a legacy payout address or a sole
+///     payout with a matching P2PKH script gets the version 1 identity,
+///     TRANSFER key id 0 and OWNER key id 1, byte for byte; other payout shapes
+///     get only OWNER key id 1. Legacy payout-address rotation is unchanged.
+///     Payout-list changes retain, re-enable or add the sole supported P2PKH
+///     TRANSFER key and disable obsolete TRANSFER keys. Split, empty or
+///     unsupported lists disable all TRANSFER authority while preserving OWNER
+///     and balance. Historical updaters keep their payout-list policy. This
+///     version must be active on a network before its Dash Core activates V24,
+///     since earlier versions keep failing on these masternodes.
+///
+/// 78. **Versioned Core masternode address resolution**: `update_masternode_list` 1
+///     resolves nested platform addresses first, then falls back to legacy ports,
+///     before storing the masternode state. Earlier protocol versions keep their
+///     flat-field interpretation. The stored layout and validator construction
+///     remain unchanged: new validators read the resolved stored ports, and an
+///     existing validator is refreshed on a ban, service or P2P-port change.
+///     Each diff starts from the old persisted representation so transient address
+///     data retained before activation cannot make a running node disagree with
+///     a restarted one. Payout lists remain outside the persisted representation.
+///
+/// 80. **A BLS12_381 signature must verify**: `verify_identity_signed_signature`
+///     1 (`STATE_TRANSITION_METHOD_VERSIONS_V2`), the signature check that
+///     identity-signature validation runs for every identity-signed
+///     transition, refuses a signature by a BLS12_381 key that does not verify
+///     (`InvalidStateTransitionSignatureError`, unpaid, as for ECDSA keys).
+///     Generation 0 refused one only when the key or the signature could not be
+///     read, and earlier versions replay through it. Identity-signature
+///     validation v0, in place, passes the platform version to the check; the
+///     tables of every earlier version select generation 0, the code it called
+///     before.
+///
+/// 81. **Token shielded pools**: a token configuration in format version 1
+///     (`TokenConfiguration::V1`, admitted by `CONTRACT_VERSIONS_V6`'s
+///     `token_configuration_format` bounds) can set `hasShieldedPool`, which
+///     gives the token its own Orchard pool under
+///     `[Tokens, TOKEN_SHIELDED_POOLS_KEY, token_id]` laid out like the credit
+///     pool. A pooled token must leave its freeze, unfreeze and destroy-frozen-
+///     funds rules unassigned, since notes have no owner to freeze. Seven batch
+///     token transitions (`TokenShield`, `TokenUnshield`,
+///     `TokenShieldedTransfer`, `TokenMintToPool`, `TokenBurnFromPool`,
+///     `TokenClaimToPool` and `TokenDirectPurchaseToPool`, validated through
+///     `DRIVE_ABCI_VALIDATION_VERSIONS_V10` and gated by
+///     `TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION`) move tokens between an
+///     identity balance, the supply and the pool or inside it; the identity
+///     signs and pays the fee in credits, and every bundle binds its pool into
+///     the Orchard sighash, since all pools share the empty-tree anchor an
+///     unbound bundle would verify against: a spend bundle binds the token id
+///     and the batch owner (a burn binds the burner: the batch owner, or the
+///     proposer of a group action), plus the recipient and amount where tokens
+///     leave the pool; an outputs-only bundle (`TokenShield`,
+///     `TokenMintToPool`, `TokenClaimToPool`, `TokenDirectPurchaseToPool`),
+///     whose anchor is never checked against a pool, binds a per-kind tag,
+///     the token id and the batch owner (for a group action mint, the
+///     proposer).
+///     A batch carrying any of these bundles, or a document whose token cost
+///     is paid out of a pool, has to hold the compute fee the bundles will be
+///     charged (`compute_shielded_verification_fee` per bundle-carrying
+///     sub-transition): the batch minimum balance pre-check v1
+///     (`identity_minimum_balance_pre_check`) reserves it on top of the flat
+///     per-sub-transition minimum, which is orders of magnitude smaller. A
+///     batch without a bundle is asked for the flat minimum, unchanged, and
+///     one that asks the contract owner to pay its gas is asked for its
+///     principal alone as in item 11, the compute fee being gas. The floor
+///     refuses only what fee validation would refuse later, but it refuses it
+///     before the Halo 2 work: `TokenClaimToPool`'s proof is skipped in check
+///     tx, since its claimable amount is only known against state, so without
+///     the floor a signer between the two numbers cleared the mempool with no
+///     verification run and every validator then did the verification inside
+///     block validation, only to refuse the batch unpaid, leaving the same
+///     bytes replayable. The same holds for the bundle of a group action's
+///     non-proposing signer, whose proof check tx also skips.
+///     The pool balances are a term of the token conservation check
+///     (`calculate_total_tokens_balance` v1 in `DRIVE_TOKEN_METHOD_VERSIONS_V2`).
+///     `record_token_shielded_pool_anchors`
+///     (`DRIVE_ABCI_METHOD_VERSIONS_V10`) records and prunes the anchors of the
+///     pools a block touched. The pools root tree is inserted by
+///     `transition_to_version_14` and by `create_initial_state_structure` v4;
+///     the six shielded queries accept an optional `token_id` to target a token
+///     pool.
+///
+/// 82. **An expiring type sums only values that keep its sums in range**:
+///     parser generation 3, in place, refuses under full validation a document
+///     type with a `ttl` and a summed property (`summable`, `averageable`,
+///     `documentsSummable` or `documentsAverageable`) unless the property's
+///     schema declares a `minimum` of at least 0, or a `minimum` of at least
+///     -2^27 and a `maximum` of at most 2^27
+///     (`SYSTEM_LIMITS_V4.max_expiring_signed_summed_value_magnitude`, `None` in
+///     the earlier tables). The cleanup deletes expired documents at the end of
+///     a block with no transition to refuse, and removing a negative value
+///     raises the sums it was in; removing values that are never negative only
+///     lowers them, and values within ±2^27 keep them in `i64` short of 2^36
+///     documents. A stored contract still parses. No earlier version parses
+///     `ttl`.
+///
+/// 83. **Unambiguous document properties**: `validate_document` generation 1 rejects
+///     repeated text keys in nested maps, including maps inside arrays, before property
+///     size, path and schema validation. Create, replace, indexOnly delete and moderator
+///     field changes use the same check. Rejection uses ValueError (10103) through the
+///     existing paid-invalid flow; generation 0 remains selected before this version.
+///
+/// 84. **Document token payments obey the issuer's movement policy**:
+///     document-base state validation 2 supersedes 1
+///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`). A transparent transfer or burn
+///     payment of a paused token is refused (`TokenIsPausedError`, 40711).
+///     A transfer to a frozen document contract owner is refused
+///     (`IdentityTokenAccountFrozenError`, 40702, naming that owner) only when
+///     the token issuer's `allowTransferToFrozenBalance` is false; its default
+///     is true, and external issuers are included. Reads are billed in order:
+///     payer freeze, payer balance, pause, recipient info, then issuer metadata
+///     only if frozen, and the issuer contract only when external. Owner
+///     self-payments emit no transfer and retain only their payer checks.
+///     Shielded payments retain their separate pool validation; native burn
+///     policy and earlier protocol tables are unchanged.
+///
+/// 85. **Rules that gate the owner's delete (`deleteConstraints`), and `$id`
+///     in a total's filter**: a document type of meta-schema v3 and parser
+///     generation 3, in place, may declare `deleteConstraints`, named rules in
+///     the `propertyConstraints` grammar (`parse_delete_constraints`,
+///     `apply_delete_constraints_v0`, run by `apply_property_constraints` 0
+///     on `parse_property_constraints`; `DocumentTypeV2Getters::delete_constraints`).
+///     Document delete state validation 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
+///     runs the checks of version 0, then reads the totals the rules read
+///     (`read_delete_constraint_aggregates`, billed, each as it will be once
+///     the document is gone) and judges every rule on the stored document
+///     (`validate_delete_constraints`, versioned with
+///     `validate_property_constraints`), refusing the first one broken with
+///     `DocumentDeleteConstraintViolatedError` (state code 40147, discriminant
+///     172), paid. A `countOf` or `sumOf` filter may match by `"$id"`, the
+///     document's own id (`AggregateBinding::Id`, an identifier key, in
+///     `propertyConstraints` too: the shared batch transformer's aggregate read,
+///     in place, passes the document's id), so a poll is deleted only while no
+///     vote names it. Refused on a type with `canBeDeleted: false`,
+///     `"onlyWhenConsumed"` or `indexOnly` (10231, every parse), held to the rule
+///     limits apart from `propertyConstraints`, frozen on update (10246), and a
+///     `refersTo` with `consume` may not target such a type
+///     (`DocumentReferenceLookup::referenced_side_error`). Moderator deletes and
+///     `ttl` expiries are not judged. Inert before this version: the earlier
+///     meta-schemas refuse the keyword and the `$id` filter value, and their
+///     tables select delete state validation 0.
+///
+/// 86. **Bounded schema depth check**: `validate_max_depth` 1
+///     (`CONTRACT_VERSIONS_V6`) no longer walks a `$ref` whose target is a
+///     scalar and never clears its visited set, so every ref target is
+///     expanded at most once and the check is bounded in schema size. Before
+///     this a crafted `$defs` chain with `$ref`s to scalars cleared the cycle
+///     guard and made the check, run during contract registration in block
+///     execution, exponential. Verdict, depth and size are unchanged for
+///     schemas without a scalar `$ref` target; earlier versions replay
+///     through generation 0.
+///
+/// 87. **Moderator document restores obey `propertyConstraints`**: moderation state
+///     validation 0, in place, judges every rule of the restored type after uniqueness
+///     and before constructing restoration operations. The retained document supplies
+///     its original id, owner, properties, times and heights. The shared aggregate reader
+///     adds it to the live totals as an insertion, with no contribution from its removal
+///     record. A failing rule returns paid `DocumentPropertyConstraintViolatedError`
+///     (10422) in a block, charging the moderator and consuming its nonce while leaving
+///     the document absent and the removal record unrestored. Mempool admission refuses
+///     it without persisting fees or a nonce change. Types without rules retain their fees.
+///     Full property schema validation and `deleteConstraints` are not added to restore.
+///     Earlier versions are unchanged: contract moderation is inactive before version 14.
+///
+/// 88. **Rules that read the bytes of a byte array**: the `propertyConstraints`
+///     grammar (item 39; meta-schema v3 and `parse_property_constraints` 0, in
+///     place) gains a `byteAt` integer operand, `{ "byteAt": [path, index] }`,
+///     the byte (0 to 255) at a literal index from 0 to 65535 of a byte array
+///     property, 0 when the array does not hold it or the document leaves it
+///     out, one node; and `startsWith` and `endsWith` test byte arrays when a
+///     side names a byte array property, the other a `{ "const": hex }` or
+///     another byte array property, three nodes, not holding for an array left
+///     out (`PropertyConstraint::BytesAffix`). Parser generation 3 refuses a read
+///     of anything but a stored byte array property, an index at or past its
+///     `maxItems`, a constant longer than it, a constant that is not an even
+///     number of hex digits, a default for a byte array, and an `equal`,
+///     `notEqual`, `in` or `contains` of one (10231). `immutable` conditions,
+///     `retractedWhen` and `deleteConstraints` read bytes the same way.
+///     Inert before this version: the earlier meta-schemas refuse
+///     `propertyConstraints` and their parsers ignore it.
+///
+/// 89. **Non-transferable tokens**: a format 1 token configuration
+///     (`TokenConfigurationV1`) gains `transferable`, `true` when absent and
+///     fixed at creation (no `TokenConfigUpdate` item). With `false` the batch
+///     advanced structure validation 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`)
+///     refuses every `TokenTransfer` from the contract the action carries
+///     (`TokenNotTransferableError`, 40726, paid, and in check tx); the
+///     document type parser, in place, refuses a cost in the contract's own
+///     such token that pays the contract owner instead of burning it
+///     (`NonTransferableTokenPaymentMustBurnError`, 10280); data contract
+///     create and update state validation 0, in place, refuse a cost in
+///     another contract's such token (40726), reusing the read that checks the
+///     token exists, external burns being refused already (10261);
+///     document-base state validation 2 refuses a payment to the contract
+///     owner in the contract's own such token again (40726), from the
+///     configuration in hand; `validate_shielded_pool_rules` refuses it with a
+///     shielded pool (`NonTransferableTokenShieldedPoolError`, 10279, unpaid
+///     at the pre-activation gate); and the pool threshold
+///     `TokenConfigUpdate` items are refused on a format 1 configuration
+///     without a pool. Mints, claims, direct purchases, burns, freezes and
+///     burn payments for the contract's own documents are unchanged.
+///     Inert before this version: only format 1 can be non-transferable, and
+///     the pre-activation gate refuses that format on every earlier version.
+///
+/// 90. **Unsigned integers are keyed in value order**: `serialize_value_for_key`
+///     and `deserialize_value_for_key` 1 (`CONTRACT_VERSIONS_V6`) key a property,
+///     or derived index property, of an unsigned integer type by its plain
+///     big-endian bytes (`DocumentPropertyType::encode_value_for_tree_keys_v1`).
+///     Generation 0 flipped the top bit as for a signed value, so the values from
+///     the middle of the type's range up (128 and above for a `u8`) sorted below
+///     the others in every index: range queries, ordering, range counts and sums
+///     across that point came out wrong, and a count or sum over a range whose
+///     bounds straddled it was refused. A key keeps its width. The `$` system
+///     fields keep their keys, and so do the paths of a contest's vote poll
+///     (`serialize_value_for_vote_poll_key`), which the masternodes' vote records
+///     address, and so does a property that ends a `rangeSummable` index, in
+///     every index of its type: the tree of its values keeps a sum in every
+///     node, and values of both signs that fit the old order can leave the
+///     signed 64-bit range in every balanced tree of the new one (an update
+///     before this version can make a summed property unsigned while it holds
+///     negative values).
+///     `transition_to_version_14` first moves every other key generation 0 wrote
+///     (`Drive::rekey_unsigned_integer_index_values`) with GroveDB's `move_op`
+///     (`GROVE_V4`, from the GroveDB bump to `b50a583377`), in batches of
+///     `max_rekey_batch_moves` moves (`SYSTEM_LIMITS_V4`), twins that trade
+///     keys in one batch. A moved subtree keeps its stored bytes, so its hashes,
+///     aggregates and Merk shapes are unchanged; only the tree holding the moved
+///     keys takes another shape. Contract validation refuses an `integerRange`
+///     on a property that keeps the earlier keys, whose grid reads value order.
+///     The features of this version that key
+///     integers themselves (an `integerRange` window start, an indexOnly member
+///     key, its row commitment and synthesized id) use the new keys from the
+///     start. Earlier versions replay through generation 0.
+///
+/// 91. **Property type shorthands, `identifier` and `bytes`**: a property
+///     schema may write `"type": "identifier"` for `"type": "array",
+///     "byteArray": true, "minItems": 32, "maxItems": 32, "contentMediaType":
+///     "application/x.dash.dpp.identifier"`, and `"type": "bytes", "size": n`
+///     for `"type": "array", "byteArray": true, "minItems": n, "maxItems": n`,
+///     on a property at any level, the `items` of a typed array and a
+///     `schemaDefs` definition. `DocumentType::expand_property_type_shorthands`
+///     0 (`expand_property_type_shorthands`, new in `CONTRACT_VERSIONS_V6`,
+///     `None` in the earlier tables) rewrites them into the long form before
+///     anything reads the schema: parser generation 3, in place, expands the
+///     document type schema and the contract's `$defs` before the meta-schema
+///     (v3, unchanged), the core parse with its `$ref` walks, the validator it
+///     compiles and every later stage; `validate_document` 1, in place,
+///     expands before compiling a stored contract's validator;
+///     `validate_schema_compatibility` 1, in place, expands the old and the
+///     new document type schemas and `$defs` before diffing, so rewriting a
+///     property or a definition between the two spellings is no change; and
+///     the check_tx schema-depth pre-check walks the rewritten schema, as the
+///     block's check does. The document type, the stored contract and the
+///     transition keep the schema as sent. Refused (10231) under full
+///     validation: `byteArray`, `minItems`, `maxItems` or `contentMediaType`
+///     beside a shorthand, `size` on `identifier`, and `bytes` without a
+///     `size` from 1 to `SYSTEM_LIMITS_V4.max_field_value_size` (5120).
+///     Without full validation nothing is refused and a shorthand that can not
+///     be rewritten is left as sent, so a contract stored before this version
+///     keeps loading even where it holds one no reader looks at (the `$defs`
+///     of a contract without document types, which are left unexpanded, or an
+///     entry a repeated key shadows), as the upgrade's read of every stored
+///     contract requires. The schema validation fee is charged on the long
+///     form. Inert before this version: the expansion rewrites nothing there,
+///     meta-schemas v0 to v2 refuse both names (no JSON Schema type), and
+///     parser generations 0 to 2 refuse them as unsupported property types.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
@@ -2036,11 +2501,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// its gates on; Drive identity methods v2 rewrite the key and raise the remaining budget).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
-    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also frees moderation storage someone is owed, a restored removal record replaced or team action approvals moved or dropped, which is refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; repaid identity debt credited to the processing fee pool); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: calculate_total_tokens_balance 1 (token shielded pool balances join token conservation) and evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
+    drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot; contract method versions v4: the moderation list trees, the document removal record trees and the moderation method table; apply_drive_operations 1 (a moderator's document deletion refunds nobody for what its document operations remove unless its type sets `deleteRefundsOwner`, those operations applied as a GroveDB batch of their own when the batch also frees moderation storage someone is owed, a restored removal record replaced or team action approvals moved or dropped, which is refunded to whoever its flags name; every write of one identity balance, fee pot or prefunded specialized balance in a batch merged into one; a batch writing one token balance or supply twice refused; a batch moving one document type's summableOffCountIndex counters for more than one document refused; repaid identity debt credited to the processing fee pool); convert_drive_operations_to_grove_operations 1 (refuses that counter batch too, then converts as before); index uniqueness gains validate_moderated_document_uniqueness (a moderator's document restore or field change); vote method versions v3: the end-date cleanup of ended contested vote polls removes an end date only once none of its polls remain; token method versions v2: calculate_total_tokens_balance 1 (token shielded pool balances join token conservation) and evonode_participation_rewards 1 (an evonode's token claim covers only the epochs it read); add_contested_indices_for_contract_operations 1: a poll's last index value is a count tree
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit; record_token_shielded_pool_anchors records and prunes the anchors of the token pools a block touched; decode_raw_state_transitions, execute_event, validate_fees_of_event and add_distribute_storage_fee_to_epochs_operations each move to 1 — the table's own per-slot comments carry the full list
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more; the three shielded-fee token pool transitions gain basic structure validation and document_base_transition_state_validation 1 admits a document token cost paid from a token pool; the ShieldFromAssetLock transform_into_action 1 checks its bundle against the bound preimage
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more; the three shielded-fee token pool transitions gain basic structure validation and document_base_transition_state_validation 2 admits a document token cost paid from a token pool and enforces pause and the issuer's frozen-recipient policy on transparent payments; the ShieldFromAssetLock transform_into_action 1 checks its bundle against the bound preimage
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -2050,9 +2515,9 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         validation: DPP_VALIDATION_VERSIONS_V5, // changed: validate_config_update 2 admits the contract moderation declaration of config V2
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; ShieldFromAssetLock moves to version 1 alone; the ContractUserModeration transition
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
-        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry; verify_identity_signed_signature 1: a BLS12_381 signature must verify
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys; serialize_value_for_key 1 keys unsigned integers in value order (except a property ending a rangeSummable index)
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
@@ -2066,7 +2531,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32) + GroveDB proof envelope floor (V1); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000)
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries; max_rekey_batch_moves (10,000) for the unsigned index value key rewrite
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

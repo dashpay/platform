@@ -67,11 +67,17 @@ contract read back), when:
 
 When a contract is registered or updated, a `ttl` below `min_document_ttl_seconds` (one hour at
 protocol version 14) or above `max_document_ttl_seconds` (one year) is refused too. The floor
-keeps a document in state well past the moment its writer fetches the proof of its create,
-which proves the document present; a document the cleanup had already deleted would fail that
-proof although the create succeeded. A contract update may not add, remove or change the `ttl`
-of an existing document type: every stored document carries the expiry it was written and paid
-with. A document type added by an update declares it freely.
+keeps a document in state well past the moment its writer fetches the proof of its create, which
+proves the document present; a document the cleanup had already deleted would fail that proof
+although the create succeeded. A summed property that admits values below 0 is refused there
+too, unless its `minimum` and `maximum` lie within ±2^27
+(`max_expiring_signed_summed_value_magnitude`): the cleanup takes a document's value out of the
+type's sums with no transition to refuse, and removing a negative value raises them, so the
+values must keep every sum in the signed 64-bit range. Removing values that are never negative
+only lowers the sums, and values within ±2^27 keep them in range short of 2^36 documents. A
+contract update may not add, remove or change the `ttl` of an existing document type: every
+stored document carries the expiry it was written and paid with. A document type added by an
+update declares it freely.
 
 The same holds for any write close to a document's expiry: a replace, transfer, purchase or price
 update accepted in the last block before the expiry proves the document present, and a proof

@@ -102,6 +102,8 @@ use crate::error::Error;
 use crate::query::drive_document_count_query::point_lookup_count_entries;
 use crate::query::index_only_synthesis::synthesize_index_only_document;
 #[cfg(feature = "server")]
+use crate::query::is_absent_path;
+#[cfg(feature = "server")]
 use crate::query::moderated_join::fetch_removals;
 use crate::query::moderated_join::{
     decode_removals, pair_missing_with_removals, removals_path_query,
@@ -114,7 +116,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
-    DocumentReferenceKind, DocumentTypeRef,
+    DocumentReferenceKind, DocumentTypeRef, Index,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -304,6 +306,30 @@ fn merge_error_to_shape_error(error: grovedb::Error) -> Error {
         )),
         other => Error::from(other),
     }
+}
+
+/// An unserved cap is a property of the read-only query, not a storage fault.
+/// This execution check does not affect block execution or proof construction.
+#[cfg(feature = "server")]
+fn check_composite_instance_limits(
+    path_query: &PathQuery,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    if platform_version
+        .drive
+        .grove_version
+        .grovedb_versions
+        .path_query_methods
+        .per_instance_query_limits
+        == 0
+        && path_query.has_instance_limits()
+    {
+        return Err(unsupported(
+            "composite query limits require a protocol version that supports per-instance limits"
+                .to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// The bound identifier a document carries for `field`, or `None` when
@@ -1197,7 +1223,7 @@ impl<'a> DriveDocumentQuery<'a> {
         )
         .ok_or_else(|| {
             unsupported(format!(
-                "count sub-query on \"{}\" needs a `countable: true` index covering its fixed \
+                "count sub-query on \"{}\" needs a `countable: true` (or summableOffCountIndex) index covering its fixed \
                  clauses and the bound field \"{}\"",
                 sub_query.document_type.name(),
                 binding.field,
@@ -1457,6 +1483,9 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<Vec<Document>, Error> {
         if query.document_type.index_only() {
             let index = query.index_only_query_index(platform_version)?;
+            // Edited in place to pass the platform version, which picks the
+            // key generation synthesis decodes with: only an indexOnly type
+            // reaches this line, and only protocol version 14 parses one.
             return trios
                 .into_iter()
                 .map(|(path, key, element)| {
@@ -1467,6 +1496,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         &path,
                         &key,
                         Some(&element),
+                        platform_version,
                     )
                 })
                 .collect();
@@ -1507,9 +1537,14 @@ impl<'a> DriveDocumentQuery<'a> {
     /// past the base path when the walk descended through trailing
     /// equalities, and IS the key otherwise (the same layout
     /// `verify_point_lookup_count_proof` reads).
-    fn decode_count_trios(base_path_len: usize, trios: Vec<PresentTrio>) -> Vec<SplitCountEntry> {
+    fn decode_count_trios(
+        index: &Index,
+        base_path_len: usize,
+        trios: Vec<PresentTrio>,
+    ) -> Vec<SplitCountEntry> {
         // A composite count is always bound, so it always carries an `IN`.
         let mut entries = point_lookup_count_entries(
+            index,
             base_path_len,
             true,
             trios
@@ -1734,7 +1769,10 @@ impl<'a> DriveDocumentQuery<'a> {
     /// component's result. Every trio must land in a component, and
     /// every decoded item must be claimed by one — an entry the
     /// derivation never asked for means the responding node steered the
-    /// composition.
+    /// composition. `sum_bearing_items_are_documents` reads every item
+    /// variant as a document (the composite verifier from version 1), where
+    /// version 0 reads only a plain `Item` as one.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assemble_from_trios(
         &self,
         derived: &[DerivedValues],
@@ -1742,6 +1780,7 @@ impl<'a> DriveDocumentQuery<'a> {
         sub_path_queries: &[Option<PathQuery>],
         removal_path_queries: &[PathQuery],
         trios: Vec<ProvedTrio>,
+        sum_bearing_items_are_documents: bool,
         platform_version: &PlatformVersion,
     ) -> Result<CompositeDocumentsResult, Error> {
         // Group documents by base path. Counts instead route by their
@@ -1795,7 +1834,17 @@ impl<'a> DriveDocumentQuery<'a> {
                 entries.push((key, element));
                 continue;
             }
-            if !matches!(element, Element::Item(..)) {
+            // A document is an item; a count is a tree or a counter. From the
+            // composite verifier's version 1 (`sum_bearing_items_are_documents`),
+            // the sum-bearing items of a `documentsSummable` type or a
+            // `summable` indexOnly index are documents too (the items
+            // `decode_document_trios` reads), which version 0 reads as counts.
+            let is_document = if sum_bearing_items_are_documents {
+                element.has_basic_item()
+            } else {
+                matches!(element, Element::Item(..))
+            };
+            if !is_document {
                 let position = (path, key);
                 let members = count_members_by_position.get(&position).ok_or_else(|| {
                     corrupted_proof(
@@ -1910,7 +1959,17 @@ impl<'a> DriveDocumentQuery<'a> {
             let Some(path_query) = &sub_path_queries[index] else {
                 continue;
             };
-            let entries = Self::decode_count_trios(path_query.path.len(), count_trios);
+            // Only the covering index is read here, which the bound field's
+            // clause resolves whatever identifiers it holds: one value spares
+            // sorting every derived value into a clause again
+            let values = &derived[index];
+            let count_query = self.sub_query_count_query(
+                &self.sub_queries[index],
+                &values[..values.len().min(1)],
+                platform_version,
+            )?;
+            let entries =
+                Self::decode_count_trios(count_query.index, path_query.path.len(), count_trios);
             sub_results[index] = Some(SubQueryResult::Counts(Self::assemble_counts(
                 &derived[index],
                 entries,
@@ -1946,27 +2005,20 @@ impl<'a> DriveDocumentQuery<'a> {
     /// the primary tree.
     fn page_ids(&self) -> Result<BTreeSet<Identifier>, Error> {
         let mut ids = BTreeSet::new();
+        // The clauses hold the client's values, so a malformed one is the request's fault, with
+        // the plain query path's errors.
         if let Some(clause) = &self.internal_clauses.primary_key_equal_clause {
             ids.insert(clause.value.to_identifier().map_err(|_| {
-                Error::Drive(DriveError::CorruptedCodeExecution(
-                    "a primary-key equality clause holds an identifier",
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "primary key equality must compare an identifier",
                 ))
             })?);
         }
         if let Some(clause) = &self.internal_clauses.primary_key_in_clause {
-            for value in clause
-                .in_values()
-                .into_data()
-                .map_err(|_| {
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "a primary-key in clause holds an array",
-                    ))
-                })?
-                .iter()
-            {
+            for value in clause.in_values().into_data_with_error()??.iter() {
                 ids.insert(value.to_identifier().map_err(|_| {
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "a primary-key in clause holds identifiers",
+                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                        "primary key IN must contain identifiers",
                     ))
                 })?);
             }
@@ -2031,22 +2083,6 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 }
 
-/// Whether a grovedb error says the queried path does not exist yet (no
-/// document of the type, no entry under the index), which a query
-/// answers with no rows.
-#[cfg(feature = "server")]
-fn is_absent_path(error: &Error) -> bool {
-    matches!(
-        error,
-        Error::GroveDB(e) if matches!(
-            e.as_ref(),
-            grovedb::Error::PathKeyNotFound(_)
-                | grovedb::Error::PathNotFound(_)
-                | grovedb::Error::PathParentLayerNotFound(_)
-        )
-    )
-}
-
 #[cfg(feature = "server")]
 impl<'a> DriveDocumentQuery<'a> {
     /// Materializes a documents component without a proof, from the
@@ -2058,8 +2094,9 @@ impl<'a> DriveDocumentQuery<'a> {
     /// so the two can fill a page differently. Everything derived from
     /// the page rides on this selection, so it has to be the proof's.
     /// indexOnly projections are synthesized from their positions,
-    /// stored documents deserialized.
-    fn materialize_component(
+    /// stored documents deserialized. A chained query reads its inner
+    /// page through here too.
+    pub(crate) fn materialize_component(
         query: &DriveDocumentQuery<'a>,
         path_query: &PathQuery,
         drive: &crate::drive::Drive,
@@ -2142,6 +2179,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     direction,
                     platform_version,
                 )?;
+                check_composite_instance_limits(&path_query, platform_version)?;
                 let documents = Self::materialize_component(
                     &query,
                     &path_query,
@@ -2155,10 +2193,11 @@ impl<'a> DriveDocumentQuery<'a> {
                 ))
             }
             SubQueryKind::Count => {
-                let path_query = self
-                    .sub_query_count_query(sub_query, values, platform_version)?
-                    .point_lookup_count_path_query(platform_version)?;
+                let count_query =
+                    self.sub_query_count_query(sub_query, values, platform_version)?;
+                let path_query = count_query.point_lookup_count_path_query(platform_version)?;
                 let base_path_len = path_query.path.len();
+                check_composite_instance_limits(&path_query, platform_version)?;
                 let (results, _skipped) = match drive.grove_get_path_query(
                     &path_query,
                     transaction,
@@ -2167,14 +2206,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     &platform_version.drive,
                 ) {
                     // No count tree yet under this index: every count is zero.
-                    Err(Error::GroveDB(e))
-                        if matches!(
-                            e.as_ref(),
-                            grovedb::Error::PathKeyNotFound(_)
-                                | grovedb::Error::PathNotFound(_)
-                                | grovedb::Error::PathParentLayerNotFound(_)
-                        ) =>
-                    {
+                    Err(error) if is_absent_path(&error) => {
                         return Ok(SubQueryResult::Counts(Vec::new()));
                     }
                     other => other?,
@@ -2187,7 +2219,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         _ => None,
                     })
                     .collect();
-                let entries = Self::decode_count_trios(base_path_len, trios);
+                let entries = Self::decode_count_trios(count_query.index, base_path_len, trios);
                 Ok(SubQueryResult::Counts(Self::assemble_counts(
                     values, entries,
                 )?))
@@ -2207,6 +2239,26 @@ impl<'a> DriveDocumentQuery<'a> {
 
         let page_path_query = self.page_path_query(platform_version)?;
         let direction = page_path_query.query.query.left_to_right;
+        // Documents are serialized whole, as a documents query's are: refused
+        // before any read when an indexOnly page or documents sub-query reads
+        // through an index lacking a property. A sub-query is judged with one
+        // representative value: the index it resolves may be a pivot index the
+        // read itself, binding more values than its limit, passes over for one
+        // holding more properties, so this can refuse a read its real values
+        // would have served, never admit one they would not.
+        self.refuse_an_uncovered_index_only_projection(platform_version)?;
+        for sub_query in &self.sub_queries {
+            if sub_query.kind == SubQueryKind::Documents && sub_query.document_type.index_only() {
+                self.sub_query_document_query_with_direction(
+                    sub_query,
+                    &[Identifier::default()],
+                    direction,
+                    platform_version,
+                )?
+                .refuse_an_uncovered_index_only_projection(platform_version)?;
+            }
+        }
+        check_composite_instance_limits(&page_path_query, platform_version)?;
         let page_documents = Self::materialize_component(
             self,
             &page_path_query,
@@ -2299,6 +2351,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()?;
 
+            check_composite_instance_limits(&page_path_query, platform_version)?;
             let page_documents = Self::materialize_component(
                 self,
                 &page_path_query,
@@ -2342,6 +2395,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 &removal_path_queries,
                 platform_version,
             )?;
+            check_composite_instance_limits(&merged_query, platform_version)?;
             let proof = drive
                 .grove
                 .prove_query(&merged_query, None, &platform_version.drive.grove_version)

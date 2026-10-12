@@ -2,6 +2,7 @@
 //! parse of the whole contract admits one only when the removal record of the referenced
 //! document keeps every key of the index path.
 
+use super::refusal_test_support::assert_refused;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
 use crate::data_contract::config::DataContractConfig;
@@ -143,20 +144,6 @@ fn assert_preallocated(document_types: &BTreeMap<String, DocumentType>, index_na
             .expect("the index")
             .preallocated,
         "{index_name} should be preallocated"
-    );
-}
-
-fn assert_refused(result: Result<BTreeMap<String, DocumentType>, ProtocolError>, fragment: &str) {
-    let error = result.expect_err("the contract should be refused");
-    // A paid refusal needs the consensus variant: a bare data contract error would surface as
-    // an internal error in a block
-    assert!(
-        matches!(error, ProtocolError::ConsensusError(_)),
-        "expected a consensus error, got {error:?}"
-    );
-    assert!(
-        error.to_string().contains(fragment),
-        "expected {fragment:?} in: {error}"
     );
 }
 

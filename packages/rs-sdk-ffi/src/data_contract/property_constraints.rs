@@ -63,22 +63,28 @@ const PROPERTY_CONSTRAINTS_KEYWORD: &str = "propertyConstraints";
 /// Get the `propertyConstraints` rules of a document type as a JSON array
 ///
 /// Each element is
-/// `{ "name": string, "rule": object, "reads": [{ "path": string, "kind": string }], "readsOwner": bool, "readsSystem": [string], "readsTotals": [{ "kind": string, "documentType": string, "property"?: string, "filter": [string] }] }`:
+/// `{ "name": string, "rule": object, "reads": [{ "path": string, "kind": string }], "readsOwner": bool, "readsSystem": [string], "readsTotals": [{ "kind": string, "documentType": string, "property"?: string, "filter": [string] }], "readsReferenced": [{ "reference": string, "path": string, "kind": string }] }`:
 /// the rule's name (its key in `propertyConstraints`), the rule exactly as the
 /// document type's schema declares it, every property it reads in declared
 /// order (`kind` is `"value"` for an integer operand, `"presence"` for
 /// `present` / `absent`, `"text"` for a string comparison, `"identifier"` for
 /// an identifier comparison, `"length"` for a `length` or `byteLength` operand,
-/// `"count"` for a `count` operand and `"elements"` for the array a `contains`
-/// looks in; `$ownerId` is no property and is not listed), whether it reads `$ownerId` (or a
+/// `"count"` for a `count` operand, `"elements"` for the array a `contains`
+/// looks in and `"bytes"` for a byte array a `byteAt` operand reads a byte of,
+/// or a `startsWith` or `endsWith` tests; `$ownerId` is no property and is not
+/// listed), whether it reads `$ownerId` (or a
 /// total that depends on the owner), which makes a transfer or a purchase answer to it too,
 /// the system times and heights it reads (`"$createdAt"`, ...), which make a price update
 /// answer to a rule reading the update's and a transfer or purchase one reading the
 /// transfer's, and the `countOf` and `sumOf` totals it reads in declared order (`kind`
 /// `"countOf"` or `"sumOf"`, the type of the contract it totals, the summed `property` of
 /// a `sumOf` only, and the keys its `filter` matches documents by; a total the platform
-/// reads from state when the document is sent, which the pre-check does not). Rules
-/// are listed in name order, the order
+/// reads from state when the document is sent, which the pre-check does not), and the
+/// values it reads of the documents the type's references point at in declared order
+/// (`{ "referenced": [reference, path] }`: the reference property of the type, the field
+/// of the referenced document and the `kind` it is read as, which `reads` leaves out; the
+/// platform reads the referenced document when it checks the reference, and the pre-check
+/// does not judge such a rule). Rules are listed in name order, the order
 /// consensus checks them in. A document type declaring none gives `[]`, and so
 /// does every document type when the SDK's protocol version is below 14.
 ///
@@ -145,7 +151,9 @@ pub unsafe extern "C" fn dash_sdk_data_contract_get_property_constraints(
 /// (`$createdAt`, `$updatedAt`, `$transferredAt`), and a rule reading a block
 /// height is not judged, since the height is unknown until the block, and
 /// neither is a rule reading a `countOf` or `sumOf` total (`"readsTotals"`),
-/// which the platform reads from state when the document is sent.
+/// which the platform reads from state when the document is sent, nor one
+/// reading a value of a document a reference points at (`"readsReferenced"`),
+/// which the platform reads when it checks the reference.
 /// Nothing but the rules is checked: not the JSON schema, not the state.
 ///
 /// The result is the first rule broken, as
@@ -318,9 +326,16 @@ fn property_constraints_json(
             )
         })?;
         let reads: Vec<serde_json::Value> = constraint
-            .property_reads()
+            .own_property_reads()
             .into_iter()
             .map(|(path, read)| json!({ "path": path, "kind": read_kind_name(read) }))
+            .collect();
+        let reads_referenced: Vec<serde_json::Value> = constraint
+            .referenced_reads()
+            .into_iter()
+            .map(|(reference, path, read)| {
+                json!({ "reference": reference, "path": path, "kind": read_kind_name(read) })
+            })
             .collect();
         rules.push(json!({
             "name": name,
@@ -337,6 +352,7 @@ fn property_constraints_json(
                 .into_iter()
                 .map(total_read_json)
                 .collect::<Vec<_>>(),
+            "readsReferenced": reads_referenced,
         }));
     }
     Ok(serde_json::Value::Array(rules))
@@ -436,6 +452,7 @@ fn read_kind_name(read: PropertyRead) -> &'static str {
         PropertyRead::Length => "length",
         PropertyRead::Count => "count",
         PropertyRead::Elements(_) => "elements",
+        PropertyRead::Bytes { .. } => "bytes",
     }
 }
 
@@ -657,7 +674,8 @@ mod tests {
                     ],
                     "readsOwner": false,
                     "readsSystem": [],
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "discountBelowPrice",
@@ -668,7 +686,8 @@ mod tests {
                     ],
                     "readsOwner": false,
                     "readsSystem": [],
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "perUnitFee",
@@ -679,7 +698,8 @@ mod tests {
                     ],
                     "readsOwner": false,
                     "readsSystem": [],
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "sellerIsOwner",
@@ -690,7 +710,8 @@ mod tests {
                     ],
                     "readsOwner": true,
                     "readsSystem": [],
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "tieredFee",
@@ -698,7 +719,8 @@ mod tests {
                     "reads": [{ "path": "fee", "kind": "value" }],
                     "readsOwner": false,
                     "readsSystem": [],
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 }
             ])
         );
@@ -1108,7 +1130,8 @@ mod tests {
                     ],
                     "readsOwner": false,
                     "readsSystem": [],
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "openEndedSoldByOwner",
@@ -1126,7 +1149,8 @@ mod tests {
                     ],
                     "readsOwner": true,
                     "readsSystem": ["$createdAt"],
-                    "readsTotals": []
+                    "readsTotals": [],
+                    "readsReferenced": []
                 }
             ])
         );
@@ -1208,6 +1232,131 @@ mod tests {
         }
         assert_eq!(other.expect("checked"), serde_json::Value::Null);
     }
+    /// A `profile` type with an optional DIP-33 `corePaymentAddress` of 21 bytes
+    /// and an optional `payload` of at most 8, and two rules on their bytes:
+    /// `addressType` (the address's type byte is 0 or 1) and `taggedPayload` (a
+    /// payload, when given, starts with 0xcafe).
+    fn payment_contract_bytes() -> Vec<u8> {
+        let platform_version = PlatformVersion::latest();
+        let documents = platform_value!({
+            "profile": {
+                "type": "object",
+                "properties": {
+                    "corePaymentAddress": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 21,
+                        "maxItems": 21,
+                        "position": 0
+                    },
+                    "payload": {
+                        "type": "array",
+                        "byteArray": true,
+                        "maxItems": 8,
+                        "position": 1
+                    }
+                },
+                "additionalProperties": false,
+                "propertyConstraints": {
+                    "addressType": { "in": [{ "byteAt": ["corePaymentAddress", 0] }, [0, 1]] },
+                    "taggedPayload": {
+                        "anyOf": [
+                            { "absent": "payload" },
+                            { "startsWith": ["payload", { "const": "cafe" }] }
+                        ]
+                    }
+                }
+            }
+        });
+        DataContractFactory::new(platform_version.protocol_version)
+            .expect("factory for the protocol version")
+            .create_with_value_config(Identifier::new(OWNER), 1, documents, None, None)
+            .expect("profile contract")
+            .data_contract()
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("serialized contract")
+    }
+
+    /// The pre-check reads the bytes of a byte array as consensus does, given
+    /// as hex, the form documents take in JSON here, or as an array of
+    /// integers: an address of an unknown type, and an untagged payload, are
+    /// each reported with the rule they break.
+    #[test]
+    fn should_read_and_check_the_bytes_of_byte_arrays() {
+        let sdk = sdk_handle(PlatformVersion::latest());
+        let contract = payment_contract_bytes();
+        let address = |type_byte: &str| format!("{type_byte}{}", "5a".repeat(20));
+
+        let rules = rules_of(sdk, &contract, "profile");
+        let p2sh = check(
+            sdk,
+            &contract,
+            "profile",
+            json!({ "corePaymentAddress": address("01") }),
+            OWNER,
+        );
+        let unknown = check(
+            sdk,
+            &contract,
+            "profile",
+            json!({ "corePaymentAddress": address("02") }),
+            OWNER,
+        );
+        let mut listed = vec![3u8];
+        listed.extend([0x5a; 20]);
+        let unknown_listed = check(
+            sdk,
+            &contract,
+            "profile",
+            json!({ "corePaymentAddress": listed }),
+            OWNER,
+        );
+        // No address: its type byte reads as 0
+        let left_out = check(sdk, &contract, "profile", json!({}), OWNER);
+        let tagged = check(
+            sdk,
+            &contract,
+            "profile",
+            json!({ "payload": "cafe01" }),
+            OWNER,
+        );
+        let untagged = check(
+            sdk,
+            &contract,
+            "profile",
+            json!({ "payload": [0xbe, 0xef] }),
+            OWNER,
+        );
+        destroy_mock_sdk_handle(sdk);
+
+        let rules = rules.expect("rules of profile");
+        assert_eq!(rules[0]["name"], "addressType");
+        assert_eq!(
+            rules[0]["reads"],
+            json!([{ "path": "corePaymentAddress", "kind": "bytes" }])
+        );
+        assert_eq!(rules[1]["name"], "taggedPayload");
+        assert_eq!(
+            rules[1]["reads"],
+            json!([
+                { "path": "payload", "kind": "presence" },
+                { "path": "payload", "kind": "bytes" }
+            ])
+        );
+
+        for result in [p2sh, left_out, tagged] {
+            assert_eq!(result.expect("checked"), serde_json::Value::Null);
+        }
+        for result in [unknown, unknown_listed] {
+            let result = result.expect("checked");
+            assert_eq!(result["rule"], "addressType");
+            assert_eq!(result["violation"], "NotMet");
+        }
+        let untagged = untagged.expect("checked");
+        assert_eq!(untagged["rule"], "taggedPayload");
+        assert_eq!(untagged["violation"], "NotMet");
+    }
+
     /// A `listing` type whose trees keep its count, each owner's count and each
     /// category's total price, with three rules reading those totals and one,
     /// `priceCap`, reading only the price.

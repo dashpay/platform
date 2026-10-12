@@ -91,6 +91,9 @@ impl DocumentTypeV1 {
             // indexOnly is a generation-3 doctype keyword; below generation 3
             // no document type can be index-only.
             false,
+            // So is `canBeDeleted: "onlyWhenConsumed"`: below generation 3 the
+            // core reads `canBeDeleted` as a boolean.
+            false,
             validation_operations,
             &common::ParserGeneration {
                 document_type_schema_version,
@@ -117,6 +120,8 @@ impl DocumentTypeV1 {
                 admit_index_outlives_delete: false,
                 // SKIP IF ABSENT: also a generation-3 keyword; not in this grammar.
                 admit_index_skip_if_absent: false,
+                // SUMMABLE OFF COUNT INDEX: also a generation-3 keyword; not in this grammar.
+                admit_index_summable_off_count_index: false,
                 // RANGE COUNTABLE IMPLIES COUNTABLE: a generation-3 rule; below it
                 // the parser demands an explicit countable `countable`, as the frozen
                 // v1 and v2 meta-schemas do.

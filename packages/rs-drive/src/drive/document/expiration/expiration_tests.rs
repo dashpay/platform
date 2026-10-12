@@ -17,6 +17,8 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v1::DataContractConfigSettersV1;
+use dpp::data_contract::config::DataContractConfig;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
@@ -688,6 +690,88 @@ fn should_remove_an_orphaned_entry_and_a_document_of_one_expiry_time_with_their_
     );
     assert!(stored_document(&drive, &contract, "note", document.id()).is_none());
     assert!(!expiry_tree_exists(&drive, expires_at));
+}
+
+/// A contract whose `tally` type expires after `TWO_WEEKS_S` and sums `amount`
+/// (`documentsSummable`), an `i64` (the contract does not size its integers) kept at 0 or
+/// above by its `minimum`.
+fn never_negative_summed_contract() -> DataContract {
+    let platform_version = PlatformVersion::latest();
+    let mut config =
+        DataContractConfig::default_for_version(platform_version).expect("default config");
+    config.set_sized_integer_types_enabled(false);
+    DataContractFactory::new(platform_version.protocol_version)
+        .expect("factory")
+        .create(
+            Identifier::from([9; 32]),
+            0,
+            platform_value!({
+                "tally": {
+                    "type": "object",
+                    "ttl": TWO_WEEKS_S,
+                    "documentsSummable": "amount",
+                    "properties": {
+                        "amount": { "type": "integer", "minimum": 0, "position": 0 },
+                    },
+                    "required": ["$createdAt", "amount"],
+                    "additionalProperties": false,
+                },
+            }),
+            Some(config),
+            None,
+        )
+        .expect("an expiring type summing values that are never negative registers")
+        .data_contract_owned()
+}
+
+fn tally(marker: u8, created_at: u64, amount: i64) -> Document {
+    let mut id = [marker; 32];
+    id[1..9].copy_from_slice(&created_at.to_be_bytes());
+    Document::V0(DocumentV0 {
+        id: Identifier::from(id),
+        owner_id: Identifier::from(OWNER),
+        properties: BTreeMap::from([("amount".to_string(), Value::I64(amount))]),
+        revision: Some(1),
+        created_at: Some(created_at),
+        ..Default::default()
+    })
+}
+
+#[test]
+fn should_expire_values_that_are_never_negative_from_the_largest_sum() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = never_negative_summed_contract();
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("contract applies");
+    let ttl_ms = u64::from(TWO_WEEKS_S) * 1000;
+    let first = tally(1, START_MS, 1);
+    let second = tally(2, START_MS + 1_000, i64::MAX - 1);
+    insert(&drive, &contract, "tally", &first, true);
+    insert(&drive, &contract, "tally", &second, true);
+
+    // From a sum of `i64::MAX`, each removal only lowers it
+    for (expires_at, document) in [
+        (START_MS + ttl_ms, &first),
+        (START_MS + 1_000 + ttl_ms, &second),
+    ] {
+        assert_eq!(
+            remove_expired(&drive, expires_at, 128),
+            RemovedExpiredDocuments {
+                deleted_documents: 1,
+                orphaned_entries: 0,
+            }
+        );
+        assert!(stored_document(&drive, &contract, "tally", document.id()).is_none());
+    }
 }
 
 #[test]

@@ -56,6 +56,10 @@ pub(crate) mod property_names {
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
 
     pub const CAN_BE_DELETED: &str = "canBeDeleted";
+    /// The `canBeDeleted` value saying a document leaves state only when a
+    /// `refersTo` with `consume` deletes it, never by its owner's delete.
+    /// Meta-schema v3+ (protocol version 14).
+    pub const CAN_BE_DELETED_ONLY_WHEN_CONSUMED: &str = "onlyWhenConsumed";
     pub const TRANSFERABLE: &str = "transferable";
     pub const TRADE_MODE: &str = "tradeMode";
 
@@ -142,6 +146,11 @@ pub(crate) mod property_names {
     /// document must meet. Meta-schema v3+ (protocol version 14). See
     /// `parse_property_constraints` in `property_constraints`.
     pub const PROPERTY_CONSTRAINTS: &str = "propertyConstraints";
+    /// Doctype-level object of named rules, in the grammar of
+    /// [`PROPERTY_CONSTRAINTS`], that the stored document must meet for its
+    /// owner to delete it. Meta-schema v3+ (protocol version 14). See
+    /// `parse_delete_constraints` in `property_constraints`.
+    pub const DELETE_CONSTRAINTS: &str = "deleteConstraints";
     pub const DISTINCT_FROM: &str = "distinctFrom";
     pub const CONTRACT_ID: &str = "contractId";
     pub const DOCUMENT_TYPE: &str = "documentType";

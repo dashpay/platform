@@ -500,6 +500,7 @@ fn should_match_a_document_by_the_values_its_filter_takes() {
     let listing = contract.document_type_for_name("listing").expect("listing");
     let owner = Identifier::from([3; 32]);
     let other = Identifier::from([4; 32]);
+    let document_id = Identifier::from([5; 32]);
     let document = |category: u64, status: &str| {
         Value::from(std::collections::BTreeMap::from([
             ("price".to_string(), Value::U64(40)),
@@ -529,7 +530,13 @@ fn should_match_a_document_by_the_values_its_filter_takes() {
         Some("byCategory")
     );
     let values = by_category
-        .filter_values(listing, &document(9, "open"), owner, platform_version)
+        .filter_values(
+            listing,
+            document_id,
+            &document(9, "open"),
+            owner,
+            platform_version,
+        )
         .expect("reads")
         .expect("an integer the key holds");
     assert_eq!(
@@ -572,7 +579,13 @@ fn should_match_a_document_by_the_values_its_filter_takes() {
         Some("byOwnerStatus")
     );
     let values = open_of_owner
-        .filter_values(listing, &document(1, "closed"), owner, platform_version)
+        .filter_values(
+            listing,
+            document_id,
+            &document(1, "closed"),
+            owner,
+            platform_version,
+        )
         .expect("reads")
         .expect("the owner and a string");
     let counted = |data: Value, owner_id: Identifier| {
@@ -593,12 +606,38 @@ fn should_match_a_document_by_the_values_its_filter_takes() {
         )],
     );
     let values = of_one_owner
-        .filter_values(listing, &document(1, "open"), other, platform_version)
+        .filter_values(
+            listing,
+            document_id,
+            &document(1, "open"),
+            other,
+            platform_version,
+        )
         .expect("reads")
         .expect("a base58 identifier");
     assert_eq!(
         values,
         [("$ownerId".to_string(), Value::Identifier([3; 32]))]
+    );
+
+    // The document's own id, for an identifier key
+    let by_own_id = read(
+        AggregateKind::Count,
+        vec![("sellerRef", AggregateBinding::Id)],
+    );
+    let values = by_own_id
+        .filter_values(
+            listing,
+            document_id,
+            &document(1, "open"),
+            owner,
+            platform_version,
+        )
+        .expect("reads")
+        .expect("the id is always there");
+    assert_eq!(
+        values,
+        [("sellerRef".to_string(), Value::Identifier([5; 32]))]
     );
 
     // A property the document leaves out matches nothing
@@ -614,7 +653,13 @@ fn should_match_a_document_by_the_values_its_filter_takes() {
     );
     assert_eq!(
         by_bound_category
-            .filter_values(listing, &document(1, "open"), owner, platform_version)
+            .filter_values(
+                listing,
+                document_id,
+                &document(1, "open"),
+                owner,
+                platform_version
+            )
             .expect("reads"),
         None
     );
@@ -625,7 +670,13 @@ fn should_match_a_document_by_the_values_its_filter_takes() {
         ..by_category.clone()
     };
     let values = not_own
-        .filter_values(listing, &document(3, "open"), owner, platform_version)
+        .filter_values(
+            listing,
+            document_id,
+            &document(3, "open"),
+            owner,
+            platform_version,
+        )
         .expect("reads")
         .expect("an integer");
     assert_eq!(
@@ -711,11 +762,13 @@ fn should_hold_a_constant_to_the_enum_of_a_key_declared_by_reference() {
 /// create waits in its contest's storage, outside the count and sum trees, and
 /// the document a contest awards is stored without the rules being judged, so
 /// the rule could be passed. Another type may still total it, as it totals any
-/// type whose writes it does not judge.
+/// type whose writes it does not judge, and so may the type's own delete rules,
+/// which read the stored total at the delete.
 #[test]
 fn should_refuse_a_total_of_its_own_type_with_a_contested_index() {
     let contract = |name_rules: Option<serde_json::Value>,
-                    note_rules: Option<serde_json::Value>| {
+                    note_rules: Option<serde_json::Value>,
+                    name_delete_rules: Option<serde_json::Value>| {
         let mut name = json!({
             "type": "object",
             "documentsMutable": false,
@@ -745,6 +798,9 @@ fn should_refuse_a_total_of_its_own_type_with_a_contested_index() {
         });
         if let Some(rules) = name_rules {
             name["propertyConstraints"] = rules;
+        }
+        if let Some(rules) = name_delete_rules {
+            name["deleteConstraints"] = rules;
         }
         let mut note = json!({
             "type": "object",
@@ -776,10 +832,12 @@ fn should_refuse_a_total_of_its_own_type_with_a_contested_index() {
     });
 
     expect_structure_error(
-        contract(Some(one_per_owner.clone()), None),
-        "rule \"onePerOwner\" counts \"name\", its own type, which has a contested index",
+        contract(Some(one_per_owner.clone()), None, None),
+        "propertyConstraints rule \"onePerOwner\" counts \"name\", its own type, which has a \
+         contested index",
     );
-    contract(None, Some(one_per_owner)).expect("another type may count it");
+    contract(None, Some(one_per_owner.clone()), None).expect("another type may count it");
+    contract(None, None, Some(one_per_owner)).expect("the type's own delete rule may count it");
 }
 
 /// A client gives no totals, and a rule reading one is not judged; consensus

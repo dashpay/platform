@@ -126,6 +126,7 @@ pub(crate) mod test_helpers;
 #[cfg(test)]
 pub(in crate::execution) mod tests {
     use crate::rpc::core::MockCoreRPCLike;
+    use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contracts::SystemDataContract;
@@ -759,7 +760,7 @@ pub(in crate::execution) mod tests {
                 pro_tx_hash,
                 collateral_hash: Txid::from_byte_array(rng.gen()),
                 collateral_index: 0,
-                collateral_address: rng.gen(),
+                collateral_address: Some(rng.gen()),
                 operator_reward: 0.0,
                 state: DMNState {
                     service: SocketAddr::new(IpAddr::V4(random_ip), 19999),
@@ -767,14 +768,18 @@ pub(in crate::execution) mod tests {
                     pose_revived_height: None,
                     pose_ban_height: None,
                     revocation_reason: 0,
-                    owner_address,
+                    owner_address: Some(owner_address),
                     voting_address: rng.gen(),
-                    payout_address,
+                    payout_address: Some(payout_address),
+                    payouts: None,
                     pub_key_operator: vec![],
                     operator_payout_address: None,
                     platform_node_id: None,
-                    platform_p2p_port: None,
-                    platform_http_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_http_port: None,
+                    addresses: None,
                 },
             },
         );
@@ -848,7 +853,7 @@ pub(in crate::execution) mod tests {
                 pro_tx_hash,
                 collateral_hash: Txid::from_byte_array(rng.gen()),
                 collateral_index: 0,
-                collateral_address: rng.gen(),
+                collateral_address: Some(rng.gen()),
                 operator_reward: 0.0,
                 state: DMNState {
                     service: SocketAddr::new(IpAddr::V4(random_ip), 19999),
@@ -856,14 +861,18 @@ pub(in crate::execution) mod tests {
                     pose_revived_height: None,
                     pose_ban_height: None,
                     revocation_reason: 0,
-                    owner_address: rng.gen(),
+                    owner_address: Some(rng.gen()),
                     voting_address,
-                    payout_address: rng.gen(),
+                    payout_address: Some(rng.gen()),
+                    payouts: None,
                     pub_key_operator: vec![],
                     operator_payout_address: None,
                     platform_node_id: None,
-                    platform_p2p_port: None,
-                    platform_http_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_p2p_port: None,
+                    #[allow(deprecated)]
+                    legacy_platform_http_port: None,
+                    addresses: None,
                 },
             },
         );
@@ -2827,6 +2836,14 @@ pub(in crate::execution) mod tests {
             None,
             platform_version,
         )
+    }
+
+    /// Makes a token non-transferable (protocol version 14), as a `token_configuration_modification`
+    /// for the token contract helpers here.
+    pub(in crate::execution) fn make_token_non_transferable(
+        token_configuration: &mut TokenConfiguration,
+    ) {
+        token_configuration.set_transferable(false);
     }
 
     /// Like [`create_token_contract_with_owner_identity`], with the contract's creation epoch

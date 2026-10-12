@@ -82,6 +82,9 @@ use crate::consensus::state::document::referenced_contract_requirement_not_met_e
 use crate::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
 use crate::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
 use crate::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
+use crate::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
+use crate::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use crate::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
 use crate::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use crate::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
@@ -110,7 +113,7 @@ use crate::consensus::state::identity::missing_transfer_key_error::MissingTransf
 use crate::consensus::state::identity::no_transfer_key_for_core_withdrawal_available_error::NoTransferKeyForCoreWithdrawalAvailableError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use crate::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
-use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError, TokenShieldedPoolNotEnabledError, TokenShieldedPaymentAmountMismatchError, TokenShieldedPaymentNotRequiredError};
+use crate::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountFrozenError, IdentityTokenAccountNotFrozenError, InvalidGroupPositionError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, NewTokensDestinationIdentityDoesNotExistError, TokenMintPastMaxSupplyError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, UnauthorizedTokenActionError, IdentityTokenAccountAlreadyFrozenError, TokenAlreadyPausedError, TokenIsPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, PreProgrammedDistributionTimestampInPastError, TokenTransferRecipientIdentityNotExistError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError, TokenOncePerIdentityDistributionAlreadyClaimedError, TokenShieldedPoolNotEnabledError, TokenShieldedPaymentAmountMismatchError, TokenShieldedPaymentNotRequiredError, TokenNotTransferableError};
 use crate::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use crate::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use crate::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -716,6 +719,26 @@ pub enum StateError {
     // (`deleteSettled.approversPredateDocument`, protocol version 14).
     #[error(transparent)]
     ContractTeamMemberAddedAfterDocumentError(ContractTeamMemberAddedAfterDocumentError),
+
+    // A document reference resolved by a document's id names an indexOnly document type, whose
+    // documents can not be fetched by id (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentTypeIndexOnlyError(ReferencedDocumentTypeIndexOnlyError),
+
+    // The owner's delete of a document breaks a rule of its type's `deleteConstraints`
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentDeleteConstraintViolatedError(DocumentDeleteConstraintViolatedError),
+
+    // A transfer of a token whose configuration sets `transferable: false`, or a contract whose
+    // document type would pay such a token to its owner (protocol version 14).
+    #[error(transparent)]
+    TokenNotTransferableError(TokenNotTransferableError),
+
+    // A `propertyConstraints` rule reads a field of another contract's document type, through a
+    // reference, that the type can not give it (protocol version 14).
+    #[error(transparent)]
+    ReferencedDocumentRuleReadInvalidError(ReferencedDocumentRuleReadInvalidError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -727,6 +750,7 @@ impl From<StateError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consensus::basic::document::PropertyConstraintViolation;
     use crate::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
     use crate::consensus::state::identity::identity_public_key_limit_not_set_error::KeyLimit;
     use crate::data_contract::config::moderation::{ContractModerationList, ModerationAbility};
@@ -764,18 +788,21 @@ mod tests {
         discriminant
     }
 
-    /// A reference error for an id reference encodes exactly as it did before
-    /// lookup references existed: the lookup form is an appended variant of
-    /// `DocumentPropertyReferenceTarget` (`PermanentDocumentLookup`), not a
-    /// field of `PermanentDocument`, so a client decoding with an earlier dpp
-    /// still reads every error an id reference produces. The bytes are pinned;
-    /// `PermanentDocument` keeps variant 3 of the target, the lookup form
-    /// takes 6.
+    /// A reference error for an id reference encodes as pinned here: the
+    /// lookup form is an appended variant of `DocumentPropertyReferenceTarget`
+    /// (`PermanentDocumentLookup`), not a field of `PermanentDocument`, so the
+    /// lookup changed nothing an id reference produces. The `where` entries
+    /// that are not equalities did: they are a field, `where_conditions`,
+    /// after `property_agreement` on every document variant, which protocol
+    /// version 14, unreleased, introduced, so an id reference's error carries
+    /// one more byte, its empty map. The bytes are pinned; `PermanentDocument`
+    /// keeps variant 3 of the target, the lookup form takes 6.
     #[test]
     fn should_keep_the_encoding_of_a_reference_error_for_an_id_reference() {
         let id_reference = DocumentPropertyReferenceTarget::PermanentDocument {
             contract_id: None,
             document_type_name: "note".to_string(),
+            where_conditions: Default::default(),
             property_agreement: BTreeMap::new(),
         };
         let error = StateError::ReferencedEntityNotFoundError(ReferencedEntityNotFoundError::new(
@@ -786,7 +813,8 @@ mod tests {
         let bytes = bincode::encode_to_vec(error, bincode::config::standard())
             .expect("expected to encode the state error");
         // StateError variant 93, the referenced id, target variant 3
-        // (PermanentDocument: no contract id, "note", no agreement), the path.
+        // (PermanentDocument: no contract id, "note", no agreement, no
+        // conditions), the path.
         assert_eq!(
             hex::encode(bytes),
             concat!(
@@ -795,6 +823,7 @@ mod tests {
                 "03",
                 "00",
                 "046e6f7465",
+                "00",
                 "00",
                 "066e6f74654964",
             )
@@ -809,6 +838,7 @@ mod tests {
             target_variant(&DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
                 lookup: DocumentReferenceLookup {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
@@ -825,6 +855,7 @@ mod tests {
                 ListElementReference {
                     contract_id: None,
                     document_type_name: "electedCharter".to_string(),
+                    where_conditions: Default::default(),
                     property_agreement: [("electedCharterId".to_string(), "$id".to_string())]
                         .into(),
                     in_list: "members".to_string(),
@@ -837,6 +868,7 @@ mod tests {
             target_variant(&DocumentPropertyReferenceTarget::DeletableDocumentLookup {
                 contract_id: None,
                 document_type_name: "note".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
                 lookup: DocumentReferenceLookup {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
@@ -1576,6 +1608,50 @@ mod tests {
                 )
             )),
             170
+        );
+        // A document reference by id to an indexOnly document type (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentTypeIndexOnlyError(
+                ReferencedDocumentTypeIndexOnlyError::new(
+                    identity_id,
+                    "like".to_string(),
+                    "replyTo".to_string(),
+                )
+            )),
+            171
+        );
+        // The owner's delete of a document a deleteConstraints rule refuses (protocol
+        // version 14).
+        assert_eq!(
+            discriminant_of(StateError::DocumentDeleteConstraintViolatedError(
+                DocumentDeleteConstraintViolatedError::new(
+                    identity_id,
+                    "poll".to_string(),
+                    "noVotes".to_string(),
+                    PropertyConstraintViolation::NotMet,
+                )
+            )),
+            172
+        );
+        // A transfer of a non-transferable token (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::TokenNotTransferableError(
+                TokenNotTransferableError::new(identity_id, "transfer".to_string())
+            )),
+            173
+        );
+        // A rule reading through a reference a field another contract's type can not give it
+        // (protocol version 14).
+        assert_eq!(
+            discriminant_of(StateError::ReferencedDocumentRuleReadInvalidError(
+                ReferencedDocumentRuleReadInvalidError::new(
+                    "vote".to_string(),
+                    "castBeforeTheEnd".to_string(),
+                    "pollId".to_string(),
+                    "endsAt is a string".to_string(),
+                )
+            )),
+            174
         );
     }
 }

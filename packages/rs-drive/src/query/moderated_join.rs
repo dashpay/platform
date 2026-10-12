@@ -26,6 +26,8 @@ use crate::error::proof::ProofError;
 use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::fees::op::LowLevelDriveOperation;
+#[cfg(feature = "server")]
+use crate::query::is_absent_path;
 use dpp::identifier::Identifier;
 #[cfg(feature = "server")]
 use dpp::version::PlatformVersion;
@@ -133,14 +135,7 @@ pub(crate) fn fetch_removals(
         drive_operations,
         &platform_version.drive,
     ) {
-        Err(Error::GroveDB(error))
-            if matches!(
-                error.as_ref(),
-                grovedb::Error::PathKeyNotFound(_)
-                    | grovedb::Error::PathNotFound(_)
-                    | grovedb::Error::PathParentLayerNotFound(_)
-            ) =>
-        {
+        Err(error) if is_absent_path(&error) => {
             return Ok(BTreeMap::new());
         }
         other => other?.0,

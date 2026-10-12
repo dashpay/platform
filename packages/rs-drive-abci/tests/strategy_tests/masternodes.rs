@@ -244,7 +244,7 @@ pub fn generate_test_masternodes(
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
@@ -253,14 +253,18 @@ pub fn generate_test_masternodes(
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: generate_voting_address(rng, add_voting_keys_to_signer),
-                payout_address: generate_payout_address(rng, add_payout_keys_to_signer),
+                payout_address: Some(generate_payout_address(rng, add_payout_keys_to_signer)),
+                payouts: None,
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: None,
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -381,7 +385,7 @@ pub fn generate_test_masternodes(
             pro_tx_hash: ProTxHash::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str(format!("1.1.{}.{}:1234", i / 256, i % 256).as_str())
@@ -390,14 +394,18 @@ pub fn generate_test_masternodes(
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: generate_voting_address(rng, add_voting_keys_to_signer),
-                payout_address: generate_payout_address(rng, add_payout_keys_to_signer),
+                payout_address: Some(generate_payout_address(rng, add_payout_keys_to_signer)),
+                payouts: None,
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: Some(rng.gen::<[u8; 20]>()),
-                platform_p2p_port: Some(3010),
-                platform_http_port: Some(8080),
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: Some(3010),
+                #[allow(deprecated)]
+                legacy_platform_http_port: Some(8080),
+                addresses: None,
             },
         };
 
@@ -530,12 +538,14 @@ pub fn generate_test_masternodes(
                         SocketAddr::new(IpAddr::V4(random_ip), old_port);
                 }
                 if update.p2p_port {
-                    if let Some(port) = hpmn_list_item_b.state.platform_p2p_port.as_mut() {
+                    #[allow(deprecated)]
+                    if let Some(port) = hpmn_list_item_b.state.legacy_platform_p2p_port.as_mut() {
                         *port += 1
                     }
                 }
                 if update.http_port {
-                    if let Some(port) = hpmn_list_item_b.state.platform_http_port.as_mut() {
+                    #[allow(deprecated)]
+                    if let Some(port) = hpmn_list_item_b.state.legacy_platform_http_port.as_mut() {
                         *port += 1
                     }
                 }

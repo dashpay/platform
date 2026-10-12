@@ -22,12 +22,13 @@ impl NewValidatorIfMasternodeInState for ValidatorV0 {
     ) -> Option<Self> {
         let MasternodeListItem { state, .. } = state.hpmn_masternode_list().get(&pro_tx_hash)?;
 
+        #[allow(deprecated)]
         let DMNState {
             service,
             platform_node_id,
             pose_ban_height,
-            platform_p2p_port,
-            platform_http_port,
+            legacy_platform_p2p_port: platform_p2p_port,
+            legacy_platform_http_port: platform_http_port,
             ..
         } = state;
         let Some(platform_http_port) = platform_http_port else {

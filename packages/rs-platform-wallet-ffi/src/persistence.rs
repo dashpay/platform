@@ -10921,4 +10921,40 @@ mod tests {
             "every emitted marked-used address must carry used == true"
         );
     }
+
+    /// A cold restore must hand every persisted owned DPNS label to the
+    /// in-memory identity, so a later capped fetch only adds to it and no
+    /// snapshot emitted before the next complete fetch drops an owned pick
+    /// that lies outside the fetched prefix.
+    #[test]
+    fn restored_identity_carries_its_persisted_dpns_names() {
+        use super::build_wallet_identity_bucket;
+        use crate::wallet_restore_types::{IdentityRestoreEntryFFI, WalletRestoreEntryFFI};
+        use std::ffi::CString;
+        use std::os::raw::c_char;
+
+        let labels: Vec<CString> = ["alice", "bob", "carol"]
+            .iter()
+            .map(|l| CString::new(*l).unwrap())
+            .collect();
+        let pointers: Vec<*const c_char> = labels.iter().map(|l| l.as_ptr()).collect();
+        let mut identity: IdentityRestoreEntryFFI = unsafe { std::mem::zeroed() };
+        identity.identity_id = [7; 32];
+        identity.dpns_names = pointers.as_ptr();
+        identity.dpns_names_count = pointers.len();
+        let entry = WalletRestoreEntryFFI {
+            wallet_id: [42; 32],
+            identities: &identity,
+            identities_count: 1,
+            ..Default::default()
+        };
+
+        let bucket = build_wallet_identity_bucket(&entry).expect("identity must restore");
+        let restored: Vec<&str> = bucket[&0]
+            .dpns_names
+            .iter()
+            .map(|n| n.label.as_str())
+            .collect();
+        assert_eq!(restored, ["alice", "bob", "carol"]);
+    }
 }

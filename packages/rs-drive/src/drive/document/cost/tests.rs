@@ -314,7 +314,7 @@ fn should_price_what_drive_charges() {
 fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
     let platform_version = PlatformVersion::latest();
     let mut ratios = Vec::new();
-    for index in [0usize, 3, 4, 7, 9, 15] {
+    for index in [0usize, 3, 4, 7, 9, 15, 22] {
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = apply(&drive, index, CONTRACTS[index]);
         for (name, document_type) in contract.document_types() {
@@ -327,13 +327,11 @@ fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
                     .expect("expected a random document");
                 small_sums(&mut document, document_type, seed);
                 let writes = writes_of(&contract, document_type, &document);
-                let known: Vec<bool> = writes
+                let written: Vec<bool> = writes
                     .iter()
-                    .map(|write| {
-                        write.ranking.is_none()
-                            && (!write.if_absent || !exists(&drive, &contract, name, write))
-                    })
+                    .map(|write| !write.if_absent || !exists(&drive, &contract, name, write))
                     .collect();
+                let known = processed_writes(&writes, &written);
                 let mut assumptions = CostAssumptions::new(platform_version);
                 assumptions.existing_documents = seed;
                 let estimate = write_processing(
@@ -473,6 +471,42 @@ fn should_split_the_storage_into_primary_storage_and_each_index() {
 }
 
 #[test]
+fn should_refund_a_document_only_a_consume_deletes_as_one_its_owner_deletes() {
+    // A consume refunds the owner as the owner's delete would, so the estimate is the same;
+    // a type whose documents nothing deletes refunds nothing
+    let platform_version = PlatformVersion::latest();
+    let refunds = |can_be_deleted: Value| {
+        let mut schema = note_schema();
+        schema
+            .insert("canBeDeleted".to_string(), can_be_deleted)
+            .expect("expected to set canBeDeleted");
+        let contract = contract_with(platform_value!({ "note": schema }));
+        let note = contract.document_type_for_name("note").expect("note");
+        let cost = document_create_cost(
+            &contract,
+            note,
+            &note_document(&contract),
+            &CostAssumptions::new(platform_version),
+            platform_version,
+        )
+        .expect("expected a cost");
+        (cost.refund_same_epoch, cost.refund_after_one_year)
+    };
+
+    let (same_epoch, after_one_year) = refunds(Value::Bool(true));
+    assert!(same_epoch.expect("a refund").new_values > 0);
+    assert!(after_one_year.expect("a refund").new_values > 0);
+    assert_eq!(
+        refunds(Value::Text("onlyWhenConsumed".to_string())),
+        (same_epoch, after_one_year)
+    );
+    assert_eq!(
+        refunds(Value::Bool(false)),
+        (Some(Scenarios::default()), Some(Scenarios::default()))
+    );
+}
+
+#[test]
 fn should_charge_no_layer_to_a_skip_index_that_skips_the_document() {
     let platform_version = PlatformVersion::latest();
     let contract = contract_with(platform_value!({ "post": {
@@ -533,6 +567,139 @@ fn should_charge_no_layer_to_a_skip_index_that_skips_the_document() {
     assert_eq!(by_language_shared_bytes, 0);
     assert!(by_language_own_bytes > 0);
     assert_eq!(shares("byLanguageHashtag"), (vec![], 0, 0));
+}
+
+#[test]
+fn should_skip_on_a_derived_value_only_when_it_or_its_reference_is_absent() {
+    // A reply may quote a permanent post; `byBodyQuotedOwner` files it under the quoted post's
+    // owner, which the reply never stores, and skips a reply without one. It shares the body's
+    // value tree with `byBody`, which skips nothing.
+    let platform_version = PlatformVersion::latest();
+    let contract = contract_with(platform_value!({
+        "post": {
+            "type": "object",
+            "documentsMutable": false,
+            "canBeDeleted": false,
+            "properties": {
+                "text": { "type": "string", "maxLength": 50, "position": 0 },
+            },
+            "additionalProperties": false,
+        },
+        "reply": {
+            "type": "object",
+            "documentsMutable": false,
+            "canBeDeleted": true,
+            "properties": {
+                "body": { "type": "string", "maxLength": 20, "position": 0 },
+                "quoteId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "refersTo": { "type": "permanentDocument", "documentType": "post" },
+                    "position": 1,
+                },
+            },
+            "indices": [
+                { "name": "byBody", "properties": [{ "body": "asc" }] },
+                {
+                    "name": "byBodyQuotedOwner",
+                    "properties": [{ "body": "asc" }, { "quoteId.$ownerId": "asc" }],
+                    "skipIfAbsent": ["quoteId.$ownerId"],
+                },
+            ],
+            "required": ["body"],
+            "additionalProperties": false,
+        },
+    }));
+    let reply = contract.document_type_for_name("reply").expect("reply");
+    let quoted = Value::Identifier([5; 32]);
+    let quoted_owner = Value::Identifier([6; 32]);
+    // (case, the quote, the derived value the caller puts in, whether the reply takes part)
+    let cases = [
+        ("unresolved, quoting", Some(&quoted), None, true),
+        ("unresolved, quoting nothing", None, None, false),
+        (
+            "resolved to null, quoting",
+            Some(&quoted),
+            Some(&Value::Null),
+            false,
+        ),
+        (
+            "resolved, quoting",
+            Some(&quoted),
+            Some(&quoted_owner),
+            true,
+        ),
+    ];
+    let mut own_bytes_taking_part = Vec::new();
+    for (case, quote, derived, takes_part) in cases {
+        let mut document = reply
+            .random_document(Some(1), platform_version)
+            .expect("expected a random document");
+        let mut properties: BTreeMap<String, Value> =
+            [("body".to_string(), Value::Text("hi".to_string()))]
+                .into_iter()
+                .collect();
+        if let Some(quote) = quote {
+            properties.insert("quoteId".to_string(), quote.clone());
+        }
+        // Under the derived name, as Drive puts it: not a path into `quoteId`
+        if let Some(derived) = derived {
+            properties.insert("quoteId.$ownerId".to_string(), derived.clone());
+        }
+        document.set_properties(properties);
+        let cost = document_create_cost(
+            &contract,
+            reply,
+            &document,
+            &CostAssumptions::new(platform_version),
+            platform_version,
+        )
+        .expect("expected a cost");
+        let shares = |name: &str| {
+            cost.indexes
+                .iter()
+                .find(|index| index.name == name)
+                .map(|index| {
+                    (
+                        index.shared_with.clone(),
+                        index.shared_bytes.new_values,
+                        index.own_bytes.new_values,
+                    )
+                })
+                .unwrap_or_default()
+        };
+        let (by_body_shared_with, by_body_shared_bytes, by_body_own_bytes) = shares("byBody");
+        assert!(by_body_own_bytes > 0, "{case}: byBody keeps its entry");
+        let (shared_with, shared_bytes, own_bytes) = shares("byBodyQuotedOwner");
+        if takes_part {
+            // The body's value tree is shared, and the derived index pays its own layer
+            assert_eq!(
+                by_body_shared_with,
+                vec!["byBodyQuotedOwner".to_string()],
+                "{case}"
+            );
+            assert!(by_body_shared_bytes > 0, "{case}");
+            assert_eq!(shared_with, vec!["byBody".to_string()], "{case}");
+            assert!(shared_bytes > 0, "{case}");
+            assert!(own_bytes > 0, "{case}");
+            own_bytes_taking_part.push(own_bytes);
+        } else {
+            // Skipped: no share of the body's value tree and no layer of its own
+            assert!(by_body_shared_with.is_empty(), "{case}");
+            assert_eq!(by_body_shared_bytes, 0, "{case}");
+            assert_eq!(
+                (shared_with, shared_bytes, own_bytes),
+                (vec![], 0, 0),
+                "{case}"
+            );
+        }
+    }
+    // An owner the caller did not resolve is priced at an identifier's size, as a resolved one
+    assert_eq!(own_bytes_taking_part.len(), 2);
+    assert_eq!(own_bytes_taking_part[0], own_bytes_taking_part[1]);
 }
 
 #[test]
@@ -793,6 +960,141 @@ fn should_count_trees_keyed_by_the_document_id_as_new_and_unrefunded() {
     let kept = (cost.storage_bytes.new_values - cost.preallocated_bytes.new_values)
         * cost.credits_per_byte;
     assert!(cost.refund_same_epoch.expect("a refund").new_values < kept);
+}
+
+#[test]
+fn should_key_preallocated_trees_as_the_referring_type_does() {
+    // The post's u8 `tier` ends a range-summable index of an i8 `weight`, so the
+    // post keys it the earlier way (5 as `0x85`); the like's own `tier`,
+    // which its preallocated index binds to the post's, is keyed big-endian
+    // (`0x05`). The trees the post preallocates are the ones its likes use.
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = contract_with(platform_value!({
+        "post": {
+            "type": "object",
+            "documentsMutable": false,
+            "canBeDeleted": false,
+            "properties": {
+                "tier": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 },
+                "weight": { "type": "integer", "minimum": -100, "maximum": 100, "position": 1 },
+            },
+            "indices": [{
+                "name": "byTier",
+                "properties": [{ "tier": "asc" }],
+                "summable": "weight",
+                "rangeSummable": true,
+            }],
+            "required": ["tier", "weight"],
+            "additionalProperties": false,
+        },
+        "like": {
+            "type": "object",
+            "indexOnly": true,
+            "documentsMutable": false,
+            "canBeDeleted": true,
+            "properties": {
+                "tier": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 },
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "documentType": "post",
+                        "where": { "tier": "tier" },
+                    },
+                    "position": 1,
+                },
+            },
+            "indices": [{
+                "name": "byTierPost",
+                "properties": [{ "tier": "asc" }, { "postId": "asc" }],
+                "countable": "countable",
+                "preallocated": true,
+            }],
+            "required": ["tier", "postId"],
+            "additionalProperties": false,
+        },
+    }));
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("expected to apply the contract");
+    let post_type = contract.document_type_for_name("post").expect("post");
+    let like_type = contract.document_type_for_name("like").expect("like");
+    let tier = Value::U8(5);
+    assert_eq!(
+        post_type
+            .serialize_value_for_key("tier", &tier, platform_version)
+            .expect("expected the post's key"),
+        vec![0x85]
+    );
+
+    let mut post = post_type
+        .random_document(Some(1), platform_version)
+        .expect("expected a post");
+    post.set_properties(BTreeMap::from([
+        ("tier".to_string(), tier.clone()),
+        ("weight".to_string(), Value::I8(-3)),
+    ]));
+    let post_id = post.id().to_vec();
+    let writes = writes_of(&contract, post_type, &post);
+    let preallocated_tiers: Vec<&[u8]> = writes
+        .iter()
+        .filter(|write| write.referring_type.is_some() && write.path == [b"tier".to_vec()])
+        .map(|write| write.key.as_slice())
+        .collect();
+    assert_eq!(preallocated_tiers, [[0x05]], "the like's key for tier 5");
+    let cost = document_create_cost(
+        &contract,
+        post_type,
+        &post,
+        &CostAssumptions::new(platform_version),
+        platform_version,
+    )
+    .expect("expected a cost");
+    let fee = insert(&drive, &contract, post_type, &post).expect("expected to insert the post");
+    assert_eq!(fee.storage_fee, cost.storage_credits.new_values);
+    for write in &writes {
+        assert!(
+            exists(&drive, &contract, "post", write),
+            "expected the insert to write {write:?}"
+        );
+    }
+    assert!(element(&drive, &contract, "like", &[b"tier".to_vec()], &[0x85]).is_none());
+
+    let mut like = like_type
+        .random_document(Some(2), platform_version)
+        .expect("expected a like");
+    like.set_properties(BTreeMap::from([
+        ("tier".to_string(), tier),
+        (
+            "postId".to_string(),
+            Value::Identifier(post.id().to_buffer()),
+        ),
+    ]));
+    insert(&drive, &contract, like_type, &like).expect("expected to insert the like");
+    assert!(
+        element(&drive, &contract, "like", &[b"tier".to_vec()], &[0x85]).is_none(),
+        "the like's entry is under the preallocated trees, not beside them"
+    );
+    assert!(element(
+        &drive,
+        &contract,
+        "like",
+        &[b"tier".to_vec(), vec![0x05], b"postId".to_vec(), post_id],
+        &[0],
+    )
+    .is_some());
 }
 
 #[test]

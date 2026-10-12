@@ -1011,6 +1011,14 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn documents_deleted_only_when_consumed(&self) -> bool {
+        match self {
+            DocumentType::V0(_) => false,
+            DocumentType::V1(_) => false,
+            DocumentType::V2(v2) => v2.documents_deleted_only_when_consumed(),
+        }
+    }
+
     fn documents_can_be_deleted_by_moderators(&self) -> bool {
         match self {
             DocumentType::V0(_) => false,
@@ -1170,6 +1178,14 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn delete_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentType::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentType::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentType::V2(v2) => v2.delete_constraints(),
+        }
+    }
+
     fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
         match self {
             DocumentType::V0(_) => &NO_DERIVED_INDEX_PROPERTIES,
@@ -1260,6 +1276,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
             DocumentTypeRef::V0(_) => &NO_ENTRY_PAYLOAD,
             DocumentTypeRef::V1(_) => &NO_ENTRY_PAYLOAD,
             DocumentTypeRef::V2(v2) => v2.entry_payload(),
+        }
+    }
+
+    fn documents_deleted_only_when_consumed(&self) -> bool {
+        match self {
+            DocumentTypeRef::V0(_) => false,
+            DocumentTypeRef::V1(_) => false,
+            DocumentTypeRef::V2(v2) => v2.documents_deleted_only_when_consumed(),
         }
     }
 
@@ -1422,6 +1446,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn delete_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeRef::V2(v2) => v2.delete_constraints(),
+        }
+    }
+
     fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
         match self {
             DocumentTypeRef::V0(_) => &NO_DERIVED_INDEX_PROPERTIES,
@@ -1478,6 +1510,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => &NO_ENTRY_PAYLOAD,
             DocumentTypeMutRef::V1(_) => &NO_ENTRY_PAYLOAD,
             DocumentTypeMutRef::V2(v2) => v2.entry_payload(),
+        }
+    }
+
+    fn documents_deleted_only_when_consumed(&self) -> bool {
+        match self {
+            DocumentTypeMutRef::V0(_) => false,
+            DocumentTypeMutRef::V1(_) => false,
+            DocumentTypeMutRef::V2(v2) => v2.documents_deleted_only_when_consumed(),
         }
     }
 
@@ -1639,6 +1679,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
             DocumentTypeMutRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
             DocumentTypeMutRef::V2(v2) => v2.property_constraints(),
+        }
+    }
+
+    fn delete_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeMutRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeMutRef::V2(v2) => v2.delete_constraints(),
         }
     }
 

@@ -8,7 +8,7 @@ use crate::execution::types::block_execution_context::v0::BlockExecutionContextV
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::mimic::test_quorum::TestQuorumInfo;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::{
-    make_extend_vote_request_id, UnsignedWithdrawalTxs,
+    tx_to_extend_vote_extension, UnsignedWithdrawalTxs,
 };
 use crate::rpc::core::CoreRPCLike;
 use ciborium::Value as CborValue;
@@ -29,14 +29,14 @@ use rand::{Rng, SeedableRng};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{
-    CommitInfo, ExecTxResult, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal,
-    RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal,
-    ValidatorSetUpdate,
+    CommitInfo, ExecTxResult, ExtendVoteExtension, RequestExtendVote, RequestFinalizeBlock,
+    RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension,
+    ResponsePrepareProposal, ValidatorSetUpdate,
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
     Block, BlockId, CanonicalVote, Data, EvidenceList, Header, PartSetHeader, SignedMsgType,
-    StateId, VoteExtension, VoteExtensionType,
+    StateId, VoteExtension,
 };
 use tenderdash_abci::proto::ToMillis;
 use tenderdash_abci::signatures::Hashable;
@@ -464,11 +464,15 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             .unsigned_withdrawal_transactions
             .iter()
             .map(|tx| {
-                let sign_request_id = Some(make_extend_vote_request_id(tx));
+                let ExtendVoteExtension {
+                    r#type,
+                    extension,
+                    sign_request_id,
+                } = tx_to_extend_vote_extension(tx);
 
                 VoteExtension {
-                    r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
-                    extension: tx.txid().to_byte_array().to_vec(),
+                    r#type,
+                    extension,
                     sign_request_id,
                     signature: vec![0; 96], //todo: signature
                 }

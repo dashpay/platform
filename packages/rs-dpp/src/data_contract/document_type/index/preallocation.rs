@@ -36,7 +36,7 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::property::{
-    is_path_listed, DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
+    is_path_listed, DocumentProperty, DocumentPropertyType, DocumentReferenceDeclaration,
     DocumentReferenceKind,
 };
 use crate::data_contract::document_type::{DocumentTypeRef, Index};
@@ -56,10 +56,11 @@ pub enum PreallocatedKeySource<'a> {
     /// its value is the named property of the referenced document, which may
     /// be one of its `$ownerId` and `$creatorId` system identifiers as well
     /// as a schema property. The two sides are validated to share one value
-    /// kind, so encoding the referenced document's value yields the same key
-    /// bytes the referring side would produce; the insert path resolves the
-    /// name through the same document accessor the entry walkers key by,
-    /// which serves the two system names alongside the schema properties.
+    /// kind; the insert path resolves the name through the same document
+    /// accessor the entry walkers key by, which serves the two system names
+    /// alongside the schema properties, then keys the value as the referring
+    /// type keys its property (an unsigned integer can be keyed in a
+    /// different generation on each side).
     ReferencedDocumentProperty(&'a str),
 }
 
@@ -101,22 +102,62 @@ impl<'a> PreallocationBinding<'a> {
     /// of the referenced document drops, or `None` when
     /// [`Self::is_kept_on_removal`].
     pub fn first_key_dropped_on_removal(&self, kept_fields: &BTreeSet<String>) -> Option<&'a str> {
-        if self.kind != DocumentReferenceKind::Moderated {
-            return None;
-        }
         self.key_sources
             .iter()
             .find_map(|key_source| match *key_source {
                 PreallocatedKeySource::ReferencedDocumentProperty(referenced)
-                    if referenced != ID
-                        && referenced != OWNER_ID
-                        && !is_path_listed(kept_fields, referenced) =>
+                    if !referenced_value_kept_on_removal(self.kind, referenced, kept_fields) =>
                 {
                     Some(referenced)
                 }
                 _ => None,
             })
     }
+}
+
+/// The same-contract, by-id `permanentDocument` or `moderatedDocument`
+/// reference `property` declares, `None` for every other property: the only
+/// references whose `where` values fix an index property from the referenced
+/// document's values. Shared by preallocation and the `summableOffCountIndex`
+/// lossless rule ([`Index::count_index_derivations`]), so the two agree on what
+/// binds.
+pub(crate) fn same_contract_record_reference(
+    property: &DocumentProperty,
+    own_contract_id: Identifier,
+) -> Option<DocumentReferenceDeclaration<'_>> {
+    let DocumentPropertyType::IdentifierWithReference(target) = &property.property_type else {
+        return None;
+    };
+    target
+        .as_document_reference()
+        .filter(|reference| {
+            matches!(
+                reference.kind,
+                DocumentReferenceKind::Permanent | DocumentReferenceKind::Moderated
+            )
+        })
+        .filter(|reference| {
+            !reference
+                .contract_id
+                .is_some_and(|id| id != own_contract_id)
+        })
+}
+
+/// Whether the referenced document's value `referenced` can still be read
+/// once the document leaves through a reference of `kind`: a reference that
+/// is not moderated keeps its document, and a moderator's removal record
+/// keeps the document's id, its owner and the fields its type lists under
+/// `deleteKeepsFields` (`kept_fields`), never its creator. Preallocation and
+/// the `summableOffCountIndex` lossless check both judge by it.
+pub fn referenced_value_kept_on_removal(
+    kind: DocumentReferenceKind,
+    referenced: &str,
+    kept_fields: &BTreeSet<String>,
+) -> bool {
+    kind != DocumentReferenceKind::Moderated
+        || referenced == ID
+        || referenced == OWNER_ID
+        || is_path_listed(kept_fields, referenced)
 }
 
 impl Index {
@@ -186,71 +227,43 @@ impl Index {
             // deletableDocument reference: its document can leave state
             // without a record, and the trees would outlive it with nothing
             // left to say what they were keyed by
-            let (kind, contract_id, document_type_name, property_agreement) =
-                match &property.property_type {
-                    DocumentPropertyType::IdentifierWithReference(
-                        DocumentPropertyReferenceTarget::PermanentDocument {
-                            contract_id,
-                            document_type_name,
-                            property_agreement,
-                        },
-                    ) => (
-                        DocumentReferenceKind::Permanent,
-                        contract_id,
-                        document_type_name,
-                        property_agreement,
-                    ),
-                    DocumentPropertyType::IdentifierWithReference(
-                        DocumentPropertyReferenceTarget::ModeratedDocument {
-                            contract_id,
-                            document_type_name,
-                            property_agreement,
-                        },
-                    ) => (
-                        DocumentReferenceKind::Moderated,
-                        contract_id,
-                        document_type_name,
-                        property_agreement,
-                    ),
-                    _ => continue,
-                };
-            if contract_id.is_some_and(|id| id != own_contract_id) {
+            let Some(reference) = same_contract_record_reference(property, own_contract_id) else {
                 continue;
-            }
+            };
             if only_target_document_type_name
-                .is_some_and(|target| target != document_type_name.as_str())
+                .is_some_and(|target| target != reference.document_type_name)
             {
                 continue;
             }
-            let key_sources: Option<Vec<_>> = self
-                .properties
-                .iter()
-                .map(|index_property| {
-                    if index_property.name == candidate.name {
-                        Some(PreallocatedKeySource::ReferencedDocumentId)
-                    } else if index_property.name.starts_with('$') {
-                        // The referring document's own system properties are
-                        // never derived from the referenced document, even
-                        // when an agreement binds the writer's `$ownerId` to
-                        // it: that agreement is a write gate, and deriving an
-                        // owner-prefixed path from it is left for later.
-                        None
-                    } else {
-                        property_agreement
-                            .get(&index_property.name)
-                            .map(|referenced| {
-                                PreallocatedKeySource::ReferencedDocumentProperty(
-                                    referenced.as_str(),
-                                )
-                            })
-                    }
-                })
-                .collect();
+            let key_sources: Option<Vec<_>> =
+                self.properties
+                    .iter()
+                    .map(|index_property| {
+                        if index_property.name == candidate.name {
+                            Some(PreallocatedKeySource::ReferencedDocumentId)
+                        } else if index_property.name.starts_with('$') {
+                            // The referring document's own system properties are
+                            // never derived from the referenced document, even
+                            // when an agreement binds the writer's `$ownerId` to
+                            // it: that agreement is a write gate, and deriving an
+                            // owner-prefixed path from it is left for later.
+                            None
+                        } else {
+                            reference.property_agreement.get(&index_property.name).map(
+                                |referenced| {
+                                    PreallocatedKeySource::ReferencedDocumentProperty(
+                                        referenced.as_str(),
+                                    )
+                                },
+                            )
+                        }
+                    })
+                    .collect();
             if let Some(key_sources) = key_sources {
                 bindings.push(PreallocationBinding {
                     referring_property: candidate.name.as_str(),
-                    target_document_type_name: document_type_name.as_str(),
-                    kind,
+                    target_document_type_name: reference.document_type_name,
+                    kind: reference.kind,
                     key_sources,
                 });
             }
@@ -262,6 +275,7 @@ impl Index {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
     use crate::data_contract::document_type::{
         DocumentReferenceLookup, IndexProperty, LookupKeySource, ReferenceOperands,
     };
@@ -277,6 +291,7 @@ mod tests {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id,
                     document_type_name: target_type.to_string(),
+                    where_conditions: Default::default(),
                     property_agreement: agreement
                         .iter()
                         .map(|(referring, referenced)| {
@@ -345,6 +360,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -354,6 +371,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }
     }
 
@@ -478,6 +496,7 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "post".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
                 lookup: DocumentReferenceLookup {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
@@ -502,6 +521,7 @@ mod tests {
         let post = |document_type_name: &str| DocumentPropertyReferenceTarget::PermanentDocument {
             contract_id: None,
             document_type_name: document_type_name.to_string(),
+            where_conditions: Default::default(),
             property_agreement: BTreeMap::new(),
         };
         let index = index_on(&["postId"]);
@@ -538,6 +558,7 @@ mod tests {
                 contract_id,
                 document_type_name,
                 property_agreement,
+                ..
             },
         ) = property.property_type
         else {
@@ -547,6 +568,7 @@ mod tests {
             DocumentPropertyReferenceTarget::ModeratedDocument {
                 contract_id,
                 document_type_name,
+                where_conditions: Default::default(),
                 property_agreement,
             },
         );
@@ -586,6 +608,7 @@ mod tests {
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id: None,
                 document_type_name: "post".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
             },
         );

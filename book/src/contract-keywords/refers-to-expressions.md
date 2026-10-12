@@ -50,8 +50,7 @@ The operands are checked in the order they are listed, and the first that fails 
 
 ```json
 "memberId": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-  "contentMediaType": "application/x.dash.dpp.identifier",
+  "type": "identifier",
   "refersTo": {
     "allOf": [
       {

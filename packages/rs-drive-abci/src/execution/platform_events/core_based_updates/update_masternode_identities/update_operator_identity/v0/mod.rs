@@ -528,7 +528,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -536,14 +536,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -605,7 +609,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -613,14 +617,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -665,7 +673,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -673,14 +681,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(new_operator_payout_address),
                 platform_node_id: Some(node_id),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -738,7 +750,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -746,14 +758,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -815,7 +831,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -823,14 +839,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(original_node_id),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -876,7 +896,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -884,14 +904,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(new_platform_node_id),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -964,7 +988,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -972,14 +996,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: original_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -1094,7 +1122,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -1102,14 +1130,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: original_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -1195,7 +1227,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -1203,14 +1235,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: original_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -1256,7 +1292,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -1264,14 +1300,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: new_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 

@@ -100,6 +100,23 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// document in state, or leave the properties `where` reads unchanged
     /// until the document is restored.
     ReferencedDocumentRemoved = 40145,
+    /// A reference that finds its document by the document's id (a
+    /// `permanentDocument`, `deletableDocument` or `moderatedDocument`
+    /// reference without `findBy`, or one with `inList`, whose list's
+    /// document is read by its id) names an `indexOnly` document type,
+    /// reported at contract registration. Such a type's documents exist only
+    /// as index entries and cannot be fetched by id, so no write could check
+    /// the reference.
+    ReferencedDocumentTypeIndexOnly = 40146,
+    /// A `propertyConstraints` rule reads, through a reference into a document
+    /// type of another contract (`{ "referenced": [reference, field] }`), a
+    /// field that type can not give it, reported at contract registration: one
+    /// it does not have, a transient one, one of another kind than the rule
+    /// reads, a time or height or a `$creatorId` it does not record, a constant
+    /// its `enum` does not list, or, through a `moderatedDocument` reference, a
+    /// field its removal record does not keep. (A rule reading a type of the
+    /// declaring contract is refused by the contract parse instead.)
+    ReferencedDocumentRuleReadInvalid = 40148,
     /// A create cannot reveal the preimage of a `refersTo` `findBy`
     /// function: a value a param reads is absent, or a variable-length
     /// value holds the one-byte separator that follows it in the preimage.
@@ -108,8 +125,8 @@ pub enum DocumentReferenceErrorCodeWasm {
 
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
-    /// is not in the 40120-40125 range, 40131, 40135-40138, 40142-40145 or
-    /// 10423.
+    /// is not in the 40120-40125 range, 40131, 40135-40138, 40142-40146,
+    /// 40148 or 10423.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -127,6 +144,8 @@ impl DocumentReferenceErrorCodeWasm {
             40143 => Some(Self::ReferencedDocumentTypeNotModerated),
             40144 => Some(Self::ReferencedDocumentTypeModerated),
             40145 => Some(Self::ReferencedDocumentRemoved),
+            40146 => Some(Self::ReferencedDocumentTypeIndexOnly),
+            40148 => Some(Self::ReferencedDocumentRuleReadInvalid),
             10423 => Some(Self::DocumentReferencePreimageInvalid),
             _ => None,
         }
@@ -368,8 +387,8 @@ impl ConsensusErrorWasm {
     }
 
     /// The reference-validation error this is, or `undefined` when it is
-    /// not one of codes 40120-40125, 40131, 40135-40138, 40142-40145 and
-    /// 10423.
+    /// not one of codes 40120-40125, 40131, 40135-40138, 40142-40146, 40148
+    /// and 10423.
     #[wasm_bindgen(getter = "documentReferenceErrorCode")]
     pub fn document_reference_error_code(&self) -> Option<DocumentReferenceErrorCodeWasm> {
         DocumentReferenceErrorCodeWasm::from_code(self.0.code())
@@ -435,7 +454,9 @@ mod tests {
     use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
     use dpp::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
     use dpp::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
+    use dpp::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
     use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+    use dpp::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
     use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
     use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
     use dpp::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
@@ -797,6 +818,29 @@ mod tests {
                 ))
                 .into(),
                 DocumentReferenceErrorCodeWasm::ReferencedDocumentRemoved,
+            ),
+            (
+                StateError::ReferencedDocumentTypeIndexOnlyError(
+                    ReferencedDocumentTypeIndexOnlyError::new(
+                        id(),
+                        "like".to_string(),
+                        "likeId".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentTypeIndexOnly,
+            ),
+            (
+                StateError::ReferencedDocumentRuleReadInvalidError(
+                    ReferencedDocumentRuleReadInvalidError::new(
+                        "vote".to_string(),
+                        "castBeforeTheEnd".to_string(),
+                        "pollId".to_string(),
+                        "endsAt is a string".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentRuleReadInvalid,
             ),
             (
                 BasicError::DocumentReferencePreimageInvalidError(

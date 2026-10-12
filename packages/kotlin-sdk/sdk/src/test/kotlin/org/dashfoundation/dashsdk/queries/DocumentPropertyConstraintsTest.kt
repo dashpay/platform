@@ -105,6 +105,39 @@ class DocumentPropertyConstraintsTest {
     """.trimIndent()
 
     /**
+     * Rules reading the bytes of byte arrays, as the FFI reports them
+     * (rs-sdk-ffi's `should_read_and_check_the_bytes_of_byte_arrays`): a
+     * `byteAt` operand reads an address's type byte, and a `startsWith` of
+     * byte arrays tests a payload's tag.
+     */
+    private val byteRulesJson = """
+        [
+          {
+            "name": "addressType",
+            "readsOwner": false,
+            "reads": [{ "kind": "bytes", "path": "corePaymentAddress" }],
+            "readsSystem": [],
+            "rule": { "in": [{ "byteAt": ["corePaymentAddress", 0] }, [0, 1]] }
+          },
+          {
+            "name": "taggedPayload",
+            "readsOwner": false,
+            "reads": [
+              { "kind": "presence", "path": "payload" },
+              { "kind": "bytes", "path": "payload" }
+            ],
+            "readsSystem": [],
+            "rule": {
+              "anyOf": [
+                { "absent": "payload" },
+                { "startsWith": ["payload", { "const": "cafe" }] }
+              ]
+            }
+          }
+        ]
+    """.trimIndent()
+
+    /**
      * Rules reading system times and heights (rs-sdk-ffi's
      * `should_read_the_clock_for_system_times_and_skip_block_heights`), plus
      * one reading an update time twice and a Core height, in declared order.
@@ -192,6 +225,25 @@ class DocumentPropertyConstraintsTest {
             rules[2].reads,
         )
         assertEquals("""{"lessThanOrEqual":[{"byteLength":"title"},12]}""", rules[2].ruleJson)
+    }
+
+    @Test
+    fun `should decode byte array reads as bytes`() {
+        val rules = DocumentPropertyConstraint.listFromJson(byteRulesJson)
+
+        assertEquals(listOf("addressType", "taggedPayload"), rules.map { it.name })
+        assertEquals(
+            listOf(PropertyConstraintRead("corePaymentAddress", PropertyConstraintRead.Kind.Bytes)),
+            rules[0].reads,
+        )
+        assertEquals(
+            listOf(
+                PropertyConstraintRead("payload", PropertyConstraintRead.Kind.Presence),
+                PropertyConstraintRead("payload", PropertyConstraintRead.Kind.Bytes),
+            ),
+            rules[1].reads,
+        )
+        assertEquals("""{"in":[{"byteAt":["corePaymentAddress",0]},[0,1]]}""", rules[0].ruleJson)
     }
 
     /** The names come through as Rust reports them, in declared order, a repeat kept. */
@@ -343,7 +395,7 @@ class DocumentPropertyConstraintsTest {
 
     @Test
     fun `should round trip every read kind name`() {
-        val names = listOf("value", "presence", "text", "identifier", "length", "count", "elements")
+        val names = listOf("value", "presence", "text", "identifier", "length", "count", "elements", "bytes")
         val kinds = listOf(
             PropertyConstraintRead.Kind.Value,
             PropertyConstraintRead.Kind.Presence,
@@ -352,6 +404,7 @@ class DocumentPropertyConstraintsTest {
             PropertyConstraintRead.Kind.Length,
             PropertyConstraintRead.Kind.Count,
             PropertyConstraintRead.Kind.Elements,
+            PropertyConstraintRead.Kind.Bytes,
         )
 
         assertEquals(kinds, names.map(PropertyConstraintRead.Kind::fromName))
@@ -551,6 +604,191 @@ class DocumentPropertyConstraintsTest {
         for (readsTotals in malformed) {
             val json =
                 """[{"name":"r","readsOwner":false,"reads":[],"readsSystem":[],"readsTotals":$readsTotals,"rule":{"present":"a"}}]"""
+            assertThrows(json, DashSdkError.SerializationError::class.java) {
+                DocumentPropertyConstraint.listFromJson(json)
+            }
+        }
+    }
+
+    /**
+     * Rules reading values of the document a reference points at, as the FFI
+     * reports them: a `vote` type whose `pollId` refers to a `poll`, reading
+     * which options the poll has, its owner and its status, and a rule,
+     * `smallChoice`, reading only the vote's choice.
+     */
+    private val referencedRulesJson = """
+        [
+          {
+            "name": "choiceIsAnOption",
+            "readsOwner": false,
+            "reads": [{ "kind": "value", "path": "choice" }],
+            "readsSystem": [],
+            "readsTotals": [],
+            "readsReferenced": [
+              { "reference": "pollId", "path": "option0", "kind": "presence" },
+              { "reference": "pollId", "path": "option1", "kind": "presence" },
+              { "reference": "pollId", "path": "option2", "kind": "presence" }
+            ],
+            "rule": {
+              "lessThan": [
+                "choice",
+                {
+                  "countPresent": [
+                    { "referenced": ["pollId", "option0"] },
+                    { "referenced": ["pollId", "option1"] },
+                    { "referenced": ["pollId", "option2"] }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "name": "ownerIsTheDenormalizedOne",
+            "readsOwner": false,
+            "reads": [{ "kind": "identifier", "path": "pollOwnerId" }],
+            "readsSystem": [],
+            "readsTotals": [],
+            "readsReferenced": [
+              { "reference": "pollId", "path": "${'$'}ownerId", "kind": "identifier" }
+            ],
+            "rule": { "equal": [{ "referenced": ["pollId", "${'$'}ownerId"] }, "pollOwnerId"] }
+          },
+          {
+            "name": "pollIsOpen",
+            "readsOwner": false,
+            "reads": [],
+            "readsSystem": [],
+            "readsTotals": [],
+            "readsReferenced": [{ "reference": "pollId", "path": "status", "kind": "text" }],
+            "rule": { "notEqual": [{ "referenced": ["pollId", "status"] }, { "const": "closed" }] }
+          },
+          {
+            "name": "smallChoice",
+            "readsOwner": false,
+            "reads": [{ "kind": "value", "path": "choice" }],
+            "readsSystem": [],
+            "readsTotals": [],
+            "readsReferenced": [],
+            "rule": { "lessThan": ["choice", 10] }
+          }
+        ]
+    """.trimIndent()
+
+    // Referenced reads
+
+    @Test
+    fun `should decode the values each rule reads of referenced documents`() {
+        val rules = DocumentPropertyConstraint.listFromJson(referencedRulesJson)
+
+        assertEquals(
+            listOf("choiceIsAnOption", "ownerIsTheDenormalizedOne", "pollIsOpen", "smallChoice"),
+            rules.map { it.name },
+        )
+        assertEquals(
+            listOf(
+                listOf("option0", "option1", "option2").map {
+                    PropertyConstraintReferencedRead("pollId", it, PropertyConstraintRead.Kind.Presence)
+                },
+                listOf(
+                    PropertyConstraintReferencedRead(
+                        "pollId",
+                        "${'$'}ownerId",
+                        PropertyConstraintRead.Kind.Identifier,
+                    ),
+                ),
+                listOf(PropertyConstraintReferencedRead("pollId", "status", PropertyConstraintRead.Kind.Text)),
+                emptyList(),
+            ),
+            rules.map { it.readsReferenced },
+        )
+        // A value of the referenced document is no property of this one; the
+        // properties the rule compares it with are
+        assertEquals(
+            listOf(
+                listOf(PropertyConstraintRead("choice", PropertyConstraintRead.Kind.Value)),
+                listOf(PropertyConstraintRead("pollOwnerId", PropertyConstraintRead.Kind.Identifier)),
+                emptyList(),
+                listOf(PropertyConstraintRead("choice", PropertyConstraintRead.Kind.Value)),
+            ),
+            rules.map { it.reads },
+        )
+        // The poll's owner is not the vote's
+        assertEquals(listOf(false, false, false, false), rules.map { it.readsOwner })
+        assertEquals(List(4) { emptyList<PropertyConstraintTotalRead>() }, rules.map { it.readsTotals })
+        assertEquals(
+            """{"equal":[{"referenced":["pollId","${'$'}ownerId"]},"pollOwnerId"]}""",
+            rules[1].ruleJson,
+        )
+    }
+
+    /** A native library built before `readsReferenced` leaves the key out. */
+    @Test
+    fun `should read a rule without readsReferenced as reading no referenced document`() {
+        val rules = DocumentPropertyConstraint.listFromJson(
+            """[{"name":"r","readsOwner":false,"reads":[],"readsSystem":[],"readsTotals":[],"rule":{"present":"a"}}]""",
+        )
+
+        assertEquals(emptyList<PropertyConstraintReferencedRead>(), rules.single().readsReferenced)
+        assertEquals(
+            DocumentPropertyConstraint("r", """{"present":"a"}""", emptyList(), readsOwner = false),
+            rules.single(),
+        )
+    }
+
+    /**
+     * Referenced reads are kept in declared order, one read twice listed
+     * twice, and a kind added by a later protocol version is kept by name
+     * rather than failing the whole list.
+     */
+    @Test
+    fun `should keep repeated referenced reads and an unknown kind`() {
+        val rules = DocumentPropertyConstraint.listFromJson(
+            """
+            [{ "name": "r", "readsOwner": false, "reads": [], "readsSystem": [], "readsTotals": [],
+               "readsReferenced": [
+                 { "reference": "pollId", "path": "endsAt", "kind": "value" },
+                 { "reference": "postId", "path": "meta.tags", "kind": "somethingNew" },
+                 { "reference": "pollId", "path": "endsAt", "kind": "value" }
+               ],
+               "rule": { "lessThan": [{ "referenced": ["pollId", "endsAt"] }, 10] } }]
+            """.trimIndent(),
+        )
+
+        val endsAt = PropertyConstraintReferencedRead("pollId", "endsAt", PropertyConstraintRead.Kind.Value)
+        assertEquals(
+            listOf(
+                endsAt,
+                PropertyConstraintReferencedRead(
+                    "postId",
+                    "meta.tags",
+                    PropertyConstraintRead.Kind.Other("somethingNew"),
+                ),
+                endsAt,
+            ),
+            rules.single().readsReferenced,
+        )
+    }
+
+    @Test
+    fun `should refuse a malformed readsReferenced`() {
+        val malformed = listOf(
+            "null",
+            "{}",
+            "\"pollId\"",
+            "[1]",
+            "[null]",
+            """[["pollId", "status", "text"]]""",
+            // Every read names its reference, path and kind, each a string
+            """[{"path":"status","kind":"text"}]""",
+            """[{"reference":"pollId","kind":"text"}]""",
+            """[{"reference":"pollId","path":"status"}]""",
+            """[{"reference":7,"path":"status","kind":"text"}]""",
+            """[{"reference":"pollId","path":["status"],"kind":"text"}]""",
+            """[{"reference":"pollId","path":"status","kind":null}]""",
+        )
+        for (readsReferenced in malformed) {
+            val json =
+                """[{"name":"r","readsOwner":false,"reads":[],"readsSystem":[],"readsTotals":[],"readsReferenced":$readsReferenced,"rule":{"present":"a"}}]"""
             assertThrows(json, DashSdkError.SerializationError::class.java) {
                 DocumentPropertyConstraint.listFromJson(json)
             }

@@ -120,6 +120,7 @@ fn should_parse_an_element_reference_of_each_target_type() {
             DocumentPropertyReferenceTarget::PermanentDocument {
                 contract_id: None,
                 document_type_name: "reason".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::from([
                     ("$ownerId".to_string(), "$ownerId".to_string()),
                     ("topic".to_string(), "topic".to_string()),
@@ -135,6 +136,7 @@ fn should_parse_an_element_reference_of_each_target_type() {
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id: Some(foreign_contract),
                 document_type_name: "draft".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
             },
         ),
@@ -148,6 +150,7 @@ fn should_parse_an_element_reference_of_each_target_type() {
             DocumentPropertyReferenceTarget::ModeratedDocument {
                 contract_id: Some(foreign_contract),
                 document_type_name: "post".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::from([("topic".to_string(), "topic".to_string())]),
             },
         ),
@@ -623,6 +626,7 @@ fn should_round_trip_a_contract_with_an_element_reference_through_platform_seria
                 target: &DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id: None,
                     document_type_name: "reason".to_string(),
+                    where_conditions: Default::default(),
                     property_agreement: BTreeMap::from([(
                         "topic".to_string(),
                         "topic".to_string()

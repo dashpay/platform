@@ -26,12 +26,16 @@ use crate::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::property::lookup_preimage::LookupHashKey;
 use crate::data_contract::document_type::property::{
-    is_transient, top_level_property, DocumentPropertyType,
+    is_transient, top_level_property, DocumentPropertyReferenceTarget, DocumentPropertyType,
 };
 
 /// Why a key part moves when it is a field only the contract's moderators write
 /// (`moderatorAbilities.changeFields`): no replace is needed to change it.
 const MODERATORS_CHANGE: &str = "the contract's moderators change";
+
+/// Why a key part moves when it is an immutable, optional `deletableDocument`
+/// reference by id: a replace may clear it once its document is deleted.
+const CLEARED_ONCE_DELETED: &str = "a replace can clear once its document is deleted";
 use crate::data_contract::document_type::{DocumentTypeRef, Index};
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
@@ -147,7 +151,8 @@ pub struct DocumentReferenceLookup {
     /// except in the lookup of an `ownerRefersTo` or `creatorRefersTo` holding
     /// a computed key, where it may be left out.
     pub keys: BTreeMap<String, LookupKeySource>,
-    /// With a computed key only: how many blocks before the create the
+    /// On a lookup judged on the create alone only
+    /// ([`Self::is_checked_on_create_only`]): how many blocks before the create the
     /// document the key finds must have been created (the reference's
     /// `minimumAgeBlocks`, beside `findBy`), judged on its
     /// `$createdAtBlockHeight`, so that 1 keeps a commitment and its reveal out
@@ -155,7 +160,8 @@ pub struct DocumentReferenceLookup {
     /// record `$createdAtBlockHeight`.
     #[serde(rename = "minimumAgeBlocks", skip_serializing_if = "Option::is_none")]
     pub minimum_age_blocks: Option<u32>,
-    /// With a computed key only: whether the create deletes the document the
+    /// On a lookup judged on the create alone only
+    /// ([`Self::is_checked_on_create_only`]): whether the create deletes the document the
     /// key found (the reference's `consume`, beside `findBy`), in the same
     /// state transition. Only a `deletableDocument` reference whose `where`
     /// pairs the found document's `$ownerId` with the writer's may consume,
@@ -295,13 +301,17 @@ impl DocumentReferenceLookup {
             .sum()
     }
 
-    /// Whether this lookup is judged only when the referring document is
-    /// created: it holds a computed key, a commitment the create reveals.
-    /// Nothing such a lookup reads can change afterwards (registration makes
-    /// every stored value it reads fixed once written), and the commitment it
-    /// found may be consumed or deleted, so a replace never re-validates it.
-    pub fn is_checked_on_create_only(&self) -> bool {
-        self.hash_key().is_some()
+    /// Whether this lookup, declared on a document type whose documents can
+    /// (`documents_mutable`) or can not be replaced, is judged only when the
+    /// referring document is created: it holds a computed key, a commitment the
+    /// create reveals, or its type's documents are never replaced, and a
+    /// replace is the one write that judges a reference again. Nothing such a
+    /// lookup reads can change afterwards (registration makes every stored value
+    /// it reads fixed once written, and no `changeFields` entry may name one),
+    /// and the document it found may be consumed or deleted, so a replace never
+    /// re-validates it.
+    pub fn is_checked_on_create_only(&self, documents_mutable: bool) -> bool {
+        self.hash_key().is_some() || !documents_mutable
     }
 
     /// The referring document type's property paths the key reads as is, in
@@ -339,10 +349,10 @@ impl DocumentReferenceLookup {
     /// (not listed under `immutable` with a condition, which could let a replace
     /// set it later unchecked), unless it is transient, never stored and read from
     /// the create alone. On a property the reference's own value must fill
-    /// the key exactly once, as a `"."` source or a param of the computed key,
-    /// and on a string or byte array property, `reference_type` not an
-    /// identifier, as a param only, a source having to match an index
-    /// property of the same kind. A param names a single property carrying
+    /// the key exactly once, as a `"."` source or a param of the computed key;
+    /// on a string or byte array property, not an identifier, a `"."` source
+    /// fills an index property holding the same kind of value, which
+    /// [`Self::referenced_side_error`] checks. A param names a single property carrying
     /// the reference by its path, never `"."`, which stands only for a value
     /// without one (each element of a typed array, the writer, the creator);
     /// only the lookup of an `ownerRefersTo` or `creatorRefersTo`,
@@ -354,7 +364,8 @@ impl DocumentReferenceLookup {
         declaring: DocumentTypeRef,
         reference_path: &str,
     ) -> Option<String> {
-        let computed = self.is_checked_on_create_only();
+        let computed = self.hash_key().is_some();
+        let create_only = self.is_checked_on_create_only(declaring.documents_mutable());
         let on_the_document = reference_path == OWNER_ID || reference_path == CREATOR_ID;
         let carrier_type = declaring
             .flattened_properties()
@@ -375,22 +386,6 @@ impl DocumentReferenceLookup {
                      property carrying the reference by its path, \"{reference_path}\""
                 ));
             }
-        }
-        // A string or byte array carrying the reference is no identifier
-        let revealed = matches!(
-            carrier_type,
-            Some(DocumentPropertyType::String(_) | DocumentPropertyType::ByteArray(_))
-        );
-        if revealed
-            && self
-                .keys
-                .values()
-                .any(|source| matches!(source, LookupKeySource::ReferenceValue))
-        {
-            return Some(format!(
-                "\"{reference_path}\" is not an identifier, so its value fills the key as a \
-                 param of a computed key, not as a source of its own"
-            ));
         }
         if computed && !on_the_document {
             let reads = if named_by_path {
@@ -427,12 +422,15 @@ impl DocumentReferenceLookup {
                     continue;
                 }
                 LookupKeySource::OwnerId => {
-                    if owner_can_change(declaring) {
+                    // A lookup judged when the document is created only, so a later transfer
+                    // or purchase moving the writer moves no key
+                    if !create_only && owner_can_change(declaring) {
                         return Some(format!(
                             "findBy \"{index_property}\" reads \"$ownerId\", which a transfer or \
                              a purchase of the referring document changes without re-validating \
                              the reference: findBy may read the writer only on a document type \
-                             that cannot be transferred or traded"
+                             that cannot be transferred or traded, beside a function, or on a \
+                             type whose documents are never replaced"
                         ));
                     }
                     continue;
@@ -496,18 +494,23 @@ impl DocumentReferenceLookup {
         None
     }
 
-    /// Why this lookup, declared on a property of `declaring`, cannot resolve
-    /// in `referenced`, the referenced document type; `None` when it can. The
+    /// Why this lookup, declared on `declaring` (on the property at
+    /// `reference_property`, `None` for its owner or creator reference),
+    /// cannot resolve in `referenced`, the referenced document type; `None`
+    /// when it can. The
     /// properties `findBy` names must be exactly those of a unique index that
     /// does not bucket its first property ([`Self::resolve_index`]), so the key
     /// finds at most one document; the referenced type may not be `indexOnly`;
     /// no index property may be transient, a value no stored document holds;
     /// and each source must hold the same kind of value as the index property
-    /// it fills, or no document could ever match. The key must also stay with
-    /// the document it found, see [`Self::moving_key_part`].
+    /// it fills, or no document could ever match: `"."` holds an identifier,
+    /// or the value of the string or byte array property carrying the
+    /// reference. The key must also stay with the document it found, see
+    /// [`Self::moving_key_part`].
     pub fn referenced_side_error(
         &self,
         declaring: DocumentTypeRef,
+        reference_property: Option<&str>,
         referenced: DocumentTypeRef,
     ) -> Option<String> {
         let index_name = match self.resolve_index(referenced) {
@@ -543,9 +546,10 @@ impl DocumentReferenceLookup {
                 ));
             };
             let source_kind = match source {
-                // Both are identifiers, the reference's own value because
-                // `refersTo` is only allowed on identifiers
-                LookupKeySource::ReferenceValue | LookupKeySource::OwnerId => {
+                LookupKeySource::ReferenceValue => {
+                    reference_value_kind(declaring, reference_property)
+                }
+                LookupKeySource::OwnerId => {
                     std::mem::discriminant(&DocumentPropertyType::Identifier)
                 }
                 // A hash is a byte array exactly as long as the hash's output,
@@ -589,7 +593,8 @@ impl DocumentReferenceLookup {
         }
         // A minimum age is judged against the found document's creation height,
         // so the type must record one; consuming deletes the document as its
-        // own owner would, which the type must allow
+        // own owner would, which the type must allow, or keep for consumption
+        // alone (`canBeDeleted: "onlyWhenConsumed"`)
         if self.minimum_age_blocks.is_some()
             && !referenced
                 .required_fields()
@@ -602,10 +607,14 @@ impl DocumentReferenceLookup {
                 referenced.name()
             ));
         }
-        if self.consume && !referenced.documents_can_be_deleted() {
+        if self.consume
+            && !referenced.documents_can_be_deleted()
+            && !referenced.documents_deleted_only_when_consumed()
+        {
             return Some(format!(
                 "consume deletes the found document as its owner would, which \"{}\" does not \
-                 allow (`canBeDeleted: false`)",
+                 allow (`canBeDeleted: false`): set `canBeDeleted` to true, or to \
+                 \"onlyWhenConsumed\" for documents only a consume deletes",
                 referenced.name()
             ));
         }
@@ -637,6 +646,14 @@ impl DocumentReferenceLookup {
                 referenced.name()
             ));
         }
+        // Nor rules gating its delete, which only a delete transition judges
+        if self.consume && !referenced.delete_constraints().is_empty() {
+            return Some(format!(
+                "consume deletes the found document without a delete transition, so \"{}\" \
+                 may declare no deleteConstraints: they would not be judged",
+                referenced.name()
+            ));
+        }
         if self.consume
             && referenced.security_level_requirement() < declaring.security_level_requirement()
         {
@@ -654,6 +671,9 @@ impl DocumentReferenceLookup {
             // A field only moderators write is never fixed, whatever the type says
             let hint = if why == MODERATORS_CHANGE {
                 "find it by a property only its owner writes"
+            } else if why == CLEARED_ONCE_DELETED {
+                "make the reference required or find it by a property that is no optional \
+                 `deletableDocument` reference"
             } else {
                 "make the type immutable or list the property under `immutable`"
             };
@@ -683,41 +703,16 @@ impl DocumentReferenceLookup {
     /// immutable on contract update, and the `immutable` list may only grow,
     /// so the answer holds for good.
     fn moving_key_part(&self, referenced: DocumentTypeRef) -> Option<(&str, &'static str)> {
-        let changes_owner = owner_can_change(referenced);
-        let replaceable = referenced.documents_mutable();
         self.keys.keys().find_map(|index_property| {
-            let why = match index_property.as_str() {
-                ID
-                | CREATOR_ID
-                | CREATED_AT
-                | CREATED_AT_BLOCK_HEIGHT
-                | CREATED_AT_CORE_BLOCK_HEIGHT => None,
-                OWNER_ID => changes_owner.then_some("a transfer or a purchase changes"),
-                UPDATED_AT | UPDATED_AT_BLOCK_HEIGHT | UPDATED_AT_CORE_BLOCK_HEIGHT => (replaceable
-                    || changes_owner)
-                    .then_some("a replace, a transfer or a purchase changes"),
-                TRANSFERRED_AT | TRANSFERRED_AT_BLOCK_HEIGHT | TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
-                    changes_owner.then_some("a transfer or a purchase changes")
-                }
-                property => {
-                    if referenced
-                        .moderator_changeable_fields()
-                        .contains(top_level_property(property))
-                    {
-                        Some(MODERATORS_CHANGE)
-                    } else {
-                        (!schema_property_is_fixed_once_written(referenced, property))
-                            .then_some("a replace can change")
-                    }
-                }
-            };
-            why.map(|why| (index_property.as_str(), why))
+            why_value_can_change(referenced, index_property)
+                .map(|why| (index_property.as_str(), why))
         })
     }
 
     /// The equality values of the key the lookup assembles for one write, by
     /// index property name: `reference_value` for `"."` (the identifier
-    /// property's value, one array element, the writer or the creator),
+    /// property's value, one array element, the writer or the creator, or the
+    /// value of a string or byte array property carrying the reference),
     /// `owner_id` for `"$ownerId"`, the value at each source path in
     /// `document_data`, and `computed_key`, the hash the caller computed and
     /// billed, for a computed key: this never hashes, so a hash is never taken
@@ -730,7 +725,7 @@ impl DocumentReferenceLookup {
     /// Either way a key with a missing part finds no document.
     pub fn key_values(
         &self,
-        reference_value: Identifier,
+        reference_value: &Value,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
         computed_key: Option<&Value>,
@@ -739,9 +734,7 @@ impl DocumentReferenceLookup {
             .iter()
             .map(|(index_property, source)| {
                 let value = match source {
-                    LookupKeySource::ReferenceValue => {
-                        Value::Identifier(reference_value.to_buffer())
-                    }
+                    LookupKeySource::ReferenceValue => reference_value.clone(),
                     LookupKeySource::OwnerId => Value::Identifier(owner_id.to_buffer()),
                     LookupKeySource::Property(path) => {
                         document_data.get_optional_at_path(path).ok()??.clone()
@@ -765,6 +758,48 @@ pub fn owner_can_change(document_type: DocumentTypeRef) -> bool {
         || document_type.trade_mode() != TradeMode::None
 }
 
+/// How the value `property` names, of a document of `referenced`, can change
+/// after the document is written, `None` when it is fixed for good: `$id`,
+/// `$creatorId` and the creation times never change; `$ownerId` and the
+/// transfer times change with a transfer or a purchase, the update times also
+/// with a replace; a schema property is fixed when
+/// [`schema_property_is_fixed_once_written`] says so and a replace cannot
+/// clear it ([`clearable_once_its_document_is_deleted`]), and its moderators'
+/// fields are named as such. Shared by a lookup's key and the
+/// `summableOffCountIndex` lossless rule, so the two judge a value alike.
+pub(crate) fn why_value_can_change(
+    referenced: DocumentTypeRef,
+    property: &str,
+) -> Option<&'static str> {
+    let changes_owner = owner_can_change(referenced);
+    match property {
+        ID | CREATOR_ID | CREATED_AT | CREATED_AT_BLOCK_HEIGHT | CREATED_AT_CORE_BLOCK_HEIGHT => {
+            None
+        }
+        OWNER_ID => changes_owner.then_some("a transfer or a purchase changes"),
+        UPDATED_AT | UPDATED_AT_BLOCK_HEIGHT | UPDATED_AT_CORE_BLOCK_HEIGHT => {
+            (referenced.documents_mutable() || changes_owner)
+                .then_some("a replace, a transfer or a purchase changes")
+        }
+        TRANSFERRED_AT | TRANSFERRED_AT_BLOCK_HEIGHT | TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
+            changes_owner.then_some("a transfer or a purchase changes")
+        }
+        property => {
+            if referenced
+                .moderator_changeable_fields()
+                .contains(top_level_property(property))
+            {
+                Some(MODERATORS_CHANGE)
+            } else if !schema_property_is_fixed_once_written(referenced, property) {
+                Some("a replace can change")
+            } else {
+                clearable_once_its_document_is_deleted(referenced, property)
+                    .then_some(CLEARED_ONCE_DELETED)
+            }
+        }
+    }
+}
+
 /// Whether the schema property at `path` of a document of `document_type` can
 /// never change once the document is written: the type is immutable
 /// (`documentsMutable: false`), or the property's top-level property is listed
@@ -785,6 +820,55 @@ pub(crate) fn schema_property_is_fixed_once_written(
         && !document_type
             .moderator_changeable_fields()
             .contains(top_level)
+}
+
+/// Whether a replace may clear the top-level property of `path` of a document
+/// of `document_type` though `immutable` lists it: an optional
+/// `deletableDocument` reference by id, which document replace state
+/// validation 1 lets a replace clear once its document is deleted, so that the
+/// document can still be replaced. A required one is never cleared: replace
+/// advanced structure validation refuses a document missing a required
+/// property before state validation reads the clear. Clearing changes the
+/// value to absent, so a value that must stay as written (a lookup's key part,
+/// a param or `where` value a findBy function's key is judged by on the create,
+/// a value a `summableOffCountIndex` index's group is fixed by) may not be one.
+pub(crate) fn clearable_once_its_document_is_deleted(
+    document_type: DocumentTypeRef,
+    path: &str,
+) -> bool {
+    document_type.documents_mutable()
+        && document_type
+            .flattened_properties()
+            .get(top_level_property(path))
+            .is_some_and(|property| {
+                !property.required
+                    && matches!(
+                        property.property_type,
+                        DocumentPropertyType::IdentifierWithReference(
+                            DocumentPropertyReferenceTarget::DeletableDocument { .. }
+                        )
+                    )
+            })
+}
+
+/// The kind of value `"."` stands for on a reference of `declaring` carried by
+/// the property at `reference_property` (`None` for the owner or creator
+/// reference): the value of a string or byte array property, and an
+/// identifier otherwise (an identifier property's value, an element of a
+/// typed array of them, the writer or the creator).
+fn reference_value_kind(
+    declaring: DocumentTypeRef,
+    reference_property: Option<&str>,
+) -> Discriminant<DocumentPropertyType> {
+    match reference_property
+        .and_then(|path| declaring.flattened_properties().get(path))
+        .map(|property| &property.property_type)
+    {
+        Some(carrier @ (DocumentPropertyType::String(_) | DocumentPropertyType::ByteArray(_))) => {
+            carrier.value_kind()
+        }
+        _ => std::mem::discriminant(&DocumentPropertyType::Identifier),
+    }
 }
 
 /// The kind of value an index property of `document_type` holds: a system
@@ -951,7 +1035,11 @@ mod tests {
             None
         );
         assert_eq!(
-            lookup.referenced_side_error(declaring.as_ref(), join_request().as_ref()),
+            lookup.referenced_side_error(
+                declaring.as_ref(),
+                Some("memberId"),
+                join_request().as_ref()
+            ),
             None
         );
     }
@@ -1007,7 +1095,11 @@ mod tests {
             ),
         ] {
             let error = lookup(&keys)
-                .referenced_side_error(declaring.as_ref(), join_request().as_ref())
+                .referenced_side_error(
+                    declaring.as_ref(),
+                    Some("memberId"),
+                    join_request().as_ref(),
+                )
                 .expect("findBy should be refused");
             assert!(error.contains(fragment), "{keys:?}: {error}");
         }
@@ -1017,7 +1109,11 @@ mod tests {
     fn should_refuse_a_source_of_the_wrong_value_kind() {
         let declaring = elected_charter();
         let error = lookup(&[("submittedCharterId", "note"), ("$ownerId", ".")])
-            .referenced_side_error(declaring.as_ref(), join_request().as_ref())
+            .referenced_side_error(
+                declaring.as_ref(),
+                Some("memberId"),
+                join_request().as_ref(),
+            )
             .expect("the string source should be refused");
         assert!(error.contains("holds a different kind of value"), "{error}");
     }
@@ -1048,7 +1144,7 @@ mod tests {
         ]);
         let declaring = elected_charter();
         let refused = |referenced: DocumentType| {
-            lookup.referenced_side_error(declaring.as_ref(), referenced.as_ref())
+            lookup.referenced_side_error(declaring.as_ref(), Some("memberId"), referenced.as_ref())
         };
 
         // A replace could move `submittedCharterId`, a transfer or a purchase `$ownerId`
@@ -1096,7 +1192,11 @@ mod tests {
             "transient": ["submittedCharterId"]
         }));
         let error = lookup
-            .referenced_side_error(elected_charter().as_ref(), referenced.as_ref())
+            .referenced_side_error(
+                elected_charter().as_ref(),
+                Some("memberId"),
+                referenced.as_ref(),
+            )
             .expect("an index over a transient property should be refused");
         assert!(
             error.contains(
@@ -1189,7 +1289,7 @@ mod tests {
         // A key id reference holds a u32 like the plain key id it is matched with
         let lookup = lookup(&[("keyId", "signerKeyId"), ("$ownerId", ".")]);
         assert_eq!(
-            lookup.referenced_side_error(declaring.as_ref(), referenced.as_ref()),
+            lookup.referenced_side_error(declaring.as_ref(), Some("memberId"), referenced.as_ref()),
             None
         );
     }
@@ -1210,14 +1310,22 @@ mod tests {
             ])
         };
         let error = consuming
-            .referenced_side_error(elected_charter().as_ref(), keeps_history.as_ref())
+            .referenced_side_error(
+                elected_charter().as_ref(),
+                Some("memberId"),
+                keeps_history.as_ref(),
+            )
             .expect("consuming a type that keeps history should be refused");
         assert!(error.contains("its documents keep history"), "{error}");
 
         // The same type without the history may be consumed
         let deletable = join_request_with(platform_value!({ "canBeDeleted": true }));
         assert_eq!(
-            consuming.referenced_side_error(elected_charter().as_ref(), deletable.as_ref()),
+            consuming.referenced_side_error(
+                elected_charter().as_ref(),
+                Some("memberId"),
+                deletable.as_ref()
+            ),
             None
         );
     }
@@ -1245,14 +1353,19 @@ mod tests {
         let data = BTreeMap::from([("submittedCharterId".to_string(), Value::Identifier([5; 32]))]);
 
         assert_eq!(
-            lookup.key_values(member, &data, owner, None),
+            lookup.key_values(&Value::Identifier(member.to_buffer()), &data, owner, None),
             Some(BTreeMap::from([
                 ("$ownerId".to_string(), Value::Identifier([3; 32])),
                 ("submittedCharterId".to_string(), Value::Identifier([5; 32])),
             ]))
         );
         assert_eq!(
-            lookup.key_values(member, &BTreeMap::new(), owner, None),
+            lookup.key_values(
+                &Value::Identifier(member.to_buffer()),
+                &BTreeMap::new(),
+                owner,
+                None
+            ),
             None
         );
         assert_eq!(
