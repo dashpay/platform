@@ -559,19 +559,20 @@ pub(crate) fn restore_pools(
     wallet_info: &mut key_wallet::wallet::ManagedWalletInfo,
     ctx: &LoadCtx,
 ) -> Result<(), WalletStorageError> {
-    // Prepared once: every account and pool below binds the same three shapes.
-    let mut stored_pool_types = conn.prepare(
+    // Prepared once, and cached like every repeated-shape statement in this
+    // module: every account and pool below binds the same three shapes.
+    let mut stored_pool_types = conn.prepare_cached(
         "SELECT DISTINCT pool_type FROM core_address_pool \
          WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
            AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6",
     )?;
-    let mut highest_stored_index = conn.prepare(
+    let mut highest_stored_index = conn.prepare_cached(
         "SELECT MAX(address_index) FROM core_address_pool \
          WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
            AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
            AND pool_type = ?7",
     )?;
-    let mut stored_rows = conn.prepare(
+    let mut stored_rows = conn.prepare_cached(
         "SELECT address_index, length(script), script, length(public_key), public_key, \
          key_type, used, reserved_at FROM core_address_pool \
          WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
