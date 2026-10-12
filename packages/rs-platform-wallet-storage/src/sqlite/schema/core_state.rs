@@ -1039,19 +1039,17 @@ pub(crate) fn load_spent_claims(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<Vec<(OutPoint, Option<Txid>)>, WalletStorageError> {
-    // The row loop selects both payloads beside their lengths, and SQLite
-    // evaluates every result column on the step: gate the lengths first.
-    blob::check_max_column_len(
-        conn,
-        "SELECT MAX(MAX(length(outpoint)), IFNULL(MAX(length(spent_in_txid)), 0)) \
-         FROM core_utxos WHERE wallet_id = ?1 AND spent = 1",
-        wallet_id,
-    )?;
+    // SQLite evaluates every result column when the row is stepped, but a
+    // CASE lazily: a payload past its gate is never loaded, and the length
+    // beside it reports the typed error below.
     let mut stmt = conn.prepare_cached(
-        "SELECT length(outpoint), outpoint, length(spent_in_txid), spent_in_txid \
+        "SELECT length(outpoint), CASE WHEN length(outpoint) <= ?2 THEN outpoint END, \
+                length(spent_in_txid), \
+                CASE WHEN length(spent_in_txid) = 32 THEN spent_in_txid END \
          FROM core_utxos WHERE wallet_id = ?1 AND spent = 1",
     )?;
-    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    let limit = i64::try_from(blob::BLOB_SIZE_LIMIT_BYTES).unwrap_or(i64::MAX);
+    let mut rows = stmt.query(params![wallet_id.as_slice(), limit])?;
     let mut outpoints = Vec::new();
     while let Some(row) = rows.next()? {
         blob::check_size(row.get(0)?)?;
