@@ -1235,6 +1235,78 @@ mod tests {
         );
     }
 
+    /// A truncation hands back a coin whose spend was mined once and may be
+    /// mined again, so the fence that spend retired has to stand again until
+    /// the spend is seen a second time.
+    #[tokio::test]
+    async fn should_fence_a_coin_again_when_a_truncation_undoes_its_spend() {
+        use dashcore::hashes::Hash as _;
+
+        let mgr = make_manager();
+        let (wallet_manager, wallet_id, generation, _signer) =
+            crate::test_support::funded_wallet_manager(
+                key_wallet::account::account_type::StandardAccountType::BIP44Account,
+            )
+            .await;
+        let spv = Arc::new(SpvRuntime::new(
+            Arc::clone(&wallet_manager),
+            Arc::new(PlatformEventManager::new(Vec::new())),
+        ));
+        let wallet = Arc::new(PlatformWallet::new(
+            Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
+            wallet_id,
+            wallet_manager,
+            Arc::clone(&generation),
+            Arc::new(Notify::new()),
+            Arc::new(NoopPersister) as Arc<dyn PlatformWalletPersistence>,
+            Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+        ));
+        mgr.wallets.rcu(|wallets| {
+            let mut next = std::collections::BTreeMap::clone(wallets);
+            next.insert(wallet_id, Arc::clone(&wallet));
+            next
+        });
+        let coin = dashcore::OutPoint {
+            txid: dashcore::Txid::from_slice(&[9u8; 32]).expect("txid"),
+            vout: 0,
+        };
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![dashcore::TxIn {
+                previous_output: coin,
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        let spend_observed = crate::test_support::observed_spend_event(wallet_id, &tx);
+        mgr.event_manager.on_wallet_event(&spend_observed);
+        assert!(generation.in_broadcast_conflict(&tx).is_none());
+
+        mgr.event_manager
+            .on_wallet_event(&key_wallet_manager::WalletEvent::ChainTruncated {
+                wallet_id,
+                height: 999,
+                txids: vec![tx.txid()],
+                unconfirmed_txids: Vec::new(),
+                restored_outpoints: vec![coin],
+                balance: key_wallet::WalletCoreBalance::default(),
+                account_balances: std::collections::BTreeMap::new(),
+            });
+        assert_eq!(
+            generation.in_broadcast_conflict(&tx),
+            Some(coin),
+            "the undone spend may be mined again; the coin must not be re-selected"
+        );
+
+        mgr.event_manager.on_wallet_event(&spend_observed);
+        assert!(
+            generation.in_broadcast_conflict(&tx).is_none(),
+            "seeing the spend again is what ends the fence"
+        );
+    }
+
     /// `shutdown()` joins every started coordinator through the shared
     /// [`ThreadRegistry`], reports each as cleanly joined, and is
     /// idempotent — a second call finds nothing running and still reports
