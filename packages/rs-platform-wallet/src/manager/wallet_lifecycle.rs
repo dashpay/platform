@@ -575,6 +575,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 error = %e,
                 "failed to persist wallet registration changeset"
             );
+            // Under the generation's lifecycle gate, like any removal (gate
+            // first, manager lock second).
+            let _teardown = generation.teardown_guard().await;
             let mut wm = self.wallet_manager.write().await;
             if let Err(remove_err) = self.remove_from_inner(&mut wm, &wallet_id) {
                 tracing::warn!(
@@ -623,6 +626,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     error = %e,
                     "failed to restore persisted platform-address state"
                 );
+                // Under the generation's lifecycle gate, like any removal.
+                let _teardown = platform_wallet.generation().teardown_guard().await;
                 let mut wm = self.wallet_manager.write().await;
                 if let Err(remove_err) = self.remove_from_inner(&mut wm, &wallet_id) {
                     tracing::warn!(

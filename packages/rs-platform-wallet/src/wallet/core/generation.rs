@@ -8,9 +8,11 @@ use std::ops::Deref;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use dashcore::{OutPoint, Transaction};
-use tokio::sync::{OwnedRwLockWriteGuard, RwLock, RwLockReadGuard};
+use key_wallet_manager::{WalletId, WalletManager};
+use tokio::sync::{watch, OwnedRwLockWriteGuard, RwLock, RwLockReadGuard};
 
 use super::balance::WalletBalance;
+use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// The state one wallet *generation* shares across every handle that names it.
 ///
@@ -63,6 +65,9 @@ pub struct WalletGeneration {
     /// a retry loop, and the guard must outlive the loop iteration that produced
     /// the `Arc<WalletGeneration>` it came from.
     lifecycle: Arc<RwLock<()>>,
+    /// Set, for good, once a teardown has asked for the gate (see
+    /// [`teardown_requested`](Self::teardown_requested)).
+    leaving: watch::Sender<bool>,
     /// Outpoints currently fenced against re-selection because a broadcast
     /// dispatch owns them ([`pin_in_broadcast`](Self::pin_in_broadcast)).
     ///
@@ -391,6 +396,7 @@ impl WalletGeneration {
         Self {
             balance: WalletBalance::new(),
             lifecycle: Arc::new(RwLock::new(())),
+            leaving: watch::Sender::new(false),
             in_broadcast: fences,
             #[cfg(test)]
             settle_boundary_hook: SettleBoundaryHook::default(),
@@ -444,8 +450,46 @@ impl WalletGeneration {
     /// Returns an *owned* guard so it can outlive the `Arc<WalletGeneration>`
     /// binding it was taken from — the remover resolves the current generation in
     /// a retry loop and must carry the guard out of the iteration that found it.
+    ///
+    /// Asking is final: only a caller that is removing this generation takes
+    /// it, and from the first poll [`teardown_requested`](Self::teardown_requested)
+    /// resolves for it.
     pub async fn teardown_guard(&self) -> OwnedRwLockWriteGuard<()> {
+        self.leaving.send_replace(true);
         Arc::clone(&self.lifecycle).write_owned().await
+    }
+
+    /// Resolves once a teardown has asked for this generation's gate, and at
+    /// once from then on.
+    ///
+    /// For an operation that holds [`payment_guard`](Self::payment_guard)
+    /// across network work it can give up without harm: raced against this, it
+    /// stops and lets go of the gate instead of making the removal wait for
+    /// its timeouts.
+    pub(crate) async fn teardown_requested(&self) {
+        let mut leaving = self.leaving.subscribe();
+        // Fails only without a sender, which `self` holds: stop then, too.
+        let _ = leaving.wait_for(|leaving| *leaving).await;
+    }
+
+    /// Whether some operation is inside the gate right now.
+    #[cfg(test)]
+    pub(crate) fn lifecycle_is_held(&self) -> bool {
+        self.lifecycle.try_write().is_err()
+    }
+
+    /// Whether this generation is the one registered under `wallet_id` — a
+    /// removal, or a re-registration under the same id, ends that. A
+    /// point-in-time observation: to act on it, hold
+    /// [`payment_guard`](Self::payment_guard) across the check and the action.
+    pub(crate) fn is_registered_in(
+        self: &Arc<Self>,
+        wallet_manager: &WalletManager<PlatformWalletInfo>,
+        wallet_id: &WalletId,
+    ) -> bool {
+        wallet_manager
+            .get_wallet_info(wallet_id)
+            .is_some_and(|info| Arc::ptr_eq(&info.generation, self))
     }
 
     /// Recovers from a poisoned mutex rather than panicking: the guarded data

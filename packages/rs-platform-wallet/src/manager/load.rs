@@ -432,6 +432,31 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // map after the rollback is one a same-id re-registration owns.
             let still_mapped = self.wallets.load();
             if !inserted_in_manager.is_empty() {
+                // Under each rolled-back generation's lifecycle gate, like any
+                // removal: an operation that saw the registration live and is
+                // pushing one of its transactions to the network finishes (or
+                // gives up) before the wallet goes. Only generations this call
+                // inserted — the published ones by the identity recorded then,
+                // the others still ours by construction. Gates first, manager
+                // lock second.
+                let unpublished: Vec<Arc<WalletGeneration>> = {
+                    let wm = self.wallet_manager.read().await;
+                    inserted_in_manager
+                        .iter()
+                        .filter(|id| !inserted_in_wallets.iter().any(|(w, _)| w == *id))
+                        .filter_map(|id| wm.get_wallet_info(id))
+                        .map(|info| Arc::clone(&info.generation))
+                        .collect()
+                };
+                // Held until the rollback below is done.
+                let mut teardowns = Vec::new();
+                for generation in inserted_in_wallets
+                    .iter()
+                    .map(|(_, generation)| generation)
+                    .chain(&unpublished)
+                {
+                    teardowns.push(generation.teardown_guard().await);
+                }
                 let mut wm = self.wallet_manager.write().await;
                 for id in &inserted_in_manager {
                     // A published id whose generation is no longer ours belongs
@@ -603,11 +628,7 @@ pub(super) async fn resend_one(
     tx: &dashcore::Transaction,
 ) -> ResendOutcome {
     let _payment = generation.payment_guard().await;
-    let still_live = {
-        let wm = wallet_manager.read().await;
-        wm.get_wallet_info(wallet_id)
-            .is_some_and(|info| Arc::ptr_eq(&info.generation, generation))
-    };
+    let still_live = generation.is_registered_in(&*wallet_manager.read().await, wallet_id);
     if !still_live {
         tracing::info!(
             wallet_id = %hex::encode(wallet_id),
