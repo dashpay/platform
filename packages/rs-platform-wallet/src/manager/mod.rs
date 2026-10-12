@@ -22,10 +22,11 @@ use tokio::sync::{Notify, RwLock};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use key_wallet_manager::WalletManager;
+use key_wallet_manager::{WalletEvent, WalletManager};
 
 use crate::broadcast_probe::DapiAcceptanceProbe;
-use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
+use crate::changeset::core_bridge::spawn_observed_wallet_event_adapter;
+use crate::changeset::PlatformWalletPersistence;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::manager::dashpay_sync::DashPaySyncManager;
 use crate::manager::dpns_sync::DpnsSyncManager;
@@ -512,16 +513,33 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // adapter raises it the first time it freezes a durable watermark.
         let sync_fault = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
+        // BroadcastResolver probes unconfirmed sends whose broadcast outcome
+        // was unknown (read-only; see its module docs). It publishes through
+        // the event manager it is registered with, so it gets a weak handle
+        // to it once that exists. Built before the adapter, which also feeds
+        // it wallet events from the lossless channel.
+        let broadcast_resolver = Arc::new(BroadcastResolver::new(
+            Arc::new(DapiAcceptanceProbe::new(Arc::clone(&sdk))),
+            Arc::clone(&wallet_manager),
+        ));
         // Spawn the wallet-event adapter that translates upstream
         // `WalletEvent`s into `CoreChangeSet`s and forwards them to
         // the persister.
         let event_adapter_cancel = CancellationToken::new();
-        let event_adapter_join = spawn_wallet_event_adapter(
+        // Weak: the resolver's lifetime stays with the manager, not with
+        // the adapter task, which may outlive it draining its backlog.
+        let resolver_observer = Arc::downgrade(&broadcast_resolver);
+        let event_adapter_join = spawn_observed_wallet_event_adapter(
             Arc::clone(&wallet_manager),
             Arc::downgrade(&persister),
             event_receiver,
             Arc::clone(&sync_fault),
             event_adapter_cancel.clone(),
+            Some(Arc::new(move |event: &WalletEvent| {
+                if let Some(resolver) = resolver_observer.upgrade() {
+                    resolver.on_recorded_wallet_event(event);
+                }
+            })),
         );
 
         // Build handler list: app handler + internal handlers.
@@ -549,14 +567,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let dashpay_payment_handler = Arc::new(DashPayPaymentHandler::new(
             Arc::clone(&wallet_manager),
             Arc::clone(&persister) as Arc<dyn PlatformWalletPersistence>,
-        ));
-        // BroadcastResolver probes unconfirmed sends whose broadcast outcome
-        // was unknown (read-only; see its module docs). It publishes through
-        // the event manager it is registered with, so it gets a weak handle
-        // to it once that exists.
-        let broadcast_resolver = Arc::new(BroadcastResolver::new(
-            Arc::new(DapiAcceptanceProbe::new(Arc::clone(&sdk))),
-            Arc::clone(&wallet_manager),
         ));
         let event_manager = Arc::new(PlatformEventManager::new(vec![
             app_handler,

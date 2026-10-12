@@ -2150,7 +2150,9 @@ mod remove_wallet_lifecycle_tests {
 /// over DAPI — right after SPV reports a send uncertain (each report), then,
 /// while the wallet follows the chain tip, every block for 24 blocks from when
 /// it first did so for that root, and every 10 blocks after (a return from the
-/// background does not restart the 24) — and each change of a send's verdict, and
+/// background does not restart the 24), 55 times at most (about a day of
+/// following the tip, counted within one session); after that only a new uncertain report probes the
+/// root, and its last verdict stays as delivered — and each change of a send's verdict, and
 /// each clear, reaches the host through
 /// `EventHandlerCallbacksExtension::on_outgoing_transaction_probed_fn`.
 /// Nothing in the wallet changes; turning it off clears every verdict.

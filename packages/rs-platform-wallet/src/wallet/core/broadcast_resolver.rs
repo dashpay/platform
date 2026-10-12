@@ -54,7 +54,9 @@
 //! root is probed every block for [`EVERY_BLOCK_WINDOW`] blocks, counted
 //! from its first probe by a height-driven pass while the wallet follows the
 //! tip (a forced pass does not start it), and every [`SLOW_INTERVAL`] blocks
-//! after. A probe no node answered (DAPI unreachable — its addresses
+//! after, [`MAX_SLOW_PROBES`] times at most: from then on only a new
+//! `Uncertain` report probes it, and its last verdict stays published. A
+//! probe no node answered (DAPI unreachable — its addresses
 //! still banned just after an outage) does not count: its root is due again
 //! at the next block, whatever its phase, and at the same height a retry
 //! probes it again (as does any `Uncertain` report, which forces a probe) — after [`NO_ANSWER_RETRY`] if no block comes
@@ -74,7 +76,11 @@
 //! one whose last pass had nothing left to probe is idle and not scanned
 //! again until a wallet event that touched its records (a new or
 //! InstantSend-locked transaction, a block that changed records, a sweep) or
-//! an `Uncertain` result for one of its transactions wakes it. No verdict
+//! an `Uncertain` result for one of its transactions wakes it. Those wallet
+//! events wake it twice: from dash-spv's fan-out, which is timely but ends
+//! when a receiver lags, and from the lossless persistence channel
+//! ([`BroadcastResolver::on_recorded_wallet_event`]), so a lost one cannot
+//! leave a wallet idle over an unsettled send. No verdict
 //! pauses the probing of a root: neither a mempool nor the nodes' word on a
 //! block is settlement.
 //! Probes run only while the SPV client delivers blocks, i.e. while the app is
@@ -120,6 +126,21 @@ pub(crate) const EVERY_BLOCK_WINDOW: u32 = 24;
 
 /// Blocks between probes once [`EVERY_BLOCK_WINDOW`] has passed.
 pub(crate) const SLOW_INTERVAL: u32 = 10;
+
+/// Probes of a root after its every-block window, beyond which the schedule
+/// stops probing it: about a day of following the tip, as long as dash-spv
+/// itself keeps rebroadcasting a send. A root that never settles would
+/// otherwise be resubmitted for as long as the wallet holds it — and a
+/// wallet's records can be fed by a peer (see [`MAX_ROOTS_PER_PASS`]), so
+/// such roots would hold probe slots for good. Counted in probes a node
+/// answered, not in blocks, so the blocks an app slept through do not use it
+/// up; a forced probe (an `Uncertain` report, a retry) after the window
+/// counts like a scheduled one. A new `Uncertain` report still probes a
+/// retired root, and so does a probe of it that no node answered. Counted
+/// within one session: the schedule lives in memory, so a relaunch, a
+/// rewind, switching probing off and on, or registering the wallet again
+/// starts a root's count anew.
+pub(crate) const MAX_SLOW_PROBES: u32 = 55;
 
 /// Scheduled roots a pass probes at most; forced ones (an `Uncertain`
 /// report's, a no-answer retry's) come on top. A wallet's records are not
@@ -383,6 +404,9 @@ pub(crate) struct ProbeSchedule {
     /// Its last probe job panicked: it waits its turn behind the other roots,
     /// even a reported send's, until a probe of it completes.
     panicked: bool,
+    /// Probes a node answered after the every-block window, up to
+    /// [`MAX_SLOW_PROBES`].
+    slow_probes: u32,
 }
 
 impl ProbeSchedule {
@@ -396,11 +420,20 @@ impl ProbeSchedule {
             .is_none_or(|first| height.saturating_sub(first) < EVERY_BLOCK_WINDOW)
     }
 
+    /// Out of slow probes ([`MAX_SLOW_PROBES`]): the schedule probes the
+    /// root no more.
+    fn retired(&self) -> bool {
+        self.slow_probes >= MAX_SLOW_PROBES
+    }
+
     pub(crate) fn is_due(&self, height: u32) -> bool {
         match self.last_probe {
             None => true,
             Some(last) if height <= last => false,
-            Some(_) if self.unanswered || self.in_window(height) => true,
+            // A probe no node answered is owed whatever the root's phase.
+            Some(_) if self.unanswered => true,
+            Some(_) if self.retired() => false,
+            Some(_) if self.in_window(height) => true,
             Some(last) => height - last >= SLOW_INTERVAL,
         }
     }
@@ -413,18 +446,33 @@ impl ProbeSchedule {
         self.unanswered = false;
     }
 
+    /// Whether the probe sent at `height` reached a node. One that reached
+    /// none is due again; one that did counts towards [`MAX_SLOW_PROBES`]
+    /// once the every-block window is over.
+    fn answered(&mut self, answered: bool, height: u32) {
+        self.unanswered = !answered;
+        if answered
+            && self.window_start.is_some()
+            && !self.in_window(height)
+            && self.slow_probes < MAX_SLOW_PROBES
+        {
+            self.slow_probes += 1;
+        }
+    }
+
     /// The last probe produced nothing: due again at once.
     fn withdraw(&mut self) {
         self.last_probe = None;
     }
 
     /// The lowest height at which [`is_due`](Self::is_due) holds.
+    /// `u32::MAX` once the root is retired: no height makes it due again.
     pub(crate) fn next_due(&self) -> u32 {
         match self.last_probe {
             None => 0,
-            Some(last) if self.unanswered || self.in_window(last.saturating_add(1)) => {
-                last.saturating_add(1)
-            }
+            Some(last) if self.unanswered => last.saturating_add(1),
+            Some(_) if self.retired() => u32::MAX,
+            Some(last) if self.in_window(last.saturating_add(1)) => last.saturating_add(1),
             Some(last) => last.saturating_add(SLOW_INTERVAL),
         }
     }
@@ -808,9 +856,15 @@ pub(crate) fn mark_sent(
 
 /// Whether a root's last probe reached a node (see
 /// [`ProbeSchedule::unanswered`]).
-fn mark_answered(state: &mut ResolverState, wallet_id: WalletId, root: Txid, answered: bool) {
+fn mark_answered(
+    state: &mut ResolverState,
+    wallet_id: WalletId,
+    root: Txid,
+    answered: bool,
+    height: u32,
+) {
     if let Some(schedule) = state.schedules.get_mut(&(wallet_id, root)) {
-        schedule.unanswered = !answered;
+        schedule.answered(answered, height);
         schedule.panicked = false;
     }
 }
@@ -2174,7 +2228,7 @@ impl Actor {
                 let height = probing.height;
                 let events = record_probe(&mut self.state, wallet_id, height, &root, &verdict);
                 deliver(&self.sink, events);
-                mark_answered(&mut self.state, wallet_id, root.txid, answered);
+                mark_answered(&mut self.state, wallet_id, root.txid, answered, height);
                 if !answered {
                     self.arm_no_answer_retry(wallet_id, root.txid, height);
                 }
@@ -2586,22 +2640,61 @@ fn is_settled(record: &TransactionRecord) -> bool {
     record.is_confirmed() || matches!(record.context, TransactionContext::InstantSend(_))
 }
 
-impl EventHandler for BroadcastResolver {
-    fn on_wallet_event(&self, event: &WalletEvent) {
-        let wallet_id = event.wallet_id();
+impl BroadcastResolver {
+    /// Tell the actor which sends `event` settled or removed.
+    fn send_settled(&self, event: &WalletEvent) {
         // While probing is off nothing is published, so there is nothing to
         // clear (turning it off cleared everything).
-        let settled = if self.is_enabled() {
-            settled_or_gone(event)
-        } else {
-            HashSet::new()
-        };
+        if !self.is_enabled() {
+            return;
+        }
+        let settled = settled_or_gone(event);
         if !settled.is_empty() {
             self.send(Command::Settled {
-                wallet_id,
+                wallet_id: event.wallet_id(),
                 txids: settled,
             });
         }
+    }
+
+    /// A wallet event as the lossless persistence channel delivered it (see
+    /// `spawn_observed_wallet_event_adapter`), next to the same event from
+    /// dash-spv's fan-out ([`EventHandler::on_wallet_event`]).
+    ///
+    /// The fan-out is timely but can lose events: it ends when a receiver
+    /// lags, and the client stops until the host restarts it. An idle wallet
+    /// learns of a new unsettled send only from a wallet event, so one lost
+    /// there would leave the send unread until it settles. This channel loses
+    /// none, at the price of running behind the persister's commits, so it
+    /// repeats only what is harmless to hear late or twice: that the wallet's
+    /// records changed, which makes its next pass read it — and a read also
+    /// clears what settled. Heard late, it costs one more read of the wallet
+    /// at the next block, and no probe. What settled is not repeated by name: named late,
+    /// after a reorg or a reinstatement brought the send back, it would clear
+    /// a send the wallet still holds. Heights stay with the fan-out: a
+    /// missed one is made up by the next.
+    pub(crate) fn on_recorded_wallet_event(&self, event: &WalletEvent) {
+        if let Some(command) = recorded_work(event, self.is_enabled()) {
+            self.send(command);
+        }
+    }
+}
+
+/// What a wallet event from the lossless channel tells the actor: that the
+/// wallet's records changed, for the events that change them, so its next
+/// pass reads it. Nothing for the rest, heights included, and nothing while
+/// probing is off (turning it on reads every wallet).
+fn recorded_work(event: &WalletEvent, enabled: bool) -> Option<Command> {
+    (enabled && may_leave_work(event)).then(|| Command::Seen {
+        wallet_id: event.wallet_id(),
+        touched: true,
+    })
+}
+
+impl EventHandler for BroadcastResolver {
+    fn on_wallet_event(&self, event: &WalletEvent) {
+        let wallet_id = event.wallet_id();
+        self.send_settled(event);
         let command = match event {
             WalletEvent::SyncHeightAdvanced { height, .. } => Command::Height {
                 wallet_id,
@@ -6401,6 +6494,65 @@ mod tests {
         assert!(settled_or_gone(&detected(TransactionContext::Mempool)).is_empty());
     }
 
+    /// The lossless channel repeats only that a wallet's records changed: a
+    /// new transaction wakes it, a height or a chain lock says nothing, and
+    /// nothing is said while probing is off.
+    #[test]
+    fn should_repeat_only_record_changes_from_the_recorded_events() {
+        let detected = WalletEvent::TransactionDetected {
+            wallet_id: wallet(),
+            record: Box::new(record(4, TransactionContext::Mempool)),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: Vec::new(),
+        };
+        assert!(matches!(
+            recorded_work(&detected, true),
+            Some(Command::Seen { wallet_id, touched: true }) if wallet_id == wallet()
+        ));
+        assert!(recorded_work(&detected, false).is_none());
+        let height = WalletEvent::SyncHeightAdvanced {
+            wallet_id: wallet(),
+            height: 101,
+        };
+        assert!(recorded_work(&height, true).is_none());
+        let chain_lock = WalletEvent::ChainLockProcessed {
+            wallet_id: wallet(),
+            chain_lock: ChainLock::dummy(100),
+            locked_transactions: BTreeMap::new(),
+        };
+        assert!(recorded_work(&chain_lock, true).is_none());
+    }
+
+    /// An idle wallet whose new send's event was lost on dash-spv's fan-out
+    /// is woken by what the lossless channel repeats, and reads the send at
+    /// the next block.
+    #[tokio::test]
+    async fn should_wake_an_idle_wallet_by_what_a_recorded_event_repeats() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![]);
+        rig.follow(wallet(), 100).await;
+        assert_eq!(rig.actor.wallets[&wallet()].wait_until, Some(u32::MAX));
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+
+        rig.height(wallet(), 102).await;
+        assert!(probe.probed().is_empty(), "idle: the wallet is not read");
+
+        let detected = WalletEvent::TransactionDetected {
+            wallet_id: wallet(),
+            record: Box::new(record(1, TransactionContext::Mempool)),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+            addresses_derived: Vec::new(),
+        };
+        rig.send(recorded_work(&detected, true).expect("a new transaction is work"))
+            .await;
+        rig.height(wallet(), 103).await;
+
+        assert_eq!(probe.probed(), vec![txid(1)]);
+    }
+
     /// A reorg brings a settled send back unsettled: a run that starts after
     /// the settle event reads it as current, and the send is probed again.
     #[tokio::test]
@@ -6937,6 +7089,101 @@ mod tests {
 
         assert_eq!(rig.walks(), 2);
         assert!(rig.actor.wallets[&wallet()].run.is_none());
+    }
+
+    /// A root that never settles is probed `MAX_SLOW_PROBES` times after its
+    /// every-block window and no further: the wallet goes idle, its last
+    /// verdict stays published, and a new report of the send still probes it.
+    #[tokio::test]
+    async fn should_stop_probing_a_root_out_of_slow_probes() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        let first = rig.actor.state.schedules[&(wallet(), txid(1))]
+            .window_start
+            .expect("the first followed probe starts the window");
+        rig.sent();
+
+        // Through the every-block window, then well past the last slow probe.
+        let window_end = first + EVERY_BLOCK_WINDOW - 1;
+        for height in 102..=window_end {
+            rig.height(wallet(), height).await;
+        }
+        let in_window = probe.probed().len();
+        for height in window_end + 1..=window_end + (MAX_SLOW_PROBES + 3) * SLOW_INTERVAL {
+            rig.height(wallet(), height).await;
+        }
+        let retired = probe.probed().len();
+        assert_eq!(retired, in_window + MAX_SLOW_PROBES as usize);
+        assert_eq!(
+            rig.actor.state.schedules[&(wallet(), txid(1))].slow_probes,
+            MAX_SLOW_PROBES
+        );
+        assert_eq!(
+            rig.actor.wallets[&wallet()].wait_until,
+            Some(u32::MAX),
+            "nothing left to wait for"
+        );
+        assert!(rig.sent().is_empty(), "the verdict stays as published");
+
+        rig.send(Command::Uncertain(txid(1))).await;
+        assert_eq!(
+            probe.probed().len(),
+            retired + 1,
+            "a report probes it again"
+        );
+    }
+
+    /// The count is of probes a node answered, after the window: the blocks
+    /// an app slept through do not use it up, and neither does a probe no
+    /// node answered or one that was withdrawn — which stay due even for a
+    /// retired root. It stops at the cap.
+    #[test]
+    fn should_retire_a_schedule_by_its_answered_slow_probes() {
+        let mut schedule = ProbeSchedule::default();
+        schedule.anchor(100);
+        schedule.probed_at(100);
+        schedule.answered(true, 100);
+        assert_eq!(schedule.slow_probes, 0, "inside the window");
+        // A day of blocks later, never followed: still due, not retired.
+        assert!(schedule.is_due(100 + 600));
+
+        let mut height = 100 + 600;
+        for _ in 0..MAX_SLOW_PROBES {
+            schedule.probed_at(height);
+            schedule.answered(true, height);
+            height += SLOW_INTERVAL;
+        }
+        assert_eq!(schedule.next_due(), u32::MAX);
+        assert!(!schedule.is_due(height));
+        assert!(!schedule.is_due(u32::MAX));
+
+        // A forced probe of the retired root that reached no node is owed.
+        schedule.probed_at(height);
+        schedule.answered(false, height);
+        assert!(schedule.is_due(height + 1));
+        assert_eq!(schedule.next_due(), height + 1);
+
+        // Withdrawn (its probe produced nothing): due once more.
+        schedule.probed_at(height + 1);
+        schedule.withdraw();
+        assert!(schedule.is_due(height + 1));
+
+        // Answered at last: retired again, the count still at the cap.
+        schedule.probed_at(height + 1);
+        schedule.answered(true, height + 1);
+        assert_eq!(schedule.slow_probes, MAX_SLOW_PROBES);
+        assert_eq!(schedule.next_due(), u32::MAX);
+    }
+
+    /// A root probed only by forced passes has no window, so nothing counts.
+    #[test]
+    fn should_not_count_probes_of_a_root_without_a_window() {
+        let mut schedule = ProbeSchedule::default();
+        schedule.probed_at(700);
+        schedule.answered(true, 700);
+        assert_eq!(schedule.slow_probes, 0);
     }
 
     /// After the every-block window a root is due only every SLOW_INTERVAL

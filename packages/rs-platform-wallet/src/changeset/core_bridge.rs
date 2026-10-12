@@ -270,12 +270,45 @@ pub fn spawn_wallet_event_adapter<P>(
 where
     P: PlatformWalletPersistence + 'static,
 {
+    spawn_observed_wallet_event_adapter(
+        wallet_manager,
+        persister,
+        receiver,
+        sync_fault,
+        cancel,
+        None,
+    )
+}
+
+/// Sees every wallet event the adapter takes off the lossless channel, in
+/// order, before it is projected. It runs on the adapter task: it must not
+/// block, and a panic in it would end persistence for the session.
+pub(crate) type WalletEventObserver = Arc<dyn Fn(&WalletEvent) + Send + Sync>;
+
+/// [`spawn_wallet_event_adapter`] with an observer of the events it consumes.
+///
+/// The persistence channel is the one stream of wallet events that cannot
+/// lose any (the broadcast fan-out ends on a lagged receiver), and it has a
+/// single receiver, so a second consumer that must not miss an event listens
+/// here rather than on a channel of its own.
+pub(crate) fn spawn_observed_wallet_event_adapter<P>(
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    persister: Weak<P>,
+    receiver: mpsc::UnboundedReceiver<WalletEvent>,
+    sync_fault: Arc<AtomicBool>,
+    cancel: CancellationToken,
+    observer: Option<WalletEventObserver>,
+) -> JoinHandle<()>
+where
+    P: PlatformWalletPersistence + 'static,
+{
     tokio::spawn(run_wallet_event_adapter(
         wallet_manager,
         persister,
         receiver,
         sync_fault,
         cancel,
+        observer,
     ))
 }
 
@@ -336,6 +369,7 @@ async fn run_wallet_event_adapter<P>(
     mut receiver: mpsc::UnboundedReceiver<WalletEvent>,
     sync_fault: Arc<AtomicBool>,
     cancel: CancellationToken,
+    observer: Option<WalletEventObserver>,
 ) where
     P: PlatformWalletPersistence + 'static,
 {
@@ -390,6 +424,11 @@ async fn run_wallet_event_adapter<P>(
             }
             break;
         };
+        // Before the persister is claimed: the observer sees an event even
+        // when its drain exits uncommitted.
+        if let Some(observer) = &observer {
+            observer(&event);
+        }
 
         // Claim the persister before folding anything else off the channel, so
         // everything this drain consumes is guaranteed a commit: an owner
@@ -444,6 +483,9 @@ async fn run_wallet_event_adapter<P>(
         while folded < ADAPTER_STORE_BATCH_LIMIT {
             match receiver.try_recv() {
                 Ok(event) => {
+                    if let Some(observer) = &observer {
+                        observer(&event);
+                    }
                     let wallet_id = event.wallet_id();
                     let core = build_core_changeset(&wallet_manager, &event).await;
                     let asset_locks =
@@ -4447,6 +4489,43 @@ mod tests {
         }
     }
 
+    /// The observer sees every event of a burst once and in order, whether
+    /// the adapter took it as the first of a batch or folded it in.
+    #[tokio::test]
+    async fn should_show_the_observer_every_event_in_order() {
+        use super::{spawn_observed_wallet_event_adapter, WalletEventObserver};
+
+        const BURST: u32 = 3000;
+        let wallet_id = [7u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        for h in 1..=BURST {
+            tx.send(sync_height_event(wallet_id, h)).unwrap();
+        }
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let observer: WalletEventObserver = {
+            let seen = Arc::clone(&seen);
+            Arc::new(move |event: &WalletEvent| {
+                if let WalletEvent::SyncHeightAdvanced { height, .. } = event {
+                    seen.lock().unwrap().push(*height);
+                }
+            })
+        };
+        let (obs_tx, _obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let handle = spawn_observed_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            CancellationToken::new(),
+            Some(observer),
+        );
+        drop(tx);
+        handle.await.unwrap();
+
+        assert_eq!(*seen.lock().unwrap(), (1..=BURST).collect::<Vec<_>>());
+    }
+
     /// (b) THE ROOT-CAUSE FIX: a burst far larger than the old bounded ring
     /// (`DEFAULT_WALLET_EVENT_CAPACITY` == 1000) is delivered losslessly over
     /// the unbounded persistence channel, so the fault latch never trips and
@@ -4473,6 +4552,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         // Close the channel so the adapter drains the entire burst (across as
@@ -4533,6 +4613,7 @@ mod tests {
             rx,
             Arc::new(AtomicBool::new(false)),
             cancel,
+            None,
         )
         .await;
 
@@ -4587,6 +4668,7 @@ mod tests {
             rx,
             Arc::new(AtomicBool::new(false)),
             cancel,
+            None,
         ));
 
         // Park inside the first chunk's `store()`, then release the only
@@ -4648,6 +4730,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         // 1) Record-bearing event whose store() is rejected → faults wallet.
@@ -4702,6 +4785,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         // Trip the guard.
@@ -4750,6 +4834,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         let observed = obs_rx
@@ -4797,6 +4882,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         let observed = obs_rx.recv().await.expect("merged store must arrive");
@@ -4849,6 +4935,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         let mut heights: BTreeMap<WalletId, Option<u32>> = BTreeMap::new();
@@ -4896,6 +4983,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         // The store for this batch panics: no observation is emitted, and the
@@ -4983,6 +5071,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         // Park the commit inside a synchronous `store()`.
@@ -5044,6 +5133,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         assert_eq!(
@@ -5127,6 +5217,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         // All three in one drain: `healthy` stores, `doomed` panics, and
@@ -5228,6 +5319,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         // Trip the fault and wait until it has latched.
@@ -5316,6 +5408,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         tx.send(swept_event(wallet_id, 0x51, 0x52)).unwrap();
@@ -5390,6 +5483,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         // Bounded like the neighbouring capability tests below: both the
@@ -5439,6 +5533,7 @@ mod tests {
             rx,
             Arc::clone(&sync_fault),
             cancel.clone(),
+            None,
         ));
 
         tx.send(swept_event(wallet_id, 0x61, 0x62)).unwrap();
@@ -6760,6 +6855,7 @@ mod tests {
             rx,
             Arc::new(AtomicBool::new(false)),
             CancellationToken::new(),
+            None,
         ));
         handle.await.expect("the adapter exits on a closed channel");
 

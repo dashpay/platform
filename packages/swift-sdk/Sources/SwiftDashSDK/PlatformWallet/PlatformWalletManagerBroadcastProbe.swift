@@ -6,8 +6,10 @@ import DashSDKFFI
 public enum OutgoingTransactionVerdict: Sendable, Equatable {
     /// A node holds the transaction: it is in a mempool or a block.
     case accepted
-    /// No verdict yet; the SDK asks again on a later block. A refusal by the
-    /// nodes asked lands here too: no answer proves a send can never land.
+    /// No verdict yet; the SDK asks again on later blocks, up to a limit per
+    /// launch (see `setBroadcastProbeEnabled`). Nothing is published when it
+    /// stops asking: the verdict stays `unresolved`. A refusal by the nodes asked lands
+    /// here too: no answer proves a send can never land.
     /// `reason` is diagnostic, never user-facing copy.
     case unresolved(reason: String)
 }
@@ -127,7 +129,9 @@ extension PlatformWalletManager {
     /// after SPV reports a broadcast uncertain (each report), then, while the
     /// wallet follows the chain tip, every block for 24 blocks from when it
     /// first did so for that root, and every 10 blocks after — a return from
-    /// the background does not restart the 24 — plus at the end of a sync
+    /// the background does not restart the 24 — 55 times at most (about a
+    /// day of following the tip, counted within one launch), after which only a new uncertain report
+    /// probes the root and its last verdict stays published; plus at the end of a sync
     /// that was catching up (a launch, a reconnect). A root no evonode
     /// answered (DAPI unreachable) is due again at every block, and retried a
     /// minute later if no block has come (then after 2 and 4 more minutes;
