@@ -608,7 +608,9 @@ async fn should_keep_a_swept_payment_out_when_the_block_of_its_double_spend_is_d
         assert!(!restored.history.contains_key(&gone));
     }
     assert!(
-        !restored.coins.contains_key(&OutPoint::new(payment.txid(), 0)),
+        !restored
+            .coins
+            .contains_key(&OutPoint::new(payment.txid(), 0)),
         "the swept payment's change is not a coin"
     );
 }
