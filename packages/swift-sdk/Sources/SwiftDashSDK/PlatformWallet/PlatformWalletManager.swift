@@ -467,6 +467,11 @@ public class PlatformWalletManager: ObservableObject {
     /// each one as it arrives.
     @Published public internal(set) var lastOutgoingTransactionProbe: OutgoingTransactionProbeEvent?
 
+    /// Per-wallet generation that fences broadcast-probe callbacks queued for
+    /// the main actor against `deleteWallet`. `nonisolated` so the C
+    /// trampoline can read it on the Rust thread.
+    nonisolated let outgoingProbeWalletGeneration = WalletGenerationCounter()
+
     /// Cumulative number of encrypted notes scanned in the **current**
     /// in-flight shielded sync pass, published once per chunk (~every
     /// 2048 notes) via the Rust-side progress callback. Nil between
@@ -2663,12 +2668,9 @@ public class PlatformWalletManager: ObservableObject {
         // with the same deterministic id doesn't inherit a stale banner (the
         // poller would also prune it, but not until the next tick).
         dashPayUnlockStatus.removeValue(forKey: walletId)
-        // Same for broadcast-probe verdicts: Rust forgets the wallet's sends
-        // on removal, and a restored wallet (same id) must start clean.
-        outgoingTransactionVerdicts = outgoingTransactionVerdicts.filter { $0.key.walletId != walletId }
-        if lastOutgoingTransactionProbe?.walletId == walletId {
-            lastOutgoingTransactionProbe = nil
-        }
+        // Same for broadcast-probe verdicts, including any still queued for
+        // the main actor.
+        forgetOutgoingTransactionProbes(walletId: walletId)
         // A store reconcile in flight for any wallet stops between pages:
         // its next step would read rows `deleteWalletData` is about to
         // remove. Coarse on purpose — the cadence re-runs the others.
