@@ -61,6 +61,8 @@ impl HistoryReplay {
 /// The persisted UTXO set already restored onto `wallet_info` stays
 /// authoritative for credits: an output the replay credits but persistence
 /// did not hold as unspent is dropped again, so the replay only ever removes.
+/// A coin it keeps also keeps its stored lock, InstantSend status and
+/// confirmation.
 ///
 /// Unconfirmed (mempool / InstantSend) spends are replayed too: without them a
 /// redelivered funding transaction would re-credit an output they reserve.
@@ -107,6 +109,13 @@ pub async fn replay_recorded_history(
             let owner = funds_account_type(account);
             account.utxos.keys().map(move |outpoint| (*outpoint, owner))
         })
+        .collect();
+    // The same coins as persistence restored them; see `restore_persisted_coin_state`.
+    let persisted: HashMap<OutPoint, Utxo> = wallet_info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .flat_map(|account| account.utxos.clone())
         .collect();
     let replay_txids: HashSet<Txid> = transactions.iter().map(|stored| stored.txid).collect();
     let mut held: HashMap<AccountType, Vec<TransactionRecord>> = HashMap::new();
@@ -259,6 +268,11 @@ pub async fn replay_recorded_history(
                 && !reserved_coins.contains(outpoint)
                 && !misplaced.contains(&(*outpoint, owner))
         });
+        for (outpoint, coin) in &mut account.utxos {
+            if let Some(persisted) = persisted.get(outpoint) {
+                restore_persisted_coin_state(coin, persisted);
+            }
+        }
     }
     for mut account in wallet_info.accounts.all_accounts_mut() {
         let owner = account.managed_account_type().to_account_type();
@@ -627,6 +641,28 @@ fn drop_fallback_copies(
                 }
             }
         }
+    }
+}
+
+/// Give a coin the replay kept the state persistence stored on it.
+///
+/// The replay rebuilds a coin from its stored funding record, and the record
+/// can know less than the coin: it keeps saying mempool after a height-only
+/// confirmation, and a coin credited to another account than the one it was
+/// parked in starts without its flags. The spend lock, the InstantSend status
+/// and the trusted mark are restored as stored.
+///
+/// A stored confirmation is restored, with its height, only for a coin the
+/// replay left unconfirmed. Where the replay confirmed the coin, the record's
+/// block stands: the record names the block, the coin holds a bare height.
+/// Nothing is raised beyond what was stored.
+fn restore_persisted_coin_state(coin: &mut Utxo, persisted: &Utxo) {
+    coin.is_locked |= persisted.is_locked;
+    coin.is_instantlocked |= persisted.is_instantlocked;
+    coin.is_trusted |= persisted.is_trusted;
+    if persisted.is_confirmed && !coin.is_confirmed {
+        coin.is_confirmed = true;
+        coin.height = persisted.height;
     }
 }
 
@@ -2488,6 +2524,156 @@ mod tests {
                 drops_guard,
                 "record {swept} swept alone"
             );
+        }
+    }
+
+    /// A coin the replay moves from its fallback account to the account that
+    /// derives it keeps what persistence stored on it: the spend lock and the
+    /// InstantSend status.
+    #[tokio::test]
+    async fn should_keep_restored_flags_of_coin_moved_from_fallback_account() {
+        use dashcore::hashes::Hash;
+        use dashcore::{Transaction, TxIn};
+
+        let (mut wallet, mut restored, addresses) = two_account_wallet();
+        let funding = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(Txid::from_byte_array([88; 32]), 0),
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value: 100_000,
+                script_pubkey: addresses[1].script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let coin = OutPoint::new(funding.txid(), 0);
+        let mut parked = Utxo::new(
+            coin,
+            funding.output[0].clone(),
+            addresses[1].clone(),
+            0,
+            false,
+        );
+        parked.is_locked = true;
+        parked.is_instantlocked = true;
+        // Parked in account 0, though account 1 derives its address.
+        restored
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .utxos
+            .insert(coin, parked);
+        let history = RecordedHistory {
+            transactions: vec![StoredTransaction {
+                txid: funding.txid(),
+                transaction: funding,
+                context: TransactionContext::Mempool,
+                stored_net_amount: None,
+                stored_direction: None,
+                owned_inputs: Vec::new(),
+            }],
+            instant_locks: BTreeMap::new(),
+        };
+
+        replay_recorded_history(&mut restored, &mut wallet, history).await;
+
+        let [fallback, owner] =
+            [0, 1].map(|index| &restored.accounts.standard_bip44_accounts[&index]);
+        assert!(!fallback.utxos.contains_key(&coin));
+        let moved = &owner.utxos[&coin];
+        assert!(moved.is_locked, "a locked coin must stay locked");
+        assert!(
+            moved.is_instantlocked,
+            "an InstantSend-locked coin must stay so"
+        );
+    }
+
+    /// The replay rebuilds a coin from its stored funding record, which can
+    /// be older than the coin: a height-only confirmation never rewrites the
+    /// record. The confirmation persistence stored on the coin must survive,
+    /// nothing may be promoted beyond it, and where the replay itself
+    /// confirmed the coin, the record's block stands.
+    #[tokio::test]
+    async fn should_restore_only_the_confirmation_persistence_stored_on_a_coin() {
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, Transaction, TxIn};
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let in_block = |height| {
+            TransactionContext::InBlock(BlockInfo::new(
+                height,
+                BlockHash::from_byte_array([height as u8; 32]),
+                height,
+            ))
+        };
+        // (case, persisted confirmation, stored record, expected confirmation)
+        for (case, persisted, recorded, expected) in [
+            (
+                "stale mempool record",
+                Some(99),
+                TransactionContext::Mempool,
+                Some(99),
+            ),
+            ("unconfirmed coin", None, TransactionContext::Mempool, None),
+            (
+                "record names another block",
+                Some(90),
+                in_block(100),
+                Some(100),
+            ),
+        ] {
+            let (mut wallet, _, address) = wallet_with_receive_address();
+            let funding = Transaction {
+                version: 1,
+                lock_time: 0,
+                input: vec![TxIn {
+                    previous_output: OutPoint::new(Txid::from_byte_array([89; 32]), 0),
+                    ..Default::default()
+                }],
+                output: vec![TxOut {
+                    value: 100_000,
+                    script_pubkey: address.script_pubkey(),
+                }],
+                special_transaction_payload: None,
+            };
+            let coin = OutPoint::new(funding.txid(), 0);
+            let mut stored_coin = Utxo::new(
+                coin,
+                funding.output[0].clone(),
+                address.clone(),
+                persisted.unwrap_or(0),
+                false,
+            );
+            stored_coin.is_confirmed = persisted.is_some();
+            let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
+            restored
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .unwrap()
+                .utxos
+                .insert(coin, stored_coin);
+            let history = RecordedHistory {
+                transactions: vec![StoredTransaction {
+                    txid: funding.txid(),
+                    transaction: funding,
+                    context: recorded,
+                    stored_net_amount: None,
+                    stored_direction: None,
+                    owned_inputs: Vec::new(),
+                }],
+                instant_locks: BTreeMap::new(),
+            };
+
+            replay_recorded_history(&mut restored, &mut wallet, history).await;
+
+            let kept = &restored.accounts.standard_bip44_accounts[&0].utxos[&coin];
+            assert_eq!(kept.is_confirmed.then_some(kept.height), expected, "{case}");
+            assert!(!kept.is_locked && !kept.is_instantlocked, "{case}");
         }
     }
 
