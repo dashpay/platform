@@ -1375,6 +1375,101 @@ async fn should_guard_recordless_spends_with_missing_funding_and_finality() {
     }
 }
 
+/// A claim restored at load holds for a funding account registered afterwards:
+/// the account that receives the spent coin is unknown to the store, is added
+/// once the wallet is loaded, and then sees the funding transaction again.
+#[tokio::test]
+async fn should_guard_a_restored_claim_in_an_account_registered_after_load() {
+    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::managed_account::ManagedCoreFundsAccount;
+
+    let late_type = AccountType::Standard {
+        index: 7,
+        standard_account_type: StandardAccountType::BIP44Account,
+    };
+    let wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    let late_account = {
+        let mut with_late = wallet.clone();
+        with_late.add_account(late_type, None).unwrap();
+        with_late.accounts.standard_bip44_accounts[&7].clone()
+    };
+    let late_managed = || {
+        let mut managed = ManagedCoreFundsAccount::from_account(&late_account);
+        let address = managed
+            .next_receive_address(Some(&late_account.account_xpub), true)
+            .unwrap();
+        (managed, address)
+    };
+    let (_, address) = late_managed();
+    let funding = Transaction {
+        version: 1,
+        lock_time: 0,
+        input: vec![TxIn {
+            previous_output: OutPoint::new(Txid::from_byte_array([17; 32]), 0),
+            ..Default::default()
+        }],
+        output: vec![
+            TxOut {
+                value: 100_000,
+                script_pubkey: address.script_pubkey(),
+            },
+            TxOut {
+                value: 20_000,
+                script_pubkey: address.script_pubkey(),
+            },
+        ],
+        special_transaction_payload: None,
+    };
+    let claimed = OutPoint::new(funding.txid(), 0);
+    let unclaimed = OutPoint::new(funding.txid(), 1);
+
+    // A recordless claim: the spent coin, with neither its funding nor its spender.
+    let (persister, _dir) = store_then_reopen(
+        &wallet,
+        CoreChangeSet {
+            spent_utxos: vec![stored_utxo(&funding, 0, address)],
+            last_processed_height: Some(300),
+            synced_height: Some(300),
+            ..Default::default()
+        },
+    );
+    let stored_claims: i64 = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM core_utxos WHERE spent = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored_claims, 1, "the store holds the recordless claim");
+
+    let mut state = persister.load().unwrap();
+    let restored = state.wallets.remove(&wallet.wallet_id).unwrap();
+    let (mut wallet, mut info) = (restored.wallet, restored.wallet_info);
+    assert!(!info.accounts.standard_bip44_accounts.contains_key(&7));
+
+    let (managed, _) = late_managed();
+    wallet
+        .add_account(late_type, Some(late_account.account_xpub))
+        .unwrap();
+    info.accounts.insert_funds_bearing_account(managed).unwrap();
+
+    info.check_core_transaction(&funding, block(100), &mut wallet, true, true)
+        .await;
+
+    let coins = &info.accounts.standard_bip44_accounts[&7].utxos;
+    assert!(
+        coins.contains_key(&unclaimed),
+        "the late account receives the funding transaction"
+    );
+    assert!(
+        !coins.contains_key(&claimed),
+        "a claim restored before the account existed still guards it"
+    );
+    assert_eq!(info.balance.total(), 20_000);
+}
+
 /// Replace the stored history with one `context` record spending `values` and receiving `received`.
 async fn stage_replay_amounts(
     context: TransactionContext,
