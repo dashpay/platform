@@ -386,9 +386,6 @@ pub struct ContestedVote(
     pub ResourceVoteChoice,
 );
 
-/// Votes casted by some identity.
-pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
-
 /// The vote an identity currently has on a vote poll, with the number of times the identity
 /// has voted on that poll.
 #[derive(Debug, Clone, PartialEq)]
@@ -410,7 +407,7 @@ pub struct ResourceVoteWithCount {
 /// vote poll, by vote poll unique id.
 ///
 /// Every entry is `Some`: a vote poll the identity has not voted on has no entry.
-pub type ResourceVotesWithCountsByIdentity = RetrievedObjects<Identifier, ResourceVoteWithCount>;
+pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVoteWithCount>;
 
 /// Represents the current state of quorums in the platform.
 ///
