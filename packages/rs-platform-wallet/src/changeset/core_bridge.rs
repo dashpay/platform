@@ -59,8 +59,9 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{
-    coalesce_account_records, merge_payment_overlays, AssetLockChangeSet, CoreChangeSet,
-    HighestUsedIndexes, PaymentOverlay, PlatformWalletChangeSet, SweepBatch, UtxoCreditVerdict,
+    coalesce_account_records, merge_payment_overlays, AssetLockChangeSet, ChainTruncation,
+    CoreChangeSet, HighestUsedIndexes, PaymentOverlay, PlatformWalletChangeSet, SweepBatch,
+    UtxoCreditVerdict,
 };
 use crate::changeset::merge::Merge;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
@@ -134,6 +135,11 @@ struct AdapterFaultState {
     /// Set by a `store()` rejection, or by the panic-recovery branch for a
     /// wallet whose commit outcome is unknown: freezes only the named wallets.
     per_wallet: HashMap<WalletId, bool>,
+    /// Truncations a `store()` rejected and did not keep, per wallet. The
+    /// fork is reported once and no rescan repeats it, so they lead that
+    /// wallet's next round until a store accepts them. Session-scoped: a
+    /// restart before that round loses them.
+    unapplied_truncations: HashMap<WalletId, Vec<ChainTruncation>>,
 }
 
 impl AdapterFaultState {
@@ -730,6 +736,35 @@ fn commit_wallet<P>(
         payments,
     } = wallet_batch;
     {
+        // A truncation this wallet's store rejected goes first: everything
+        // folded since describes the wallet after it.
+        if let Some(unapplied) = fault.unapplied_truncations.remove(&wallet_id) {
+            let mut owed = CoreChangeSet {
+                truncations: unapplied,
+                ..CoreChangeSet::default()
+            };
+            owed.merge(core);
+            core = owed;
+        }
+        // Withheld, not faulted: see `CORE_CHAIN_TRUNCATION` for why freezing
+        // the watermark, as the sweep gate below does, would recover nothing.
+        // The merge has already rewritten the rest of the round as the
+        // truncation left it, so that part is still correct to store.
+        if !core.truncations.is_empty()
+            && !persister
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::CORE_CHAIN_TRUNCATION)
+        {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_id),
+                truncations = core.truncations.len(),
+                fork_height = core.truncations.iter().map(|t| t.height).min(),
+                "Persister does not advertise CORE_CHAIN_TRUNCATION; withholding this round's \
+                 chain truncation. Stored wallet state keeps the replaced branch above the fork \
+                 height until the host rescans."
+            );
+            core.truncations.clear();
+        }
         // Sent-payment verdicts reach a host only through the payment-overlay
         // slot, which a persister advertises with `DASHPAY_PAYMENTS`. A host
         // without it would take the round, return `Ok`, and drop the verdict
@@ -845,7 +880,24 @@ fn commit_wallet<P>(
             dashpay_payments_overlay: payments,
             ..PlatformWalletChangeSet::default()
         };
+        let offered_truncations = cs
+            .core
+            .as_ref()
+            .map(|core| core.truncations.clone())
+            .unwrap_or_default();
         let store_result = persister.store(wallet_id, cs);
+        if let Err(error) = &store_result {
+            // A backend that kept the failed round for its own retry still
+            // holds the truncation. A second copy would land after what that
+            // round stores behind it, and cut that away.
+            let kept_by_backend =
+                error.is_transient() && !persister.store_transient_is_reissuable();
+            if !offered_truncations.is_empty() && !kept_by_backend {
+                fault
+                    .unapplied_truncations
+                    .insert(wallet_id, offered_truncations);
+            }
+        }
         // Recorded only once the store has RETURNED, and whether it accepted
         // or rejected — both are answers. A wallet whose store panicked never
         // reaches this line, and one the loop never got to is never pushed at
@@ -1185,7 +1237,20 @@ async fn build_core_changeset(
                 collect_usage_deltas(wallet_manager, wallet_id, vec![&**record]).await;
             let mut folded = owned.clone();
             crate::changeset::changeset::fold_same_txid_records(&mut folded);
+            // A lock that arrives with the transaction lives only in the
+            // record's context, which mining replaces. Stored on its own it
+            // survives that, so a truncation returning the transaction to
+            // the mempool leaves its outputs InstantSend-locked in the store
+            // as it does in the wallet. Read from the event, not the
+            // snapshot above, which may already be past that truncation.
+            let instant_locks_for_non_final_records = match &record.context {
+                TransactionContext::InstantSend(lock) => {
+                    BTreeMap::from([(record.txid, lock.clone())])
+                }
+                _ => BTreeMap::new(),
+            };
             CoreChangeSet {
+                instant_locks_for_non_final_records,
                 // New UTXOs from the owned slices only (a watch-only
                 // chain's outputs are the contact's coins); spends
                 // from ALL slices, so a contact spending an output a
@@ -1349,20 +1414,25 @@ async fn build_core_changeset(
             restored_outpoints,
             ..
         } => {
-            // TODO(#5380): mirror the truncation to the persister. The wallet
-            // has already dropped these records in memory, but `CoreChangeSet`
-            // cannot express it: the heights are monotonic-max on merge, a
-            // `SweepBatch` needs a winning transaction, and nothing demotes a
-            // confirmed record to unconfirmed. Until it can, the stored rows
-            // and the stored sync height stay as they were before the fork.
-            tracing::warn!(
+            // The wallet has already dropped these records. Every other arm
+            // only appends or raises, so without this one the store keeps
+            // the replaced branch and a height above the fork.
+            tracing::info!(
                 height,
                 removed = txids.len(),
                 unconfirmed = unconfirmed_txids.len(),
                 restored = restored_outpoints.len(),
-                "Chain truncation is not mirrored to the persister; stored wallet state keeps the replaced branch"
+                "Mirroring a chain truncation to the persister"
             );
-            CoreChangeSet::default()
+            CoreChangeSet {
+                truncations: vec![ChainTruncation {
+                    height: *height,
+                    txids: txids.clone(),
+                    unconfirmed_txids: unconfirmed_txids.clone(),
+                    restored_outpoints: restored_outpoints.clone(),
+                }],
+                ..CoreChangeSet::default()
+            }
         }
         WalletEvent::SyncHeightAdvanced { height, .. } => CoreChangeSet {
             synced_height: Some(*height),
@@ -2187,6 +2257,7 @@ impl CoreChangeSet {
         self.records.is_empty()
             && self.account_records.is_empty()
             && self.sweeps.is_empty()
+            && self.truncations.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
@@ -2280,24 +2351,36 @@ mod swept_transaction_projection_tests {
         }
     }
 
-    /// Pins the gap tracked in #5380: a truncation reaches the bridge but
-    /// produces no persistable change, least of all a sweep (it has no
-    /// winning transaction) or a height (heights only move up on merge).
+    /// A truncation carries txids and outpoints but no records, so like a
+    /// sweep it has to reach the persister on the strength of those alone.
     #[tokio::test]
-    async fn should_persist_nothing_for_a_chain_truncation() {
+    async fn should_mirror_a_chain_truncation_to_the_persister() {
         let event = WalletEvent::ChainTruncated {
             wallet_id: WALLET_ID,
             height: WINNER_HEIGHT,
             txids: vec![txid(1)],
             unconfirmed_txids: vec![txid(2)],
-            restored_outpoints: Vec::new(),
+            restored_outpoints: vec![outpoint(3, 0)],
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
         };
 
         let cs = build_core_changeset(&test_manager(), &event).await;
 
-        assert!(cs.is_empty(), "a truncation is not mirrored yet");
+        assert_eq!(
+            cs.truncations,
+            vec![ChainTruncation {
+                height: WINNER_HEIGHT,
+                txids: vec![txid(1)],
+                unconfirmed_txids: vec![txid(2)],
+                restored_outpoints: vec![outpoint(3, 0)],
+            }]
+        );
+        assert!(cs.sweeps.is_empty(), "a truncation has no winner to name");
+        assert!(
+            !cs.is_empty_no_records(),
+            "the adapter must not skip the round"
+        );
     }
 
     #[tokio::test]
@@ -4965,6 +5048,8 @@ mod tests {
         /// must be coupled to, since the sweep never re-emits once its round
         /// is durable.
         n_sweeps: usize,
+        /// Chain truncations the round carries, verbatim.
+        truncations: Vec<super::ChainTruncation>,
         /// The round's `dashpay_payments_overlay` verbatim — `None` when the
         /// round carried none, which is also what a payments-blind persister
         /// must see after the capability gate has withheld one.
@@ -4987,6 +5072,10 @@ mod tests {
     struct ProbePersister {
         obs: UnboundedSender<StoreObserved>,
         fail_once: Mutex<HashSet<WalletId>>,
+        /// Wallets whose NEXT `store()` fails as `Transient`. The probe does
+        /// not attest `store_transient_is_reissuable`, so this is a backend
+        /// that kept the failed round for its own retry.
+        fail_transiently_once: Mutex<HashSet<WalletId>>,
         /// Wallets whose NEXT `store()` panics instead of returning. Models a
         /// backend that dies mid-write — which surfaces as a `JoinError`
         /// instead of unwinding the whole adapter task.
@@ -5006,6 +5095,7 @@ mod tests {
             Self {
                 obs,
                 fail_once: Mutex::new(HashSet::new()),
+                fail_transiently_once: Mutex::new(HashSet::new()),
                 panic_once: Mutex::new(HashSet::new()),
                 block_until: Mutex::new(None),
                 blocked: Arc::new(AtomicBool::new(false)),
@@ -5034,6 +5124,9 @@ mod tests {
         fn fail_next(&self, wallet_id: WalletId) {
             self.fail_once.lock().unwrap().insert(wallet_id);
         }
+        fn fail_next_transiently(&self, wallet_id: WalletId) {
+            self.fail_transiently_once.lock().unwrap().insert(wallet_id);
+        }
         fn panic_next(&self, wallet_id: WalletId) {
             self.panic_once.lock().unwrap().insert(wallet_id);
         }
@@ -5061,7 +5154,12 @@ mod tests {
             if self.panic_once.lock().unwrap().remove(&wallet_id) {
                 panic!("probe persister: store panicked for {wallet_id:?}");
             }
-            let rejected = self.fail_once.lock().unwrap().remove(&wallet_id);
+            let kept_for_retry = self
+                .fail_transiently_once
+                .lock()
+                .unwrap()
+                .remove(&wallet_id);
+            let rejected = self.fail_once.lock().unwrap().remove(&wallet_id) || kept_for_retry;
             let _ = self.obs.send(StoreObserved {
                 wallet_id,
                 synced_height: core.and_then(|c| c.synced_height),
@@ -5078,6 +5176,7 @@ mod tests {
                     .map(|a| a.removed.len())
                     .unwrap_or(0),
                 n_sweeps: core.map(|c| c.sweeps.len()).unwrap_or(0),
+                truncations: core.map(|c| c.truncations.clone()).unwrap_or_default(),
                 dashpay_payments: changeset.dashpay_payments_overlay.clone(),
                 dashpay_identity_payments: changeset.identities.as_ref().map(|ids| {
                     ids.identities
@@ -5087,7 +5186,12 @@ mod tests {
                 }),
                 rejected,
             });
-            if rejected {
+            if kept_for_retry {
+                Err(PersistenceError::backend_with_kind(
+                    crate::changeset::traits::PersistenceErrorKind::Transient,
+                    "probe: forced transient store failure",
+                ))
+            } else if rejected {
                 Err(PersistenceError::backend("probe: forced store rejection"))
             } else {
                 Ok(())
@@ -6098,6 +6202,195 @@ mod tests {
         })
         .await
         .expect("the fail-closed guard must still trip for the folded round");
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// Height of the last block the truncations in this module keep.
+    const FORK_HEIGHT: u32 = 30;
+
+    fn truncated_event(wallet_id: WalletId) -> WalletEvent {
+        use dashcore::hashes::Hash as _;
+        WalletEvent::ChainTruncated {
+            wallet_id,
+            height: FORK_HEIGHT,
+            txids: vec![dashcore::Txid::from_byte_array([0x61; 32])],
+            unconfirmed_txids: Vec::new(),
+            restored_outpoints: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        }
+    }
+
+    /// The next round the probe sees, or a failed test instead of a hang.
+    async fn next_store(
+        obs_rx: &mut tokio::sync::mpsc::UnboundedReceiver<StoreObserved>,
+    ) -> StoreObserved {
+        tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv())
+            .await
+            .expect("a round must reach store() within the timeout")
+            .expect("a round must reach store()")
+    }
+
+    /// A persister that never attested `CORE_CHAIN_TRUNCATION` is not handed
+    /// one, and — unlike an unattested sweep — is not faulted for it: nothing
+    /// replays a truncation, so freezing its watermark would recover nothing.
+    #[tokio::test]
+    async fn should_withhold_a_truncation_from_a_persister_that_cannot_apply_it() {
+        let wallet_id = [31u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        tx.send(truncated_event(wallet_id)).unwrap();
+        tx.send(sync_height_event(wallet_id, FORK_HEIGHT + 5))
+            .unwrap();
+        let mut seen = Vec::new();
+        while seen
+            .iter()
+            .all(|round: &StoreObserved| round.synced_height.is_none())
+        {
+            seen.push(next_store(&mut obs_rx).await);
+        }
+
+        assert!(
+            seen.iter().all(|round| round.truncations.is_empty()),
+            "a persister that cannot apply a truncation must not be handed one"
+        );
+        assert_eq!(
+            seen.last().and_then(|round| round.synced_height),
+            Some(FORK_HEIGHT + 5),
+            "the rest of the stream keeps persisting, watermark included"
+        );
+        assert!(!sync_fault.load(Ordering::Relaxed));
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_hand_a_truncation_to_a_persister_that_attests_it() {
+        let wallet_id = [32u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_CHAIN_TRUNCATION,
+        ));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel.clone(),
+        ));
+
+        tx.send(truncated_event(wallet_id)).unwrap();
+        let round = next_store(&mut obs_rx).await;
+
+        assert_eq!(round.truncations.len(), 1);
+        assert_eq!(round.truncations[0].height, FORK_HEIGHT);
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// A rejected round leaves the store on the replaced branch, and no scan
+    /// reports a truncation twice. So the adapter offers it again, ahead of
+    /// whatever the wallet's next round carries, until a store accepts it.
+    #[tokio::test]
+    async fn should_offer_a_rejected_truncation_again_with_the_next_round() {
+        let wallet_id = [33u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_CHAIN_TRUNCATION,
+        ));
+        persister.fail_next(wallet_id);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel.clone(),
+        ));
+
+        tx.send(truncated_event(wallet_id)).unwrap();
+        let rejected = next_store(&mut obs_rx).await;
+        assert!(rejected.rejected);
+        assert_eq!(rejected.truncations.len(), 1);
+
+        tx.send(block_processed_event(wallet_id, FORK_HEIGHT + 1))
+            .unwrap();
+        let retried = next_store(&mut obs_rx).await;
+        assert!(!retried.rejected);
+        assert_eq!(
+            retried.truncations, rejected.truncations,
+            "the unapplied truncation rides the wallet's next round"
+        );
+        assert_eq!(retried.last_processed_height, Some(FORK_HEIGHT + 1));
+
+        tx.send(block_processed_event(wallet_id, FORK_HEIGHT + 2))
+            .unwrap();
+        let after = next_store(&mut obs_rx).await;
+        assert!(
+            after.truncations.is_empty(),
+            "an accepted truncation is not offered a third time"
+        );
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// A backend that fails `Transient` without attesting
+    /// `store_transient_is_reissuable` kept the round and retries it itself.
+    /// A second copy from the adapter would land after what that round
+    /// stored behind the truncation, and cut it away.
+    #[tokio::test]
+    async fn should_not_offer_a_truncation_again_to_a_persister_that_kept_the_failed_round() {
+        let wallet_id = [34u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_CHAIN_TRUNCATION,
+        ));
+        persister.fail_next_transiently(wallet_id);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel.clone(),
+        ));
+
+        tx.send(truncated_event(wallet_id)).unwrap();
+        let kept = next_store(&mut obs_rx).await;
+        assert!(kept.rejected);
+        assert_eq!(kept.truncations.len(), 1);
+
+        tx.send(block_processed_event(wallet_id, FORK_HEIGHT + 1))
+            .unwrap();
+        let next = next_store(&mut obs_rx).await;
+        assert!(next.truncations.is_empty());
 
         cancel.cancel();
         drop(tx);
