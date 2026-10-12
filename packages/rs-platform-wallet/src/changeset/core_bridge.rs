@@ -1487,6 +1487,9 @@ enum SentPaymentEvidence {
     /// The transaction reached a context that is final for DashPay display —
     /// mined, or InstantSend-locked.
     Final,
+    /// A fork dropped the block that held the transaction and no InstantSend
+    /// lock covers it: unconfirmed again, and free to be mined again.
+    Unmined,
 }
 
 /// The complete set of legal `Sent` payment transitions, and the only place a
@@ -1498,10 +1501,13 @@ enum SentPaymentEvidence {
 /// | `Confirmed` | `Swept`  | `Failed`    | An IS-locked payment evicted by a chainlocked winner is a dead payment reported as good — the worst of the two. |
 /// | `Pending`   | `Final`  | `Confirmed` | The ordinary confirm: mempool → mined / IS-locked.                                    |
 /// | `Failed`    | `Final`  | `Confirmed` | A chainlock can reinstate a transaction a sweep removed; without this edge the repair is unreachable. |
+/// | `Confirmed` | `Unmined`| `Pending`   | The block that confirmed it is gone; the block that mines it again takes the ordinary confirm.          |
 ///
-/// The two remaining pairs — `Failed` + `Swept` and `Confirmed` + `Final` —
-/// return `None`: the entry already carries that verdict, so re-emitting it
-/// would put an unchanged row on the store round for every re-detection.
+/// `Failed` + `Swept` and `Confirmed` + `Final` return `None`: the entry
+/// already carries that verdict, so re-emitting it would put an unchanged row
+/// on the store round for every re-detection. So does `Pending` + `Unmined`.
+/// `Failed` + `Unmined` returns `None` because a truncation does not bring a
+/// swept transaction back.
 ///
 /// Exhaustive on purpose (no `_` arm): a future [`PaymentStatus`] variant must
 /// fail to compile here and be given an explicit edge, rather than be silently
@@ -1510,7 +1516,7 @@ fn next_sent_payment_status(
     current: PaymentStatus,
     evidence: SentPaymentEvidence,
 ) -> Option<PaymentStatus> {
-    use SentPaymentEvidence::{Final, Swept};
+    use SentPaymentEvidence::{Final, Swept, Unmined};
     match (current, evidence) {
         (PaymentStatus::Pending, Swept) => Some(PaymentStatus::Failed),
         (PaymentStatus::Confirmed, Swept) => Some(PaymentStatus::Failed),
@@ -1518,6 +1524,9 @@ fn next_sent_payment_status(
         (PaymentStatus::Pending, Final) => Some(PaymentStatus::Confirmed),
         (PaymentStatus::Failed, Final) => Some(PaymentStatus::Confirmed),
         (PaymentStatus::Confirmed, Final) => None,
+        (PaymentStatus::Confirmed, Unmined) => Some(PaymentStatus::Pending),
+        (PaymentStatus::Pending, Unmined) => None,
+        (PaymentStatus::Failed, Unmined) => None,
     }
 }
 
@@ -1561,11 +1570,15 @@ fn sent_payment_evidence(event: &WalletEvent) -> Vec<(String, SentPaymentEvidenc
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => finality(inserted.iter().chain(updated.iter())),
-        // TODO(#5380): a payment whose confirmation a truncation undid keeps
-        // the verdict it already has.
-        WalletEvent::SyncHeightAdvanced { .. }
-        | WalletEvent::ChainLockProcessed { .. }
-        | WalletEvent::ChainTruncated { .. } => Vec::new(),
+        // `unconfirmed_txids` are left out: they stay InstantSend-locked,
+        // which is still final for DashPay display.
+        WalletEvent::ChainTruncated { txids, .. } => txids
+            .iter()
+            .map(|txid| (txid.to_string(), SentPaymentEvidence::Unmined))
+            .collect(),
+        WalletEvent::SyncHeightAdvanced { .. } | WalletEvent::ChainLockProcessed { .. } => {
+            Vec::new()
+        }
     }
 }
 
@@ -2934,12 +2947,90 @@ mod sent_payment_verdict_tests {
         );
     }
 
+    /// A truncation dropping the block of `removed`, keeping `unconfirmed`
+    /// as InstantSend-locked mempool transactions.
+    fn truncation_of(
+        wallet_id: WalletId,
+        removed: Vec<Txid>,
+        unconfirmed: Vec<Txid>,
+    ) -> WalletEvent {
+        WalletEvent::ChainTruncated {
+            wallet_id,
+            height: 1_499_000,
+            txids: removed,
+            unconfirmed_txids: unconfirmed,
+            restored_outpoints: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        }
+    }
+
+    /// A payment shown `Confirmed` on the strength of a block the chain no
+    /// longer has is not confirmed. It is not dead either — the transaction
+    /// can be mined again — so it goes back to `Pending`, and the block that
+    /// mines it again confirms it through the ordinary edge.
+    #[tokio::test]
+    async fn should_return_a_confirmed_sent_payment_to_pending_when_its_block_is_dropped() {
+        let (wallet_manager, wallet_id, txid) =
+            wallet_with_payment(PaymentDirection::Sent, PaymentStatus::Confirmed).await;
+        let event = truncation_of(wallet_id, vec![sent_transaction().txid()], Vec::new());
+
+        let overlay = sent_payment_verdicts(&wallet_manager, &event).await;
+
+        assert_eq!(only_row(&overlay, &txid).status, PaymentStatus::Pending);
+        assert_eq!(
+            stored_status(&wallet_manager, &wallet_id, &txid).await,
+            PaymentStatus::Pending
+        );
+
+        let mined_again =
+            sent_payment_verdicts(&wallet_manager, &chainlocked_reinstatement(wallet_id)).await;
+        assert_eq!(
+            only_row(&mined_again, &txid).status,
+            PaymentStatus::Confirmed
+        );
+    }
+
+    /// An InstantSend lock outlives the block: a kept transaction is still
+    /// final for DashPay display, so its payment does not move.
+    #[tokio::test]
+    async fn should_keep_a_sent_payment_confirmed_when_its_dropped_block_left_it_instant_locked() {
+        let (wallet_manager, wallet_id, txid) =
+            wallet_with_payment(PaymentDirection::Sent, PaymentStatus::Confirmed).await;
+        let event = truncation_of(wallet_id, Vec::new(), vec![sent_transaction().txid()]);
+
+        let overlay = sent_payment_verdicts(&wallet_manager, &event).await;
+
+        assert!(overlay.is_empty());
+        assert_eq!(
+            stored_status(&wallet_manager, &wallet_id, &txid).await,
+            PaymentStatus::Confirmed
+        );
+    }
+
+    /// A sweep's verdict stands through a truncation: the wallet does not
+    /// bring a swept transaction back when the block of its winner goes.
+    #[tokio::test]
+    async fn should_keep_a_failed_sent_payment_failed_when_a_block_is_dropped() {
+        let (wallet_manager, wallet_id, txid) =
+            wallet_with_payment(PaymentDirection::Sent, PaymentStatus::Failed).await;
+        let event = truncation_of(wallet_id, vec![sent_transaction().txid()], Vec::new());
+
+        let overlay = sent_payment_verdicts(&wallet_manager, &event).await;
+
+        assert!(overlay.is_empty());
+        assert_eq!(
+            stored_status(&wallet_manager, &wallet_id, &txid).await,
+            PaymentStatus::Failed
+        );
+    }
+
     /// The transition table, enumerated. Written out rather than derived so
     /// that adding an edge means editing this list — the point of the table
     /// is that every edge was chosen, not inferred.
     #[test]
-    fn the_transition_table_admits_exactly_the_four_intended_edges() {
-        use SentPaymentEvidence::{Final, Swept};
+    fn the_transition_table_admits_exactly_the_five_intended_edges() {
+        use SentPaymentEvidence::{Final, Swept, Unmined};
         let expected = [
             ((PaymentStatus::Pending, Swept), Some(PaymentStatus::Failed)),
             (
@@ -2956,6 +3047,12 @@ mod sent_payment_verdict_tests {
                 Some(PaymentStatus::Confirmed),
             ),
             ((PaymentStatus::Confirmed, Final), None),
+            (
+                (PaymentStatus::Confirmed, Unmined),
+                Some(PaymentStatus::Pending),
+            ),
+            ((PaymentStatus::Pending, Unmined), None),
+            ((PaymentStatus::Failed, Unmined), None),
         ];
         for ((from, evidence), to) in expected {
             assert_eq!(
@@ -2966,8 +3063,8 @@ mod sent_payment_verdict_tests {
         }
         assert_eq!(
             expected.iter().filter(|(_, to)| to.is_some()).count(),
-            4,
-            "four edges move an entry; the other two are no-ops"
+            5,
+            "five edges move an entry; the other four are no-ops"
         );
     }
 
