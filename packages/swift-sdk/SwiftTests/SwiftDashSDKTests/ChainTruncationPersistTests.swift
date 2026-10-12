@@ -474,7 +474,10 @@ final class ChainTruncationPersistTests: XCTestCase {
         truncateAndMineAgain(handler, wallet: otherWalletId, vout: 1, kept, blockHash: newBlock)
 
         let first = try XCTUnwrap(txo(container, txid: spendTxid, vout: 0), "the first wallet's coin went missing")
-        XCTAssertTrue(first.isConfirmed, "the first wallet's coin was returned to unconfirmed by the second wallet's truncation")
+        XCTAssertTrue(
+            first.isConfirmed,
+            "the first wallet's coin was returned to unconfirmed by the second wallet's truncation"
+        )
         XCTAssertEqual(first.height, 102, "the first wallet's coin lost its new block")
         let second = try XCTUnwrap(txo(container, txid: spendTxid, vout: 1), "the second wallet's coin went missing")
         XCTAssertTrue(second.isConfirmed, "the second wallet's coin stayed unconfirmed after its own round mined it")

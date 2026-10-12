@@ -1614,13 +1614,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             prefetching: [\.outputs, \.inputs, \.pendingInputs]
         ) else { return }
 
+        // Read through an Optional cast, as `resolvedWalletId(of:)` does.
+        let walletOf: (PersistentAccount) -> Data? = { account in
+            let wallet: PersistentWallet? = account.wallet
+            return wallet?.walletId
+        }
         // Decided before anything is detached: a coin whose wallet cannot
         // be resolved counts as somebody else's.
         let sharedWithAnotherWallet =
             row.outputs.contains { Self.resolvedWalletId(of: $0) != walletId }
             || row.inputs.contains { Self.resolvedWalletId(of: $0) != walletId }
             || row.pendingInputs.contains { $0.walletId != walletId }
-            || row.involvedAccounts.contains { $0.wallet.walletId != walletId }
+            || row.involvedAccounts.contains { walletOf($0) != walletId }
 
         for output in row.outputs where Self.resolvedWalletId(of: output) == walletId {
             roundIndex?.txosByOutpoint[output.outpoint] = output
@@ -1639,7 +1644,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         for pending in row.pendingInputs where pending.walletId == walletId {
             backgroundContext.delete(pending)
         }
-        row.involvedAccounts.removeAll { $0.wallet.walletId == walletId }
+        row.involvedAccounts.removeAll { walletOf($0) == walletId }
 
         guard !sharedWithAnotherWallet else { return }
         Self.unconfirm(row, as: .mempool)
