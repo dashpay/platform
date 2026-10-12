@@ -107,9 +107,11 @@ pub fn document_remaining_lifetime_ms(
 }
 
 /// The index levels a document of this type writes and its deletion removes: every index
-/// counts its properties, an index bucketing time or integers into overlapping windows
-/// counts them once per window holding the document, and an index naming a typed array
-/// (protocol version 14) once per element it can hold, its `maxItems`.
+/// counts its properties, and an index bucketing time or integers into overlapping windows
+/// counts them once per window holding the document. An index naming a typed array
+/// (protocol version 14) counts the levels above the array once and the array's level and
+/// those below it once per element it can hold, its `maxItems`: a document's entries share
+/// the path down to the array, and fan out from there.
 pub fn document_type_weighted_index_levels(document_type: DocumentTypeRef) -> u64 {
     document_type
         .indexes()
@@ -124,12 +126,22 @@ pub fn document_type_weighted_index_levels(document_type: DocumentTypeRef) -> u6
                     .as_ref()
                     .map(|transform| transform.overlap_factor()))
                 .map_or(1, |windows| windows.max(1));
-            let elements = index
-                .typed_array_max_items(document_type.flattened_properties())
-                .map_or(1, |elements| u64::from(elements.max(1)));
-            (index.properties.len() as u64)
-                .saturating_mul(windows)
-                .saturating_mul(elements)
+            let properties = index.properties.len() as u64;
+            let levels = match index
+                .typed_arrays(document_type.flattened_properties())
+                .next()
+            {
+                Some((position, _, typed_array)) => {
+                    let above = position as u64;
+                    above.saturating_add(
+                        properties
+                            .saturating_sub(above)
+                            .saturating_mul(u64::from(typed_array.max_items.max(1))),
+                    )
+                }
+                None => properties,
+            };
+            levels.saturating_mul(windows)
         })
         .fold(0u64, u64::saturating_add)
 }

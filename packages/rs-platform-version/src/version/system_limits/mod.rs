@@ -375,7 +375,9 @@ pub struct SystemLimits {
     /// The most work the document expiry cleanup does in one block, beside
     /// `max_document_expirations_per_block`: each deleted document weighs 1 plus the weighted
     /// index levels of its type (every index counts its properties, times the overlapping
-    /// windows of a `timeRange` index), the measure its prepaid deletion fee is sized by.
+    /// windows of a `timeRange` or `integerRange` index, an index naming a typed array its
+    /// levels from the array on once per element `maxItems` allows), the measure its prepaid
+    /// deletion fee is sized by.
     /// The cleanup stops before a document that would pass it, except the block's first, so
     /// the backlog always drains.
     ///
