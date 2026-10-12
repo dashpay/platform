@@ -112,6 +112,18 @@ interface TransactionDao {
     suspend fun deleteByTxids(txids: List<ByteArray>)
 
     /**
+     * Return [txids] to the mempool: a chain truncation dropped their
+     * block and kept them as unconfirmed. Clears the block columns and
+     * touches nothing else. Chunked by the caller.
+     */
+    @Query(
+        "UPDATE transactions SET context = 0, blockHeight = 0, blockHash = NULL, " +
+            "blockTimestamp = 0, blockPosition = 0, hasBlockPosition = 0 " +
+            "WHERE txid IN (:txids)"
+    )
+    suspend fun unconfirmByTxids(txids: List<ByteArray>)
+
+    /**
      * Orphan sweep run after a wallet wipe (Swift `deleteWalletData`'s
      * post-delete pass): drop transactions no longer referenced by any
      * TXO (as creating `txid` or spending `spendingTxid`) or pending

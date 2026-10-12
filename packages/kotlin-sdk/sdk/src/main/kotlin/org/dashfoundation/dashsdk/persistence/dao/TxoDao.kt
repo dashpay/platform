@@ -167,6 +167,15 @@ interface TxoDao {
     suspend fun deleteByTxids(txids: List<ByteArray>)
 
     /**
+     * Mark every TXO created by one of [txids] unconfirmed and
+     * InstantSend-locked — the outputs of transactions a chain truncation
+     * kept after dropping their block. Spend state is not touched. Chunked
+     * by the caller.
+     */
+    @Query("UPDATE txos SET isConfirmed = 0, isInstantLocked = 1, height = 0 WHERE txid IN (:txids)")
+    suspend fun unconfirmInstantLockedByTxids(txids: List<ByteArray>)
+
+    /**
      * Delete the rows at [outpoints] outright — outputs of a transaction
      * swept in this round that some loser claimed or some release named.
      * A coin created by a dead transaction cannot be unspent, only gone:

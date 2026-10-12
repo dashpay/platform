@@ -27,11 +27,15 @@
   handling to the version-3 ProRegTx / ProUpServTx types.
 - **platform-wallet:** a chain reorganization reported by key-wallet
   (`WalletEvent::ChainTruncated`) now reaches persisted wallet state as
-  `CoreChangeSet::truncations`. The SQLite backend removes the transactions of
-  the dropped blocks and their coins, keeps InstantSend-locked ones as
-  unconfirmed, restores the coins the removed ones spent and lowers the stored
-  sync heights to the fork, so a restart after a reorg loads the same wallet as
-  no restart. A persister attests support with the new
+  `CoreChangeSet::truncations`. The SQLite backend and the Swift and Kotlin
+  persistence handlers remove the transactions of the dropped blocks and their
+  coins, keep InstantSend-locked ones as unconfirmed, restore the coins the
+  removed ones spent and lower the stored sync heights to the fork, so a
+  restart after a reorg loads the same wallet as no restart. FFI hosts receive
+  truncations through the size-negotiated
+  `on_persist_wallet_changeset_truncations_fn` extension callback, Kotlin
+  bridges through `onWalletChangesetChainTruncated`. A persister attests
+  support with the new
   `PersistenceCapabilities::CORE_CHAIN_TRUNCATION` bit; one that does not is
   not handed the truncation and keeps the replaced branch until it rescans
   ([#5380](https://github.com/dashpay/platform/issues/5380)). Version-3
