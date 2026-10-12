@@ -150,6 +150,8 @@ With only a `minimum`, the integer takes 8 bytes, unsigned when the minimum is 0
 
 Stored documents and index entries hold each integer at its width, so a contract update may not change the width or the sign. Raising `maximum` past the width, lowering `minimum` below 0, removing a bound, or adding an `enum` value outside the width is refused with `DocumentTypeUpdateError` (40212); so is turning `sizedIntegerTypes` on when it would change an existing integer's width. A change that keeps the width is accepted.
 
+In an index, an integer property is keyed so that the keys sort as the numbers do: an unsigned integer by its big-endian bytes, and a signed one by its big-endian bytes with the sign bit flipped, which puts the negative values first. Before protocol version 14 an unsigned integer was keyed with its top bit flipped as well, so the values from the middle of its range up (128 and above, for one byte) sorted below the others in range queries, ordering, counts and sums. The first block of protocol version 14 moves the keys stored that way to their new keys. Three kinds of keys keep the earlier encoding: the values of a contested index in the paths of its vote poll, which the masternodes' votes point at, so the contested values of an unsigned property are listed in that order; the system timestamps and heights, whose values never reach the flipped bit; and the values of an unsigned property that ends a `rangeSummable` index, in every index of the document type. That index keeps a sum in every node of the tree holding those values, and values of both signs whose sums fit in the earlier order can leave the signed 64-bit range in every balanced tree of the new order (an update before protocol version 14 can make a summed property unsigned while it holds negative values, so its type does not rule them out), so the property is keyed the earlier way at every protocol version, and its order stays as it was.
+
 ## `enum` and `const`
 
 | | |
@@ -281,14 +283,7 @@ The two spellings are the same property: a value is validated, indexed and store
 "records": {
   "type": "object",
   "properties": {
-    "identity": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 32,
-      "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
-      "position": 0
-    }
+    "identity": { "type": "identifier", "position": 0 }
   },
   "minProperties": 1,
   "additionalProperties": false,

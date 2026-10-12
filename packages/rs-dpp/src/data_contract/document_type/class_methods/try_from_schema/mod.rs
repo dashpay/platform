@@ -16,8 +16,8 @@ use crate::data_contract::document_type::property_constraints::{
 };
 use crate::data_contract::document_type::reference_lookup::{
     clearable_once_its_document_is_deleted, owner_can_change,
-    schema_property_is_fixed_once_written, LOOKUP_REFERENCE_VALUE, MAX_LOOKUP_KEYS,
-    MAX_LOOKUP_PATH_LENGTH,
+    schema_property_is_fixed_once_written, LOOKUP_REFERENCE_VALUE, MAX_CHOOSE_FIRST_ORDER,
+    MAX_LOOKUP_KEYS, MAX_LOOKUP_PATH_LENGTH,
 };
 use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
@@ -25,15 +25,16 @@ use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
     is_path_listed, is_referenced_system_agreement_property,
     is_referring_system_agreement_property, is_transient, property_at_path, property_names,
-    ContractReferenceModeration, ContractReferenceOwner, ContractReferenceRequirements,
-    DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
-    DocumentPropertyTypeParsingOptions, DocumentReferenceDeclaration, DocumentReferenceKind,
-    DocumentReferenceLookup, DocumentType, DocumentTypeRef, EncryptedFor, EncryptedForRecipient,
-    EncryptionScheme, GeneratedFrom, GenerationParam, IdentityKeyReferenceRequirements,
-    KeyIdReference, KeyReferenceIdentityProperty, ListElementReference, LookupHashKey,
-    LookupKeySource, PropertyReference, ReferenceCombinator, ReferenceOperands, SystemFunction,
-    WhereBoundRead, WhereCondition, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
-    WhereOrdering, WhereOrderingBound, COMBINABLE_REFERENCE_TARGET_TYPES,
+    ChooseFirstOrder, ContractReferenceModeration, ContractReferenceOwner,
+    ContractReferenceRequirements, DistinctFrom, DocumentProperty, DocumentPropertyReferenceTarget,
+    DocumentPropertyType, DocumentPropertyTypeParsingOptions, DocumentReferenceDeclaration,
+    DocumentReferenceKind, DocumentReferenceLookup, DocumentType, DocumentTypeRef, EncryptedFor,
+    EncryptedForRecipient, EncryptionScheme, GeneratedFrom, GenerationParam,
+    IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
+    ListElementReference, LookupChooseFirst, LookupHashKey, LookupKeySource, PropertyReference,
+    ReferenceCombinator, ReferenceOperands, SystemFunction, WhereBoundRead, WhereCondition,
+    WhereLiteral, WhereLiteralKind, WhereNotEqualBound, WhereOrdering, WhereOrderingBound,
+    COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -1201,14 +1202,26 @@ fn validate_reference_target_keys(
         )));
     }
 
-    // `minimumAgeBlocks` and `consume` describe the document `findBy` finds
-    // when the referring document is created: they sit beside `findBy` and need
-    // it. That the reference is judged on the create alone (a function in
-    // `findBy`, or a declaring type whose documents are never replaced) needs
-    // the declaring type, and is checked once it is parsed
-    // (`validate_reference_lookup_sources`); `inList` refuses both
-    // (`parse_list_element_reference`)
-    if let Some(keyword) = [property_names::MINIMUM_AGE_BLOCKS, property_names::CONSUME]
+    // `minimumAgeBlocks` and `chooseFirst` sit in `constraints`, not beside it
+    if let Some(keyword) = [
+        property_names::MINIMUM_AGE_BLOCKS,
+        property_names::CHOOSE_FIRST,
+    ]
+    .into_iter()
+    .find(|keyword| refers_to_map.contains_key(*keyword))
+    {
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "{reference_type} refersTo declares {keyword} inside its constraints, \
+             {{ \"constraints\": {{ \"{keyword}\": ... }} }}, not beside findBy"
+        )));
+    }
+    // `constraints` and `consume` describe the document `findBy` finds when the
+    // referring document is created: they sit beside `findBy` and need it. That
+    // the reference is judged on the create alone (a function in `findBy`, or a
+    // declaring type whose documents are never replaced) needs the declaring
+    // type, and is checked once it is parsed (`validate_reference_lookup_sources`);
+    // `inList` refuses both (`parse_list_element_reference`)
+    if let Some(keyword) = [property_names::CONSTRAINTS, property_names::CONSUME]
         .into_iter()
         .find(|keyword| refers_to_map.contains_key(*keyword))
     {
@@ -1381,6 +1394,16 @@ fn parse_reference_target(
                             "permanentDocument refersTo cannot consume the document findBy \
                              finds, which is never deleted: consume needs a deletableDocument \
                              reference"
+                                .to_string(),
+                        ));
+                    }
+                    // `chooseFirst` reads commitments that expire (`ttl`), which a permanent
+                    // document never does
+                    if lookup.choose_first.is_some() {
+                        return Err(DataContractError::InvalidContractStructure(
+                            "permanentDocument refersTo does not take chooseFirst: the \
+                             commitments it reads must expire, and a permanent document never \
+                             leaves state: chooseFirst needs a deletableDocument reference"
                                 .to_string(),
                         ));
                     }
@@ -1707,8 +1730,8 @@ fn parse_where_condition(
 /// type ([`validate_list_element_sources`]), the list against the referenced
 /// one (at contract level for a type of the same contract, at registration
 /// for one of another contract), the `where` comparisons as every agreement's.
-/// `minimumAgeBlocks` and `consume` are refused on every parse: they describe
-/// a document `findBy` finds by a key, which a list element reference has no
+/// `constraints` and `consume` are refused on every parse: they describe a
+/// document `findBy` finds by a key, which a list element reference has no
 /// field for, so they would be dropped unenforced.
 fn parse_list_element_reference(
     refers_to_map: &BTreeMap<String, &Value>,
@@ -1718,11 +1741,11 @@ fn parse_list_element_reference(
     mut property_agreement: BTreeMap<String, String>,
     where_conditions: BTreeMap<String, WhereCondition>,
 ) -> Result<ListElementReference, DataContractError> {
-    if refers_to_map.contains_key(property_names::MINIMUM_AGE_BLOCKS)
+    if refers_to_map.contains_key(property_names::CONSTRAINTS)
         || refers_to_map.contains_key(property_names::CONSUME)
     {
         return Err(DataContractError::InvalidContractStructure(
-            "permanentDocument refersTo inList does not take minimumAgeBlocks or consume: they \
+            "permanentDocument refersTo inList does not take constraints or consume: they \
              describe a document findBy finds by a key, and inList checks that a list holds the \
              value"
                 .to_string(),
@@ -2107,9 +2130,10 @@ pub(super) fn parse_doctype_reference(
 /// `ownerRefersTo` or `creatorRefersTo` one (checked with the other
 /// referring-side rules). `$id` finds a document by id only for a list
 /// ([`parse_list_element_reference`]): without `findBy` the value is the id.
-/// Beside a function the `refersTo`, `refers_to_map`, may declare
-/// `minimumAgeBlocks` and `consume`, what the commitment the key finds must be
-/// and whether the create deletes it, held on the parsed lookup. What the
+/// Beside a function the `refersTo`, `refers_to_map`, may declare `consume` and
+/// `constraints` (`minimumAgeBlocks`, `chooseFirst`), what the commitment the key
+/// finds must be, whether the create deletes it and which commitments to the
+/// same values it must precede, held on the parsed lookup. What the
 /// names resolve to is checked once the document types are parsed: the
 /// sources against the declaring type ([`validate_reference_lookup_sources`]),
 /// the index against the referenced one (at contract level for a type of the
@@ -2189,10 +2213,36 @@ fn parse_find_by(
         )));
     }
 
-    // What the commitment a computed key finds must be, and whether the create
-    // deletes it, declared beside `findBy`: a key read as is finds no
-    // commitment
-    let minimum_age_blocks = refers_to_map
+    // What the commitment a computed key finds must meet, its `constraints`,
+    // and whether the create deletes it, declared beside `findBy`
+    let constraints = match refers_to_map.get(property_names::CONSTRAINTS) {
+        None => BTreeMap::new(),
+        Some(value) => {
+            let constraints = value.to_btree_ref_string_map().map_err(|_| {
+                DataContractError::InvalidContractStructure(
+                    "refersTo constraints is an object holding minimumAgeBlocks, chooseFirst or \
+                     both"
+                        .to_string(),
+                )
+            })?;
+            if constraints.is_empty() {
+                return Err(DataContractError::InvalidContractStructure(
+                    "refersTo constraints holds minimumAgeBlocks, chooseFirst or both".to_string(),
+                ));
+            }
+            if let Some(unknown) = constraints.keys().find(|key| {
+                key.as_str() != property_names::MINIMUM_AGE_BLOCKS
+                    && key.as_str() != property_names::CHOOSE_FIRST
+            }) {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "refersTo constraints holds minimumAgeBlocks and chooseFirst only, not \
+                     {unknown:?}"
+                )));
+            }
+            constraints
+        }
+    };
+    let minimum_age_blocks = constraints
         .get(property_names::MINIMUM_AGE_BLOCKS)
         .map(|value| {
             let blocks: u32 = value.to_integer().map_err(|_| {
@@ -2217,10 +2267,154 @@ fn parse_find_by(
             ))
         }
     };
+    let choose_first = constraints
+        .get(property_names::CHOOSE_FIRST)
+        .map(|value| parse_choose_first(value))
+        .transpose()?;
     Ok(DocumentReferenceLookup {
         minimum_age_blocks,
         consume,
+        choose_first,
         ..lookup
+    })
+}
+
+/// The `chooseFirst` in a document reference's `constraints`, `choose_first_value`:
+/// `{ "among", "validWhen", "by" }`. `among` is a schema property of the referenced document
+/// type, the one the `findBy` function fills; `validWhen` holds exactly one entry, a schema
+/// property of the referenced type mapped to an owner-bound function of the shape of a
+/// `findBy` function; `by` lists the properties the commitments are ordered by, each a name
+/// (ascending) or `{ "<name>": "asc" | "desc" }`, at most [`MAX_CHOOSE_FIRST_ORDER`], each once,
+/// `$id` only last and never `among` itself. What the functions may read and what they name
+/// are checked once the document types are parsed, beside the `findBy` they complement
+/// ([`DocumentReferenceLookup::referring_side_error`], on every parse), and against the
+/// referenced type ([`DocumentReferenceLookup::referenced_side_error`]).
+fn parse_choose_first(choose_first_value: &Value) -> Result<LookupChooseFirst, DataContractError> {
+    let refused = |reason: String| {
+        DataContractError::InvalidContractStructure(format!("refersTo chooseFirst {reason}"))
+    };
+    let schema_property = |value: Option<&&Value>| match value {
+        Some(Value::Text(property))
+            if !property.is_empty()
+                && property.len() <= MAX_LOOKUP_PATH_LENGTH
+                && !property.starts_with('$') =>
+        {
+            Some(property.clone())
+        }
+        _ => None,
+    };
+    let choose_first_map = choose_first_value.to_btree_ref_string_map()?;
+    if let Some(unknown) = choose_first_map
+        .keys()
+        .find(|key| !matches!(key.as_str(), "among" | "validWhen" | "by"))
+    {
+        return Err(refused(format!(
+            "holds \"among\", \"validWhen\" and \"by\" only, not {unknown:?}"
+        )));
+    }
+    let Some(among) = schema_property(choose_first_map.get("among")) else {
+        return Err(refused(format!(
+            "names in \"among\" the schema property of the referenced document type, of 1 to \
+             {MAX_LOOKUP_PATH_LENGTH} characters, that the findBy function fills"
+        )));
+    };
+    let valid_when_map = match choose_first_map.get("validWhen") {
+        Some(value @ Value::Map(_)) => value.to_btree_ref_string_map()?,
+        _ => BTreeMap::new(),
+    };
+    let mut valid_when_entries = valid_when_map.into_iter();
+    let (Some((valid_when_property, function @ Value::Map(_))), None) =
+        (valid_when_entries.next(), valid_when_entries.next())
+    else {
+        return Err(refused(format!(
+            "among \"{among}\" holds in \"validWhen\" exactly one entry, a schema property of the \
+             referenced document type mapped to a function, {{ \"function\", \"params\" }}"
+        )));
+    };
+    if schema_property(Some(&&Value::Text(valid_when_property.clone()))).is_none() {
+        return Err(refused(format!(
+            "among \"{among}\" names in \"validWhen\" a schema property of the referenced \
+             document type of 1 to {MAX_LOOKUP_PATH_LENGTH} characters, not {valid_when_property:?}"
+        )));
+    }
+    let Some(Value::Array(entries)) = choose_first_map.get("by") else {
+        return Err(refused(format!(
+            "among \"{among}\" lists in \"by\" the properties commitments are ordered by"
+        )));
+    };
+    if entries.is_empty() || entries.len() > MAX_CHOOSE_FIRST_ORDER {
+        return Err(refused(format!(
+            "among \"{among}\" orders by 1 to {MAX_CHOOSE_FIRST_ORDER} properties"
+        )));
+    }
+    let mut by: Vec<ChooseFirstOrder> = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let order = match entry {
+            Value::Text(name) => Some((name.clone(), true)),
+            Value::Map(map) => match map.as_slice() {
+                [(Value::Text(name), Value::Text(direction))] => match direction.as_str() {
+                    "asc" => Some((name.clone(), true)),
+                    "desc" => Some((name.clone(), false)),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some((name, ascending)) =
+            order.filter(|(name, _)| !name.is_empty() && name.len() <= MAX_LOOKUP_PATH_LENGTH)
+        else {
+            return Err(refused(format!(
+                "among \"{among}\" orders by a property name, ascending, or by {{ \"<name>\": \
+                 \"asc\" }} or {{ \"<name>\": \"desc\" }}"
+            )));
+        };
+        if name == among || by.iter().any(|order| order.property == name) {
+            return Err(refused(format!(
+                "among \"{among}\" orders by \"{name}\" twice, or by the property it groups by"
+            )));
+        }
+        if by.last().is_some_and(|order| order.property == ID) {
+            return Err(refused(format!(
+                "among \"{among}\" orders by {ID} last only: the entries of an index are kept by \
+                 it after every one of its properties"
+            )));
+        }
+        by.push(ChooseFirstOrder {
+            property: name,
+            ascending,
+        });
+    }
+    // The index keeps the documents equal on its properties by id in the direction of its last
+    // (ascending under an equal value alone), and the scan, cut at its candidate limit, reads
+    // them that way: a last `$id` running the other way would leave out the ones before the
+    // commitment found, read last
+    if let Some((last, before)) = by.split_last() {
+        let ids_ascending = before.last().is_none_or(|order| order.ascending);
+        if last.property == ID && last.ascending != ids_ascending {
+            let direction = |ascending: bool| if ascending { "asc" } else { "desc" };
+            let after = match before.last() {
+                Some(order) => format!(
+                    "after \"{}\" {}",
+                    order.property,
+                    direction(order.ascending)
+                ),
+                None => "alone".to_string(),
+            };
+            return Err(refused(format!(
+                "among \"{among}\" orders by {ID} {} {after}: an index keeps the documents equal \
+                 on its properties by {ID} in the direction of its last, and the scan reads them \
+                 that way, so a last {ID} runs in the direction of the property before it \
+                 (asc alone)",
+                direction(last.ascending)
+            )));
+        }
+    }
+    Ok(LookupChooseFirst {
+        among,
+        valid_when_property,
+        valid_when: LookupHashKey::from_value_of(function, property_names::CHOOSE_FIRST)?,
+        by,
     })
 }
 
@@ -2247,10 +2441,13 @@ pub(super) fn validate_reference_lookup_sources(
     // element, and the owner or creator reference's `"."` is that identity,
     // named by the path `$ownerId` or `$creatorId`, which no property source
     // can be
+    // At most one `chooseFirst` on the type, so a create reads one set of competitors
+    let mut choose_first_declared = false;
     for (holder, reference) in document_type.reference_declarations() {
         let Some(target) = reference.target() else {
             continue;
         };
+        let on_elements = matches!(reference, PropertyReference::Elements { .. });
         // Each leaf of a reference expression reads its key as it would
         // alone, and the error names the leaf (`refersTo anyOf[1] findBy`)
         for (leaf_path, leaf) in target.leaves_with_paths() {
@@ -2260,8 +2457,20 @@ pub(super) fn validate_reference_lookup_sources(
             let Some(lookup) = declaration.lookup else {
                 continue;
             };
-            if let Some(reason) = lookup
-                .referring_side_error(document_type, holder.path())
+            let choose_first_error = lookup.choose_first.as_ref().and_then(|_| {
+                let error = choose_first_declaration_error(
+                    on_elements,
+                    &leaf_path,
+                    &declaration,
+                    choose_first_declared,
+                );
+                choose_first_declared = true;
+                error
+            });
+            // Where a `chooseFirst` sits is judged first: on the elements of a typed array its
+            // findBy, which may read the element in no function, would be refused for that
+            if let Some(reason) = choose_first_error
+                .or_else(|| lookup.referring_side_error(document_type, holder.path()))
                 .or_else(|| create_only_leaf_error(document_type, &leaf_path, lookup, &declaration))
                 .or_else(|| age_or_consume_error(document_type, lookup))
             {
@@ -2278,6 +2487,65 @@ pub(super) fn validate_reference_lookup_sources(
         }
     }
     Ok(())
+}
+
+/// Why a `chooseFirst` cannot sit where it is declared; `None` when it can. A create reads
+/// the commitments a `chooseFirst` precedes once per value it judges, up to
+/// `SystemLimits::max_choose_first_candidates` documents, so a document type declares at most
+/// one (`already_declared` is whether an earlier declaration of the type held one), on a
+/// single reference: not on the elements of a typed array (`on_elements`), each element of
+/// which would read them again, nor on an operand of a reference expression (`leaf_path`
+/// not empty). A `where` beside it compares nothing but the writer with the commitment's
+/// owner (the declaration's `property_agreement`) and holds no other condition
+/// (`where_conditions`): a competitor is judged on its key alone, so a commitment differing
+/// from the create's in a `where` value, or failing a condition the found one meets, could
+/// precede it.
+fn choose_first_declaration_error(
+    on_elements: bool,
+    leaf_path: &str,
+    declaration: &DocumentReferenceDeclaration,
+    already_declared: bool,
+) -> Option<String> {
+    if already_declared {
+        return Some(
+            "a document type declares at most one chooseFirst: a create reads the competitors \
+             of each"
+                .to_string(),
+        );
+    }
+    if on_elements {
+        return Some(
+            "chooseFirst may not sit on the elements of a typed array: every element would read \
+             the competitors of its commitment again"
+                .to_string(),
+        );
+    }
+    if !leaf_path.is_empty() {
+        return Some(
+            "chooseFirst may not sit on an operand of a reference expression: it describes the \
+             one commitment a reference reveals"
+                .to_string(),
+        );
+    }
+    if let Some(referenced) = declaration.where_conditions.keys().next() {
+        return Some(format!(
+            "where \"{referenced}\" holds a condition beside chooseFirst: a competitor is judged \
+             on its key alone, so where may compare nothing but \"{OWNER_ID}\" with the writer"
+        ));
+    }
+    declaration
+        .property_agreement
+        .iter()
+        .find(|(referring, referenced)| {
+            referring.as_str() != OWNER_ID || referenced.as_str() != OWNER_ID
+        })
+        .map(|(referring, referenced)| {
+            format!(
+                "where \"{referenced}\": \"{referring}\" beside chooseFirst: a competitor is \
+                 judged on its key alone, so where may compare nothing but \"{OWNER_ID}\" with \
+                 the writer"
+            )
+        })
 }
 
 /// Why a lookup declared on `document_type` may not declare `minimumAgeBlocks` or `consume`;
@@ -8425,6 +8693,65 @@ mod tests {
                 .overlap_factor(),
             1
         );
+    }
+
+    /// A `score` type whose `amount` ends a `rangeSummable` index over
+    /// `weight` and is bucketed by a unique `integerRange` index.
+    fn range_summed_and_bucketed_schema(
+        amount: serde_json::Value,
+        weight: serde_json::Value,
+    ) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "amount": amount,
+                "weight": weight,
+                "author": { "type": "string", "maxLength": 63, "position": 2 }
+            },
+            "indices": [
+                {
+                    "name": "byAmount",
+                    "properties": [{ "amount": "asc" }],
+                    "summable": "weight",
+                    "rangeSummable": true
+                },
+                {
+                    "name": "byAmountBand",
+                    "properties": [{ "amount": "asc" }, { "author": "asc" }],
+                    "unique": true,
+                    "integerRange": { "on": "amount", "range": 100u64, "step": 100u64 }
+                }
+            ],
+            "required": ["amount", "weight", "author"],
+            "additionalProperties": false
+        })
+    }
+
+    #[test]
+    fn should_refuse_an_integer_range_on_an_unsigned_property_ending_a_range_summable_index() {
+        let unsigned_amount =
+            || json!({ "type": "integer", "minimum": 0, "maximum": 255, "position": 0 });
+        let signed_weight =
+            || json!({ "type": "integer", "minimum": -10, "maximum": 10, "position": 1 });
+        for weight in [
+            signed_weight(),
+            json!({ "type": "integer", "minimum": 0, "maximum": 10, "position": 1 }),
+        ] {
+            let error = try_document_type_from_schema_full_validation(
+                range_summed_and_bucketed_schema(unsigned_amount(), weight),
+            )
+            .expect_err("the amount keeps its earlier keys, which the grid does not read");
+            assert!(
+                error.to_string().contains("keeps its earlier key encoding"),
+                "unexpected error: {error}"
+            );
+        }
+
+        try_document_type_from_schema_full_validation(range_summed_and_bucketed_schema(
+            json!({ "type": "integer", "minimum": -128, "maximum": 127, "position": 0 }),
+            signed_weight(),
+        ))
+        .expect("a signed amount keeps its signed keys whatever the index sums");
     }
 
     /// A `listing` type with a required integer `price` (inferred from its

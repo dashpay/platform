@@ -25,14 +25,7 @@ Whether the owner of a document may replace it. Set it to `false` for records th
   "documentsMutable": false,
   "canBeDeleted": false,
   "properties": {
-    "proposalId": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 32,
-      "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
-      "position": 0
-    },
+    "proposalId": { "type": "identifier", "position": 0 },
     "choice": { "type": "string", "enum": ["yes", "no", "abstain"], "position": 1 }
   },
   "required": ["proposalId", "choice", "$createdAt"],

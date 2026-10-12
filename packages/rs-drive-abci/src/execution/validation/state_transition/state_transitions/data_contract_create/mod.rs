@@ -7215,6 +7215,81 @@ mod tests {
             );
         }
 
+        /// The contract whose `namePreorder` type holds two hashes, `ownerNameHash` unique per
+        /// owner and `nameHash` under a non-unique index with `$createdAtBlockHeight`, and whose
+        /// `unindexedPreorder` lacks that second index.
+        const CHOOSE_FIRST_PREORDERS_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-choose-first-preorders.json";
+
+        #[tokio::test]
+        async fn should_register_choose_first_into_a_preorder_type_of_another_contract() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-choose-first-registration-foreign-valid.json",
+                CHOOSE_FIRST_PREORDERS_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        /// What `chooseFirst` names on a type of another contract only registration sees, with
+        /// the rest of the `findBy` it sits beside: a type without the index over the property
+        /// and `$createdAtBlockHeight` can not list a commitment's competitors.
+        #[tokio::test]
+        async fn should_reject_choose_first_into_a_type_of_another_contract_without_its_index() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-choose-first-registration-foreign-missing-index.json",
+                CHOOSE_FIRST_PREORDERS_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentLookupInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "name.$creatorId"
+                    && e.reason().contains(
+                        "chooseFirst among \"nameHash\" reads the commitments holding the same \
+                         value"
+                    )
+                    && e.reason().contains("which it does not have")
+            );
+        }
+
+        /// A type of another contract whose owner-bound hash, the one the `findBy` function
+        /// fills, is unique without `$ownerId`: a copy of a pending commitment's hash landing
+        /// first under another identity would keep the commitment out, without its copier
+        /// knowing the values.
+        #[tokio::test]
+        async fn should_reject_choose_first_into_a_type_of_another_contract_unique_over_the_owner_hash(
+        ) {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-choose-first-registration-foreign-copyable-owner-hash.json",
+                CHOOSE_FIRST_PREORDERS_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentLookupInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "name.$creatorId"
+                    && e.reason().contains(
+                        "index \"ownerNameHashAlone\" of \"copyablePreorder\" is unique over \
+                         \"ownerNameHash\" without $ownerId"
+                    )
+            );
+        }
+
         #[tokio::test]
         async fn should_reject_a_lookup_into_a_non_unique_index_of_the_same_contract() {
             // The contract parse sees the referenced type of the same contract,

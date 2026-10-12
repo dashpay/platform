@@ -54,6 +54,7 @@ impl DriveDocumentQuery<'_> {
                     &path,
                     &key,
                     element.as_ref(),
+                    platform_version,
                 )
             })
             .collect::<Result<Vec<Document>, Error>>()?;
@@ -113,6 +114,7 @@ impl DriveDocumentQuery<'_> {
                         &path,
                         &key,
                         Some(&element),
+                        platform_version,
                     )?);
                 }
                 Some(segment) if segment == outer_type_name => {
