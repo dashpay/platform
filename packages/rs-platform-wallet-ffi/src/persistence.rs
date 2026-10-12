@@ -8974,6 +8974,119 @@ mod tests {
         }
     }
 
+    /// Why the outbound-account marker may ride an account's round only on
+    /// an atomic host: without begin/end brackets `FFIPersister` cannot claim
+    /// `ATOMIC_CHANGESETS` even when the host declares it, and it carries on
+    /// to the contacts callback after the account callback failed. A marker
+    /// in that round would land beside the account the host still holds, so
+    /// `register_external_contact_account` leaves it out of rounds on such a
+    /// host (dashpay/platform#4302 review).
+    #[test]
+    fn a_non_atomic_host_keeps_contact_rows_after_rejecting_the_account() {
+        use dashcore::secp256k1::Secp256k1;
+        use key_wallet::account::AccountType;
+        use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+        use key_wallet::mnemonic::Mnemonic;
+        use platform_wallet::changeset::{
+            AccountRegistrationEntry, ContactChangeSet, SentContactRequestKey,
+        };
+        use platform_wallet::wallet::identity::{ContactRequest, EstablishedContact};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Default)]
+        struct Host {
+            marked_rows: AtomicUsize,
+        }
+        unsafe extern "C" fn reject_accounts(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountSpecFFI,
+            _: usize,
+        ) -> i32 {
+            1
+        }
+        #[allow(clippy::too_many_arguments)]
+        unsafe extern "C" fn keep_contacts(
+            ctx: *mut c_void,
+            _: *const u8,
+            upserts: *const ContactRequestFFI,
+            count: usize,
+            _: *const ContactRequestRemovalFFI,
+            _: usize,
+            _: *const ContactRequestRemovalFFI,
+            _: usize,
+            _: *const ContactIgnoredSenderFFI,
+            _: usize,
+        ) -> i32 {
+            let host = &*(ctx as *const Host);
+            for row in std::slice::from_raw_parts(upserts, count) {
+                if row.has_external_account_reference {
+                    host.marked_rows.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+            0
+        }
+
+        let host = Host::default();
+        let persister = FFIPersister::new_with_persistence_capabilities(
+            PersistenceCallbacks {
+                context: &host as *const Host as *mut c_void,
+                on_persist_account_registrations_fn: Some(reject_accounts),
+                on_persist_contacts_fn: Some(keep_contacts),
+                ..PersistenceCallbacks::default()
+            },
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+        );
+        assert!(
+            !persister
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::ATOMIC_CHANGESETS),
+            "a declaration without begin/end brackets is not an atomic round"
+        );
+
+        let seed = Mnemonic::from_phrase(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        )
+        .expect("static BIP-39 vector")
+        .to_seed("");
+        let master =
+            ExtendedPrivKey::new_master(dashcore::Network::Testnet, &seed).expect("master");
+        let xpub = ExtendedPubKey::from_priv(&Secp256k1::new(), &master);
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0x01; 32]);
+        let mut established = EstablishedContact::new(
+            contact,
+            ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0),
+            ContactRequest::new(contact, owner, 0, 0, 8, vec![0u8; 96], 100, 0),
+        );
+        established.external_account_reference = Some(8);
+        let mut contacts = ContactChangeSet::default();
+        contacts.established.insert(
+            SentContactRequestKey {
+                owner_id: owner,
+                recipient_id: contact,
+            },
+            established,
+        );
+        let round = PlatformWalletChangeSet {
+            account_registrations: vec![AccountRegistrationEntry {
+                account_type: AccountType::DashpayExternalAccount {
+                    index: 0,
+                    user_identity_id: owner.to_buffer(),
+                    friend_identity_id: contact.to_buffer(),
+                },
+                account_xpub: xpub,
+            }],
+            contacts: Some(contacts),
+            ..PlatformWalletChangeSet::default()
+        };
+        assert!(persister.store([7u8; 32], round).is_err());
+        assert!(
+            host.marked_rows.load(Ordering::SeqCst) > 0,
+            "the contact rows still reached the host after the account was rejected"
+        );
+    }
+
     /// The restore side of dashpay/platform#4302: a wallet-restore entry
     /// carrying the record decodes into the start state's
     /// `dashpay_backfill` in canonical form, and an entry without it — the

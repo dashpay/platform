@@ -419,10 +419,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// guard the payload is checked against the contact's LIVE incoming
     /// request, and a stale one returns
     /// [`ExternalAccountRegistration::Superseded`] without writing anything.
-    /// When the contact is established, the account and the contact's
-    /// outbound-account marker are written in the same store round, so the
-    /// durable marker always names the request the durable account was built
-    /// from (dashpay/platform#4302 review).
+    /// When the contact is established and the backend's rounds are inline
+    /// and atomic, the account and the contact's outbound-account marker are
+    /// written in the same store round, so the durable marker always names
+    /// the request the durable account was built from. Any other backend
+    /// gets no marker from this round; the caller stamps it once the account
+    /// is stored (dashpay/platform#4302 review).
     pub async fn register_external_contact_account(
         &self,
         our_identity_id: &Identifier,
@@ -575,8 +577,20 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return Ok(ExternalAccountRegistration::AlreadyExisted);
         }
 
-        // The payload must still be the contact's live request, and the
-        // durable marker is bound to it in the same round as the account.
+        // The payload must still be the contact's live request. The durable
+        // marker is bound to it in the same round as the account only where
+        // that round is all-or-nothing: an inline store that attests atomic
+        // changesets. A backend without that guarantee can reject the account
+        // and pool yet keep the contact row, leaving the live request's marker
+        // beside the previous account it still holds — which a restart would
+        // trust. There the marker keeps its old order: the caller stamps it
+        // (`note_external_account_registered`) only after this round succeeded
+        // (dashpay/platform#4302 review).
+        let binds_marker = self.persister.store_commits_inline()
+            && self
+                .persister
+                .persistence_capabilities()
+                .contains(crate::changeset::PersistenceCapabilities::ATOMIC_CHANGESETS);
         let bound_contact = match info
             .identity_manager
             .managed_identity(our_identity_id)
@@ -593,12 +607,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 );
                 return Ok(ExternalAccountRegistration::Superseded);
             }
-            Some(contact) => {
+            Some(contact) if binds_marker => {
                 let mut bound = contact.clone();
                 bound.external_account_reference = Some(contact.incoming_request.account_reference);
                 Some(bound)
             }
-            None => None,
+            Some(_) | None => None,
         };
 
         // Persist the registration BEFORE the in-memory inserts (same

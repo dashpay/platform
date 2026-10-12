@@ -1921,6 +1921,11 @@ mod tests {
         /// keeps the record and then fails on the cursor — the partial write
         /// a non-atomic backend is allowed to leave.
         partial_rounds: Mutex<bool>,
+        /// When set, a round carrying an account registration rejects the
+        /// account and pool but keeps the round's contact rows, then fails —
+        /// what `FFIPersister` does on a host without atomic rounds, which
+        /// carries on to later callbacks after one fails.
+        reject_account_rounds: Mutex<bool>,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
@@ -1950,6 +1955,16 @@ mod tests {
             }
             if std::mem::take(&mut *self.panic_next_store.lock().unwrap()) {
                 panic!("recording persister: injected store panic");
+            }
+            if *self.reject_account_rounds.lock().unwrap()
+                && !changeset.account_registrations.is_empty()
+            {
+                let kept = PlatformWalletChangeSet {
+                    contacts: changeset.contacts,
+                    ..PlatformWalletChangeSet::default()
+                };
+                self.stores.lock().unwrap().push((wallet_id, kept));
+                return Err(PersistenceError::backend("injected account write failure"));
             }
             if *self.partial_rounds.lock().unwrap()
                 && changeset.dashpay_backfill.is_some()
@@ -5134,6 +5149,134 @@ mod tests {
             .established_contacts()[&contact]
             .clone();
         assert_eq!(established.external_account_reference, Some(8));
+    }
+
+    /// The marker rides the account's round only where that round is
+    /// all-or-nothing. A host without atomic rounds can reject a rotated
+    /// account and its pool yet keep the round's contact rows; with the
+    /// marker in that round, the live request's marker would sit on disk
+    /// beside the previous account the host still holds, and a restart would
+    /// trust it. On such a host the round carries no marker, and the old one
+    /// stays stale so the sweep rebuilds (dashpay/platform#4302 review).
+    #[tokio::test]
+    async fn a_rejected_rotation_on_a_non_atomic_host_leaves_no_current_marker_on_disk() {
+        use crate::wallet::identity::network::contact_requests::external_account_needs_rebuild;
+        use crate::wallet::identity::network::contacts::ExternalAccountRegistration;
+        use crate::wallet::identity::{ContactRequest, EstablishedContact};
+        use key_wallet::account::account_collection::DashpayAccountKey;
+
+        let (manager, persister, wallet_id) = make_wallet().await;
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0x01; 32]);
+        let shared_key = [0x55u8; 32];
+        let payload_old = encrypted_contact_xpub(&owner, &contact, &shared_key);
+        let payload_new =
+            encrypted_contact_xpub(&owner, &Identifier::from([0x02; 32]), &shared_key);
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet.identity();
+        let establish = |reference: u32, payload: Vec<u8>| {
+            let iw = iw.clone();
+            let persister = Arc::clone(&persister);
+            async move {
+                let p = WalletPersister::new(wallet_id, persister as _);
+                let mut wm = iw.wallet_manager.write().await;
+                let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+                if info.identity_manager.managed_identity(&owner).is_none() {
+                    info.identity_manager
+                        .add_identity(bare_identity(owner.to_buffer()), 0, wallet_id, &p)
+                        .expect("add owner");
+                }
+                let managed = info
+                    .identity_manager
+                    .managed_identity_mut(&owner)
+                    .expect("managed");
+                let marker = managed
+                    .dashpay()
+                    .established_contacts()
+                    .get(&contact)
+                    .and_then(|c| c.external_account_reference);
+                let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0);
+                let incoming =
+                    ContactRequest::new(contact, owner, 0, 0, reference, payload, 100, 0);
+                let mut established = EstablishedContact::new(contact, outgoing, incoming);
+                established.external_account_reference = marker;
+                managed.apply_established_contact(established);
+            }
+        };
+        let register = |payload: Vec<u8>| {
+            let iw = iw.clone();
+            async move {
+                iw.dashpay()
+                    .register_external_contact_account(
+                        &owner,
+                        &bare_identity(contact.to_buffer()),
+                        &payload,
+                        zeroize::Zeroizing::new(shared_key),
+                    )
+                    .await
+            }
+        };
+
+        // Built on an atomic host from request 7: account and marker together.
+        establish(7, payload_old.clone()).await;
+        assert_eq!(
+            register(payload_old).await.expect("first build"),
+            ExternalAccountRegistration::Built
+        );
+
+        // The contact rotates to request 8 and the sweep tears the account
+        // down in memory; the host still holds the old one. The host now
+        // has no atomic rounds and rejects the rebuilt account and pool.
+        establish(8, payload_new.clone()).await;
+        {
+            let key = DashpayAccountKey {
+                index: 0,
+                user_identity_id: owner.to_buffer(),
+                friend_identity_id: contact.to_buffer(),
+            };
+            let mut wm = manager.wallet_manager.write().await;
+            let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+            wallet.accounts.dashpay_external_accounts.remove(&key);
+            info.core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .remove(&key);
+        }
+        *persister.non_atomic.lock().unwrap() = true;
+        *persister.reject_account_rounds.lock().unwrap() = true;
+        persister.stores.lock().unwrap().clear();
+        assert!(
+            register(payload_new).await.is_err(),
+            "the host rejected the account"
+        );
+
+        let reached_disk = persister
+            .stores
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(_, cs)| cs.contacts.as_ref())
+            .flat_map(|contacts| contacts.established.values())
+            .any(|established| established.external_account_reference == Some(8));
+        assert!(
+            !reached_disk,
+            "the live request's marker must not reach disk beside the previous account"
+        );
+        let wm = manager.wallet_manager.read().await;
+        let established = wm
+            .get_wallet_info(&wallet_id)
+            .expect("info")
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("owner")
+            .dashpay()
+            .established_contacts()[&contact]
+            .clone();
+        assert_eq!(established.external_account_reference, Some(7));
+        assert!(
+            external_account_needs_rebuild(&established, true),
+            "the stale marker keeps the repair armed"
+        );
     }
 
     /// A restored outbound-account marker suppresses the startup rebuild, so
