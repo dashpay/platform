@@ -80,7 +80,8 @@ impl HistoryReplay {
 /// peer data, a settled one is store corruption, and this path has no recovery
 /// mode to fall back on. The restored coins it spends stay reserved, and an
 /// unconfirmed one stays on record, unchecked, so that a settled conflict
-/// still sweeps it and releases them.
+/// still sweeps it and releases them. A coin two such records spend is held
+/// for one of them only and is released with that one.
 ///
 /// Returns how many records were replayed and which stored transactions were
 /// retired instead.
@@ -198,16 +199,14 @@ pub async fn replay_recorded_history(
             );
         }
     }
-    // `Some` claimant: a conflict sweep or an abandon of the record releases the coin.
-    let mut reserved: Vec<(OutPoint, Option<Txid>)> = Vec::new();
-    for stored in &set_aside {
-        for input in &stored.transaction.input {
-            if placed.contains_key(&input.previous_output) {
-                reserved.push((input.previous_output, Some(stored.txid)));
-            }
-        }
-    }
-    let reserved_coins: HashSet<OutPoint> = reserved.iter().map(|(coin, _)| *coin).collect();
+    // The restored coins the records left out spend: they leave the UTXO set
+    // below and are claimed for those records once the replay is over.
+    let reserved_coins: HashSet<OutPoint> = set_aside
+        .iter()
+        .flat_map(|stored| &stored.transaction.input)
+        .map(|input| input.previous_output)
+        .filter(|outpoint| placed.contains_key(outpoint))
+        .collect();
     for account in wallet_info.accounts.all_funding_accounts_mut() {
         account
             .utxos
@@ -320,8 +319,29 @@ pub async fn replay_recorded_history(
     if let Some(chain_lock) = wallet_info.metadata.last_applied_chain_lock.clone() {
         wallet_info.apply_chain_lock(chain_lock);
     }
-    // A claim guards a coin only once it has left the UTXO set.
-    wallet_info.restore_spent_outpoints(&reserved);
+    // A claim guards a coin only once it has left the UTXO set, and a sweep
+    // or an abandon of its claimant releases the coin. One claimant per coin,
+    // the smallest txid still on record: the wallet turns two different
+    // claimants into a claim nothing releases.
+    let mut claims: BTreeMap<OutPoint, Txid> = BTreeMap::new();
+    for stored in set_aside
+        .iter()
+        .filter(|stored| !swept.contains(&stored.txid))
+    {
+        for input in &stored.transaction.input {
+            if reserved_coins.contains(&input.previous_output) {
+                claims
+                    .entry(input.previous_output)
+                    .and_modify(|claimant| *claimant = stored.txid.min(*claimant))
+                    .or_insert(stored.txid);
+            }
+        }
+    }
+    let claims: Vec<(OutPoint, Option<Txid>)> = claims
+        .into_iter()
+        .map(|(coin, claimant)| (coin, Some(claimant)))
+        .collect();
+    wallet_info.restore_spent_outpoints(&claims);
     wallet_info.update_balance();
     swept.extend(set_aside.iter().map(|stored| stored.txid));
     HistoryReplay {
@@ -2261,6 +2281,212 @@ mod tests {
                 owner.transactions()[&child.txid()].net_amount,
                 1 - value as i64,
                 "{value}: the spend counts the coin once"
+            );
+        }
+    }
+
+    /// Two unconfirmed records with unsafe amounts that both spend one shared
+    /// coin, each next to a coin of its own, replayed onto a projection
+    /// holding all three coins.
+    ///
+    /// Returns the wallet after the replay, the two records ordered by txid,
+    /// the shared coin with its funding, and each record's own coin.
+    async fn overlapping_unsafe_spends_fixture() -> (
+        Wallet,
+        ManagedWalletInfo,
+        [dashcore::Transaction; 2],
+        (OutPoint, dashcore::Transaction),
+        [OutPoint; 2],
+    ) {
+        use dashcore::hashes::Hash;
+        use dashcore::{Transaction, TxIn};
+
+        let (mut wallet, _, address) = wallet_with_receive_address();
+        let spend = |spends: &[OutPoint], value: u64| Transaction {
+            version: 1,
+            lock_time: 0,
+            input: spends
+                .iter()
+                .map(|previous_output| TxIn {
+                    previous_output: *previous_output,
+                    ..Default::default()
+                })
+                .collect(),
+            output: vec![TxOut {
+                value,
+                script_pubkey: address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let fundings = [(85, 10_000), (86, 20_000), (87, 30_000)].map(|(byte, value)| {
+            spend(
+                &[OutPoint::new(Txid::from_byte_array([byte; 32]), 0)],
+                value,
+            )
+        });
+        let [shared, one, other] = [0, 1, 2].map(|index| OutPoint::new(fundings[index].txid(), 0));
+        let mut spends = [
+            (spend(&[shared, one], 1 << 63), one),
+            (spend(&[shared, other], 1 << 63), other),
+        ];
+        spends.sort_by_key(|(spend, _)| spend.txid());
+        let own = [spends[0].1, spends[1].1];
+        let unsafe_spends = spends.map(|(spend, _)| spend);
+
+        let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let account = restored
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap();
+        for (coin, funding) in [shared, one, other].iter().zip(&fundings) {
+            account.utxos.insert(
+                *coin,
+                Utxo::new(*coin, funding.output[0].clone(), address.clone(), 99, false),
+            );
+        }
+        let history = RecordedHistory {
+            transactions: unsafe_spends
+                .iter()
+                .map(|transaction| StoredTransaction {
+                    txid: transaction.txid(),
+                    transaction: transaction.clone(),
+                    context: TransactionContext::Mempool,
+                    stored_net_amount: None,
+                    stored_direction: None,
+                    owned_inputs: Vec::new(),
+                })
+                .collect(),
+            instant_locks: BTreeMap::new(),
+        };
+        replay_recorded_history(&mut restored, &mut wallet, history).await;
+        assert_eq!(
+            restored.balance.total(),
+            0,
+            "every coin an unsafe record spends is reserved"
+        );
+        let [funding, _, _] = fundings;
+        (wallet, restored, unsafe_spends, (shared, funding), own)
+    }
+
+    /// A confirmed spend of `coins`, delivered to `info` after the load.
+    async fn deliver_confirmed_spend(
+        info: &mut ManagedWalletInfo,
+        wallet: &mut Wallet,
+        coins: &[OutPoint],
+    ) -> key_wallet::transaction_checking::TransactionCheckResult {
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, Transaction, TxIn};
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let winner = Transaction {
+            version: 1,
+            lock_time: 0,
+            input: coins
+                .iter()
+                .map(|previous_output| TxIn {
+                    previous_output: *previous_output,
+                    ..Default::default()
+                })
+                .collect(),
+            output: vec![TxOut {
+                value: 1_000,
+                script_pubkey: dashcore::ScriptBuf::new(),
+            }],
+            special_transaction_payload: None,
+        };
+        let block = BlockInfo::new(101, BlockHash::from_byte_array([101; 32]), 101);
+        info.check_core_transaction(
+            &winner,
+            TransactionContext::InBlock(block),
+            wallet,
+            true,
+            true,
+        )
+        .await
+    }
+
+    /// Whether a redelivery of `funding` credits `coin` to the wallet.
+    async fn redelivery_credits(
+        info: &ManagedWalletInfo,
+        wallet: &mut Wallet,
+        funding: &dashcore::Transaction,
+        coin: &OutPoint,
+    ) -> bool {
+        use dashcore::hashes::Hash;
+        use dashcore::BlockHash;
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let mut info = info.clone();
+        let block = BlockInfo::new(99, BlockHash::from_byte_array([99; 32]), 99);
+        info.check_core_transaction(
+            funding,
+            TransactionContext::InBlock(block),
+            wallet,
+            true,
+            true,
+        )
+        .await;
+        info.accounts.standard_bip44_accounts[&0]
+            .utxos
+            .contains_key(coin)
+    }
+
+    /// Two records left out for unsafe amounts can spend the same restored
+    /// coin. Once a settled transaction has swept both, nothing spends the
+    /// coin any more: it must be released and credited when its funding is
+    /// seen again.
+    #[tokio::test]
+    async fn should_release_coin_shared_by_two_unsafe_records_once_both_are_swept() {
+        let (mut wallet, mut restored, unsafe_spends, (shared, funding), own) =
+            overlapping_unsafe_spends_fixture().await;
+        assert!(!redelivery_credits(&restored, &mut wallet, &funding, &shared).await);
+
+        let settled = deliver_confirmed_spend(&mut restored, &mut wallet, &own).await;
+
+        let mut swept = settled.swept_transactions.clone();
+        swept.sort_unstable();
+        assert_eq!(swept, unsafe_spends.map(|spend| spend.txid()));
+        assert_eq!(
+            settled.released_outpoints,
+            vec![shared],
+            "the coin only the swept records spent must be released"
+        );
+        assert!(
+            redelivery_credits(&restored, &mut wallet, &funding, &shared).await,
+            "the released coin must be credited when its funding is seen"
+        );
+    }
+
+    /// The wallet can name one claimant per reserved coin, so a shared coin
+    /// is held for the record with the smaller txid. Accepted consequence:
+    /// sweeping that record alone drops the guard although the other record
+    /// still names the coin, and sweeping the other one alone drops nothing.
+    /// Neither is reported as a release while a record on file spends the
+    /// coin. A record with unsafe amounts can never confirm, so neither
+    /// costs funds.
+    #[tokio::test]
+    async fn should_hold_shared_coin_for_the_unsafe_record_with_the_smaller_txid() {
+        for (swept, drops_guard) in [(0, true), (1, false)] {
+            let (mut wallet, mut restored, unsafe_spends, (shared, funding), own) =
+                overlapping_unsafe_spends_fixture().await;
+
+            let settled =
+                deliver_confirmed_spend(&mut restored, &mut wallet, &own[swept..=swept]).await;
+
+            assert_eq!(
+                settled.swept_transactions,
+                vec![unsafe_spends[swept].txid()]
+            );
+            assert_eq!(
+                settled.released_outpoints,
+                vec![],
+                "record {swept} swept alone: the other record still spends the coin"
+            );
+            assert_eq!(
+                redelivery_credits(&restored, &mut wallet, &funding, &shared).await,
+                drops_guard,
+                "record {swept} swept alone"
             );
         }
     }
