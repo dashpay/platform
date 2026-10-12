@@ -5,7 +5,7 @@
 //! and re-deriving private keys.
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -503,22 +503,21 @@ pub(crate) fn recorded_input_conflicts<'a>(
     locks: impl IntoIterator<Item = &'a TrackedAssetLock>,
     history: &RecordedHistory,
 ) -> BTreeMap<OutPoint, ObservedInputConflict> {
-    let pending: Vec<&TrackedAssetLock> = locks
-        .into_iter()
-        .filter(|lock| {
-            matches!(
-                lock.status,
-                AssetLockStatus::Built | AssetLockStatus::Broadcast
-            )
-        })
-        .collect();
-    let watched: HashSet<OutPoint> = pending
-        .iter()
-        .flat_map(|lock| lock.transaction.input.iter())
-        .map(|input| input.previous_output)
-        .collect();
+    // The pending lock transactions that spend each outpoint.
+    let mut owners: BTreeMap<OutPoint, Vec<Txid>> = BTreeMap::new();
+    for lock in locks.into_iter().filter(|lock| {
+        matches!(
+            lock.status,
+            AssetLockStatus::Built | AssetLockStatus::Broadcast
+        )
+    }) {
+        let txid = lock.transaction.txid();
+        for input in &lock.transaction.input {
+            owners.entry(input.previous_output).or_default().push(txid);
+        }
+    }
     let mut conflicts = BTreeMap::new();
-    if watched.is_empty() {
+    if owners.is_empty() {
         return conflicts;
     }
     for stored in &history.transactions {
@@ -527,15 +526,9 @@ pub(crate) fn recorded_input_conflicts<'a>(
         };
         for input in stored.transaction.input.iter().map(|i| i.previous_output) {
             // A lock's own confirmation is not a conflict with itself.
-            let contested = watched.contains(&input)
-                && pending.iter().any(|lock| {
-                    lock.transaction.txid() != stored.txid
-                        && lock
-                            .transaction
-                            .input
-                            .iter()
-                            .any(|i| i.previous_output == input)
-                });
+            let contested = owners
+                .get(&input)
+                .is_some_and(|owners| owners.iter().any(|owner| *owner != stored.txid));
             if contested {
                 conflicts.insert(
                     input,
@@ -3817,14 +3810,24 @@ mod tests {
             owned_inputs: Vec::new(),
         };
 
-        let (contested, own, unconfirmed, consumed) =
-            (outpoint(1), outpoint(2), outpoint(3), outpoint(4));
+        let (contested, own, unconfirmed, consumed, shared) = (
+            outpoint(1),
+            outpoint(2),
+            outpoint(3),
+            outpoint(4),
+            outpoint(5),
+        );
         let confirmed_lock = spending(own, 0);
+        // Two pending locks on one input: the confirmation of one is a
+        // conflict for the other.
+        let confirmed_rival = spending(shared, 0);
         let locks = [
             lock(spending(contested, 0), AssetLockStatus::Broadcast),
             lock(confirmed_lock.clone(), AssetLockStatus::Built),
             lock(spending(unconfirmed, 0), AssetLockStatus::Broadcast),
             lock(spending(consumed, 0), AssetLockStatus::Consumed),
+            lock(confirmed_rival.clone(), AssetLockStatus::Broadcast),
+            lock(spending(shared, 2), AssetLockStatus::Built),
         ];
         let spender = spending(contested, 1);
         let history = RecordedHistory {
@@ -3833,19 +3836,29 @@ mod tests {
                 stored(confirmed_lock, confirmed_at(101)),
                 stored(spending(unconfirmed, 1), TransactionContext::Mempool),
                 stored(spending(consumed, 1), confirmed_at(102)),
+                stored(confirmed_rival.clone(), confirmed_at(103)),
             ],
             instant_locks: BTreeMap::new(),
         };
 
         assert_eq!(
             super::recorded_input_conflicts(&locks, &history),
-            BTreeMap::from([(
-                contested,
-                ObservedInputConflict {
-                    spender: spender.txid(),
-                    height: 100,
-                },
-            )])
+            BTreeMap::from([
+                (
+                    contested,
+                    ObservedInputConflict {
+                        spender: spender.txid(),
+                        height: 100,
+                    },
+                ),
+                (
+                    shared,
+                    ObservedInputConflict {
+                        spender: confirmed_rival.txid(),
+                        height: 103,
+                    },
+                ),
+            ])
         );
     }
 
