@@ -1462,14 +1462,20 @@ impl Index {
     /// Whether the index keeps exactly one entry for every live document,
     /// keyed by values the document carries: it keeps entries (it is no
     /// `summableOffCountIndex` index), skips no document (no `skipIfAbsent`),
-    /// drops a deleted document's entry (no `outlivesDelete`) and keys none
-    /// by `$createdAt`, a timestamp the block assigns. An indexOnly type's
-    /// proof index and a counter's source index both need it.
+    /// drops a deleted document's entry (no `outlivesDelete`), keys none
+    /// by `$createdAt`, a timestamp the block assigns, and names no typed
+    /// array, whose index enters a document once per element and not at all
+    /// for an empty list. An indexOnly type's proof index, a counter's source
+    /// index and the index an indexOnly array index's key must hold all need
+    /// it. Only indexOnly rules read it, and an indexOnly type names no typed
+    /// array before this check admitted one, so the array term changes the
+    /// answer for no earlier contract.
     pub fn keys_each_live_document_by_its_values(&self) -> bool {
         !self.is_summable_off_count_index()
             && !self.skip_if_absent
             && !self.outlives_delete
             && !self.involves(property_names::CREATED_AT)
+            && self.indexed_array.is_none()
     }
 
     /// The terminal's single component; `None` on a composite terminal or a

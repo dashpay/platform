@@ -11,6 +11,8 @@ use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 #[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{
     index_only_row_commits_created_at, DocumentPropertyType, DocumentTypeRef,
 };
@@ -19,9 +21,15 @@ use dpp::document::document_methods::DocumentMethodsV0;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::document::{Document, DocumentV0Getters};
 #[cfg(any(feature = "server", feature = "verify"))]
+use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::platform_value::Value;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::util::hash::hash_double;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::version::PlatformVersion;
+#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::ProtocolError;
 
 /// The byte length of an indexOnly terminal item's payload: the row
 /// commitment below.
@@ -69,6 +77,16 @@ pub const INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE: u32 = INDEX_ONLY_ROW_COMMITMENT_
 /// capped far below 2^24 bytes), and the one name-less tail segment starts
 /// with `$` — so equal preimages imply equal (owner, present-set, values,
 /// createdAt). Pinned by the absence tests in the e2e battery.
+///
+/// A typed array (protocol version 14, which an indexOnly type holds only
+/// as the array an index enters a document under once per element) is
+/// committed as its whole list, in the document's order: the raw bytes are
+/// `(u32 length ‖ element key)*`, each element keyed as its entries are
+/// ([`typed_array_commitment_bytes`]). A delete carrying the list reordered,
+/// shortened, lengthened or changed hashes differently and fails every probe.
+/// An empty or null list is committed as an absent one: the three write the
+/// same entries (none under the array's indexes), so a delete may carry
+/// any of them.
 #[cfg(any(feature = "server", feature = "verify"))]
 pub fn index_only_row_commitment(
     document: &Document,
@@ -103,13 +121,32 @@ pub fn index_only_row_commitment_with_preimage_size(
     property_names.sort();
 
     for property_name in property_names {
-        // An entry payload property is a value, not a key: it is committed
-        // through the payload encoding, which carries no 255-byte key cap
-        // (the parser bounds it by the field value limit instead).
-        let raw = if document_type
+        let is_typed_array = document_type
+            .flattened_properties()
+            .get(property_name)
+            .is_some_and(|property| {
+                matches!(property.property_type, DocumentPropertyType::TypedArray(_))
+            });
+        let raw = if is_typed_array {
+            // The whole list. An empty one is committed as an absent one,
+            // required or not: the array's indexes skip both, and the schema
+            // enforces `required`
+            match typed_array_commitment_bytes(
+                document,
+                document_type,
+                property_name,
+                platform_version,
+            )? {
+                Some(list) => Some(list),
+                None => continue,
+            }
+        } else if document_type
             .entry_payload()
             .contains(property_name.as_str())
         {
+            // An entry payload property is a value, not a key: it is committed
+            // through the payload encoding, which carries no 255-byte key cap
+            // (the parser bounds it by the field value limit instead).
             match document.properties().get(property_name.as_str()) {
                 Some(value) => {
                     let property = document_type
@@ -174,4 +211,43 @@ pub fn index_only_row_commitment_with_preimage_size(
     let preimage_size = preimage.len().try_into().unwrap_or(u16::MAX);
 
     Ok((hash_double(preimage), preimage_size))
+}
+
+/// The raw bytes the row commitment binds a typed array of `document` by
+/// ([`index_only_row_commitment`]): `(u32 length ‖ element key)*` over its
+/// elements in the document's order, each element keyed as an index naming
+/// the array enters the document under it (`serialize_value_for_key`, the
+/// encoding the walkers and probes key its entries with), or `None` for an
+/// absent, null or empty list.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn typed_array_commitment_bytes(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    property_name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<Option<Vec<u8>>, Error> {
+    let elements = match document
+        .properties()
+        .get_optional_at_path(property_name)
+        .map_err(ProtocolError::ValueError)?
+    {
+        None | Some(Value::Null) => return Ok(None),
+        Some(Value::Array(elements)) if elements.is_empty() => return Ok(None),
+        Some(Value::Array(elements)) => elements,
+        Some(_) => {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "an indexOnly document's typed array holds no list: the schema validates \
+                 the values before they are committed",
+            )))
+        }
+    };
+    let mut list = Vec::new();
+    for element in elements {
+        let key =
+            document_type.serialize_value_for_key(property_name, element, platform_version)?;
+        // An element key is at most 255 bytes (the index key cap)
+        list.extend_from_slice(&(key.len() as u32).to_be_bytes());
+        list.extend_from_slice(&key);
+    }
+    Ok(Some(list))
 }

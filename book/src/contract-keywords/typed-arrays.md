@@ -96,7 +96,7 @@ An index may name a typed array, from protocol version 14. The document is then 
 
 `byHashtag` lists the posts carrying one hashtag, newest first; `byMention` the posts naming one identity; `trending` counts the posts per hashtag and ranks the hashtags by that count.
 
-- **One entry per distinct element.** Each element is keyed exactly as a property of the element's type would be, so elements sort like values of that type. A list that repeats an element is entered under it once; `uniqueItems` is not needed.
+- **One entry per distinct element.** Each element is keyed exactly as a property of the element's type would be, so elements sort like values of that type. A list that repeats an element is entered under it once; `uniqueItems` is not needed, except by an index of an [index-only type](index-only.md#typed-arrays).
 - **An empty or absent list is entered nowhere.** The array is always in the index's skip set (see [`skipIfAbsent`](indexes.md#skipifabsent)), declared or not, and an index naming it is read only with the elements bound.
 - **Any position, one array.** The array may be the index's first property or come after others (`[$ownerId, hashtags]`), but an index names at most one typed array.
 - **Updates move only what changed.** A replace that keeps an element keeps its entry; an element added or dropped adds or removes one entry; a change to another property of the index moves every element's entry in that index.
@@ -122,7 +122,7 @@ The element schema (`items`):
 
 Where a typed array cannot be used:
 
-- in an index of an index-only type, or as an index-only type's terminal or entry payload: an index-only type's entries are its rows, one per document (10231, or `InvalidIndexPropertyTypeError` 10206 in a terminal);
+- as an index-only type's terminal or entry payload: a terminal keys one entry and an entry payload is one value (10231, or `InvalidIndexPropertyTypeError` 10206 in a terminal). An index of an index-only type may name one, under the rules of [Index-Only Types](index-only.md#typed-arrays);
 - inside an object, when an index names it: an indexed typed array is a top-level property (10231);
 - on either side of a `where` entry in a reference;
 - as an operand of a [propertyConstraints](property-constraints.md) rule, other than in a `present` or `absent` test;
@@ -137,7 +137,7 @@ A meta-schema violation is refused with `JsonSchemaError` (10101) and the other 
 - `items` may not be added or removed, so a byte array cannot become a typed array or the reverse (10246).
 - Inside `items`, each keyword follows its own update rule (see [Property Schemas](property-schemas.md)): for example `maxLength` and `maxBytes` may be raised, and `enum` may gain values. `refersTo` and `distinctFrom` are fixed.
 - A change to how an element is stored is refused (`DocumentTypeUpdateError`, 40212): an integer element whose width or sign would change (by its bounds or its `enum`), or a byte array element that would switch between fixed and variable size or change its fixed size.
-- On the array, `maxItems` may be raised, up to 1024 and within the reference limit, and `minItems` lowered. `uniqueItems` may be removed, not added. An indexed array's `maxItems` stays within the index limits (16, or 4 under a window, and 256 entries per document), and on a type with a [`ttl`](ttl.md), whose documents prepaid their cleanup by it, is not raised at all (`DocumentTypeUpdateError`, 40212).
+- On the array, `maxItems` may be raised, up to 1024 and within the reference limit, and `minItems` lowered. `uniqueItems` may be removed, not added, and not removed from an array an index of an index-only type names. An indexed array's `maxItems` stays within the index limits (16, or 4 under a window, and 256 entries per document), and on a type with a [`ttl`](ttl.md), whose documents prepaid their cleanup by it, is not raised at all (`DocumentTypeUpdateError`, 40212).
 - The element bounds of an indexed array stay within the index key limits (a string's `maxLength` at most 63, a byte array element's `minItems` at least 1).
 
 ## See also

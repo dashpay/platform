@@ -8,7 +8,11 @@
 //! * **create**: any existing entry is a duplicate, so probe every index —
 //!   a shorter index thereby doubles as a uniqueness constraint over its
 //!   value projection plus owner (for Yappr's likes the `[postId]` index
-//!   is the one-like-per-(post, owner) rule).
+//!   is the one-like-per-(post, owner) rule). An index of a typed array
+//!   (protocol version 14) has one entry per element and is no such rule:
+//!   registration makes another index's whole key part of its key without
+//!   the array, so a create colliding on one of its elements collides on
+//!   that index's entry too.
 //! * **delete**: probe every surviving index entry. Only paths already
 //!   drained from expired buckets are exempt. Every index
 //!   embeds `$ownerId` (the parser enforces it), so each probe — computed
@@ -40,9 +44,10 @@ use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
-/// The entry paths a document's values produce under one index — one per
-/// containing bucket for a time-range index, exactly one otherwise —
-/// paired with the shared member key (the terminal property's value).
+/// The entry paths a document's values produce under one index (one per
+/// containing bucket for a time-range index and per distinct element for an
+/// index of a typed array, exactly one otherwise), paired with the shared
+/// member key (the terminal property's value).
 pub type IndexOnlyEntryPathsAndKey = (Vec<Vec<Vec<u8>>>, Vec<u8>);
 
 impl Drive {
@@ -79,9 +84,13 @@ impl Drive {
     /// doctype, (<level key>, <value key>)*, 0]` with the terminal
     /// property's value as the member key.
     ///
-    /// A plain index produces exactly one path. A time-range (bucketed)
+    /// A plain index produces exactly one path. An index of a typed array
+    /// (protocol version 14) produces one path per distinct element of the
+    /// document's list, and none for an empty or absent list, as the walkers
+    /// write it. A time-range (bucketed)
     /// index produces one path per bucket containing the document's
-    /// timestamp: the first level's segment is the grid-qualified
+    /// timestamp (times the elements, when it also names a typed array):
+    /// the first level's segment is the grid-qualified
     /// [`level_key`](Index::level_key) and its value keys come from
     /// [`TimeRangeTransform::entry_keys_for_raw`] — the same derivation
     /// the index walkers write with, so probe and write paths cannot
@@ -127,12 +136,36 @@ impl Drive {
                 )))
         };
 
+        // An index of a typed array (protocol version 14) enters the document
+        // under each distinct element of its list, the keys the walkers write
+        // it under (`level_keys`). The array is in the index's skip set, and a
+        // list without elements is not carried, so the index has no entry for
+        // it.
+        let array_elements = match index.indexed_array.as_deref() {
+            Some(array) => {
+                let elements = document.get_raw_array_elements_for_document_type(
+                    array,
+                    document_type,
+                    platform_version,
+                )?;
+                if elements.is_empty() {
+                    return Ok((Vec::new(), Vec::new()));
+                }
+                Some((array, elements))
+            }
+            None => None,
+        };
+
         // A skipIfAbsent index participates only when the document carries
         // every property of its skip set (the parser guarantees those are the
         // only properties of the index that may be absent). Mirror the write
         // walkers' skip exactly (`document_takes_part_in_index`): a document
         // the index skips has no entries in it.
         for skip_property in index.skip_if_absent_properties.iter() {
+            // Judged by its elements above
+            if index.indexed_array.as_ref() == Some(skip_property) {
+                continue;
+            }
             if document
                 .get_raw_for_document_type(
                     skip_property,
@@ -155,13 +188,15 @@ impl Drive {
         let mut paths: Vec<Vec<Vec<u8>>> = vec![prefix];
         for (position, property) in index.properties.iter().enumerate() {
             let level_key = index.level_key(position, &property.name);
-            let raw = raw_value_for(&property.name)?;
-            // Only a bucketed (time- or integer-range) index's first
-            // property fans out; every other level extends each path with
-            // its single value key.
-            let value_keys: Vec<Vec<u8>> = match index.bucketing() {
-                Some(bucketing) if position == 0 => bucketing.entry_keys_for_raw(&raw),
-                _ => vec![raw],
+            // A bucketed (time- or integer-range) index's first property fans
+            // out over its windows, and a typed array over its elements; every
+            // other level extends each path with its single value key.
+            let value_keys: Vec<Vec<u8>> = match (&array_elements, index.bucketing()) {
+                (Some((array, elements)), _) if property.name == *array => elements.clone(),
+                (_, Some(bucketing)) if position == 0 => {
+                    bucketing.entry_keys_for_raw(&raw_value_for(&property.name)?)
+                }
+                _ => vec![raw_value_for(&property.name)?],
             };
             paths = paths
                 .into_iter()
