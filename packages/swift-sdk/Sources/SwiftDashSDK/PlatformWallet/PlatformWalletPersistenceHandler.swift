@@ -297,6 +297,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// counts, by `endChangeset`. Confined to `serialQueue`.
     private var roundUtxoCreditTally = UtxoCreditVerdictTally()
 
+    /// Rows a chain truncation removed in the open round, keyed by `txid`
+    /// and by outpoint, and held back from deletion until `endChangeset`.
+    private struct VacatedRows {
+        var transactions: [Data: PersistentTransaction] = [:]
+        var txos: [Data: PersistentTxo] = [:]
+    }
+
+    /// The round that removes a transaction can record it again in its new
+    /// block, and a delete followed by an insert under one unique key in a
+    /// single save is not a sequence this store is relied on to resolve. A
+    /// removed row is therefore hidden from the keyed lookups, handed to
+    /// the writer that would otherwise insert its key, and deleted by
+    /// `endChangeset` only if nothing took it. Cleared by `beginChangeset`
+    /// and `endChangeset`. Confined to `serialQueue`.
+    private var roundVacated = VacatedRows()
+
     /// Breadcrumb backfills that arrived on the serial queue while a
     /// changeset round was open. The backfill both mutates
     /// `backgroundContext` and saves it, so running it mid-round would
@@ -1487,6 +1503,182 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    /// Cut the mirror back the way the wallet cut itself back when a fork
+    /// replaced the chain above each truncation's height — the SwiftData
+    /// counterpart of the SQLite store's `apply_truncation`.
+    ///
+    /// Rust fires this before the round's other core callbacks, so the rest
+    /// of the round describes the wallet after the last truncation. Per
+    /// truncation, in order: a removed transaction and the coins it created
+    /// go for every wallet — chain facts, like a swept loser's; a kept
+    /// transaction — InstantSend-locked, so mined again — returns to the
+    /// mempool with its outputs unconfirmed and locked, and what it spent
+    /// stays spent; this wallet's restored coins are spendable again; the
+    /// synced height drops to the fork and never rises. A restored coin
+    /// needs no veto from stored claims, unlike a sweep's release: its
+    /// spender was confirmed, and no block the fork keeps can hold a second
+    /// spend of it.
+    ///
+    /// Same fail-the-round contract as the sweep callback: a lookup that
+    /// throws returns `false`, so Rust does not treat a truncation that
+    /// never landed as durable.
+    @discardableResult
+    func persistWalletChangesetTruncations(
+        walletId: Data,
+        truncations: UnsafePointer<ChainTruncationFFI>?,
+        count: UInt
+    ) -> Bool {
+        onQueue {
+            let wallet: PersistentWallet
+            switch roundWalletLookup(walletId: walletId, callback: "wallet_changeset_truncations") {
+            case .failed: return false
+            case .absent: return true
+            case .found(let row): wallet = row
+            }
+            guard count > 0, let truncationsPtr = truncations else { return true }
+
+            for index in 0..<Int(count) {
+                let truncation = truncationsPtr[index]
+                do {
+                    if truncation.txids_count > 0, let txidsPtr = truncation.txids {
+                        for i in 0..<Int(truncation.txids_count) {
+                            try vacateTransaction(txid: hashData(txidsPtr[i]))
+                        }
+                    }
+                    if truncation.unconfirmed_txids_count > 0,
+                       let txidsPtr = truncation.unconfirmed_txids {
+                        for i in 0..<Int(truncation.unconfirmed_txids_count) {
+                            try unconfirmTransaction(txid: hashData(txidsPtr[i]))
+                        }
+                    }
+                    if truncation.restored_outpoints_count > 0,
+                       let outpointsPtr = truncation.restored_outpoints {
+                        for i in 0..<Int(truncation.restored_outpoints_count) {
+                            let entry = outpointsPtr[i]
+                            try restoreTruncatedCoin(
+                                outpoint: PersistentTxo.makeOutpoint(
+                                    txid: hashData(entry.txid),
+                                    vout: entry.vout
+                                ),
+                                walletId: walletId
+                            )
+                        }
+                    }
+                } catch {
+                    SDKLogger.event(
+                        "persistence_chain_truncation_failed",
+                        category: .persistence,
+                        severity: .error,
+                        fields: [
+                            "height": .integer(Int64(truncation.height)),
+                            "wallet_reference": .reference(walletId),
+                        ],
+                        error: error
+                    )
+                    return false
+                }
+                if wallet.syncedHeight > truncation.height {
+                    wallet.syncedHeight = truncation.height
+                    wallet.lastUpdated = Date()
+                }
+            }
+
+            // Bracketed by changesetBegin/End, which deletes what the round
+            // did not take back; with no round open nothing can.
+            if !inChangeset { deleteVacatedRows() }
+            return true
+        }
+    }
+
+    /// Take a transaction a chain truncation removed, and the coins it
+    /// created, out of the round — see `roundVacated`. The links and the
+    /// pending claims it made go at once, so nothing the rest of the round
+    /// reads still counts it as a spender.
+    ///
+    /// Every row a relationship hands over is registered before it is
+    /// written, like any other first touch of a key (see `roundIndex`).
+    private func vacateTransaction(txid: Data) throws {
+        guard let row = try fetchTransactionRow(
+            txid: txid,
+            prefetching: [\.outputs, \.inputs, \.pendingInputs]
+        ) else { return }
+
+        for output in row.outputs {
+            roundIndex?.txosByOutpoint[output.outpoint] = output
+            output.isSpent = false
+            output.spendingTransaction = nil
+            output.spendingInputIndex = nil
+            output.supersededByTxid = nil
+            roundVacated.txos[output.outpoint] = output
+        }
+        for input in row.inputs {
+            roundIndex?.txosByOutpoint[input.outpoint] = input
+            input.spendingTransaction = nil
+            input.spendingInputIndex = nil
+            input.lastUpdated = Date()
+        }
+        for pending in row.pendingInputs {
+            backgroundContext.delete(pending)
+        }
+        Self.returnToMempool(row)
+        row.involvedAccounts.removeAll()
+        roundVacated.transactions[txid] = row
+    }
+
+    /// Keep a transaction whose block a chain truncation dropped as
+    /// unconfirmed: no block, and its outputs unconfirmed and
+    /// InstantSend-locked. Spend state is not touched.
+    private func unconfirmTransaction(txid: Data) throws {
+        guard let row = try fetchTransactionRow(txid: txid, prefetching: [\.outputs]) else { return }
+        Self.returnToMempool(row)
+        for output in row.outputs {
+            roundIndex?.txosByOutpoint[output.outpoint] = output
+            output.isConfirmed = false
+            output.isInstantLocked = true
+            output.height = 0
+            output.lastUpdated = Date()
+        }
+    }
+
+    private static func returnToMempool(_ row: PersistentTransaction) {
+        row.context = TransactionContextType.mempool.rawValue
+        row.blockHeight = 0
+        row.blockHash = nil
+        row.blockTimestamp = 0
+        row.blockPosition = 0
+        row.hasBlockPosition = false
+        row.lastUpdated = Date()
+    }
+
+    /// Hand back one of this wallet's coins that a removed transaction had
+    /// spent. The link to that transaction is cleared by
+    /// `vacateTransaction`, or by the delete rule when another wallet's
+    /// round removed the shared row first.
+    private func restoreTruncatedCoin(outpoint: Data, walletId: Data) throws {
+        if let txo = try fetchTxoRowChecked(outpoint: outpoint),
+           Self.resolvedWalletId(of: txo) == walletId {
+            txo.isSpent = false
+            txo.supersededByTxid = nil
+            txo.lastUpdated = Date()
+        }
+        for pending in pendingInputRows(outpoint: outpoint)
+        where pending.walletId == walletId && pending.isSweptTombstone {
+            backgroundContext.delete(pending)
+        }
+    }
+
+    /// Delete the rows a truncation removed that the round did not record
+    /// again — see `roundVacated`.
+    private func deleteVacatedRows() {
+        for txo in roundVacated.txos.values where !txo.isDeleted {
+            backgroundContext.delete(txo)
+        }
+        for row in roundVacated.transactions.values where !row.isDeleted {
+            backgroundContext.delete(row)
+        }
+        roundVacated = VacatedRows()
+    }
+
     func persistWalletChangesetSweeps(
         walletId: Data,
         sweeps: UnsafePointer<SweepBatchFFI>?,
@@ -2363,6 +2555,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         txid: Data,
         prefetching: [PartialKeyPath<PersistentTransaction>]
     ) throws -> PersistentTransaction? {
+        if roundVacated.transactions[txid] != nil { return nil }
         if let known = roundIndex?.transactionsByTxid[txid] {
             return known.isDeleted ? nil : known
         }
@@ -2390,6 +2583,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// read both mean "write the row"); the reconcile passes must not,
     /// because for them a miss is an insert and a failed read is a stop.
     private func fetchTxoRowChecked(outpoint: Data) throws -> PersistentTxo? {
+        if roundVacated.txos[outpoint] != nil { return nil }
         if let known = roundIndex?.txosByOutpoint[outpoint] {
             return known.isDeleted ? nil : known
         }
@@ -2533,6 +2727,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let record: PersistentTransaction
         if let existing {
             record = existing
+        } else if let vacated = roundVacated.transactions.removeValue(forKey: txidData) {
+            // Removed by a truncation earlier in this round and recorded
+            // again: the row is taken back and rewritten below.
+            record = vacated
         } else {
             record = PersistentTransaction(
                 txid: txidData,
@@ -2805,6 +3003,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             let parentTx: PersistentTransaction
             if let existingTx = fetchTransactionRow(txid: txidData) {
                 parentTx = existingTx
+            } else if let vacated = roundVacated.transactions.removeValue(forKey: txidData) {
+                // Removed by a truncation earlier in this round: taken
+                // back as the stub the branch below would insert.
+                vacated.transactionData = Data()
+                parentTx = vacated
             } else {
                 // Stub row — `transactionData` is left as empty
                 // `Data()` on purpose. The real upsert (which has the
@@ -2823,18 +3026,28 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 return Data(bytes: p, count: Int(utxo.script_pubkey_len))
             }()
             let addressStr = utxo.address.map { String(cString: $0) } ?? ""
-            record = PersistentTxo(
-                transaction: parentTx,
-                vout: utxo.outpoint.vout,
-                amount: utxo.amount,
-                address: addressStr,
-                scriptPubKey: script,
-                height: utxo.height
-            )
+            if let vacated = roundVacated.txos.removeValue(forKey: outpoint) {
+                // A coin a truncation removed earlier in this round, created
+                // again: `vacateTransaction` cleared its spend state, and
+                // the rest is rewritten here and below as for a new row.
+                record = vacated
+                record.transaction = parentTx
+                record.address = addressStr
+                record.scriptPubKey = script
+            } else {
+                record = PersistentTxo(
+                    transaction: parentTx,
+                    vout: utxo.outpoint.vout,
+                    amount: utxo.amount,
+                    address: addressStr,
+                    scriptPubKey: script,
+                    height: utxo.height
+                )
+                backgroundContext.insert(record)
+                roundIndex?.txosByOutpoint[outpoint] = record
+            }
             record.account = account
             record.walletId = resolvedWalletId
-            backgroundContext.insert(record)
-            roundIndex?.txosByOutpoint[outpoint] = record
             redelivered = false
         }
 
@@ -3189,6 +3402,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.trackedMasternodes
                 | PlatformWalletPersistenceCapabilities.coreSweepRemoval
                 | PlatformWalletPersistenceCapabilities.dashpayPayments
+                | PlatformWalletPersistenceCapabilities.coreChainTruncation
         )
     }
 
@@ -3226,6 +3440,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             persistWalletChangesetUtxoVerdictsCallback
         extensionCallbacks.on_persist_identity_balance_block_time_fn = persistIdentityBalanceBlockTimeCallback
         extensionCallbacks.on_load_identity_balance_block_time_fn = loadIdentityBalanceBlockTimeCallback
+        // Chain truncations: fired first among a round's core callbacks,
+        // and size-negotiated like the sweeps slot.
+        extensionCallbacks.on_persist_wallet_changeset_truncations_fn =
+            persistWalletChangesetTruncationsCallback
         return extensionCallbacks
     }
 
@@ -3309,6 +3527,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             self.inChangeset = true
             self.roundUtxoCreditVerdicts = [:]
             self.roundUtxoCreditTally = UtxoCreditVerdictTally()
+            self.roundVacated = VacatedRows()
             // Out-of-round writers (heal paths, deferred backfills) stage
             // entries too; they are not this round's to reconcile and may
             // point at rows a failed save rolled back. Load-time accounting
@@ -3399,6 +3618,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
                 self.roundUtxoCreditVerdicts = [:]
                 self.roundUtxoCreditTally = UtxoCreditVerdictTally()
+                self.roundVacated = VacatedRows()
                 self.roundIndex = nil
                 self.accountingDirty.removeAll()
                 self.roundAdvancedFinalityBoundary = false
@@ -3436,6 +3656,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     backgroundContext.rollback()
                     return false
                 }
+                // Whatever a truncation removed and the round did not
+                // record again goes now, ahead of every pass that reads
+                // the rows the round leaves behind.
+                deleteVacatedRows()
                 // The round's one collector pass: after every account slice
                 // and every sweep, on the boundary the round's own writes
                 // left on the wallet row — see
@@ -9682,6 +9906,34 @@ private func persistWalletChangesetSweepsCallback(
         walletId: walletId,
         sweeps: sweepsPtr,
         count: sweepsCount
+    ) ? 0 : 1
+}
+
+/// C shim for the extension's `on_persist_wallet_changeset_truncations_fn`
+/// — the round's chain truncations, fired inside the begin/end bracket
+/// before the round's other core callbacks. Same non-zero-fails-the-round
+/// contract as its siblings: a truncation Rust believes durable but that
+/// never landed would leave the replaced branch in the store.
+private func persistWalletChangesetTruncationsCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    truncationsPtr: UnsafePointer<ChainTruncationFFI>?,
+    truncationsCount: UInt
+) -> Int32 {
+    guard let context = context,
+          let walletIdPtr = walletIdPtr else {
+        return 0
+    }
+
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+    return handler.persistWalletChangesetTruncations(
+        walletId: walletId,
+        truncations: truncationsPtr,
+        count: truncationsCount
     ) ? 0 : 1
 }
 
