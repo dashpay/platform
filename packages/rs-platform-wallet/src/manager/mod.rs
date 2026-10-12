@@ -752,7 +752,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let cursor = (!record.is_empty() && own_cursor < host_cursor).then_some(own_cursor);
         tracing::info!(
             wallet_id = %hex::encode(wallet_id),
-            covered = record.covered.len(),
+            covered = record.covered().len(),
             dropped,
             predecessor,
             durable,

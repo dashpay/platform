@@ -141,7 +141,7 @@ pub fn build_dashpay_backfill_covered_for_callback(
     record: &platform_wallet::changeset::DashPayBackfillRecord,
 ) -> Vec<DashPayBackfillCoveredContactFFI> {
     record
-        .covered
+        .covered()
         .iter()
         .map(|entry| DashPayBackfillCoveredContactFFI {
             owner_identity_id: entry.owner.to_buffer(),

@@ -3214,7 +3214,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// - Stamping `external_account_reference` lets the sweep's rotation
     ///   self-heal skip a healthy account (marker matches the tracked
-    ///   reference) and detect a stale one after a restart (F2).
+    ///   reference) and detect a stale one after a restart (F2). On a
+    ///   backend that keeps markers on disk the registration round already
+    ///   bound it, and this only clears the broken flag while that marker is
+    ///   still current; it never stamps one there.
     /// - Clearing `payment_channel_broken` heals a channel that a prior
     ///   permanent-fault marked broken but that a successful re-register (via
     ///   the drain or a user re-accept) proves is usable again — otherwise the
@@ -3262,6 +3265,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
         let current_reference = contact.incoming_request.account_reference;
         let already_current = contact.external_account_reference == Some(current_reference);
+        // Where markers are kept on disk, registration is their only writer:
+        // it binds the marker in the account's own round, to the request the
+        // account was built from. A completion arriving late — after the
+        // account was torn down and rebuilt, or from a request that reused
+        // the same ciphertext under another reference — could otherwise
+        // stamp the live reference beside an obsolete durable account, and a
+        // restart would trust the pairing. So it only heals the broken flag,
+        // and only while the marker registration bound is still the live one
+        // (dashpay/platform#4302 review).
+        if self.persister.persists_outbound_account_markers() && !already_current {
+            return;
+        }
         if already_current && !contact.payment_channel_broken {
             return;
         }

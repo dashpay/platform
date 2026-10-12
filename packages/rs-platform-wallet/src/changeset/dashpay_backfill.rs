@@ -118,8 +118,10 @@ pub struct DashPayBackfillRecord {
     /// rewound anything ([`has_extent`](Self::has_extent)).
     pub rewound_from: u32,
     /// Receival accounts the backfill covers, sorted by `(owner, contact,
-    /// account_index)`, at most one entry per account.
-    pub covered: Vec<DashPayBackfillCoveredContact>,
+    /// account_index)`, at most one entry per account. Private so nothing
+    /// outside this type can break that order, which `covered_from`'s binary
+    /// search relies on; read it through [`covered`](Self::covered).
+    covered: Vec<DashPayBackfillCoveredContact>,
     /// In-memory only, never persisted or crossed over the FFI: a cursor a
     /// previous record round still owes the host because that round's
     /// store failed. The next successful record round carries it as the
@@ -243,6 +245,12 @@ impl DashPayBackfillRecord {
             self.unpersisted_cursor_epoch = None;
         }
         paid
+    }
+
+    /// The covered receival accounts, sorted by `(owner, contact,
+    /// account_index)`, at most one entry per account.
+    pub fn covered(&self) -> &[DashPayBackfillCoveredContact] {
+        &self.covered
     }
 
     /// Whether no backfill has ever been recorded for this wallet.
