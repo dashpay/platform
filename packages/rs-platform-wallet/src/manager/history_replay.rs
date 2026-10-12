@@ -82,8 +82,8 @@ impl HistoryReplay {
 /// peer data, a settled one is store corruption, and this path has no recovery
 /// mode to fall back on. The restored coins it spends stay reserved, and an
 /// unconfirmed one stays on record, unchecked, so that a settled conflict
-/// still sweeps it and releases them. A coin two such records spend is held
-/// for one of them only and is released with that one.
+/// still sweeps it and releases them. A coin several such records spend is
+/// held as [`reservation_claimant`] decides.
 ///
 /// Returns how many records were replayed and which stored transactions were
 /// retired instead.
@@ -173,7 +173,8 @@ pub async fn replay_recorded_history(
             )
         })
         .collect();
-    let unsafe_txids = unsafe_replay_amounts(wallet_info, &operands);
+    let unsafe_amounts = unsafe_replay_amounts(wallet_info, &operands);
+    let unsafe_txids: HashSet<Txid> = unsafe_amounts.keys().copied().collect();
     // Losers leave the replay and the projection; `swept` also keeps their
     // held raw records from coming back as fallbacks.
     let plan = plan_replay_sweeps(wallet_info, &replay, &unsafe_txids);
@@ -333,27 +334,25 @@ pub async fn replay_recorded_history(
     if let Some(chain_lock) = wallet_info.metadata.last_applied_chain_lock.clone() {
         wallet_info.apply_chain_lock(chain_lock);
     }
-    // A claim guards a coin only once it has left the UTXO set, and a sweep
-    // or an abandon of its claimant releases the coin. One claimant per coin,
-    // the smallest txid still on record: the wallet turns two different
-    // claimants into a claim nothing releases.
-    let mut claims: BTreeMap<OutPoint, Txid> = BTreeMap::new();
+    // A claim guards a coin only once it has left the UTXO set. Each reserved
+    // coin is claimed for the records still on record that spend it.
+    let mut spenders: BTreeMap<OutPoint, BTreeSet<Txid>> = BTreeMap::new();
     for stored in set_aside
         .iter()
         .filter(|stored| !swept.contains(&stored.txid))
     {
         for input in &stored.transaction.input {
             if reserved_coins.contains(&input.previous_output) {
-                claims
+                spenders
                     .entry(input.previous_output)
-                    .and_modify(|claimant| *claimant = stored.txid.min(*claimant))
-                    .or_insert(stored.txid);
+                    .or_default()
+                    .insert(stored.txid);
             }
         }
     }
-    let mut claims: Vec<(OutPoint, Option<Txid>)> = claims
+    let mut claims: Vec<(OutPoint, Option<Txid>)> = spenders
         .into_iter()
-        .map(|(coin, claimant)| (coin, Some(claimant)))
+        .map(|(coin, spenders)| (coin, reservation_claimant(&spenders, &unsafe_amounts)))
         .collect();
     claims.extend(settled_spend_claims(&replay));
     wallet_info.restore_spent_outpoints(&claims);
@@ -365,9 +364,44 @@ pub async fn replay_recorded_history(
     }
 }
 
+/// The claimant a reserved coin is held for, out of the records left out
+/// that spend it.
+///
+/// The wallet holds one claimant per coin and releases the coin when that
+/// one is swept or abandoned; two different claimants make a claim nothing
+/// releases. A record unsafe by its own outputs can never confirm, so among
+/// such records the smallest txid stands for all. A record unsafe only by
+/// stored amounts may still confirm, so the coin is held for it. Two of
+/// those leave no claimant whose removal proves the coin free: the coin
+/// stays claimed until the next load (`None`).
+fn reservation_claimant(
+    spenders: &BTreeSet<Txid>,
+    unsafe_amounts: &HashMap<Txid, UnsafeAmounts>,
+) -> Option<Txid> {
+    let mut may_confirm = spenders
+        .iter()
+        .filter(|txid| unsafe_amounts.get(*txid) == Some(&UnsafeAmounts::Stored));
+    match (may_confirm.next(), may_confirm.next()) {
+        (Some(_), Some(_)) => None,
+        (Some(only), None) => Some(*only),
+        _ => spenders.first().copied(),
+    }
+}
+
 /// One stored transaction as [`unsafe_replay_amounts`] reads it: its txid, its
 /// body and the wallet-owned inputs its store recorded.
 pub type ReplayOperands<'a> = (Txid, &'a Transaction, &'a [InputDetail]);
+
+/// Which amounts make a stored transaction unsafe to replay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnsafeAmounts {
+    /// The transaction's own outputs. No valid transaction carries them, so
+    /// it can never confirm.
+    Outputs,
+    /// Only amounts stored beside the transaction: its recorded owned inputs,
+    /// or the coins it spends. The transaction itself may be valid.
+    Stored,
+}
 
 /// The stored transactions whose amounts the wallet checker cannot take.
 ///
@@ -377,11 +411,11 @@ pub type ReplayOperands<'a> = (Txid, &'a Transaction, &'a [InputDetail]);
 /// fitting net does not make an overflowing operand safe. Every source of an
 /// operand is covered: the coins restored onto `wallet_info`, the outputs of
 /// the other `records` (asset-lock credit outputs included) and the recorded
-/// owned inputs.
+/// owned inputs. Each rejected transaction comes with the reason.
 pub fn unsafe_replay_amounts(
     wallet_info: &ManagedWalletInfo,
     records: &[ReplayOperands<'_>],
-) -> HashSet<Txid> {
+) -> HashMap<Txid, UnsafeAmounts> {
     /// Whether every value and their running sum fit `i64`.
     fn fits(values: impl IntoIterator<Item = u64>) -> bool {
         let mut sum = 0_u64;
@@ -401,7 +435,7 @@ pub fn unsafe_replay_amounts(
             remember(*outpoint, coin.txout.value);
         }
     }
-    let mut unsafe_txids = HashSet::new();
+    let mut unsafe_amounts = HashMap::new();
     for (txid, transaction, owned_inputs) in records {
         let credit_outputs = match &transaction.special_transaction_payload {
             Some(TransactionPayload::AssetLockPayloadType(payload)) => {
@@ -410,11 +444,16 @@ pub fn unsafe_replay_amounts(
             _ => &[],
         };
         let outputs = transaction.output.iter().chain(credit_outputs);
-        if !fits(owned_inputs.iter().map(|detail| detail.value))
-            || !fits(outputs.map(|output| output.value))
-        {
+        let reason = if !fits(outputs.map(|output| output.value)) {
+            Some(UnsafeAmounts::Outputs)
+        } else if !fits(owned_inputs.iter().map(|detail| detail.value)) {
+            Some(UnsafeAmounts::Stored)
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
             // A record left out credits nothing, so its outputs are no child's input amount.
-            unsafe_txids.insert(*txid);
+            unsafe_amounts.insert(*txid, reason);
             continue;
         }
         for (vout, output) in transaction.output.iter().enumerate() {
@@ -432,10 +471,10 @@ pub fn unsafe_replay_amounts(
             .iter()
             .filter_map(|input| amounts.get(&input.previous_output).copied());
         if !fits(inputs) {
-            unsafe_txids.insert(*txid);
+            unsafe_amounts.entry(*txid).or_insert(UnsafeAmounts::Stored);
         }
     }
-    unsafe_txids
+    unsafe_amounts
 }
 
 /// What [`plan_replay_sweeps`] decided, and what deciding it cost.
@@ -2428,16 +2467,22 @@ mod tests {
 
     /// Two unconfirmed records with unsafe amounts that both spend one shared
     /// coin, each next to a coin of its own, replayed onto a projection
-    /// holding all three coins.
+    /// holding all three coins. A record is unsafe by its own output, or,
+    /// where `by_stored_amounts` says so, only by the input amount the store
+    /// recorded beside an ordinary transaction.
     ///
     /// Returns the wallet after the replay, the two records ordered by txid,
-    /// the shared coin with its funding, and each record's own coin.
-    async fn overlapping_unsafe_spends_fixture() -> (
+    /// the shared coin with its funding, each record's own coin, and which
+    /// of the ordered records is unsafe by stored amounts only.
+    async fn overlapping_unsafe_spends_fixture(
+        by_stored_amounts: [bool; 2],
+    ) -> (
         Wallet,
         ManagedWalletInfo,
         [dashcore::Transaction; 2],
         (OutPoint, dashcore::Transaction),
         [OutPoint; 2],
+        [bool; 2],
     ) {
         use dashcore::hashes::Hash;
         use dashcore::{Transaction, TxIn};
@@ -2466,13 +2511,23 @@ mod tests {
             )
         });
         let [shared, one, other] = [0, 1, 2].map(|index| OutPoint::new(fundings[index].txid(), 0));
+        let value = |stored: bool| if stored { 25_000 } else { 1 << 63 };
         let mut spends = [
-            (spend(&[shared, one], 1 << 63), one),
-            (spend(&[shared, other], 1 << 63), other),
+            (
+                spend(&[shared, one], value(by_stored_amounts[0])),
+                one,
+                by_stored_amounts[0],
+            ),
+            (
+                spend(&[shared, other], value(by_stored_amounts[1])),
+                other,
+                by_stored_amounts[1],
+            ),
         ];
-        spends.sort_by_key(|(spend, _)| spend.txid());
+        spends.sort_by_key(|(spend, _, _)| spend.txid());
         let own = [spends[0].1, spends[1].1];
-        let unsafe_spends = spends.map(|(spend, _)| spend);
+        let stored_only = [spends[0].2, spends[1].2];
+        let unsafe_spends = spends.map(|(spend, _, _)| spend);
 
         let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
         let account = restored
@@ -2489,13 +2544,22 @@ mod tests {
         let history = RecordedHistory {
             transactions: unsafe_spends
                 .iter()
-                .map(|transaction| StoredTransaction {
+                .zip(stored_only)
+                .map(|(transaction, stored_only)| StoredTransaction {
                     txid: transaction.txid(),
                     transaction: transaction.clone(),
                     context: TransactionContext::Mempool,
                     stored_net_amount: None,
                     stored_direction: None,
-                    owned_inputs: Vec::new(),
+                    owned_inputs: if stored_only {
+                        vec![InputDetail {
+                            index: 0,
+                            value: 1 << 63,
+                            address: address.clone(),
+                        }]
+                    } else {
+                        Vec::new()
+                    },
                 })
                 .collect(),
             instant_locks: BTreeMap::new(),
@@ -2507,7 +2571,14 @@ mod tests {
             "every coin an unsafe record spends is reserved"
         );
         let [funding, _, _] = fundings;
-        (wallet, restored, unsafe_spends, (shared, funding), own)
+        (
+            wallet,
+            restored,
+            unsafe_spends,
+            (shared, funding),
+            own,
+            stored_only,
+        )
     }
 
     /// A confirmed spend of `coins`, delivered to `info` after the load.
@@ -2579,8 +2650,8 @@ mod tests {
     /// seen again.
     #[tokio::test]
     async fn should_release_coin_shared_by_two_unsafe_records_once_both_are_swept() {
-        let (mut wallet, mut restored, unsafe_spends, (shared, funding), own) =
-            overlapping_unsafe_spends_fixture().await;
+        let (mut wallet, mut restored, unsafe_spends, (shared, funding), own, _) =
+            overlapping_unsafe_spends_fixture([false, false]).await;
         assert!(!redelivery_credits(&restored, &mut wallet, &funding, &shared).await);
 
         let settled = deliver_confirmed_spend(&mut restored, &mut wallet, &own).await;
@@ -2599,8 +2670,9 @@ mod tests {
         );
     }
 
-    /// The wallet can name one claimant per reserved coin, so a shared coin
-    /// is held for the record with the smaller txid. Accepted consequence:
+    /// The wallet can name one claimant per reserved coin, so a coin shared
+    /// by records unsafe by their own outputs is held for the one with the
+    /// smaller txid. Accepted consequence:
     /// sweeping that record alone drops the guard although the other record
     /// still names the coin, and sweeping the other one alone drops nothing.
     /// Neither is reported as a release while a record on file spends the
@@ -2609,8 +2681,8 @@ mod tests {
     #[tokio::test]
     async fn should_hold_shared_coin_for_the_unsafe_record_with_the_smaller_txid() {
         for (swept, drops_guard) in [(0, true), (1, false)] {
-            let (mut wallet, mut restored, unsafe_spends, (shared, funding), own) =
-                overlapping_unsafe_spends_fixture().await;
+            let (mut wallet, mut restored, unsafe_spends, (shared, funding), own, _) =
+                overlapping_unsafe_spends_fixture([false, false]).await;
 
             let settled =
                 deliver_confirmed_spend(&mut restored, &mut wallet, &own[swept..=swept]).await;
@@ -2779,6 +2851,48 @@ mod tests {
             let kept = &restored.accounts.standard_bip44_accounts[&0].utxos[&coin];
             assert_eq!(kept.is_confirmed.then_some(kept.height), expected, "{case}");
             assert!(!kept.is_locked && !kept.is_instantlocked, "{case}");
+        }
+    }
+
+    /// A record unsafe only by amounts the store recorded beside it holds a
+    /// valid transaction that may still confirm, so the coin it spends must
+    /// stay guarded while it stands, whichever other record is swept. Two
+    /// such records sharing a coin leave no single claimant to name: the
+    /// coin then stays guarded for the rest of the run, even once both are
+    /// swept.
+    #[tokio::test]
+    async fn should_hold_shared_coin_while_a_record_that_may_confirm_spends_it() {
+        for swept in [&[0][..], &[1], &[0, 1]] {
+            let (mut wallet, mut restored, _, (shared, funding), own, _) =
+                overlapping_unsafe_spends_fixture([true, true]).await;
+            let coins: Vec<OutPoint> = swept.iter().map(|index| own[*index]).collect();
+
+            let settled = deliver_confirmed_spend(&mut restored, &mut wallet, &coins).await;
+
+            assert_eq!(settled.swept_transactions.len(), swept.len());
+            assert_eq!(settled.released_outpoints, vec![], "swept {swept:?}");
+            assert!(
+                !redelivery_credits(&restored, &mut wallet, &funding, &shared).await,
+                "swept {swept:?}: the coin stays guarded"
+            );
+        }
+
+        // Next to a record that can never confirm, the coin is held for the
+        // one that may, whichever of the two has the smaller txid.
+        for by_stored_amounts in [[true, false], [false, true]] {
+            for swept in [0, 1] {
+                let (mut wallet, mut restored, _, (shared, funding), own, stored_only) =
+                    overlapping_unsafe_spends_fixture(by_stored_amounts).await;
+
+                deliver_confirmed_spend(&mut restored, &mut wallet, &own[swept..=swept]).await;
+
+                assert_eq!(
+                    redelivery_credits(&restored, &mut wallet, &funding, &shared).await,
+                    stored_only[swept],
+                    "{by_stored_amounts:?}, record {swept} swept: only removing the record \
+                     that may confirm drops the guard"
+                );
+            }
         }
     }
 
