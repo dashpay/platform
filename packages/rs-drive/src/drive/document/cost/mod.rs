@@ -17,6 +17,8 @@ mod document;
 mod grove_costs;
 mod writes;
 
+#[cfg(feature = "server")]
+pub(crate) use document::value_of;
 pub use document::{sized_document, FieldChoice, FieldSize};
 
 use crate::drive::document::cost::grove_costs::{new_element_bytes, NodeKind, PricedElement};
@@ -33,6 +35,7 @@ use dpp::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV1Getters, DocumentTypeV2Getters,
 };
 use dpp::data_contract::document_type::action_fees::{ActionFeePricing, DocumentActionFee};
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -50,6 +53,7 @@ use dpp::tokens::token_amount_on_contract_token::{
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::required_vote_resolution_fund_to_join;
 use grovedb::element::IndexAxis;
+use std::collections::BTreeMap;
 
 /// Credits in one Dash.
 pub const CREDITS_PER_DASH: Credits = 100_000_000_000;
@@ -342,6 +346,7 @@ pub fn document_create_cost(
     let indexes = index_costs(document_type, &elements);
     let storage_credits = storage_bytes.scale(credits_per_byte);
     let processing = processing_costs(
+        contract,
         document_type,
         &writes,
         &known,
@@ -642,6 +647,7 @@ fn path_height(entries: u64) -> u64 {
 /// The processing fee, part by part.
 #[allow(clippy::too_many_arguments)]
 fn processing_costs(
+    contract: &DataContract,
     document_type: DocumentTypeRef,
     writes: &[Write],
     known: &[bool],
@@ -728,6 +734,18 @@ fn processing_costs(
             exact: false,
         },
     ];
+    let derived_index_reads =
+        derived_index_reads_processing(contract, document_type, assumptions, platform_version)?;
+    if derived_index_reads > 0 {
+        parts.push(ProcessingCost {
+            code: "derivedIndexReads",
+            text: "reading the documents the derived index properties take their values from, \
+                   when their references are validated"
+                .to_string(),
+            credits: exact(derived_index_reads),
+            exact: false,
+        });
+    }
     if document_type.documents_ttl_seconds().is_some() {
         parts.push(ProcessingCost {
             code: "ttlCleanup",
@@ -892,6 +910,40 @@ fn write_processing(
         }
     }
     credits
+}
+
+/// The reads of the documents a type's derived index properties take their values from
+/// (protocol version 14): each referenced document is read once on a create, when its
+/// reference is validated, which also gives Drive the values to key the index entries by: a
+/// seek down a tree of about as many entries as the assumptions give and a load of the
+/// referenced document. Zero for a type without derived index properties.
+fn derived_index_reads_processing(
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    assumptions: &CostAssumptions,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, Error> {
+    let fee = &platform_version.fee_version;
+    let height = path_height(assumptions.existing_documents).max(1);
+    let mut referenced_types = BTreeMap::new();
+    for derived in document_type.derived_index_properties().values() {
+        referenced_types.insert(
+            derived.reference_property.as_str(),
+            derived.referenced_document_type_name.as_str(),
+        );
+    }
+    let mut credits: Credits = 0;
+    for referenced_type_name in referenced_types.into_values() {
+        let referenced_type = contract.document_type_for_name(referenced_type_name)?;
+        let read = height
+            .saturating_mul(fee.storage.storage_seek_cost)
+            .saturating_add(
+                (referenced_type.estimated_size(platform_version)? as u64)
+                    .saturating_mul(fee.storage.storage_load_credit_per_byte),
+            );
+        credits = credits.saturating_add(read);
+    }
+    Ok(credits)
 }
 
 /// The small reads and writes around the insert: the query that checks the

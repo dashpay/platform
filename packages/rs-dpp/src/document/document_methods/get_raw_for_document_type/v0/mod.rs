@@ -1,3 +1,4 @@
+use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
 use crate::data_contract::document_type::DocumentPropertyType;
 use crate::data_contract::document_type::DocumentTypeRef;
@@ -5,6 +6,7 @@ use crate::document::DocumentV0Getters;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+use platform_value::Value;
 
 pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
     /// Return a value given the path to its key for a document type.
@@ -83,6 +85,28 @@ pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
             }
             "$moderatedBy" => return Ok(self.moderated_by().map(|id| id.to_vec())),
             _ => {}
+        }
+        // A derived index property (protocol version 14) is read from the document a reference
+        // points at, not stored: Drive puts the value it read into the properties under the
+        // property's own name before it keys the document (`Value::Null` when the referenced
+        // document has none). No property name holds a `.`, so the name can not collide with a
+        // stored property, and a document Drive did not complete is refused rather than keyed
+        // under null.
+        if document_type
+            .derived_index_properties()
+            .contains_key(key_path)
+        {
+            return match self.properties().get(key_path) {
+                Some(Value::Null) => Ok(None),
+                Some(value) => document_type
+                    .serialize_value_for_key(key_path, value, platform_version)
+                    .map(Some),
+                None => Err(ProtocolError::CorruptedCodeExecution(format!(
+                    "the value of the derived index property {key_path} was not read from the \
+                     referenced document before keying document {}",
+                    self.id()
+                ))),
+            };
         }
         self.properties()
             .get_optional_at_path(key_path)?

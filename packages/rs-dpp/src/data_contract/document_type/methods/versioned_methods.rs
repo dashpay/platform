@@ -764,10 +764,15 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 value.to_integer().map_err(ProtocolError::ValueError)?,
             )),
             _ => {
-                let property = self.flattened_properties().get(key).ok_or_else(|| {
-                    DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties().keys().join(" | "), self.name()))
-                })?;
-                let bytes = property.property_type.encode_value_for_tree_keys(value)?;
+                // A derived index property (protocol version 14) takes the type of the field it
+                // reads on the referenced document; no property of the type carries its name
+                let property_type = match self.flattened_properties().get(key) {
+                    Some(property) => &property.property_type,
+                    None => self.derived_index_property_type(key).ok_or_else(|| {
+                        DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties().keys().join(" | "), self.name()))
+                    })?,
+                };
+                let bytes = property_type.encode_value_for_tree_keys(value)?;
                 if bytes.len() > MAX_INDEX_SIZE {
                     Err(ProtocolError::DataContractError(
                         DataContractError::FieldRequirementUnmet(
@@ -815,10 +820,13 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
                 )?))
             }
             _ => {
-                let property = self.flattened_properties().get(key).ok_or_else(|| {
-                    DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties().keys().join(" | "), self.name()))
-                })?;
-                property.property_type.decode_value_for_tree_keys(value)
+                let property_type = match self.flattened_properties().get(key) {
+                    Some(property) => &property.property_type,
+                    None => self.derived_index_property_type(key).ok_or_else(|| {
+                        DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties().keys().join(" | "), self.name()))
+                    })?,
+                };
+                property_type.decode_value_for_tree_keys(value)
             }
         }
     }

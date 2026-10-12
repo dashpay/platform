@@ -12,7 +12,10 @@
 //! reference refusal, and by-id routing when the page and a join share
 //! the primary tree.
 
+use super::chained_query_e2e_tests::{removal_of, remove_post, with_moderated_posts};
+use crate::drive::contract::moderation::types::ContractDocumentRemovalEntry;
 use crate::error::Error;
+use crate::query::moderated_join::removals_path_query;
 use crate::query::{
     BindingSource, DriveDocumentQuery, DriveSubQuery, InternalClauses, OrderClause,
     SubQueryBinding, SubQueryKind, SubQueryResult, WhereClause, WhereOperator, MAX_SUB_QUERIES,
@@ -1975,11 +1978,16 @@ fn should_prove_the_absence_of_a_missing_joined_document() {
             .expect("derived values");
         assert_eq!(derived[0].len(), QUOTED.len());
 
-        let (page, sub_path_queries) = query
+        let (page, sub_path_queries, removal_path_queries) = query
             .proof_path_queries(&derived, pv)
             .expect("path queries");
-        let merged = DriveDocumentQuery::merged_path_query(&page, &sub_path_queries, pv)
-            .expect("merged query");
+        let merged = DriveDocumentQuery::merged_path_query(
+            &page,
+            &sub_path_queries,
+            &removal_path_queries,
+            pv,
+        )
+        .expect("merged query");
         let (_root, trios) =
             grovedb::GroveDb::verify_query(&proof, &merged, &pv.drive.grove_version)
                 .expect("grovedb verifies the merged query with the missing ids in it");
@@ -2033,9 +2041,15 @@ fn should_reject_a_proof_withholding_an_existing_joined_document() {
     for withheld in cases {
         let mut served = honest.clone();
         served[0].retain(|id| !withheld.contains(&id.to_buffer()));
-        let (page, sub_path_queries) = query.proof_path_queries(&served, pv).expect("path queries");
-        let merged = DriveDocumentQuery::merged_path_query(&page, &sub_path_queries, pv)
-            .expect("merged query");
+        let (page, sub_path_queries, removal_path_queries) =
+            query.proof_path_queries(&served, pv).expect("path queries");
+        let merged = DriveDocumentQuery::merged_path_query(
+            &page,
+            &sub_path_queries,
+            &removal_path_queries,
+            pv,
+        )
+        .expect("merged query");
         let dishonest_proof = drive
             .grove
             .prove_query(&merged, None, &pv.drive.grove_version)
@@ -2162,9 +2176,15 @@ fn should_reject_a_proof_withholding_an_existing_document_of_a_deletable_documen
     for withheld in cases {
         let mut served = honest.clone();
         served[0].retain(|id| !withheld.contains(&id.to_buffer()));
-        let (page, sub_path_queries) = query.proof_path_queries(&served, pv).expect("path queries");
-        let merged = DriveDocumentQuery::merged_path_query(&page, &sub_path_queries, pv)
-            .expect("merged query");
+        let (page, sub_path_queries, removal_path_queries) =
+            query.proof_path_queries(&served, pv).expect("path queries");
+        let merged = DriveDocumentQuery::merged_path_query(
+            &page,
+            &sub_path_queries,
+            &removal_path_queries,
+            pv,
+        )
+        .expect("merged query");
         let dishonest_proof = drive
             .grove
             .prove_query(&merged, None, &pv.drive.grove_version)
@@ -2188,4 +2208,165 @@ fn should_reject_a_proof_withholding_an_existing_document_of_a_deletable_documen
         verified.sub_result_missing_ids,
         vec![vec![Identifier::from(QUOTED[3])]]
     );
+}
+
+/// The feed contract with `post` removed by its moderators only, on the record, and every
+/// reference to it a `refersTo: moderatedDocument` one, applied beside dashpay.
+fn setup_with_moderated_posts() -> (crate::drive::Drive, DataContract) {
+    let drive = setup_drive_with_initial_state_structure(None);
+    let pv = platform_version();
+    let feed = with_moderated_posts(
+        json_document_to_contract(FEED_CONTRACT, false, pv).expect("expected the feed contract"),
+    );
+    drive
+        .apply_contract(
+            &feed,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("expected to apply the moderated feed contract");
+    for (i, quoted) in QUOTED.iter().enumerate() {
+        insert_post(&drive, &feed, *quoted, OWNER_2, "btc", None, 1 + i as u64);
+        insert_post(
+            &drive,
+            &feed,
+            QUOTING[i],
+            OWNER_1,
+            "dash",
+            Some(*quoted),
+            10 + i as u64,
+        );
+    }
+    (drive, feed)
+}
+
+/// A by-id join off a `moderatedDocument` property reports a quoted post a moderator removed
+/// by its removal record, proven beside the join, and leaves nothing missing; the server and
+/// the verifier agree. A quoted post gone without a record is refused by both.
+#[test]
+fn should_report_a_removed_document_of_a_moderated_document_join_by_its_record() {
+    let pv = platform_version();
+    let (drive, feed) = setup_with_moderated_posts();
+    remove_post(&drive, &feed, QUOTED[1], Some(removal_of(QUOTED[1])));
+    remove_post(&drive, &feed, QUOTED[3], Some(removal_of(QUOTED[3])));
+    let query = quoted_posts_join(&feed);
+
+    let materialized = drive
+        .query_composite_documents(&query, None, None, pv)
+        .expect("a removed quoted post does not fail a moderatedDocument join")
+        .result;
+    let (proof, _page) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("composite proves");
+    let (_root, verified) = query
+        .verify_composite_documents_proof(&proof, pv)
+        .expect("the proof verifies with the removed posts' records proven");
+
+    // The page lists the quoting posts newest first, so the join derives the quoted posts in
+    // that order, and reports the removed ones in it
+    let derived = query
+        .derive_all(&materialized.page_documents, |_| None)
+        .expect("derived values");
+    let kept: Vec<[u8; 32]> = derived[0]
+        .iter()
+        .map(|id| id.to_buffer())
+        .filter(|id| *id != QUOTED[1] && *id != QUOTED[3])
+        .collect();
+    let removed: Vec<ContractDocumentRemovalEntry> = derived[0]
+        .iter()
+        .map(|id| id.to_buffer())
+        .filter(|id| *id == QUOTED[1] || *id == QUOTED[3])
+        .map(|id| ContractDocumentRemovalEntry {
+            document_id: Identifier::from(id),
+            removal: removal_of(id),
+        })
+        .collect();
+    assert_eq!(ids(materialized.sub_results[0].documents()), kept);
+    assert_eq!(
+        materialized.sub_result_missing_ids,
+        vec![Vec::<Identifier>::new()]
+    );
+    assert_eq!(materialized.sub_result_removals, vec![removed]);
+    assert_eq!(verified.page_documents, materialized.page_documents);
+    assert_eq!(verified.sub_results, materialized.sub_results);
+    assert_eq!(
+        verified.sub_result_missing_ids,
+        materialized.sub_result_missing_ids
+    );
+    assert_eq!(
+        verified.sub_result_removals,
+        materialized.sub_result_removals
+    );
+
+    // Gone without a record: refused on both sides
+    remove_post(&drive, &feed, QUOTED[4], None);
+    let refused = drive.query_composite_documents(&query, None, None, pv);
+    assert!(
+        matches!(refused, Err(Error::Proof(_))),
+        "the server refuses the unrecorded removal, got {refused:?}"
+    );
+    let (proof, _page) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("the proof generates: only its assembly refuses");
+    let refused = query.verify_composite_documents_proof(&proof, pv);
+    assert!(
+        matches!(refused, Err(Error::Proof(_))),
+        "the verifier refuses the unrecorded removal, got {refused:?}"
+    );
+}
+
+/// Withholding the records component, or one record from it, leaves the proof without
+/// coverage for a key the verifier's re-derived query demands: grovedb refuses it, so a prover
+/// can not pass a removed post off as silently missing.
+#[test]
+fn should_reject_a_proof_withholding_a_removal_record_of_a_moderated_document_join() {
+    let pv = platform_version();
+    let (drive, feed) = setup_with_moderated_posts();
+    remove_post(&drive, &feed, QUOTED[2], Some(removal_of(QUOTED[2])));
+    let query = quoted_posts_join(&feed);
+    let (_honest_proof, page_documents) = drive
+        .query_composite_documents_with_proof(&query, pv)
+        .expect("the honest proof generates");
+    let derived = query
+        .derive_all(&page_documents, |_| None)
+        .expect("derived values");
+    let (page, sub_path_queries, removal_path_queries) = query
+        .proof_path_queries(&derived, pv)
+        .expect("path queries");
+    assert_eq!(
+        removal_path_queries.len(),
+        1,
+        "one records component per type"
+    );
+
+    let without_one = vec![removals_path_query(
+        feed.id(),
+        "post",
+        &derived[0]
+            .iter()
+            .filter(|id| id.to_buffer() != QUOTED[2])
+            .copied()
+            .collect::<Vec<_>>(),
+        removal_path_queries[0].query.query.left_to_right,
+    )];
+    for (case, removals) in [
+        ("one record withheld", without_one),
+        ("every record withheld", Vec::new()),
+    ] {
+        let merged = DriveDocumentQuery::merged_path_query(&page, &sub_path_queries, &removals, pv)
+            .expect("merged query");
+        let dishonest_proof = drive
+            .grove
+            .prove_query(&merged, None, &pv.drive.grove_version)
+            .unwrap()
+            .expect("the dishonest proof generates");
+        let refused = query.verify_composite_documents_proof(&dishonest_proof, pv);
+        assert!(
+            matches!(refused, Err(Error::GroveDB(_))),
+            "{case}: must be refused by grovedb, got {refused:?}"
+        );
+    }
 }

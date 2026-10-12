@@ -2,9 +2,12 @@
 //! stored accounting for databases migrating from V018 or earlier.
 //!
 //! Frozen on purpose: the live per-round repair in `schema::core_history` may
-//! evolve, but V019 must keep doing exactly what it did when it shipped. Only
-//! the low-level blob codec is shared; `TransactionRecord`'s encoding is owned
-//! upstream (key-wallet) and cannot be frozen here. Do not edit.
+//! evolve, but V019 must keep doing exactly what it did when it shipped. It
+//! shares only these live helpers, which must stay behaviour-stable: the blob
+//! codec and its size/width gates (`blob`), `id32`, `wallets::parse_network`,
+//! `i64_to_u64`, `i64_to_u32` and the `WalletStorageError` variants they return.
+//! `TransactionRecord`'s encoding is owned upstream (key-wallet) and cannot be
+//! frozen here. Do not edit.
 
 use std::collections::BTreeMap;
 
@@ -19,7 +22,7 @@ use rusqlite::{params, OptionalExtension, Transaction};
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::{blob, id32, wallets};
-use crate::sqlite::util::safe_cast::i64_to_u64;
+use crate::sqlite::util::safe_cast::{i64_to_u32, i64_to_u64};
 
 /// Read a stored record; undecodable bytes are an error the caller classifies.
 fn read_record(
@@ -27,23 +30,27 @@ fn read_record(
     wallet_id: &WalletId,
     txid: &Txid,
 ) -> Result<Option<TransactionRecord>, WalletStorageError> {
-    let stored: Option<Option<(i64, Vec<u8>)>> = tx
-        .query_row(
-            "SELECT length(record_blob), record_blob FROM core_transactions \
+    let key = params![wallet_id.as_slice(), txid.as_byte_array().as_slice()];
+    // Gate the stored length in its own statement: SQLite evaluates every
+    // result column before a row is returned, so selecting the payload
+    // alongside its length would load an oversize blob before the check.
+    let len: Option<Option<i64>> = tx
+        .prepare_cached(
+            "SELECT length(record_blob) FROM core_transactions \
              WHERE wallet_id = ?1 AND txid = ?2",
-            params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
-            |row| {
-                Ok(match row.get::<_, Option<i64>>(0)? {
-                    Some(len) => Some((len, row.get(1)?)),
-                    None => None,
-                })
-            },
-        )
+        )?
+        .query_row(key, |row| row.get(0))
         .optional()?;
-    let Some(Some((len, payload))) = stored else {
+    let Some(Some(len)) = len else {
         return Ok(None);
     };
     blob::check_size(len)?;
+    let payload: Vec<u8> = tx
+        .prepare_cached(
+            "SELECT record_blob FROM core_transactions \
+             WHERE wallet_id = ?1 AND txid = ?2",
+        )?
+        .query_row(key, |row| row.get(0))?;
     let record: TransactionRecord = blob::decode(&payload)?;
     if record.txid != *txid {
         return Err(WalletStorageError::blob_decode(
@@ -93,7 +100,8 @@ fn drop_for_resync(
         params![wallet_id.as_slice()],
         |row| row.get(0),
     )?;
-    let rescan_from = (birth_height - 1).max(0);
+    // A corrupt birth height fails the migration instead of choosing a rescan height.
+    let rescan_from = i64_to_u32("wallets.birth_height", birth_height)?.saturating_sub(1);
     tx.execute(
         "DELETE FROM core_transaction_inputs WHERE wallet_id = ?1 AND txid = ?2",
         params![wallet_id.as_slice(), txid.as_byte_array().as_slice()],
@@ -145,8 +153,10 @@ fn network(
         params![wallet_id.as_slice()],
         |r| r.get(0),
     )?;
-    wallets::parse_network(&label)
-        .ok_or_else(|| WalletStorageError::blob_decode("wallets.network is unknown"))
+    wallets::parse_network(&label).ok_or_else(|| WalletStorageError::UnknownWalletNetwork {
+        wallet_id: *wallet_id,
+        label,
+    })
 }
 
 fn owned_output(
@@ -155,17 +165,30 @@ fn owned_output(
     outpoint: &OutPoint,
     network: dashcore::Network,
 ) -> Result<Option<(u64, Address)>, WalletStorageError> {
-    let mut stmt = tx.prepare_cached("SELECT value, length(script), script FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0")?;
-    let mut rows = stmt.query(params![
-        wallet_id.as_slice(),
-        blob::encode_outpoint(outpoint)?
-    ])?;
-    let Some(row) = rows.next()? else {
+    let encoded = blob::encode_outpoint(outpoint)?;
+    let key = params![wallet_id.as_slice(), encoded];
+    // Gate the script length in its own statement: SQLite evaluates every
+    // result column before a row is returned.
+    let Some((value, len)) = tx
+        .prepare_cached(
+            "SELECT value, length(script) FROM core_utxos \
+             WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
+        )?
+        .query_row(key, |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        })
+        .optional()?
+    else {
         return Ok(None);
     };
-    let value = i64_to_u64("core_utxos.value", row.get(0)?)?;
-    blob::check_size(row.get(1)?)?;
-    let script: Vec<u8> = row.get(2)?;
+    let value = i64_to_u64("core_utxos.value", value)?;
+    blob::check_size(len)?;
+    let script: Vec<u8> = tx
+        .prepare_cached(
+            "SELECT script FROM core_utxos \
+             WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
+        )?
+        .query_row(key, |row| row.get(0))?;
     if contact_only_script(tx, wallet_id, &script)? {
         return Ok(None);
     }
@@ -180,8 +203,12 @@ fn contact_only_script(
     script: &[u8],
 ) -> Result<bool, WalletStorageError> {
     Ok(conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) AND NOT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2 AND account_type != 'dashpay_external')",
-        params![wallet_id.as_slice(), script], |r| r.get(0))?)
+        "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) \
+         AND NOT EXISTS(SELECT 1 FROM core_address_pool \
+             WHERE wallet_id = ?1 AND script = ?2 AND account_type != 'dashpay_external')",
+        params![wallet_id.as_slice(), script],
+        |r| r.get(0),
+    )?)
 }
 
 fn repair_record(
@@ -277,8 +304,11 @@ fn repair_record(
         .map(|d| i128::from(d.value))
         .sum();
     let spent: i128 = inputs.values().map(|d| i128::from(d.value)).sum();
-    record.net_amount = i64::try_from(received - spent).map_err(|_| {
-        WalletStorageError::blob_decode("wallet transaction net amount exceeds i64")
+    let net = received - spent;
+    record.net_amount = i64::try_from(net).map_err(|_| WalletStorageError::NetAmountOverflow {
+        wallet_id: *wallet_id,
+        txid: *txid,
+        value: net,
     })?;
     let has_ours = outputs
         .values()
@@ -334,7 +364,10 @@ pub(super) fn repair_history(tx: &Transaction<'_>) -> Result<(), WalletStorageEr
     // Keys are collected first so drops never race the open cursor.
     let mut keys = Vec::new();
     {
-        let mut stmt = tx.prepare_cached("SELECT length(wallet_id), wallet_id, length(txid), txid FROM core_transactions WHERE record_blob IS NOT NULL")?;
+        let mut stmt = tx.prepare_cached(
+            "SELECT length(wallet_id), wallet_id, length(txid), txid \
+             FROM core_transactions WHERE record_blob IS NOT NULL",
+        )?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
             blob::check_fixed_width(row.get(0)?, 32, "core_transactions.wallet_id")?;
@@ -370,7 +403,50 @@ mod tests {
     use rusqlite::Connection;
 
     use super::*;
+    use crate::sqlite::migrations::{self, rewind_to_v018};
     use crate::sqlite::schema::core_state;
+
+    #[test]
+    fn should_reject_oversize_owned_output_script_before_reading_it() {
+        const WALLET: WalletId = [0xC2u8; 32];
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrations::run(&mut conn).unwrap();
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&WALLET[..]],
+        )
+        .unwrap();
+
+        use rusqlite::limits::Limit;
+
+        use crate::sqlite::conn::SQLITE_MAX_BLOB_BYTES;
+
+        let outpoint = OutPoint::new(Txid::from_byte_array([0x42; 32]), 0);
+        // Over the connection's length cap, so reading the column itself
+        // fails: only a length-only pre-read reports it as oversize.
+        let script = vec![0u8; SQLITE_MAX_BLOB_BYTES as usize + 1];
+        conn.execute(
+            "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+             VALUES (?1, ?2, 0, ?3, 0)",
+            params![
+                &WALLET[..],
+                blob::encode_outpoint(&outpoint).unwrap(),
+                script
+            ],
+        )
+        .unwrap();
+        drop(script);
+        conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, SQLITE_MAX_BLOB_BYTES)
+            .unwrap();
+        let tx = conn.transaction().unwrap();
+
+        let err = owned_output(&tx, &WALLET, &outpoint, dashcore::Network::Testnet).unwrap_err();
+
+        assert!(
+            matches!(err, WalletStorageError::BlobTooLarge { .. }),
+            "got {err:?}"
+        );
+    }
 
     fn address(marker: u8) -> Address {
         Address::new(
@@ -396,12 +472,101 @@ mod tests {
         }
     }
 
+    /// A V018 database holding one oversize confirmed record for a wallet born
+    /// at `birth_height`, synced to 900.
+    fn seed_oversize_confirmed_record(birth_height: i64) -> (Connection, WalletId) {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrations::run(&mut conn).unwrap();
+        let wallet_id = [0xC2u8; 32];
+        let txid = Txid::from_byte_array([0x72; 32]);
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
+            params![&wallet_id[..], birth_height],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) \
+             VALUES (?1, 900, 900)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) \
+             VALUES (?1, ?2, 300, 1, zeroblob(?3))",
+            params![
+                &wallet_id[..],
+                txid.as_byte_array().as_slice(),
+                i64::try_from(blob::BLOB_SIZE_LIMIT_BYTES + 1).unwrap()
+            ],
+        )
+        .unwrap();
+        rewind_to_v018(&conn);
+        (conn, wallet_id)
+    }
+
+    /// `(record count, synced_height)` for `wallet_id`.
+    fn records_and_synced_height(conn: &Connection, wallet_id: &WalletId) -> (i64, i64) {
+        conn.query_row(
+            "SELECT (SELECT count(*) FROM core_transactions WHERE wallet_id = ?1), \
+                    (SELECT synced_height FROM core_sync_state WHERE wallet_id = ?1)",
+            params![&wallet_id[..]],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+    }
+
+    /// An oversize confirmed record fails its length gate before its payload
+    /// is read, and is dropped with a rescan from just below the birth height.
+    #[test]
+    fn should_drop_oversize_confirmed_record_for_resync() {
+        let (mut conn, wallet_id) = seed_oversize_confirmed_record(50);
+
+        migrations::run(&mut conn).unwrap();
+
+        let (records, synced) = records_and_synced_height(&conn, &wallet_id);
+        assert_eq!(records, 0, "the oversize record must be dropped");
+        assert_eq!(
+            synced, 49,
+            "the rescan must restart just below the birth height"
+        );
+    }
+
+    #[test]
+    fn should_rescan_from_genesis_when_the_wallet_is_born_at_zero() {
+        let (mut conn, wallet_id) = seed_oversize_confirmed_record(0);
+
+        migrations::run(&mut conn).unwrap();
+
+        assert_eq!(records_and_synced_height(&conn, &wallet_id), (0, 0));
+    }
+
+    /// A stored birth height outside `u32` fails the migration with a typed
+    /// error, instead of overflowing, and leaves the record and sync state alone.
+    #[test]
+    fn should_reject_out_of_range_birth_height_before_scheduling_a_rescan() {
+        for birth_height in [i64::MIN, -1, i64::from(u32::MAX) + 1, i64::MAX] {
+            let (mut conn, wallet_id) = seed_oversize_confirmed_record(birth_height);
+
+            let error = migrations::run(&mut conn).unwrap_err();
+
+            assert!(
+                format!("{error:?}").contains("wallets.birth_height"),
+                "birth height {birth_height}: {error:?}"
+            );
+            assert_eq!(
+                records_and_synced_height(&conn, &wallet_id),
+                (1, 900),
+                "birth height {birth_height}: the failed upgrade must roll back"
+            );
+        }
+    }
+
     /// Pins V019's observable result on a V018-shaped database: the repaired
     /// record, the preserved original, the input index and the spent marks.
     #[test]
     fn should_pin_v019_repair_of_a_v018_database() {
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xC1u8; 32];
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
@@ -492,15 +657,11 @@ mod tests {
                 ],
             )
             .unwrap();
-            tx.execute_batch(
-                "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
-                 DELETE FROM refinery_schema_history WHERE version >= 19;",
-            )
-            .unwrap();
+            rewind_to_v018(&tx);
             tx.commit().unwrap();
         }
 
-        crate::sqlite::migrations::run(&mut conn).unwrap();
+        migrations::run(&mut conn).unwrap();
 
         let mut expected = original.clone();
         expected.input_details = vec![InputDetail {

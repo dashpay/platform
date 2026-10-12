@@ -26,8 +26,9 @@ use crate::data_contract::document_type::methods::versioned_methods::DocumentTyp
 use crate::data_contract::document_type::property_constraints::{
     DocumentSystemValues, SystemChange,
 };
+use crate::data_contract::document_type::DocumentPropertyType;
 #[cfg(feature = "validation")]
-use crate::data_contract::document_type::{DocumentPropertyType, StringPropertySizes};
+use crate::data_contract::document_type::StringPropertySizes;
 use crate::fee::Credits;
 use crate::voting::vote_polls::VotePoll;
 use platform_value::btreemap_extensions::{
@@ -65,6 +66,16 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
     /// generation before the keyword.
     fn has_moderator_changeable_fields(&self) -> bool {
         false
+    }
+
+    /// The type of the value a derived index property of the type holds (an
+    /// index property `"<reference property>.<field>"` read from the referenced
+    /// document, protocol version 14), `None` for any other name and on every
+    /// generation before them. Encodes the values of such a property into keys,
+    /// as [`DocumentTypeV0Getters::flattened_properties`] gives the types of the
+    /// properties the documents hold.
+    fn derived_index_property_type(&self, _name: &str) -> Option<&DocumentPropertyType> {
+        None
     }
 
     fn requires_revision(&self) -> bool {

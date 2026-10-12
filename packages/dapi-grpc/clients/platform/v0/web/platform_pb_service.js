@@ -217,6 +217,33 @@ Platform.getContractDocumentRemovals = {
   responseType: platform_pb.GetContractDocumentRemovalsResponse
 };
 
+Platform.getContractTeamActions = {
+  methodName: "getContractTeamActions",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetContractTeamActionsRequest,
+  responseType: platform_pb.GetContractTeamActionsResponse
+};
+
+Platform.getContractTeamActionSigners = {
+  methodName: "getContractTeamActionSigners",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetContractTeamActionSignersRequest,
+  responseType: platform_pb.GetContractTeamActionSignersResponse
+};
+
+Platform.getContractModerationActionCounts = {
+  methodName: "getContractModerationActionCounts",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetContractModerationActionCountsRequest,
+  responseType: platform_pb.GetContractModerationActionCountsResponse
+};
+
 Platform.getContractFeePots = {
   methodName: "getContractFeePots",
   service: Platform,
@@ -1334,6 +1361,99 @@ PlatformClient.prototype.getContractDocumentRemovals = function getContractDocum
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getContractDocumentRemovals, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getContractTeamActions = function getContractTeamActions(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getContractTeamActions, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getContractTeamActionSigners = function getContractTeamActionSigners(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getContractTeamActionSigners, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getContractModerationActionCounts = function getContractModerationActionCounts(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getContractModerationActionCounts, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

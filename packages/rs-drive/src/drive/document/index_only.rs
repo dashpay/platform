@@ -304,7 +304,13 @@ impl Drive {
     ) -> Result<(), Error> {
         let estimated_item_value_size =
             index_only_item_estimated_value_size(document_type, platform_version)?;
-        for index in document_type.indexes().values() {
+        // A delete neither checks nor clears the entries of an index that
+        // outlives it, so it reads none of them.
+        for index in document_type
+            .indexes()
+            .values()
+            .filter(|index| !index.outlives_delete)
+        {
             let (paths, member_key) = Self::index_only_entry_paths_and_key(
                 contract_id,
                 document_type,

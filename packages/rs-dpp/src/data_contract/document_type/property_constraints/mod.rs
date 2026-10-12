@@ -145,6 +145,18 @@ const OPERAND_KEYS: &str = "add, subtract, multiply, divide, modulo, power, min,
 /// no change to a limit can make a stored contract unparseable.
 pub const MAX_PROPERTY_CONSTRAINT_PARSE_DEPTH: usize = 64;
 
+/// The prefix through which the condition of an `immutable` entry reads the
+/// stored document instead of the one a replace writes: `$old.status` is the
+/// stored `status`. Only such a condition may read it, and only a schema
+/// property through it; the condition is judged against the written document's
+/// properties with the stored ones under [`STORED_DOCUMENT_KEY`].
+pub const STORED_DOCUMENT_PREFIX: &str = "$old.";
+
+/// The key the stored document's properties sit under in the data the
+/// condition of an `immutable` entry is judged against, so that a path through
+/// [`STORED_DOCUMENT_PREFIX`] reads them.
+pub const STORED_DOCUMENT_KEY: &str = "$old";
+
 /// How the two sides of a comparison must compare.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConstraintComparison {
@@ -2021,6 +2033,24 @@ pub fn parse_property_constraints(
         }
     }
     Ok(constraints)
+}
+
+/// Reads one condition, the `when` of an `immutable` entry, with the grammar
+/// and the shape rules of a `propertyConstraints` rule ([`parse_property_constraints`]).
+/// `property_kind` is as there, for paths as the condition names them (through
+/// [`STORED_DOCUMENT_PREFIX`] included). The error is the rest of a message
+/// naming the condition. What the paths name is checked against the parsed
+/// document type by parser generation 3.
+pub fn parse_property_constraint_condition(
+    condition: &Value,
+    document_type_name: &str,
+    property_kind: &dyn Fn(&str) -> Option<EqualityKind>,
+) -> Result<PropertyConstraint, String> {
+    let context = ParseContext {
+        document_type_name,
+        property_kind,
+    };
+    parse_condition(condition, &mut String::new(), 0, &context)
 }
 
 /// Whether `name` can name a rule: 1 to 64 letters, digits or underscores, as

@@ -130,6 +130,7 @@ mod tests {
             gas_fees_paid_by: GasFeesPaidBy::default(),
             contract_gas_fees_paid_by: GasFeesPaidBy::default(),
             declared_action_fee: None,
+            shielded_token_payment: None,
         });
 
         let data = BTreeMap::from([(
@@ -147,6 +148,7 @@ mod tests {
             property_constraint_aggregates: Default::default(),
             moderated: false,
             consumed_documents: Vec::new(),
+            derived_index_values: None,
         })
     }
 

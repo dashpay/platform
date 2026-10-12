@@ -11,7 +11,7 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
-    ListElementReference, PropertyReference,
+    DocumentReferenceKind, ListElementReference, PropertyReference,
 };
 use crate::data_contract::DataContract;
 use crate::serialization::{
@@ -234,7 +234,7 @@ fn should_parse_a_list_element_reference_on_an_identifier_property() {
     let member_id = resignation_property_type(&parsed, "memberId");
     let declaration = reference_declaration(&member_id);
     assert_eq!(declaration.document_type_name, "electedCharter");
-    assert!(declaration.permanent);
+    assert_eq!(declaration.kind, DocumentReferenceKind::Permanent);
     assert_eq!(declaration.in_list, Some("members"));
 }
 

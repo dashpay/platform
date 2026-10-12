@@ -12,6 +12,7 @@ use crate::drive::document::{
     make_document_reference, make_document_reference_with_sum_item, read_document_sum_contribution,
 };
 
+use crate::drive::document::derived_index_values::set_derived_index_values;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -206,6 +207,18 @@ impl Drive {
             );
         }
 
+        // A type with derived index properties (protocol version 14) keys its documents by
+        // values read from the documents its references point at: read here for the new
+        // version, and taken from it for the old one below, whose references are the same.
+        // Every other type passes through unchanged.
+        let document_and_contract_info = self.with_derived_index_values(
+            document_and_contract_info,
+            false,
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
+
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         let owner_id = document_and_contract_info.owned_document_info.owner_id;
@@ -303,13 +316,26 @@ impl Drive {
                 }
             };
             old_document_bytes = old_serialized_document.len() as u64;
-            let document = Document::from_bytes(
+            let mut old_document = Document::from_bytes(
                 old_serialized_document.as_slice(),
                 document_type,
                 platform_version,
             )?;
+            if !document_type.derived_index_properties().is_empty() {
+                let values = self.derived_index_values(
+                    &old_document,
+                    Some(document),
+                    contract,
+                    document_type,
+                    false,
+                    transaction,
+                    &mut batch_operations,
+                    platform_version,
+                )?;
+                set_derived_index_values(&mut old_document, values);
+            }
             let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
-            DocumentOwnedInfo((document, storage_flags.map(Cow::Owned)))
+            DocumentOwnedInfo((old_document, storage_flags.map(Cow::Owned)))
         } else {
             return Err(Error::Drive(DriveError::UpdatingDocumentThatDoesNotExist(
                 "document being updated does not exist",

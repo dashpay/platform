@@ -14,6 +14,7 @@
 
 use std::path::PathBuf;
 
+use dashcore::hashes::Hash;
 use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
 use platform_wallet_storage::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use platform_wallet_storage::sqlite::util::safe_cast::SafeCastTarget;
@@ -150,6 +151,39 @@ fn tc_code_004_b_identity_index_variants_map_to_constraint_kind() {
     }
 }
 
+/// History invariants are enforced in Rust on the write path: an incoming
+/// record that contradicts stored history is a data fault, not a retryable
+/// or engine failure.
+#[test]
+fn history_integrity_variants_map_to_constraint_kind() {
+    let txid = dashcore::Txid::from_byte_array([0x44; 32]);
+    let cases: Vec<(&str, WalletStorageError)> = vec![
+        (
+            "TransactionBodyConflict",
+            WalletStorageError::TransactionBodyConflict {
+                wallet_id: [0xAA; 32],
+                txid,
+            },
+        ),
+        (
+            "NetAmountOverflow",
+            WalletStorageError::NetAmountOverflow {
+                wallet_id: [0xAA; 32],
+                txid,
+                value: i128::from(i64::MIN) - 1,
+            },
+        ),
+    ];
+    for (label, err) in cases {
+        assert!(!err.is_transient(), "{label}: must not be transient");
+        assert_eq!(
+            kind_of(err),
+            PersistenceErrorKind::Constraint,
+            "{label}: trait-boundary kind must be Constraint"
+        );
+    }
+}
+
 /// Every remaining fatal-but-not-constraint variant maps to `Fatal`.
 /// Spot-check enough variants to lock the table; the
 /// exhaustiveness is guarded by the wildcard-free invariant test.
@@ -231,6 +265,13 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
         (
             "BlobDecode",
             WalletStorageError::BlobDecode { reason: "len" },
+        ),
+        (
+            "UnknownWalletNetwork",
+            WalletStorageError::UnknownWalletNetwork {
+                wallet_id: [0xAA; 32],
+                label: "moonnet".into(),
+            },
         ),
         (
             "ForeignKeysNotEnforced",

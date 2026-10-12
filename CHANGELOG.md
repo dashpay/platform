@@ -1,3 +1,51 @@
+## [5.0.0-beta.1](https://github.com/dashpay/platform/compare/v4.2.0-beta.7...v5.0.0-beta.1) (2026-09-30)
+
+The 4.2 release line was renamed 5.0. This release follows 4.2.0-beta.7.
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** review fixes for outlivesDelete (PV14) (#5233)
+* **platform:** index entries that outlive a delete (outlivesDelete, PV14) (#5232)
+* **platform:** preallocated indexes may be bound through moderatedDocument references (PV14) (#5229)
+* **platform:** a seated moderation team deletes settled documents by approval (PV14) (#5215)
+* **platform:** review fixes for derived index properties reading kept fields (PV14) (#5224)
+* **platform:** derived index properties read a removed document's kept fields (PV14) (#5223)
+* **dpp:** moderator removal records keep the fields a type lists (PV14) (#5219)
+* **platform:** immutable properties frozen under a condition (PV14) (#5217)
+* **platform:** index a value of the document a reference points at (PV14) (#5216)
+* **dpp:** refersTo moderatedDocument, a reference that outlives a moderator's removal (PV14) (#5214)
+
+### Features
+
+* **dpp:** moderator removal records keep the fields a type lists (PV14) ([#5219](https://github.com/dashpay/platform/issues/5219))
+* **dpp:** refersTo moderatedDocument, a reference that outlives a moderator's removal (PV14) ([#5214](https://github.com/dashpay/platform/issues/5214))
+* **platform:** a seated moderation team deletes settled documents by approval (PV14) ([#5215](https://github.com/dashpay/platform/issues/5215))
+* **platform:** derived index properties read a removed document's kept fields (PV14) ([#5223](https://github.com/dashpay/platform/issues/5223))
+* **platform:** immutable properties frozen under a condition (PV14) ([#5217](https://github.com/dashpay/platform/issues/5217))
+* **platform:** index a value of the document a reference points at (PV14) ([#5216](https://github.com/dashpay/platform/issues/5216))
+* **platform:** index entries that outlive a delete (outlivesDelete, PV14) ([#5232](https://github.com/dashpay/platform/issues/5232))
+* **platform:** moderation reads: approval counts, action counts and team seats (PV14) ([#5230](https://github.com/dashpay/platform/issues/5230))
+* **platform:** preallocated indexes may be bound through moderatedDocument references (PV14) ([#5229](https://github.com/dashpay/platform/issues/5229))
+
+
+### Bug Fixes
+
+* **platform:** review fixes for derived index properties reading kept fields (PV14) ([#5224](https://github.com/dashpay/platform/issues/5224))
+* **platform:** review fixes for outlivesDelete (PV14) ([#5233](https://github.com/dashpay/platform/issues/5233))
+* **swift-sdk:** settle a stopping pass's completion and refuse manual syncs
+* **swift-sdk:** stop shielded sync off the main thread, closes [#5201](https://github.com/dashpay/platform/issues/5201)
+* **wasm-sdk:** fetch the moderated contract before verifying moderation proofs ([#5213](https://github.com/dashpay/platform/issues/5213))
+
+
+### Miscellaneous Chores
+
+* **swift-sdk:** freeze App Store schema 3.0.0
+
+
+### Tests
+
+* **rs-sdk:** poll for missing-owner exclusions to expire instead of racing a fixed sleep ([#5218](https://github.com/dashpay/platform/issues/5218))
+
 ## [4.2.0-beta.7](https://github.com/dashpay/platform/compare/v4.2.0-beta.6...v4.2.0-beta.7) (2026-09-29)
 
 

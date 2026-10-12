@@ -15,6 +15,7 @@ fn admissions(integer_range: bool) -> IndexGrammarAdmissions {
         integer_range,
         terminal: false,
         preallocated: false,
+        outlives_delete: false,
         skip_if_absent: false,
         range_countable_implies_countable: true,
         no_locking_resolution: false,

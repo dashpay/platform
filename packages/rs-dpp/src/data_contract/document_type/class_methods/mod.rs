@@ -13,6 +13,10 @@ mod should_use_creator_id;
 mod system_properties;
 mod try_from_schema;
 
+pub(in crate::data_contract) use try_from_schema::{
+    resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
+};
+
 #[inline]
 pub(crate) fn consensus_or_protocol_data_contract_error(
     data_contract_error: DataContractError,

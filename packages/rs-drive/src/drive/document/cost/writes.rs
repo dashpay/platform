@@ -24,9 +24,11 @@ use crate::drive::document::{
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::util::storage_flags::StorageFlags;
+use crate::util::type_constants::DEFAULT_HASH_SIZE_U16;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
+use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::document_type::{
     is_flat_level_key, DocumentPropertyType, DocumentTypeRef, Index, IndexLevel,
     IndexLevelTypeInfo, PreallocatedKeySource,
@@ -308,6 +310,23 @@ impl Context<'_> {
     }
 
     fn raw(&self, property: &str) -> Result<Option<Vec<u8>>, Error> {
+        // A derived index property's value is read from the document a reference points at,
+        // which an estimate does not have (unless the caller put it in): its key is priced at
+        // the typical size of the field's type
+        if self
+            .document_type
+            .derived_index_properties()
+            .contains_key(property)
+            && !self.document.properties().contains_key(property)
+        {
+            let size = match self.document_type.derived_index_property_type(property) {
+                Some(property_type) => property_type
+                    .middle_byte_size_ceil(self.platform_version)?
+                    .unwrap_or(DEFAULT_HASH_SIZE_U16),
+                None => DEFAULT_HASH_SIZE_U16,
+            };
+            return Ok(Some(vec![0; usize::from(size)]));
+        }
         Ok(self.document.get_raw_for_document_type(
             property,
             self.document_type,
@@ -726,7 +745,7 @@ impl Context<'_> {
     /// contract) whose entries will reference the document, created with it
     /// and charged to its creator (`add_preallocated_index_tree_operations`).
     fn preallocations(&mut self, contract: &DataContract) -> Result<(), Error> {
-        let target_name = self.document_type.name().clone();
+        let target = self.document_type;
         // Preallocated trees are only deleted with the contract, so they
         // carry flags only when it can be.
         let flags = self
@@ -746,7 +765,7 @@ impl Context<'_> {
                 for binding in index.preallocation_bindings_for_target(
                     referring.flattened_properties(),
                     contract.id(),
-                    &target_name,
+                    target,
                 ) {
                     self.referring_type = Some(referring.name().clone());
                     let result =

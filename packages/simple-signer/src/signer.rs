@@ -4,8 +4,8 @@ use base64::Engine;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::bincode::{Decode, Encode};
 use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
-use dpp::dashcore::secp256k1::rand::{RngCore, SeedableRng};
-use dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+use dpp::dashcore::secp256k1::rand::SeedableRng;
+use dpp::dashcore::secp256k1::{PublicKey, SecretKey};
 use dpp::dashcore::signer;
 use dpp::ed25519_dalek::Signer as BlsSigner;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -15,6 +15,7 @@ use dpp::platform_value::BinaryData;
 use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use dpp::util::hash::ripemd160_sha256;
 use dpp::{bls_signatures, dashcore, ed25519_dalek, ProtocolError};
+use rand::RngCore;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
 
@@ -95,14 +96,14 @@ impl SimpleSigner {
     ///
     /// This is only for tests.
     pub fn add_random_address_key<R: RngCore + ?Sized>(&mut self, rng: &mut R) -> PlatformAddress {
-        let secp = Secp256k1::new();
-
         // Generate a valid secp256k1 secret key from random bytes
-        let mut ecdsa_rng = dashcore::secp256k1::rand::rngs::StdRng::from_rng(rng).unwrap();
+        let mut seed = [0u8; 32];
+        rng.fill_bytes(&mut seed);
+        let mut ecdsa_rng = dashcore::secp256k1::rand::rngs::StdRng::from_seed(seed);
         let secret_key = SecretKey::new(&mut ecdsa_rng);
 
         // Derive compressed public key
-        let public_key = PublicKey::from_secret_key(&secp, &secret_key);
+        let public_key = PublicKey::from_secret_key(&secret_key);
         let pubkey_ser = public_key.serialize(); // 33-byte compressed
 
         let address_hash = ripemd160_sha256(&pubkey_ser);
@@ -110,7 +111,7 @@ impl SimpleSigner {
         // Store private key so this signer can later sign for this address
         // (use *_in_creation to mirror your identity key behavior)
         self.address_private_keys_in_creation
-            .insert(address_hash, secret_key.secret_bytes());
+            .insert(address_hash, secret_key.to_secret_bytes());
 
         PlatformAddress::P2pkh(address_hash)
     }

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
     document_takes_part_in_index, index_level_tree_types_with_continuation_demotion,
-    level_reaches_entry,
+    level_removes_entry,
 };
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 
@@ -99,12 +99,15 @@ impl Drive {
         let document_type = document_and_contract_info.document_type;
 
         // Mirror of the insert walker: the index ending here holds an entry
-        // for the document only when it did not skip it.
+        // for the document only when it did not skip it, and a delete leaves
+        // the entry of an index that outlives it.
         if let Some(index_type) = index_level.has_index_with_type() {
-            if document_takes_part_in_index(
-                &index_type.skip_if_absent_properties,
-                &document_and_contract_info.owned_document_info.document_info,
-            )? {
+            if !index_type.outlives_delete
+                && document_takes_part_in_index(
+                    &index_type.skip_if_absent_properties,
+                    &document_and_contract_info.owned_document_info.document_info,
+                )?
+            {
                 // An entry written before protocol version 14 can sit in
                 // another layout than the rule gives (see
                 // `drive::document::stored_index_entry`): a unique index's
@@ -173,9 +176,9 @@ impl Drive {
 
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
-            // A sub-level under which the document wrote no entry holds
-            // nothing of it to remove.
-            if !level_reaches_entry(
+            // A sub-level under which the document wrote no entry, or only
+            // entries that outlive the delete, holds nothing it removes.
+            if !level_removes_entry(
                 sub_level,
                 &document_and_contract_info.owned_document_info.document_info,
             )? {

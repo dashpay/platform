@@ -60,7 +60,9 @@ use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
 
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 pub use crate::data_contract::associated_token::token_configuration::TokenConfiguration;
+use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::group::Group;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
@@ -338,6 +340,16 @@ impl PlatformLimitDeserializableFromVersionedStructureUntrusted for DataContract
 }
 
 impl DataContract {
+    /// Whether the contract keeps the actions its seated moderation team votes on (protocol
+    /// version 14): one of its document types lets the team delete its settled documents
+    /// (`moderatorAbilities.deleteSettled`). Such a contract gets the team actions tree with its
+    /// creation, and no update adds such a type, so this is also whether the tree exists.
+    pub fn keeps_team_actions(&self) -> bool {
+        self.document_types()
+            .values()
+            .any(|document_type| document_type.moderator_settled_deletion().is_some())
+    }
+
     pub fn as_v0(&self) -> Option<&DataContractV0> {
         match self {
             DataContract::V0(v0) => Some(v0),

@@ -1,5 +1,7 @@
 /// A module for validating asset locks
 pub mod asset_lock;
+/// The error refusing a document reference whose kind its target document type does not admit
+pub(crate) mod document_reference_kind;
 /// Who moderates a contract, as state has it now
 pub(crate) mod moderators;
 /// The seated moderation charter of an elected contract, read from the moderation charters

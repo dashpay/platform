@@ -330,6 +330,25 @@ impl SubmittedCharter {
 }
 
 impl ElectedCharter {
+    /// The most members its team can hold: the leader, the members the charter elected and the
+    /// additions the target contract's elected declaration allows (`max_added_moderators`),
+    /// each seat filled now or not. A member the leader removed still holds its seat, which the
+    /// leader fills again by deleting the removal, so removing members never lowers it. A
+    /// `moderatorAbilities.deleteSettled` rule asking for more approvals than this needs every
+    /// seat's.
+    pub fn seats(&self, max_added_moderators: u16) -> u16 {
+        Self::seats_for(self.members.len(), max_added_moderators)
+    }
+
+    /// [`ElectedCharter::seats`] of a charter that elected `elected_members` members, for a
+    /// holder of the count alone.
+    pub fn seats_for(elected_members: usize, max_added_moderators: u16) -> u16 {
+        u16::try_from(elected_members)
+            .unwrap_or(u16::MAX)
+            .saturating_add(max_added_moderators)
+            .saturating_add(1)
+    }
+
     /// The members a seated team acts with besides its leader, `leader_id`: the elected
     /// members and those the leader added after the election, less those the leader removed.
     /// `added` and `removed` are the `memberId`s of the charter's `addedModerator` and

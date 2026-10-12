@@ -156,6 +156,12 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub shield_from_identity_state_transition: DriveAbciStateTransitionValidationVersion,
     pub identity_top_up_from_shielded_pool_state_transition:
         DriveAbciStateTransitionValidationVersion,
+    pub token_shielded_transfer_with_shielded_fee_state_transition:
+        DriveAbciStateTransitionValidationVersion,
+    pub token_unshield_with_shielded_fee_state_transition:
+        DriveAbciStateTransitionValidationVersion,
+    pub token_purchase_from_shielded_pool_state_transition:
+        DriveAbciStateTransitionValidationVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -287,6 +293,20 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub token_direct_purchase_transition_state_validation: FeatureVersion,
     pub token_set_price_for_direct_purchase_transition_structure_validation: FeatureVersion,
     pub token_set_price_for_direct_purchase_transition_state_validation: FeatureVersion,
+    pub token_shield_transition_structure_validation: FeatureVersion,
+    pub token_shield_transition_state_validation: FeatureVersion,
+    pub token_mint_to_pool_transition_structure_validation: FeatureVersion,
+    pub token_mint_to_pool_transition_state_validation: FeatureVersion,
+    pub token_burn_from_pool_transition_structure_validation: FeatureVersion,
+    pub token_burn_from_pool_transition_state_validation: FeatureVersion,
+    pub token_claim_to_pool_transition_structure_validation: FeatureVersion,
+    pub token_claim_to_pool_transition_state_validation: FeatureVersion,
+    pub token_direct_purchase_to_pool_transition_structure_validation: FeatureVersion,
+    pub token_direct_purchase_to_pool_transition_state_validation: FeatureVersion,
+    pub token_unshield_transition_structure_validation: FeatureVersion,
+    pub token_unshield_transition_state_validation: FeatureVersion,
+    pub token_shielded_transfer_transition_structure_validation: FeatureVersion,
+    pub token_shielded_transfer_transition_state_validation: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

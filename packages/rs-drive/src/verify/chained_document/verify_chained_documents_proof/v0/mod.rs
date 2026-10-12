@@ -1,7 +1,9 @@
+use crate::drive::contract::paths::contract_document_type_removals_path_vec;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::index_only_synthesis::synthesize_index_only_document;
-use crate::query::{ChainedDocumentsResult, DriveDocumentQuery};
+use crate::query::moderated_join::decode_removals;
+use crate::query::{ChainedDocumentsResult, ChainedOuterDocuments, DriveDocumentQuery};
 use crate::verify::RootHash;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -76,15 +78,27 @@ impl DriveDocumentQuery<'_> {
 
         // Split the proved trios between the halves by their doctype
         // path segment: `[DataContractDocuments, contract_id, 1,
-        // <doctype>, …]`.
+        // <doctype>, …]`. The removal records of a join off a
+        // `moderatedDocument` property sit at the outer type's removals
+        // path, `[DataContractDocuments, contract_id, 2, 16, <doctype>]`,
+        // which no document path equals.
         let inner_type_name = self.document_type.name().as_bytes();
         let outer_type_name = outer_document_type.name().as_bytes();
+        let removals_path = contract_document_type_removals_path_vec(
+            self.contract.id().as_slice(),
+            outer_document_type.name(),
+        );
         let mut inner_documents: Vec<Document> = Vec::new();
         let mut outer_documents: Vec<Document> = Vec::new();
+        let mut removal_entries = Vec::new();
         for (path, key, element) in proved_path_key_values {
             let Some(element) = element else {
                 continue;
             };
+            if path == removals_path {
+                removal_entries.push((key, element));
+                continue;
+            }
             match path.get(3).map(|segment| segment.as_slice()) {
                 Some(segment) if segment == inner_type_name => {
                     inner_documents.push(synthesize_index_only_document(
@@ -127,9 +141,15 @@ impl DriveDocumentQuery<'_> {
         // bootstrap candidates were only for reconstructing the query —
         // and the exact-set assembly refuses any divergence between
         // them and the proven outer documents, in either direction.
+        // A record reaches here only through the removals component, which
+        // the merged query carries for a moderatedDocument join alone.
         let join_values = self.chained_join_values(&inner_documents)?;
-        let (outer_documents, missing_outer_ids) =
-            self.assemble_chained_outer_documents(&join_values, outer_documents)?;
+        let removals = decode_removals(removal_entries)?;
+        let ChainedOuterDocuments {
+            documents: outer_documents,
+            missing: missing_outer_ids,
+            removed: removed_outer_documents,
+        } = self.assemble_chained_outer_documents(&join_values, outer_documents, &removals)?;
 
         Ok((
             root_hash,
@@ -137,6 +157,7 @@ impl DriveDocumentQuery<'_> {
                 inner_documents,
                 outer_documents,
                 missing_outer_ids,
+                removed_outer_documents,
             },
         ))
     }

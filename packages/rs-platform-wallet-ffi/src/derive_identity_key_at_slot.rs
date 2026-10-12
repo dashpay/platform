@@ -81,8 +81,7 @@ unsafe fn derive_at_slot_inner(
     let pub_len = pub_box.len();
     std::mem::forget(pub_box);
 
-    let secret_key = match dashcore::secp256k1::SecretKey::from_slice(derived.private_key.as_ref())
-    {
+    let secret_key = match dashcore::secp256k1::SecretKey::from_secret_bytes(*derived.private_key) {
         Ok(k) => k,
         Err(e) => {
             drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(

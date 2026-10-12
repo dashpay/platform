@@ -223,6 +223,18 @@ impl Drive {
             return Ok(batch_operations);
         }
 
+        // A type with derived index properties (protocol version 14) keys its documents by
+        // values read from the documents its references point at, which the document does not
+        // store: they are read here, before anything is keyed. Every other type passes through
+        // unchanged.
+        let document_and_contract_info = self.with_derived_index_values(
+            document_and_contract_info,
+            estimated_costs_only_with_layer_info.is_some(),
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
+
         // if we are trying to get estimated costs we need to add the upper levels
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
             Self::add_estimation_costs_for_levels_up_to_contract_document_type_excluded(

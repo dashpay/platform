@@ -4,12 +4,17 @@ use crate::identifier::IdentifierWasm;
 use crate::platform_address::PlatformAddressWasm;
 use crate::shielded::orchard_action::{SerializedOrchardActionWasm, actions_from_js_options};
 use crate::utils::{try_from_options, try_from_options_optional, try_vec_to_fixed_bytes};
+use crate::version::PlatformVersionWasm;
 use crate::{impl_wasm_conversions_inner, impl_wasm_type_info};
+use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
 use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
 use dpp::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
-use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::state_transition::shield_from_asset_lock_transition::v1::ShieldFromAssetLockTransitionV1;
+use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionSingleSigned};
+use dpp::version::PlatformVersion;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
@@ -49,6 +54,13 @@ export interface ShieldFromAssetLockTransitionOptions {
      * Accepts a PlatformAddress, a 21-byte Uint8Array, or a bech32m string.
      */
     surplusOutput?: PlatformAddressLike;
+    /**
+     * The protocol version to build for; defaults to the version this library
+     * targets. Protocol version 14 admits only transition version 1, whose
+     * bundle binds its kind and its asset lock; earlier versions admit only
+     * version 0. Build the bundle's sighash for the same protocol version.
+     */
+    platformVersion?: PlatformVersionLike;
 }
 
 /**
@@ -125,6 +137,10 @@ impl ShieldFromAssetLockTransitionWasm {
         // absent / null / undefined → `None`.
         let surplus_output: Option<PlatformAddressWasm> =
             try_from_options_optional(options.as_ref(), "surplusOutput")?;
+        let platform_version: PlatformVersion =
+            try_from_options_optional::<PlatformVersionWasm>(options.as_ref(), "platformVersion")?
+                .map(Into::into)
+                .unwrap_or_else(|| PlatformVersionWasm::default().into());
 
         // Extract remaining simple fields via serde (consumes options)
         let fields: ShieldFromAssetLockTransitionSimpleFields =
@@ -135,92 +151,101 @@ impl ShieldFromAssetLockTransitionWasm {
         let binding_signature: [u8; 64] =
             try_vec_to_fixed_bytes(fields.binding_signature, "bindingSignature")?;
 
-        Ok(ShieldFromAssetLockTransitionWasm(
-            ShieldFromAssetLockTransition::V0(ShieldFromAssetLockTransitionV0 {
-                asset_lock_proof: asset_lock.into(),
-                actions: actions.into_iter().map(Into::into).collect(),
+        let asset_lock_proof = asset_lock.into();
+        let actions = actions.into_iter().map(Into::into).collect();
+        let surplus_output = surplus_output.map(Into::into);
+        let signature = BinaryData::from(fields.signature);
+        let transition = match platform_version
+            .dpp
+            .state_transition_serialization_versions
+            .shield_from_asset_lock_state_transition
+            .default_current_version
+        {
+            0 => ShieldFromAssetLockTransition::V0(ShieldFromAssetLockTransitionV0 {
+                asset_lock_proof,
+                actions,
                 value_balance: fields.value_balance,
                 anchor,
                 proof: fields.proof,
                 binding_signature,
-                surplus_output: surplus_output.map(Into::into),
-                signature: BinaryData::from(fields.signature),
+                surplus_output,
+                signature,
             }),
-        ))
+            1 => ShieldFromAssetLockTransition::V1(ShieldFromAssetLockTransitionV1 {
+                asset_lock_proof,
+                actions,
+                value_balance: fields.value_balance,
+                anchor,
+                proof: fields.proof,
+                binding_signature,
+                surplus_output,
+                signature,
+            }),
+            version => {
+                return Err(WasmDppError::invalid_argument(format!(
+                    "unknown ShieldFromAssetLockTransition version {version}"
+                )));
+            }
+        };
+
+        Ok(ShieldFromAssetLockTransitionWasm(transition))
     }
 
     /// Returns the asset lock proof.
     #[wasm_bindgen(getter = "assetLockProof")]
     pub fn asset_lock_proof(&self) -> AssetLockProofWasm {
-        match &self.0 {
-            ShieldFromAssetLockTransition::V0(v0) => {
-                AssetLockProofWasm::from(v0.asset_lock_proof.clone())
-            }
-        }
+        AssetLockProofWasm::from(self.0.asset_lock_proof().clone())
     }
 
     /// Returns the serialized Orchard actions.
     #[wasm_bindgen(getter = "actions")]
     pub fn actions(&self) -> Vec<SerializedOrchardActionWasm> {
-        match &self.0 {
-            ShieldFromAssetLockTransition::V0(v0) => v0
-                .actions
-                .iter()
-                .cloned()
-                .map(SerializedOrchardActionWasm::from)
-                .collect(),
-        }
+        self.0
+            .actions()
+            .iter()
+            .cloned()
+            .map(SerializedOrchardActionWasm::from)
+            .collect()
     }
 
     /// Returns the net value balance.
     #[wasm_bindgen(getter = "valueBalance")]
     pub fn value_balance(&self) -> u64 {
-        match &self.0 {
-            ShieldFromAssetLockTransition::V0(v0) => v0.value_balance,
-        }
+        self.0.value_balance()
     }
 
     /// Returns the optional surplus-output platform address, or
     /// `undefined` when the surplus folds into the fee pools.
     #[wasm_bindgen(getter = "surplusOutput")]
     pub fn surplus_output(&self) -> Option<PlatformAddressWasm> {
-        match &self.0 {
-            ShieldFromAssetLockTransition::V0(v0) => {
-                v0.surplus_output.map(PlatformAddressWasm::from)
-            }
-        }
+        self.0
+            .surplus_output()
+            .copied()
+            .map(PlatformAddressWasm::from)
     }
 
     /// Returns the anchor (32-byte Merkle root).
     #[wasm_bindgen(getter = "anchor")]
     pub fn anchor(&self) -> Vec<u8> {
-        match &self.0 {
-            ShieldFromAssetLockTransition::V0(v0) => v0.anchor.to_vec(),
-        }
+        self.0.anchor().to_vec()
     }
 
     /// Returns the Halo2 proof bytes.
     #[wasm_bindgen(getter = "proof")]
     pub fn proof(&self) -> Vec<u8> {
-        match &self.0 {
-            ShieldFromAssetLockTransition::V0(v0) => v0.proof.clone(),
-        }
+        self.0.proof().to_vec()
     }
 
     /// Returns the RedPallas binding signature (64 bytes).
     #[wasm_bindgen(getter = "bindingSignature")]
     pub fn binding_signature(&self) -> Vec<u8> {
-        match &self.0 {
-            ShieldFromAssetLockTransition::V0(v0) => v0.binding_signature.to_vec(),
-        }
+        self.0.binding_signature().to_vec()
     }
 
     /// Returns the ECDSA signature.
     #[wasm_bindgen(getter = "signature")]
     pub fn signature(&self) -> Vec<u8> {
-        match &self.0 {
-            ShieldFromAssetLockTransition::V0(v0) => v0.signature.to_vec(),
-        }
+        self.0.signature().to_vec()
     }
 
     #[wasm_bindgen(js_name = getModifiedDataIds)]

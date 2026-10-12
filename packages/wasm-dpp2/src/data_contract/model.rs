@@ -1031,11 +1031,12 @@ impl DataContractWasm {
         Ok(JsValue::from(map).into())
     }
 
-    /// The `immutable` / `immutableAllowSetting` declarations of one
-    /// document type: `{ immutable: string[], immutableAllowSetting:
-    /// string[] }`, both sorted by property name.
+    /// The `immutable` declarations of one document type: `{ immutable:
+    /// string[], immutableWhen: Record<string, condition> }`, the properties
+    /// frozen at creation and those frozen under a condition, each sorted by
+    /// property name.
     ///
-    /// Both arrays are empty when the document type declares nothing (the
+    /// Both are empty when the document type declares nothing (the
     /// normal case, and the only case for a type whose documents are not
     /// mutable). Throws when the contract has no document type by that
     /// name, so "no such type" and "nothing frozen" stay distinguishable.
@@ -1066,8 +1067,9 @@ impl DataContractWasm {
     /// Every document type that freezes at least one property, keyed by
     /// document type name.
     ///
-    /// Document types with an empty `immutable` list are omitted, so an
-    /// empty `Map` means "nothing in this contract is frozen per property".
+    /// Document types whose `immutable` keyword lists nothing are omitted, so
+    /// an empty `Map` means "nothing in this contract is frozen per
+    /// property".
     #[wasm_bindgen(getter = "documentImmutableProperties")]
     pub fn document_immutable_properties(
         &self,
@@ -1075,7 +1077,9 @@ impl DataContractWasm {
         let map = js_sys::Map::new();
 
         for (name, document_type) in self.0.document_types() {
-            if document_type.immutable_fields().is_empty() {
+            if document_type.immutable_fields().is_empty()
+                && document_type.immutable_field_conditions().is_empty()
+            {
                 continue;
             }
             let properties = immutable_properties_for_document_type(document_type.as_ref(), name)?;

@@ -139,7 +139,9 @@ mod tests {
     use dpp::consensus::codes::ErrorWithCode;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
-    use dpp::dashcore::key::{Keypair, Secp256k1};
+    use dpp::dashcore::key::Keypair;
+    use dpp::dashcore::secp256k1::rand::rngs::StdRng as SecpStdRng;
+    use dpp::dashcore::secp256k1::rand::SeedableRng as _;
     use dpp::dashcore::signer;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identifier::Identifier;
@@ -257,11 +259,9 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(292);
 
-        let mut rng = StdRng::seed_from_u64(292);
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -294,7 +294,7 @@ mod tests {
 
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -540,9 +540,8 @@ mod tests {
             document_type_name: "profile".into(),
         };
         let platform_state = platform.state.load();
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(292);
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let mut rng = SecpStdRng::seed_from_u64(292);
+        let new_key_pair = Keypair::new(&mut rng);
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
             purpose: Purpose::AUTHENTICATION,
@@ -567,11 +566,13 @@ mod tests {
             .into()
         };
         let signable_bytes = build(new_key.clone()).signable_bytes().unwrap();
-        new_key.signature =
-            signer::sign(&signable_bytes, &new_key_pair.secret_key().secret_bytes())
-                .unwrap()
-                .to_vec()
-                .into();
+        new_key.signature = signer::sign(
+            &signable_bytes,
+            &new_key_pair.secret_key().to_secret_bytes(),
+        )
+        .unwrap()
+        .to_vec()
+        .into();
         let mut update_transition = build(new_key);
         update_transition
             .set_signature(signer.sign(&key, signable_bytes.as_slice()).await.unwrap());
@@ -749,9 +750,8 @@ mod tests {
             id: contract_group_id,
         };
         let platform_state = platform.state.load();
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(293);
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let mut rng = SecpStdRng::seed_from_u64(293);
+        let new_key_pair = Keypair::new(&mut rng);
         let build =
             |revision: u64, nonce: u64, add: Vec<IdentityPublicKeyInCreationV0>, disable| {
                 StateTransition::from(IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
@@ -783,11 +783,13 @@ mod tests {
             let signable_bytes = build(revision, nonce, vec![new_key.clone()], vec![])
                 .signable_bytes()
                 .unwrap();
-            new_key.signature =
-                signer::sign(&signable_bytes, &new_key_pair.secret_key().secret_bytes())
-                    .unwrap()
-                    .to_vec()
-                    .into();
+            new_key.signature = signer::sign(
+                &signable_bytes,
+                &new_key_pair.secret_key().to_secret_bytes(),
+            )
+            .unwrap()
+            .to_vec()
+            .into();
             let mut update = build(revision, nonce, vec![new_key], vec![]);
             update.set_signature(signer.sign(&key, signable_bytes.as_slice()).await.unwrap());
             signed_updates.push(update);
@@ -1107,11 +1109,10 @@ mod tests {
             .load_dashpay(version)
             .unwrap();
         let bounds = ContractBounds::SingleContract { id: dashpay.id() };
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(292);
+        let mut rng = SecpStdRng::seed_from_u64(292);
         let pairs: BTreeMap<u32, Keypair> = [2u32, 3, 4]
             .into_iter()
-            .map(|id| (id, Keypair::new(&secp, &mut rng)))
+            .map(|id| (id, Keypair::new(&mut rng)))
             .collect();
         let bound_key = |id: u32| IdentityPublicKeyInCreationV0 {
             id,
@@ -1226,7 +1227,7 @@ mod tests {
         let mut adds = vec![bound_key(3), bound_key(2)];
         let signable = unsigned(1, adds.clone(), vec![]).signable_bytes().unwrap();
         for key in &mut adds {
-            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().secret_bytes())
+            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().to_secret_bytes())
                 .unwrap()
                 .to_vec()
                 .into();
@@ -1241,7 +1242,7 @@ mod tests {
         let mut adds = vec![bound_key(4)];
         let signable = unsigned(2, adds.clone(), vec![3]).signable_bytes().unwrap();
         for key in &mut adds {
-            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().secret_bytes())
+            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().to_secret_bytes())
                 .unwrap()
                 .to_vec()
                 .into();
@@ -1673,11 +1674,9 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let mut rng = StdRng::seed_from_u64(1292);
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -1862,11 +1861,9 @@ mod tests {
         )
         .await;
 
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let mut rng = StdRng::seed_from_u64(1292);
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -1902,7 +1899,7 @@ mod tests {
         // Sign the new key with its own private key
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -2147,14 +2144,13 @@ mod tests {
         let bounds = ContractBounds::SingleContract {
             id: data_contract.id(),
         };
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(1292);
+        let mut rng = SecpStdRng::seed_from_u64(1292);
         // Two encryption keys, the newer one listed first: both write the encryption
         // current-key alias, and the one naming the highest key id must win.
         let pairs: Vec<(u32, Purpose, Keypair)> = vec![
-            (4, Purpose::ENCRYPTION, Keypair::new(&secp, &mut rng)),
-            (2, Purpose::ENCRYPTION, Keypair::new(&secp, &mut rng)),
-            (3, Purpose::DECRYPTION, Keypair::new(&secp, &mut rng)),
+            (4, Purpose::ENCRYPTION, Keypair::new(&mut rng)),
+            (2, Purpose::ENCRYPTION, Keypair::new(&mut rng)),
+            (3, Purpose::DECRYPTION, Keypair::new(&mut rng)),
         ];
         let mut adds: Vec<IdentityPublicKeyInCreationV0> = pairs
             .iter()
@@ -2270,7 +2266,7 @@ mod tests {
             .signable_bytes()
             .expect("expected signable bytes");
         for (key, (_, _, pair)) in adds.iter_mut().zip(&pairs) {
-            key.signature = signer::sign(&signable, &pair.secret_key().secret_bytes())
+            key.signature = signer::sign(&signable, &pair.secret_key().to_secret_bytes())
                 .expect("expected to sign")
                 .to_vec()
                 .into();
@@ -2637,11 +2633,9 @@ mod tests {
         )
         .await;
 
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let mut rng = StdRng::seed_from_u64(1292);
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -2678,7 +2672,7 @@ mod tests {
         // Sign the new key with its own private key
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -3011,9 +3005,8 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(292);
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let mut rng = SecpStdRng::seed_from_u64(292);
+        let new_key_pair = Keypair::new(&mut rng);
 
         // Add a key with id 2 and also disable key id 2 in the same transition
         let new_key = IdentityPublicKeyInCreationV0 {
@@ -3241,9 +3234,8 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(292);
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let mut rng = SecpStdRng::seed_from_u64(292);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let signable_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: identity.id(),
@@ -3276,7 +3268,7 @@ mod tests {
         // Sign the new key
         let secret = new_key_pair.secret_key();
         let key_sig =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 1, // existing key ID
@@ -3377,9 +3369,8 @@ mod tests {
                 setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
             let platform_state = platform.state.load();
 
-            let secp = Secp256k1::new();
-            let mut rng = StdRng::seed_from_u64(292);
-            let new_key_pair = Keypair::new(&secp, &mut rng);
+            let mut rng = SecpStdRng::seed_from_u64(292);
+            let new_key_pair = Keypair::new(&mut rng);
             let mut new_key = IdentityPublicKeyInCreationV1 {
                 id: NEW_KEY_ID,
                 purpose: added_key.purpose,
@@ -3413,11 +3404,13 @@ mod tests {
             let signable_bytes = transition_adding(new_key.clone())
                 .signable_bytes()
                 .expect("expected signable bytes");
-            new_key.signature =
-                signer::sign(&signable_bytes, &new_key_pair.secret_key().secret_bytes())
-                    .expect("expected to sign")
-                    .to_vec()
-                    .into();
+            new_key.signature = signer::sign(
+                &signable_bytes,
+                &new_key_pair.secret_key().to_secret_bytes(),
+            )
+            .expect("expected to sign")
+            .to_vec()
+            .into();
 
             let mut update_transition = transition_adding(new_key);
             update_transition.set_signature(

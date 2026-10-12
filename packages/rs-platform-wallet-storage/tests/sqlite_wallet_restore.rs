@@ -369,10 +369,21 @@ fn should_advertise_full_core_wallet_restore() {
         .contains(PersistenceCapabilities::WALLET_RESTORE));
 }
 
+/// A wallet is loaded inside its own `BEGIN IMMEDIATE` transaction, so a
+/// writer on another connection cannot change the rows mid-load.
+///
+/// Timing is deterministic, not slept for: SQLite calls the authorizer while
+/// it compiles a statement, so the write is attempted from inside the load's
+/// own `core_utxos` read. The busy rejection is the proof that the load
+/// transaction is open at that instant — in WAL mode a second connection is
+/// refused the write lock only while another connection holds it, and the
+/// persister holds it nowhere else during `load()`.
 #[test]
-fn should_read_one_snapshot_despite_a_concurrent_commit() {
+fn should_reject_a_concurrent_writer_while_a_wallet_load_transaction_is_open() {
     use rusqlite::hooks::{AuthAction, Authorization};
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
+
+    const CONCURRENT_WRITE: &str = "UPDATE core_sync_state SET synced_height = 200";
 
     let (persister, _tmp, path) = common::fresh_persister();
     let wallet =
@@ -384,9 +395,19 @@ fn should_read_one_snapshot_despite_a_concurrent_commit() {
         ..Default::default()
     });
     persister.store(wallet.wallet_id, cs).unwrap();
-    let writer = rusqlite::Connection::open(path).unwrap();
-    let changed = Arc::new(AtomicBool::new(false));
-    let changed_callback = Arc::clone(&changed);
+    let synced_height = |persister: &SqlitePersister| {
+        persister.load().unwrap().wallets[&wallet.wallet_id]
+            .wallet_info
+            .metadata
+            .synced_height
+    };
+
+    let writer = rusqlite::Connection::open(&path).unwrap();
+    // Fail at once instead of waiting out the default busy handler.
+    writer.busy_timeout(std::time::Duration::ZERO).unwrap();
+    // The authorizer swallows panics, so the outcome is asserted outside it.
+    let attempt: Arc<Mutex<Option<rusqlite::Result<usize>>>> = Arc::new(Mutex::new(None));
+    let attempt_callback = Arc::clone(&attempt);
     persister
         .lock_conn_for_test()
         .authorizer(Some(move |ctx: rusqlite::hooks::AuthContext<'_>| {
@@ -396,25 +417,43 @@ fn should_read_one_snapshot_despite_a_concurrent_commit() {
                     table_name: "core_utxos",
                     ..
                 }
-            ) && !changed_callback.swap(true, Ordering::SeqCst)
-            {
-                writer
-                    .execute("UPDATE core_sync_state SET synced_height = 200", [])
-                    .unwrap();
+            ) {
+                let mut attempt = attempt_callback.lock().unwrap();
+                if attempt.is_none() {
+                    *attempt = Some(writer.execute(CONCURRENT_WRITE, []));
+                }
             }
             Authorization::Allow
         }))
         .unwrap();
-    let state = persister.load().unwrap();
-    assert!(changed.load(Ordering::SeqCst));
+
     assert_eq!(
-        state.wallets[&wallet.wallet_id]
-            .wallet_info
-            .metadata
-            .synced_height,
+        synced_height(&persister),
         100,
-        "one load must retain its original read snapshot"
+        "one wallet load must see one snapshot"
     );
+    {
+        // Scoped: the authorizer takes this lock again on the next load.
+        let attempt = attempt.lock().unwrap();
+        let attempt = attempt
+            .as_ref()
+            .expect("the load must read core_utxos, which triggers the write");
+        assert!(
+            matches!(
+                attempt,
+                Err(rusqlite::Error::SqliteFailure(error, _))
+                    if error.code == rusqlite::ErrorCode::DatabaseBusy
+            ),
+            "a write during a wallet's load transaction must be refused as busy, got {attempt:?}"
+        );
+    }
+
+    // Control: the same statement lands once the load has released its lock,
+    // and the next load reads it — so the refusal above was the load's lock,
+    // not an inert statement.
+    let late_writer = rusqlite::Connection::open(&path).unwrap();
+    assert_eq!(late_writer.execute(CONCURRENT_WRITE, []).unwrap(), 1);
+    assert_eq!(synced_height(&persister), 200);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

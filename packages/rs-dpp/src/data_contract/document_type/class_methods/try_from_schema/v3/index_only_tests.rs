@@ -1042,7 +1042,7 @@ fn rejects_unindexed_property() {
     );
     expect_structure_error(
         parse_with(schema, PlatformVersion::latest(), false),
-        "does not appear in any non-skipIfAbsent index",
+        "does not appear in any index that neither sets skipIfAbsent nor outlivesDelete",
     );
 }
 

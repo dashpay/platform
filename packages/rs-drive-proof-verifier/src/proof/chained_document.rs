@@ -34,6 +34,7 @@ use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
+use drive::drive::contract::moderation::types::ContractDocumentRemovalEntry;
 use drive::query::DriveDocumentQuery;
 use drive::verify::RootHash;
 
@@ -54,8 +55,15 @@ pub struct ChainedDocuments {
     /// The join values that have NO outer document, in first-appearance
     /// order: each one a PROVEN absence (the merged proof covers every
     /// derived `$id`). Always empty under a `permanentDocument` join
-    /// property, where a missing document is an invalid proof.
+    /// property, where a missing document is an invalid proof, and under a
+    /// `moderatedDocument` one, which reports its missing documents in
+    /// [`Self::removed_outer_documents`].
     pub missing_outer_ids: Vec<dpp::identifier::Identifier>,
+    /// The join values whose outer document the contract's moderators
+    /// removed, each with its PROVEN removal record, in first-appearance
+    /// order. Only a `moderatedDocument` join property reports any; there a
+    /// join value with neither a document nor a record is an invalid proof.
+    pub removed_outer_documents: Vec<ContractDocumentRemovalEntry>,
 }
 
 /// Verify a chained query's single merged proof and bind its root hash
@@ -95,6 +103,7 @@ pub fn verify_chained_documents_proof(
             inner_documents: result.inner_documents,
             outer_documents: result.outer_documents,
             missing_outer_ids: result.missing_outer_ids,
+            removed_outer_documents: result.removed_outer_documents,
         },
     ))
 }
