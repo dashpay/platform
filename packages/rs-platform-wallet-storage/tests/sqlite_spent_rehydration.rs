@@ -967,20 +967,7 @@ async fn assert_conflict_restart(case: ConflictCase) {
             |row| row.get(0),
         )
         .unwrap();
-    // Release controls carry a known loser claim; an unknown durable claim must stay held.
-    if expect_released {
-        persister
-            .lock_conn_for_test()
-            .execute(
-                "UPDATE core_utxos SET spent_in_txid = ?1 WHERE wallet_id = ?2 AND outpoint = ?3",
-                rusqlite::params![
-                    loser.txid().as_byte_array().as_slice(),
-                    wallet.wallet_id.as_slice(),
-                    &extra_key
-                ],
-            )
-            .unwrap();
-    }
+    // The store itself names the loser as claimant; only an unknown durable claim stays held.
     if let ConflictCase::UnknownClaim { height, .. } = case {
         persister.lock_conn_for_test().execute(
             "UPDATE core_utxos SET spent_in_txid = NULL, winner_mined_height = ?1 WHERE wallet_id = ?2 AND outpoint = ?3",
