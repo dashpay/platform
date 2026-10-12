@@ -2051,6 +2051,69 @@ mod tests {
         build().await.expect("final coins fund the lock");
     }
 
+    /// A drain over a few final duffs fails inside key-wallet with its own
+    /// fee-and-dust figure. With waiting coins above the floor it is waiting
+    /// on the network, and what it names as required is the floor.
+    #[tokio::test]
+    async fn should_name_the_floor_for_a_drain_over_final_dust_and_waiting_coins() {
+        let (wallet_manager, wallet_id, _generation, signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                StandardAccountType::BIP44Account,
+                &[300, 10_000_000],
+            )
+            .await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = Arc::new(AssetLockManager::new(
+            sdk,
+            wallet_manager,
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(CountingOkBroadcaster::default()),
+            WalletPersister::new(
+                wallet_id,
+                Arc::new(CapturingPersistence::default()) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        ));
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let (_, info) = wm
+                .get_wallet_mut_and_info_mut(&manager.wallet_id)
+                .expect("wallet");
+            for account in info.core_wallet.accounts.all_funding_accounts_mut() {
+                for utxo in account.utxos.values_mut().filter(|u| u.value() > 300) {
+                    utxo.is_confirmed = false;
+                    utxo.is_instantlocked = false;
+                }
+            }
+        }
+
+        let result = manager
+            .build_asset_lock_transaction_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: Some(20_000),
+                },
+                &[AccountTypePreference::BIP44],
+                0,
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                &signer,
+            )
+            .await;
+
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                    available: Some(300),
+                    waiting: 10_000_000,
+                    required: Some(20_000),
+                    outpoint: None,
+                })
+            ),
+            "got {result:?}"
+        );
+    }
+
     /// The same for a CoinJoin drain, the form the shielded flow funds with:
     /// waiting coins above the floor are waiting on the network, below it
     /// insufficient, and a drain without a floor names no required amount.

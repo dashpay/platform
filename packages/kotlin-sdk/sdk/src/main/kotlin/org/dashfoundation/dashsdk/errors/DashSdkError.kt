@@ -238,6 +238,8 @@ sealed class DashSdkError(
          * drain), and by
          * [shieldedFundFromAssetLock][org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedFundFromAssetLock]
          * when the pooled funding sources cannot cover the requested lock.
+         * When coins that are not confirmed yet would fund the lock, both
+         * raise [CoreFundsAwaitingNetwork] instead: wait, don't add funds.
          */
         class AssetLockInsufficientFunds(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)

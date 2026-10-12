@@ -420,8 +420,9 @@ pub enum PlatformWalletError {
     /// spend once they are final; with `outpoint` set, of that one coin, which
     /// the caller chose as an input itself and which is not final.
     /// `available` / `required` are key-wallet's figures for the build when it
-    /// names them; an asset lock that found no final coin names the requested
-    /// amount (for a drain, its minimum lock floor) as `required`.
+    /// names them. An asset lock that found no final coin names the requested
+    /// amount as `required`; a drain always names its minimum lock floor
+    /// there, and no amount when it has no floor.
     #[error(
         "Core funds are waiting for network confirmation: {} DASH not yet confirmed{}{}{}",
         dash_amount(*waiting),
