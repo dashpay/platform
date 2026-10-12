@@ -124,6 +124,20 @@ impl PersistenceCapabilities {
     /// a frozen watermark would cost the host its durable progress and
     /// recover nothing. Such a store keeps the replaced branch until the
     /// host rescans.
+    ///
+    /// # A truncation is owed until it is applied
+    ///
+    /// For the same reason a truncation a `store` rejected is offered again
+    /// ahead of the wallet's next round, and so is never skipped: while it
+    /// cannot be applied, every later round of that wallet fails with it.
+    ///
+    /// A backend whose
+    /// [`store_transient_is_reissuable`](super::PlatformWalletPersistence::store_transient_is_reissuable)
+    /// is `false` is not offered a truncation again after a transient
+    /// failure, since it may hold the round for its own retry. Attesting
+    /// this bit therefore obliges such a backend to keep that truncation
+    /// until it has applied it, including when it discards the rest of what
+    /// it held.
     // Bit 13 is reserved for `CORE_HISTORY_RESTORE` (dashpay/platform#5220).
     pub const CORE_CHAIN_TRUNCATION: Self = Self(1 << 14);
 

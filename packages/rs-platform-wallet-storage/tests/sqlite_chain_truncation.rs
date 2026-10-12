@@ -37,7 +37,7 @@ use platform_wallet::{
     key_wallet_manager::{WalletEvent, WalletInterface, WalletManager},
     wallet::platform_wallet::{PlatformWalletInfo, WalletId},
 };
-use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
+use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig, WalletStorageError};
 use proptest::prelude::*;
 use tokio::sync::{mpsc, RwLock};
 use tokio_util::sync::CancellationToken;
@@ -653,6 +653,116 @@ async fn should_keep_an_instant_locked_transaction_when_the_fork_follows_a_resta
     }
 }
 
+/// The truncation among `events`, as the changeset carries it.
+fn reported_truncation(events: Vec<WalletEvent>) -> ChainTruncation {
+    events
+        .into_iter()
+        .find_map(|event| match event {
+            WalletEvent::ChainTruncated {
+                height,
+                txids,
+                unconfirmed_txids,
+                restored_outpoints,
+                ..
+            } => Some(ChainTruncation {
+                height,
+                txids,
+                unconfirmed_txids,
+                restored_outpoints,
+            }),
+            _ => None,
+        })
+        .expect("the fork is reported")
+}
+
+fn core_round(core: CoreChangeSet) -> PlatformWalletChangeSet {
+    PlatformWalletChangeSet {
+        core: Some(core),
+        ..Default::default()
+    }
+}
+
+/// A store that keeps a round after a busy database owns the truncation in
+/// it: nobody else will offer it again. When a later round fails for good
+/// and takes the buffer with it, the truncation must still be applied by
+/// the next round that lands.
+#[tokio::test]
+async fn should_apply_a_truncation_it_kept_after_dropping_a_later_round() {
+    let mut session = Session::open(Rounds::PerStep).await;
+    let wallet_id = session.chain.wallet_id;
+    let spend = session.chain.spend(session.chain.funding, FUNDING);
+    session.chain.mine(vec![spend.clone()]).await;
+    session.chain.sync().await;
+    session.step().await;
+    session.chain.fork_at(BASE).await;
+    let truncation = reported_truncation(session.chain.drain());
+    assert_eq!(truncation.txids, [spend.txid()]);
+    let persister = session.store.persister();
+
+    persister.force_next_flush_to_fail(WalletStorageError::Sqlite(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+        None,
+    )));
+    let kept = persister.store(
+        wallet_id,
+        core_round(CoreChangeSet {
+            truncations: vec![truncation.clone()],
+            ..Default::default()
+        }),
+    );
+    assert!(kept.is_err(), "the busy database rejects the round");
+    persister.force_next_flush_to_fail(WalletStorageError::Sqlite(
+        rusqlite::Error::InvalidColumnIndex(0),
+    ));
+    let dropped = persister.store(
+        wallet_id,
+        core_round(CoreChangeSet {
+            last_processed_height: Some(BASE),
+            ..Default::default()
+        }),
+    );
+    assert!(dropped.is_err(), "the fatal failure rejects the round");
+    persister
+        .store(
+            wallet_id,
+            core_round(CoreChangeSet {
+                synced_height: Some(BASE),
+                ..Default::default()
+            }),
+        )
+        .expect("the next round lands");
+
+    let follows_the_fork = |when: &str| {
+        assert_eq!(
+            session.store.transaction_rows(&spend.txid()),
+            Vec::<Option<u32>>::new(),
+            "{when}: the transaction of the dropped block is gone"
+        );
+        assert_eq!(
+            session.store.heights(wallet_id),
+            (Some(BASE), Some(BASE)),
+            "{when}"
+        );
+    };
+    follows_the_fork("after the round that landed");
+
+    // A caller that kept its own copy offers the truncation once more.
+    persister
+        .store(
+            wallet_id,
+            core_round(CoreChangeSet {
+                truncations: vec![truncation],
+                ..Default::default()
+            }),
+        )
+        .expect("a second delivery is accepted");
+    follows_the_fork("after a second delivery");
+    let restored = view(&session.store.restart(wallet_id));
+    if let Err(difference) = restored.follows(&session.chain.memory().await) {
+        panic!("{difference}");
+    }
+}
+
 /// A truncation is several writes: rows deleted, records rewritten, coins
 /// released, heights lowered. One that fails part-way must leave none behind.
 #[tokio::test]
@@ -681,26 +791,7 @@ async fn should_leave_the_store_untouched_when_a_truncation_cannot_be_applied() 
         .unwrap();
 
     session.chain.fork_at(BASE).await;
-    let truncation = session
-        .chain
-        .drain()
-        .into_iter()
-        .find_map(|event| match event {
-            WalletEvent::ChainTruncated {
-                height,
-                txids,
-                unconfirmed_txids,
-                restored_outpoints,
-                ..
-            } => Some(ChainTruncation {
-                height,
-                txids,
-                unconfirmed_txids,
-                restored_outpoints,
-            }),
-            _ => None,
-        })
-        .expect("the fork is reported");
+    let truncation = reported_truncation(session.chain.drain());
     assert_eq!(truncation.txids, [removed.txid()]);
     assert_eq!(truncation.unconfirmed_txids, [kept.txid()]);
 

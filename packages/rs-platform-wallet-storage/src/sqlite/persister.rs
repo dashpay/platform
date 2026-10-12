@@ -7,9 +7,9 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use rusqlite::{Connection, OptionalExtension};
 
 use dpp::prelude::Identifier;
-use platform_wallet::changeset::changeset::SweepBatch;
+use platform_wallet::changeset::changeset::{ChainTruncation, SweepBatch};
 use platform_wallet::changeset::{
-    ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
+    ClientStartState, CoreChangeSet, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
     PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
@@ -1112,12 +1112,12 @@ impl SqlitePersister {
     }
 
     /// Classify the failure: transient errors restore the buffer and
-    /// surface as `FlushRetryable`; everything else drops the changeset
-    /// and returns the original variant.
+    /// surface as `FlushRetryable`; everything else drops the changeset,
+    /// except its chain truncations, and returns the original variant.
     fn handle_flush_error(
         &self,
         wallet_id: &WalletId,
-        cs: PendingWrites,
+        mut cs: PendingWrites,
         err: WalletStorageError,
     ) -> Result<(), PersistenceError> {
         let field_count = populated_field_count(&cs);
@@ -1161,13 +1161,47 @@ impl SqlitePersister {
                 source,
             }))
         } else {
+            // A truncation is reported once, and a round restored after a
+            // transient failure is this store's alone to retry: its caller
+            // no longer holds the truncation in it. So the truncations stay
+            // buffered for the next write, which applies them ahead of
+            // whatever it brings. One that arrives a second time from a
+            // caller that kept its own copy lands right behind the first,
+            // where applying it again changes nothing.
+            let truncations: Vec<ChainTruncation> = cs
+                .segments
+                .iter_mut()
+                .filter_map(|segment| segment.core.as_mut())
+                .flat_map(|core| std::mem::take(&mut core.truncations))
+                .collect();
+            let kept_truncation_count = truncations.len();
             tracing::error!(
                 wallet_id = %hex::encode(wallet_id),
                 error_kind = kind,
                 dropped_field_count = field_count,
+                kept_truncation_count,
                 "flush failed fatally — buffer wiped"
             );
             drop(cs);
+            if !truncations.is_empty() {
+                let owed = PendingWrites {
+                    segments: vec![PlatformWalletChangeSet {
+                        core: Some(CoreChangeSet {
+                            truncations,
+                            ..CoreChangeSet::default()
+                        }),
+                        ..PlatformWalletChangeSet::default()
+                    }],
+                };
+                if let Err(restore_err) = self.buffer.restore(*wallet_id, owed) {
+                    tracing::error!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error_kind = restore_err.error_kind_str(),
+                        lost_truncation_count = kept_truncation_count,
+                        "chain truncations could not be kept after a fatal flush error — the store keeps the replaced branch"
+                    );
+                }
+            }
             Err(PersistenceError::from(err))
         }
     }
