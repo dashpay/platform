@@ -1229,6 +1229,16 @@ mod fixtures {
         conformance_of(&drive, "address_balances", run);
     }
 
+    /// The Core-anchored withdrawal accounting: a recorded Core credit pool balance.
+    fn core_anchored_withdrawal_accounting(run: &mut FixtureRun) {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        drive
+            .record_core_credit_pool_blocks(&[(100, 5_000_000)], None, platform_version)
+            .expect("expected to record a Core block");
+        conformance_of(&drive, "core_anchored_withdrawal_accounting", run);
+    }
+
     /// An epoch while it runs, then after it was paid out: payout deletes the
     /// proposers and both fee items and keeps the epoch tree. The finished
     /// epoch info is written at payout, so no epoch ever holds all nine keys.
@@ -1846,6 +1856,7 @@ mod fixtures {
         contract_with_team_actions(&mut run);
         tokens_and_group_actions(&mut run);
         address_balances(&mut run);
+        core_anchored_withdrawal_accounting(&mut run);
         current_then_paid_epoch(&mut run);
         contested_documents(&mut run);
         token_distributions(&mut run);

@@ -41,7 +41,6 @@ where
 }
 
 #[cfg(test)]
-#[allow(deprecated)] // Fixtures preserve legacy RPC flat-port behavior.
 mod tests {
     use crate::platform_types::platform::Platform;
     use crate::rpc::core::MockCoreRPCLike;
@@ -72,12 +71,14 @@ mod tests {
                 owner_address: Some([0u8; 20]),
                 voting_address,
                 payout_address: Some([0u8; 20]),
+                payouts: None,
                 pub_key_operator: vec![0u8; 48],
                 operator_payout_address: None,
                 platform_node_id: None,
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         }

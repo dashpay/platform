@@ -314,7 +314,7 @@ fn should_price_what_drive_charges() {
 fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
     let platform_version = PlatformVersion::latest();
     let mut ratios = Vec::new();
-    for index in [0usize, 3, 4, 7, 9, 15] {
+    for index in [0usize, 3, 4, 7, 9, 15, 22] {
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
         let contract = apply(&drive, index, CONTRACTS[index]);
         for (name, document_type) in contract.document_types() {
@@ -327,13 +327,11 @@ fn should_estimate_the_processing_of_the_writes_within_a_factor_of_two() {
                     .expect("expected a random document");
                 small_sums(&mut document, document_type, seed);
                 let writes = writes_of(&contract, document_type, &document);
-                let known: Vec<bool> = writes
+                let written: Vec<bool> = writes
                     .iter()
-                    .map(|write| {
-                        write.ranking.is_none()
-                            && (!write.if_absent || !exists(&drive, &contract, name, write))
-                    })
+                    .map(|write| !write.if_absent || !exists(&drive, &contract, name, write))
                     .collect();
+                let known = processed_writes(&writes, &written);
                 let mut assumptions = CostAssumptions::new(platform_version);
                 assumptions.existing_documents = seed;
                 let estimate = write_processing(
@@ -470,6 +468,42 @@ fn should_split_the_storage_into_primary_storage_and_each_index() {
     assert!(same_epoch.new_values < cost.storage_credits.new_values);
     assert!(same_epoch.new_values > cost.storage_credits.new_values * 99 / 100);
     assert!(after_one_year.new_values < same_epoch.new_values);
+}
+
+#[test]
+fn should_refund_a_document_only_a_consume_deletes_as_one_its_owner_deletes() {
+    // A consume refunds the owner as the owner's delete would, so the estimate is the same;
+    // a type whose documents nothing deletes refunds nothing
+    let platform_version = PlatformVersion::latest();
+    let refunds = |can_be_deleted: Value| {
+        let mut schema = note_schema();
+        schema
+            .insert("canBeDeleted".to_string(), can_be_deleted)
+            .expect("expected to set canBeDeleted");
+        let contract = contract_with(platform_value!({ "note": schema }));
+        let note = contract.document_type_for_name("note").expect("note");
+        let cost = document_create_cost(
+            &contract,
+            note,
+            &note_document(&contract),
+            &CostAssumptions::new(platform_version),
+            platform_version,
+        )
+        .expect("expected a cost");
+        (cost.refund_same_epoch, cost.refund_after_one_year)
+    };
+
+    let (same_epoch, after_one_year) = refunds(Value::Bool(true));
+    assert!(same_epoch.expect("a refund").new_values > 0);
+    assert!(after_one_year.expect("a refund").new_values > 0);
+    assert_eq!(
+        refunds(Value::Text("onlyWhenConsumed".to_string())),
+        (same_epoch, after_one_year)
+    );
+    assert_eq!(
+        refunds(Value::Bool(false)),
+        (Some(Scenarios::default()), Some(Scenarios::default()))
+    );
 }
 
 #[test]

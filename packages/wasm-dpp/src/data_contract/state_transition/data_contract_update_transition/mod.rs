@@ -265,7 +265,11 @@ impl DataContractUpdateTransitionWasm {
         let bls_adapter = BlsAdapter(bls);
 
         let verification_result = StateTransition::DataContractUpdate(self.0.clone())
-            .verify_identity_signed_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+            .verify_identity_signed_signature(
+                &identity_public_key.to_owned().into(),
+                &bls_adapter,
+                PlatformVersion::latest(),
+            );
 
         match verification_result {
             Ok(()) => Ok(true),

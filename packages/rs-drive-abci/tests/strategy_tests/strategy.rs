@@ -1699,7 +1699,7 @@ impl NetworkStrategy {
                             let (pro_tx_hash, masternode_list_item) =
                                 full_masternode_list.iter().nth(rand_index).unwrap();
 
-                            let pro_tx_hash_bytes: [u8; 32] = pro_tx_hash.to_raw_hash().into();
+                            let pro_tx_hash_bytes: [u8; 32] = pro_tx_hash.to_byte_array();
                             let voting_address = masternode_list_item.state.voting_address;
 
                             let voting_identifier = Identifier::create_voter_identifier(

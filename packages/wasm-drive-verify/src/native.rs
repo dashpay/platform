@@ -3,19 +3,16 @@
 //! This module provides Rust-native functions for proof verification,
 //! allowing other Rust/WASM projects to use wasm-drive-verify as a library.
 
-use crate::utils::proof::validate_supported_grovedb_proof;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::identity::Identity;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::query::DriveDocumentQuery;
+use drive::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
 
-fn supported_grovedb_proof<'a>(
-    proof: &'a [u8],
-    platform_version: &PlatformVersion,
-) -> Result<&'a [u8], drive::error::Error> {
-    validate_supported_grovedb_proof(proof, platform_version)?;
+fn supported_grovedb_proof(proof: &[u8]) -> Result<&[u8], drive::error::Error> {
+    require_supported_grovedb_proof_envelope(proof, "proof")?;
     Ok(proof)
 }
 
@@ -27,7 +24,7 @@ pub fn verify_full_identity_by_identity_id(
     platform_version: &PlatformVersion,
 ) -> Result<([u8; 32], Option<Identity>), drive::error::Error> {
     Drive::verify_full_identity_by_identity_id(
-        supported_grovedb_proof(proof, platform_version)?,
+        supported_grovedb_proof(proof)?,
         is_proof_subset,
         identity_id,
         platform_version,
@@ -44,7 +41,7 @@ pub fn verify_contract(
     platform_version: &PlatformVersion,
 ) -> Result<([u8; 32], Option<DataContract>), drive::error::Error> {
     Drive::verify_contract(
-        supported_grovedb_proof(proof, platform_version)?,
+        supported_grovedb_proof(proof)?,
         contract_known_keeps_history,
         is_proof_subset,
         in_multiple_contract_proof_form,
@@ -59,10 +56,7 @@ pub fn verify_documents_with_query(
     query: &DriveDocumentQuery,
     platform_version: &PlatformVersion,
 ) -> Result<([u8; 32], Vec<Document>), drive::error::Error> {
-    query.verify_proof(
-        supported_grovedb_proof(proof, platform_version)?,
-        platform_version,
-    )
+    query.verify_proof(supported_grovedb_proof(proof)?, platform_version)
 }
 
 #[cfg(test)]
@@ -165,21 +159,21 @@ mod tests {
         assert_rejected_envelope(result);
     }
 
-    /// The floor is a protocol-version table entry: the last generation
-    /// before it still lets a V0 envelope reach Drive.
+    /// The floor does not depend on the protocol version a caller verifies
+    /// with: the last shipped one refuses V0 too.
     #[test]
-    fn entry_points_accept_legacy_envelope_before_protocol_version_14() {
+    fn entry_points_reject_legacy_envelope_at_protocol_version_13() {
         let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
             .expect("DPNS contract");
         let query = dpns_domain_query(&contract, platform_version);
         let truncated_v0 = envelope_only_proof(0);
 
-        assert_not_an_envelope_rejection(
+        assert_rejected_envelope(
             verify_full_identity_by_identity_id(&truncated_v0, false, [0u8; 32], platform_version)
                 .map(|_| ()),
         );
-        assert_not_an_envelope_rejection(
+        assert_rejected_envelope(
             verify_contract(
                 &truncated_v0,
                 None,
@@ -190,7 +184,7 @@ mod tests {
             )
             .map(|_| ()),
         );
-        assert_not_an_envelope_rejection(
+        assert_rejected_envelope(
             verify_documents_with_query(&truncated_v0, &query, platform_version).map(|_| ()),
         );
     }

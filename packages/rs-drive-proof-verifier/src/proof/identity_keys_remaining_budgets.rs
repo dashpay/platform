@@ -64,7 +64,7 @@ impl FromProof<GetIdentityKeysRemainingBudgetsRequest> for IdentityKeysRemaining
         let proof = response.proof_owned().or(Err(Error::NoProofInResult))?;
 
         let (root_hash, result) = Drive::verify_identity_keys_remaining_budgets(
-            supported_grovedb_proof_bytes(&proof, platform_version)?,
+            supported_grovedb_proof_bytes(&proof)?,
             identity_id,
             &key_ids,
             false,
@@ -72,7 +72,7 @@ impl FromProof<GetIdentityKeysRemainingBudgetsRequest> for IdentityKeysRemaining
         )
         .map_drive_error(&proof, &metadata)?;
 
-        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider, platform_version)?;
+        verify_tenderdash_proof(&proof, &metadata, &root_hash, provider)?;
 
         Ok((Some(result), metadata, proof))
     }

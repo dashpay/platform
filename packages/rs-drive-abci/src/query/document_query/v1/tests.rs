@@ -717,9 +717,9 @@ fn accept_single_field_group_by_on_in_field_with_range_routes_to_in_entries() {
     // `group_by=[in_field]` with an additional range clause is
     // valid: drive's `detect_mode` picks
     // `RangeAggregateCarrierProof` (grovedb #663) on the prove
-    // path and `RangeNoProof` per-In-branch on the no-prove path —
-    // both produce entries that line up with the caller's
-    // single-field GROUP BY shape.
+    // path, one entry per `In` value, and `RangeNoProof` on the
+    // no-prove path, which folds the per-In-branch totals into one
+    // entry.
     let request = GetDocumentsRequestV1 {
         selects: select_count_star(),
         group_by: vec!["brand".to_string()],
@@ -3933,7 +3933,7 @@ mod having_trust_boundary {
     use crate::rpc::core::MockCoreRPCLike;
     use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
     use dpp::block::block_info::BlockInfo;
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
+    use dpp::bls::SecretKey;
     use dpp::dashcore::Network;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -4024,12 +4024,10 @@ mod having_trust_boundary {
     }
 
     /// A deterministic, valid BLS scalar — no RNG dependency.
-    pub(super) fn quorum_secret_key() -> SecretKey<Bls12381G2Impl> {
+    pub(super) fn quorum_secret_key() -> SecretKey {
         let mut bytes = [0u8; 32];
         bytes[31] = 42;
-        SecretKey::<Bls12381G2Impl>::from_be_bytes(&bytes)
-            .into_option()
-            .expect("a small nonzero scalar is a valid secret key")
+        SecretKey::from_be_bytes(&bytes).expect("a small nonzero scalar is a valid secret key")
     }
 
     fn register_grades(
@@ -4192,7 +4190,7 @@ mod having_trust_boundary {
         grovedb_proof: Vec<u8>,
         app_hash: &[u8; 32],
         mtd: &ResponseMetadata,
-        secret_key: &SecretKey<Bls12381G2Impl>,
+        secret_key: &SecretKey,
         quorum_hash: [u8; 32],
     ) -> Proof {
         let block_id_hash = [7u8; 32].to_vec();
@@ -4224,10 +4222,9 @@ mod having_trust_boundary {
             )
             .expect("sign digest");
         let signature = secret_key
-            .sign(SignatureSchemes::Basic, &sign_digest)
+            .sign(&sign_digest)
             .expect("signing with a valid key succeeds")
-            .as_raw_value()
-            .to_compressed()
+            .to_bytes()
             .to_vec();
         Proof {
             grovedb_proof,
@@ -4254,7 +4251,7 @@ mod having_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let query = client_side_query(&contract);
@@ -4291,7 +4288,7 @@ mod having_trust_boundary {
             quorum_hash,
         );
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let query = client_side_query(&contract);
@@ -4316,7 +4313,7 @@ mod having_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let mut tampered = mtd;
@@ -4347,11 +4344,9 @@ mod having_trust_boundary {
 
         let mut other_bytes = [0u8; 32];
         other_bytes[31] = 43;
-        let other_key = SecretKey::<Bls12381G2Impl>::from_be_bytes(&other_bytes)
-            .into_option()
-            .expect("valid scalar");
+        let other_key = SecretKey::from_be_bytes(&other_bytes).expect("valid scalar");
         let provider = TestQuorumProvider {
-            pubkey: other_key.public_key().0.to_compressed(),
+            pubkey: other_key.public_key().to_bytes(),
         };
 
         let query = client_side_query(&contract);
@@ -4665,7 +4660,7 @@ mod time_range_proof_verification {
             QUORUM_HASH,
         );
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
         (signed, mtd, provider)
     }
@@ -4975,7 +4970,7 @@ mod time_range_proof_verification {
 
     use dash_platform_queries::documents::document_query::DocumentQuery as SdkDocumentQuery;
     use drive::query::SelectProjection;
-    use drive_proof_verifier::{DocumentAverage, DocumentCount, DocumentSum};
+    use drive_proof_verifier::{DocumentAverage, DocumentCount, DocumentSplitCounts, DocumentSum};
     use std::sync::Arc;
 
     const SUMMABLE_INDEX: &str = "trendingLikes";
@@ -5143,6 +5138,112 @@ mod time_range_proof_verification {
                 ProofVerifierError::GroveDBError { .. } | ProofVerifierError::DriveError { .. }
             ),
             "the rejection must come from the proof path, got: {error:?}"
+        );
+    }
+
+    /// A range-outer carrier count (two ranges, grouped by the outer one,
+    /// proved) without a limit walks the platform default number of outer
+    /// keys on the server, and the SDK entry point rebuilds the same walk:
+    /// with more brands in range than that default, the proof verifies to the
+    /// first of them.
+    #[test]
+    fn should_verify_a_range_outer_carrier_count_without_a_limit_through_the_sdk() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = DataContractFactory::new(version.protocol_version)
+            .expect("expected a factory")
+            .create_with_value_config(
+                Identifier::new([9u8; 32]),
+                0,
+                platform_value!({
+                    "widget": {
+                        "type": "object",
+                        "properties": {
+                            "brand": { "type": "string", "maxLength": 32, "position": 0 },
+                            "color": { "type": "string", "maxLength": 32, "position": 1 },
+                        },
+                        "indices": [{
+                            "name": "byBrandColor",
+                            "properties": [{ "brand": "asc" }, { "color": "asc" }],
+                            "countable": "countable",
+                            "rangeCountable": true,
+                        }],
+                        "additionalProperties": false,
+                    }
+                }),
+                None,
+                None,
+            )
+            .expect("the brand contract is well-formed")
+            .data_contract_owned();
+        store_data_contract(&platform, &contract, version);
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget doctype exists");
+        let brands: Vec<String> = (0..12).map(|i| format!("brand{i:02}")).collect();
+        for (i, brand) in brands.iter().enumerate() {
+            let mut document: Document = document_type
+                .random_document(Some(9_000 + i as u64), version)
+                .expect("random document");
+            document.set_properties(BTreeMap::from([
+                ("brand".to_string(), Value::Text(brand.clone())),
+                ("color".to_string(), Value::Text("red".to_string())),
+            ]));
+            store_document(&platform, &contract, document_type, &document, version);
+        }
+        let state = state_with_committed_block_time(&base_state, &platform.drive, version);
+
+        let request = GetDocumentsRequestV1 {
+            data_contract_id: contract.id().to_vec(),
+            where_clauses: vec![
+                wc(
+                    "brand",
+                    ProtoWhereOperator::GreaterThan,
+                    Value::Text("a".to_string()),
+                ),
+                wc(
+                    "color",
+                    ProtoWhereOperator::GreaterThan,
+                    Value::Text("blue".to_string()),
+                ),
+            ],
+            selects: select_count_star(),
+            group_by: vec!["brand".to_string()],
+            prove: true,
+            limit: None,
+            ..empty_v1_request()
+        };
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let range = |field: &str, value: &str| WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text(value.to_string()),
+        };
+        let query = SdkDocumentQuery::new(Arc::new(contract.clone()), "widget")
+            .expect("the fixture has this document type")
+            .with_select(SelectProjection::count_star())
+            .with_where(range("brand", "a"))
+            .with_where(range("color", "blue"))
+            .with_group_by("brand");
+        let (counts, _mtd, _proof) =
+            <DocumentSplitCounts as FromProof<SdkDocumentQuery>>::maybe_from_proof_with_metadata(
+                query,
+                signed_response(proof, &mtd),
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a range-outer carrier count without a limit must verify through the SDK");
+        let counts = counts.expect("brands are in range");
+        assert_eq!(
+            counts.0.len(),
+            10,
+            "the platform default caps the outer walk at ten brands of twelve"
+        );
+        assert!(
+            counts.0.iter().all(|entry| entry.count == Some(1)),
+            "each brand has one red widget: {:?}",
+            counts.0
         );
     }
 
@@ -6605,7 +6706,7 @@ mod chained_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let (verified, _mtd, _proof) =
@@ -6648,14 +6749,10 @@ mod chained_trust_boundary {
         let other_key = {
             let mut bytes = [0u8; 32];
             bytes[31] = 43;
-            dpp::bls_signatures::SecretKey::<dpp::bls_signatures::Bls12381G2Impl>::from_be_bytes(
-                &bytes,
-            )
-            .into_option()
-            .expect("valid scalar")
+            dpp::bls::SecretKey::from_be_bytes(&bytes).expect("valid scalar")
         };
         let provider = TestQuorumProvider {
-            pubkey: other_key.public_key().0.to_compressed(),
+            pubkey: other_key.public_key().to_bytes(),
         };
 
         let refused =
@@ -6682,7 +6779,7 @@ mod chained_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, [5u8; 32]);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
         let mut tampered = mtd;
         tampered.height += 1;
@@ -6942,7 +7039,7 @@ mod composite_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, quorum_hash);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let response = response_with(proof, mtd);
@@ -7099,14 +7196,10 @@ mod composite_trust_boundary {
         let other_key = {
             let mut bytes = [0u8; 32];
             bytes[31] = 44;
-            dpp::bls_signatures::SecretKey::<dpp::bls_signatures::Bls12381G2Impl>::from_be_bytes(
-                &bytes,
-            )
-            .into_option()
-            .expect("valid scalar")
+            dpp::bls::SecretKey::from_be_bytes(&bytes).expect("valid scalar")
         };
         let provider = TestQuorumProvider {
-            pubkey: other_key.public_key().0.to_compressed(),
+            pubkey: other_key.public_key().to_bytes(),
         };
 
         let refused =
@@ -7134,7 +7227,7 @@ mod composite_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, [6u8; 32]);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
         let mut tampered = mtd;
         tampered.height += 1;
@@ -7179,7 +7272,7 @@ mod composite_trust_boundary {
         let mtd = metadata();
         let proof = signed_proof(grovedb_proof, &root_hash, &mtd, &secret_key, [6u8; 32]);
         let provider = TestQuorumProvider {
-            pubkey: secret_key.public_key().0.to_compressed(),
+            pubkey: secret_key.public_key().to_bytes(),
         };
 
         let refused =

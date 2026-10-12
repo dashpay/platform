@@ -15,6 +15,7 @@ mod try_from_schema;
 
 pub(in crate::data_contract) use try_from_schema::{
     resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
+    validate_summable_off_count_indexes_lossless,
 };
 
 #[inline]

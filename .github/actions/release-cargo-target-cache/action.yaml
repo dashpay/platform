@@ -1,4 +1,7 @@
 ---
+# release-kotlin-sdk.yml and release-swift-sdk.yml carry an inline copy of
+# this step, because a dispatch from the dev branch for an older tag checks
+# out a tree without this action. Keep those copies in sync with it.
 name: "Release Cargo target cache"
 description: >-
   Point CARGO_TARGET_DIR at a per-workflow directory outside the checkout.

@@ -56,6 +56,10 @@ pub(crate) mod property_names {
     pub const DOCUMENTS_MUTABLE: &str = "documentsMutable";
 
     pub const CAN_BE_DELETED: &str = "canBeDeleted";
+    /// The `canBeDeleted` value saying a document leaves state only when a
+    /// `refersTo` with `consume` deletes it, never by its owner's delete.
+    /// Meta-schema v3+ (protocol version 14).
+    pub const CAN_BE_DELETED_ONLY_WHEN_CONSUMED: &str = "onlyWhenConsumed";
     pub const TRANSFERABLE: &str = "transferable";
     pub const TRADE_MODE: &str = "tradeMode";
 

@@ -73,7 +73,9 @@
 //! provable variant did, so a ranked index's secondaries keep ranking
 //! correctly over a shared-prefix shape.
 
-use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
+use crate::drive::document::ranked_index_tree_type::{
+    property_name_tree_type_and_ranked_axes_for_level, ranked_chain_value_tree_type,
+};
 use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::util::object_size_info::DriveKeyInfo;
@@ -127,30 +129,33 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
 ) -> Result<IndexLevelTreeTypes, Error> {
     let (property_name_tree_type, ranked_axes) =
         property_name_tree_type_and_ranked_axes_for_level(sub_level)?;
-    // A prefix-ranking chain level (the `rankedCountable: { at }` grouping
-    // level or a count-propagating level below it) counts its chain
-    // continuation: the value tree's count IS the subtree total the
-    // grouping secondary ranks by, so that continuation is inserted
+    // A prefix-ranking chain level (a `{ at }` grouping level or a
+    // propagating level below it) counts its chain continuation: the value
+    // tree's count (and, on a `summableOffCountIndex` chain, its sum) IS the
+    // subtree total the grouping secondaries rank by, so that continuation is inserted
     // contributing rather than zero-wrapped (see the walkers). A plain
     // sibling's branch sharing such a level (`count_exempt_branch` on the
     // CHILD level) is the one other child the validation admits — the
-    // walkers insert it `Element::NonCounted`-wrapped, contributing zero,
-    // which a `CountTree` parent accepts (only the provable count-bearing
-    // variants reject suppressed children). No index terminates at a chain
+    // walkers insert it contributing zero, wrapped as the chain's value tree
+    // needs (`zero_contribution_wrapper`: `Element::NonCounted` under a
+    // `CountTree`, not counted or summed under a `CountSumTree`, and under a
+    // `SumTree` not summed when it carries a sum, else unwrapped); only the
+    // provable count-bearing variants reject suppressed children. No index terminates at a chain
     // level itself (the resolver above fails closed on one), so the
     // terminator-flag derivation below never applies to it.
-    let value_tree_type = if sub_level.ranked_count_grouping() || sub_level.count_propagating() {
-        TreeType::CountTree
-    } else {
-        let info = sub_level.has_index_with_type();
-        derive_value_tree_type(
-            info.map(|i| i.countable.is_countable()).unwrap_or(false),
-            info.map(|i| i.range_countable).unwrap_or(false),
-            info.map(|i| i.summable.is_some()).unwrap_or(false),
-            info.map(|i| i.range_summable).unwrap_or(false),
-            !sub_level.sub_levels().is_empty(),
-        )
-    };
+    let value_tree_type =
+        if let Some(chain_value_tree_type) = ranked_chain_value_tree_type(sub_level) {
+            chain_value_tree_type
+        } else {
+            let info = sub_level.has_index_with_type();
+            derive_value_tree_type(
+                info.map(|i| i.countable.is_countable()).unwrap_or(false),
+                info.map(|i| i.range_countable).unwrap_or(false),
+                info.map(|i| i.summable.is_some()).unwrap_or(false),
+                info.map(|i| i.range_summable).unwrap_or(false),
+                !sub_level.sub_levels().is_empty(),
+            )
+        };
     Ok(IndexLevelTreeTypes {
         property_name_tree_type,
         ranked_axes,
@@ -352,10 +357,11 @@ pub(crate) enum ZeroContributionRefusal {
 
 /// Whether the continuation property-name tree of `sub_level`, under a value
 /// tree of `parent_level` whose type is `parent_value_tree_type`, is inserted
-/// so it contributes zero to that value tree: the parent aggregates, and it
-/// does not count its continuations (a prefix-ranking chain level or a
-/// count-propagating level does), unless `sub_level` is a count-exempt
-/// branch. The entry-insert walker and the preallocation path both decide
+/// so it contributes zero to that value tree: the parent aggregates, and its
+/// level is no prefix-ranking chain level (a grouping or propagating level of
+/// a count, sum or average chain, [`IndexLevel::is_ranked_chain_level`], whose
+/// value trees aggregate their chain continuation), unless `sub_level` is a
+/// count-exempt branch. The entry-insert walker and the preallocation path both decide
 /// with this.
 pub(crate) fn continuation_contributes_zero(
     parent_value_tree_type: TreeType,
@@ -364,12 +370,6 @@ pub(crate) fn continuation_contributes_zero(
 ) -> bool {
     !matches!(parent_value_tree_type, TreeType::NormalTree)
         && (!parent_counts_continuations || sub_level.count_exempt_branch())
-}
-
-/// Whether the value trees of `level` count their continuation subtrees
-/// (a prefix-ranking chain level or a count-propagating level).
-pub(crate) fn level_counts_continuations(level: &IndexLevel) -> bool {
-    level.ranked_count_grouping() || level.count_propagating()
 }
 
 /// Whether a document without a value for `property` writes nothing under a
@@ -601,6 +601,7 @@ mod tests {
             outlives_delete: false,
             flat: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         }
     }
 
@@ -730,6 +731,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec!["hashtag".to_string()],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -739,6 +742,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         };
 
         let index_structure =
@@ -820,6 +824,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -829,6 +835,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         };
         let mut ranked = base("byAuthorPost", &["postAuthor", "postId"]);
         ranked.countable = IndexCountability::Countable;
@@ -916,6 +923,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -925,6 +934,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         };
         let mut prefix_ranked = base("byHashtagPost", &["hashtag", "postId"]);
         prefix_ranked.ranked_countable_at = vec!["hashtag".to_string()];
@@ -998,6 +1008,8 @@ mod tests {
             range_summable: true,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: true,
             time_range: None,
@@ -1007,6 +1019,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         };
         let compound = Index {
             name: "byRestaurantChef".to_string(),
@@ -1029,6 +1042,8 @@ mod tests {
             range_summable: false,
             ranked_countable: false,
             ranked_countable_at: vec![],
+            ranked_summable_at: Vec::new(),
+            ranked_averageable_at: Vec::new(),
             ranked_summable: false,
             ranked_averageable: false,
             time_range: None,
@@ -1038,6 +1053,7 @@ mod tests {
             outlives_delete: false,
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
+            summable_off_count_index: None,
         };
 
         let index_structure =

@@ -1,6 +1,5 @@
 use crate::error::Error;
 use crate::execution::types::update_state_masternode_list_outcome;
-use crate::platform_types::masternode::v0::validate_legacy_masternode;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -53,7 +52,6 @@ where
     /// * `dmn_state_diff` - The `DMNStateDiff` containing the updated masternode information
     /// * `state` - The platform state whose validator sets are updated; only the
     ///   sets that list the masternode are touched
-    #[allow(deprecated)] // Preserve shipped v0 flat-port behavior.
     fn update_masternode_in_validator_sets(
         pro_tx_hash: &ProTxHash,
         dmn_state_diff: &DMNStateDiff,
@@ -74,10 +72,12 @@ where
                 validator.node_ip = address.ip().to_string();
             }
 
+            #[allow(deprecated)]
             if let Some(p2p_port) = dmn_state_diff.legacy_platform_p2p_port {
                 validator.platform_p2p_port = p2p_port as u16;
             }
 
+            #[allow(deprecated)]
             if let Some(http_port) = dmn_state_diff.legacy_platform_http_port {
                 validator.platform_http_port = http_port as u16;
             }
@@ -104,7 +104,6 @@ where
         })
     }
 
-    #[allow(deprecated)] // Preserve shipped v0 flat-port behavior.
     pub(crate) fn update_state_masternode_list_v0(
         &self,
         state: &mut PlatformState,
@@ -124,24 +123,9 @@ where
             Some(state_core_height)
         };
 
-        let mut masternode_diff = self
+        let masternode_diff = self
             .core_rpc
             .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?;
-
-        // The old RPC parser required these three addresses and ignored the
-        // new payouts/addresses fields. Project to that same representation
-        // before comparisons or mutation: apply_diff now otherwise clears a
-        // legacy payout when a payout list is present. Shipped v0 behavior and
-        // persisted bytes remain unchanged for previously accepted records.
-        for masternode in &mut masternode_diff.added_mns {
-            validate_legacy_masternode(masternode)?;
-            masternode.state.payouts = None;
-            masternode.state.addresses = None;
-        }
-        for (_, state_diff) in &mut masternode_diff.updated_mns {
-            state_diff.payouts = None;
-            state_diff.addresses = None;
-        }
 
         let MasternodeListDiff {
             added_mns,
@@ -187,10 +171,12 @@ where
             }
             // these 3 fields are the only fields that are useful for validators. If they change we need to update
             // validator sets
+            #[allow(deprecated)]
+            let platform_p2p_port_changed = state_diff.legacy_platform_p2p_port.is_some();
             if is_hpmn
                 && (state_diff.pose_ban_height.is_some()
                     || state_diff.service.is_some()
-                    || state_diff.legacy_platform_p2p_port.is_some())
+                    || platform_p2p_port_changed)
             {
                 // we updated the ban status the IP or the platform port, we need to update the validator in the validator list
                 Self::update_masternode_in_validator_sets(pro_tx_hash, state_diff, state);
@@ -221,20 +207,15 @@ where
 }
 
 #[cfg(test)]
-#[allow(deprecated)] // Fixtures preserve legacy RPC flat-port behavior.
 mod tests {
     use crate::config::PlatformConfig;
-    use crate::error::execution::ExecutionError;
-    use crate::error::Error;
-    use crate::platform_types::masternode::v0::MasternodeV0;
     use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{Network, ProTxHash, Txid};
     use dpp::dashcore_rpc::dashcore_rpc_json::{
-        DMNState, DMNStateDiff, MasternodeAddresses, MasternodeListDiff, MasternodeListItem,
-        MasternodeType,
+        DMNState, DMNStateDiff, MasternodeListDiff, MasternodeListItem, MasternodeType,
     };
     use dpp::version::PlatformVersion;
     use std::collections::BTreeSet;
@@ -256,12 +237,14 @@ mod tests {
                 owner_address: Some([0u8; 20]),
                 voting_address: [0u8; 20],
                 payout_address: Some([0u8; 20]),
+                payouts: None,
                 pub_key_operator: vec![0u8; 48],
                 operator_payout_address: None,
                 platform_node_id: None,
+                #[allow(deprecated)]
                 legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
                 legacy_platform_http_port: None,
-                payouts: None,
                 addresses: None,
             },
         }
@@ -282,12 +265,14 @@ mod tests {
             owner_address: None,
             voting_address: None,
             payout_address: None,
+            payouts: None,
             pub_key_operator: None,
             operator_payout_address: None,
             platform_node_id: None,
+            #[allow(deprecated)]
             legacy_platform_p2p_port: None,
+            #[allow(deprecated)]
             legacy_platform_http_port: None,
-            payouts: None,
             addresses: None,
         }
     }
@@ -301,23 +286,7 @@ mod tests {
         PlatformState,
         ProTxHash,
     ) {
-        state_with_one_masternode_and_rpc_diff(MasternodeListDiff {
-            base_height: 0,
-            block_height: 1,
-            added_mns: vec![],
-            removed_mns: vec![],
-            updated_mns: vec![(ProTxHash::from_byte_array([0x77u8; 32]), state_diff)],
-        })
-    }
-
-    fn state_with_one_masternode_and_rpc_diff(
-        diff: MasternodeListDiff,
-    ) -> (
-        crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
-        PlatformState,
-        ProTxHash,
-    ) {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
 
         let pro_tx_hash = ProTxHash::from_byte_array([0x77u8; 32]);
@@ -339,7 +308,9 @@ mod tests {
                 Ok(MasternodeListDiff {
                     base_height: base_block.unwrap_or_default(),
                     block_height: block,
-                    ..diff.clone()
+                    added_mns: vec![],
+                    removed_mns: vec![],
+                    updated_mns: vec![(pro_tx_hash, state_diff.clone())],
                 })
             });
 
@@ -410,7 +381,7 @@ mod tests {
 
     #[test]
     fn should_only_upsert_changed_entries_in_a_mixed_masternode_diff() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let mut state = PlatformState::default_with_protocol_versions(
             platform_version.protocol_version,
@@ -480,145 +451,5 @@ mod tests {
         );
         assert!(state.masternode_changes.removed.is_empty());
         assert!(!state.masternode_changes.rewrite_all);
-    }
-    #[test]
-    fn should_ignore_new_only_diff_fields_without_dirtying_legacy_state() {
-        let (platform, mut state, pro_tx_hash) = state_with_one_masternode_and_diff(DMNStateDiff {
-            payouts: Some(vec![]),
-            addresses: Some(Some(MasternodeAddresses {
-                platform_p2p: vec!["9.8.7.6:12345".into()],
-                ..Default::default()
-            })),
-            ..empty_state_diff()
-        });
-        let before = state.full_masternode_list().clone();
-        let result = platform
-            .update_state_masternode_list_v0(&mut state, 1, false)
-            .expect("unknown RPC fields were ignored by the legacy parser");
-        assert_eq!(state.full_masternode_list(), &before);
-        assert!(!state.heavy_fields_dirty);
-        assert_eq!(
-            state.full_masternode_list()[&pro_tx_hash]
-                .state
-                .payout_address,
-            Some([0; 20])
-        );
-        assert!(result.masternode_list_diff.updated_mns[0]
-            .1
-            .payouts
-            .is_none());
-        assert!(result.masternode_list_diff.updated_mns[0]
-            .1
-            .addresses
-            .is_none());
-    }
-
-    #[test]
-    fn should_apply_legacy_diff_fields_when_new_fields_are_also_present() {
-        let (platform, mut state, pro_tx_hash) = state_with_one_masternode_and_diff(DMNStateDiff {
-            payout_address: Some([7; 20]),
-            legacy_platform_p2p_port: Some(1234),
-            payouts: Some(vec![]),
-            addresses: Some(Some(MasternodeAddresses {
-                platform_p2p: vec!["9.8.7.6:54321".into()],
-                ..Default::default()
-            })),
-            ..empty_state_diff()
-        });
-        platform
-            .update_state_masternode_list_v0(&mut state, 1, false)
-            .expect("legacy diff");
-        let updated = &state.full_masternode_list()[&pro_tx_hash].state;
-        assert_eq!(updated.payout_address, Some([7; 20]));
-        assert_eq!(updated.legacy_platform_p2p_port, Some(1234));
-        assert!(updated.payouts.is_none());
-        assert!(updated.addresses.is_none());
-    }
-
-    #[test]
-    fn should_ignore_new_full_record_fields_and_preserve_legacy_storage_bytes() {
-        let pro_tx_hash = ProTxHash::from_byte_array([0x88; 32]);
-        let mut legacy = masternode(pro_tx_hash);
-        legacy.state.platform_node_id = Some(std::array::from_fn(|i| i as u8));
-        // The old persisted format retains the full u32, including values that
-        // the new upstream port-resolution helpers would discard.
-        legacy.state.legacy_platform_p2p_port = Some(u32::MAX);
-        let expected = MasternodeV0::try_from(legacy.clone()).expect("legacy record");
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
-        let expected_bytes = bincode::encode_to_vec(&expected, config).expect("encode");
-        assert_eq!(MasternodeListItem::from(expected), legacy);
-        let mut extended = legacy.clone();
-        extended.state.payouts = Some(vec![]);
-        extended.state.addresses = Some(MasternodeAddresses {
-            platform_p2p: vec!["9.8.7.6:12345".into()],
-            ..Default::default()
-        });
-        let (platform, mut state, _) = state_with_one_masternode_and_rpc_diff(MasternodeListDiff {
-            base_height: 0,
-            block_height: 1,
-            added_mns: vec![extended],
-            removed_mns: vec![],
-            updated_mns: vec![],
-        });
-        let result = platform
-            .update_state_masternode_list_v0(&mut state, 1, false)
-            .expect("legacy projection");
-        assert_eq!(state.full_masternode_list()[&pro_tx_hash], legacy);
-        assert_eq!(result.masternode_list_diff.added_mns[0], legacy);
-        let actual = MasternodeV0::try_from(state.full_masternode_list()[&pro_tx_hash].clone())
-            .expect("stored record");
-        assert_eq!(
-            bincode::encode_to_vec(actual, config).expect("encode"),
-            expected_bytes
-        );
-    }
-
-    #[test]
-    fn should_reject_missing_legacy_addresses_before_any_state_mutation() {
-        for field in ["collateralAddress", "ownerAddress", "payoutAddress"] {
-            for start_from_scratch in [false, true] {
-                let mut invalid = masternode(ProTxHash::from_byte_array([0x99; 32]));
-                match field {
-                    "collateralAddress" => invalid.collateral_address = None,
-                    "ownerAddress" => invalid.state.owner_address = None,
-                    "payoutAddress" => {
-                        invalid.state.payout_address = None;
-                        invalid.state.payouts = Some(vec![]);
-                    }
-                    _ => unreachable!("fixed field cases"),
-                }
-                assert!(matches!(
-                    MasternodeV0::try_from(invalid.clone()),
-                    Err(Error::Execution(ExecutionError::DashCoreBadResponseError(
-                        _
-                    )))
-                ));
-                let (platform, mut state, _) =
-                    state_with_one_masternode_and_rpc_diff(MasternodeListDiff {
-                        base_height: 0,
-                        block_height: 1,
-                        // A valid record first detects accidentally incremental validation.
-                        added_mns: vec![
-                            masternode(ProTxHash::from_byte_array([0x88; 32])),
-                            invalid,
-                        ],
-                        removed_mns: vec![],
-                        updated_mns: vec![],
-                    });
-                let before = state.full_masternode_list().clone();
-                let Err(error) =
-                    platform.update_state_masternode_list_v0(&mut state, 1, start_from_scratch)
-                else {
-                    panic!("missing legacy field must fail");
-                };
-                assert!(
-                    matches!(error, Error::Execution(ExecutionError::DashCoreBadResponseError(ref message)) if message.contains(field))
-                );
-                assert_eq!(state.full_masternode_list(), &before);
-                assert!(!state.heavy_fields_dirty);
-            }
-        }
     }
 }

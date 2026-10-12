@@ -3,7 +3,8 @@ use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::bincode::{Decode, Encode};
-use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
+
+use dpp::bls;
 use dpp::dashcore::secp256k1::rand::SeedableRng;
 use dpp::dashcore::secp256k1::{PublicKey, SecretKey};
 use dpp::dashcore::signer;
@@ -14,7 +15,7 @@ use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use dpp::util::hash::ripemd160_sha256;
-use dpp::{bls_signatures, dashcore, ed25519_dalek, ProtocolError};
+use dpp::{dashcore, ed25519_dalek, ProtocolError};
 use rand::RngCore;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Formatter};
@@ -138,15 +139,13 @@ impl Signer<IdentityPublicKey> for SimpleSigner {
                 Ok(signature.to_vec().into())
             }
             KeyType::BLS12_381 => {
-                let pk = bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(private_key)
-                    .into_option()
-                    .ok_or(ProtocolError::Generic(
-                        "bls private key from bytes isn't correct".to_string(),
-                    ))?;
+                let pk = bls::SecretKey::from_be_bytes(private_key).ok_or(
+                    ProtocolError::Generic("bls private key from bytes isn't correct".to_string()),
+                )?;
                 let signature = pk
-                    .sign(SignatureSchemes::Basic, data)
+                    .sign(data)
                     .map_err(|e| ProtocolError::Generic(format!("BLS signing failed {}", e)))?;
-                Ok(signature.as_raw_value().to_compressed().to_vec().into())
+                Ok(signature.to_bytes().to_vec().into())
             }
             KeyType::EDDSA_25519_HASH160 => {
                 #[allow(clippy::unnecessary_fallible_conversions)]

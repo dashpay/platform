@@ -35,6 +35,9 @@ pub const LABEL_CHECK_TX_MODE: &str = "check_tx_mode";
 pub const GAUGE_CREDIT_WITHDRAWAL_LIMIT_AVAILABLE: &str = "credit_withdrawal_limit_available";
 /// Total withdrawal daily limit in credits
 pub const GAUGE_CREDIT_WITHDRAWAL_LIMIT_TOTAL: &str = "credit_withdrawal_limit_total";
+/// Credits still available to withdrawals on the Core-anchored side of the withdrawal limit
+pub const GAUGE_CREDIT_WITHDRAWAL_LIMIT_CORE_AVAILABLE: &str =
+    "credit_withdrawal_limit_core_available";
 
 /// Error returned by metrics subsystem
 #[derive(thiserror::Error, Debug)]
@@ -236,6 +239,11 @@ impl Prometheus {
             describe_gauge!(
                 GAUGE_CREDIT_WITHDRAWAL_LIMIT_TOTAL,
                 "Total withdrawal limit for last 24 hours in credits"
+            );
+
+            describe_gauge!(
+                GAUGE_CREDIT_WITHDRAWAL_LIMIT_CORE_AVAILABLE,
+                "Credits withdrawals may still take from Core's credit pool, by the stricter copy of Core's unlock limit"
             );
         });
     }
