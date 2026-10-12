@@ -104,6 +104,39 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         removed
     }
 
+    /// Take `generation` — a registration this manager inserted and is now
+    /// unwinding — back out of the inner wallet manager.
+    ///
+    /// Under the generation's lifecycle gate, like any removal (gate first,
+    /// manager lock second): an operation that saw the registration live and
+    /// is pushing one of its transactions to the network finishes, or gives
+    /// up, before the wallet goes. And by identity, not by id: whatever else
+    /// has come to be registered under `wallet_id` while this waited for the
+    /// gate is not this call's to remove.
+    pub(super) async fn roll_back_inner(
+        &self,
+        wallet_id: &WalletId,
+        generation: &Arc<WalletGeneration>,
+    ) {
+        let _teardown = generation.teardown_guard().await;
+        let mut wm = self.wallet_manager.write().await;
+        if !generation.is_registered_in(&wm, wallet_id) {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                "rollback: the registration to unwind is no longer the one under this id; \
+                 leaving what is there in place"
+            );
+            return;
+        }
+        if let Err(error) = self.remove_from_inner(&mut wm, wallet_id) {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                %error,
+                "rollback: remove_wallet failed while unwinding a wallet registration"
+            );
+        }
+    }
+
     /// Create a PlatformWallet from a BIP39 mnemonic phrase.
     ///
     /// The mnemonic's language is auto-detected by trying each
@@ -575,17 +608,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 error = %e,
                 "failed to persist wallet registration changeset"
             );
-            // Under the generation's lifecycle gate, like any removal (gate
-            // first, manager lock second).
-            let _teardown = generation.teardown_guard().await;
-            let mut wm = self.wallet_manager.write().await;
-            if let Err(remove_err) = self.remove_from_inner(&mut wm, &wallet_id) {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    error = %remove_err,
-                    "rollback: remove_wallet failed while unwinding a failed wallet registration"
-                );
-            }
+            self.roll_back_inner(&wallet_id, &generation).await;
             return Err(PlatformWalletError::from_store_failure(&*self.persister, e));
         }
 
@@ -626,16 +649,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     error = %e,
                     "failed to restore persisted platform-address state"
                 );
-                // Under the generation's lifecycle gate, like any removal.
-                let _teardown = platform_wallet.generation().teardown_guard().await;
-                let mut wm = self.wallet_manager.write().await;
-                if let Err(remove_err) = self.remove_from_inner(&mut wm, &wallet_id) {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        error = %remove_err,
-                        "rollback: remove_wallet failed while unwinding a failed wallet setup"
-                    );
-                }
+                self.roll_back_inner(&wallet_id, platform_wallet.generation())
+                    .await;
                 // Wrap the already-typed error rather than stringify it, so
                 // its concrete variant and source chain survive.
                 return Err(PlatformWalletError::from_restore_failure(e));
@@ -2354,5 +2369,57 @@ mod remove_versus_recreate_tests {
             "the removal's id-keyed unregister deleted the identity-sync row the recreated \
              generation registered mid-removal"
         );
+    }
+}
+
+#[cfg(test)]
+mod rollback_tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use tokio::time::timeout;
+
+    use crate::test_support::test_platform_wallet_manager;
+    use crate::wallet::core::WalletGeneration;
+
+    /// A rollback is a removal: it takes the registration out under its
+    /// lifecycle gate, so it waits for an operation that saw the wallet live
+    /// and is still inside — gate first, manager lock second.
+    #[tokio::test(start_paused = true)]
+    async fn a_rollback_waits_for_an_operation_inside_the_generations_gate() {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let generation = Arc::clone(wallet.generation());
+        let payment = generation.payment_guard().await;
+        let mut rollback = Box::pin(manager.roll_back_inner(&wallet_id, &generation));
+
+        assert!(
+            timeout(Duration::from_millis(50), &mut rollback)
+                .await
+                .is_err(),
+            "the rollback waits for the gate"
+        );
+        // Not holding the manager lock while it waits: the operation inside
+        // the gate still gets it.
+        assert!(generation.is_registered_in(&*manager.wallet_manager.read().await, &wallet_id));
+
+        drop(payment);
+        rollback.await;
+        assert!(!generation.is_registered_in(&*manager.wallet_manager.read().await, &wallet_id));
+    }
+
+    /// By identity, not by id: a registration that is not the one being
+    /// unwound stays.
+    #[tokio::test]
+    async fn a_rollback_leaves_another_registration_under_the_id_in_place() {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let unwound = Arc::new(WalletGeneration::new());
+
+        manager.roll_back_inner(&wallet_id, &unwound).await;
+
+        assert!(wallet
+            .generation()
+            .is_registered_in(&*manager.wallet_manager.read().await, &wallet_id));
     }
 }

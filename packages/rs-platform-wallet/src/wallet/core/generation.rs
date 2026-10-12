@@ -14,6 +14,35 @@ use tokio::sync::{watch, OwnedRwLockWriteGuard, RwLock, RwLockReadGuard};
 use super::balance::WalletBalance;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
+/// One teardown's place in [`WalletGeneration::teardown_requested`]'s count,
+/// given up when dropped — with the guard, or with a
+/// [`teardown_guard`](WalletGeneration::teardown_guard) call abandoned while
+/// it waits.
+#[derive(Debug)]
+struct TeardownRequest(Arc<watch::Sender<usize>>);
+
+impl TeardownRequest {
+    fn new(leaving: &Arc<watch::Sender<usize>>) -> Self {
+        leaving.send_modify(|asking| *asking += 1);
+        Self(Arc::clone(leaving))
+    }
+}
+
+impl Drop for TeardownRequest {
+    fn drop(&mut self) {
+        self.0.send_modify(|asking| *asking -= 1);
+    }
+}
+
+/// The exclusive side of a generation's lifecycle gate (see
+/// [`WalletGeneration::teardown_guard`]). Owned: it may outlive the
+/// `Arc<WalletGeneration>` binding it was taken from.
+#[derive(Debug)]
+pub struct TeardownGuard {
+    _gate: OwnedRwLockWriteGuard<()>,
+    _request: TeardownRequest,
+}
+
 /// The state one wallet *generation* shares across every handle that names it.
 ///
 /// A "generation" is one live in-memory instance of a logical wallet. Removing a
@@ -65,9 +94,10 @@ pub struct WalletGeneration {
     /// a retry loop, and the guard must outlive the loop iteration that produced
     /// the `Arc<WalletGeneration>` it came from.
     lifecycle: Arc<RwLock<()>>,
-    /// Set, for good, once a teardown has asked for the gate (see
-    /// [`teardown_requested`](Self::teardown_requested)).
-    leaving: watch::Sender<bool>,
+    /// How many teardowns are asking for the gate or hold it (see
+    /// [`teardown_requested`](Self::teardown_requested)). Shared with their
+    /// guards, which take themselves off it when dropped.
+    leaving: Arc<watch::Sender<usize>>,
     /// Outpoints currently fenced against re-selection because a broadcast
     /// dispatch owns them ([`pin_in_broadcast`](Self::pin_in_broadcast)).
     ///
@@ -396,7 +426,7 @@ impl WalletGeneration {
         Self {
             balance: WalletBalance::new(),
             lifecycle: Arc::new(RwLock::new(())),
-            leaving: watch::Sender::new(false),
+            leaving: Arc::new(watch::Sender::new(0)),
             in_broadcast: fences,
             #[cfg(test)]
             settle_boundary_hook: SettleBoundaryHook::default(),
@@ -451,25 +481,30 @@ impl WalletGeneration {
     /// binding it was taken from — the remover resolves the current generation in
     /// a retry loop and must carry the guard out of the iteration that found it.
     ///
-    /// Asking is final: only a caller that is removing this generation takes
-    /// it, and from the first poll [`teardown_requested`](Self::teardown_requested)
-    /// resolves for it.
-    pub async fn teardown_guard(&self) -> OwnedRwLockWriteGuard<()> {
-        self.leaving.send_replace(true);
-        Arc::clone(&self.lifecycle).write_owned().await
+    /// From this future's first poll until the guard is dropped — or until
+    /// the future is, if it is abandoned while still waiting —
+    /// [`teardown_requested`](Self::teardown_requested) resolves.
+    pub async fn teardown_guard(&self) -> TeardownGuard {
+        let request = TeardownRequest::new(&self.leaving);
+        let gate = Arc::clone(&self.lifecycle).write_owned().await;
+        TeardownGuard {
+            _gate: gate,
+            _request: request,
+        }
     }
 
-    /// Resolves once a teardown has asked for this generation's gate, and at
-    /// once from then on.
+    /// Resolves while a teardown is asking for this generation's gate or
+    /// holds it; pending otherwise.
     ///
     /// For an operation that holds [`payment_guard`](Self::payment_guard)
     /// across network work it can give up without harm: raced against this, it
     /// stops and lets go of the gate instead of making the removal wait for
-    /// its timeouts.
+    /// its timeouts. Not a liveness check — a teardown that was abandoned
+    /// leaves the generation registered and this pending again.
     pub(crate) async fn teardown_requested(&self) {
         let mut leaving = self.leaving.subscribe();
         // Fails only without a sender, which `self` holds: stop then, too.
-        let _ = leaving.wait_for(|leaving| *leaving).await;
+        let _ = leaving.wait_for(|asking| *asking > 0).await;
     }
 
     /// Whether some operation is inside the gate right now.
@@ -1542,5 +1577,63 @@ mod tests {
         settle_dispatched(&generation, &tx);
 
         assert_eq!(fired.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(test)]
+mod teardown_request_tests {
+    use std::time::Duration;
+
+    use tokio::time::timeout;
+
+    use super::*;
+
+    /// Long enough for anything that was going to resolve to have done so.
+    const SETTLED: Duration = Duration::from_millis(50);
+
+    async fn is_requested(generation: &WalletGeneration) -> bool {
+        timeout(SETTLED, generation.teardown_requested())
+            .await
+            .is_ok()
+    }
+
+    /// A teardown is "requested" from the moment it asks for the gate — while
+    /// it still waits behind a payment operation — until its guard is dropped.
+    #[tokio::test(start_paused = true)]
+    async fn should_report_a_teardown_from_its_request_until_its_guard_is_dropped() {
+        let generation = WalletGeneration::new();
+        assert!(!is_requested(&generation).await);
+        let payment = generation.payment_guard().await;
+        let mut teardown = Box::pin(generation.teardown_guard());
+        assert!(
+            timeout(SETTLED, &mut teardown).await.is_err(),
+            "waits behind the payment operation"
+        );
+
+        assert!(is_requested(&generation).await, "asked, not yet inside");
+        drop(payment);
+        let guard = teardown.await;
+        assert!(is_requested(&generation).await, "inside");
+        drop(guard);
+        assert!(!is_requested(&generation).await);
+    }
+
+    /// A teardown given up while it waits for the gate leaves no trace: the
+    /// generation is still registered, and its operations must go on.
+    #[tokio::test(start_paused = true)]
+    async fn should_withdraw_the_request_of_an_abandoned_teardown() {
+        let generation = WalletGeneration::new();
+        let _payment = generation.payment_guard().await;
+        let mut outlasting = Box::pin(generation.teardown_guard());
+        assert!(timeout(SETTLED, &mut outlasting).await.is_err());
+        {
+            let mut abandoned = Box::pin(generation.teardown_guard());
+            assert!(timeout(SETTLED, &mut abandoned).await.is_err());
+        }
+        assert!(is_requested(&generation).await, "one still asks");
+
+        drop(outlasting);
+
+        assert!(!is_requested(&generation).await);
     }
 }

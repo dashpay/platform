@@ -833,8 +833,8 @@ fn withdraw_unanswered(
     roots
 }
 
-/// A root's probe never produced a verdict (its job panicked): nothing was
-/// learned, so it is due again at once.
+/// A root's probe never produced a verdict (its job panicked, or stopped for
+/// a removal): nothing was learned, so it is due again at once.
 pub(crate) fn withdraw_send(state: &mut ResolverState, wallet_id: WalletId, root: Txid) {
     if let Some(schedule) = state.schedules.get_mut(&(wallet_id, root)) {
         schedule.withdraw();
@@ -963,17 +963,28 @@ pub(crate) trait WalletSource: Send + Sync {
     async fn is_registered(&self, wallet_id: WalletId, generation: &Arc<WalletGeneration>) -> bool;
 }
 
-/// Probe `transaction` for the registration it was read from, or not at all:
-/// `None` when `generation` is no longer the wallet's, with nothing sent.
+/// Why a probe produced no verdict (see [`gated_probe`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NotProbed {
+    /// A teardown is asking for the registration's gate, or holds it: the
+    /// probe stopped where it was. The wallet may yet stay — a removal can
+    /// be abandoned.
+    Leaving,
+    /// The registration is no longer the wallet's: nothing was sent.
+    Unregistered,
+}
+
+/// Probe `transaction` for the registration it was read from, or not at all.
 ///
 /// A probe resubmits the transaction, so it follows the contract of
 /// [`WalletGeneration::payment_guard`]: the gate is held across both the
 /// liveness check and the network step. A removal therefore either gets in
-/// first, and the probe sees the registration gone, or finds the probe
-/// inside — which then stops where it is, so the removal waits for no
-/// node's answer (a probe is up to eight requests, each with its own
-/// timeout). Stopping the job from the actor is not that barrier: the actor
-/// learns of a removal only after the manager has let the wallet go.
+/// first, and the probe sees it asking or the registration gone, or finds
+/// the probe inside — which then stops where it is, so the removal waits
+/// neither for the wallet-manager lock nor for any node's answer (a probe is
+/// up to eight requests, each with its own timeout). Stopping the job from the actor is
+/// not that barrier: the actor learns of a removal only after the manager
+/// has let the wallet go.
 ///
 /// Lock order is the gate's: gate first, wallet-manager lock (inside
 /// [`WalletSource::is_registered`]) second.
@@ -983,15 +994,17 @@ async fn gated_probe(
     wallet_id: WalletId,
     generation: &Arc<WalletGeneration>,
     transaction: &Transaction,
-) -> Option<ProbeOutcome> {
-    let _payment = generation.payment_guard().await;
-    if !source.is_registered(wallet_id, generation).await {
-        return None;
-    }
+) -> Result<ProbeOutcome, NotProbed> {
     tokio::select! {
         biased;
-        _ = generation.teardown_requested() => None,
-        outcome = probe.probe(transaction) => Some(outcome),
+        _ = generation.teardown_requested() => Err(NotProbed::Leaving),
+        probed = async {
+            let _payment = generation.payment_guard().await;
+            if !source.is_registered(wallet_id, generation).await {
+                return Err(NotProbed::Unregistered);
+            }
+            Ok(probe.probe(transaction).await)
+        } => probed,
     }
 }
 
@@ -1196,10 +1209,7 @@ enum JobDone {
         /// The root it probed: a result for a root no longer in flight (its
         /// probe was stopped, but had already finished) is not this one's.
         root: Txid,
-        /// `None`: the registration the pass read is no longer the wallet's,
-        /// or is being removed — no verdict, and nothing more is sent for it
-        /// (see [`gated_probe`]).
-        outcome: Option<ProbeOutcome>,
+        outcome: Result<ProbeOutcome, NotProbed>,
     },
     /// [`NO_ANSWER_RETRY`] passed since a probe at `height` that no node
     /// answered.
@@ -2129,22 +2139,39 @@ impl Actor {
                     self.probe_next(wallet_id);
                     return;
                 };
-                let Some(ProbeOutcome { verdict, answered }) = outcome else {
-                    // The registration this pass read is leaving the manager
-                    // or has left it: everything kept for it is stale, as for
-                    // a wallet registered anew. A removal through this manager
-                    // queues `WalletRemoved` too, usually ahead of this
-                    // result; one that does not (through
-                    // `wallet_manager_arc`) leaves a fresh entry, which a
-                    // same-id wallet's events find.
-                    tracing::info!(
-                        wallet_id = %hex::encode(wallet_id),
-                        txid = %root.txid,
-                        "broadcast probe: the wallet's registration is gone; probe dropped"
-                    );
-                    self.drop_wallet(&wallet_id, "gone");
-                    self.wallets.insert(wallet_id, WalletEntry::default());
-                    return;
+                let ProbeOutcome { verdict, answered } = match outcome {
+                    Ok(outcome) => outcome,
+                    Err(NotProbed::Leaving) => {
+                        // The wallet is being removed: `WalletRemoved`
+                        // follows and drops what is kept for it. Until then
+                        // the pass sends nothing more; should the removal be
+                        // abandoned, the root is due again and the next
+                        // height reads the wallet.
+                        withdraw_send(&mut self.state, wallet_id, root.txid);
+                        if let Some(entry) = self.wallets.get_mut(&wallet_id) {
+                            entry.wait_until = None;
+                        }
+                        self.end_run(wallet_id);
+                        return;
+                    }
+                    Err(NotProbed::Unregistered) => {
+                        // A removal through this manager queues
+                        // `WalletRemoved` before it lets the probe see this,
+                        // and that drops the run: only a registration
+                        // replaced or removed behind the manager
+                        // (`wallet_manager_arc`) gets here. Everything kept
+                        // for the old one is stale, as when a wallet is
+                        // registered anew; the fresh entry is what a same-id
+                        // wallet's events find.
+                        tracing::warn!(
+                            wallet_id = %hex::encode(wallet_id),
+                            txid = %root.txid,
+                            "broadcast probe: the wallet's registration is gone; nothing sent"
+                        );
+                        self.drop_wallet(&wallet_id, "gone");
+                        self.wallets.insert(wallet_id, WalletEntry::default());
+                        return;
+                    }
                 };
                 if !probing.views.iter().any(|view| view.txid == root.txid) {
                     // Settled or gone while its probe was out: moot.
@@ -5438,9 +5465,6 @@ mod tests {
         );
     }
 
-    /// How long a test waits to see that a job stays blocked.
-    const STAYS_BLOCKED: Duration = Duration::from_millis(50);
-
     /// Start a followed pass and hand its read to the actor: the probe of
     /// its first root is spawned, not yet run.
     async fn spawn_first_probe(rig: &mut Rig, wallet_id: WalletId, from: u32) {
@@ -5451,50 +5475,42 @@ mod tests {
         rig.actor.joined(read);
     }
 
-    /// The race a removal must win: the probe job exists, the wallet's
-    /// removal takes the gate, lets the wallet go and returns, and the actor
-    /// has not handled `WalletRemoved` yet. The probe waits at the gate and
-    /// then finds its registration gone: the removed wallet's transaction is
-    /// not sent.
-    #[tokio::test(start_paused = true)]
-    async fn should_not_send_a_probe_for_a_wallet_removed_before_it_went_out() {
+    /// The race a removal must win: the probe job exists when the wallet's
+    /// removal takes the gate, and the actor has not handled `WalletRemoved`
+    /// yet. The probe sends nothing — not while the removal runs, not after
+    /// it returns.
+    #[tokio::test]
+    async fn should_not_send_a_probe_for_a_wallet_being_removed() {
         let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
         let mut rig = enabled(probe.clone()).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         let teardown = rig.source.generation(wallet()).teardown_guard().await;
         spawn_first_probe(&mut rig, wallet(), 100).await;
-        assert!(
-            timeout(STAYS_BLOCKED, rig.actor.jobs.join_next_with_id())
-                .await
-                .is_err(),
-            "the probe waits for the removal"
-        );
+
+        rig.settle().await;
+        assert!(probe.probed().is_empty(), "nothing sent");
+        assert!(rig.sent().is_empty(), "and no verdict");
 
         rig.source.views.lock().expect("views").remove(&wallet());
         drop(teardown);
-        let probed = rig.actor.jobs.join_next_with_id().await.expect("probe");
-        rig.actor.joined(probed);
-
-        assert!(probe.probed().is_empty(), "nothing sent");
-        assert!(rig.sent().is_empty(), "and no verdict");
         rig.send(Command::WalletRemoved(wallet())).await;
         assert!(probe.probed().is_empty());
         assert!(!rig.actor.wallets.contains_key(&wallet()));
     }
 
-    /// The same race with the id registered anew before the probe resumes:
-    /// the transaction the old registration's pass captured is not sent for
-    /// it; the new registration's own pass probes it.
+    /// A probe job that gets to the gate only after the removal is over —
+    /// and the id registered anew — finds the registration it was read from
+    /// replaced: the transaction the old pass captured is not sent for it;
+    /// the new registration's own pass probes it.
     #[tokio::test]
     async fn should_not_send_a_removed_registrations_probe_for_its_successor() {
         let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
         let mut rig = enabled(probe.clone()).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        let teardown = rig.source.generation(wallet()).teardown_guard().await;
         spawn_first_probe(&mut rig, wallet(), 100).await;
 
+        // The whole removal and the new registration, before the job runs.
         rig.source.reregister(wallet());
-        drop(teardown);
         let probed = rig.actor.jobs.join_next_with_id().await.expect("probe");
         rig.actor.joined(probed);
         assert!(probe.probed().is_empty(), "nothing sent for the old one");
@@ -5523,7 +5539,6 @@ mod tests {
             rig.sent(),
             vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
         );
-        let teardown = rig.source.generation(wallet()).teardown_guard().await;
         rig.handle(Command::Height {
             wallet_id: wallet(),
             height: 102,
@@ -5531,7 +5546,6 @@ mod tests {
         let read = rig.actor.jobs.join_next_with_id().await.expect("read");
         rig.actor.joined(read);
         rig.source.reregister(wallet());
-        drop(teardown);
 
         rig.settle().await;
         assert_eq!(probe.probed().len(), 1, "nothing sent for the old one");
@@ -5544,6 +5558,27 @@ mod tests {
             rig.sent(),
             vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
         );
+    }
+
+    /// A removal that was asked for and then abandoned leaves the wallet
+    /// registered: the pass it stopped sends nothing and keeps what the
+    /// host was shown, and the next block probes the root again.
+    #[tokio::test]
+    async fn should_probe_again_after_an_abandoned_removal() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.sent();
+        let teardown = rig.source.generation(wallet()).teardown_guard().await;
+
+        rig.height(wallet(), 102).await;
+        assert_eq!(probe.probed().len(), 1, "stopped for the removal");
+        assert!(rig.sent().is_empty(), "the verdict shown stands");
+
+        drop(teardown);
+        rig.height(wallet(), 103).await;
+        assert_eq!(probe.probed().len(), 2);
     }
 
     /// A probe that never ends once started, and says when it was dropped.
@@ -5594,7 +5629,15 @@ mod tests {
             .expect("remove");
 
         assert!(probe.dropped.load(Ordering::SeqCst), "the probe stopped");
-        assert!(job.await.expect("job").is_none(), "with no verdict");
+        assert_eq!(job.await.expect("job"), Err(NotProbed::Leaving));
+        // The request is over with the removal: only the registration
+        // check answers now.
+        let transaction = tx(1, &[outpoint(90, 0)]);
+        let source = ManagerSource(Arc::clone(platform_wallet.wallet_manager()));
+        assert_eq!(
+            gated_probe(&source, &*probe, wallet_id, &generation, &transaction).await,
+            Err(NotProbed::Unregistered)
+        );
     }
 
     /// Against the real manager: the registration a read names is the
@@ -5618,11 +5661,11 @@ mod tests {
         let transaction = tx(1, &[outpoint(90, 0)]);
 
         let sent = gated_probe(&source, &probe, wallet_id, &read.generation, &transaction).await;
-        assert!(sent.is_some(), "probed while registered");
+        assert!(sent.is_ok(), "probed while registered");
         manager.remove_wallet(&wallet_id).await.expect("remove");
         let refused = gated_probe(&source, &probe, wallet_id, &read.generation, &transaction).await;
 
-        assert!(refused.is_none());
+        assert_eq!(refused, Err(NotProbed::Unregistered));
         assert_eq!(probe.probed().len(), 1, "nothing sent after the removal");
     }
 
@@ -6565,7 +6608,7 @@ mod tests {
             Ok((_, JobDone::Probed { root, outcome, .. }))
                 if *root == txid(1)
                     && outcome.as_ref().map(|outcome| &outcome.verdict)
-                        == Some(&ProbeVerdict::Mined)
+                        == Ok(&ProbeVerdict::Mined)
         ));
 
         rig.handle(Command::Settled {

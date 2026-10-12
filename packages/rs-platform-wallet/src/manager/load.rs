@@ -106,7 +106,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // restarts. The orphan state is observable across the FFI
         // boundary with no Swift-side reset path, so transactional
         // semantics matter for this hydration API.
-        let mut inserted_in_manager: Vec<WalletId> = Vec::new();
+        let mut inserted_in_manager: Vec<(WalletId, Arc<WalletGeneration>)> = Vec::new();
         // Re-dispatches owed by this load, held until the rollback point has
         // passed. See the push site for why they cannot be spawned inline.
         #[allow(clippy::type_complexity)]
@@ -278,7 +278,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     break 'load;
                 }
             }
-            inserted_in_manager.push(wallet_id);
+            inserted_in_manager.push((wallet_id, Arc::clone(&generation)));
 
             let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(
                 &self.spv_manager,
@@ -431,34 +431,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // Wait-free, purely for the diagnostics below: an id still in the
             // map after the rollback is one a same-id re-registration owns.
             let still_mapped = self.wallets.load();
-            if !inserted_in_manager.is_empty() {
-                // Under each rolled-back generation's lifecycle gate, like any
-                // removal: an operation that saw the registration live and is
-                // pushing one of its transactions to the network finishes (or
-                // gives up) before the wallet goes. Only generations this call
-                // inserted — the published ones by the identity recorded then,
-                // the others still ours by construction. Gates first, manager
-                // lock second.
-                let unpublished: Vec<Arc<WalletGeneration>> = {
-                    let wm = self.wallet_manager.read().await;
-                    inserted_in_manager
-                        .iter()
-                        .filter(|id| !inserted_in_wallets.iter().any(|(w, _)| w == *id))
-                        .filter_map(|id| wm.get_wallet_info(id))
-                        .map(|info| Arc::clone(&info.generation))
-                        .collect()
-                };
-                // Held until the rollback below is done.
-                let mut teardowns = Vec::new();
-                for generation in inserted_in_wallets
-                    .iter()
-                    .map(|(_, generation)| generation)
-                    .chain(&unpublished)
-                {
-                    teardowns.push(generation.teardown_guard().await);
-                }
-                let mut wm = self.wallet_manager.write().await;
-                for id in &inserted_in_manager {
+            {
+                for (id, generation) in &inserted_in_manager {
                     // A published id whose generation is no longer ours belongs
                     // to a newer registration; taking it out of the inner
                     // manager would strip a live wallet of its backing. An id
@@ -490,13 +464,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         }
                         continue;
                     }
-                    if let Err(e) = self.remove_from_inner(&mut wm, id) {
-                        tracing::warn!(
-                            wallet_id = %hex::encode(id),
-                            error = %e,
-                            "rollback after load failure: remove_wallet failed"
-                        );
-                    }
+                    self.roll_back_inner(id, generation).await;
                 }
             }
             return Err(err);
