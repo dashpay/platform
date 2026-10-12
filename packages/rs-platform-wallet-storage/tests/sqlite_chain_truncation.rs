@@ -682,6 +682,49 @@ fn core_round(core: CoreChangeSet) -> PlatformWalletChangeSet {
     }
 }
 
+/// A payment row needs its identity in the store. One whose identity is
+/// gone is refused for good, and the round it rides in rolls back whole, the
+/// truncation included — which is why the wallet-event adapter gives such a
+/// row up instead of offering it with every round.
+#[tokio::test]
+async fn should_reject_the_whole_round_for_a_payment_row_of_an_absent_identity() {
+    use platform_wallet::changeset::PersistenceErrorKind;
+    use platform_wallet::wallet::identity::PaymentEntry;
+
+    let mut session = Session::open(Rounds::PerStep).await;
+    let wallet_id = session.chain.wallet_id;
+    let spend = session.chain.spend(session.chain.funding, FUNDING);
+    session.chain.mine(vec![spend.clone()]).await;
+    session.chain.sync().await;
+    session.step().await;
+    session.chain.fork_at(BASE).await;
+    let truncation = reported_truncation(session.chain.drain());
+    let absent = dpp::prelude::Identifier::from([0xAB; 32]);
+    let reversal = PaymentEntry::new_sent(dpp::prelude::Identifier::from([0xCD; 32]), 1, None);
+
+    let mut round = core_round(CoreChangeSet {
+        truncations: vec![truncation],
+        synced_height: Some(BASE),
+        ..Default::default()
+    });
+    round.dashpay_payments_overlay = Some(std::collections::BTreeMap::from([(
+        absent,
+        std::collections::BTreeMap::from([(spend.txid().to_string(), reversal)]),
+    )]));
+    let refused = session
+        .store
+        .persister()
+        .store(wallet_id, round)
+        .expect_err("the store refuses the round");
+
+    assert_eq!(refused.kind(), Some(PersistenceErrorKind::Constraint));
+    assert_eq!(
+        session.store.transaction_rows(&spend.txid()).len(),
+        1,
+        "the truncation rolled back with the row"
+    );
+}
+
 /// A store that keeps a round after a busy database owns the truncation in
 /// it: nobody else will offer it again. When a later round fails for good
 /// and takes the buffer with it, the truncation must still be applied by

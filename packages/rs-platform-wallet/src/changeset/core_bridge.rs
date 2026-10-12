@@ -742,6 +742,7 @@ fn commit_wallet<P>(
     } = wallet_batch;
     {
         // Under this round's own rows: a verdict reached since is the newer.
+        let carries_reversals = fault.unstored_reversals.contains_key(&wallet_id);
         if let Some(mut owed) = fault.unstored_reversals.remove(&wallet_id) {
             merge_payment_overlays(&mut owed, payments);
             payments = owed;
@@ -918,8 +919,11 @@ fn commit_wallet<P>(
                     .insert(wallet_id, offered_truncations);
             }
             // Whole rows, so a copy the backend also kept changes nothing:
-            // these are set aside on every failure.
-            if !offered_reversals.is_empty() {
+            // these are set aside on every failure but one. A round that
+            // already carried such rows and is refused for good gives them
+            // up: the store may never take them — their identity removed,
+            // say — and they would fail every later round of the wallet.
+            if !offered_reversals.is_empty() && (error.is_transient() || !carries_reversals) {
                 fault
                     .unstored_reversals
                     .insert(wallet_id, offered_reversals);
@@ -1652,7 +1656,8 @@ fn sent_payment_evidence(event: &WalletEvent) -> Vec<(String, SentPaymentEvidenc
 /// reports the fork again, so nothing re-derives that verdict. Those rows are
 /// offered again with the wallet's next round, as the truncation is (see
 /// [`returned_to_pending`]). The list is held in memory only; a restart
-/// before a store accepts them leaves the stored payment confirmed.
+/// before a store accepts them leaves the stored payment confirmed, and so
+/// does a second refusal that is not transient.
 pub(crate) async fn sent_payment_verdicts(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     event: &WalletEvent,
@@ -7474,6 +7479,108 @@ mod tests {
             .try_recv()
             .expect("the second round")
             .dashpay_payments
+    }
+
+    /// What the store sees over three rounds when the first is refused for
+    /// good and carries a truncation with the payment it returned to
+    /// pending, and the second is refused the way `second` says.
+    fn rounds_after_a_refused_reversal(
+        second: fn(&ProbePersister, WalletId),
+    ) -> Vec<StoreObserved> {
+        use crate::changeset::PersistenceCapabilities;
+        use crate::wallet::identity::PaymentStatus;
+        let wallet_id = [0x37u8; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::with_capabilities(
+            obs_tx,
+            PersistenceCapabilities::CORE_CHAIN_TRUNCATION
+                .union(PersistenceCapabilities::DASHPAY_PAYMENTS),
+        );
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        let freeze_logged = AtomicBool::new(false);
+
+        let mut stored = Vec::new();
+        for seq in 0..3usize {
+            let mut core = watermark_with_rows(700 + seq as u32, 700 + seq as u32);
+            let mut payments = super::PaymentOverlay::default();
+            match seq {
+                0 => {
+                    core.truncations = vec![super::ChainTruncation {
+                        height: 600,
+                        txids: Vec::new(),
+                        unconfirmed_txids: Vec::new(),
+                        restored_outpoints: Vec::new(),
+                    }];
+                    payments = one_verdict_overlay(PaymentStatus::Pending);
+                    persister.fail_next(wallet_id);
+                }
+                1 => second(&persister, wallet_id),
+                _ => {}
+            }
+            let mut batch = BTreeMap::new();
+            batch.insert(
+                wallet_id,
+                WalletBatch {
+                    core,
+                    asset_locks: AssetLockChangeSet::default(),
+                    payments,
+                },
+            );
+            commit_batch(
+                &persister,
+                batch,
+                seq,
+                &mut fault,
+                &sync_fault,
+                &freeze_logged,
+                &mut Vec::new(),
+            );
+            stored.push(obs_rx.try_recv().expect("the round reaches store()"));
+        }
+        assert!(stored[0].rejected && stored[1].rejected);
+        assert_eq!(
+            stored[1].dashpay_payments,
+            Some(one_verdict_overlay(PaymentStatus::Pending)),
+            "the second round carries the row the first one could not store"
+        );
+        stored
+    }
+
+    /// A store can refuse a carried row for good — its identity was removed
+    /// while the row waited. Offered again with every round, the row would
+    /// take each of them down, the truncation with it.
+    #[test]
+    fn should_stop_offering_a_carried_reversal_the_store_refuses_for_good() {
+        let stored = rounds_after_a_refused_reversal(|persister, wallet_id| {
+            persister.fail_next(wallet_id);
+        });
+
+        let third = &stored[2];
+        assert!(!third.rejected, "the round after the refusal goes through");
+        assert_eq!(
+            third.dashpay_payments, None,
+            "a row refused for good is not offered a third time"
+        );
+        assert_eq!(
+            third.truncations, stored[0].truncations,
+            "and the truncation it rode with is applied"
+        );
+    }
+
+    /// A store that is merely busy has said nothing about the row, so it is
+    /// offered until a store answers.
+    #[test]
+    fn should_keep_offering_a_carried_reversal_through_a_transient_failure() {
+        use crate::wallet::identity::PaymentStatus;
+        let stored = rounds_after_a_refused_reversal(|persister, wallet_id| {
+            persister.fail_next_transiently(wallet_id);
+        });
+
+        assert_eq!(
+            stored[2].dashpay_payments,
+            Some(one_verdict_overlay(PaymentStatus::Pending)),
+        );
     }
 
     /// A swept or confirmed payment of a rejected round is re-derived by the
