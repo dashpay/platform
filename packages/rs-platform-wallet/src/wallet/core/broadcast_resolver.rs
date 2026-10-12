@@ -8,8 +8,8 @@
 //! [`AcceptanceProbe`](crate::broadcast_probe::AcceptanceProbe) and publishes
 //! the verdict; it **changes nothing** in the wallet. A probe resubmits the
 //! signed transaction, so it goes out only under the lifecycle gate of the
-//! registration it was read from, never for one that has left the manager,
-//! and a removal stops the one in flight (see [`gated_probe`]). Verdicts are positive
+//! registration it was read from, and a wallet's removal stops the one in
+//! flight and lets none start after it (see [`gated_probe`]). Verdicts are positive
 //! only — accepted or mined — or unresolved: no answer the probe gets proves
 //! that a transaction can never land (see
 //! [`broadcast_probe`](crate::broadcast_probe)).
@@ -794,19 +794,16 @@ pub(crate) fn mark_sent(
     root: Txid,
     height: u32,
     anchor: Option<u32>,
-) -> bool {
-    let mut anchored = false;
+) {
     if let Some(schedule) = state.schedules.get_mut(&(wallet_id, root)) {
         // A root's every-block window starts at its first probe by a pass
         // that follows the tip — not while it waits in a backlog, nor when a
         // pass that planned it gave way before sending it.
         if let Some(anchor) = anchor {
-            anchored = schedule.window_start.is_none();
             schedule.anchor(anchor);
         }
         schedule.probed_at(height);
     }
-    anchored
 }
 
 /// Whether a root's last probe reached a node (see
@@ -836,8 +833,8 @@ fn withdraw_unanswered(
     roots
 }
 
-/// A root's probe never produced a verdict (its job panicked, or stopped for
-/// a removal): nothing was learned, so it is due again at once.
+/// A root's probe never produced a verdict (its job panicked): nothing was
+/// learned, so it is due again at once.
 pub(crate) fn withdraw_send(state: &mut ResolverState, wallet_id: WalletId, root: Txid) {
     if let Some(schedule) = state.schedules.get_mut(&(wallet_id, root)) {
         schedule.withdraw();
@@ -988,6 +985,11 @@ enum NotProbed {
 /// up to eight requests, each with its own timeout). Stopping the job from the actor is
 /// not that barrier: the actor learns of a removal only after the manager
 /// has let the wallet go.
+///
+/// "Removal" is the manager's `remove_wallet`. The rollback of a
+/// registration or load that failed half-way takes no gate: a probe already
+/// past the check may finish for a wallet rolled back meanwhile — the same
+/// signed bytes, for a wallet nobody asked to remove.
 ///
 /// Lock order is the gate's: gate first, wallet-manager lock (inside
 /// [`WalletSource::is_registered`]) second.
@@ -1276,9 +1278,9 @@ struct Probing {
     due: VecDeque<DueRoot>,
     /// The root whose probe is out now.
     in_flight: Option<DueRoot>,
-    /// That probe started its root's every-block window: taken back if the
-    /// probe is stopped before anything goes out.
-    anchored: bool,
+    /// That root's schedule before its probe was marked sent: put back if
+    /// the probe is stopped before anything goes out.
+    before: Option<ProbeSchedule>,
 }
 
 impl Probing {
@@ -2049,7 +2051,7 @@ impl Actor {
                             height,
                             due: start.due,
                             in_flight: None,
-                            anchored: false,
+                            before: None,
                         });
                         // A forced request that came while this pass read.
                         yield_to_forced(entry);
@@ -2159,23 +2161,23 @@ impl Actor {
                         // The wallet is being removed: `WalletRemoved`
                         // follows and drops what is kept for it. Should the
                         // removal be abandoned instead, nothing is lost: the
-                        // root is as if never sent, and what the pass was
-                        // forced to probe waits for the next height or
-                        // report — not started now, when it would only be
-                        // stopped again.
-                        let anchored = probing.anchored;
-                        withdraw_send(&mut self.state, wallet_id, root.txid);
-                        if anchored {
-                            if let Some(schedule) =
-                                self.state.schedules.get_mut(&(wallet_id, root.txid))
-                            {
-                                schedule.window_start = None;
-                            }
+                        // root's schedule is as before this probe, and what
+                        // the pass was to probe waits for the next height,
+                        // sync completion or report — not started now, when
+                        // it would only be stopped again.
+                        if let (Some(before), Some(schedule)) = (
+                            probing.before,
+                            self.state.schedules.get_mut(&(wallet_id, root.txid)),
+                        ) {
+                            *schedule = before;
                         }
                         let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                             return;
                         };
                         entry.wait_until = None;
+                        // This height's pass sent nothing for the rest of its
+                        // roots: a sync completion at it may run another.
+                        entry.followed_pass_at = None;
                         if let Some(run) = entry.run.take() {
                             if !run.forced.is_empty() || !run.retried.is_empty() {
                                 let pending =
@@ -2338,7 +2340,8 @@ impl Actor {
             });
             self.job_runs
                 .insert(run.abort.id(), (wallet_id, id, Some(root_txid)));
-            probing.anchored = mark_sent(
+            probing.before = self.state.schedules.get(&(wallet_id, root.txid)).copied();
+            mark_sent(
                 &mut self.state,
                 wallet_id,
                 root.txid,
@@ -5192,7 +5195,7 @@ mod tests {
             height: 101,
             due: start.due,
             in_flight: None,
-            anchored: false,
+            before: None,
         });
         yield_to_forced(&mut entry);
 
