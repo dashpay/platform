@@ -8,6 +8,8 @@
 use super::*;
 use dpp::tests::json_document::json_document_to_json_value;
 use drive::drive::RootTree;
+use drive::grovedb::Element;
+use drive::util::grove_operations::DirectQueryType;
 
 const LIKE: &str = "like";
 
@@ -35,15 +37,6 @@ async fn setup() -> Setup {
     .await
 }
 
-fn texts(texts: &[&str]) -> Value {
-    Value::Array(
-        texts
-            .iter()
-            .map(|text| Value::Text(text.to_string()))
-            .collect(),
-    )
-}
-
 impl Setup {
     /// The counter `byTagPost` keeps for `post_id` under `tag`, if there is one
     fn tag_counter(
@@ -65,18 +58,19 @@ impl Setup {
         match self
             .platform
             .drive
-            .grove
-            .get(
-                path_refs.as_slice(),
+            .grove_get_raw_optional(
+                path_refs.as_slice().into(),
                 post_id.as_slice(),
+                DirectQueryType::StatefulDirectQuery,
                 Some(transaction),
-                &PlatformVersion::latest().drive.grove_version,
+                &mut vec![],
+                &PlatformVersion::latest().drive,
             )
-            .unwrap()
+            .expect("expected to read the counter")
         {
-            Ok(drive::grovedb::Element::SumItem(count, _)) => Some(count),
-            Ok(other) => panic!("expected a counter under {tag}, got {other:?}"),
-            Err(_) => None,
+            Some(Element::SumItem(count, _)) => Some(count),
+            Some(other) => panic!("expected a counter under {tag}, got {other:?}"),
+            None => None,
         }
     }
 
@@ -93,7 +87,7 @@ impl Setup {
             ("postAuthor", Value::Identifier(author.to_buffer())),
         ];
         if let Some(tags) = tags {
-            properties.push(("tags", texts(tags)));
+            properties.push(("tags", Value::from(tags)));
         }
         create_with(self, actor, LIKE, properties).await
     }
@@ -145,7 +139,7 @@ async fn should_count_likes_per_tag_of_a_post_through_removal_and_restore() {
         POST,
         vec![
             ("content", Value::Text("hello".to_string())),
-            ("tags", texts(&["dash", "news"])),
+            ("tags", Value::from(&["dash", "news"][..])),
         ],
     )
     .await;

@@ -223,32 +223,30 @@ impl Drive {
             if let Some(index_type) = sub_level.summable_off_count_index_info() {
                 // The group's value, or each distinct element of a typed array
                 // a `where` equality fixes (see the insert walker)
-                for document_index_field in document_index_fields {
-                    self.add_summable_off_count_counter_operations(
-                        sub_level_index_path_info.clone(),
-                        document_index_field,
-                        property_name_tree_type,
-                        CounterChange::Decrement {
-                            keep_at_zero: index_type.preallocated,
-                        },
-                        *storage_flags,
-                        || {
-                            document_and_contract_info
-                                .owned_document_info
-                                .document_info
-                                .get_estimated_size_for_document_type(
-                                    name,
-                                    document_type,
-                                    platform_version,
-                                )
-                        },
-                        estimated_costs_only_with_layer_info,
-                        previous_batch_operations,
-                        transaction,
-                        batch_operations,
-                        platform_version,
-                    )?;
-                }
+                self.add_summable_off_count_counter_operations(
+                    sub_level_index_path_info,
+                    document_index_fields,
+                    property_name_tree_type,
+                    CounterChange::Decrement {
+                        keep_at_zero: index_type.preallocated,
+                    },
+                    *storage_flags,
+                    || {
+                        document_and_contract_info
+                            .owned_document_info
+                            .document_info
+                            .get_estimated_size_for_document_type(
+                                name,
+                                document_type,
+                                platform_version,
+                            )
+                    },
+                    estimated_costs_only_with_layer_info,
+                    previous_batch_operations,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
                 continue;
             }
 

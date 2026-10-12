@@ -956,7 +956,9 @@ impl Context<'_> {
                 }
             };
             // A value the document does not carry, a null one, or an empty
-            // list: no entry can agree with it, so nothing is preallocated.
+            // list: no entry can agree with it, so nothing is preallocated (a
+            // list holding an element keyed as empty has no keys at all, as
+            // Drive judges it).
             match raws {
                 Some(raws) if !raws.is_empty() && raws.iter().all(|raw| !raw.is_empty()) => {
                     levels.push((name, sub_level, raws))
@@ -995,7 +997,16 @@ impl Context<'_> {
                     )))
                 })?
                 .is_some();
-            let mut next_paths = Vec::with_capacity(paths.len() * raws.len());
+            // A `summableOffCountIndex` index's counter, created at zero in
+            // place of the value tree and its empty terminal: it counts one
+            // group and nothing towards the sum. Nothing continues below it.
+            let counter_level =
+                info.is_summable_off_count_index() && position + 1 == index.properties.len();
+            let mut next_paths = Vec::with_capacity(if counter_level {
+                0
+            } else {
+                paths.len() * raws.len()
+            });
             for mut path in paths {
                 if position > 0 {
                     self.push(Write {
@@ -1014,12 +1025,8 @@ impl Context<'_> {
                     });
                 }
                 path.push(name.as_bytes().to_vec());
-                for raw in &raws {
-                    // A `summableOffCountIndex` index's counter, created at zero in
-                    // place of the value tree and its empty terminal: it counts one
-                    // group and nothing towards the sum.
-                    if info.is_summable_off_count_index() && position + 1 == index.properties.len()
-                    {
+                if counter_level {
+                    for raw in &raws {
                         // A preallocated index is never under a time window.
                         self.counter_write(
                             &path,
@@ -1031,8 +1038,10 @@ impl Context<'_> {
                             flags,
                             false,
                         )?;
-                        continue;
                     }
+                    continue;
+                }
+                for raw in &raws {
                     self.push(Write {
                         path: path.clone(),
                         key: raw.clone(),
@@ -1064,7 +1073,7 @@ impl Context<'_> {
                     next_paths.push(value_path);
                 }
             }
-            if info.is_summable_off_count_index() && position + 1 == index.properties.len() {
+            if counter_level {
                 return Ok(());
             }
             paths = next_paths;

@@ -464,11 +464,16 @@ referencing the document holds that list, and the index enters it under
 each element, so the level takes one key per distinct element of the
 referenced list, keyed as the referring type keys its elements
 (`referenced_list_tree_keys_for_referring_property`). The walk continues
-under each element's value tree, every tree queued once, and a list that is
-empty, absent, no list at all or holding an element wider than the
-referring elements can be preallocates nothing. The estimate walks
-`maxItems` distinct worst-case elements. `contains` and `containsAll` fix
-no element and bind nothing.
+under each element's value tree, every tree queued once, and a list no
+referring document can hold preallocates nothing: empty, absent or no list
+at all, longer than the referring array's `maxItems` or shorter than its
+`minItems`, repeating an element where it declares `uniqueItems`, or holding
+an element keyed as empty or wider than the referring elements can be. The
+estimate walks `maxItems` distinct worst-case elements. `contains` and
+`containsAll` fix no element and bind nothing. A plain tree under one the
+same walk created is inserted without an existence read, and the dry run of
+a change of the referenced document preallocates nothing, since an applied
+change never does.
 
 `preallocated` composes with `skipIfAbsent`: every bound key is resolved
 before any operation is emitted, and an absent bound value (an untagged

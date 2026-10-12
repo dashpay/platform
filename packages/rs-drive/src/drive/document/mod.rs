@@ -306,9 +306,16 @@ pub(crate) fn referenced_tree_key_for_referring_property(
 /// agreeing with `document` holds that list exactly, so its entries sit under
 /// exactly these keys. Empty for an empty, null or absent list, which every
 /// index naming the array skips. `None` when no referring document can agree:
-/// the value is no list (it then equals none, `where_list_elements`), or an
-/// element is wider as a tree key than an element of the referring array can
-/// be, as [`bound_value_fits_referring_property`] judges a single value.
+/// the value is no list (it then equals none, `where_list_elements`); it holds
+/// fewer elements than the referring array's `minItems` or more than its
+/// `maxItems`, or repeats an element where the referring array declares
+/// `uniqueItems` (a list equality compares the lists element by element, so a
+/// referring list would have to be exactly as long and repeat the same
+/// elements); or an element keys as empty, the null layout's key, or wider than
+/// an element of the referring array can be, as
+/// [`bound_value_fits_referring_property`] judges a single value. The bound on
+/// the length keeps the paths a referenced document preallocates within the
+/// elements one referring document can hold.
 /// Shared by the preallocation path and `drive::document::cost`.
 pub(crate) fn referenced_list_tree_keys_for_referring_property(
     document: &Document,
@@ -328,6 +335,16 @@ pub(crate) fn referenced_list_tree_keys_for_referring_property(
         .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
             "a property a preallocated index keys by list elements must be a typed array",
         )))?;
+    if elements.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    if elements.len() > usize::from(referring_list.max_items)
+        || referring_list
+            .min_items
+            .is_some_and(|min_items| elements.len() < usize::from(min_items))
+    {
+        return Ok(None);
+    }
     let max_width = referring_list
         .item_type
         .saturating_max_byte_size(platform_version)?;
@@ -335,10 +352,13 @@ pub(crate) fn referenced_list_tree_keys_for_referring_property(
     for element in elements {
         let key =
             referring.serialize_value_for_key(referring_property, element, platform_version)?;
-        if max_width.is_some_and(|max_width| key.len() > usize::from(max_width)) {
+        if key.is_empty() || max_width.is_some_and(|max_width| key.len() > usize::from(max_width)) {
             return Ok(None);
         }
         keys.insert(key);
+    }
+    if referring_list.unique_items && keys.len() < elements.len() {
+        return Ok(None);
     }
     Ok(Some(keys.into_iter().collect()))
 }

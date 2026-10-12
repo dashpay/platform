@@ -1246,7 +1246,7 @@ fn count_request<'a>(
 /// The count of `where_clauses`, unproved, and proved through the point
 /// lookup verifier the SDK runs, which must agree and reach the live root
 /// hash: one total per tag the clauses name, keyed by tag.
-fn counted(
+pub(super) fn counted(
     drive: &Drive,
     contract: &DataContract,
     where_clauses: Vec<WhereClause>,

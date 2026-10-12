@@ -23,7 +23,6 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
-use crate::data_contract::document_type::index::preallocation::same_contract_record_reference;
 use crate::data_contract::document_type::index::{
     reads_through_reference, Index, IndexGrammarAdmissions, IntegerRangeKeyType,
 };
@@ -3809,12 +3808,21 @@ fn summable_off_count_index_error(
         &document_type.flattened_properties,
         document_type.data_contract_id,
     ) {
+        let hint = if index.indexed_array.as_deref() == Some(property) {
+            list_binding_hint(
+                index,
+                "a counter's group is one element, and only an equality enters every \
+                 document of a source group under the same elements",
+            )
+        } else {
+            String::new()
+        };
         return Some(format!(
             "{prefix} has \"{property}\", which is neither a property of its source \
              \"{source_name}\" nor fixed by it: it must be a referring value of a `where` on a \
              same-contract permanentDocument or moderatedDocument reference by id (no findBy or \
              inList) held by a property of \"{source_name}\", or one source group would spread \
-             over several groups"
+             over several groups{hint}"
         ));
     }
     let depth = index.properties.len();
@@ -3852,6 +3860,21 @@ fn keyed_by_a_document_index(indices: &BTreeMap<String, Index>, key: &BTreeSet<&
     })
 }
 
+/// For an index naming a typed array, the sentence a `preallocated` or
+/// `summableOffCountIndex` refusal adds: the array is fixed only by a `where` making it
+/// equal to a typed array of the referenced document, because `why`. Empty for every
+/// other index.
+fn list_binding_hint(index: &Index, why: &str) -> String {
+    match index.indexed_array.as_deref() {
+        Some(array_name) => format!(
+            ". The typed array \"{array_name}\" is fixed only by a `where` making it equal to \
+             a typed array of the referenced document (as `\"{array_name}\": \"{array_name}\"`), \
+             not by `contains` or `containsAll`: {why}"
+        ),
+        None => String::new(),
+    }
+}
+
 /// The rules an indexOnly document type checks for one index naming a typed array
 /// (protocol version 14), beyond those every indexed array follows
 /// (`validate_indexed_array_index`): the reason it is refused, or `None`.
@@ -3867,18 +3890,16 @@ fn keyed_by_a_document_index(indices: &BTreeMap<String, Index>, key: &BTreeSet<&
 ///   refuses: the array index is no uniqueness rule of its own, and no entry of it ever
 ///   stands for two documents.
 /// - The array declares `uniqueItems`, so every element of a list has an entry of its own.
-/// - When the index is `preallocated` or a `summableOffCountIndex` index, the array is
-///   bound by a `where` equality with a typed array of the document another of its
-///   properties references ([`array_bound_by_list_equality`]): every document referencing
-///   one document holds its list, so the elements a preallocation keys and a counter's
-///   groups are fixed by that document. The other rules of those keywords follow below
-///   (`Index::preallocation_bindings`, `summable_off_count_index_error`).
 /// - It names one array, a top-level property: the rules every indexed array follows
 ///   run under full validation only, and these are what the entry probes and the row
 ///   commitment rely on, so an indexOnly type checks them on every parse too.
 ///
 /// A `summableOffCountIndex` index keeps one counter per group and no entries, so the
-/// first rule has nothing to keep apart there.
+/// first rule has nothing to keep apart there. Whether the index may be `preallocated` or
+/// a `summableOffCountIndex` index is those keywords' own rules to judge
+/// (`Index::preallocation_bindings`, `summable_off_count_index_error`): they bind the
+/// array only through a `where` equality with a typed array of the referenced document,
+/// and their refusals say so for an index naming one.
 fn index_only_array_index_error(
     index_name: &str,
     index: &Index,
@@ -3902,26 +3923,6 @@ fn index_only_array_index_error(
         return Some(format!(
             "{prefix}, which is inside an object: an indexed typed array is a top-level \
              property of the document type"
-        ));
-    }
-    let bound = || array_bound_by_list_equality(index, array_name, document_type);
-    if index.preallocated && !bound() {
-        return Some(format!(
-            "{prefix} and declares `preallocated`, but no `where` makes \"{array_name}\" equal \
-             to a typed array of the document another of its properties references (a \
-             same-contract permanentDocument or moderatedDocument reference by id, as \
-             `\"{array_name}\": \"{array_name}\"`): a preallocated index's path is fixed by one \
-             referenced document, and only an equality fixes the elements a document's list \
-             holds"
-        ));
-    }
-    if index.is_summable_off_count_index() && !bound() {
-        return Some(format!(
-            "{prefix} and is a summableOffCountIndex index, but no `where` makes \
-             \"{array_name}\" equal to a typed array of the document another of its properties \
-             references (a same-contract permanentDocument or moderatedDocument reference by \
-             id, as `\"{array_name}\": \"{array_name}\"`): a counter's group is one element, and \
-             only an equality enters every document of a source group under the same elements"
         ));
     }
     let unique_items = index
@@ -3952,29 +3953,6 @@ fn index_only_array_index_error(
         ));
     }
     None
-}
-
-/// Whether a `where` equality binds the typed array `array_name` of `index` to a typed
-/// array of the referenced document: another property of the index holds a same-contract
-/// `permanentDocument` or `moderatedDocument` reference by id whose `where` pairs the array
-/// with a referenced property. Contract registration refuses an equality pairing a typed
-/// array with anything but a typed array, so the pair is one of two lists. The keywords'
-/// own rules then judge the rest of the index (`Index::preallocation_bindings`,
-/// `Index::count_index_derivations`).
-fn array_bound_by_list_equality(
-    index: &Index,
-    array_name: &str,
-    document_type: &DocumentTypeV2,
-) -> bool {
-    index.properties.iter().any(|property| {
-        document_type
-            .flattened_properties
-            .get(&property.name)
-            .and_then(|declaration| {
-                same_contract_record_reference(declaration, document_type.data_contract_id)
-            })
-            .is_some_and(|reference| reference.property_agreement.contains_key(array_name))
-    })
 }
 
 /// Parses a condition a replace is judged by, the `when` of an `immutable`
@@ -4682,8 +4660,10 @@ pub(super) fn apply_index_only(
             )));
         }
         // An index of a typed array (protocol version 14) enters a document once
-        // per element: another index must keep each document's entries apart,
-        // and the keywords whose path or group is one value refuse it.
+        // per element: see `index_only_array_index_error` for when another index
+        // must keep each document's entries apart (not for a counter index,
+        // which keeps none). Whether it may be `preallocated` or a
+        // `summableOffCountIndex` index is judged by those keywords' rules below.
         if let Some(message) = index_only_array_index_error(index_name, index, document_type, name)
         {
             return Err(structure_error(message));
@@ -5059,8 +5039,15 @@ pub(super) fn apply_index_only(
                  referenced document's $ownerId or $creatorId). The referring document's \
                  OWN system properties like $ownerId cannot be determined by the \
                  referenced document, so a preallocated index may carry $ownerId only as \
-                 its terminal",
-                index_name, name,
+                 its terminal{}",
+                index_name,
+                name,
+                list_binding_hint(
+                    index,
+                    "the preallocated path is fixed by one referenced \
+                    document, and only an equality fixes the elements every list referencing \
+                    it holds"
+                ),
             )));
         }
         // `summableOffCountIndex`: a summableOffCountIndex index keeps, per group, the number of its

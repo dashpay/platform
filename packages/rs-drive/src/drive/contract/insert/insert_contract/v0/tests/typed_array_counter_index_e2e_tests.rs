@@ -11,36 +11,24 @@
 //! upper-bound the applied fees for 1 and 4 tags, and per-tag counts, sums
 //! and rankings prove.
 
+use super::index_only_array_index_e2e_tests::counted;
 use super::index_only_e2e_tests::{
-    assert_grovedb_is_consistent, assert_live_root_hash, platform_version, read_grove_element,
-    sum_top_k,
+    assert_grovedb_is_consistent, assert_live_root_hash, doctype_path, platform_version,
+    read_grove_element, sum_top_k,
 };
-use crate::config::DriveConfig;
+use super::summable_off_count_index_e2e_tests::{like_sum_query, proved_ranked_page, sum_likes};
 use crate::drive::Drive;
-use crate::query::drive_document_count_query::{
-    CountMode, DocumentCountRequest, DocumentCountResponse,
-};
-use crate::query::drive_document_ranked_query::index_picker::resolve_ranked_query_for_mode;
-use crate::query::drive_document_ranked_query::mode_detection::detect_ranked_mode;
-use crate::query::drive_document_ranked_query::{
-    DocumentRankedRequest, DocumentRankedResponse, RankedEntryValue, RankedPaginationInputs,
-    RANKED_COUNT_ORDER_KEY,
-};
-use crate::query::drive_document_sum_query::index_picker::find_summable_index_for_where_clauses;
-use crate::query::drive_document_sum_query::{
-    DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
-};
+use crate::query::drive_document_count_query::CountMode;
+use crate::query::drive_document_ranked_query::{RankedEntryValue, RANKED_COUNT_ORDER_KEY};
+use crate::query::drive_document_sum_query::{DocumentSumResponse, SumMode};
 use crate::query::projection::SelectProjection;
-use crate::query::{
-    key_array_element_clauses, DriveDocumentCountQuery, OrderClause, WhereClause, WhereOperator,
-};
+use crate::query::{key_array_element_clauses, OrderClause, WhereClause, WhereOperator};
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::fee_result::FeeResult;
@@ -108,18 +96,8 @@ fn setup_with(
 
 fn document_type<'a>(contract: &'a DataContract, name: &str) -> DocumentTypeRef<'a> {
     contract
-        .document_types()
-        .get(name)
+        .document_type_for_name(name)
         .expect("the document type")
-        .as_ref()
-}
-
-fn tags_value(tags: &[&str]) -> Value {
-    Value::Array(
-        tags.iter()
-            .map(|tag| Value::Text(tag.to_string()))
-            .collect(),
-    )
 }
 
 /// A post by `AUTHOR` with id `[id; 32]`, carrying `tags` as given: a list of
@@ -128,7 +106,7 @@ fn post(id: u8, tags: Option<&[&str]>) -> Document {
     let mut properties =
         BTreeMap::from([("content".to_string(), Value::Text("a post".to_string()))]);
     if let Some(tags) = tags {
-        properties.insert("tags".to_string(), tags_value(tags));
+        properties.insert("tags".to_string(), Value::from(tags));
     }
     Document::V0(DocumentV0 {
         id: Identifier::from([id; 32]),
@@ -220,14 +198,9 @@ fn delete_like(drive: &Drive, contract: &DataContract, like: &Document, apply: b
         .expect("the like deletes")
 }
 
-/// `[DataContractDocuments, contract, 1, "like"]` followed by `segments`.
+/// The like type's tree followed by `segments`.
 fn like_path(contract: &DataContract, segments: &[&[u8]]) -> Vec<Vec<u8>> {
-    let mut path = vec![
-        vec![crate::drive::RootTree::DataContractDocuments as u8],
-        contract.id().to_vec(),
-        vec![1],
-        b"like".to_vec(),
-    ];
+    let mut path = doctype_path(contract);
     path.extend(segments.iter().map(|segment| segment.to_vec()));
     path
 }
@@ -325,6 +298,36 @@ fn should_preallocate_a_zero_counter_per_tag_of_a_post() {
         sum_top_k(&drive, &like_path(&contract, &[b"tags"]), 10, true).len(),
         4
     );
+    assert_grovedb_is_consistent(&drive);
+}
+
+/// A post whose list no like can hold preallocates nothing under the tags: one
+/// longer than the like's `maxItems` (4), or one repeating a tag where the
+/// like declares `uniqueItems`. A like must hold the post's list exactly.
+#[test]
+fn should_preallocate_no_tag_counter_for_a_list_no_like_can_hold() {
+    let (drive, contract) = setup(true);
+    for (id, tags) in [
+        (0xA1, &["a", "b", "c", "d", "e"][..]),
+        (0xB2, &["dash", "dash"][..]),
+    ] {
+        let unlikeable = post(id, Some(tags));
+        insert(&drive, &contract, "post", &unlikeable, true);
+        for tag in tags {
+            assert_eq!(
+                tag_counter(&drive, &contract, tag, &unlikeable),
+                None,
+                "{tag}"
+            );
+        }
+        // The trees keyed by the post alone are still preallocated
+        assert!(read_grove_element(
+            &drive,
+            &like_path(&contract, &[b"postId", unlikeable.id().as_slice()]),
+            &[0]
+        )
+        .is_some());
+    }
     assert_grovedb_is_consistent(&drive);
 }
 
@@ -557,26 +560,34 @@ fn should_upper_bound_post_and_like_fees_with_their_dry_runs() {
     }
 }
 
-/// Four tags cost a post more than one: each tag's trees are priced.
+/// Four tags cost a post more preallocation than one: each tag's trees are
+/// priced. The post's own writes (its `tagAndTime` entries, its larger
+/// serialization) grow with its tags too, so the preallocation is measured
+/// as what a post pays beyond the same post when the like indexes are not
+/// preallocated.
 #[test]
 fn should_price_each_tag_a_post_preallocates() {
-    let (drive, contract) = setup(true);
-    let one = insert(
-        &drive,
-        &contract,
-        "post",
-        &post(0xA1, Some(&["dash"])),
-        true,
+    let preallocation = |tags: &[&str]| {
+        let tagged = post(0xA1, Some(tags));
+        let (drive, contract) = setup(true);
+        let with = insert(&drive, &contract, "post", &tagged, true);
+        let (drive, contract) = setup(false);
+        let without = insert(&drive, &contract, "post", &tagged, true);
+        (
+            with.storage_fee - without.storage_fee,
+            with.processing_fee - without.processing_fee,
+        )
+    };
+    let (one_storage, one_processing) = preallocation(&["dash"]);
+    let (four_storage, four_processing) = preallocation(&["dash", "evo", "news", "solo"]);
+    assert!(
+        four_storage > one_storage,
+        "{four_storage} <= {one_storage}"
     );
-    let four = insert(
-        &drive,
-        &contract,
-        "post",
-        &post(0xB2, Some(&["dash", "evo", "news", "solo"])),
-        true,
+    assert!(
+        four_processing > one_processing,
+        "{four_processing} <= {one_processing}"
     );
-    assert!(four.storage_fee > one.storage_fee);
-    assert!(four.processing_fee > one.processing_fee);
 }
 
 // ---------------------------------------------------------------------------
@@ -622,133 +633,38 @@ fn keyed(
     .expect("the clauses key")
 }
 
-/// A `count(*)` over likes, unproved and proved through the point lookup
-/// verifier, which must agree and reach the live root hash: one total per
-/// group, keyed by the tag for a `containsAny`, else one total.
-fn counted(
-    drive: &Drive,
-    contract: &DataContract,
-    clauses: Vec<WhereClause>,
-    mode: CountMode,
-) -> BTreeMap<Vec<u8>, u64> {
-    let config = DriveConfig::default();
-    let request = |prove: bool| DocumentCountRequest {
-        contract,
-        document_type: document_type(contract, "like"),
-        where_clauses: clauses.clone(),
-        resolved_time_ranges: vec![],
-        order_clauses: vec![],
-        mode,
-        limit: None,
-        prove,
-        drive_config: &config,
-    };
-    let unproved = match drive
-        .execute_document_count_request(request(false), None, platform_version())
-        .expect("the count executes")
-    {
-        DocumentCountResponse::Aggregate(total) => BTreeMap::from([(Vec::new(), total)]),
-        DocumentCountResponse::Entries(entries) => entries
-            .into_iter()
-            .map(|entry| (entry.in_key.unwrap_or(entry.key), entry.count.unwrap_or(0)))
-            .collect(),
-        other => panic!("expected a count, got {other:?}"),
-    };
-    let proof = match drive
-        .execute_document_count_request(request(true), None, platform_version())
-        .expect("the count proves")
-    {
-        DocumentCountResponse::Proof(proof) => proof,
-        other => panic!("expected a proof, got {other:?}"),
-    };
-    let keyed = keyed(contract, &clauses, matches!(mode, CountMode::GroupByIn));
-    let like_type = document_type(contract, "like");
-    let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
-        contract
-            .document_types()
-            .get("like")
-            .expect("the like type")
-            .indexes(),
-        &keyed,
-        &[],
-    )
-    .expect("an index counts the likes");
-    assert!(index.is_summable_off_count_index(), "{}", index.name);
-    let (root_hash, entries) = DriveDocumentCountQuery {
-        document_type: like_type,
-        contract_id: contract.id().to_buffer(),
-        document_type_name: "like".to_string(),
-        index,
-        where_clauses: keyed,
-    }
-    .verify_point_lookup_count_proof(&proof, platform_version())
-    .expect("the count proof verifies");
-    assert_live_root_hash(drive, root_hash);
-    let proved: BTreeMap<Vec<u8>, u64> = match mode {
-        CountMode::Aggregate => BTreeMap::from([(
-            Vec::new(),
-            entries.iter().map(|entry| entry.count.unwrap_or(0)).sum(),
-        )]),
-        _ => entries
-            .into_iter()
-            .map(|entry| (entry.in_key.unwrap_or(entry.key), entry.count.unwrap_or(0)))
-            .collect(),
-    };
-    assert_eq!(unproved, proved, "unproved and proved counts agree");
-    proved
-}
-
-/// A `sum(byPost)` over likes, unproved and proved: one total.
+/// A `sum(byPost)` over likes, unproved and proved through the point lookup
+/// verifier with the clauses keyed as the server keys them: one total.
 fn summed(drive: &Drive, contract: &DataContract, clauses: Vec<WhereClause>) -> i64 {
-    let config = DriveConfig::default();
-    let request = |prove: bool| DocumentSumRequest {
+    let unproved = match sum_likes(
+        drive,
         contract,
-        document_type: document_type(contract, "like"),
-        sum_property: "byPost".to_string(),
-        where_clauses: clauses.clone(),
-        resolved_time_ranges: vec![],
-        order_clauses: vec![],
-        mode: SumMode::Aggregate,
-        limit: None,
-        prove,
-        drive_config: &config,
-    };
-    let unproved = match drive
-        .execute_document_sum_request(request(false), None, platform_version())
-        .expect("the sum executes")
+        clauses.clone(),
+        SumMode::Aggregate,
+        None,
+        false,
+    )
+    .expect("the sum executes")
     {
         DocumentSumResponse::Aggregate(sum) => sum,
         other => panic!("expected an aggregate sum, got {other:?}"),
     };
-    let proof = match drive
-        .execute_document_sum_request(request(true), None, platform_version())
-        .expect("the sum proves")
+    let proof = match sum_likes(
+        drive,
+        contract,
+        clauses.clone(),
+        SumMode::Aggregate,
+        None,
+        true,
+    )
+    .expect("the sum proves")
     {
         DocumentSumResponse::Proof(proof) => proof,
         other => panic!("expected a proof, got {other:?}"),
     };
-    let keyed = keyed(contract, &clauses, false);
-    let index = find_summable_index_for_where_clauses(
-        contract
-            .document_types()
-            .get("like")
-            .expect("the like type")
-            .indexes(),
-        &keyed,
-        "byPost",
-        &[],
-    )
-    .expect("a counter index answers the sum");
-    let (root_hash, entries) = DriveDocumentSumQuery {
-        document_type: document_type(contract, "like"),
-        contract_id: contract.id().to_buffer(),
-        document_type_name: "like".to_string(),
-        index,
-        where_clauses: keyed,
-        sum_property: "byPost".to_string(),
-    }
-    .verify_point_lookup_sum_proof(&proof, platform_version())
-    .expect("the sum proof verifies");
+    let (root_hash, entries) = like_sum_query(contract, &keyed(contract, &clauses, false))
+        .verify_point_lookup_sum_proof(&proof, platform_version())
+        .expect("the sum proof verifies");
     assert_live_root_hash(drive, root_hash);
     let proved: i64 = entries.iter().filter_map(|entry| entry.sum).sum();
     assert_eq!(unproved, proved, "unproved and proved sums agree");
@@ -764,7 +680,7 @@ fn should_count_and_sum_likes_per_tag_with_proofs() {
     let [a, b, _] = liked_posts(&drive, &contract);
     let unliked = post(0xD4, Some(&["news"]));
     insert(&drive, &contract, "post", &unliked, true);
-    let total = |total: u64| BTreeMap::from([(Vec::new(), total)]);
+    let total = |total: u64| BTreeMap::from([(String::new(), total)]);
 
     for (clauses, likes) in [
         (vec![contains("dash")], 5),
@@ -774,7 +690,13 @@ fn should_count_and_sum_likes_per_tag_with_proofs() {
         (vec![contains("news"), post_is(&unliked)], 0),
     ] {
         assert_eq!(
-            counted(&drive, &contract, clauses.clone(), CountMode::Aggregate),
+            counted(
+                &drive,
+                &contract,
+                clauses.clone(),
+                vec![],
+                CountMode::Aggregate
+            ),
             total(likes),
             "{clauses:?}"
         );
@@ -793,86 +715,12 @@ fn should_count_and_sum_likes_per_tag_with_proofs() {
                 WhereOperator::ContainsAny,
                 platform_value!(["dash", "news"]),
             )],
+            vec![],
             CountMode::GroupByIn
         ),
-        BTreeMap::from([(b"dash".to_vec(), 5), (b"news".to_vec(), 3)])
+        BTreeMap::from([("dash".to_string(), 5), ("news".to_string(), 3)])
     );
     assert_grovedb_is_consistent(&drive);
-}
-
-/// A ranked read over likes, its proof verified against the live root with
-/// the clauses keyed as the server keys them: the page's entries.
-fn proved_ranked_page(
-    drive: &Drive,
-    contract: &DataContract,
-    group_by: &[String],
-    clauses: &[WhereClause],
-) -> Vec<(Vec<u8>, RankedEntryValue)> {
-    let pv = platform_version();
-    let like_type = document_type(contract, "like");
-    let page = RankedPaginationInputs {
-        limit: Some(10),
-        offset: None,
-        has_start_at: false,
-    };
-    let select = SelectProjection::count_star();
-    let order_by = vec![OrderClause {
-        field: RANKED_COUNT_ORDER_KEY.to_string(),
-        ascending: false,
-    }];
-    let request = |prove: bool| DocumentRankedRequest {
-        contract,
-        document_type: like_type,
-        group_by,
-        select: select.clone(),
-        having: &[],
-        order_by: &order_by,
-        where_clauses: clauses,
-        limit: page.limit,
-        offset: page.offset,
-        has_start_at: page.has_start_at,
-        prove,
-        resolved_time_ranges: &[],
-    };
-    let entries = match drive
-        .execute_document_ranked_request(request(false), None, pv)
-        .expect("the ranked read succeeds")
-    {
-        DocumentRankedResponse::Entries(page) => page.entries,
-        DocumentRankedResponse::Proof(_) => panic!("expected entries"),
-    };
-    let proof = match drive
-        .execute_document_ranked_request(request(true), None, pv)
-        .expect("the ranked prove succeeds")
-    {
-        DocumentRankedResponse::Proof(proof) => proof,
-        DocumentRankedResponse::Entries(_) => panic!("expected a proof"),
-    };
-    let keyed = keyed(contract, clauses, false);
-    let mode = detect_ranked_mode(&select, group_by, &[], &order_by, &keyed, page, pv)
-        .expect("the ranked request is well formed");
-    let (root_hash, verified) = resolve_ranked_query_for_mode(
-        contract.id_ref().to_buffer(),
-        like_type,
-        "like".to_string(),
-        contract
-            .document_types()
-            .get("like")
-            .expect("the like type")
-            .indexes(),
-        &mode,
-        &[],
-        pv,
-    )
-    .expect("a ranking answers")
-    .verify_ranked_top_k_proof(&proof, pv)
-    .expect("the ranked proof verifies");
-    assert_live_root_hash(drive, root_hash);
-    assert_eq!(verified.entries, entries);
-    entries
-        .iter()
-        .map(|entry| (entry.key.clone(), entry.value))
-        .collect()
 }
 
 /// Tags rank by likes (`dash` 5 over `news` 3), and a tag's posts by likes
@@ -882,8 +730,20 @@ fn proved_ranked_page(
 fn should_rank_tags_and_their_posts_by_likes_with_proofs() {
     let (drive, contract) = setup(true);
     let [a, b, _] = liked_posts(&drive, &contract);
+    let select = SelectProjection::count_star();
+    let by_count = [OrderClause {
+        field: RANKED_COUNT_ORDER_KEY.to_string(),
+        ascending: false,
+    }];
     assert_eq!(
-        proved_ranked_page(&drive, &contract, &["tags".to_string()], &[]),
+        proved_ranked_page(
+            &drive,
+            &contract,
+            &select,
+            &["tags".to_string()],
+            &by_count,
+            &[]
+        ),
         vec![
             (b"dash".to_vec(), RankedEntryValue::Count(5)),
             (b"news".to_vec(), RankedEntryValue::Count(3)),
@@ -893,7 +753,9 @@ fn should_rank_tags_and_their_posts_by_likes_with_proofs() {
         proved_ranked_page(
             &drive,
             &contract,
+            &select,
             &["postId".to_string()],
+            &by_count,
             &[contains("dash")]
         ),
         vec![
@@ -913,7 +775,7 @@ fn should_move_only_the_groups_a_like_names() {
     let tagged = post(0xB2, Some(&["dash"]));
     insert(&drive, &contract, "post", &tagged, true);
     let mut stray = like(&tagged, LIKER_1);
-    stray.set("tags", tags_value(&["news"]));
+    stray.set("tags", Value::from(&["news"][..]));
     insert(&drive, &contract, "like", &stray, true);
     assert_eq!(tag_counter(&drive, &contract, "dash", &tagged), Some(0));
     assert_eq!(tag_counter(&drive, &contract, "news", &tagged), Some(1));

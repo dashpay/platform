@@ -5,31 +5,10 @@
 //! holds every like of it.
 
 use super::refusal_test_support::assert_refused;
-use crate::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
-use crate::data_contract::config::DataContractConfig;
+use super::summable_off_count_index_tests::{by_post, identifier, parse, with, CONTRACT_ID};
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use crate::data_contract::document_type::{DocumentType, PreallocatedKeySource};
-use crate::ProtocolError;
+use crate::data_contract::document_type::PreallocatedKeySource;
 use platform_value::{platform_value, Identifier, Value};
-use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
-
-const CONTRACT_ID: [u8; 32] = [9; 32];
-
-fn identifier(position: u64, refers_to: Option<Value>) -> Value {
-    let mut property = platform_value!({
-        "type": "array",
-        "byteArray": true,
-        "minItems": 32,
-        "maxItems": 32,
-        "contentMediaType": "application/x.dash.dpp.identifier",
-        "position": position,
-    });
-    if let (Some(refers_to), Value::Map(map)) = (refers_to, &mut property) {
-        map.push((Value::Text("refersTo".to_string()), refers_to));
-    }
-    property
-}
 
 /// Up to 4 distinct tags, as a post and a like of it carry them.
 fn tags(position: u64) -> Value {
@@ -83,17 +62,6 @@ fn like(where_tags: Value, indices: Vec<Value>) -> Value {
     })
 }
 
-fn by_post() -> Value {
-    platform_value!({
-        "name": "byPost",
-        "properties": [{ "postId": "asc" }],
-        "terminal": "$ownerId",
-        "rangeCountable": true,
-        "rankedCountable": true,
-        "preallocated": true,
-    })
-}
-
 /// One counter per tag of a post, created at zero with the post. The array
 /// is in the skip set of every index naming it, so the index takes no
 /// `skipIfAbsent` of its own (a type naming the array alone there is refused).
@@ -144,43 +112,6 @@ fn yappr_like() -> Value {
             by_trend_tag_post(),
         ],
     )
-}
-
-fn config() -> DataContractConfig {
-    DataContractConfig::default_for_version(PlatformVersion::latest())
-        .expect("default config available")
-        .with_moderation(Some(ContractModerationConfig {
-            banlist: false,
-            suspensions: false,
-            moderators: ContractModerators::ContractOwner,
-            warnings: false,
-        }))
-}
-
-fn parse(
-    post: Value,
-    like: Value,
-    full_validation: bool,
-) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
-    let config = config();
-    DocumentType::create_document_types_from_document_schemas(
-        Identifier::new(CONTRACT_ID),
-        1,
-        config.version(),
-        BTreeMap::from([("post".to_string(), post), ("like".to_string(), like)]),
-        None,
-        &BTreeMap::new(),
-        &config,
-        full_validation,
-        false,
-        &mut vec![],
-        PlatformVersion::latest(),
-    )
-}
-
-fn with(mut index: Value, key: &str, value: Value) -> Value {
-    index.set_value(key, value).expect("index key applies");
-    index
 }
 
 fn without(mut index: Value, key: &str) -> Value {
@@ -292,7 +223,7 @@ fn should_refuse_an_array_index_bound_only_by_a_contains() {
                 ),
                 full_validation,
             ),
-            "and is a summableOffCountIndex index, but no `where` makes \"tags\" equal",
+            "a counter's group is one element, and only an equality enters every document",
         );
         let tag_likes = platform_value!({
             "name": "byTagPostLiker",
@@ -306,7 +237,7 @@ fn should_refuse_an_array_index_bound_only_by_a_contains() {
                 like(contains_all(), vec![by_post(), tag_likes]),
                 full_validation,
             ),
-            "and declares `preallocated`, but no `where` makes \"tags\" equal",
+            "the preallocated path is fixed by one referenced document, and only an equality",
         );
     }
 }
@@ -370,6 +301,7 @@ fn should_refuse_a_counter_over_tags_without_unique_items() {
     .expect("properties set");
     assert_refused(
         parse(post(), like, true),
-        "must declare `uniqueItems: true`",
+        "index \"byTagPost\" on indexOnly document type \"like\" names the typed array \"tags\", \
+         which must declare `uniqueItems: true`",
     );
 }

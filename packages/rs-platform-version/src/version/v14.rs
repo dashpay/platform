@@ -2647,11 +2647,17 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     than 255 bytes. Drive (in place): the v1 document insert preallocates
 ///     such an index's trees under each distinct element of the referenced
 ///     document's list, keyed as the referring type keys its elements, and
-///     nothing for an empty, absent or non-list value or one holding an
-///     element wider than the referring elements, the estimate walking
-///     `maxItems` worst-case elements; the v2 insert and delete walkers move
-///     one counter per element where the counter's own level is the array;
-///     the document cost model follows. Inert before this version: only parser
+///     nothing for a list no referring document can hold (empty, absent or no
+///     list; longer than the referring array's `maxItems` or shorter than its
+///     `minItems`; repeating an element where it declares `uniqueItems`; or
+///     holding an element keyed as empty or wider than the referring
+///     elements); the v2 insert and delete walkers move one counter per
+///     element where the counter's own level is the array; the document cost
+///     model follows. The v1 insert's preallocation also inserts a plain tree
+///     (a value tree, a `0` bucket) under a tree the same walk created
+///     without reading whether it exists, and the dry run of a document change
+///     (`estimate_document_change_as_insert_operations` 1) preallocates
+///     nothing, as an applied change never does. Inert before this version: only parser
 ///     generation 3 admits `preallocated`, `summableOffCountIndex`, an indexed
 ///     typed array and a `where`, and every contract that registers today
 ///     binds no typed array.

@@ -61,11 +61,11 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::{LowLevelDriveOperation, LowLevelDriveOperationTreeTypeConverter};
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::util::object_size_info::{
-    DocumentAndContractInfo, DocumentInfoV0Methods, DriveKeyInfo, PathInfo,
+    DocumentAndContractInfo, DocumentInfoV0Methods, DriveKeyInfo, PathInfo, PathKeyInfo,
 };
 use crate::util::storage_flags::StorageFlags;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
@@ -132,7 +132,10 @@ impl Drive {
         // entry walkers, walking the shared index levels once, do. A tree
         // already in state is not queued, so each binding reaching it reads its
         // existence again (a billed read per binding, where the entry walkers
-        // read it once).
+        // read it once); under a level keyed by the elements of a list that is
+        // a read per binding and element, when two preallocated indexes start
+        // with the same list. Over-priced, never under-priced: each read is a
+        // billed operation the estimate also prices.
         let mut queued = Vec::new();
         for (referring_type, index, binding) in
             preallocation_bindings_targeting(contract, document_and_contract_info.document_type)
@@ -308,11 +311,28 @@ impl Drive {
         }
         let terminal_level = current_level;
 
-        // The value trees reached so far, each the path the walk continues
-        // under. One path, except below a level keyed by the elements of a
-        // list, which continues once under each element's value tree: each
-        // tree is then queued once, under the one path it belongs to.
-        let mut frontier: Vec<PathInfo<0>> = Vec::new();
+        let stateful = estimated_costs_only_with_layer_info.is_none();
+        let flags_len = storage_flags
+            .map(|s| s.serialized_size())
+            .unwrap_or_default();
+
+        // The trees reached so far, each the path the walk continues under,
+        // and whether this walk created the tree at its end: nothing can sit
+        // under a tree it created, so a stateful insert of a plain tree there
+        // skips the existence read (an estimate still prices the read, so it
+        // bounds every stateful write). It starts at the document type's tree,
+        // which holds the static first property-name tree. One path, except
+        // below a level keyed by the elements of a list, which continues once
+        // under each element's value tree: each tree is then queued once,
+        // under the one path it belongs to.
+        let document_type_path_info = if document_info.is_document_size() {
+            PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(
+                contract_document_type_path.clone(),
+            ))
+        } else {
+            PathInfo::PathAsVec::<0>(contract_document_type_path.clone())
+        };
+        let mut frontier = vec![(document_type_path_info, false)];
         // The value tree type of the level above, deciding whether the next
         // property-name tree needs the zero-contribution wrapper — exactly
         // the `parent_value_tree_type` the recursive walker threads through.
@@ -331,75 +351,76 @@ impl Drive {
             let property_name_tree_type = tree_types.property_name_tree_type;
             let ranked_axes = tree_types.ranked_axes.as_slice();
             let value_tree_type = tree_types.value_tree_type;
+            let property_name_apply_type = if stateful {
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
+            } else {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                    in_tree_type: parent_value_tree_type,
+                    tree_type: property_name_tree_type,
+                    flags_len,
+                }
+            };
+            let value_apply_type = if stateful {
+                BatchInsertTreeApplyType::StatefulBatchInsertTree
+            } else {
+                BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                    in_tree_type: property_name_tree_type,
+                    tree_type: value_tree_type,
+                    flags_len,
+                }
+            };
+            // A count-exempt sibling branch re-inverts the chain-level choice
+            // per child (a preallocated index may itself be the plain
+            // sibling): its branch tree is zero-wrapped even under a chain
+            // level that counts its own continuation — matching the
+            // entry-insert walkers.
+            let contributes_zero = continuation_contributes_zero(
+                parent_value_tree_type,
+                parent_counts_continuations,
+                sub_level,
+            );
 
             // This level's property-name tree under each path so far, and
-            // whether this walk created it (a static first level never is):
-            // a counter under it cannot exist yet.
-            let mut property_name_paths = Vec::with_capacity(frontier.len().max(1));
-            if position == 0 {
-                // First property: its property-name tree is static —
+            // whether this walk created it: a tree or counter under it cannot
+            // exist yet.
+            let mut property_name_paths = Vec::with_capacity(frontier.len());
+            for (mut path_info, _) in std::mem::take(&mut frontier) {
+                // The first property's property-name tree is static —
                 // created at contract registration — so only enter it.
-                let mut index_path = contract_document_type_path.clone();
-                index_path.push(Vec::from(property_name.as_bytes()));
-                let path_info = if document_info.is_document_size() {
-                    PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
+                // Deeper ones are dynamic: create this one inside the parent
+                // value tree, wrapped to contribute zero when that parent
+                // aggregates — the same dispatch the recursive walker uses.
+                let created = if position == 0 {
+                    false
                 } else {
-                    PathInfo::PathAsVec::<0>(index_path)
-                };
-                property_name_paths.push((path_info, false));
-            }
-            for mut path_info in std::mem::take(&mut frontier) {
-                // Deeper property-name trees are dynamic: create this
-                // one inside the parent value tree, wrapped to
-                // contribute zero when that parent aggregates — the
-                // same dispatch the recursive walker uses.
-                let property_name_apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                    BatchInsertTreeApplyType::StatefulBatchInsertTree
-                } else {
-                    BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                        in_tree_type: parent_value_tree_type,
-                        tree_type: property_name_tree_type,
-                        flags_len: storage_flags
-                            .map(|s| s.serialized_size())
-                            .unwrap_or_default(),
+                    let path_key_info =
+                        KeyRef(property_name.as_bytes()).add_path_info(path_info.clone());
+                    if contributes_zero {
+                        self.batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists(
+                            path_key_info,
+                            parent_value_tree_type,
+                            property_name_tree_type,
+                            ranked_axes,
+                            storage_flags,
+                            property_name_apply_type,
+                            transaction,
+                            previous_batch_operations,
+                            batch_operations,
+                            drive_version,
+                        )?
+                    } else {
+                        self.batch_insert_empty_index_tree_if_not_exists(
+                            path_key_info,
+                            property_name_tree_type,
+                            ranked_axes,
+                            storage_flags,
+                            property_name_apply_type,
+                            transaction,
+                            previous_batch_operations,
+                            batch_operations,
+                            drive_version,
+                        )?
                     }
-                };
-                let path_key_info =
-                    KeyRef(property_name.as_bytes()).add_path_info(path_info.clone());
-                // A count-exempt sibling branch re-inverts the
-                // chain-level choice per child (a preallocated index
-                // may itself be the plain sibling): its branch tree is
-                // zero-wrapped even under a chain level that counts its
-                // own continuation — matching the entry-insert walkers.
-                let created = if continuation_contributes_zero(
-                    parent_value_tree_type,
-                    parent_counts_continuations,
-                    sub_level,
-                ) {
-                    self.batch_insert_empty_tree_contributing_zero_to_aggregating_parent_if_not_exists(
-                        path_key_info,
-                        parent_value_tree_type,
-                        property_name_tree_type,
-                        ranked_axes,
-                        storage_flags,
-                        property_name_apply_type,
-                        transaction,
-                        previous_batch_operations,
-                        batch_operations,
-                        drive_version,
-                    )?
-                } else {
-                    self.batch_insert_empty_index_tree_if_not_exists(
-                        path_key_info,
-                        property_name_tree_type,
-                        ranked_axes,
-                        storage_flags,
-                        property_name_apply_type,
-                        transaction,
-                        previous_batch_operations,
-                        batch_operations,
-                        drive_version,
-                    )?
                 };
                 path_info.push(KeyRef(property_name.as_bytes()))?;
                 property_name_paths.push((path_info, created));
@@ -412,60 +433,61 @@ impl Drive {
             // Nothing continues below it, so this is the last level.
             if sub_level.summable_off_count_index_info().is_some() {
                 for (path_info, property_name_tree_created) in property_name_paths {
-                    for value_key in &value_keys {
-                        self.add_summable_off_count_zero_counter_operations(
-                            path_info.clone(),
-                            value_key.clone(),
-                            property_name_tree_type,
-                            property_name_tree_created
-                                || binding.kind == DocumentReferenceKind::Permanent,
-                            storage_flags,
-                            previous_batch_operations,
-                            || {
-                                document_info.get_estimated_size_for_document_type(
-                                    property_name,
-                                    referring_type,
-                                    platform_version,
-                                )
-                            },
-                            estimated_costs_only_with_layer_info,
-                            transaction,
-                            batch_operations,
-                            platform_version,
-                        )?;
-                    }
+                    self.add_summable_off_count_zero_counter_operations(
+                        path_info,
+                        value_keys.clone(),
+                        property_name_tree_type,
+                        property_name_tree_created
+                            || binding.kind == DocumentReferenceKind::Permanent,
+                        storage_flags,
+                        previous_batch_operations,
+                        || {
+                            document_info.get_estimated_size_for_document_type(
+                                property_name,
+                                referring_type,
+                                platform_version,
+                            )
+                        },
+                        estimated_costs_only_with_layer_info,
+                        transaction,
+                        batch_operations,
+                        platform_version,
+                    )?;
                 }
                 return Ok(());
             }
 
-            for (path_info, _) in property_name_paths {
+            // The property-name layer: children are value trees keyed by the
+            // referring property's values, sized exactly as an entry insert
+            // sizes this layer (32 bytes for the reference property). A
+            // referenced document only keys it with a value that fits that
+            // property, so a wider referenced property does not widen the
+            // estimate.
+            let value_key_estimated_size = if stateful {
+                0
+            } else {
+                let size = document_info.get_estimated_size_for_document_type(
+                    property_name,
+                    referring_type,
+                    platform_version,
+                )?;
+                u8::try_from(size).map_err(|_| {
+                    Error::Fee(FeeError::Overflow(
+                        "document field is too big for being an index",
+                    ))
+                })?
+            };
+            for (path_info, property_name_tree_created) in property_name_paths {
                 if let Some(estimated_costs_only_with_layer_info) =
                     estimated_costs_only_with_layer_info
                 {
-                    // The property-name layer: children are value trees keyed by
-                    // the referring property's values, sized exactly as an entry
-                    // insert sizes this layer (32 bytes for the reference
-                    // property). A referenced document only keys it with a value
-                    // that fits that property, so a wider referenced property
-                    // does not widen the estimate.
-                    let value_key_estimated_size = document_info
-                        .get_estimated_size_for_document_type(
-                            property_name,
-                            referring_type,
-                            platform_version,
-                        )?;
-                    if value_key_estimated_size > u8::MAX as u16 {
-                        return Err(Error::Fee(FeeError::Overflow(
-                            "document field is too big for being an index",
-                        )));
-                    }
                     estimated_costs_only_with_layer_info.insert(
                         path_info.clone().convert_to_key_info_path(),
                         EstimatedLayerInformation {
                             tree_type: property_name_tree_type,
                             estimated_layer_count: PotentiallyAtMaxElements,
                             estimated_layer_sizes: AllSubtrees(
-                                value_key_estimated_size as u8,
+                                value_key_estimated_size,
                                 estimated_sum_trees_for_value_tree_type(value_tree_type),
                                 storage_flags.map(|s| s.serialized_size()),
                             ),
@@ -475,28 +497,27 @@ impl Drive {
 
                 for value_key in &value_keys {
                     // The value tree for the resolved key.
-                    let value_apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                        BatchInsertTreeApplyType::StatefulBatchInsertTree
-                    } else {
-                        BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                            in_tree_type: property_name_tree_type,
-                            tree_type: value_tree_type,
-                            flags_len: storage_flags
-                                .map(|s| s.serialized_size())
-                                .unwrap_or_default(),
-                        }
-                    };
                     let path_key_info = value_key.clone().add_path_info(path_info.clone());
-                    self.batch_insert_empty_tree_if_not_exists(
-                        path_key_info,
-                        value_tree_type,
-                        storage_flags,
-                        value_apply_type,
-                        transaction,
-                        previous_batch_operations,
-                        batch_operations,
-                        drive_version,
-                    )?;
+                    let created = if stateful && property_name_tree_created {
+                        insert_new_empty_tree(
+                            path_key_info,
+                            value_tree_type,
+                            storage_flags,
+                            batch_operations,
+                        )?;
+                        true
+                    } else {
+                        self.batch_insert_empty_tree_if_not_exists(
+                            path_key_info,
+                            value_tree_type,
+                            storage_flags,
+                            value_apply_type,
+                            transaction,
+                            previous_batch_operations,
+                            batch_operations,
+                            drive_version,
+                        )?
+                    };
                     let mut value_path_info = path_info.clone();
                     value_path_info.push(value_key.clone())?;
 
@@ -520,7 +541,7 @@ impl Drive {
                             },
                         );
                     }
-                    frontier.push(value_path_info);
+                    frontier.push((value_path_info, created));
                 }
             }
 
@@ -528,7 +549,7 @@ impl Drive {
             parent_counts_continuations = sub_level.is_ranked_chain_level();
         }
 
-        if frontier.is_empty() {
+        if index.properties.is_empty() {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "a preallocated index must have properties",
             )));
@@ -543,63 +564,75 @@ impl Drive {
             ),
         ))?;
         let member_tree_type = terminal_member_tree_type(level_info);
-        for mut path_info in frontier {
-            let member_apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                BatchInsertTreeApplyType::StatefulBatchInsertTree
-            } else {
-                BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                    // The `0` tree's parent is the index's value tree — same
-                    // aggregate-aware claim the entry-insert terminal makes.
-                    in_tree_type: terminal_value_tree_type(level_info),
-                    tree_type: member_tree_type,
-                    flags_len: storage_flags
-                        .map(|s| s.serialized_size())
-                        .unwrap_or_default(),
+        let member_apply_type = if stateful {
+            BatchInsertTreeApplyType::StatefulBatchInsertTree
+        } else {
+            BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                // The `0` tree's parent is the index's value tree — same
+                // aggregate-aware claim the entry-insert terminal makes.
+                in_tree_type: terminal_value_tree_type(level_info),
+                tree_type: member_tree_type,
+                flags_len,
+            }
+        };
+        // Same per-entry padding (and sum-item worst case) the entry-insert
+        // terminal claims for this layer — see
+        // `add_index_only_terminal_item_operations`.
+        let member_layer_sizes = if stateful {
+            None
+        } else {
+            let estimated_item_value_size =
+                index_only_item_estimated_value_size(referring_type, platform_version)?;
+            let member_key_max_size = match level_info.terminal.as_deref() {
+                Some(terminal) => {
+                    index_only_terminal_max_key_size(referring_type, terminal, platform_version)?
                 }
+                None => DEFAULT_HASH_SIZE_U8,
             };
+            let estimated_value_size = if level_info.summable.is_some() {
+                estimated_item_value_size + 10
+            } else {
+                estimated_item_value_size
+            };
+            Some(AllItems(
+                member_key_max_size,
+                estimated_value_size,
+                storage_flags.map(|s| s.serialized_size()),
+            ))
+        };
+        for (mut path_info, value_tree_created) in frontier {
             let path_key_info = KeyRef(&[0]).add_path_info(path_info.clone());
-            self.batch_insert_empty_tree_if_not_exists(
-                path_key_info,
-                member_tree_type,
-                storage_flags,
-                member_apply_type,
-                transaction,
-                previous_batch_operations,
-                batch_operations,
-                drive_version,
-            )?;
+            if stateful && value_tree_created {
+                insert_new_empty_tree(
+                    path_key_info,
+                    member_tree_type,
+                    storage_flags,
+                    batch_operations,
+                )?;
+            } else {
+                self.batch_insert_empty_tree_if_not_exists(
+                    path_key_info,
+                    member_tree_type,
+                    storage_flags,
+                    member_apply_type,
+                    transaction,
+                    previous_batch_operations,
+                    batch_operations,
+                    drive_version,
+                )?;
+            }
 
-            if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
-            {
+            if let (Some(estimated_costs_only_with_layer_info), Some(member_layer_sizes)) = (
+                estimated_costs_only_with_layer_info.as_mut(),
+                member_layer_sizes,
+            ) {
                 path_info.push(Key(vec![0]))?;
-                // Same per-entry padding (and sum-item worst case) the
-                // entry-insert terminal claims for this layer — see
-                // `add_index_only_terminal_item_operations`.
-                let estimated_item_value_size =
-                    index_only_item_estimated_value_size(referring_type, platform_version)?;
-                let member_key_max_size = match level_info.terminal.as_deref() {
-                    Some(terminal) => index_only_terminal_max_key_size(
-                        referring_type,
-                        terminal,
-                        platform_version,
-                    )?,
-                    None => DEFAULT_HASH_SIZE_U8,
-                };
-                let estimated_value_size = if level_info.summable.is_some() {
-                    estimated_item_value_size + 10
-                } else {
-                    estimated_item_value_size
-                };
                 estimated_costs_only_with_layer_info.insert(
                     path_info.convert_to_key_info_path(),
                     EstimatedLayerInformation {
                         tree_type: member_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
-                        estimated_layer_sizes: AllItems(
-                            member_key_max_size,
-                            estimated_value_size,
-                            storage_flags.map(|s| s.serialized_size()),
-                        ),
+                        estimated_layer_sizes: member_layer_sizes,
                     },
                 );
             }
@@ -634,6 +667,13 @@ fn preallocated_single_key<'d>(
     // as the referring type keys it, so the bytes match what an
     // entry insert would write.
     let (source_property, source_type) = match key_source {
+        PreallocatedKeySource::ReferencedDocumentId => ("$id", target_document_type),
+        PreallocatedKeySource::ReferencedDocumentListElements(_) => {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a list key source resolves through \
+                 referenced_list_tree_keys_for_referring_property, not as a single key",
+            )))
+        }
         PreallocatedKeySource::ReferencedDocumentProperty(referenced) => {
             match document_info.get_borrowed_document() {
                 None => (property_name, referring_type),
@@ -662,7 +702,6 @@ fn preallocated_single_key<'d>(
                 }
             }
         }
-        _ => ("$id", target_document_type),
     };
     let Some(value_key) = document_info.get_raw_for_document_type(
         source_property,
@@ -699,4 +738,30 @@ fn preallocated_single_key<'d>(
         }
         (_, value_key) => value_key,
     }))
+}
+
+/// Queues the plain empty tree at `path_key_info` (no wrapper, no ranking)
+/// without reading whether it exists, for a stateful walk under a tree it has
+/// just created, which nothing can hold yet.
+fn insert_new_empty_tree(
+    path_key_info: PathKeyInfo<0>,
+    tree_type: TreeType,
+    storage_flags: Option<&StorageFlags>,
+    batch_operations: &mut Vec<LowLevelDriveOperation>,
+) -> Result<(), Error> {
+    let (path, key) = match path_key_info {
+        PathKeyInfo::PathKey((path, key)) => (path, key),
+        PathKeyInfo::PathKeyRef((path, key)) => (path, key.to_vec()),
+        _ => {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a stateful preallocation walks known paths",
+            )))
+        }
+    };
+    batch_operations.push(tree_type.empty_tree_operation_for_known_path_key(
+        path,
+        key,
+        storage_flags,
+    )?);
+    Ok(())
 }

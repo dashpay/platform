@@ -74,11 +74,8 @@ impl Index {
             {
                 continue;
             }
-            // A typed array is fixed only by an equality with a referenced
-            // typed array, the one agreement registration admits for it:
-            // `contains` and `containsAll` are no equalities, and documents of
-            // one post whose lists only hold, or are held by, its list would
-            // spread over several groups
+            // The referring document's own system values are never fixed by a
+            // referenced document
             if property.starts_with('$') {
                 return Err(property);
             }
@@ -93,6 +90,12 @@ impl Index {
                 else {
                     continue;
                 };
+                // Only `where` equalities sit in `property_agreement`. A typed
+                // array is fixed only by an equality with a referenced typed
+                // array, the one agreement registration admits for it:
+                // `contains` and `containsAll` are no equalities, and documents
+                // of one post whose lists only hold, or are held by, its list
+                // would spread over several groups
                 let Some(referenced) = reference.property_agreement.get(property) else {
                     continue;
                 };

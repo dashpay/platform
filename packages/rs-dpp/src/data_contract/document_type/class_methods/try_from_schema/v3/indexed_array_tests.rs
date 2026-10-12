@@ -737,7 +737,7 @@ fn should_refuse_a_preallocated_or_counting_index_only_array_index() {
             like_tags(true),
             platform_value!([by_post(), preallocated]),
         )),
-        "and declares `preallocated`",
+        "declares `preallocated`, but its path is not determined by a reference",
     );
 
     let counter = platform_value!({
@@ -752,7 +752,7 @@ fn should_refuse_a_preallocated_or_counting_index_only_array_index() {
             like_tags(true),
             platform_value!([by_post(), counter]),
         )),
-        "and is a summableOffCountIndex index",
+        "has \"tags\", which is neither a property of its source \"byPost\" nor fixed by it",
     );
 }
 

@@ -180,7 +180,7 @@ fn preallocated_index_keyed_by(
 /// Why a preallocated index of `document_type` keyed through the agreement
 /// pair of `referring_property` and `referenced_property`, on the reference
 /// carried by `reference_property` ([`preallocated_index_keyed_by`]), can not
-/// key its trees by the values of `key_type` that `holder` holds (the
+/// key its trees by `keyed`, the values of `key_type` that `holder` holds (the
 /// referenced property, or each element of a referenced list): such a value
 /// may be wider than a tree key holds, at most `MAX_INDEX_SIZE` bytes. `None`
 /// when it fits, or when no preallocated index is keyed through the pair.
@@ -192,6 +192,7 @@ fn preallocated_key_width_error(
     referring_property: &str,
     referenced_property: &str,
     key_type: &DocumentPropertyType,
+    keyed: &str,
     holder: &str,
     platform_version: &PlatformVersion,
 ) -> Option<String> {
@@ -210,9 +211,9 @@ fn preallocated_key_width_error(
         .is_none_or(|width| usize::from(width) > MAX_INDEX_SIZE)
         .then(|| {
             format!(
-                "the preallocated index {index_name} keys its trees by the values of {holder}, \
-                 and a tree key holds at most {MAX_INDEX_SIZE} bytes, but {holder} can hold \
-                 values of up to {} bytes",
+                "the preallocated index {index_name} keys its trees by {keyed}, and a tree key \
+                 holds at most {MAX_INDEX_SIZE} bytes, but {holder} can hold values of up to {} \
+                 bytes",
                 max_width.unwrap_or(u16::MAX)
             )
         })
@@ -1049,6 +1050,7 @@ fn validate_reference_target_declaration_v0(
                     referring_property,
                     referenced_property,
                     &referenced_list.item_type,
+                    "each element of the referenced typed array",
                     "an element of the referenced typed array",
                     platform_version,
                 ) {
@@ -1083,6 +1085,7 @@ fn validate_reference_target_declaration_v0(
             referring_property,
             referenced_property,
             &referenced.property_type,
+            "the referenced property's value",
             "the referenced property",
             platform_version,
         ) {
