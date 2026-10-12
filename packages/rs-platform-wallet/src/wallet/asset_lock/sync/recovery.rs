@@ -493,6 +493,39 @@ pub(crate) fn seed_observed_input_conflicts(info: &PlatformWalletInfo) {
     }
 }
 
+/// Spend claims for the inputs of every asset lock whose funding is final.
+///
+/// A host may drop those inputs from the load projection on the lock's status
+/// alone, while the funding's own record still reads as unconfirmed and, with
+/// no output paying the wallet, marks nothing spent. From `InstantSendLocked`
+/// on the funding cannot be replaced: its inputs are consumed for good, and a
+/// later delivery of the transaction that created one must not credit it.
+///
+/// The claim names the funding transaction, as a store that keeps each coin's
+/// spender does, so both restore the same claim. It is released only if that
+/// transaction is swept or abandoned, and becomes permanent once it confirms.
+pub(crate) fn final_lock_input_claims<'a>(
+    locks: impl IntoIterator<Item = &'a TrackedAssetLock>,
+) -> Vec<(OutPoint, Option<Txid>)> {
+    locks
+        .into_iter()
+        .filter(|lock| match lock.status {
+            AssetLockStatus::Built | AssetLockStatus::Broadcast => false,
+            AssetLockStatus::InstantSendLocked
+            | AssetLockStatus::ChainLocked
+            | AssetLockStatus::Consumed
+            | AssetLockStatus::RecoveredFromChain => true,
+        })
+        .flat_map(|lock| {
+            let funding = lock.transaction.txid();
+            lock.transaction
+                .input
+                .iter()
+                .map(move |input| (input.previous_output, Some(funding)))
+        })
+        .collect()
+}
+
 /// Confirmed spends of pending asset-lock inputs, read from the stored history.
 ///
 /// The load replay keeps two kinds of spender out of the wallet history that

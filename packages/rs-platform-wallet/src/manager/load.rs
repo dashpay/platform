@@ -9,7 +9,7 @@ use crate::changeset::{
 use crate::error::PlatformWalletError;
 use crate::manager::history_replay::replay_recorded_history;
 use crate::wallet::asset_lock::sync::recovery::{
-    recorded_input_conflicts, seed_observed_input_conflicts,
+    final_lock_input_claims, recorded_input_conflicts, seed_observed_input_conflicts,
 };
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
@@ -247,6 +247,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             for (_account_index, account_locks) in unused_asset_locks {
                 tracked_asset_locks.extend(account_locks);
             }
+            // A host may drop a final lock's inputs from the projection while
+            // the funding's own record guards nothing.
+            wallet_info
+                .restore_spent_outpoints(&final_lock_input_claims(tracked_asset_locks.values()));
 
             // Canonical id recomputed from the wallet's own key material.
             // Computed up front — before `insert_wallet` consumes `wallet` —
@@ -1407,6 +1411,155 @@ mod idempotent_load_tests {
                 "funding_recorded={funding_recorded}: the stored confirmed spender must be \
                  remembered after the load replay"
             );
+        }
+    }
+
+    /// A host drops the inputs of an asset lock from the projection once the
+    /// lock is InstantSend-locked or beyond, while the funding's own record
+    /// can still read as unconfirmed and, paying nothing to the wallet,
+    /// guards nothing. Such an input is consumed for good and must not be
+    /// credited when the transaction that created it is delivered again. A
+    /// lock that is only built or broadcast claims nothing, and a funding
+    /// with change keeps its change.
+    #[tokio::test]
+    async fn should_not_credit_inputs_of_a_final_asset_lock_again() {
+        use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
+        use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
+        use dashcore::hashes::Hash;
+        use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
+        use key_wallet::transaction_checking::BlockInfo;
+        use key_wallet::Utxo;
+
+        let in_block = |height| {
+            TransactionContext::InBlock(BlockInfo::new(
+                height,
+                dashcore::BlockHash::from_byte_array([height as u8; 32]),
+                height,
+            ))
+        };
+        for (status, with_change, consumed) in [
+            (AssetLockStatus::Built, false, false),
+            (AssetLockStatus::Broadcast, false, false),
+            (AssetLockStatus::InstantSendLocked, false, true),
+            (AssetLockStatus::ChainLocked, false, true),
+            (AssetLockStatus::Consumed, false, true),
+            (AssetLockStatus::RecoveredFromChain, false, true),
+            (AssetLockStatus::InstantSendLocked, true, true),
+        ] {
+            let case = format!("{status:?}, change: {with_change}");
+            let (ctx, funding) = TestWalletContext::new_random()
+                .with_mempool_funding(100_000)
+                .await;
+            let wallet_id = ctx.wallet.compute_wallet_id();
+            let coin = dashcore::OutPoint {
+                txid: funding.txid(),
+                vout: 0,
+            };
+            // An asset-lock funding: the value is burnt into the payload.
+            let mut asset_lock = dashcore::Transaction {
+                version: 3,
+                special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
+                    AssetLockPayload {
+                        version: 1,
+                        credit_outputs: spend_to(coin, 74_000).output,
+                    },
+                )),
+                ..spend_to(coin, 74_000)
+            };
+            asset_lock.output[0].script_pubkey = dashcore::ScriptBuf::new_op_return(&[]);
+            if with_change {
+                asset_lock.output.push(dashcore::TxOut {
+                    value: 20_000,
+                    script_pubkey: ctx.receive_address.script_pubkey(),
+                });
+            }
+            let change = dashcore::OutPoint {
+                txid: asset_lock.txid(),
+                vout: 1,
+            };
+            let mut projection = ManagedWalletInfo::from_wallet(&ctx.wallet, 0);
+            if with_change {
+                projection
+                    .first_bip44_managed_account_mut()
+                    .expect("bip44 account")
+                    .utxos
+                    .insert(
+                        change,
+                        Utxo::new(
+                            change,
+                            asset_lock.output[1].clone(),
+                            ctx.receive_address.clone(),
+                            0,
+                            false,
+                        ),
+                    );
+            }
+            let out_point = dashcore::OutPoint {
+                txid: asset_lock.txid(),
+                vout: 0,
+            };
+            let mut wallet = ctx.wallet.clone();
+            let manager = make_history_manager(RecordedHistoryPersister {
+                wallet: ctx.wallet,
+                managed: projection,
+                history: RecordedHistory {
+                    // The funding's row never left the mempool context.
+                    transactions: vec![StoredTransaction {
+                        txid: asset_lock.txid(),
+                        transaction: asset_lock.clone(),
+                        context: TransactionContext::Mempool,
+                        stored_net_amount: None,
+                        stored_direction: None,
+                        owned_inputs: Vec::new(),
+                    }],
+                    instant_locks: BTreeMap::new(),
+                },
+                asset_locks: [(
+                    out_point,
+                    TrackedAssetLock {
+                        out_point,
+                        transaction: asset_lock.clone(),
+                        account_index: 0,
+                        funding_type: AssetLockFundingType::IdentityRegistration,
+                        identity_index: 0,
+                        amount: 74_000,
+                        status,
+                        proof: None,
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            });
+            manager
+                .load_from_persistor()
+                .await
+                .expect("the wallet must load");
+            let mut core = manager
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&wallet_id)
+                .expect("the loaded wallet must be registered")
+                .core_wallet
+                .clone();
+            let holds = |core: &ManagedWalletInfo, outpoint: dashcore::OutPoint| {
+                core.utxos().iter().any(|utxo| utxo.outpoint == outpoint)
+            };
+            assert_eq!(holds(&core, change), with_change, "{case}");
+
+            core.check_core_transaction(&funding, in_block(90), &mut wallet, true, true)
+                .await;
+            assert_eq!(
+                holds(&core, coin),
+                !consumed,
+                "{case}: only a final lock keeps its input from being credited"
+            );
+
+            // The funding's own confirmation changes neither.
+            core.check_core_transaction(&asset_lock, in_block(95), &mut wallet, true, true)
+                .await;
+            assert!(!holds(&core, coin), "{case}: the lock spends its input");
+            assert_eq!(holds(&core, change), with_change, "{case}");
         }
     }
 
