@@ -198,6 +198,7 @@ pub async fn replay_recorded_history(
             )
             .await;
         swept.extend(result.swept_transactions);
+        drop_fallback_copies(wallet_info, stored, &placed);
     }
 
     let spent: HashSet<_> = wallet_info
@@ -205,9 +206,9 @@ pub async fn replay_recorded_history(
         .keys()
         .copied()
         .collect();
-    // Replay credits an output to the account whose pool derives it. When
-    // that differs from the load-time fallback, the fallback copy is a
-    // duplicate: drop it so each outpoint lives in exactly one account.
+    // Replay credits an output to the account whose pool derives it. A
+    // fallback copy `drop_fallback_copies` did not see credited by then is
+    // dropped here, so each outpoint lives in exactly one account.
     let misplaced: HashSet<(OutPoint, AccountType)> = wallet_info
         .accounts
         .all_funding_accounts()
@@ -494,6 +495,36 @@ fn is_contested(stored: &StoredTransaction, competitors: &HashMap<OutPoint, Vec<
             .get(&input.previous_output)
             .is_some_and(|spenders| spenders.iter().any(|txid| *txid != stored.txid))
     })
+}
+
+/// Drop the projection's fallback copy of every output of `stored` that its
+/// replay just credited to the account deriving it.
+///
+/// Left until the end of the replay, the copy lets a later record spend the
+/// coin in both accounts: the fallback account records a spend of a coin it
+/// never owned, and the checker's wallet total counts the coin twice.
+fn drop_fallback_copies(
+    wallet_info: &mut ManagedWalletInfo,
+    stored: &StoredTransaction,
+    placed: &HashMap<OutPoint, AccountType>,
+) {
+    for vout in 0..stored.transaction.output.len() as u32 {
+        let outpoint = OutPoint::new(stored.txid, vout);
+        let Some(parked) = placed.get(&outpoint) else {
+            continue;
+        };
+        let mut accounts = wallet_info.accounts.all_funding_accounts_mut();
+        let credited_elsewhere = accounts.iter().any(|account| {
+            funds_account_type(account) != *parked && account.utxos.contains_key(&outpoint)
+        });
+        if credited_elsewhere {
+            for account in &mut accounts {
+                if funds_account_type(account) == *parked {
+                    account.utxos.remove(&outpoint);
+                }
+            }
+        }
+    }
 }
 
 /// Park every owned input a record spends whose funding no replayed record credits.
@@ -1755,6 +1786,89 @@ mod tests {
                 .unwrap()
         });
         (wallet, info, addresses)
+    }
+
+    /// The projection can park a coin in a fallback account while its funding,
+    /// replayed, credits it to the account that derives it. A stored spend of
+    /// that coin must still count it once: summed over both copies, the
+    /// checker's wallet total doubles and a large coin overflows it.
+    #[tokio::test]
+    async fn should_spend_coin_parked_in_fallback_account_once() {
+        use dashcore::hashes::Hash;
+        use dashcore::{BlockHash, Transaction, TxIn};
+        use key_wallet::transaction_checking::BlockInfo;
+
+        for value in [1_u64 << 62, 100_000] {
+            let (mut wallet, restored, addresses) = two_account_wallet();
+            let pay = |previous_output: OutPoint, value: u64| Transaction {
+                version: 1,
+                lock_time: 0,
+                input: vec![TxIn {
+                    previous_output,
+                    ..Default::default()
+                }],
+                output: vec![TxOut {
+                    value,
+                    script_pubkey: addresses[1].script_pubkey(),
+                }],
+                special_transaction_payload: None,
+            };
+            let funding = pay(OutPoint::new(Txid::from_byte_array([81; 32]), 0), value);
+            let coin = OutPoint::new(funding.txid(), 0);
+            let child = pay(coin, 1);
+            let stored = |transaction: Transaction, context| StoredTransaction {
+                txid: transaction.txid(),
+                transaction,
+                context,
+                stored_net_amount: None,
+                stored_direction: None,
+                owned_inputs: Vec::new(),
+            };
+            let block = BlockInfo::new(100, BlockHash::from_byte_array([82; 32]), 100);
+            let history = RecordedHistory {
+                transactions: vec![
+                    stored(funding.clone(), TransactionContext::InBlock(block)),
+                    stored(child.clone(), TransactionContext::Mempool),
+                ],
+                instant_locks: BTreeMap::new(),
+            };
+            let mut restored = restored;
+            // Parked in account 0, though account 1 derives its address.
+            restored
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .unwrap()
+                .utxos
+                .insert(
+                    coin,
+                    Utxo::new(
+                        coin,
+                        funding.output[0].clone(),
+                        addresses[1].clone(),
+                        100,
+                        false,
+                    ),
+                );
+
+            replay_recorded_history(&mut restored, &mut wallet, history).await;
+
+            let [fallback, owner] =
+                [0, 1].map(|index| &restored.accounts.standard_bip44_accounts[&index]);
+            assert!(
+                !fallback.utxos.contains_key(&coin) && !owner.utxos.contains_key(&coin),
+                "{value}: the stored spend took the coin"
+            );
+            assert!(
+                !fallback.transactions().contains_key(&child.txid()),
+                "{value}: the fallback account never owned the coin the spend took"
+            );
+            assert_eq!(
+                owner.transactions()[&child.txid()].net_amount,
+                1 - value as i64,
+                "{value}: the spend counts the coin once"
+            );
+        }
     }
 
     /// A transaction recorded in two accounts is one spender of its inputs,
