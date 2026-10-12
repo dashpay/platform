@@ -375,7 +375,9 @@ pub struct SystemLimits {
     /// The most work the document expiry cleanup does in one block, beside
     /// `max_document_expirations_per_block`: each deleted document weighs 1 plus the weighted
     /// index levels of its type (every index counts its properties, times the overlapping
-    /// windows of a `timeRange` index), the measure its prepaid deletion fee is sized by.
+    /// windows of a `timeRange` or `integerRange` index, an index naming a typed array its
+    /// levels from the array on once per element `maxItems` allows), the measure its prepaid
+    /// deletion fee is sized by.
     /// The cleanup stops before a document that would pass it, except the block's first, so
     /// the backlog always drains.
     ///
@@ -405,6 +407,33 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions whose parsers do not read it.
     pub max_expiring_signed_summed_value_magnitude: Option<u64>,
+    /// The highest `maxItems` a typed array may declare when an index keys the document by
+    /// its elements, enforced when a contract is registered or updated (full validation only,
+    /// like `max_typed_array_items`). Each distinct element is one index entry, so this is the
+    /// write amplification one index takes from the array. Read by document type parser
+    /// generation 3 (protocol version 14).
+    ///
+    /// `None` preserves the behavior of protocol versions whose parsers refuse an index on a
+    /// typed array.
+    pub max_indexed_array_items: Option<u16>,
+    /// The highest `maxItems` of an indexed typed array when the same index also groups
+    /// documents into `timeRange` or `integerRange` windows: the document is entered once per
+    /// window and element, so the array is held lower than `max_indexed_array_items`. Same
+    /// enforcement and generation as `max_indexed_array_items`.
+    ///
+    /// `None` preserves the behavior of protocol versions whose parsers refuse an index on a
+    /// typed array.
+    pub max_windowed_indexed_array_items: Option<u16>,
+    /// The most index entries one document of a type with an indexed typed array can write
+    /// across all of the type's indexes: an index counts 1, times the windows of a
+    /// `timeRange` or `integerRange` grid, times the `maxItems` of its typed array. Enforced
+    /// when a contract is registered or updated (full validation only), on document types with
+    /// an indexed typed array: a type without one writes at most 10 indexes of 24 windows, 240
+    /// entries. Same generation as `max_indexed_array_items`.
+    ///
+    /// `None` preserves the behavior of protocol versions whose parsers refuse an index on a
+    /// typed array.
+    pub max_index_entries_per_document: Option<u16>,
     /// The most documents a create reads for a `refersTo` `chooseFirst`, the competitors of
     /// the commitment its `findBy` found: the documents of the referenced type holding the found
     /// commitment's value at `among`, read in the order its `by` lists through the type's index

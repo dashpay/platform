@@ -48,7 +48,7 @@ impl Drive {
     /// documents). The PerInValue branch is the sibling executor that
     /// emits one entry per In branch.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_count_and_sum_total_no_proof(
+    pub(crate) fn execute_document_count_and_sum_total_no_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,

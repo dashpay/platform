@@ -2519,6 +2519,44 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     meta-schemas v0 to v2 refuse both names (no JSON Schema type), and
 ///     parser generations 0 to 2 refuse them as unsupported property types.
 ///
+/// 92. **Indexes on the elements of a typed array**: an index may name a
+///     top-level typed array property, at any position, one per index, and
+///     keys a document once by each distinct element, an element keyed as a
+///     property of the element type is. Parser generation 3 (in place) admits
+///     it and refuses, under full validation: an indexOnly type (10231), a
+///     unique or contested index, `nullSearchable: false`, a ranking above the
+///     array, a second array (10231); a `maxItems` above
+///     `SYSTEM_LIMITS_V4.max_indexed_array_items` (16), or
+///     `max_windowed_indexed_array_items` (4) on an index with a `timeRange`
+///     or `integerRange`, and elements past the key limits of their type or
+///     byte array elements that may be empty (10205); and a type whose
+///     document can write more than `max_index_entries_per_document` (256)
+///     index entries (10231). On every parse it adds the array to the index's
+///     skip set (`skip_if_absent` keeps the declared keyword) and stamps its
+///     index level with the array's `maxItems`
+///     (`IndexLevel::stamp_indexed_arrays`). `serialize_value_for_key` and
+///     `deserialize_value_for_key` 1 (90, in place) key a typed array
+///     property's value as one element, keyed as a property of the element's
+///     type is, an unsigned element in value order, and
+///     `get_raw_array_elements_for_document_type` 0 (new, `DOCUMENT_VERSIONS_V4`,
+///     `None` before) gives a document's sorted, distinct element keys. The
+///     v2 insert and delete walkers (in place) write and remove one value tree
+///     per element at a stamped level, a document with no element reaching
+///     none of its branches; the v1 update (in place) diffs the old and new
+///     entries of an index naming an array, or bucketing its first property,
+///     inserting and refreshing first and deleting last. The document cost
+///     and the TTL drain budget count an array's `maxItems`, and the document
+///     `ttl` cleanup weight counts the levels from the array on once per
+///     element it allows. Queries read the elements with `contains` (one
+///     element: an equality on its key, cursors allowed when the cursor
+///     document holds it) and `containsAny` (an `in` over several: a page
+///     drops a document's repeats, on the server and in verification, and
+///     takes no cursor); grouping v1 groups them, grouping v0 refuses them,
+///     an index naming an array is read only with its elements bound, and
+///     count, sum and average requests read several elements only grouped
+///     per element. Inert before this version: generations 0 to 2 refuse a
+///     typed array in an index and meta-schemas v0 to v2 have none.
+///
 /// 93. **Fee estimates size sum and count trees, and sum items, as they are
 ///     stored**: grovedb's `GROVE_V4`
 ///     (`average_case_propagated_aggregate_kind` 1) estimates a sum, big sum,
@@ -2649,7 +2687,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries; max_rekey_batch_moves (10,000) for the unsigned index value key rewrite; a refersTo chooseFirst reads at most 1,000 competitors
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries; max_rekey_batch_moves (10,000) for the unsigned index value key rewrite; a refersTo chooseFirst reads at most 1,000 competitors; an indexed typed array holds at most 16 elements (4 under a window), and a document writes at most 256 index entries
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

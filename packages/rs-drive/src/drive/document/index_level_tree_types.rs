@@ -85,14 +85,18 @@ use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, Docume
 #[cfg(feature = "server")]
 use dpp::data_contract::document_type::IndexBucketing;
 use dpp::data_contract::document_type::{
-    DocumentTypeRef, IndexCountability, IndexLevel, IndexLevelTypeInfo,
+    typed_array_property, DocumentTypeRef, IndexCountability, IndexLevel, IndexLevelTypeInfo,
 };
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::Value;
 #[cfg(feature = "server")]
+use dpp::version::PlatformVersion;
+#[cfg(feature = "server")]
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::element::IndexAxis;
 use grovedb_merk::tree_type::TreeType;
+#[cfg(feature = "server")]
+use itertools::Either;
 
 /// The two tree types an index sub-level materializes: the
 /// property-name tree (keys = the property's distinct values) and the
@@ -163,6 +167,64 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
     })
 }
 
+/// What a document is keyed by at an index level of the insert and delete v2
+/// walkers ([`level_keys`]).
+#[cfg(feature = "server")]
+pub(crate) enum LevelKeys<'a> {
+    /// One key per distinct element of the typed array the level indexes
+    /// (protocol version 14): never empty, and no element is null.
+    Elements(Vec<DriveKeyInfo<'a>>),
+    /// The property's single value, `None` when the document lacks it; each
+    /// walker keys an absent value by its own layout rule.
+    Value(Option<DriveKeyInfo<'a>>),
+}
+
+#[cfg(feature = "server")]
+impl<'a> LevelKeys<'a> {
+    /// The keys of a level below the top: the elements, or the single value
+    /// with an absent one keyed by the null layout's empty key, the single
+    /// value yielded without collecting it.
+    pub(crate) fn nested_keys(self) -> impl ExactSizeIterator<Item = DriveKeyInfo<'a>> {
+        match self {
+            LevelKeys::Elements(keys) => Either::Left(keys.into_iter()),
+            LevelKeys::Value(value) => Either::Right(std::iter::once(value.unwrap_or_default())),
+        }
+    }
+}
+
+/// The keys `document_info` is entered under at `level`, reading `property`:
+/// the elements of a typed array the level indexes, else the property's single
+/// value. The insert and delete walkers read every level through this one
+/// choice, so a delete removes exactly the keys the insert wrote.
+#[cfg(feature = "server")]
+pub(crate) fn level_keys<'a>(
+    document_info: &'a DocumentInfo,
+    level: &IndexLevel,
+    property: &str,
+    document_type: DocumentTypeRef,
+    owner_id: Option<[u8; 32]>,
+    size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
+    platform_version: &PlatformVersion,
+) -> Result<LevelKeys<'a>, Error> {
+    if level.indexes_array_elements() {
+        return Ok(LevelKeys::Elements(
+            document_info.get_raw_array_elements_for_document_type(
+                property,
+                document_type,
+                size_info_with_base_event,
+                platform_version,
+            )?,
+        ));
+    }
+    Ok(LevelKeys::Value(document_info.get_raw_for_document_type(
+        property,
+        document_type,
+        owner_id,
+        size_info_with_base_event,
+        platform_version,
+    )?))
+}
+
 /// Expands a document's raw top-field key into the set of index-entry keys a
 /// bucketed (time- or integer-range) first-property node stores it under.
 /// For a node without a grid the single key passes through untouched.
@@ -200,19 +262,7 @@ pub(crate) fn bucket_index_keys<'a>(
             // Not `clamp(1, max)`: `Ord::clamp` asserts `min <= max`, so a
             // future limits table carrying `Some(0)` would panic here.
             let overlap = transform.overlap_factor().min(max_overlap_factor).max(1) as usize;
-            (0..overlap)
-                .map(|ordinal| {
-                    let mut key_info = key_info.clone();
-                    let suffix = (ordinal as u16).to_be_bytes();
-                    match &mut key_info {
-                        KeyInfo::KnownKey(bytes) => bytes.extend_from_slice(&suffix),
-                        KeyInfo::MaxKeySize { unique_id, .. } => {
-                            unique_id.extend_from_slice(&suffix)
-                        }
-                    }
-                    DriveKeyInfo::KeySize(key_info)
-                })
-                .collect()
+            distinct_estimated_keys(key_info, overlap)
         }
         DriveKeyInfo::Key(raw) => transform
             .entry_keys_for_raw(raw)
@@ -225,6 +275,30 @@ pub(crate) fn bucket_index_keys<'a>(
             .map(DriveKeyInfo::Key)
             .collect(),
     }
+}
+
+/// `count` estimated keys of the shape of `key_info`, each made distinct by a
+/// big-endian `u16` ordinal suffix: identical `(path, key)` operations
+/// collapse inside grovedb's batch structure, so `count` copies of one key
+/// would estimate a single key's cost. The windows of a bucketed level
+/// ([`bucket_index_keys`]) and the elements of a typed array level
+/// (`get_raw_array_elements_for_document_type`) are estimated so.
+#[cfg(feature = "server")]
+pub(crate) fn distinct_estimated_keys<'a>(
+    key_info: &KeyInfo,
+    count: usize,
+) -> Vec<DriveKeyInfo<'a>> {
+    (0..count)
+        .map(|ordinal| {
+            let mut key_info = key_info.clone();
+            let suffix = (ordinal as u16).to_be_bytes();
+            match &mut key_info {
+                KeyInfo::KnownKey(bytes) => bytes.extend_from_slice(&suffix),
+                KeyInfo::MaxKeySize { unique_id, .. } => unique_id.extend_from_slice(&suffix),
+            }
+            DriveKeyInfo::KeySize(key_info)
+        })
+        .collect()
 }
 
 /// The tree type of the `0` member bucket at an index's terminal level
@@ -442,11 +516,24 @@ where
 /// keying it (`derived_index_values`), null where the reference or the field
 /// it reads is absent, and that null is absent as a missing property is: it
 /// would be keyed under the same empty key.
-pub(crate) fn document_carries(document: &Document, property: &str) -> bool {
-    !matches!(
-        document.properties().get(property),
-        None | Some(Value::Null)
-    )
+///
+/// An indexed typed array of `document_type` is in the skip set of every
+/// index naming it (protocol version 14), and an empty list is not carried: it
+/// has no element to key the document by. Any other empty list is carried, a
+/// byte array given as a list of bytes included: it is keyed as its value, as
+/// the indexOnly entry probes and row commitments key it.
+pub(crate) fn document_carries(
+    document: &Document,
+    document_type: DocumentTypeRef,
+    property: &str,
+) -> bool {
+    match document.properties().get(property) {
+        None | Some(Value::Null) => false,
+        Some(Value::Array(elements)) if elements.is_empty() => {
+            typed_array_property(document_type.flattened_properties(), property).is_none()
+        }
+        Some(_) => true,
+    }
 }
 
 /// Whether `document_info` carries `property` ([`document_carries`]). A
@@ -455,32 +542,48 @@ pub(crate) fn document_carries(document: &Document, property: &str) -> bool {
 /// so it skips where the apply does, though never on a derived value it does
 /// not read, which is a placeholder of the field's type.
 #[cfg(feature = "server")]
-fn document_info_carries(document_info: &DocumentInfo, property: &str) -> bool {
+fn document_info_carries(
+    document_info: &DocumentInfo,
+    document_type: DocumentTypeRef,
+    property: &str,
+) -> bool {
     match document_info.get_borrowed_document() {
-        Some(document) => document_carries(document, property),
+        Some(document) => document_carries(document, document_type, property),
         None => true,
     }
 }
 
-/// [`takes_part_in_index_by`] for the document of `document_info`.
+/// [`takes_part_in_index_by`] for the document of `document_info`, of
+/// `document_type`.
 #[cfg(feature = "server")]
 pub(crate) fn document_takes_part_in_index(
     skip_set: &[String],
     document_info: &DocumentInfo,
+    document_type: DocumentTypeRef,
 ) -> Result<bool, Error> {
     takes_part_in_index_by(skip_set, &mut |property| {
-        Ok(document_info_carries(document_info, property))
+        Ok(document_info_carries(
+            document_info,
+            document_type,
+            property,
+        ))
     })
 }
 
-/// [`level_reaches_entry_by`] for the document of `document_info`.
+/// [`level_reaches_entry_by`] for the document of `document_info`, of
+/// `document_type`.
 #[cfg(feature = "server")]
 pub(crate) fn level_reaches_entry(
     level: &IndexLevel,
     document_info: &DocumentInfo,
+    document_type: DocumentTypeRef,
 ) -> Result<bool, Error> {
     level_reaches_entry_by(level, &mut |property| {
-        Ok(document_info_carries(document_info, property))
+        Ok(document_info_carries(
+            document_info,
+            document_type,
+            property,
+        ))
     })
 }
 
@@ -498,9 +601,10 @@ pub(crate) fn level_reaches_entry(
 pub(crate) fn level_removes_entry(
     level: &IndexLevel,
     document_info: &DocumentInfo,
+    document_type: DocumentTypeRef,
 ) -> Result<bool, Error> {
     if !level.outlives_delete_at_or_below() {
-        return level_reaches_entry(level, document_info);
+        return level_reaches_entry(level, document_info, document_type);
     }
     // Only indexes whose entries outlive the delete pass here
     if !level.cleared_on_delete_at_or_below() {
@@ -508,13 +612,17 @@ pub(crate) fn level_removes_entry(
     }
     if let Some(index_type) = level.has_index_with_type() {
         if !index_type.outlives_delete
-            && document_takes_part_in_index(&index_type.skip_if_absent_properties, document_info)?
+            && document_takes_part_in_index(
+                &index_type.skip_if_absent_properties,
+                document_info,
+                document_type,
+            )?
         {
             return Ok(true);
         }
     }
     for sub_level in level.sub_levels().values() {
-        if level_removes_entry(sub_level, document_info)? {
+        if level_removes_entry(sub_level, document_info, document_type)? {
             return Ok(true);
         }
     }
@@ -757,6 +865,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
 
         let index_structure =
@@ -850,6 +959,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
         let mut ranked = base("byAuthorPost", &["postAuthor", "postId"]);
         ranked.countable = IndexCountability::Countable;
@@ -949,6 +1059,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
         let mut prefix_ranked = base("byHashtagPost", &["hashtag", "postId"]);
         prefix_ranked.ranked_countable_at = vec!["hashtag".to_string()];
@@ -1034,6 +1145,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
         let compound = Index {
             name: "byRestaurantChef".to_string(),
@@ -1068,6 +1180,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
 
         let index_structure =

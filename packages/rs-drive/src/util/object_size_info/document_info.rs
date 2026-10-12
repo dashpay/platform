@@ -1,3 +1,4 @@
+use crate::drive::document::index_level_tree_types::distinct_estimated_keys;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -59,6 +60,17 @@ pub trait DocumentInfoV0Methods {
         size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<DriveKeyInfo<'_>>, Error>;
+    /// The keys an index naming the typed array at `key_path` enters the document under at
+    /// `size_info_with_base_event`'s level: one per distinct element, sorted, none for an
+    /// absent or empty list. A worst-case size holds `maxItems` distinct elements of the
+    /// element type's typical size, each a key of its own.
+    fn get_raw_array_elements_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: DocumentTypeRef,
+        size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<DriveKeyInfo<'_>>, Error>;
     /// Gets the borrowed document
     fn get_borrowed_document_and_storage_flags(&self)
         -> Option<(&Document, Option<&StorageFlags>)>;
@@ -69,14 +81,18 @@ pub trait DocumentInfoV0Methods {
 }
 
 /// The type of the value an index keys `key_path` by: the document type's property at that
-/// path, or the field a derived index property reads on the referenced document (protocol
-/// version 14), which no property of the type carries.
+/// path, the element type of a typed array, which an index keys by each element (protocol
+/// version 14), or the field a derived index property reads on the referenced document
+/// (protocol version 14), which no property of the type carries.
 fn indexed_property_type<'a>(
     document_type: &'a DocumentTypeRef<'a>,
     key_path: &str,
 ) -> Option<&'a DocumentPropertyType> {
     match document_type.flattened_properties().get(key_path) {
-        Some(property) => Some(&property.property_type),
+        Some(property) => match &property.property_type {
+            DocumentPropertyType::TypedArray(typed_array) => Some(typed_array.item_type.as_ref()),
+            property_type => Some(property_type),
+        },
         None => document_type.derived_index_property_type(key_path),
     }
 }
@@ -283,6 +299,52 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
                     }
                 }
             }
+        }
+    }
+
+    fn get_raw_array_elements_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: DocumentTypeRef,
+        size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<DriveKeyInfo<'_>>, Error> {
+        if let Some(document) = self.get_borrowed_document() {
+            return Ok(document
+                .get_raw_array_elements_for_document_type(
+                    key_path,
+                    document_type,
+                    platform_version,
+                )?
+                .into_iter()
+                .map(Key)
+                .collect());
+        }
+        // The worst case holds `maxItems` distinct elements, each estimated as
+        // a key of the element's type is (`get_raw_for_document_type` reads a
+        // typed array as its element type), and each a key of its own
+        let (index_level, _) = size_info_with_base_event.ok_or(Error::Drive(
+            DriveError::CorruptedCodeExecution("size_info_with_base_event None but needed"),
+        ))?;
+        let max_items = index_level.indexed_array_max_items().ok_or(Error::Fee(
+            FeeError::DocumentTypeFieldNotFoundForEstimation(format!(
+                "key path [{}] does not reach a level of typed array elements",
+                key_path
+            )),
+        ))?;
+        match self.get_raw_for_document_type(
+            key_path,
+            document_type,
+            None,
+            size_info_with_base_event,
+            platform_version,
+        )? {
+            Some(KeySize(key_info)) => {
+                Ok(distinct_estimated_keys(&key_info, usize::from(max_items)))
+            }
+            _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "an estimated document estimates its keys",
+            ))),
         }
     }
 

@@ -37,7 +37,9 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use dpp::data_contract::document_type::typed_array_property;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -49,7 +51,9 @@ use dpp::state_transition::batch_transition::document_replace_transition::v0::v0
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_index_only_delete_transition::v0::v0_methods::DocumentIndexOnlyDeleteTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
-use crate::query::{InternalClauses, QuerySyntaxSimpleValidationResult, ValueClause, WhereOperator};
+use crate::query::{
+    InternalClauses, QuerySyntaxSimpleValidationResult, ValueClause, WhereClause, WhereOperator,
+};
 use crate::error::query::QuerySyntaxError;
 use dpp::platform_value::ValueMapHelper;
 use dpp::version::PlatformVersion;
@@ -428,6 +432,46 @@ impl DriveDocumentQueryFilter<'_> {
         document_type.data_as_stored(data, platform_version).ok()
     }
 
+    /// Whether `clause` holds for the document's `value` of its field. A clause
+    /// reading the elements of a typed array (`contains`, `containsAny`) matches
+    /// an element that keys as one of its values does, as an indexed documents
+    /// query matches it: an identifier given as bytes or base58 text, or an
+    /// integer of another width, matches the stored element it keys like. Every
+    /// other clause compares values as before.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn clause_matches(&self, clause: &WhereClause, value: &Value) -> bool {
+        if !clause.operator.reads_array_elements() {
+            return clause.matches_value(value);
+        }
+        let Some(document_type) = self
+            .contract
+            .document_type_optional_for_name(&self.document_type_name)
+        else {
+            return false;
+        };
+        let Some(typed_array) =
+            typed_array_property(document_type.flattened_properties(), &clause.field)
+        else {
+            return false;
+        };
+        let key = |value: &Value| typed_array.item_type.encode_value_for_tree_keys(value).ok();
+        let wanted: Vec<Vec<u8>> = if clause.operator == WhereOperator::ContainsAny {
+            match clause.in_values().data {
+                Some(values) => values.iter().filter_map(key).collect(),
+                None => return false,
+            }
+        } else {
+            key(&clause.value).into_iter().collect()
+        };
+        let Value::Array(elements) = value else {
+            return false;
+        };
+        elements
+            .iter()
+            .filter_map(key)
+            .any(|element| wanted.contains(&element))
+    }
+
     /// Single clause evaluator used by both transition and original-document paths.
     #[cfg(any(feature = "server", feature = "verify"))]
     fn evaluate_clauses(
@@ -454,7 +498,7 @@ impl DriveDocumentQueryFilter<'_> {
         for in_clause in &clauses.in_clauses {
             let field_value = get_value_by_path(document_data, &in_clause.field);
             if let Some(value) = field_value {
-                if !in_clause.matches_value(value) {
+                if !self.clause_matches(in_clause, value) {
                     return false;
                 }
             } else {
@@ -478,7 +522,7 @@ impl DriveDocumentQueryFilter<'_> {
         for (field, equal_clause) in &clauses.equal_clauses {
             let field_value = get_value_by_path(document_data, field);
             if let Some(value) = field_value {
-                if !equal_clause.matches_value(value) {
+                if !self.clause_matches(equal_clause, value) {
                     return false;
                 }
             } else {
@@ -595,7 +639,9 @@ impl DriveDocumentQueryFilter<'_> {
                             }
                             _ => false,
                         },
-                        WhereOperator::StartsWith => false,
+                        WhereOperator::StartsWith
+                        | WhereOperator::Contains
+                        | WhereOperator::ContainsAny => false,
                     };
                     if ok {
                         QuerySyntaxSimpleValidationResult::new()
@@ -2925,5 +2971,276 @@ mod tests {
             },
         };
         assert!(filter.validate().is_err());
+    }
+
+    /// A filter reads a typed array by its elements as a documents query does
+    /// (protocol version 14): with the same operators, judging the same values.
+    mod typed_array_elements {
+        use super::*;
+        use crate::error::Error;
+        use dpp::data_contract::DataContractFactory;
+        use dpp::platform_value::platform_value;
+        use dpp::platform_value::string_encoding::Encoding;
+
+        /// A `post` type holding a boolean, a u8 and a string typed array,
+        /// beside a boolean and a string property.
+        fn element_contract() -> DataContract {
+            DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .expect("factory")
+                .create_with_value_config(
+                    Identifier::from([1; 32]),
+                    0,
+                    platform_value!({"post": {
+                        "type": "object",
+                        "properties": {
+                            "flags": {
+                                "type": "array", "maxItems": 4,
+                                "items": {"type": "boolean"}, "position": 0
+                            },
+                            "scores": {
+                                "type": "array", "maxItems": 8,
+                                "items": {"type": "integer", "minimum": 0, "maximum": 255},
+                                "position": 1
+                            },
+                            "hashtags": {
+                                "type": "array", "maxItems": 8,
+                                "items": {"type": "string", "maxLength": 61}, "position": 2
+                            },
+                            "pinned": {"type": "boolean", "position": 3},
+                            "language": {"type": "string", "maxLength": 2, "position": 4},
+                            "authors": {
+                                "type": "array", "maxItems": 4,
+                                "items": {
+                                    "type": "array", "byteArray": true, "minItems": 32,
+                                    "maxItems": 32,
+                                    "contentMediaType": "application/x.dash.dpp.identifier"
+                                },
+                                "position": 5
+                            }
+                        },
+                        "additionalProperties": false
+                    }}),
+                    None,
+                    None,
+                )
+                .expect("contract")
+                .data_contract_owned()
+        }
+
+        fn clause(field: &str, operator: WhereOperator, value: Value) -> WhereClause {
+            WhereClause {
+                field: field.to_string(),
+                operator,
+                value,
+            }
+        }
+
+        /// `clause` as the one clause of a filter on created posts, placed
+        /// where an equality (`contains`) or an `in` (`containsAny`) goes.
+        fn filter_clauses(clause: WhereClause) -> InternalClauses {
+            let mut clauses = InternalClauses::default();
+            match clause.operator {
+                WhereOperator::Equal | WhereOperator::Contains => {
+                    clauses.equal_clauses.insert(clause.field.clone(), clause);
+                }
+                _ => clauses.in_clauses.push(clause),
+            }
+            clauses
+        }
+
+        fn create_filter(
+            contract: &DataContract,
+            clause: WhereClause,
+        ) -> DriveDocumentQueryFilter<'_> {
+            DriveDocumentQueryFilter {
+                contract,
+                document_type_name: "post".to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: filter_clauses(clause),
+                },
+            }
+        }
+
+        /// The refusal of a filter whose one clause is `clause`.
+        fn filter_refusal(contract: &DataContract, clause: WhereClause) -> Option<String> {
+            create_filter(contract, clause)
+                .validate()
+                .first_error()
+                .map(ToString::to_string)
+        }
+
+        /// The refusal a documents query gives `clause`.
+        fn query_refusal(contract: &DataContract, clause: &WhereClause) -> Option<String> {
+            let document_type = contract.document_type_for_name("post").expect("post");
+            clause
+                .validate_array_element_clause(document_type, PlatformVersion::latest())
+                .err()
+                .map(|error| match error {
+                    Error::Query(error) => error.to_string(),
+                    other => other.to_string(),
+                })
+        }
+
+        /// One property of a created post.
+        fn post_data(property: &str, value: Value) -> BTreeMap<String, Value> {
+            BTreeMap::from([(property.to_string(), value)])
+        }
+
+        /// Whether the filter whose one clause is `clause` matches a created
+        /// post holding `data`.
+        fn matches(
+            contract: &DataContract,
+            clause: WhereClause,
+            document_data: BTreeMap<String, Value>,
+        ) -> bool {
+            let filter = create_filter(contract, clause);
+            let DocumentActionMatchClauses::Create {
+                new_document_clauses,
+            } = &filter.action_clauses
+            else {
+                unreachable!("a create filter");
+            };
+            filter.evaluate_clauses(
+                new_document_clauses,
+                &Value::Identifier([3; 32]),
+                &document_data,
+            )
+        }
+
+        #[test]
+        fn should_admit_a_boolean_array_membership_as_documents_queries_do() {
+            let contract = element_contract();
+            for element_clause in [
+                clause(
+                    "flags",
+                    WhereOperator::ContainsAny,
+                    Value::Array(vec![Value::Bool(true)]),
+                ),
+                clause("flags", WhereOperator::Contains, Value::Bool(false)),
+            ] {
+                assert_eq!(query_refusal(&contract, &element_clause), None);
+                assert_eq!(filter_refusal(&contract, element_clause), None);
+            }
+            let flagged = post_data(
+                "flags",
+                Value::Array(vec![Value::Bool(false), Value::Bool(true)]),
+            );
+            let unflagged = post_data("flags", Value::Array(vec![Value::Bool(false)]));
+            let any_true = clause(
+                "flags",
+                WhereOperator::ContainsAny,
+                Value::Array(vec![Value::Bool(true)]),
+            );
+            assert!(matches(&contract, any_true.clone(), flagged));
+            assert!(!matches(&contract, any_true, unflagged));
+        }
+
+        #[test]
+        fn should_keep_refusing_in_on_a_boolean_property() {
+            let contract = element_contract();
+            let pinned_in = clause(
+                "pinned",
+                WhereOperator::In,
+                Value::Array(vec![Value::Bool(true)]),
+            );
+            assert_eq!(
+                filter_refusal(&contract, pinned_in).as_deref(),
+                Some("invalid where clause components error: operator not allowed for field type")
+            );
+        }
+
+        #[test]
+        fn should_match_a_u8_array_against_a_list_given_as_bytes() {
+            let contract = element_contract();
+            let any_score = clause(
+                "scores",
+                WhereOperator::ContainsAny,
+                Value::Bytes(vec![1, 2]),
+            );
+            assert_eq!(query_refusal(&contract, &any_score), None);
+            assert_eq!(filter_refusal(&contract, any_score.clone()), None);
+            let scored = post_data("scores", Value::Array(vec![Value::U8(1), Value::U8(5)]));
+            let unscored = post_data("scores", Value::Array(vec![Value::U8(3)]));
+            assert!(matches(&contract, any_score.clone(), scored));
+            assert!(!matches(&contract, any_score, unscored));
+        }
+
+        #[test]
+        fn should_match_an_element_given_in_another_representation() {
+            let contract = element_contract();
+            // An integer of another width keys as the stored u8 element does.
+            let scored = post_data("scores", Value::Array(vec![Value::U8(1), Value::U8(5)]));
+            assert!(matches(
+                &contract,
+                clause("scores", WhereOperator::Contains, Value::U64(5)),
+                scored.clone()
+            ));
+            assert!(matches(
+                &contract,
+                clause(
+                    "scores",
+                    WhereOperator::ContainsAny,
+                    Value::Array(vec![Value::I64(9), Value::U16(1)])
+                ),
+                scored.clone()
+            ));
+            assert!(!matches(
+                &contract,
+                clause("scores", WhereOperator::Contains, Value::U64(9)),
+                scored
+            ));
+            // An identifier given as bytes or as base58 text keys as the stored
+            // identifier does.
+            let author = [8u8; 32];
+            let authored = post_data(
+                "authors",
+                Value::Array(vec![Value::Identifier(author), Value::Identifier([9; 32])]),
+            );
+            for given in [
+                Value::Bytes(author.to_vec()),
+                Value::Text(Identifier::from(author).to_string(Encoding::Base58)),
+                Value::Identifier(author),
+            ] {
+                assert_eq!(
+                    query_refusal(
+                        &contract,
+                        &clause("authors", WhereOperator::Contains, given.clone())
+                    ),
+                    None
+                );
+                assert!(
+                    matches(
+                        &contract,
+                        clause("authors", WhereOperator::Contains, given.clone()),
+                        authored.clone()
+                    ),
+                    "{given:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn should_refuse_what_documents_queries_refuse_with_the_same_error() {
+            let contract = element_contract();
+            for refused in [
+                clause("hashtags", WhereOperator::Equal, Value::Text("dash".into())),
+                clause(
+                    "language",
+                    WhereOperator::Contains,
+                    Value::Text("en".into()),
+                ),
+                clause("hashtags", WhereOperator::Contains, Value::U64(5)),
+                clause("hashtags", WhereOperator::ContainsAny, Value::Array(vec![])),
+                clause(
+                    "hashtags",
+                    WhereOperator::ContainsAny,
+                    Value::Array(vec![Value::Text("a".into()), Value::Text("a".into())]),
+                ),
+            ] {
+                let query = query_refusal(&contract, &refused);
+                assert!(query.is_some(), "a documents query refuses {refused:?}");
+                assert_eq!(filter_refusal(&contract, refused), query);
+            }
+        }
     }
 }
