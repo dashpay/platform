@@ -12,6 +12,11 @@
 //! Empty entries (e.g. a verifier that emitted `None` for a
 //! queried-but-absent branch) contribute 0 to the sum via
 //! `filter_map(|e| e.count)`.
+//!
+//! A `containsAny` over several elements of a typed array is refused, even
+//! grouped by the array: summed, a document holding two of the elements would
+//! count twice. [`drive_proof_verifier::DocumentSplitCounts`] keeps one count
+//! per element.
 
 use crate::documents::count_proof_helpers::{assert_select_is_count, verify_count_query};
 use crate::documents::document_query::DocumentQuery;
@@ -39,7 +44,7 @@ impl FromProof<DocumentQuery> for DocumentCount {
         assert_select_is_count(&request)?;
         let response: Self::Response = response.into();
         let (entries, mtd, proof) =
-            verify_count_query(request, response, platform_version, provider)?;
+            verify_count_query(request, response, true, platform_version, provider)?;
         let count = entries
             .map(|es| es.iter().filter_map(|e| e.count).sum::<u64>())
             .map(DocumentCount);

@@ -19,7 +19,7 @@
 //! [`DocumentAverage`]: drive_proof_verifier::DocumentAverage
 //! [`DocumentSplitAverages`]: drive_proof_verifier::DocumentSplitAverages
 
-use crate::documents::array_element_clauses::{aggregate_answers_per_element, key_element_clauses};
+use crate::documents::array_element_clauses::aggregate_where_clauses;
 use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
@@ -36,7 +36,6 @@ use drive::query::drive_document_sum_query::index_picker::{
 };
 use drive::query::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
 use drive::query::drive_document_sum_query::{DocumentSumMode, DriveDocumentSumQuery, SumMode};
-use drive::query::validate_and_canonicalize_where_clauses;
 use drive::query::{SelectFunction, WhereOperator};
 use drive_proof_verifier::{
     verify_aggregate_count_and_sum_proof, verify_carrier_aggregate_count_and_sum_proof,
@@ -99,9 +98,13 @@ pub(super) fn assert_select_is_avg(
 /// - `Total` / `PerInValue` / `RangeNoProof` are no-proof modes
 ///   that should be unreachable here (`prove = true`); reject as
 ///   `RequestError` if they bubble through.
+///
+/// `folds_entries` is whether the caller adds the verified entries up into one
+/// total ([`aggregate_where_clauses`]).
 pub(super) fn verify_average_query(
     mut request: DocumentQuery,
     response: GetDocumentsResponse,
+    folds_entries: bool,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<AverageEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
@@ -125,11 +128,10 @@ pub(super) fn verify_average_query(
     let resolved_time_ranges =
         normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
 
-    // Canonicalize exactly as the server dispatcher does (the shared step
-    // in `drive::query::canonicalize`): the prover merged `[f > A, f < B]`
-    // pairs into one `between*` clause before its mode detection, so mode
-    // detection here must run over the same canonical shape or a valid
-    // proof is rejected.
+    // The server's dispatcher reads the clauses with a typed array's elements
+    // keyed, then canonicalized, before its mode detection; the verifier reads
+    // them the same way, or a valid proof is refused (or a refused total
+    // accepted).
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -139,26 +141,13 @@ pub(super) fn verify_average_query(
                 request.document_type_name, e
             ),
         })?;
-
-    // Key the elements of a typed array first, by the server's own rule (the
-    // shared step in `drive::query::canonicalize`): several elements only
-    // when the request answers per element. A proof of a total over several
-    // elements, which the server refuses to give, is refused here too.
-    let several_elements_allowed =
-        aggregate_answers_per_element(&request.group_by, &request.where_clauses);
-    let keyed_where_clauses = key_element_clauses(
-        &request.data_contract,
-        &request.document_type_name,
+    request.where_clauses = aggregate_where_clauses(
+        document_type,
+        &request.group_by,
         std::mem::take(&mut request.where_clauses),
-        several_elements_allowed,
+        folds_entries,
         platform_version,
     )?;
-    request.where_clauses =
-        validate_and_canonicalize_where_clauses(keyed_where_clauses, platform_version).map_err(
-            |e| drive_proof_verifier::Error::RequestError {
-                error: format!("where-clause canonicalization failed: {e}"),
-            },
-        )?;
 
     // Resolve the SQL-shape `SumMode` the request implies — AVG
     // shares the routing table with SUM (see module docstring), so
