@@ -55,6 +55,7 @@ mod commit_reveal_lookup_tests {
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
     use dpp::fee::fee_result::FeeResult;
     use dpp::fee::Credits;
+    use dpp::data_contract::document_type::HashFunction;
     use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::first_among_scan_budget;
     use crate::platform_types::platform::PlatformRef;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
@@ -2758,6 +2759,128 @@ mod commit_reveal_lookup_tests {
                 error: ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e)),
                 ..
             } if *e.preceding_document_id() == alice.id()
+        );
+    }
+
+    /// Check tx reserves the scan's budget on a recheck too, where it validates no state of an
+    /// unsponsored reveal either: a signer whose balance falls one credit short of the
+    /// rechecked estimate, the budget included, leaves the mempool, though it still covers
+    /// the estimate without the budget; one holding it stays.
+    #[tokio::test]
+    async fn should_reserve_the_competitor_scan_budget_on_recheck() {
+        const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
+        let (mut fixture, _) = preceded_reveal_fixture().await;
+        let contract = fixture.contract.clone();
+        let (_, reveal) = fixture
+            .creation_transition(&contract, Who::Mallory, "name", &name_values(), &[], None)
+            .await;
+        assert_eq!(fixture.check_tx(&reveal), Vec::<u32>::new());
+
+        let (errors, estimated) = fixture.check_tx_at(&reveal, Recheck);
+        assert_eq!(errors, Vec::<u32>::new());
+        let required = estimated
+            .expect("expected the recheck to estimate the fee")
+            .total_base_fee();
+        let budget = first_among_scan_budget(PlatformVersion::latest());
+        assert!(required > budget, "the recheck estimate holds the budget");
+
+        fixture.set_balance(Who::Mallory, required - 1);
+        assert_eq!(
+            fixture.check_tx_at(&reveal, Recheck).0,
+            vec![IDENTITY_INSUFFICIENT_BALANCE]
+        );
+        fixture.set_balance(Who::Mallory, required);
+        assert_eq!(fixture.check_tx_at(&reveal, Recheck).0, Vec::<u32>::new());
+    }
+
+    /// A `paddedName`: a `name` whose `findBy` and `firstAmong` functions both read a
+    /// transient `pad` of up to 5,120 bytes, which no stored document keeps.
+    fn padded_name_schema() -> serde_json::Value {
+        let name_params = serde_json::json!([
+            "pad",
+            { "const": "|" },
+            "normalizedLabel",
+            { "const": "." },
+            "normalizedParentDomainName"
+        ]);
+        let mut find_by_params = name_params.clone();
+        find_by_params
+            .as_array_mut()
+            .expect("an array")
+            .insert(0, serde_json::json!("$ownerId"));
+        let mut schema = name_schema(
+            serde_json::json!({
+                "type": "deletableDocument",
+                "documentType": "namePreorder",
+                "findBy": {
+                    "$ownerId": "$ownerId",
+                    "ownerNameHash": { "function": "sys.hash.sha256d", "params": find_by_params }
+                },
+                "firstAmong": {
+                    "nameHash": { "function": "sys.hash.sha256d", "params": name_params }
+                },
+                "minimumAgeBlocks": 1
+            }),
+            false,
+        );
+        schema["properties"]["pad"] = serde_json::json!({
+            "type": "array", "byteArray": true, "maxItems": 5120, "position": 2
+        });
+        schema["transient"] = serde_json::json!(["pad"]);
+        schema
+    }
+
+    /// Check tx reserves the two hashes a reveal's `firstAmong` check computes as their own
+    /// values make them: a transient param, which no stored document keeps and so no write
+    /// estimate prices, makes the reservation grow by the double SHA-256 blocks it adds to
+    /// both preimages, and by nothing else.
+    #[tokio::test]
+    async fn should_reserve_the_upfront_hashes_by_the_reveals_own_values() {
+        let mut fixture = CommitRevealFixture::new_with(|contract| {
+            add_name_registration(contract, true);
+            contract["documentSchemas"]["paddedName"] = padded_name_schema();
+        });
+        let platform_version = PlatformVersion::latest();
+        let contract = fixture.contract.clone();
+        let padded = |pad: usize| {
+            let mut values = name_values();
+            values.push(("pad", Value::Bytes(vec![0x07; pad])));
+            values
+        };
+        let (_, small) = fixture
+            .creation_transition(&contract, Who::Mallory, "paddedName", &padded(1), &[], None)
+            .await;
+        let (_, large) = fixture
+            .creation_transition(
+                &contract,
+                Who::Mallory,
+                "paddedName",
+                &padded(5_000),
+                &[],
+                None,
+            )
+            .await;
+        let fee = |transition: &StateTransition| {
+            let (errors, estimated) = fixture.check_tx_at(transition, FirstTimeCheck);
+            assert_eq!(errors, Vec::<u32>::new());
+            estimated.expect("expected an estimated fee")
+        };
+        let (small, large) = (fee(&small), fee(&large));
+
+        // The findBy preimage is the writer's id and the firstAmong one, `pad | label . parent`
+        let first_among_len = |pad: usize| pad + 1 + NAME_LABEL.len() + 1 + NAME_PARENT.len();
+        let function = HashFunction::Sha256d;
+        let blocks = |pad: usize| {
+            u64::from(function.block_count(32 + first_among_len(pad)))
+                + u64::from(function.block_count(first_among_len(pad)))
+        };
+        assert_eq!(
+            large.processing_fee - small.processing_fee,
+            (blocks(5_000) - blocks(1)) * platform_version.fee_version.hashing.sha256_per_block,
+        );
+        assert_eq!(
+            large.storage_fee, small.storage_fee,
+            "the pad is not stored"
         );
     }
 

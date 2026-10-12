@@ -1725,9 +1725,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `FEE_VERSION3.document_reference.first_among_credits_per_candidate`
 ///     (100,000; a new fee group, unread before this version) times that
 ///     limit, and check tx, which validates no state of such a create,
-///     reserves that whole budget on top of its estimated fee (not
-///     consensus). Registration, on the same contract and on another
-///     (`DocumentReferenceLookup`'s `referring_side_error` and
+///     reserves that whole budget and the create's two hashes on top of its
+///     estimated fee (not consensus). Registration, on the same contract and
+///     on another (`DocumentReferenceLookup`'s `referring_side_error` and
 ///     `referenced_side_error`, and the parser's
 ///     `validate_reference_lookup_sources`), requires the property to be a
 ///     stored 32-byte byte array fixed once written; the referenced type to

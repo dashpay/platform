@@ -20,9 +20,7 @@ use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use crate::execution::types::execution_operation::ValidationOperation;
-use crate::execution::validation::state_transition::batch::first_among_scan_reservation;
-use dpp::fee::fee_result::FeeResult;
+use crate::execution::validation::state_transition::batch::first_among_reservation;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::address_witnesses::{StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0};
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
@@ -702,20 +700,17 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     }
 }
 
-/// Reserves, on top of the estimated fee of `action`, the budget of every `firstAmong`
-/// competitor scan it carries (see `first_among_scan_reservation`), for an action whose state
-/// check tx did not validate. Fee validation then admits only a signer who could pay for the
-/// scan in a block, where it is billed at most that budget.
+/// Reserves, on top of the estimated fee of `action`, what the `firstAmong` checks of its
+/// creates may bill in a block (see `first_among_reservation`: their two hashes and the
+/// competitor scan's budget), for an action whose state check tx did not validate. Fee
+/// validation then admits only a signer who could pay for them.
 fn reserve_first_among_scans(
     action: &StateTransitionAction,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) {
-    let reservation = first_among_scan_reservation(action, platform_version);
-    if reservation > 0 {
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
-            FeeResult::new_from_processing_fee(reservation),
-        ));
+    for operation in first_among_reservation(action, platform_version) {
+        execution_context.add_operation(operation);
     }
 }
 

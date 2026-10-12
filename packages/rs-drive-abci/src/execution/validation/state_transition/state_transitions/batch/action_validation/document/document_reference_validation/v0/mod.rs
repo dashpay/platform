@@ -1734,9 +1734,8 @@ fn validate_reference_target_v0(
 /// The most a create's `firstAmong` competitor scan bills: the credits per competitor of the
 /// fee schedule (`FeeDocumentReferenceVersion::first_among_credits_per_candidate`) times the
 /// competitors it may read (`SystemLimits::max_first_among_candidates`). Check tx reserves it
-/// for every such create whose state it does not validate
-/// ([`first_among_scan_reservation`]), so the scan never costs more in a block than the
-/// signer was admitted with.
+/// for every such create whose state it does not validate ([`first_among_reservation`]), so
+/// the scan never costs more in a block than the signer was admitted with.
 pub(crate) fn first_among_scan_budget(platform_version: &PlatformVersion) -> Credits {
     platform_version
         .fee_version
@@ -1747,50 +1746,73 @@ pub(crate) fn first_among_scan_budget(platform_version: &PlatformVersion) -> Cre
         ))
 }
 
-/// The credits check tx reserves for the `firstAmong` competitor scans of `action`, whose
-/// state it does not validate: [`first_among_scan_budget`] for every document create of a type
-/// declaring `firstAmong` (registration admits at most one per type), nothing for anything
-/// else. Without it, a signer covering the create's estimated fee but not the scan would be
-/// admitted, then refused unpaid in a block, its nonce left to replay the scan.
-pub(crate) fn first_among_scan_reservation(
+/// What check tx reserves, on top of the estimated fee of `action`, for the `firstAmong`
+/// checks of its creates when it does not validate their state: for every create of a
+/// document type declaring `firstAmong` (registration admits at most one per type), the
+/// double SHA-256s of its `findBy` and `firstAmong` preimages, priced by the blocks the
+/// create's own values make them (a transient param counts, though no stored document keeps
+/// it), and [`first_among_scan_budget`] for the competitor scan. Nothing for anything else,
+/// nor for a create whose preimage cannot be assembled, which structure validation refuses
+/// before any read. Without it, a signer covering the create's estimated fee but not these
+/// would be admitted, then refused unpaid in a block, its nonce left to replay the work.
+pub(crate) fn first_among_reservation(
     action: &StateTransitionAction,
     platform_version: &PlatformVersion,
-) -> Credits {
+) -> Vec<ValidationOperation> {
     let StateTransitionAction::BatchAction(batch) = action else {
-        return 0;
+        return Vec::new();
     };
-    let creates_judged_first_among = batch
-        .transitions()
-        .iter()
-        .filter(|transition| {
-            let BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(
-                create,
-            )) = transition
-            else {
-                return false;
-            };
-            let base = create.base();
-            base.data_contract_fetch_info_ref()
-                .contract
-                .document_type_for_name(base.document_type_name())
-                .is_ok_and(declares_first_among)
-        })
-        .count() as u64;
-    first_among_scan_budget(platform_version).saturating_mul(creates_judged_first_among)
+    let writer_id = batch.owner_id();
+    let mut reservation = Vec::new();
+    for transition in batch.transitions() {
+        let BatchedTransitionAction::DocumentAction(DocumentTransitionAction::CreateAction(create)) =
+            transition
+        else {
+            continue;
+        };
+        let base = create.base();
+        let Ok(document_type) = base
+            .data_contract_fetch_info_ref()
+            .contract
+            .document_type_for_name(base.document_type_name())
+        else {
+            continue;
+        };
+        let Some(lookup) = first_among_lookup(document_type) else {
+            continue;
+        };
+        // Neither function reads `"."` beside `firstAmong`, which registration refuses
+        for key in lookup.hash_key().map(|(_, key)| key).into_iter().chain(
+            lookup
+                .first_among
+                .as_ref()
+                .map(|first_among| &first_among.key),
+        ) {
+            if let Ok(preimage) = key.preimage(document_type, None, writer_id, create.data()) {
+                reservation.push(ValidationOperation::DoubleSha256(
+                    key.function.block_count(preimage.len()),
+                ));
+            }
+        }
+        reservation.push(ValidationOperation::PrecalculatedOperation(
+            FeeResult::new_from_processing_fee(first_among_scan_budget(platform_version)),
+        ));
+    }
+    reservation
 }
 
-/// Whether a reference `document_type` declares judges a create first among the commitments
-/// it found (`firstAmong`).
-fn declares_first_among(document_type: DocumentTypeRef) -> bool {
+/// The lookup through which `document_type` judges a create first among the commitments it
+/// found (`firstAmong`), if it declares one.
+fn first_among_lookup(document_type: DocumentTypeRef<'_>) -> Option<&DocumentReferenceLookup> {
     document_type
         .reference_declarations()
         .filter_map(|(_, reference)| reference.target())
         .flat_map(|target| target.leaves())
         .filter_map(|leaf| leaf.as_any_document_reference())
-        .any(|declaration| {
+        .find_map(|declaration| {
             declaration
                 .lookup
-                .is_some_and(|lookup| lookup.first_among.is_some())
+                .filter(|lookup| lookup.first_among.is_some())
         })
 }
 
@@ -1852,7 +1874,7 @@ impl FirstAmongScanBill {
 ///   not name. The first valid competitor refuses the create
 ///   (`ReferencedDocumentPrecededError`, 40149).
 /// * The query and the competitors' hashes are billed as they run, up to the scan's budget
-///   ([`first_among_scan_budget`]), which check tx reserves.
+///   ([`first_among_scan_budget`]), which check tx reserves ([`first_among_reservation`]).
 ///
 /// Registration demands a unique index over the referenced type's `$ownerId` and the
 /// `firstAmong` property, so each competitor is another identity's: the writer's only document
