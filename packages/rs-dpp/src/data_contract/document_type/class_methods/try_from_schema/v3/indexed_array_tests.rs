@@ -569,8 +569,10 @@ fn should_refuse_an_index_only_array_index_without_unique_items() {
 }
 
 /// `preallocated` and `summableOffCountIndex` stay refused on an index of a
-/// typed array: a preallocated path is fixed by one referenced document, and a
-/// counter's group is one value.
+/// typed array no `where` equality binds to a referenced typed array (here the
+/// like refers to nothing): a preallocated path is fixed by one referenced
+/// document, and a counter's group is one element of one list. The bound shape
+/// is admitted (`typed_array_counter_index_tests`).
 #[test]
 fn should_refuse_a_preallocated_or_counting_index_only_array_index() {
     let mut preallocated = by_tag_post();

@@ -65,8 +65,8 @@ pub use reference_lookup::{
     ChooseFirstOrder, DocumentReferenceLookup, LookupChooseFirst, LookupKeySource,
 };
 pub use reference_where::{
-    where_lists_equal, WhereBoundRead, WhereCondition, WhereContainsBound, WhereLiteral,
-    WhereLiteralKind, WhereNotEqualBound, WhereOrdering, WhereOrderingBound,
+    where_list_elements, where_lists_equal, WhereBoundRead, WhereCondition, WhereContainsBound,
+    WhereLiteral, WhereLiteralKind, WhereNotEqualBound, WhereOrdering, WhereOrderingBound,
 };
 
 #[cfg(test)]

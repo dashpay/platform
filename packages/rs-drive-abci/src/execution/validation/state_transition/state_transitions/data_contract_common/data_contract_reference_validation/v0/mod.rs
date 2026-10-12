@@ -129,7 +129,8 @@ fn stores_key_id_without_identity(
 /// by the referenced document's `referenced_property` through the agreement
 /// pair naming it from `referring_property`, on the reference carried by
 /// `reference_property`: creating a referenced document then writes that
-/// property's value as a tree key of the index. `None` when no preallocated
+/// property's value as a tree key of the index, or each element of it when
+/// the pair is of two typed arrays. `None` when no preallocated
 /// index is keyed through the pair, or only through a `moderatedDocument`
 /// binding the referenced type's removal record would not keep, which the
 /// referenced document's insert never preallocates through
@@ -160,15 +161,61 @@ fn preallocated_index_keyed_by(
                         && index.properties.iter().zip(&binding.key_sources).any(
                             |(index_property, key_source)| {
                                 index_property.name == referring_property
-                                    && *key_source
-                                        == PreallocatedKeySource::ReferencedDocumentProperty(
-                                            referenced_property,
+                                    && matches!(
+                                        *key_source,
+                                        PreallocatedKeySource::ReferencedDocumentProperty(
+                                            referenced,
                                         )
+                                        | PreallocatedKeySource::ReferencedDocumentListElements(
+                                            referenced,
+                                        ) if referenced == referenced_property
+                                    )
                             },
                         )
                 })
         })
         .map(|index| index.name.clone())
+}
+
+/// Why a preallocated index of `document_type` keyed through the agreement
+/// pair of `referring_property` and `referenced_property`, on the reference
+/// carried by `reference_property` ([`preallocated_index_keyed_by`]), can not
+/// key its trees by the values of `key_type` that `holder` holds (the
+/// referenced property, or each element of a referenced list): such a value
+/// may be wider than a tree key holds, at most `MAX_INDEX_SIZE` bytes. `None`
+/// when it fits, or when no preallocated index is keyed through the pair.
+#[allow(clippy::too_many_arguments)]
+fn preallocated_key_width_error(
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    reference_property: Option<&str>,
+    referring_property: &str,
+    referenced_property: &str,
+    key_type: &DocumentPropertyType,
+    holder: &str,
+    platform_version: &PlatformVersion,
+) -> Option<String> {
+    let index_name = preallocated_index_keyed_by(
+        contract,
+        document_type,
+        reference_property?,
+        referring_property,
+        referenced_property,
+    )?;
+    let max_width = key_type
+        .saturating_max_byte_size(platform_version)
+        .ok()
+        .flatten();
+    max_width
+        .is_none_or(|width| usize::from(width) > MAX_INDEX_SIZE)
+        .then(|| {
+            format!(
+                "the preallocated index {index_name} keys its trees by the values of {holder}, \
+                 and a tree key holds at most {MAX_INDEX_SIZE} bytes, but {holder} can hold \
+                 values of up to {} bytes",
+                max_width.unwrap_or(u16::MAX)
+            )
+        })
 }
 
 /// Why the elements of the referenced typed array `referenced` hold no value a
@@ -977,9 +1024,11 @@ fn validate_reference_target_declaration_v0(
             ));
         }
         // Two typed arrays are equal as lists, element by element, which no
-        // single value is. No index is keyed through a pair of lists: the
-        // preallocation bindings and `summableOffCountIndex` derivations bind
-        // no typed array, so the tree key check below is not theirs
+        // single value is. A preallocated index keyed through the pair writes
+        // each element of the referenced document's list as a tree key when
+        // that document is created, so every element the referenced list can
+        // hold must fit one, as a single value must below. In place: inert
+        // before protocol version 14, which alone reaches this module
         match (referring_type, &referenced.property_type) {
             (
                 DocumentPropertyType::TypedArray(referring_list),
@@ -992,6 +1041,18 @@ fn validate_reference_target_declaration_v0(
                     referenced_list,
                 ) {
                     return Ok(invalid(reason));
+                }
+                if let Some(reason) = preallocated_key_width_error(
+                    contract,
+                    document_type,
+                    reference_property,
+                    referring_property,
+                    referenced_property,
+                    &referenced_list.item_type,
+                    "an element of the referenced typed array",
+                    platform_version,
+                ) {
+                    return Ok(invalid(&reason));
                 }
                 continue;
             }
@@ -1015,29 +1076,17 @@ fn validate_reference_target_declaration_v0(
         // referring side is an index property, bounded by the index rules. In
         // place: inert before protocol version 14, which alone reaches this
         // module (contract create and update state validation 1).
-        let keyed_index = reference_property.and_then(|reference_property| {
-            preallocated_index_keyed_by(
-                contract,
-                document_type,
-                reference_property,
-                referring_property,
-                referenced_property,
-            )
-        });
-        if let Some(index_name) = keyed_index {
-            let max_width = referenced
-                .property_type
-                .saturating_max_byte_size(platform_version)
-                .ok()
-                .flatten();
-            if max_width.is_none_or(|width| usize::from(width) > MAX_INDEX_SIZE) {
-                return Ok(invalid(&format!(
-                    "the preallocated index {index_name} keys its trees by the referenced \
-                     property's value, and a tree key holds at most {MAX_INDEX_SIZE} bytes, but \
-                     the referenced property can hold values of up to {} bytes",
-                    max_width.unwrap_or(u16::MAX)
-                )));
-            }
+        if let Some(reason) = preallocated_key_width_error(
+            contract,
+            document_type,
+            reference_property,
+            referring_property,
+            referenced_property,
+            &referenced.property_type,
+            "the referenced property",
+            platform_version,
+        ) {
+            return Ok(invalid(&reason));
         }
     }
 

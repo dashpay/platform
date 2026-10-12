@@ -23,6 +23,7 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
+use crate::data_contract::document_type::index::preallocation::same_contract_record_reference;
 use crate::data_contract::document_type::index::{
     reads_through_reference, Index, IndexGrammarAdmissions, IntegerRangeKeyType,
 };
@@ -3844,8 +3845,15 @@ fn summable_off_count_index_error(
 ///   refuses: the array index is no uniqueness rule of its own, and no entry of it ever
 ///   stands for two documents.
 /// - The array declares `uniqueItems`, so every element of a list has an entry of its own.
-/// - It is neither `preallocated` nor a `summableOffCountIndex` index: a preallocated
-///   path is fixed by one referenced document, and a counter's group holds one value.
+/// - When the index is `preallocated` or a `summableOffCountIndex` index, the array is
+///   bound by a `where` equality with a typed array of the document another of its
+///   properties references ([`array_bound_by_list_equality`]): every document referencing
+///   one document holds its list, so the elements a preallocation keys and a counter's
+///   groups are fixed by that document. The other rules of those keywords follow below
+///   (`Index::preallocation_bindings`, `summable_off_count_index_error`).
+///
+/// A `summableOffCountIndex` index keeps one counter per group and no entries, so the
+/// first rule has nothing to keep apart there.
 fn index_only_array_index_error(
     index_name: &str,
     index: &Index,
@@ -3857,17 +3865,24 @@ fn index_only_array_index_error(
         "index \"{index_name}\" on indexOnly document type \"{document_type_name}\" names the \
          typed array \"{array_name}\""
     );
-    if index.preallocated {
+    let bound = || array_bound_by_list_equality(index, array_name, document_type);
+    if index.preallocated && !bound() {
         return Some(format!(
-            "{prefix} and declares `preallocated`: a preallocated index's path is fixed by one \
-             referenced document, and an index of a typed array enters a document under each \
-             of its elements"
+            "{prefix} and declares `preallocated`, but no `where` makes \"{array_name}\" equal \
+             to a typed array of the document another of its properties references (a \
+             same-contract permanentDocument or moderatedDocument reference by id, as \
+             `\"{array_name}\": \"{array_name}\"`): a preallocated index's path is fixed by one \
+             referenced document, and only an equality fixes the elements a document's list \
+             holds"
         ));
     }
-    if index.is_summable_off_count_index() {
+    if index.is_summable_off_count_index() && !bound() {
         return Some(format!(
-            "{prefix} and is a summableOffCountIndex index: a counter's group is one value, and \
-             a typed array holds many"
+            "{prefix} and is a summableOffCountIndex index, but no `where` makes \
+             \"{array_name}\" equal to a typed array of the document another of its properties \
+             references (a same-contract permanentDocument or moderatedDocument reference by \
+             id, as `\"{array_name}\": \"{array_name}\"`): a counter's group is one element, and \
+             only an equality enters every document of a source group under the same elements"
         ));
     }
     let unique_items = index
@@ -3880,6 +3895,9 @@ fn index_only_array_index_error(
              every element of a list, and a list repeating an element would hold fewer \
              entries than elements"
         ));
+    }
+    if index.is_summable_off_count_index() {
+        return None;
     }
     let key: BTreeSet<&str> = index
         .properties
@@ -3908,6 +3926,29 @@ fn index_only_array_index_error(
         ));
     }
     None
+}
+
+/// Whether a `where` equality binds the typed array `array_name` of `index` to a typed
+/// array of the referenced document: another property of the index holds a same-contract
+/// `permanentDocument` or `moderatedDocument` reference by id whose `where` pairs the array
+/// with a referenced property. Contract registration refuses an equality pairing a typed
+/// array with anything but a typed array, so the pair is one of two lists. The keywords'
+/// own rules then judge the rest of the index (`Index::preallocation_bindings`,
+/// `Index::count_index_derivations`).
+fn array_bound_by_list_equality(
+    index: &Index,
+    array_name: &str,
+    document_type: &DocumentTypeV2,
+) -> bool {
+    index.properties.iter().any(|property| {
+        document_type
+            .flattened_properties
+            .get(&property.name)
+            .and_then(|declaration| {
+                same_contract_record_reference(declaration, document_type.data_contract_id)
+            })
+            .is_some_and(|reference| reference.property_agreement.contains_key(array_name))
+    })
 }
 
 /// Parses a condition a replace is judged by, the `when` of an `immutable`

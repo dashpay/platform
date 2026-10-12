@@ -5855,6 +5855,22 @@ mod tests {
         const FOREIGN_CONTRACT_PATH: &str =
             "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-foreign.json";
 
+        /// Yappr's post and like, the like counting likes per tag of a post.
+        const TAG_COUNTERS_CONTRACT_PATH: &str =
+            "../rs-drive/tests/supporting_files/contract/yappr-likes/yappr-likes-tags-counters-contract.json";
+
+        /// The default config, moderated by the contract owner.
+        fn owner_moderated_config() -> DataContractConfig {
+            DataContractConfig::default_for_version(PlatformVersion::latest())
+                .unwrap()
+                .with_moderation(Some(ContractModerationConfig {
+                    banlist: false,
+                    suspensions: false,
+                    moderators: ContractModerators::ContractOwner,
+                    warnings: false,
+                }))
+        }
+
         /// Processes a data contract create transition built from the given
         /// fixture, with the foreign permanent-document fixture contract
         /// already in state, and returns the execution result.
@@ -6648,6 +6664,61 @@ mod tests {
                     ..
                 } if error.referring_property() == "hashtag"
                     && error.reason().contains("preallocated index byHashtagPost")
+                    && error.reason().contains("up to 1120 bytes")
+            );
+        }
+
+        /// The Yappr shape: a like whose `tags` the `where` makes equal to its
+        /// post's keeps a preallocated counter per tag of the post
+        /// (`byTagPost`, a `summableOffCountIndex` index of `byPost`), the
+        /// post's tags immutable and kept by a moderator's removal. It
+        /// registers.
+        #[tokio::test]
+        async fn should_register_a_counter_per_tag_keyed_through_a_list_equality() {
+            let result = run_contract_create_with_foreign_and_config(
+                TAG_COUNTERS_CONTRACT_PATH,
+                FOREIGN_CONTRACT_PATH,
+                owner_moderated_config(),
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        /// Creating a post preallocates a tree keyed by each of its tags, so
+        /// every element the post's `tags` can hold must fit a tree key: tags
+        /// of up to 280 characters can take 1,120 bytes, and the contract is
+        /// refused.
+        #[tokio::test]
+        async fn should_reject_a_list_keying_a_preallocated_index_by_elements_wider_than_a_tree_key(
+        ) {
+            let mut contract_json = json_document_to_json_value(TAG_COUNTERS_CONTRACT_PATH)
+                .expect("expected to read the fixture contract");
+            let post = &mut contract_json["documentSchemas"]["post"];
+            post["properties"]["tags"]["items"] = json!({ "type": "string", "maxLength": 280 });
+            post.as_object_mut()
+                .expect("the post schema")
+                .remove("indices");
+            let result = run_contract_json_create(
+                contract_json,
+                FOREIGN_CONTRACT_PATH,
+                owner_moderated_config(),
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
+                    ),
+                    ..
+                } if error.referring_property() == "tags"
+                    && error.reason().contains("preallocated index byTagPost")
+                    && error.reason().contains("an element of the referenced typed array")
                     && error.reason().contains("up to 1120 bytes")
             );
         }

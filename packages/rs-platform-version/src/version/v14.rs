@@ -2604,13 +2604,37 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     still refuse a typed array. Document reference validation 0 (in place)
 ///     checks them against the document found or the removal record, refusing
 ///     with 40127, and refuses an entry whose referring path is no object on
-///     the way as a mismatch. `Index::preallocation_bindings` and
-///     `Index::count_index_derivations` bind no index property that is a typed
-///     array, so no preallocated or `summableOffCountIndex` index is keyed
-///     through a pair of lists; inert while an indexOnly type, the only one
-///     declaring either, indexes no typed array. Inert before this version:
-///     only parser generation 3 reads a `where`, and this module and that
-///     validation are reached from this version only.
+///     the way as a mismatch. A pair of lists keys a preallocated or
+///     `summableOffCountIndex` index only by its elements, as 95 says. Inert
+///     before this version: only parser generation 3 reads a `where`, and this
+///     module and that validation are reached from this version only.
+///
+/// 95. **Preallocated and counter indexes keyed by the elements of a list**:
+///     an indexOnly type's index naming a typed array (92) may be
+///     `preallocated` or a `summableOffCountIndex` index when a `where`
+///     equality (94) makes the array equal to a typed array of the referenced
+///     document. `Index::preallocation_bindings` binds such an index property
+///     through the pair (`PreallocatedKeySource::ReferencedDocumentListElements`,
+///     appended) and `Index::count_index_derivations` derives it; `contains`
+///     and `containsAll` bind nothing. Parser generation 3 (in place,
+///     `apply_index_only`) admits either keyword on an array index only so
+///     bound (10231 otherwise) and asks a `summableOffCountIndex` array index,
+///     which keeps no entries, for no other index keeping its documents apart;
+///     the contract-level rules (55, 68 and the counter's lossless rule) judge
+///     the list as a whole. Contract create and update state validation (data
+///     contract reference validation 0, in place) refuses with 40126 a list
+///     pair keying a preallocated index whose referenced elements can hold more
+///     than 255 bytes. Drive (in place): the v1 document insert preallocates
+///     such an index's trees under each distinct element of the referenced
+///     document's list, keyed as the referring type keys its elements, and
+///     nothing for an empty, absent or non-list value or one holding an
+///     element wider than the referring elements, the estimate walking
+///     `maxItems` worst-case elements; the v2 insert and delete walkers move
+///     one counter per element where the counter's own level is the array;
+///     the document cost model follows. Inert before this version: only parser
+///     generation 3 admits `preallocated`, `summableOffCountIndex`, an indexed
+///     typed array and a `where`, and every contract that registers today
+///     binds no typed array.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
