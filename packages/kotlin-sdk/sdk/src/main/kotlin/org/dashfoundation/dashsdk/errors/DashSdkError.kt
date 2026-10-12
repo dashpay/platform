@@ -118,8 +118,9 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorCoreFundsAwaitingNetwork` (native code 59). The payment is
-         * covered only by coins the network has not confirmed yet (neither
+         * `ErrorCoreFundsAwaitingNetwork` (native code 59). The payment or
+         * asset lock (identity registration and top-up, invitation, shielded
+         * and platform-address funding) is covered only by coins the network has not confirmed yet (neither
          * InstantSend-locked nor mined); they become spendable once their
          * transaction is. Not a shortfall — retry once they are confirmed.
          */

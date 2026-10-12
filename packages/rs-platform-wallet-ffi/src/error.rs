@@ -601,8 +601,10 @@ pub enum PlatformWalletFFIResultCode {
     /// Platform returned no balance for a managed identity. Retrying this read
     /// is safe; this does not imply missing ownership or require registration.
     ErrorIdentityBalanceUnavailable = 58,
-    /// A Core payment the balance covers only with coins the network has not
-    /// confirmed yet — neither InstantSend-locked nor mined
+    /// A Core payment or asset lock (identity registration and top-up,
+    /// invitation, shielded and platform-address funding) the balance covers
+    /// only with coins the network has not confirmed yet — neither
+    /// InstantSend-locked nor mined
     /// ([`platform_wallet::PlatformWalletError::CoreFundsAwaitingNetwork`]).
     /// Not a shortfall and nothing was sent: the coins become spendable once
     /// their transaction is InstantSend-locked or mined, so the host should

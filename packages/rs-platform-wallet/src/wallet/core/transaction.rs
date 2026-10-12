@@ -930,6 +930,12 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         source_index: u32,
         outpoints: &[OutPoint],
     ) -> Result<(), PlatformWalletError> {
+        // The finalizer's own refusals for a source list that funds nothing.
+        if sources.is_empty() {
+            return Err(PlatformWalletError::TransactionBuild(
+                "no funding sources named".into(),
+            ));
+        }
         let manager = self.wallet_manager.read().await;
         let (wallet, info) = manager
             .get_wallet_and_info(&self.wallet_id)
@@ -941,6 +947,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             source_index,
             sources.len() == 1,
         )?;
+        if resolved.is_empty() {
+            return Err(PlatformWalletError::WalletNotFound(format!(
+                "no funding account of any named source at index {source_index}"
+            )));
+        }
         let height = info.core_wallet.last_processed_height();
         resolve_chosen_inputs(info, &resolved, outpoints, height).map(|_| ())
     }
@@ -3763,6 +3774,19 @@ mod tests {
                 }) if outpoint == bip32
             ),
             "got {foreign:?}"
+        );
+
+        // A source list that funds nothing is the finalizer's refusal, not
+        // a verdict on the coin.
+        let unnamed = core.check_chosen_outpoints(&[], 0, &[bip44]).await;
+        assert!(
+            matches!(unnamed, Err(PlatformWalletError::TransactionBuild(_))),
+            "got {unnamed:?}"
+        );
+        let unfunded = core.check_chosen_outpoints(&sources, 7, &[bip44]).await;
+        assert!(
+            matches!(unfunded, Err(PlatformWalletError::WalletNotFound(_))),
+            "got {unfunded:?}"
         );
 
         set_bip44_finality(&manager, &wallet_id, false).await;

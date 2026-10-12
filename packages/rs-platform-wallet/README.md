@@ -209,8 +209,9 @@ Spending only final coins brings these Rust source and behaviour changes:
   shielded and platform-address funding) return `CoreFundsAwaitingNetwork`
   for the same condition, where they returned `AssetLockInsufficientFunds`
   (FFI code 29): a caller that matched 29 to offer "add funds" should treat 59
-  as "wait". For a drain it is reported only when the waiting coins exceed the
-  minimum lock floor.
+  as "wait". A drain reports it only when no coin is final and the waiting
+  coins exceed the minimum lock floor (their fee aside); one that builds from
+  a few final coins and lands under the floor is still refused as before.
 - Behaviour: every payment build that funds from the wallet, and
   `pooled_spendable_balance` / `pooled_max_sendable`, use only confirmed or
   InstantSend-locked coins. A coin in `FinalizeOptions::inputs` that a

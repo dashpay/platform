@@ -258,8 +258,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorShieldedRecoveryKeysRequired = 57
     /// Platform returned no balance. Retrying the read is safe; ownership is unchanged.
     case errorIdentityBalanceUnavailable = 58
-    /// The payment needs coins the network has not confirmed yet (neither
-    /// InstantSend-locked nor mined). Not a shortfall and nothing was sent:
+    /// The payment or asset lock (identity registration and top-up,
+    /// invitation, shielded and platform-address funding) needs coins the
+    /// network has not confirmed yet (neither InstantSend-locked nor mined). Not a shortfall and nothing was sent:
     /// they become spendable once their transaction is InstantSend-locked or
     /// mined.
     case errorCoreFundsAwaitingNetwork = 59
