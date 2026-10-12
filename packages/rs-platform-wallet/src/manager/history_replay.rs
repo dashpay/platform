@@ -369,7 +369,7 @@ pub async fn replay_recorded_history(
 ///
 /// The wallet holds one claimant per coin and releases the coin when that
 /// one is swept or abandoned; two different claimants make a claim nothing
-/// releases. A record unsafe by its own outputs can never confirm, so among
+/// releases. A record unsafe by recorded outputs can never confirm, so among
 /// such records the smallest txid stands for all. A record unsafe only by
 /// stored amounts may still confirm, so the coin is held for it. Two of
 /// those leave no claimant whose removal proves the coin free: the coin
@@ -395,11 +395,12 @@ pub type ReplayOperands<'a> = (Txid, &'a Transaction, &'a [InputDetail]);
 /// Which amounts make a stored transaction unsafe to replay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnsafeAmounts {
-    /// The transaction's own outputs. No valid transaction carries them, so
-    /// it can never confirm.
+    /// Outputs of recorded transactions: its own, or the ones it spends.
+    /// Their bodies commit to these amounts and consensus rejects them, so it
+    /// can never confirm.
     Outputs,
     /// Only amounts stored beside the transaction: its recorded owned inputs,
-    /// or the coins it spends. The transaction itself may be valid.
+    /// or the restored coins it spends. The transaction itself may be valid.
     Stored,
 }
 
@@ -411,7 +412,10 @@ pub enum UnsafeAmounts {
 /// fitting net does not make an overflowing operand safe. Every source of an
 /// operand is covered: the coins restored onto `wallet_info`, the outputs of
 /// the other `records` (asset-lock credit outputs included) and the recorded
-/// owned inputs. Each rejected transaction comes with the reason.
+/// owned inputs. Each rejected transaction comes with the reason: an overflow
+/// the recorded transaction bodies prove on their own is
+/// [`UnsafeAmounts::Outputs`], one that depends on a stored value is
+/// [`UnsafeAmounts::Stored`].
 pub fn unsafe_replay_amounts(
     wallet_info: &ManagedWalletInfo,
     records: &[ReplayOperands<'_>],
@@ -433,6 +437,14 @@ pub fn unsafe_replay_amounts(
     for account in wallet_info.accounts.all_funding_accounts() {
         for (outpoint, coin) in &account.utxos {
             remember(*outpoint, coin.txout.value);
+        }
+    }
+    // What each recorded body pays, left-out records included: an outpoint
+    // commits to its transaction, so these amounts hold whatever is stored.
+    let mut committed: HashMap<OutPoint, u64> = HashMap::new();
+    for (txid, transaction, _) in records {
+        for (vout, output) in transaction.output.iter().enumerate() {
+            committed.insert(OutPoint::new(*txid, vout as u32), output.value);
         }
     }
     let mut unsafe_amounts = HashMap::new();
@@ -466,12 +478,21 @@ pub fn unsafe_replay_amounts(
         }
     }
     for (txid, transaction, _) in records {
-        let inputs = transaction
-            .input
-            .iter()
-            .filter_map(|input| amounts.get(&input.previous_output).copied());
-        if !fits(inputs) {
+        let inputs_fit = |known: &HashMap<OutPoint, u64>| {
+            fits(
+                transaction
+                    .input
+                    .iter()
+                    .filter_map(|input| known.get(&input.previous_output).copied()),
+            )
+        };
+        if inputs_fit(&amounts) {
+            continue;
+        }
+        if inputs_fit(&committed) {
             unsafe_amounts.entry(*txid).or_insert(UnsafeAmounts::Stored);
+        } else {
+            unsafe_amounts.insert(*txid, UnsafeAmounts::Outputs);
         }
     }
     unsafe_amounts
@@ -2812,6 +2833,111 @@ mod tests {
             redelivery_credits(&restored, &mut wallet, &funding, &shared).await,
             "the released coin must be credited when its funding is seen"
         );
+    }
+
+    /// Amounts a peer can make the wallet record: unconfirmed parents paying
+    /// it `1 << 62` twice, and two spends of both parent outputs and of one
+    /// genuine coin. The parents' bodies prove the spends take in more than
+    /// can exist, so neither spend can ever confirm, and once a settled
+    /// transaction has swept both, the genuine coin must be released.
+    #[tokio::test]
+    async fn should_release_coin_shared_by_spends_of_impossible_recorded_amounts() {
+        use dashcore::hashes::Hash;
+        use dashcore::{Transaction, TxIn};
+
+        for one_parent in [false, true] {
+            let (mut wallet, _, address) = wallet_with_receive_address();
+            let pay = |spends: &[OutPoint], values: &[u64]| Transaction {
+                version: 1,
+                lock_time: 0,
+                input: spends
+                    .iter()
+                    .map(|previous_output| TxIn {
+                        previous_output: *previous_output,
+                        ..Default::default()
+                    })
+                    .collect(),
+                output: values
+                    .iter()
+                    .map(|value| TxOut {
+                        value: *value,
+                        script_pubkey: address.script_pubkey(),
+                    })
+                    .collect(),
+                special_transaction_payload: None,
+            };
+            let foreign = |byte| OutPoint::new(Txid::from_byte_array([byte; 32]), 0);
+            // One parent with both outputs is itself left out for its own
+            // outputs; its body still proves what its children take in.
+            let parents = if one_parent {
+                vec![pay(&[foreign(81)], &[1 << 62, 1 << 62])]
+            } else {
+                vec![
+                    pay(&[foreign(81)], &[1 << 62]),
+                    pay(&[foreign(82)], &[1 << 62]),
+                ]
+            };
+            let fakes: Vec<OutPoint> = parents
+                .iter()
+                .flat_map(|parent| {
+                    (0..parent.output.len() as u32).map(|vout| OutPoint::new(parent.txid(), vout))
+                })
+                .collect();
+            let fundings = [
+                pay(&[foreign(85)], &[10_000]),
+                pay(&[foreign(86)], &[20_000]),
+                pay(&[foreign(87)], &[30_000]),
+            ];
+            let [genuine, one, other] =
+                [0, 1, 2].map(|index| OutPoint::new(fundings[index].txid(), 0));
+            let forged = [(one, 5_000), (other, 6_000)]
+                .map(|(own, value)| pay(&[fakes[0], fakes[1], genuine, own], &[value]));
+
+            let mut restored = ManagedWalletInfo::from_wallet(&wallet, 0);
+            let account = restored
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .unwrap();
+            for funding in parents.iter().chain(&fundings) {
+                for (vout, txout) in funding.output.iter().enumerate() {
+                    let coin = OutPoint::new(funding.txid(), vout as u32);
+                    account.utxos.insert(
+                        coin,
+                        Utxo::new(coin, txout.clone(), address.clone(), 0, false),
+                    );
+                }
+            }
+            let history = RecordedHistory {
+                transactions: parents
+                    .iter()
+                    .chain(&forged)
+                    .map(|transaction| StoredTransaction {
+                        txid: transaction.txid(),
+                        transaction: transaction.clone(),
+                        context: TransactionContext::Mempool,
+                        stored_net_amount: None,
+                        stored_direction: None,
+                        owned_inputs: Vec::new(),
+                    })
+                    .collect(),
+                instant_locks: BTreeMap::new(),
+            };
+            replay_recorded_history(&mut restored, &mut wallet, history).await;
+            assert!(!redelivery_credits(&restored, &mut wallet, &fundings[0], &genuine).await);
+
+            let settled = deliver_confirmed_spend(&mut restored, &mut wallet, &[one, other]).await;
+
+            let mut swept = settled.swept_transactions.clone();
+            swept.sort_unstable();
+            let mut expected = forged.map(|spend| spend.txid());
+            expected.sort_unstable();
+            assert_eq!(swept, expected, "one parent: {one_parent}");
+            assert!(
+                redelivery_credits(&restored, &mut wallet, &fundings[0], &genuine).await,
+                "one parent: {one_parent}: nothing spends the genuine coin any more"
+            );
+        }
     }
 
     /// The wallet can name one claimant per reserved coin, so a coin shared
