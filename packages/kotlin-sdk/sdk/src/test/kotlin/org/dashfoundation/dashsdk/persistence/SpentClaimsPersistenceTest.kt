@@ -43,8 +43,9 @@ class SpentClaimsPersistenceTest {
 
     private fun register(wallet: ByteArray = walletId) {
         assertEquals(0, handler.onPersistWalletMetadata(wallet, 1, ByteArray(32), 0))
+        // `accounts.accountExtendedPubKeyBytes` is unique, so each wallet needs its own xpub.
         assertEquals(0, handler.onPersistAccountRegistration(
-            wallet, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 4 },
+            wallet, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { wallet[0] },
         ))
     }
 
