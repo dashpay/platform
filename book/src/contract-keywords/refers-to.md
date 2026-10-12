@@ -20,16 +20,14 @@ An identifier (a 32-byte id) can hold any value. `refersTo` says what it points 
   "canBeDeleted": true,
   "properties": {
     "postId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "refersTo": { "type": "deletableDocument", "documentType": "post" },
       "position": 0
     },
     "mentions": {
       "type": "array", "minItems": 0, "maxItems": 5, "uniqueItems": true,
       "items": {
-        "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-        "contentMediaType": "application/x.dash.dpp.identifier",
+        "type": "identifier",
         "refersTo": { "type": "identity" }
       },
       "position": 1
@@ -79,8 +77,7 @@ The value is the id of a document of `documentType`, in this contract or in the 
 "reasons": {
   "type": "array", "minItems": 0, "maxItems": 64, "uniqueItems": true,
   "items": {
-    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-    "contentMediaType": "application/x.dash.dpp.identifier",
+    "type": "identifier",
     "refersTo": { "type": "permanentDocument", "documentType": "reason" }
   },
   "position": 2
@@ -95,8 +92,7 @@ The same for a type whose documents disappear only when the contract's moderator
 
 ```json
 "postId": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-  "contentMediaType": "application/x.dash.dpp.identifier",
+  "type": "identifier",
   "refersTo": { "type": "moderatedDocument", "documentType": "post" },
   "position": 0
 }
@@ -174,8 +170,7 @@ States what the referenced document must hold once found. It takes 1 to 10 entri
 
 ```json
 "submittedCharterId": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-  "contentMediaType": "application/x.dash.dpp.identifier",
+  "type": "identifier",
   "refersTo": {
     "type": "permanentDocument",
     "documentType": "submittedCharter",
@@ -216,8 +211,7 @@ A literal is an integer, `true` or `false`, or a string, and it reads as the ref
 
 ```json
 "auctionId": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-  "contentMediaType": "application/x.dash.dpp.identifier",
+  "type": "identifier",
   "refersTo": {
     "type": "permanentDocument",
     "documentType": "auction",

@@ -19,8 +19,7 @@ A contract's `documentSchemas` maps each document type name to its schema. Keywo
   "properties": {
     "text": { "type": "string", "maxLength": 280, "maxBytes": 560, "position": 0 },
     "replyTo": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "refersTo": { "type": "deletableDocument", "documentType": "post" },
       "position": 1
     }
@@ -33,6 +32,8 @@ A contract's `documentSchemas` maps each document type name to its schema. Keywo
 - **Document type keywords** sit at the top of the schema (`documentsMutable`, `canBeDeleted`, `indices`, `required`). They say what may happen to a document of the type and who may do it.
 - **Index keywords** sit inside an entry of `indices` (`name`, `properties`).
 - **Property keywords** sit inside a property's schema (`type`, `maxLength`, `maxBytes`, `position`, `refersTo`). Most are ordinary JSON Schema; the rest are Platform's own.
+
+The examples write identifiers and fixed-size byte arrays with the protocol version 14 [shorthands](contract-keywords/property-schemas.md#shorthands-identifier-and-bytes), `"type": "identifier"` and `"type": "bytes"` with `size`. Excerpts of the system contracts (DPNS, DashPay, moderation charters) are quoted as those contracts are written, in the long form the shorthands stand for.
 
 The contract around the document types has keys of its own, and a `config` object: see [Contract-Level Keys and config](contract-keywords/contract-config.md).
 

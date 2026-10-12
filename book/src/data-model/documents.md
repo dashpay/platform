@@ -325,8 +325,7 @@ A `permanentDocument` reference normally holds the referenced document's id. It 
 "members": {
   "type": "array", "minItems": 0, "maxItems": 15, "uniqueItems": true,
   "items": {
-    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-    "contentMediaType": "application/x.dash.dpp.identifier",
+    "type": "identifier",
     "distinctFrom": "$ownerId",
     "refersTo": {
       "type": "permanentDocument",
@@ -373,8 +372,7 @@ A `refersTo` may combine targets in place of naming one. `{ "anyOf": [...] }` ho
 
 ```json
 "memberId": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-  "contentMediaType": "application/x.dash.dpp.identifier",
+  "type": "identifier",
   "refersTo": {
     "anyOf": [
       {
@@ -419,14 +417,12 @@ A `permanentDocument` reference with `inList` says the value must be one of the 
   "type": "object",
   "properties": {
     "electedCharterId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "refersTo": { "type": "permanentDocument", "documentType": "electedCharter" },
       "position": 0
     },
     "memberId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "refersTo": {
         "type": "permanentDocument",
         "documentType": "electedCharter",
@@ -521,9 +517,7 @@ One `findBy` entry may hold a function instead of a source: `"<referenced proper
   "documentsMutable": false,
   "canBeDeleted": true,
   "properties": {
-    "saltedDomainHash": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0
-    }
+    "saltedDomainHash": { "type": "bytes", "size": 32, "position": 0 }
   },
   "indices": [
     { "name": "saltedHash", "properties": [{ "saltedDomainHash": "asc" }], "unique": true }
@@ -535,7 +529,7 @@ One `findBy` entry may hold a function instead of a source: `"<referenced proper
   "type": "object",
   "properties": {
     "preorderSalt": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 4,
+      "type": "bytes", "size": 32, "position": 4,
       "refersTo": {
         "type": "deletableDocument",
         "documentType": "preorder",
@@ -704,10 +698,7 @@ Up to protocol version 13 a `type: "array"` property had to be a byte array (`by
   "minItems": 0,
   "maxItems": 64,
   "uniqueItems": true,
-  "items": {
-    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-    "contentMediaType": "application/x.dash.dpp.identifier"
-  },
+  "items": { "type": "identifier" },
   "position": 2
 }
 ```
@@ -748,14 +739,12 @@ Protocol version 14 adds the property-level `distinctFrom` keyword, a pure struc
 
 ```json
 "delegateId": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-  "contentMediaType": "application/x.dash.dpp.identifier",
+  "type": "identifier",
   "distinctFrom": "$ownerId",
   "position": 0
 },
 "backupId": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-  "contentMediaType": "application/x.dash.dpp.identifier",
+  "type": "identifier",
   "distinctFrom": "delegateId",
   "position": 1
 }
