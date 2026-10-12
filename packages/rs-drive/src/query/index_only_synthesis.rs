@@ -15,8 +15,8 @@
 //!
 //! Field recovery:
 //! * prefix properties — decoded from the value path segments via
-//!   [`DocumentPropertyType::decode_value_for_tree_keys`], the inverse of
-//!   the key encoding the write path used;
+//!   `deserialize_value_for_key` of the protocol version, the inverse of the
+//!   key encoding the write path used;
 //! * the terminal property — decoded from the member key the same way;
 //! * `$ownerId` / `$createdAt` — from whichever position (prefix or
 //!   terminal) the index carries them.
@@ -1023,6 +1023,7 @@ impl DriveDocumentQuery<'_> {
                     &path,
                     &key,
                     Some(&element),
+                    platform_version,
                 )
             })
             .collect::<Result<Vec<Document>, Error>>()?;
@@ -1089,6 +1090,7 @@ impl DriveDocumentQuery<'_> {
                     &path,
                     &key,
                     Some(&element),
+                    platform_version,
                 )
             })
             .collect::<Result<Vec<Document>, Error>>()?;
@@ -1237,7 +1239,8 @@ pub fn index_only_transition_entry_path_query(
 /// storage marker); `member_key` is the entry's key (the terminal
 /// components' encoded values, concatenated); `element` is the proved
 /// entry item, required on a type with an `entryPayload` (the payload is
-/// decoded off it) and ignored otherwise.
+/// decoded off it) and ignored otherwise. The keys are read in the key
+/// generation of `platform_version` (`deserialize_value_for_key`).
 pub fn synthesize_index_only_document(
     contract_id: Identifier,
     document_type: DocumentTypeRef,
@@ -1245,7 +1248,9 @@ pub fn synthesize_index_only_document(
     path: &[Vec<u8>],
     member_key: &[u8],
     element: Option<&grovedb::Element>,
+    platform_version: &PlatformVersion,
 ) -> Result<Document, Error> {
+    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
     use dpp::document::property_names::CREATED_AT;
 
     let corrupted =
@@ -1312,9 +1317,8 @@ pub fn synthesize_index_only_document(
                 {
                     Value::Bytes(Vec::new())
                 } else {
-                    property
-                        .property_type
-                        .decode_value_for_tree_keys(encoded)
+                    document_type
+                        .deserialize_value_for_key(name, encoded, platform_version)
                         .map_err(|e| Error::Protocol(Box::new(e)))?
                 };
                 // A flattened name like `profile.targetId` must come back

@@ -21,6 +21,7 @@ use crate::drive::document::{
     bound_value_fits_referring_property, encode_index_only_entry_payload, index_only_member_key,
     index_only_row_commitment, make_document_reference, make_document_reference_with_sum_item,
     preallocation_bindings_targeting, read_document_sum_contribution,
+    referenced_tree_key_for_referring_property,
 };
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -931,6 +932,17 @@ impl Context<'_> {
                         return Ok(());
                     }
                     self.raw(referenced)?
+                        .map(|raw| {
+                            referenced_tree_key_for_referring_property(
+                                raw,
+                                self.document_type,
+                                referenced,
+                                referring,
+                                name,
+                                self.platform_version,
+                            )
+                        })
+                        .transpose()?
                 }
             };
             // A value the document does not carry, or a null one: no entry

@@ -21,8 +21,12 @@ use dpp::data_contract::document_type::{
     ReferenceCombinator, ReferenceHolder, ReferringWrite,
 };
 use dpp::data_contract::config::moderation::{kept_value_at, ContractDocumentRemoval};
+use dpp::data_contract::document_type::property_constraints::{
+    referenced_document_value, referenced_document_values, referenced_fields, DocumentSystemValues,
+};
+use dpp::data_contract::document_type::{WhereBoundRead, WhereCondition, WhereLiteralKind};
 use dpp::data_contract::DataContract;
-use dpp::document::property_names::{CREATOR_ID, ID, OWNER_ID};
+use dpp::document::property_names::{ID, OWNER_ID};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::errors::consensus::state::document::referenced_document_property_mismatch_error::ReferencedDocumentPropertyMismatchError;
 use dpp::errors::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
@@ -92,12 +96,14 @@ pub(crate) trait DocumentReferenceValidationV0 {
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
         creator_id: Option<Identifier>,
+        referring_system: &DocumentSystemValues,
         changed_fields: Option<&BTreeSet<String>>,
         stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
         derived_index_values: Option<&mut BTreeMap<String, Value>>,
+        referenced_documents: &mut BTreeMap<String, Value>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -187,12 +193,14 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
         creator_id: Option<Identifier>,
+        referring_system: &DocumentSystemValues,
         changed_fields: Option<&BTreeSet<String>>,
         stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
         derived_index_values: Option<&mut BTreeMap<String, Value>>,
+        referenced_documents: &mut BTreeMap<String, Value>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -214,12 +222,14 @@ impl DocumentReferenceValidationV0 for DocumentBaseTransitionAction {
             document_data,
             owner_id,
             creator_id,
+            referring_system,
             changed_fields,
             stored_values,
             platform,
             block_info,
             consumed_documents,
             derived_index_values,
+            referenced_documents,
             transaction,
             execution_context,
             platform_version,
@@ -234,18 +244,35 @@ fn validate_document_type_references_v0(
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
     creator_id: Option<Identifier>,
+    referring_system: &DocumentSystemValues,
     changed_fields: Option<&BTreeSet<String>>,
     stored_values: Option<&BTreeMap<String, Value>>,
     platform: &PlatformStateRef,
     block_info: &BlockInfo,
     consumed_documents: &mut Vec<ConsumedLookupDocument>,
     derived_index_values: Option<&mut BTreeMap<String, Value>>,
+    referenced_documents: &mut BTreeMap<String, Value>,
     transaction: TransactionArg,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     // The documents this write's references fetch by id, shared among them
     let mut fetched_documents = FetchedDocuments::default();
+
+    // The foreign contracts this write's references resolved, so each is
+    // fetched, and billed, once whatever number of declarations, elements of a
+    // typed array and leaves of an expression name it. Reached from protocol
+    // version 14 only (document create state validation 2 and replace state
+    // validation 1), where a reference a rule reads through is checked on
+    // every replace
+    let mut referenced_contracts = BTreeMap::new();
+
+    // What the type's `propertyConstraints` rules read of the documents its references
+    // point at, by reference property (protocol version 14). Every replace judges every
+    // rule, so each such reference is checked on every replace, and once it holds the
+    // values the rules read of the document its check read are recorded in
+    // `referenced_documents`, for the rules to be judged on: no other read is made
+    let rule_reads = referenced_fields(document_type.property_constraints());
 
     // A create is the one write with no changed fields, and the only one a lookup with a
     // computed key, which reveals a commitment, is judged at
@@ -342,6 +369,7 @@ fn validate_document_type_references_v0(
                 if let Some(changed) = changed_fields {
                     if hash_key.is_some()
                         || (!is_changed_field(changed, path)
+                            && !rule_reads.contains_key(path)
                             && !binds_a_changed_property(target, changed, writer_can_change))
                     {
                         continue;
@@ -393,17 +421,19 @@ fn validate_document_type_references_v0(
                     document_type,
                     document_data,
                     owner_id,
+                    referring_system,
                     target,
                     referenced_id,
                     Some(RevealedValue { value, billed_key }),
                     path,
                     None,
-                    &mut BTreeMap::new(),
+                    &mut referenced_contracts,
                     &mut fetched_documents,
                     platform,
                     block_info,
                     is_create,
                     consumed_documents,
+                    RuleReads::of(&rule_reads, path, referenced_documents),
                     transaction,
                     execution_context,
                     platform_version,
@@ -430,17 +460,16 @@ fn validate_document_type_references_v0(
             // them all.
             let bound_property_changed =
                 binds_a_changed_property(reference_target, changed, writer_can_change);
-            if !is_changed_field(changed, path) && !bound_property_changed {
+            if !is_changed_field(changed, path)
+                && !bound_property_changed
+                && !rule_reads.contains_key(path)
+            {
                 continue;
             }
             bound_property_changed
         } else {
             false
         };
-
-        // The referenced contracts this declaration resolved, so the
-        // elements of a typed array fetch a foreign contract once
-        let mut referenced_contracts = BTreeMap::new();
 
         if !holds_elements {
             let referenced_id = match holder {
@@ -503,6 +532,7 @@ fn validate_document_type_references_v0(
                 document_type,
                 document_data,
                 owner_id,
+                referring_system,
                 reference_target,
                 referenced_id,
                 None,
@@ -514,6 +544,7 @@ fn validate_document_type_references_v0(
                 block_info,
                 is_create,
                 consumed_documents,
+                RuleReads::of(&rule_reads, path, referenced_documents),
                 transaction,
                 execution_context,
                 platform_version,
@@ -584,11 +615,14 @@ fn validate_document_type_references_v0(
                 }
                 let kept_value_changed_fields =
                     kept_value_changed_fields(changed_fields, stored_values, path, &referenced_id);
+                // No rule reads through the elements of a typed array, which point at
+                // several documents (registration refuses it)
                 let result = validate_reference_v0(
                     contract,
                     document_type,
                     document_data,
                     owner_id,
+                    referring_system,
                     reference_target,
                     referenced_id,
                     None,
@@ -600,6 +634,7 @@ fn validate_document_type_references_v0(
                     block_info,
                     is_create,
                     consumed_documents,
+                    None,
                     transaction,
                     execution_context,
                     platform_version,
@@ -760,28 +795,30 @@ fn binds_a_changed_property(
     {
         return false;
     }
+    // The `where` of a document reference asks a replace about it when a
+    // referring property it reads changed, and on every replace when it reads
+    // a value that changes without a write: the writer (a writer gate, or a
+    // `notEqual` bounded by it), or the time or heights of the last update or
+    // transfer bounding an ordering (protocol version 14)
+    let where_binds = |declaration: DocumentReferenceDeclaration| {
+        declaration.where_is_rechecked_on_every_replace()
+            || declaration
+                .where_referring_properties()
+                .any(|referring_property| is_changed_field(changed_fields, referring_property))
+    };
     match reference_target {
         // A moderated reference is kept as a permanent one is: its document
         // leaves state only on a moderator's record, which the reference then
-        // resolves to, so nothing but its own pairs asks a replace about it
-        DocumentPropertyReferenceTarget::PermanentDocument {
-            property_agreement, ..
-        }
-        | DocumentPropertyReferenceTarget::ModeratedDocument {
-            property_agreement, ..
-        } => property_agreement.keys().any(|referring_property| {
-            is_referring_system_agreement_property(referring_property)
-                || is_changed_field(changed_fields, referring_property)
-        }),
-        DocumentPropertyReferenceTarget::PermanentDocumentLookup {
-            property_agreement,
-            lookup,
-            ..
-        } => {
-            property_agreement.keys().any(|referring_property| {
-                is_referring_system_agreement_property(referring_property)
-                    || is_changed_field(changed_fields, referring_property)
-            }) || lookup_key_may_have_changed(lookup, changed_fields)
+        // resolves to, so nothing but its own `where` asks a replace about it
+        DocumentPropertyReferenceTarget::PermanentDocument { .. }
+        | DocumentPropertyReferenceTarget::ModeratedDocument { .. } => reference_target
+            .as_any_document_reference()
+            .is_some_and(where_binds),
+        DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. } => {
+            reference_target
+                .as_any_document_reference()
+                .is_some_and(where_binds)
+                || lookup_key_may_have_changed(lookup, changed_fields)
         }
         // A deletableDocument reference is re-validated on EVERY replace,
         // touched or not: its target may have been deleted since the last
@@ -805,13 +842,9 @@ fn binds_a_changed_property(
         // A list element binds the properties its agreement reads, the
         // `$id` pair's among them: a changed one may name another document,
         // whose list is then checked against every value
-        DocumentPropertyReferenceTarget::ListElement(reference) => reference
-            .property_agreement
-            .keys()
-            .any(|referring_property| {
-                is_referring_system_agreement_property(referring_property)
-                    || is_changed_field(changed_fields, referring_property)
-            }),
+        DocumentPropertyReferenceTarget::ListElement(_) => reference_target
+            .as_any_document_reference()
+            .is_some_and(where_binds),
         // A contract reference's `owner` requirement is judged against the
         // writer, transition metadata: a transfer or a purchase hands the
         // document to an owner the requirement never checked, without any
@@ -851,6 +884,43 @@ fn binds_a_changed_property(
     }
 }
 
+/// What the document type's `propertyConstraints` rules read of the document
+/// one reference finds (`{ "referenced": [reference, field] }`), and where the
+/// values go once the reference holds: under the reference property, in the map
+/// the rules are judged on. Only a single reference to one document, found by
+/// id or by a `findBy` without a function, carries one; registration refuses a
+/// rule reading through any other.
+struct RuleReads<'a> {
+    reference: &'a str,
+    fields: &'a BTreeSet<&'a str>,
+    values: &'a mut BTreeMap<String, Value>,
+}
+
+impl<'a> RuleReads<'a> {
+    /// What the rules read through the reference at `path`, `None` when they
+    /// read nothing through it.
+    fn of(
+        rule_reads: &'a BTreeMap<&'a str, BTreeSet<&'a str>>,
+        path: &'a str,
+        values: &'a mut BTreeMap<String, Value>,
+    ) -> Option<Self> {
+        rule_reads.get(path).map(|fields| RuleReads {
+            reference: path,
+            fields,
+            values,
+        })
+    }
+
+    /// Records what the rules read of `document`, the document the reference
+    /// found.
+    fn record_document(self, document: &Document) -> Result<(), Error> {
+        let values = referenced_document_values(document, self.fields.iter().copied())
+            .map_err(|error| Error::Protocol(error.into()))?;
+        self.values.insert(self.reference.to_string(), values);
+        Ok(())
+    }
+}
+
 /// What a string or byte array property carrying a reference hands its lookup
 /// in place of an id: its `value`, which `"."` reads, and, when a `findBy`
 /// function computes the key, the hash already computed and billed.
@@ -887,6 +957,7 @@ fn validate_reference_v0(
     document_type: DocumentTypeRef<'_>,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
+    referring_system: &DocumentSystemValues,
     reference_target: &DocumentPropertyReferenceTarget,
     referenced_id: [u8; 32],
     revealed: Option<RevealedValue<'_>>,
@@ -898,6 +969,7 @@ fn validate_reference_v0(
     block_info: &BlockInfo,
     is_create: bool,
     consumed_documents: &mut Vec<ConsumedLookupDocument>,
+    rule_reads: Option<RuleReads<'_>>,
     transaction: TransactionArg,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
@@ -908,6 +980,7 @@ fn validate_reference_v0(
             document_type,
             document_data,
             owner_id,
+            referring_system,
             reference_target,
             referenced_id,
             revealed,
@@ -919,6 +992,7 @@ fn validate_reference_v0(
             block_info,
             is_create,
             consumed_documents,
+            rule_reads,
             transaction,
             execution_context,
             platform_version,
@@ -938,11 +1012,14 @@ fn validate_reference_v0(
     let mut result = SimpleConsensusValidationResult::new();
     for operand in operands.operands() {
         let consumed_before_operand = consumed_documents.len();
+        // No rule reads through an expression, which may hold through one
+        // document or another (registration refuses it)
         result = validate_reference_v0(
             contract,
             document_type,
             document_data,
             owner_id,
+            referring_system,
             operand,
             referenced_id,
             revealed,
@@ -954,6 +1031,7 @@ fn validate_reference_v0(
             block_info,
             is_create,
             consumed_documents,
+            None,
             transaction,
             execution_context,
             platform_version,
@@ -1013,6 +1091,7 @@ fn validate_reference_target_v0(
     document_type: DocumentTypeRef<'_>,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
+    referring_system: &DocumentSystemValues,
     reference_target: &DocumentPropertyReferenceTarget,
     referenced_id: [u8; 32],
     revealed: Option<RevealedValue<'_>>,
@@ -1024,6 +1103,7 @@ fn validate_reference_target_v0(
     block_info: &BlockInfo,
     is_create: bool,
     consumed_documents: &mut Vec<ConsumedLookupDocument>,
+    rule_reads: Option<RuleReads<'_>>,
     transaction: TransactionArg,
     execution_context: &mut StateTransitionExecutionContext,
     platform_version: &PlatformVersion,
@@ -1113,6 +1193,7 @@ fn validate_reference_target_v0(
                 contract_id: referenced_contract_id,
                 document_type_name,
                 property_agreement,
+                where_conditions,
                 kind,
                 lookup,
                 in_list: _,
@@ -1142,10 +1223,8 @@ fn validate_reference_target_v0(
             let referenced_contract = if effective_contract_id == contract.id() {
                 contract
             } else {
-                // The elements of one typed array share their declaration,
-                // so they resolve its contract once: the first element's
-                // fetch is billed and the rest reuse it. A single
-                // reference comes with a map of its own, one fetch
+                // Every reference of the write resolves a contract once: the
+                // first fetch is billed and the rest reuse it
                 let fetch_info = match referenced_contracts.get(&effective_contract_id) {
                     Some(resolved) => resolved.clone(),
                     None => {
@@ -1343,13 +1422,16 @@ fn validate_reference_target_v0(
                 if let Some(removal) = removal.filter(|removal| !removal.is_restored()) {
                     return validate_pairs_against_removal(
                         property_agreement,
+                        where_conditions,
                         &removal,
                         referenced_document_type,
                         Identifier::from(referenced_id),
                         changed_fields,
                         document_data,
                         owner_id,
+                        referring_system,
                         path,
+                        rule_reads,
                     );
                 }
             }
@@ -1424,25 +1506,10 @@ fn validate_reference_target_v0(
                     // registration validated that each faces an identifier
                     // property on the referring side, so the two compare as
                     // identifiers below.
-                    let referenced_value: Option<Cow<Value>> = match referenced_property.as_str() {
-                        OWNER_ID => Some(Cow::Owned(Value::Identifier(
-                            referenced_document.owner_id().to_buffer(),
-                        ))),
-                        ID => Some(Cow::Owned(Value::Identifier(
-                            referenced_document.id().to_buffer(),
-                        ))),
-                        CREATOR_ID => referenced_document.creator_id().map(|creator_id| {
-                            Cow::Owned(Value::Identifier(creator_id.to_buffer()))
-                        }),
-                        _ => {
-                            let Ok(referenced_value) = referenced_document
-                                .properties()
-                                .get_optional_at_path(referenced_property)
-                            else {
-                                return Ok(mismatch());
-                            };
-                            referenced_value.map(Cow::Borrowed)
-                        }
+                    let Ok(referenced_value) =
+                        referenced_document_value(referenced_document, referenced_property)
+                    else {
+                        return Ok(mismatch());
                     };
                     let (referring_value, referenced_value) =
                         match (referring_value, referenced_value) {
@@ -1461,6 +1528,27 @@ fn validate_reference_target_v0(
                     // document type carries a pair to reach this comparison
                     if !referring_value.same_scalar_data(&referenced_value) {
                         return Ok(mismatch());
+                    }
+                }
+                // The other `where` entries (protocol version 14): a literal the
+                // referenced side must equal or be one of, or a bound it must differ
+                // from or compare with, read from the document already in hand. A
+                // literal reads as the referenced property's kind says, of the type
+                // just resolved, since it may be another contract's
+                for (referenced_property, condition) in where_conditions {
+                    let Ok(referenced_value) =
+                        referenced_document_value(referenced_document, referenced_property)
+                    else {
+                        return Ok(condition_mismatch(path, condition, referenced_property));
+                    };
+                    let kind = WhereLiteralKind::of_referenced(
+                        referenced_document_type,
+                        referenced_property,
+                    );
+                    let bound =
+                        where_bound_value(condition, document_data, owner_id, referring_system);
+                    if !condition.holds(referenced_value.as_deref(), kind, bound.as_deref()) {
+                        return Ok(condition_mismatch(path, condition, referenced_property));
                     }
                 }
             }
@@ -1500,6 +1588,15 @@ fn validate_reference_target_v0(
                         path: path.to_string(),
                     });
                 }
+            }
+
+            // What the type's rules read of the document, from the document in
+            // hand: the reference holds, every check above having passed. A list
+            // element reference never carries rule reads (registration refuses it)
+            if let (Some(rule_reads), Some(found), None) =
+                (rule_reads, referenced_document, list_reference)
+            {
+                rule_reads.record_document(found)?;
             }
 
             // A list element exists when the document does and its list
@@ -1593,6 +1690,92 @@ fn validate_reference_target_v0(
     Ok(SimpleConsensusValidationResult::new())
 }
 
+/// The refusal of a write whose referenced document does not meet the `where`
+/// entry keyed by `referenced_property` that `condition` declares: a
+/// `ReferencedDocumentPropertyMismatchError` (40127), whose referring side is
+/// the condition as written (`{ "greaterThan": "$createdAt" }`).
+fn condition_mismatch(
+    path: &str,
+    condition: &WhereCondition,
+    referenced_property: &str,
+) -> SimpleConsensusValidationResult {
+    SimpleConsensusValidationResult::new_with_error(
+        ReferencedDocumentPropertyMismatchError::new(
+            path.to_string(),
+            condition.to_string(),
+            referenced_property.to_string(),
+        )
+        .into(),
+    )
+}
+
+/// The value of the bound `condition` compares the referenced side with, read
+/// from the referring document: a property of `document_data` (`None` when it
+/// leaves it out or a path on the way is no object), the writer `owner_id`, or
+/// a time or height of `referring_system` as an integer. `None` for a literal
+/// or a list of them, which the condition carries.
+fn where_bound_value<'a>(
+    condition: &WhereCondition,
+    document_data: &'a BTreeMap<String, Value>,
+    owner_id: Identifier,
+    referring_system: &DocumentSystemValues,
+) -> Option<Cow<'a, Value>> {
+    match condition.bound_read()? {
+        WhereBoundRead::Property(path) => document_data
+            .get_optional_at_path(path)
+            .ok()
+            .flatten()
+            .map(Cow::Borrowed),
+        WhereBoundRead::Writer => Some(Cow::Owned(Value::Identifier(owner_id.to_buffer()))),
+        WhereBoundRead::System(property) => referring_system
+            .value(property)
+            .map(|value| Cow::Owned(Value::I128(value))),
+    }
+}
+
+/// What a removal record holds of the document a moderator removed, read field
+/// by field: its `$id`, its `$ownerId` at the removal, which no transfer can
+/// move since (a removed document can not be transferred, and a restore brings
+/// it back as it was), and the values of the fields its type keeps under
+/// `deleteKeepsFields` (a kept path, or one inside a kept object), decoded under
+/// `referenced_document_type` on the first read of one.
+struct RemovalRecord<'a> {
+    removal: &'a ContractDocumentRemoval,
+    document_id: Identifier,
+    referenced_document_type: DocumentTypeRef<'a>,
+    kept_values: Option<BTreeMap<String, Value>>,
+}
+
+impl RemovalRecord<'_> {
+    /// The record's value of `field`, `Some(None)` when it keeps the field and
+    /// the document held none there, `None` when it keeps no such field. A
+    /// record whose values do not read under the type is a corrupted state, an
+    /// error rather than a refusal.
+    fn value(&mut self, field: &str) -> Result<Option<Option<Value>>, Error> {
+        Ok(match field {
+            OWNER_ID => Some(Some(Value::Identifier(
+                self.removal.document_owner_id.to_buffer(),
+            ))),
+            ID => Some(Some(Value::Identifier(self.document_id.to_buffer()))),
+            field => {
+                let kept_paths = self
+                    .referenced_document_type
+                    .moderator_deletion_kept_fields();
+                if !is_path_listed(kept_paths, field) {
+                    return Ok(None);
+                }
+                if self.kept_values.is_none() {
+                    self.kept_values =
+                        Some(self.removal.kept_values(self.referenced_document_type)?);
+                }
+                self.kept_values
+                    .as_ref()
+                    .map(|kept_values| kept_value_at(kept_paths, kept_values, field).flatten())
+            }
+        })
+    }
+}
+
 /// A `moderatedDocument` reference a replace keeps, whose document a moderator
 /// removed: it holds through `removal`, the document's removal record. The
 /// record keeps the document's id and its owner at the removal, which no
@@ -1615,53 +1798,56 @@ fn validate_reference_target_v0(
 /// on a `moderatedDocument` reference against the referenced `$ownerId` or
 /// `$id` alone, since a writer gate is asked about on every replace. A pair the replace does not ask about held when it was last
 /// checked, against a document whose values the removal froze, and is left as
-/// it is. No read: the record was read and billed by the caller.
+/// it is, unless a rule reads the document through the reference: then every
+/// entry is checked, as the replace checks every entry against a document in
+/// state, and registration keeps each to what every record holds. No read: the
+/// record was read and billed by the caller.
 ///
 /// In place in generation 0: reached from protocol version 14 only, the only
 /// version whose parser produces a `moderatedDocument` reference.
 #[allow(clippy::too_many_arguments)]
 fn validate_pairs_against_removal(
     property_agreement: &BTreeMap<String, String>,
+    where_conditions: &BTreeMap<String, WhereCondition>,
     removal: &ContractDocumentRemoval,
     referenced_document_type: DocumentTypeRef,
     document_id: Identifier,
     changed_fields: &BTreeSet<String>,
     document_data: &BTreeMap<String, Value>,
     owner_id: Identifier,
+    referring_system: &DocumentSystemValues,
     path: &str,
+    rule_reads: Option<RuleReads<'_>>,
 ) -> Result<SimpleConsensusValidationResult, Error> {
-    let kept_paths = referenced_document_type.moderator_deletion_kept_fields();
-    let mut kept_values = None;
+    let mut record = RemovalRecord {
+        removal,
+        document_id,
+        referenced_document_type,
+        kept_values: None,
+    };
+    let removed = |referenced_property: &str| {
+        SimpleConsensusValidationResult::new_with_error(
+            ReferencedDocumentRemovedError::new(
+                document_id,
+                path.to_string(),
+                referenced_property.to_string(),
+            )
+            .into(),
+        )
+    };
+    // A rule reading the document has the reference checked on every replace,
+    // its `where` whole, as against a document in state; registration keeps
+    // every entry of such a reference to what every record holds
+    let checks_every_entry = rule_reads.is_some();
     for (referring_property, referenced_property) in property_agreement {
-        let rechecked = is_referring_system_agreement_property(referring_property)
+        let rechecked = checks_every_entry
+            || is_referring_system_agreement_property(referring_property)
             || is_changed_field(changed_fields, referring_property);
         if !rechecked {
             continue;
         }
-        let referenced_value = match referenced_property.as_str() {
-            OWNER_ID => Some(Cow::Owned(Value::Identifier(
-                removal.document_owner_id.to_buffer(),
-            ))),
-            ID => Some(Cow::Owned(Value::Identifier(document_id.to_buffer()))),
-            property if !is_path_listed(kept_paths, property) => {
-                return Ok(SimpleConsensusValidationResult::new_with_error(
-                    ReferencedDocumentRemovedError::new(
-                        document_id,
-                        path.to_string(),
-                        referenced_property.clone(),
-                    )
-                    .into(),
-                ))
-            }
-            property => {
-                let kept_values = match &mut kept_values {
-                    Some(kept_values) => kept_values,
-                    None => kept_values.insert(removal.kept_values(referenced_document_type)?),
-                };
-                kept_value_at(kept_paths, kept_values, property)
-                    .flatten()
-                    .map(Cow::Owned)
-            }
+        let Some(referenced_value) = record.value(referenced_property)? else {
+            return Ok(removed(referenced_property));
         };
         // As against a document in state: the writer for `$ownerId`, a
         // property of the document otherwise, one unreadable a mismatch
@@ -1690,6 +1876,51 @@ fn validate_pairs_against_removal(
                 .into(),
             ));
         }
+    }
+    // The other `where` entries the replace asks about again, as the pairs
+    // above: one bounded by a changed property, or by a value that changes
+    // without a write (the writer, the last update or transfer), or every one
+    // when a rule reads the document. Registration keeps an entry asked about
+    // on every replace to what every record holds
+    for (referenced_property, condition) in where_conditions {
+        let rechecked = checks_every_entry
+            || condition.is_rechecked_on_every_replace()
+            || condition
+                .referring_property()
+                .is_some_and(|property| is_changed_field(changed_fields, property));
+        if !rechecked {
+            continue;
+        }
+        let Some(referenced_value) = record.value(referenced_property)? else {
+            return Ok(removed(referenced_property));
+        };
+        let kind = WhereLiteralKind::of_referenced(referenced_document_type, referenced_property);
+        let bound = where_bound_value(condition, document_data, owner_id, referring_system);
+        if !condition.holds(referenced_value.as_ref(), kind, bound.as_deref()) {
+            return Ok(condition_mismatch(path, condition, referenced_property));
+        }
+    }
+    // What the type's rules read of the document, from its record: its id, its
+    // owner at the removal and the fields its type keeps, the only ones
+    // registration lets a rule read through such a reference
+    if let Some(rule_reads) = rule_reads {
+        let mut values = Value::Map(Vec::new());
+        for field in rule_reads.fields.iter().copied() {
+            let Some(value) = record.value(field)? else {
+                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "a rule reads through a moderatedDocument reference only what every \
+                     removal record keeps, which registration enforces",
+                )));
+            };
+            if let Some(value) = value {
+                values
+                    .set_value_at_full_path(field, value)
+                    .map_err(|error| Error::Protocol(error.into()))?;
+            }
+        }
+        rule_reads
+            .values
+            .insert(rule_reads.reference.to_string(), values);
     }
     Ok(SimpleConsensusValidationResult::new())
 }

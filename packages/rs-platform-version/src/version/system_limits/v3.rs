@@ -77,4 +77,5 @@ pub const SYSTEM_LIMITS_V3: SystemLimits = SystemLimits {
     max_indexed_array_items: None,
     max_windowed_indexed_array_items: None,
     max_index_entries_per_document: None,
+    max_rekey_batch_moves: None,                // read only by the protocol version 14 upgrade
 };

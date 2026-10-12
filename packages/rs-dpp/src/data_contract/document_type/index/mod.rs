@@ -1528,6 +1528,23 @@ impl Index {
         self.summable_off_count_index.is_some()
     }
 
+    /// Whether this index is `rangeSummable` and ends with `property`. The
+    /// tree holding `property`'s values then keeps a signed sum in every node,
+    /// so `serialize_value_for_key` 1 keys such a property, when unsigned, as
+    /// generation 0 at every protocol version: values of both signs whose
+    /// sums fit every node in the earlier key order can leave the signed
+    /// 64-bit range in every balanced tree of value order, and a summed
+    /// property's type does not tell its stored values are never negative
+    /// (an update before protocol version 14 can make a property holding
+    /// negative values unsigned).
+    pub fn ends_range_summable_with(&self, property: &str) -> bool {
+        self.range_summable
+            && self
+                .properties
+                .last()
+                .is_some_and(|last| last.name == property)
+    }
+
     /// The position of the shallowest level of this index's count chain: the
     /// shallowest property its count or average ranking names in `at`.
     /// Every value tree from that level down counts its whole subtree. `None`

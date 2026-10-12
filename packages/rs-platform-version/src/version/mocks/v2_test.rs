@@ -641,6 +641,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_indexed_array_items: None,
         max_windowed_indexed_array_items: None,
         max_index_entries_per_document: None,
+        max_rekey_batch_moves: None,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,

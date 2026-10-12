@@ -11,14 +11,17 @@
 //! document type are references, and to what?" — without hand-parsing the
 //! contract's raw JSON schema.
 
+use crate::data_contract::document_type_property_constraints::integer_to_js;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::utils::define_own_property;
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
     IdentityKeyReferenceRequirements, KeyIdReference, LookupHashKey, LookupKeyParam,
-    LookupKeySource, PropertyReference,
+    LookupKeySource, PropertyReference, WhereCondition, WhereLiteral, WhereNotEqualBound,
+    WhereOrderingBound,
 };
-use dpp::document::property_names::ID;
+use dpp::document::property_names::{ID, OWNER_ID};
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
 use std::collections::BTreeMap;
@@ -248,8 +251,11 @@ export type DocumentPropertyReferenceTarget =
        * resolves to the document or, once a moderator removed it, to its
        * removal record, which a restore can bring the document back from. A
        * replace keeps it, re-validating it only when the value or a property
-       * `where` reads changes (every replace for a `where` value `$ownerId`),
-       * as for `permanentDocument`.
+       * `where` reads changes, as for `permanentDocument`; on every replace
+       * for a `where` value `$ownerId`, a `notEqual` bounded by `$ownerId`,
+       * an ordering bounded by `$updatedAt` or `$transferredAt` (or their
+       * heights), and a reference a `propertyConstraints` rule reads through,
+       * which checks its whole `where`.
        */
       type: 'moderatedDocument';
       /**
@@ -333,8 +339,40 @@ export type DocumentReferenceFindBy = Record<string, string | DocumentReferenceF
  * an identity equal to the referenced side may create the document, and every
  * replace re-checks it. Beside a `findBy` function the whole declaration is
  * judged when the document is created only, so no replace re-checks it.
+ *
+ * A value may instead be a condition ({@link DocumentReferenceWhereCondition}):
+ * a literal the referenced side must equal, a value it must differ from,
+ * literals it must be one of, or a bound it must compare with.
  */
-export type DocumentReferenceWhere = Record<string, string>;
+export type DocumentReferenceWhere = Record<string, string | DocumentReferenceWhereCondition>;
+
+/**
+ * A `where` entry that is not an equality with a referring value, as the
+ * schema writes it, one key:
+ *
+ * - `const`: a literal the referenced side must equal (a string is a base58
+ *   identifier for an identifier, hex for a byte array); a side the document
+ *   leaves out equals none;
+ * - `notEqual`: a referring property path, `'$ownerId'` (the writer, checked on
+ *   every replace) or a `{ const }` it must differ from; both sides absent are
+ *   equal;
+ * - `in`: two or more literals of one kind, one of which it must equal;
+ * - `greaterThan`, `greaterThanOrEqual`, `lessThan`, `lessThanOrEqual`: an
+ *   integer it must compare with, an integer property path of the referring
+ *   type, an integer `{ const }`, or a time or height the referring type
+ *   records (`'$createdAt'`; one of the update or transfer is checked on every
+ *   replace); it holds only when both sides have a value.
+ *
+ * An entry that does not hold refuses the write with code 40127.
+ */
+export type DocumentReferenceWhereCondition =
+  | { const: string | number | bigint | boolean }
+  | { notEqual: string | { const: string | number | bigint | boolean } }
+  | { in: Array<string | number | bigint | boolean> }
+  | { greaterThan: string | { const: number | bigint } }
+  | { greaterThanOrEqual: string | { const: number | bigint } }
+  | { lessThan: string | { const: number | bigint } }
+  | { lessThanOrEqual: string | { const: number | bigint } };
 
 /**
  * A `findBy` function, for a commit and reveal, keyed by the referenced
@@ -414,6 +452,17 @@ fn set_field(target: &Object, key: &str, value: &JsValue, path: &str) -> WasmDpp
         ))
     })?;
     Ok(())
+}
+
+/// [`set_field`] for a key the schema names, a property of the referenced
+/// type: an own property even when the name is `__proto__`, whose assignment
+/// would call the setter every object inherits instead.
+fn set_schema_field(target: &Object, key: &str, value: JsValue, path: &str) -> WasmDppResult<()> {
+    define_own_property(target, key, value).map_err(|_| {
+        WasmDppError::generic(format!(
+            "unable to serialize the `{key}` field of the reference declared at '{path}'"
+        ))
+    })
 }
 
 /// A `findBy` function as the schema spells it: `{ function, params }`.
@@ -498,13 +547,15 @@ fn set_key_requirements_field(
 /// The `where` field of a document reference: `{ referenced property:
 /// referring property }`, a consensus-enforced equality at write time, keyed by
 /// the referenced side as the schema spells it (the parsed model keys it the
-/// other way). `find_by_entry` leaves out the entry `findBy` reads instead, a
-/// list's `$id`. Absent, not `{}`-valued, when the declaration compares
-/// nothing, matching the schema's own omission and the absent-field convention
-/// of the other optional target fields.
+/// other way), and the other entries, each `{ referenced property: condition }`
+/// as the schema writes the condition. `find_by_entry` leaves out the entry
+/// `findBy` reads instead, a list's `$id`. Absent, not `{}`-valued, when the
+/// declaration compares nothing, matching the schema's own omission and the
+/// absent-field convention of the other optional target fields.
 fn set_where_field(
     object: &Object,
     property_agreement: &BTreeMap<String, String>,
+    where_conditions: &BTreeMap<String, WhereCondition>,
     find_by_entry: Option<&str>,
     path: &str,
 ) -> WasmDppResult<()> {
@@ -512,19 +563,85 @@ fn set_where_field(
         .iter()
         .filter(|(_, referenced)| Some(referenced.as_str()) != find_by_entry)
         .collect();
-    if entries.is_empty() {
+    if entries.is_empty() && where_conditions.is_empty() {
         return Ok(());
     }
     let where_object = Object::new();
     for (referring, referenced) in entries {
-        set_field(
+        set_schema_field(
             &where_object,
             referenced,
-            &JsValue::from_str(referring),
+            JsValue::from_str(referring),
+            path,
+        )?;
+    }
+    for (referenced, condition) in where_conditions {
+        set_schema_field(
+            &where_object,
+            referenced,
+            where_condition_to_js(condition, path)?,
             path,
         )?;
     }
     set_field(object, "where", &where_object, path)
+}
+
+/// A `where` literal as the schema writes it: an integer past
+/// `Number.MAX_SAFE_INTEGER` as a `bigint`, exactly.
+fn where_literal_to_js(literal: &WhereLiteral) -> JsValue {
+    match literal {
+        WhereLiteral::Integer(integer) => integer_to_js(*integer),
+        WhereLiteral::Boolean(flag) => JsValue::from_bool(*flag),
+        WhereLiteral::Text(text) => JsValue::from_str(text),
+    }
+}
+
+/// `{ "const": literal }`.
+fn where_constant_to_js(literal: &WhereLiteral, path: &str) -> WasmDppResult<JsValue> {
+    let constant = Object::new();
+    set_field(&constant, "const", &where_literal_to_js(literal), path)?;
+    Ok(constant.into())
+}
+
+/// The bound of a `notEqual` as the schema writes it: a path, `'$ownerId'` or
+/// `{ const }`.
+fn not_equal_bound_to_js(bound: &WhereNotEqualBound, path: &str) -> WasmDppResult<JsValue> {
+    Ok(match bound {
+        WhereNotEqualBound::Property(property) => JsValue::from_str(property),
+        WhereNotEqualBound::Writer => JsValue::from_str(OWNER_ID),
+        WhereNotEqualBound::Constant(literal) => where_constant_to_js(literal, path)?,
+    })
+}
+
+/// The bound of an ordering as the schema writes it: a path, a time or
+/// height, or `{ const }`.
+fn ordering_bound_to_js(bound: &WhereOrderingBound, path: &str) -> WasmDppResult<JsValue> {
+    Ok(match bound {
+        WhereOrderingBound::Property(property) => JsValue::from_str(property),
+        WhereOrderingBound::System(property) => JsValue::from_str(property.name()),
+        WhereOrderingBound::Constant(integer) => {
+            where_constant_to_js(&WhereLiteral::Integer(*integer), path)?
+        }
+    })
+}
+
+/// A `where` condition as the schema writes it: an object with one key.
+fn where_condition_to_js(condition: &WhereCondition, path: &str) -> WasmDppResult<JsValue> {
+    let value = match condition {
+        WhereCondition::Constant(literal) => where_literal_to_js(literal),
+        WhereCondition::NotEqual(bound) => not_equal_bound_to_js(bound, path)?,
+        WhereCondition::Ordering { bound, .. } => ordering_bound_to_js(bound, path)?,
+        WhereCondition::In(literals) => {
+            let values = Array::new();
+            for literal in literals {
+                values.push(&where_literal_to_js(literal));
+            }
+            values.into()
+        }
+    };
+    let object = Object::new();
+    set_field(&object, condition.wire_name(), &value, path)?;
+    Ok(object.into())
 }
 
 /// The `findBy` field of a document reference found by it: every property it
@@ -542,7 +659,7 @@ fn set_find_by_fields(
             LookupKeySource::Hash(key) => find_by_function_to_js(key, path)?,
             source => JsValue::from_str(source.as_str()),
         };
-        set_field(&find_by, index_property, &value, path)?;
+        set_schema_field(&find_by, index_property, value, path)?;
     }
     set_field(object, "findBy", &find_by, path)?;
     if let Some(blocks) = lookup.minimum_age_blocks {
@@ -682,28 +799,33 @@ fn set_reference_target_fields(
             contract_id,
             document_type_name,
             property_agreement,
+            where_conditions,
         }
         | DocumentPropertyReferenceTarget::PermanentDocumentLookup {
             contract_id,
             document_type_name,
             property_agreement,
+            where_conditions,
             ..
         }
         | DocumentPropertyReferenceTarget::DeletableDocument {
             contract_id,
             document_type_name,
             property_agreement,
+            where_conditions,
         }
         | DocumentPropertyReferenceTarget::DeletableDocumentLookup {
             contract_id,
             document_type_name,
             property_agreement,
+            where_conditions,
             ..
         }
         | DocumentPropertyReferenceTarget::ModeratedDocument {
             contract_id,
             document_type_name,
             property_agreement,
+            where_conditions,
         } => {
             let effective = contract_id.unwrap_or(declaring_contract_id);
             set_field(
@@ -725,7 +847,7 @@ fn set_reference_target_fields(
             {
                 set_find_by_fields(object, lookup, path)?;
             }
-            set_where_field(object, property_agreement, None, path)?;
+            set_where_field(object, property_agreement, where_conditions, None, path)?;
         }
         // A document found by its `$id` read from another property, whose list
         // the value must be in: the fields of `permanentDocument`, `findBy`
@@ -749,7 +871,13 @@ fn set_reference_target_fields(
                 set_field(&find_by, ID, &JsValue::from_str(document_id_property), path)?;
                 set_field(object, "findBy", &find_by, path)?;
             }
-            set_where_field(object, &reference.property_agreement, Some(ID), path)?;
+            set_where_field(
+                object,
+                &reference.property_agreement,
+                &reference.where_conditions,
+                Some(ID),
+                path,
+            )?;
             set_field(
                 object,
                 "inList",
