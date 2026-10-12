@@ -19,8 +19,8 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
 };
 use drive::drive::identity::withdrawals::paths::{
-    get_withdrawal_root_path, WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
-    WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY, WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
+    get_withdrawal_root_path, WITHDRAWAL_TRANSACTIONS_BROADCASTED_KEY,
+    WITHDRAWAL_TRANSACTIONS_SUM_AMOUNT_TREE_KEY,
 };
 use drive::drive::prefunded_specialized_balances::prefunded_specialized_balances_for_voting_path_vec;
 use drive::drive::saved_block_transactions::{
@@ -40,7 +40,6 @@ use drive::drive::{Drive, RootTree};
 use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction, TreeType};
 use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
-use drive::util::grove_operations::DirectQueryType;
 use drive::util::storage_flags::StorageFlags;
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -718,21 +717,10 @@ impl<C> Platform<C> {
         // Unsigned index value keys: from this version a property of an unsigned integer
         // type is keyed by its big-endian bytes (`serialize_value_for_key` 1), which sort as
         // the values do. Every key written before is rewritten first, under the contracts
-        // that wrote it. The rewrite flips keys, so running it again would flip them back:
-        // it runs only while the withdrawal limit trees, which this transition inserts, are
-        // absent, as they are on every chain before its first block of version 14.
-        let transitioned_before = self.drive.grove_has_raw(
-            SubtreePath::from(&get_withdrawal_root_path()),
-            &WITHDRAWAL_TOTAL_CREDITS_HISTORY_KEY,
-            DirectQueryType::StatefulDirectQuery,
-            Some(transaction),
-            &mut vec![],
-            &platform_version.drive,
-        )?;
-        if !transitioned_before {
-            self.drive
-                .rekey_unsigned_integer_index_values(transaction, platform_version)?;
-        }
+        // that wrote it. The rewrite flips keys, so it must run once, as this transition does:
+        // in the one block where a chain's protocol version reaches 14.
+        self.drive
+            .rekey_unsigned_integer_index_values(transaction, platform_version)?;
 
         let dashpay_contract =
             load_system_data_contract(SystemDataContract::Dashpay, platform_version)?;
@@ -1566,12 +1554,9 @@ mod tests {
             core_height: 100,
             epoch: Epoch::new(1).expect("expected epoch"),
         };
-        // A second run leaves the rewritten keys as they are
-        for _ in 0..2 {
-            platform
-                .transition_to_version_14(&block_info, &transaction, platform_version)
-                .expect("expected the transition to succeed");
-        }
+        platform
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
 
         let drive_config = DriveConfig::default();
         let count = |operator, value| match platform

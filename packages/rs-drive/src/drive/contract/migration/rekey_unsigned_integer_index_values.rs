@@ -27,7 +27,7 @@ impl Drive {
     /// sort as the values do, where generation 0 flipped the top bit as for a
     /// signed value. Generation 1 differs only by that flip, so running the
     /// rewrite again would flip the keys back; `transition_to_version_14`
-    /// calls it only on a chain it has not transitioned before.
+    /// calls it, which runs once per chain.
     ///
     /// Every document type of every contract in state is walked through its
     /// layout (`document_type_layout`) down to the trees whose children are
