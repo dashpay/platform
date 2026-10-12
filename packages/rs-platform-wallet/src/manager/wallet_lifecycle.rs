@@ -107,12 +107,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Take `generation` — a registration this manager inserted and is now
     /// unwinding — back out of the inner wallet manager.
     ///
-    /// Under the generation's lifecycle gate, like any removal (gate first,
-    /// manager lock second): an operation that saw the registration live and
-    /// is pushing one of its transactions to the network finishes, or gives
-    /// up, before the wallet goes. And by identity, not by id: whatever else
-    /// has come to be registered under `wallet_id` while this waited for the
-    /// gate is not this call's to remove.
+    /// Under the generation's lifecycle gate (gate first, manager lock
+    /// second): an operation that saw the registration live and is pushing
+    /// one of its transactions to the network finishes, or gives up, before
+    /// the wallet goes. Only the inner removal: a rollback has no deferred
+    /// state to sweep the way
+    /// [`remove_wallet_with_teardown`](Self::remove_wallet_with_teardown)
+    /// does.
     pub(super) async fn roll_back_inner(
         &self,
         wallet_id: &WalletId,
@@ -120,7 +121,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ) {
         let _teardown = generation.teardown_guard().await;
         let mut wm = self.wallet_manager.write().await;
-        if !generation.is_registered_in(&wm, wallet_id) {
+        self.roll_back_from_inner(&mut wm, wallet_id, generation);
+    }
+
+    /// The removal of [`roll_back_inner`](Self::roll_back_inner), for a
+    /// caller that holds `generation`'s teardown guard and the manager's
+    /// write guard. By identity, not by id: whatever else has come to be
+    /// registered under `wallet_id` while the caller waited for the gate is
+    /// not its to remove.
+    pub(super) fn roll_back_from_inner(
+        &self,
+        wm: &mut WalletManager<PlatformWalletInfo>,
+        wallet_id: &WalletId,
+        generation: &Arc<WalletGeneration>,
+    ) {
+        if !generation.is_registered_in(wm, wallet_id) {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 "rollback: the registration to unwind is no longer the one under this id; \
@@ -128,7 +143,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             );
             return;
         }
-        if let Err(error) = self.remove_from_inner(&mut wm, wallet_id) {
+        if let Err(error) = self.remove_from_inner(wm, wallet_id) {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 %error,
@@ -2386,7 +2401,7 @@ mod rollback_tests {
     /// lifecycle gate, so it waits for an operation that saw the wallet live
     /// and is still inside — gate first, manager lock second.
     #[tokio::test(start_paused = true)]
-    async fn a_rollback_waits_for_an_operation_inside_the_generations_gate() {
+    async fn should_make_a_rollback_wait_for_an_operation_inside_the_generations_gate() {
         let (manager, wallet_id) = test_platform_wallet_manager().await;
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         let generation = Arc::clone(wallet.generation());
@@ -2411,7 +2426,7 @@ mod rollback_tests {
     /// By identity, not by id: a registration that is not the one being
     /// unwound stays.
     #[tokio::test]
-    async fn a_rollback_leaves_another_registration_under_the_id_in_place() {
+    async fn should_leave_another_registration_under_the_id_in_place_on_rollback() {
         let (manager, wallet_id) = test_platform_wallet_manager().await;
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
         let unwound = Arc::new(WalletGeneration::new());

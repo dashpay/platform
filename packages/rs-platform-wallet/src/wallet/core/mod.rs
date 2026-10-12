@@ -12,8 +12,8 @@ pub mod wallet;
 
 pub use balance::WalletBalance;
 pub use balance_handler::BalanceUpdateHandler;
-pub use generation::WalletGeneration;
 pub(crate) use generation::{InBroadcastFences, InBroadcastPin};
+pub use generation::{TeardownGuard, WalletGeneration};
 pub use spend_observer::SpendObservationHandler;
 pub(crate) use transaction::{
     build_error_awaiting_network, resolve_source_accounts, trial_with_waiting_coins,

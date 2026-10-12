@@ -404,6 +404,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
 
         if let Some(err) = load_error {
+            // The whole rollback runs under the lifecycle gate of every
+            // generation this call inserted, taken before anything is undone
+            // (gates first, manager lock second): an operation that saw one
+            // of them live and is pushing its transaction to the network
+            // finishes, or gives up, before the wallet goes — and the
+            // rollback itself stays one step, not one per gate it waits for.
+            let mut _teardowns = Vec::with_capacity(inserted_in_manager.len());
+            for (_, generation) in &inserted_in_manager {
+                _teardowns.push(generation.teardown_guard().await);
+            }
             // Walk back every wallet committed in this call so the
             // manager state matches what it was before. Order:
             // remove from `self.wallets` first (UI surface), then
@@ -431,7 +441,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // Wait-free, purely for the diagnostics below: an id still in the
             // map after the rollback is one a same-id re-registration owns.
             let still_mapped = self.wallets.load();
-            {
+            if !inserted_in_manager.is_empty() {
+                let mut wm = self.wallet_manager.write().await;
                 for (id, generation) in &inserted_in_manager {
                     // A published id whose generation is no longer ours belongs
                     // to a newer registration; taking it out of the inner
@@ -464,7 +475,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         }
                         continue;
                     }
-                    self.roll_back_inner(id, generation).await;
+                    self.roll_back_from_inner(&mut wm, id, generation);
                 }
             }
             return Err(err);
