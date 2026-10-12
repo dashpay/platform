@@ -3830,6 +3830,28 @@ fn summable_off_count_index_error(
     None
 }
 
+/// The names an indexOnly index keys its entries by: its properties, then its
+/// terminal components.
+fn index_key_names(index: &Index) -> impl Iterator<Item = &str> {
+    index
+        .properties
+        .iter()
+        .map(|property| property.name.as_str())
+        .chain(index.terminal_components().iter().map(String::as_str))
+}
+
+/// Whether one of `indices` keeps exactly one entry for every live document
+/// ([`Index::keys_each_live_document_by_its_values`]) and has its whole key
+/// ([`index_key_names`]) inside `key`: two documents in state can then never
+/// share an entry keyed by `key`, since they would share that index's entry,
+/// which a create probes as a duplicate.
+fn keyed_by_a_document_index(indices: &BTreeMap<String, Index>, key: &BTreeSet<&str>) -> bool {
+    indices.values().any(|other| {
+        other.keys_each_live_document_by_its_values()
+            && index_key_names(other).all(|name| key.contains(name))
+    })
+}
+
 /// The rules an indexOnly document type checks for one index naming a typed array
 /// (protocol version 14), beyond those every indexed array follows
 /// (`validate_indexed_array_index`): the reason it is refused, or `None`.
@@ -3851,6 +3873,9 @@ fn summable_off_count_index_error(
 ///   one document holds its list, so the elements a preallocation keys and a counter's
 ///   groups are fixed by that document. The other rules of those keywords follow below
 ///   (`Index::preallocation_bindings`, `summable_off_count_index_error`).
+/// - It names one array, a top-level property: the rules every indexed array follows
+///   run under full validation only, and these are what the entry probes and the row
+///   commitment rely on, so an indexOnly type checks them on every parse too.
 ///
 /// A `summableOffCountIndex` index keeps one counter per group and no entries, so the
 /// first rule has nothing to keep apart there.
@@ -3865,6 +3890,20 @@ fn index_only_array_index_error(
         "index \"{index_name}\" on indexOnly document type \"{document_type_name}\" names the \
          typed array \"{array_name}\""
     );
+    if let Some((_, second, _)) = index
+        .typed_arrays(&document_type.flattened_properties)
+        .nth(1)
+    {
+        return Some(format!(
+            "{prefix} and also \"{second}\": an index keys by the elements of one typed array"
+        ));
+    }
+    if array_name.contains('.') {
+        return Some(format!(
+            "{prefix}, which is inside an object: an indexed typed array is a top-level \
+             property of the document type"
+        ));
+    }
     let bound = || array_bound_by_list_equality(index, array_name, document_type);
     if index.preallocated && !bound() {
         return Some(format!(
@@ -3899,23 +3938,10 @@ fn index_only_array_index_error(
     if index.is_summable_off_count_index() {
         return None;
     }
-    let key: BTreeSet<&str> = index
-        .properties
-        .iter()
-        .map(|property| property.name.as_str())
-        .chain(index.terminal_components().iter().map(String::as_str))
+    let key: BTreeSet<&str> = index_key_names(index)
         .filter(|name| *name != array_name)
         .collect();
-    let keyed_by_a_document_index = document_type.indices.values().any(|other| {
-        other.keys_each_live_document_by_its_values()
-            && other
-                .properties
-                .iter()
-                .map(|property| property.name.as_str())
-                .chain(other.terminal_components().iter().map(String::as_str))
-                .all(|name| key.contains(name))
-    });
-    if !keyed_by_a_document_index {
+    if !keyed_by_a_document_index(&document_type.indices, &key) {
         return Some(format!(
             "{prefix}, but its key without the array (its other properties and its terminal) \
              holds the whole key of no index that keeps one entry for every document (an \
@@ -4988,25 +5014,12 @@ pub(super) fn apply_index_only(
             // document, whose entry the create probes as a duplicate. The
             // entry then stands for no other live document than the one
             // writing it.
-            let key: BTreeSet<&str> = index
-                .properties
-                .iter()
-                .map(|property| property.name.as_str())
-                .chain(index.terminal_components().iter().map(String::as_str))
+            let key: BTreeSet<&str> = index_key_names(index)
                 .filter(|name| *name != CREATED_AT)
                 .collect();
             // (An index involving `$createdAt` never fits that key, so the
             // shared predicate's `$createdAt` term changes nothing here.)
-            let keyed_by_a_cleared_index = document_type.indices.values().any(|other| {
-                other.keys_each_live_document_by_its_values()
-                    && other
-                        .properties
-                        .iter()
-                        .map(|property| property.name.as_str())
-                        .chain(other.terminal_components().iter().map(String::as_str))
-                        .all(|name| key.contains(name))
-            });
-            if !keyed_by_a_cleared_index {
+            if !keyed_by_a_document_index(&document_type.indices, &key) {
                 return Err(structure_error(format!(
                     "index \"{}\" on indexOnly document type \"{}\" declares \
                      `outlivesDelete`, but its key (its properties but $createdAt, and its \

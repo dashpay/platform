@@ -568,6 +568,94 @@ fn should_refuse_an_index_only_array_index_without_unique_items() {
     );
 }
 
+/// An indexOnly type's array index names one top-level array on every parse,
+/// not only under full validation: the entry probes and the row commitment
+/// key the one array the index stamps, by its top-level name.
+#[test]
+fn should_refuse_a_second_or_nested_array_on_an_index_only_type_on_every_parse() {
+    let two_arrays = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "postId": identifier(0),
+            "tags": like_tags(true),
+            "postAuthor": identifier(2),
+            "topics": {
+                "type": "array",
+                "items": { "type": "string", "maxLength": 61 },
+                "maxItems": 4,
+                "uniqueItems": true,
+                "position": 3
+            }
+        },
+        "required": ["$createdAt", "postId", "postAuthor"],
+        "indices": [
+            by_post(),
+            {
+                "name": "byTagTopicPost",
+                "properties": [{ "tags": "asc" }, { "topics": "asc" }, { "postId": "asc" }]
+            },
+            {
+                "name": "byAuthorPostTime",
+                "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }, { "$createdAt": "asc" }]
+            }
+        ],
+        "additionalProperties": false
+    });
+    let nested = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "postId": identifier(0),
+            "meta": {
+                "type": "object",
+                "properties": { "tags": like_tags(true) },
+                "additionalProperties": false,
+                "position": 1
+            },
+            "postAuthor": identifier(2)
+        },
+        "required": ["$createdAt", "postId", "postAuthor", "meta"],
+        "indices": [
+            by_post(),
+            {
+                "name": "byTagPost",
+                "properties": [{ "meta.tags": "asc" }, { "postId": "asc" }]
+            },
+            {
+                "name": "byAuthorPostTime",
+                "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }, { "$createdAt": "asc" }]
+            }
+        ],
+        "additionalProperties": false
+    });
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                two_arrays.clone(),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "an index keys by the elements of one typed array",
+        );
+        expect_structure_error(
+            parse_dispatched(nested.clone(), PlatformVersion::latest(), full_validation),
+            if full_validation {
+                "an indexed typed array must be a top-level property"
+            } else {
+                "which is inside an object: an indexed typed array is a top-level property"
+            },
+        );
+    }
+    // The second array is the indexOnly rule's own finding without full validation
+    expect_structure_error(
+        parse_dispatched(two_arrays, PlatformVersion::latest(), false),
+        "and also \"topics\"",
+    );
+}
+
 /// `preallocated` and `summableOffCountIndex` stay refused on an index of a
 /// typed array no `where` equality binds to a referenced typed array (here the
 /// like refers to nothing): a preallocated path is fixed by one referenced

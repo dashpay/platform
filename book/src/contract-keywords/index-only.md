@@ -357,7 +357,7 @@ Every other index of an index-only type is a uniqueness rule, and an index on a 
 - An index on a typed array is never the proof index: it has no entry for a document without elements.
 - The array is in the skip set of every index naming it, so such an index needs no `skipIfAbsent`, and one whose only skip property would be the array is refused (10231): remove the flag.
 
-A create probes every element entry, and a delete checks every one against the row commitment, which holds the list in its order: a delete carrying the tags reordered, shortened or changed is refused with `DocumentNotFoundError` (40101). An empty, `null` and absent list are one value to the commitment, since they write the same entries, so a delete may carry any of them for a document created with any of them.
+A create does not read the array index's entries, since the other index already refuses any collision on them. A delete checks every element entry against the row commitment, which holds the list in its order: a delete carrying the tags reordered, shortened or changed is refused with `DocumentNotFoundError` (40101). An empty, `null` and absent list are one value to the commitment, since they write the same entries, so a delete may carry any of them for a document created with any of them.
 
 A query reads the elements with `contains` and `containsAny`, as on any type. Each entry is rebuilt as a document listing the one element it sits under: `tags contains "dash"` returns the likes tagged `dash`, each with `tags: ["dash"]`, and `containsAny` returns a like once for each listed tag it holds. Counts work as on any type: `byTagPost` counts a tag's likes and a post's likes under a tag, and `byTrendTagPost` a window's likes under a tag.
 
