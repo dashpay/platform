@@ -801,8 +801,20 @@ mod tests {
     use std::collections::BTreeMap;
 
     use key_wallet::managed_account::transaction_record::TransactionRecord;
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::Network;
+
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    /// The test wallet, built from a fixed mnemonic: every txid a test derives
+    /// from its addresses is the same in each run, so no test depends on how
+    /// random txids happen to sort.
+    fn test_wallet(accounts: WalletAccountCreationOptions) -> Wallet {
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).unwrap();
+        Wallet::from_mnemonic(mnemonic, Network::Testnet, accounts).unwrap()
+    }
 
     /// Stored history built from checker-produced records.
     fn history(
@@ -815,10 +827,9 @@ mod tests {
         }
     }
 
-    /// A fresh random wallet and its first BIP44 receive address.
+    /// The test wallet and its first BIP44 receive address.
     fn wallet_with_receive_address() -> (Wallet, ManagedWalletInfo, dashcore::Address) {
-        let wallet =
-            Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+        let wallet = test_wallet(WalletAccountCreationOptions::Default);
         let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
         let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
         let address = info
@@ -1397,11 +1408,9 @@ mod tests {
         use dashcore::{BlockHash, Transaction, TxIn, TxOut};
         use key_wallet::transaction_checking::BlockInfo;
 
-        let mut wallet = Wallet::new_random(
-            Network::Testnet,
-            WalletAccountCreationOptions::BIP44AccountsOnly([0, 1].into_iter().collect()),
-        )
-        .unwrap();
+        let mut wallet = test_wallet(WalletAccountCreationOptions::BIP44AccountsOnly(
+            [0, 1].into_iter().collect(),
+        ));
         let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
         let addresses: Vec<_> = [0, 1]
             .into_iter()
@@ -2220,11 +2229,9 @@ mod tests {
 
     /// A wallet with BIP44 accounts 0 and 1 and a receive address of each.
     fn two_account_wallet() -> (Wallet, ManagedWalletInfo, [dashcore::Address; 2]) {
-        let wallet = Wallet::new_random(
-            Network::Testnet,
-            WalletAccountCreationOptions::BIP44AccountsOnly([0, 1].into_iter().collect()),
-        )
-        .unwrap();
+        let wallet = test_wallet(WalletAccountCreationOptions::BIP44AccountsOnly(
+            [0, 1].into_iter().collect(),
+        ));
         let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
         let addresses = [0, 1].map(|index| {
             let xpub = wallet.accounts.standard_bip44_accounts[&index].account_xpub;
