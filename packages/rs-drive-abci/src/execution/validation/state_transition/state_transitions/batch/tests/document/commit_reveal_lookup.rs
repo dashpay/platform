@@ -2372,6 +2372,54 @@ mod commit_reveal_lookup_tests {
         assert!(!fixture.document_exists("namePreorder", first.id()));
     }
 
+    /// Ordered by `$createdAtBlockHeight` and then `$id`, both descending, the preorders of one
+    /// block are read by id the way `by` orders them: with a limit of 1, the higher id's
+    /// commitment is the one read, and refuses the lower id's reveal, while the higher id's own
+    /// reveal stands.
+    #[tokio::test]
+    async fn should_read_one_blocks_ids_the_way_by_orders_them_within_the_candidate_limit() {
+        let mut fixture = choose_first_fixture_by(serde_json::json!([
+            { "$createdAtBlockHeight": "desc" },
+            { "$id": "desc" }
+        ]));
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT).await;
+        let ((first_who, first), (second_who, second)) = if alice.id() > mallory.id() {
+            ((Who::Alice, alice), (Who::Mallory, mallory))
+        } else {
+            ((Who::Mallory, mallory), (Who::Alice, alice))
+        };
+        let data: BTreeMap<String, Value> = name_values()
+            .into_iter()
+            .map(|(property, value)| (property.to_string(), value))
+            .collect();
+        let mut one_candidate = PlatformVersion::latest().clone();
+        one_candidate.system_limits.max_choose_first_candidates = 1;
+
+        let (result, _, _) = fixture.validate_references(
+            "name",
+            &data,
+            fixture.id(second_who),
+            None,
+            REVEAL_HEIGHT,
+            &one_candidate,
+        );
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e))]
+                if *e.document_id() == second.id() && *e.preceding_document_id() == first.id()
+        );
+        let (result, _, _) = fixture.validate_references(
+            "name",
+            &data,
+            fixture.id(first_who),
+            None,
+            REVEAL_HEIGHT,
+            &one_candidate,
+        );
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
+
     /// Ordered by `$createdAtBlockHeight` descending, the newest valid preorder comes first:
     /// Alice's older one is preceded by Mallory's, whose reveal stands.
     #[tokio::test]
@@ -2633,8 +2681,8 @@ mod commit_reveal_lookup_tests {
         );
     }
 
-    /// The `findBy` and `chooseFirst` hashes are billed as the double SHA-256s they are, the
-    /// lookup and the competitors as the queries they are, and each competitor's `findBy`
+    /// The `findBy` and `validWhen` hashes are billed as the double SHA-256s they are, the
+    /// lookup and the competitors as the queries they are, and each competitor's `validWhen`
     /// value once: Carol's copy, then Mallory's valid preorder, which refuses.
     #[tokio::test]
     async fn should_bill_the_competitors_query_and_one_hash_per_competitor() {

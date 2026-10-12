@@ -415,7 +415,8 @@ export type DocumentReferenceConstraints = {
  * `findBy` function reads: a commitment is valid when it holds that function
  * computed with its owner, which takes knowing the values, so a copied hash
  * does not count. The commitments are ordered by `by`, each entry one property
- * and its direction, a last `$id` breaking ties. A create is refused when a
+ * and its direction, a last `$id` breaking ties in the direction of the entry
+ * before it (ascending alone). A create is refused when a
  * valid commitment before the found one is not past its `ttl` (code 40149);
  * two equal on every `by` property precede neither other. A found commitment
  * past its own `ttl`, or not valid itself, reveals nothing (code 40120).

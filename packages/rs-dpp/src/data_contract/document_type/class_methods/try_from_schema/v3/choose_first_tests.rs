@@ -861,9 +861,37 @@ fn should_refuse_choose_first_a_referenced_type_cannot_answer() {
     );
 }
 
+/// The index keeps the commitments equal on its properties by id in the direction of its
+/// last (ascending under the grouped value alone), and the scan, cut at its candidate limit,
+/// reads them that way, so a last `$id` running the other way is refused.
+#[test]
+fn should_refuse_a_last_id_against_the_direction_the_index_keeps_ids() {
+    for (by, fragment) in [
+        (
+            json!([{ "$createdAtBlockHeight": "asc" }, { "$id": "desc" }]),
+            "chooseFirst among \"nameHash\" orders by $id desc after \"$createdAtBlockHeight\" \
+             asc: an index keeps the documents equal on its properties by $id in the direction \
+             of its last",
+        ),
+        (
+            json!([{ "$createdAtBlockHeight": "desc" }, "$id"]),
+            "chooseFirst among \"nameHash\" orders by $id asc after \"$createdAtBlockHeight\" \
+             desc",
+        ),
+        (
+            json!([{ "$id": "desc" }]),
+            "chooseFirst among \"nameHash\" orders by $id desc alone",
+        ),
+    ] {
+        let reveal = reveal_with(move |reveal| reveal["constraints"]["chooseFirst"]["by"] = by);
+        assert_refused_by_the_parser_on_every_parse(contract_revealing(reveal), fragment);
+    }
+}
+
 /// `by` orders through the index over the property followed by the `by` properties, each
 /// recorded on every commitment and fixed once written, in either direction; a last `$id`
-/// stands outside that index, which must then not be unique.
+/// stands outside that index, which must then not be unique, and runs the way the property
+/// before it does.
 #[test]
 fn should_order_choose_first_through_its_index() {
     let ordered_by = |by: serde_json::Value| {
@@ -872,7 +900,7 @@ fn should_order_choose_first_through_its_index() {
     for by in [
         json!([{ "$createdAtBlockHeight": "desc" }]),
         json!(["$createdAtBlockHeight", "$id"]),
-        json!([{ "$createdAtBlockHeight": "asc" }, { "$id": "desc" }]),
+        json!([{ "$createdAtBlockHeight": "desc" }, { "$id": "desc" }]),
     ] {
         contract(contract_revealing(ordered_by(by.clone())))
             .unwrap_or_else(|error| panic!("{by} should order the commitments: {error}"));

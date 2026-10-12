@@ -231,7 +231,8 @@ impl Serialize for DocumentReferenceLookup {
 /// The commitments are ordered by `by`, properties of the referenced document type each
 /// ascending or descending, through its index over `among` followed by those properties; a
 /// last `$id` may stand outside that index when it is not unique, whose entries are kept by
-/// id. A create whose found commitment is preceded by a valid one is refused
+/// id in the direction of its last property (ascending under `among` alone), the direction
+/// the last `$id` must run in. A create whose found commitment is preceded by a valid one is refused
 /// (`ReferencedDocumentPrecededError`), and two commitments equal on every `by` property
 /// precede neither other.
 #[derive(Debug, PartialEq, Eq, Clone, Encode, Decode, DecodeUntrusted)]

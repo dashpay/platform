@@ -2385,6 +2385,31 @@ fn parse_choose_first(choose_first_value: &Value) -> Result<LookupChooseFirst, D
             ascending,
         });
     }
+    // The index keeps the documents equal on its properties by id in the direction of its last
+    // (ascending under an equal value alone), and the scan, cut at its candidate limit, reads
+    // them that way: a last `$id` running the other way would leave out the ones before the
+    // commitment found, read last
+    if let Some((last, before)) = by.split_last() {
+        let ids_ascending = before.last().is_none_or(|order| order.ascending);
+        if last.property == ID && last.ascending != ids_ascending {
+            let direction = |ascending: bool| if ascending { "asc" } else { "desc" };
+            let after = match before.last() {
+                Some(order) => format!(
+                    "after \"{}\" {}",
+                    order.property,
+                    direction(order.ascending)
+                ),
+                None => "alone".to_string(),
+            };
+            return Err(refused(format!(
+                "among \"{among}\" orders by {ID} {} {after}: an index keeps the documents equal \
+                 on its properties by {ID} in the direction of its last, and the scan reads them \
+                 that way, so a last {ID} runs in the direction of the property before it \
+                 (asc alone)",
+                direction(last.ascending)
+            )));
+        }
+    }
     Ok(LookupChooseFirst {
         among,
         valid_when_property,

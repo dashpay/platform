@@ -1738,7 +1738,9 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `validate_reference_lookup_sources`), requires the `validWhen` property
 ///     to be a stored 32-byte byte array fixed once written; every `by`
 ///     property to be recorded on every document, fixed once written and not
-///     transient; the referenced type to expire (`ttl`), to hold the index over
+///     transient (a last `$id` in the direction of the property before it,
+///     ascending alone: the index keeps ids that way and the capped query reads
+///     them so); the referenced type to expire (`ttl`), to hold the index over
 ///     `among` and the `by` properties (not unique under a last `$id`) and no
 ///     unique index holding `among`, or the `validWhen` property, without
 ///     `$ownerId`; at most one `chooseFirst` per type, not on typed array
