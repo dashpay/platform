@@ -463,7 +463,6 @@ pub(crate) fn restore_recorded_transactions(
     // outpoint keeps its reservation across load and rescan; only a conflicting
     // IS-locked or confirmed spend releases it. Sibling of
     // TODO(release-repair-spends-after-reorg) in `core_history`.
-    let mut replay = replay_order(records);
     if !unreplayable.is_empty() {
         // Count only: the txids are peer-supplied.
         tracing::warn!(
@@ -472,7 +471,8 @@ pub(crate) fn restore_recorded_transactions(
             "unconfirmed transaction records with unsafe amounts restored without replay; conflict settlement still sees them"
         );
     }
-    for record in &mut replay {
+    let mut records = records;
+    for record in &mut records {
         // A set-aside record stays unconfirmed: it may lose a conflict, never settle one.
         if unreplayable.contains_key(&record.txid) {
             continue;
@@ -495,6 +495,9 @@ pub(crate) fn restore_recorded_transactions(
             context => context.clone(),
         };
     }
+    // Ordered once the locks are applied: a locked record must not replay after
+    // unrelated mempool records.
+    let mut replay = replay_order(records);
 
     // Kept only to undo a replay the checker suspended part-way through.
     let (info_before, wallet_before) = (wallet_info.clone(), wallet.clone());
@@ -945,7 +948,9 @@ fn poll_ready<F: std::future::Future>(future: F) -> Option<F::Output> {
 }
 
 /// Order records as the chain would deliver them: every in-set parent ahead of
-/// its children, otherwise confirmed by block position, then unconfirmed.
+/// its children, otherwise confirmed by block position, then InstantSend-locked,
+/// then plain mempool. Replaying a locked record makes upstream scan every
+/// unconfirmed record already in history, so the unlocked ones go last.
 ///
 /// Dependencies span both partitions: a parent's stored record can still say
 /// mempool after it confirmed (a height-only confirmation never rewrites an
@@ -956,6 +961,7 @@ fn replay_order(records: Vec<TransactionRecord>) -> Vec<TransactionRecord> {
         let block = record.block_info();
         (
             block.is_none(),
+            matches!(record.context, TransactionContext::Mempool),
             block.map(|block| (block.height(), block.position())),
             record.txid,
         )
@@ -4719,6 +4725,58 @@ mod tests {
             history[&withheld].output_details.is_empty(),
             "owned outputs past i64 are withheld from the upstream net"
         );
+    }
+
+    /// An InstantSend-locked record settles conflicts when replayed, which makes
+    /// upstream scan every unconfirmed record already in history: plain mempool
+    /// records therefore wait until the locked ones are in.
+    #[test]
+    fn should_replay_instant_send_records_before_unrelated_mempool_records() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dashcore::hashes::Hash;
+
+        let locked = |record: TransactionRecord| TransactionRecord {
+            context: TransactionContext::InstantSend(InstantLock {
+                txid: record.txid,
+                ..Default::default()
+            }),
+            ..record
+        };
+        let coin = |byte| Txid::from_byte_array([byte; 32]);
+        let pending: Vec<_> = (1..=8u8)
+            .map(|n| replay_record(&[coin(n)], u64::from(n), TransactionContext::Mempool))
+            .collect();
+        let parent = pending[0].clone();
+        let settled: Vec<_> = (20..24u8)
+            .map(|n| {
+                locked(replay_record(
+                    &[coin(n)],
+                    u64::from(n),
+                    TransactionContext::Mempool,
+                ))
+            })
+            .collect();
+        let child = locked(replay_record(
+            &[parent.txid],
+            30,
+            TransactionContext::Mempool,
+        ));
+        let mut records = pending.clone();
+        records.push(child.clone());
+        records.extend(settled.iter().cloned());
+
+        let order = replayed_txids(records);
+
+        let mut first: Vec<_> = settled.iter().map(|record| record.txid).collect();
+        first.sort();
+        assert_eq!(
+            order[..first.len()],
+            first,
+            "locked records enter history ahead of every mempool record"
+        );
+        let position = |txid| order.iter().position(|seen| *seen == txid).unwrap();
+        // The one exception: a locked child cannot go ahead of its own parent.
+        assert!(position(parent.txid) < position(child.txid));
     }
 
     /// An unconfirmed child whose txid sorts ahead of its parent's still
