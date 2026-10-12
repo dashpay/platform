@@ -79,11 +79,14 @@ pub enum LoadSite {
     /// One used address resolves to two different owning accounts.
     UsedAddressOwnerConflict,
     /// A stored address-pool row sits further above the rest of its pool
-    /// than the load will derive to check it, so it is not restored.
+    /// than the load will derive to check it, so it is not restored. A used
+    /// or reserved one-time funding key in that state fails the wallet
+    /// instead.
     PoolRowBeyondDerivationBudget,
     /// A stored address reservation was taken back by no restored pool: its
     /// row matches no account of the wallet, or was left out above. Counted
-    /// per reservation.
+    /// per reservation. A one-time funding key in that state fails the
+    /// wallet instead.
     UnrestoredPoolReservation,
     /// An `identity_keys` row was unreadable or contradicted its columns.
     IdentityKeyRow,

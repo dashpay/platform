@@ -553,6 +553,27 @@ fn derive_towards(
     Ok(())
 }
 
+/// Labels of the accounts whose keys each fund one asset lock.
+///
+/// Such a key leaves the wallet — an invitation exports it — and never shows
+/// up as a coin, so the `used` flag or reservation on its pool row is the
+/// only record that it is gone. The set is the one the wallet snapshots after
+/// an asset-lock build (`persist_asset_lock_account_pools` in
+/// `rs-platform-wallet`'s `wallet/asset_lock/build.rs`), which this crate
+/// cannot name from there; `one_time_funding_labels_match_the_asset_lock_writer`
+/// holds the two together.
+const ONE_TIME_FUNDING_LABELS: [&str; 6] = [
+    "identity_registration",
+    "identity_topup",
+    "identity_topup_unbound",
+    "identity_invitation",
+    "asset_lock_address_topup",
+    "asset_lock_shielded_topup",
+];
+
+const ONE_TIME_ROW_UNMATCHED: &str = "one-time funding key row matches no restored account";
+const ONE_TIME_ROW_NOT_RESTORED: &str = "one-time funding key row could not be restored";
+
 /// Refuse a stored pool row.
 ///
 /// The error says only what is wrong with the row, and under `Strict`
@@ -560,7 +581,7 @@ fn derive_towards(
 /// here. Neither its address nor its key is logged.
 fn refuse_pool_row(
     wallet_id: &WalletId,
-    account_type: &key_wallet::account::AccountType,
+    account_type: &dyn std::fmt::Debug,
     pool_type: &dyn std::fmt::Debug,
     address_index: Option<u32>,
     reason: &'static str,
@@ -591,6 +612,13 @@ fn refuse_pool_row(
 /// is counted as [`LoadSite::PoolRowBeyondDerivationBudget`] under either
 /// policy and the wallet loads without it, the way the discovery walk defers
 /// an address it cannot reach.
+///
+/// One-time funding keys ([`ONE_TIME_FUNDING_LABELS`]) get no such leniency.
+/// A row of theirs that is used or reserved and that no pool restored here
+/// takes back — its coordinates match no account, it lies above the budget,
+/// or its script cannot be read — fails the wallet: loading without it would
+/// hand the same key out again. A row that is gone altogether leaves nothing
+/// to notice, and a wallet that rebuilds no account is not asked.
 ///
 /// `AbsentHardened` pools are the exception. A hardened child cannot be
 /// derived from public key material, and a watch-only load holds nothing
@@ -632,9 +660,12 @@ pub(crate) fn restore_pools(
            AND pool_type = ?7 ORDER BY address_index",
     )?;
     let mut restored_reservations: i64 = 0;
+    // Coordinates of every one-time funding pool restored below.
+    let mut one_time_pools = std::collections::HashSet::new();
     for mut account in accounts {
         let account_type = account.managed_account_type().to_account_type();
         let label = accounts::account_type_db_label(&account_type);
+        let one_time = ONE_TIME_FUNDING_LABELS.contains(&label);
         let (user, friend) = accounts::account_dashpay_ids(&account_type);
         let key_source = public_key_source(wallet, account_type);
         let account_index = i64::from(accounts::account_index(&account_type));
@@ -678,6 +709,16 @@ pub(crate) fn restore_pools(
                 friend.as_slice(),
                 pool_type_to_i64(pool.pool_type)
             ];
+            if one_time {
+                one_time_pools.insert((
+                    label.to_string(),
+                    account_index,
+                    key_class,
+                    user.to_vec(),
+                    friend.to_vec(),
+                    pool_type_to_i64(pool.pool_type),
+                ));
+            }
             let (highest_stored, stored): (Option<i64>, i64) =
                 highest_stored_index.query_row(pool_rows, |row| Ok((row.get(0)?, row.get(1)?)))?;
             if let Some(highest_stored) = highest_stored {
@@ -698,6 +739,18 @@ pub(crate) fn restore_pools(
                 let address = match dashcore::Address::from_script(&script, pool.network) {
                     Ok(address) => address,
                     Err(source) => {
+                        // No earlier reader accounts for a one-time funding key.
+                        if one_time
+                            && (row.get::<_, bool>(6)? || row.get::<_, Option<i64>>(7)?.is_some())
+                        {
+                            return Err(refuse_pool_row(
+                                wallet_id,
+                                &account_type,
+                                &pool.pool_type,
+                                Some(index),
+                                ONE_TIME_ROW_NOT_RESTORED,
+                            ));
+                        }
                         // Earlier readers already account for used and typed platform rows.
                         if row.get::<_, bool>(6)?
                             || (account_type
@@ -798,6 +851,15 @@ pub(crate) fn restore_pools(
                     // row above its end is one the budget left out.
                     if key_source.is_some() && pool.highest_generated.is_some_and(|end| index > end)
                     {
+                        if one_time && (used || reserved.is_some()) {
+                            return Err(refuse_pool_row(
+                                wallet_id,
+                                &account_type,
+                                &pool.pool_type,
+                                Some(index),
+                                ONE_TIME_ROW_NOT_RESTORED,
+                            ));
+                        }
                         beyond_budget += 1;
                         continue;
                     }
@@ -896,11 +958,42 @@ pub(crate) fn restore_pools(
             }
         }
     }
-    // Rows are read account by account, so a reservation whose coordinates
-    // match no account restored above was read by nobody. Whether that row is
-    // damaged or belongs to an account this wallet no longer rebuilds cannot
-    // be told from the row, and stores holding the second kind are healthy,
-    // so it is reported under either policy instead of failing the wallet.
+    // Rows are read account by account, so a row whose coordinates match no
+    // pool restored above was read by nobody. For a one-time funding key that
+    // is used or reserved, loading on would hand the key out a second time.
+    let [l0, l1, l2, l3, l4, l5] = ONE_TIME_FUNDING_LABELS;
+    let mut one_time_rows = conn.prepare_cached(
+        "SELECT account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+         pool_type, address_index FROM core_address_pool \
+         WHERE wallet_id = ?1 AND account_type IN (?2, ?3, ?4, ?5, ?6, ?7) \
+           AND (used = 1 OR reserved_at IS NOT NULL)",
+    )?;
+    let mut rows = one_time_rows.query(params![wallet_id.as_slice(), l0, l1, l2, l3, l4, l5])?;
+    while let Some(row) = rows.next()? {
+        let pool: (String, i64, i64, Vec<u8>, Vec<u8>, i64) = (
+            row.get(0)?,
+            row.get(1)?,
+            row.get(2)?,
+            row.get(3)?,
+            row.get(4)?,
+            row.get(5)?,
+        );
+        if !one_time_pools.contains(&pool) {
+            // The identity ids of the row are left out of the log.
+            return Err(refuse_pool_row(
+                wallet_id,
+                &format_args!("{}[{}], key class {}", pool.0, pool.1, pool.2),
+                &pool.5,
+                u32::try_from(row.get::<_, i64>(6)?).ok(),
+                ONE_TIME_ROW_UNMATCHED,
+            ));
+        }
+    }
+    // A reservation of any other account can go unread the same way. Whether
+    // its row is damaged or belongs to an account this wallet no longer
+    // rebuilds cannot be told from the row, and handing its address out again
+    // costs privacy, not funds, so it is reported under either policy instead
+    // of failing the wallet.
     let stored_reservations: i64 = conn
         .prepare_cached(
             "SELECT COUNT(*) FROM core_address_pool \
@@ -1331,6 +1424,71 @@ mod tests {
         for withheld in [derived.to_string(), foreign, "42".repeat(20)] {
             assert!(!logs_contain(&withheld), "must not be logged: {withheld}");
         }
+    }
+
+    /// The asset-lock writer in `rs-platform-wallet` decides which accounts
+    /// hold one-time funding keys; that crate does not export its list, so
+    /// it is read from the source. A variant added there fails here until the
+    /// label list follows.
+    #[test]
+    fn one_time_funding_labels_match_the_asset_lock_writer() {
+        use key_wallet::account::AccountType;
+        use std::collections::BTreeSet;
+
+        let source = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../rs-platform-wallet/src/wallet/asset_lock/build.rs"
+        ))
+        .expect("the asset-lock writer's source");
+        let writer = source
+            .split_once("async fn persist_asset_lock_account_pools")
+            .and_then(|(_, body)| body.split_once("matches!("))
+            .and_then(|(_, filter)| filter.split_once(".flat_map("))
+            .map(|(filter, _)| filter)
+            .expect("the writer's account filter");
+        let named_by_writer: BTreeSet<&str> = writer
+            .split("AccountType::")
+            .skip(1)
+            .map(|rest| {
+                rest.split(|c: char| !c.is_alphanumeric())
+                    .next()
+                    .unwrap_or_default()
+            })
+            .collect();
+
+        let accounts = [
+            AccountType::IdentityRegistration,
+            AccountType::IdentityTopUp {
+                registration_index: 0,
+            },
+            AccountType::IdentityTopUpNotBoundToIdentity,
+            AccountType::IdentityInvitation,
+            AccountType::AssetLockAddressTopUp,
+            AccountType::AssetLockShieldedAddressTopUp,
+        ];
+        let named_here: BTreeSet<String> = accounts
+            .iter()
+            .map(|account| format!("{account:?}"))
+            .map(|debug| {
+                debug
+                    .split([' ', '{'])
+                    .next()
+                    .unwrap_or_default()
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(
+            named_by_writer,
+            named_here.iter().map(String::as_str).collect(),
+            "the asset-lock writer snapshots a different set of accounts"
+        );
+        assert_eq!(
+            accounts
+                .iter()
+                .map(accounts::account_type_db_label)
+                .collect::<BTreeSet<_>>(),
+            ONE_TIME_FUNDING_LABELS.into_iter().collect(),
+        );
     }
 
     #[test]

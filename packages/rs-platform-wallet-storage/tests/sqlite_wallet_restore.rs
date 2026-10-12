@@ -798,11 +798,30 @@ fn assert_pool_corruption_is_typed_and_isolated(
     prepare: impl FnOnce(&Wallet, &mut ManagedWalletInfo) -> String,
     reason: &str,
 ) {
+    use platform_wallet_storage::WalletStorageError;
+
+    assert_wallet_corruption_is_isolated(
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap(),
+        prepare,
+        |error| matches!(error, WalletStorageError::BlobDecode { reason: actual } if *actual == reason),
+        reason,
+    );
+}
+
+/// `prepare` edits the sick wallet before it is stored and returns the SQL
+/// that damages exactly one of its rows (`?1` is the wallet id). Strict must
+/// then fail with an error `strict` accepts; Recovery must drop that wallet
+/// alone, as `blob_decode`, and keep the healthy one beside it.
+fn assert_wallet_corruption_is_isolated(
+    sick: Wallet,
+    prepare: impl FnOnce(&Wallet, &mut ManagedWalletInfo) -> String,
+    strict: impl Fn(&platform_wallet_storage::WalletStorageError) -> bool,
+    expectation: &str,
+) {
     use platform_wallet::changeset::PersistenceError;
     use platform_wallet_storage::{LoadPolicy, WalletStorageError};
 
     let (persister, _tmp, path) = common::fresh_persister();
-    let sick = Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
     let mut sick_info = ManagedWalletInfo::from_wallet(&sick, 1);
     let corruption = prepare(&sick, &mut sick_info);
     persister
@@ -820,25 +839,27 @@ fn assert_pool_corruption_is_typed_and_isolated(
         .lock_conn_for_test()
         .execute(&corruption, [sick.wallet_id.as_slice()])
         .unwrap();
-    assert_eq!(rewritten, 1, "the fixture must rewrite exactly one row");
+    assert_eq!(
+        rewritten, 1,
+        "{expectation}: the fixture must rewrite exactly one row"
+    );
     drop(persister);
 
-    let strict = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
-    let error = match strict.load() {
-        Ok(_) => panic!("Strict must refuse the row: {reason}"),
+    let opened = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
+    let error = match opened.load() {
+        Ok(_) => panic!("Strict must refuse the row: {expectation}"),
         Err(error) => error,
     };
     let PersistenceError::Backend { source, .. } = error else {
         panic!("expected a backend error, got {error:?}")
     };
     assert!(
-        matches!(
-            source.downcast_ref::<WalletStorageError>(),
-            Some(WalletStorageError::BlobDecode { reason: actual }) if *actual == reason
-        ),
-        "expected `{reason}`, got {source:?}"
+        source
+            .downcast_ref::<WalletStorageError>()
+            .is_some_and(&strict),
+        "expected `{expectation}`, got {source:?}"
     );
-    drop(strict);
+    drop(opened);
 
     let recovery = SqlitePersister::open(
         SqlitePersisterConfig::new(&path).with_load_policy(LoadPolicy::Recovery),
@@ -846,12 +867,16 @@ fn assert_pool_corruption_is_typed_and_isolated(
     .unwrap();
     let state = recovery.load().expect("recovery isolates the wallet");
     assert!(state.wallets.contains_key(&healthy.wallet_id));
-    assert!(!state.wallets.contains_key(&sick.wallet_id));
+    assert!(
+        !state.wallets.contains_key(&sick.wallet_id),
+        "Recovery must not return the wallet: {expectation}"
+    );
     let degradation = recovery.last_load_degradation();
     assert_eq!(degradation.wallets_degraded.len(), 1);
     assert_eq!(
         degradation.wallets_degraded.get(&sick.wallet_id).copied(),
-        Some("blob_decode")
+        Some("blob_decode"),
+        "{expectation}"
     );
 }
 
@@ -1179,9 +1204,10 @@ fn should_restore_a_correctly_derived_pool_deeper_than_the_discovery_ceiling() {
 }
 
 /// A reserved row whose account coordinates match no account of the wallet
-/// is read by no pool. The row cannot say whether it is damaged or belongs
-/// to an account the wallet no longer rebuilds, so the load keeps the wallet
-/// and reports the reservation it could not take back.
+/// is read by no pool. Outside the one-time funding accounts the row cannot
+/// say whether it is damaged or belongs to an account the wallet no longer
+/// rebuilds, so the load keeps the wallet and reports the reservation it
+/// could not take back.
 #[test]
 fn should_report_a_reservation_that_no_restored_pool_takes_back() {
     use key_wallet::managed_account::address_pool::AddressPoolType;
@@ -1193,8 +1219,8 @@ fn should_report_a_reservation_that_no_restored_pool_takes_back() {
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
     let mut reserved = Vec::new();
     for account_type in [
-        AccountType::IdentityInvitation,
-        AccountType::IdentityRegistration,
+        AccountType::ProviderOwnerKeys,
+        AccountType::ProviderVotingKeys,
     ] {
         let source = account_key_source(&wallet, account_type);
         reserved.push(with_pool(
@@ -1219,12 +1245,12 @@ fn should_report_a_reservation_that_no_restored_pool_takes_back() {
         None,
         "every reservation of an intact store is taken back"
     );
-    // The invitation account's key class is always zero.
+    // A provider key account's key class is always zero.
     let rewritten = persister
         .lock_conn_for_test()
         .execute(
             "UPDATE core_address_pool SET key_class = 1 \
-             WHERE wallet_id = ?1 AND account_type = 'identity_invitation' \
+             WHERE wallet_id = ?1 AND account_type = 'provider_owner' \
                AND reserved_at IS NOT NULL",
             [wallet.wallet_id.as_slice()],
         )
@@ -1258,12 +1284,12 @@ fn should_report_a_reservation_that_no_restored_pool_takes_back() {
             })
         };
         assert_eq!(
-            state_of(restored, AccountType::IdentityInvitation, reserved[0]),
+            state_of(restored, AccountType::ProviderOwnerKeys, reserved[0]),
             AddressState::Available,
             "{policy:?}: this is the loss the counter reports"
         );
         assert_eq!(
-            state_of(restored, AccountType::IdentityRegistration, reserved[1]),
+            state_of(restored, AccountType::ProviderVotingKeys, reserved[1]),
             AddressState::Reserved { at: 12345 },
         );
     }
@@ -1374,9 +1400,9 @@ async fn should_count_an_unrestored_reservation_once_when_startup_repair_rebuild
     let mut wallet =
         Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
-    let invitation = AccountType::IdentityInvitation;
-    let source = account_key_source(&wallet, invitation);
-    with_pool(&mut info, invitation, AddressPoolType::Absent, |pool| {
+    let owner_keys = AccountType::ProviderOwnerKeys;
+    let source = account_key_source(&wallet, owner_keys);
+    with_pool(&mut info, owner_keys, AddressPoolType::Absent, |pool| {
         pool.next_unused_and_reserve(&source, 12345).unwrap();
     });
     let (persister, _tmp, path) = common::fresh_persister();
@@ -1511,12 +1537,12 @@ async fn should_count_an_unrestored_reservation_once_when_startup_repair_rebuild
             },
         )
         .unwrap();
-    // The invitation account's key class is always zero.
+    // A provider key account's key class is always zero.
     let rewritten = persister
         .lock_conn_for_test()
         .execute(
             "UPDATE core_address_pool SET key_class = 1 \
-             WHERE account_type = 'identity_invitation' AND reserved_at IS NOT NULL",
+             WHERE account_type = 'provider_owner' AND reserved_at IS NOT NULL",
             [],
         )
         .unwrap();
@@ -1543,6 +1569,260 @@ async fn should_count_an_unrestored_reservation_once_when_startup_repair_rebuild
             "{site}: one incident is one count, however often the wallet was rebuilt"
         );
     }
+}
+
+/// The accounts whose keys fund one asset lock each, with the label their
+/// pool rows are stored under. The top-up account is the one with an account
+/// index of its own.
+fn one_time_funding_accounts() -> [(AccountType, &'static str); 6] {
+    [
+        (AccountType::IdentityRegistration, "identity_registration"),
+        (
+            AccountType::IdentityTopUp {
+                registration_index: 3,
+            },
+            "identity_topup",
+        ),
+        (
+            AccountType::IdentityTopUpNotBoundToIdentity,
+            "identity_topup_unbound",
+        ),
+        (AccountType::IdentityInvitation, "identity_invitation"),
+        (
+            AccountType::AssetLockAddressTopUp,
+            "asset_lock_address_topup",
+        ),
+        (
+            AccountType::AssetLockShieldedAddressTopUp,
+            "asset_lock_shielded_topup",
+        ),
+    ]
+}
+
+/// A wallet holding `account_type`, which a default wallet lacks only for the
+/// on-demand top-up account.
+fn wallet_with_funding_account(account_type: AccountType) -> Wallet {
+    let mut wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    if matches!(account_type, AccountType::IdentityTopUp { .. }) {
+        wallet.add_account(account_type, None).unwrap();
+    }
+    wallet
+}
+
+/// Burn the first two one-time keys of `account_type` the way the asset-lock
+/// builder does, or burn the first and only reserve the second.
+fn burn_two_funding_keys(info: &mut ManagedWalletInfo, account_type: AccountType, reserve: bool) {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+
+    with_pool(info, account_type, AddressPoolType::Absent, |pool| {
+        assert!(pool.mark_index_used(0));
+        if reserve {
+            pool.addresses.get_mut(&1).unwrap().state = AddressState::Reserved { at: 12345 };
+        } else {
+            assert!(pool.mark_index_used(1));
+        }
+    });
+}
+
+/// The index the asset-lock builder would fund its next credit output from.
+fn next_funding_index(info: &mut ManagedWalletInfo, account_type: AccountType) -> u32 {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+    let mut accounts = info.accounts.all_accounts_mut();
+    let account = accounts
+        .iter_mut()
+        .find(|account| account.managed_account_type().to_account_type() == account_type)
+        .expect("funding account");
+    let pool = account
+        .managed_account_type_mut()
+        .address_pools_mut()
+        .into_iter()
+        .next()
+        .expect("funding pool");
+    pool.next_unused_with_info(&KeySource::NoKeySource, false)
+        .expect("an unused funding key")
+        .index
+}
+
+/// Damage the row of a burned (or only reserved) one-time funding key with
+/// `damage`, for every such account, and expect the wallet not to load.
+fn assert_damaged_one_time_funding_row_fails_the_wallet(
+    damage: &str,
+    reserve: bool,
+    only: impl Fn(&AccountType) -> bool,
+    strict: impl Fn(&platform_wallet_storage::WalletStorageError) -> bool + Copy,
+) {
+    for (account_type, label) in one_time_funding_accounts() {
+        if !only(&account_type) {
+            continue;
+        }
+        assert_wallet_corruption_is_isolated(
+            wallet_with_funding_account(account_type),
+            |_, info| {
+                burn_two_funding_keys(info, account_type, reserve);
+                format!(
+                    "UPDATE core_address_pool SET {damage} \
+                     WHERE wallet_id = ?1 AND account_type = '{label}' AND address_index = 1"
+                )
+            },
+            strict,
+            &format!("{label}: {damage} (reserved: {reserve})"),
+        );
+    }
+}
+
+fn is_blob_decode(
+    expected: &'static str,
+) -> impl Fn(&platform_wallet_storage::WalletStorageError) -> bool + Copy {
+    move |error| {
+        matches!(
+            error,
+            platform_wallet_storage::WalletStorageError::BlobDecode { reason } if *reason == expected
+        )
+    }
+}
+
+/// A one-time funding key is handed to someone else: an invitation exports
+/// it. Its pool row is the only record that it is gone, so a wallet that
+/// cannot take such a row back must not load, or the same key funds the next
+/// asset lock too. Here the row's account coordinates match no account.
+#[test]
+fn should_refuse_a_wallet_whose_one_time_funding_key_row_matches_no_account() {
+    let unmatched = is_blob_decode("one-time funding key row matches no restored account");
+    for reserve in [false, true] {
+        assert_damaged_one_time_funding_row_fails_the_wallet(
+            "key_class = 1",
+            reserve,
+            |_| true,
+            unmatched,
+        );
+    }
+    // The top-up account is the one whose account index tells accounts apart.
+    assert_damaged_one_time_funding_row_fails_the_wallet(
+        "account_index = account_index + 1",
+        false,
+        |account| matches!(account, AccountType::IdentityTopUp { .. }),
+        unmatched,
+    );
+}
+
+/// The row sits under the right account, but further above the rest of its
+/// pool than the load derives, so nothing can check it.
+#[test]
+fn should_refuse_a_wallet_whose_one_time_funding_key_row_lies_beyond_the_derivation_budget() {
+    assert_damaged_one_time_funding_row_fails_the_wallet(
+        "address_index = 2147483647",
+        false,
+        |_| true,
+        is_blob_decode("one-time funding key row could not be restored"),
+    );
+}
+
+/// The row's script is not an address. On a used row that already fails
+/// Strict in the used-address reader; Recovery tolerates it there, and must
+/// still not return the wallet.
+#[test]
+fn should_refuse_a_wallet_whose_one_time_funding_key_row_has_an_unreadable_script() {
+    assert_damaged_one_time_funding_row_fails_the_wallet(
+        "script = X'6a'",
+        false,
+        |_| true,
+        |error| {
+            matches!(
+                error,
+                platform_wallet_storage::WalletStorageError::AddressDecode { .. }
+            )
+        },
+    );
+    // A reserved row is not read by the used-address reader at all.
+    assert_damaged_one_time_funding_row_fails_the_wallet(
+        "script = X'6a'",
+        true,
+        |_| true,
+        is_blob_decode("one-time funding key row could not be restored"),
+    );
+}
+
+/// The control for the refusals above: burned and reserved one-time keys of
+/// an intact store come back as they were, and the next key is a new one.
+#[test]
+fn should_load_intact_one_time_funding_key_rows_and_hand_out_the_next_key() {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+    use platform_wallet_storage::LoadPolicy;
+
+    for (account_type, label) in one_time_funding_accounts() {
+        for reserve in [false, true] {
+            let (persister, _tmp, path) = common::fresh_persister();
+            let wallet = wallet_with_funding_account(account_type);
+            let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+            burn_two_funding_keys(&mut info, account_type, reserve);
+            persister
+                .store(wallet.wallet_id, registration(&wallet, &info))
+                .unwrap();
+            drop(persister);
+
+            for policy in [LoadPolicy::Strict, LoadPolicy::Recovery] {
+                let mut state = SqlitePersister::open(
+                    SqlitePersisterConfig::new(&path).with_load_policy(policy),
+                )
+                .unwrap()
+                .load()
+                .unwrap_or_else(|error| panic!("{label}, {policy:?}: {error}"));
+                let restored = &mut state
+                    .wallets
+                    .get_mut(&wallet.wallet_id)
+                    .unwrap_or_else(|| panic!("{label}, {policy:?}: wallet dropped"))
+                    .wallet_info;
+                let second = if reserve {
+                    AddressState::Reserved { at: 12345 }
+                } else {
+                    AddressState::Used
+                };
+                with_pool(restored, account_type, AddressPoolType::Absent, |pool| {
+                    assert_eq!(pool.addresses[&0].state, AddressState::Used, "{label}");
+                    assert_eq!(pool.addresses[&1].state, second, "{label}");
+                });
+                assert_eq!(next_funding_index(restored, account_type), 2, "{label}");
+            }
+        }
+    }
+}
+
+/// The limit of that guarantee. The row is the only record that a key was
+/// burned: once the row itself is gone nothing in the store says so, the
+/// wallet loads, and the key is handed out again.
+#[test]
+fn should_hand_out_again_a_one_time_funding_key_whose_row_was_deleted() {
+    let account_type = AccountType::IdentityInvitation;
+    let (persister, _tmp, path) = common::fresh_persister();
+    let wallet = wallet_with_funding_account(account_type);
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    burn_two_funding_keys(&mut info, account_type, false);
+    persister
+        .store(wallet.wallet_id, registration(&wallet, &info))
+        .unwrap();
+    let deleted = persister
+        .lock_conn_for_test()
+        .execute(
+            "DELETE FROM core_address_pool \
+             WHERE account_type = 'identity_invitation' AND address_index = 1",
+            [],
+        )
+        .unwrap();
+    assert_eq!(deleted, 1);
+    drop(persister);
+
+    let persister = SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap();
+    let mut state = persister
+        .load()
+        .expect("nothing left in the store contradicts the wallet");
+    let restored = &mut state
+        .wallets
+        .get_mut(&wallet.wallet_id)
+        .unwrap()
+        .wallet_info;
+    assert_eq!(next_funding_index(restored, account_type), 1);
 }
 
 /// `v4.2` registered both Standard variants under the label `standard`. That
