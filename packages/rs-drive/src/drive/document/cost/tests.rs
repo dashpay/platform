@@ -964,7 +964,7 @@ fn should_count_trees_keyed_by_the_document_id_as_new_and_unrefunded() {
 
 #[test]
 fn should_key_preallocated_trees_as_the_referring_type_does() {
-    // The post's u8 `tier` ends an index range-summing an i8 `weight`, so the
+    // The post's u8 `tier` ends a range-summable index of an i8 `weight`, so the
     // post keys it the earlier way (5 as `0x85`); the like's own `tier`,
     // which its preallocated index binds to the post's, is keyed big-endian
     // (`0x05`). The trees the post preallocates are the ones its likes use.

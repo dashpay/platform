@@ -790,10 +790,14 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     /// The type of the property an index key names, when it is one whose key
     /// generation 1 changes: a property, or a derived index property, keyed
     /// as an unsigned integer. `None` for the `$` system fields, which keep
-    /// their encoding, for a property that ends an index range-summing a
-    /// value that can be negative (see
-    /// [`Self::ends_an_index_range_summing_a_signed_value`]), and for every
-    /// other name.
+    /// their encoding, for a property that ends a `rangeSummable` index
+    /// ([`Index::ends_range_summable_with`]), which keeps generation 0's keys
+    /// in every index naming it, and for every other name.
+    ///
+    /// The answer can't change for a stored document type after the upgrade
+    /// reads it: an update can't change its indexes, and from protocol
+    /// version 14 can't change any integer property's width or signedness
+    /// (`validate_integer_encoding_stability`).
     fn unsigned_integer_tree_key_property_type(&self, key: &str) -> Option<&DocumentPropertyType> {
         if key.starts_with('$') {
             return None;
@@ -803,37 +807,19 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
             .map(|property| &property.property_type)
             .or_else(|| self.derived_index_property_type(key))
             .filter(|property_type| property_type.has_unsigned_integer_tree_key())
-            .filter(|_| !self.ends_an_index_range_summing_a_signed_value(key))
-    }
-
-    /// Whether an index ending with `key` is `rangeSummable` over a property
-    /// whose values can be negative
-    /// ([`Index::ends_with_range_sum_of_signed_values`]). The property-name
-    /// tree holding `key`'s values then keeps a sum in every node, and
-    /// GroveDB refuses a node sum outside the signed 64-bit range. The keys
-    /// stored before generation 1 can't always be put in value order there:
-    /// values of both signs that fit every node of the old order can leave
-    /// the range in every balanced tree of the new one. So such a property
-    /// keeps generation 0's keys at every version, and the upgrade to
-    /// generation 1 leaves its index as it is. Sums of values that can't be
-    /// negative never leave the range in any order, since every node sums
-    /// part of the whole tree's sum.
-    ///
-    /// The answer can't change for a stored document type after the upgrade
-    /// reads it: an update can't change its indexes, and from protocol
-    /// version 14 can't change any integer property's width or signedness
-    /// (`validate_integer_encoding_stability`), the summed one included.
-    fn ends_an_index_range_summing_a_signed_value(&self, key: &str) -> bool {
-        self.indexes().values().any(|index| {
-            index.ends_with_range_sum_of_signed_values(key, self.flattened_properties())
-        })
+            .filter(|_| {
+                !self
+                    .indexes()
+                    .values()
+                    .any(|index| index.ends_range_summable_with(key))
+            })
     }
 
     /// Generation 1 keys a property or derived index property of an unsigned
     /// integer type by its plain big-endian bytes
     /// ([`DocumentPropertyType::encode_value_for_tree_keys_v1`]), so its keys
     /// sort as its values do, except one that keeps generation 0's keys
-    /// because it ends an index range-summing values that can be negative
+    /// because it ends a `rangeSummable` index
     /// ([`Self::unsigned_integer_tree_key_property_type`]). Every other key is
     /// generation 0's, the `$` system fields included: the timestamps and
     /// heights they hold never

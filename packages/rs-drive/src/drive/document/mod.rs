@@ -271,7 +271,7 @@ pub(crate) fn bound_value_fits_referring_property(
 /// writes the same value for its `referring_property`. Registration pairs the
 /// two with one property type, but an unsigned integer can still be keyed in
 /// a different generation on each side (a property ending an index that
-/// range-sums values that can be negative keeps generation 0), so the key is
+/// is `rangeSummable` keeps generation 0), so the key is
 /// carried through generation 0 from one codec to the other.
 /// Shared by the preallocation path and `drive::document::cost`.
 pub(crate) fn referenced_tree_key_for_referring_property(
@@ -283,7 +283,7 @@ pub(crate) fn referenced_tree_key_for_referring_property(
     platform_version: &PlatformVersion,
 ) -> Result<Vec<u8>, Error> {
     let key_in_generation_0 =
-        target.tree_key_in_generation_0(referenced_property, &key, platform_version)?;
+        target.tree_key_into_generation_0(referenced_property, key, platform_version)?;
     Ok(referring.tree_key_from_generation_0(
         referring_property,
         &key_in_generation_0,

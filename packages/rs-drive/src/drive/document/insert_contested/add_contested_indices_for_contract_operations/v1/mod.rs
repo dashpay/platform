@@ -180,7 +180,7 @@ impl Drive {
                 )?
                 .map(|key| match key {
                     DriveKeyInfo::Key(key) => document_type
-                        .tree_key_in_generation_0(name, &key, platform_version)
+                        .tree_key_into_generation_0(name, key, platform_version)
                         .map(DriveKeyInfo::Key),
                     DriveKeyInfo::KeyRef(key) => document_type
                         .tree_key_in_generation_0(name, key, platform_version)

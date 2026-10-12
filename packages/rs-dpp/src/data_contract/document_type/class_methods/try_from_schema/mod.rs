@@ -8460,25 +8460,24 @@ mod tests {
     }
 
     #[test]
-    fn should_refuse_an_integer_range_on_a_property_range_summing_signed_values() {
+    fn should_refuse_an_integer_range_on_an_unsigned_property_ending_a_range_summable_index() {
         let unsigned_amount =
             || json!({ "type": "integer", "minimum": 0, "maximum": 255, "position": 0 });
         let signed_weight =
             || json!({ "type": "integer", "minimum": -10, "maximum": 10, "position": 1 });
-        let error = try_document_type_from_schema_full_validation(
-            range_summed_and_bucketed_schema(unsigned_amount(), signed_weight()),
-        )
-        .expect_err("the amount keeps its earlier keys, which the grid does not read");
-        assert!(
-            error.to_string().contains("keeps its earlier key encoding"),
-            "unexpected error: {error}"
-        );
-
-        try_document_type_from_schema_full_validation(range_summed_and_bucketed_schema(
-            unsigned_amount(),
+        for weight in [
+            signed_weight(),
             json!({ "type": "integer", "minimum": 0, "maximum": 10, "position": 1 }),
-        ))
-        .expect("range-summed values that are never negative leave the amount in value order");
+        ] {
+            let error = try_document_type_from_schema_full_validation(
+                range_summed_and_bucketed_schema(unsigned_amount(), weight),
+            )
+            .expect_err("the amount keeps its earlier keys, which the grid does not read");
+            assert!(
+                error.to_string().contains("keeps its earlier key encoding"),
+                "unexpected error: {error}"
+            );
+        }
 
         try_document_type_from_schema_full_validation(range_summed_and_bucketed_schema(
             json!({ "type": "integer", "minimum": -128, "maximum": 127, "position": 0 }),

@@ -3182,8 +3182,8 @@ impl DocumentPropertyType {
     /// integer as for a signed one, so an unsigned property's values from the
     /// middle of its range up sort below the rest; from protocol version 14
     /// most properties are keyed by [`Self::encode_value_for_tree_keys_v1`].
-    /// Still the key of the `$` system fields, of a property ending an index
-    /// that range-sums values that can be negative, and of a contested
+    /// Still the key of the `$` system fields, of a property ending a
+    /// `rangeSummable` index, and of a contested
     /// index's values in its vote poll, and the encoding of an indexOnly
     /// entry payload, which is a value, not a key.
     pub fn encode_value_for_tree_keys(&self, value: &Value) -> Result<Vec<u8>, ProtocolError> {
@@ -3477,18 +3477,18 @@ impl DocumentPropertyType {
 
     /// The key the other tree-key generation writes for the value `key`
     /// holds: for an unsigned integer key of its type's exact width, the same
-    /// bytes with the top bit flipped, since that flip is all that tells
-    /// [`Self::encode_value_for_tree_keys`] from
+    /// bytes with the top bit flipped in place, since that flip is all that
+    /// tells [`Self::encode_value_for_tree_keys`] from
     /// [`Self::encode_value_for_tree_keys_v1`] (each the other's inverse).
-    /// `None` for every other key, which both generations write the same.
-    pub fn unsigned_tree_key_in_other_generation(&self, key: &[u8]) -> Option<Vec<u8>> {
-        if !self.is_unsigned_integer_tree_key_of_full_width(key) {
-            return None;
+    /// Every other key, which both generations write the same, as it is.
+    pub fn unsigned_tree_key_into_other_generation(&self, mut key: Vec<u8>) -> Vec<u8> {
+        if self.is_unsigned_integer_tree_key_of_full_width(&key) {
+            // Every unsigned key type is at least one byte wide
+            if let Some(top) = key.first_mut() {
+                *top ^= 0b1000_0000;
+            }
         }
-        let mut key = key.to_vec();
-        // Every unsigned key type is at least one byte wide
-        *key.first_mut()? ^= 0b1000_0000;
-        Some(key)
+        key
     }
 
     // Given a field type and a value this function chooses and executes the right encoding method
@@ -5581,8 +5581,8 @@ mod tests {
                     .encode_value_for_tree_keys_v1(&value)
                     .expect("the value is keyed");
                 assert_eq!(
-                    property_type.unsigned_tree_key_in_other_generation(&old),
-                    Some(new)
+                    property_type.unsigned_tree_key_into_other_generation(old),
+                    new
                 );
             }
         }
@@ -5610,18 +5610,18 @@ mod tests {
                 key
             );
             assert_eq!(
-                property_type.unsigned_tree_key_in_other_generation(&key),
-                None
+                property_type.unsigned_tree_key_into_other_generation(key.clone()),
+                key
             );
         }
         // A null unsigned key and one of the wrong width keep their bytes
         assert_eq!(
-            DocumentPropertyType::U16.unsigned_tree_key_in_other_generation(&[]),
-            None
+            DocumentPropertyType::U16.unsigned_tree_key_into_other_generation(vec![]),
+            Vec::<u8>::new()
         );
         assert_eq!(
-            DocumentPropertyType::U16.unsigned_tree_key_in_other_generation(&[1]),
-            None
+            DocumentPropertyType::U16.unsigned_tree_key_into_other_generation(vec![1]),
+            vec![1]
         );
     }
 

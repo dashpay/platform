@@ -2368,10 +2368,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     bounds straddled it was refused. A key keeps its width. The `$` system
 ///     fields keep their keys, and so do the paths of a contest's vote poll
 ///     (`serialize_value_for_vote_poll_key`), which the masternodes' vote records
-///     address, and so does a property that ends an index `rangeSummable` over a
-///     value that can be negative: the tree of its values keeps a sum in every
+///     address, and so does a property that ends a `rangeSummable` index, in
+///     every index of its type: the tree of its values keeps a sum in every
 ///     node, and values of both signs that fit the old order can leave the
-///     signed 64-bit range in every balanced tree of the new one.
+///     signed 64-bit range in every balanced tree of the new one (an update
+///     before this version can make a summed property unsigned while it holds
+///     negative values).
 ///     `transition_to_version_14` first moves every other key generation 0 wrote
 ///     (`Drive::rekey_unsigned_integer_index_values`) with GroveDB's `move_op`
 ///     (`GROVE_V4`, from the GroveDB bump to `b50a583377`), in batches of
@@ -2515,7 +2517,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry; verify_identity_signed_signature 1: a BLS12_381 signature must verify
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys; serialize_value_for_key 1 keys unsigned integers in value order (except a property ending an index rangeSummable over a signed value)
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys; serialize_value_for_key 1 keys unsigned integers in value order (except a property ending a rangeSummable index)
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,

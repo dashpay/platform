@@ -855,6 +855,17 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         key: &[u8],
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, ProtocolError> {
+        self.tree_key_into_generation_0(key_name, key.to_vec(), platform_version)
+    }
+
+    /// [`Self::tree_key_in_generation_0`] on an owned key, converted in place:
+    /// a key both generations write the same is returned as it is.
+    fn tree_key_into_generation_0(
+        &self,
+        key_name: &str,
+        key: Vec<u8>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
         match platform_version
             .dpp
             .contract_versions
@@ -862,13 +873,17 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .methods
             .serialize_value_for_key
         {
-            0 => Ok(key.to_vec()),
-            1 => Ok(self
-                .unsigned_integer_tree_key_property_type(key_name)
-                .and_then(|property_type| property_type.unsigned_tree_key_in_other_generation(key))
-                .unwrap_or_else(|| key.to_vec())),
+            0 => Ok(key),
+            1 => Ok(
+                match self.unsigned_integer_tree_key_property_type(key_name) {
+                    Some(property_type) => {
+                        property_type.unsigned_tree_key_into_other_generation(key)
+                    }
+                    None => key,
+                },
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "tree_key_in_generation_0".to_string(),
+                method: "tree_key_into_generation_0".to_string(),
                 known_versions: vec![0, 1],
                 received: version,
             }),
@@ -1766,7 +1781,7 @@ mod tests {
     }
 
     #[test]
-    fn should_keep_generation_0_keys_for_a_property_ending_an_index_range_summing_signed_values() {
+    fn should_keep_generation_0_keys_for_a_property_ending_a_range_summable_index() {
         let platform_version = PlatformVersion::latest();
         let grade_200 = |weight: Value, range_summable: bool| {
             let document_type = build_doc_type_at(
@@ -1800,17 +1815,17 @@ mod tests {
         assert_eq!(
             grade_200(signed.clone(), true),
             (vec![0x48], false, vec![0x48], vec![0x48]),
-            "values of both signs range-summed: generation 0's key, which the conversions keep"
+            "range-summed: generation 0's key, which the conversions keep"
+        );
+        assert_eq!(
+            grade_200(unsigned, true),
+            (vec![0x48], false, vec![0x48], vec![0x48]),
+            "range-summed values that are never negative by type: generation 0's key too"
         );
         assert_eq!(
             grade_200(signed, false),
             (vec![0xC8], true, vec![0x48], vec![0xC8]),
             "summed without range sums: generation 1's key"
-        );
-        assert_eq!(
-            grade_200(unsigned, true),
-            (vec![0xC8], true, vec![0x48], vec![0xC8]),
-            "range-summed values that are never negative: generation 1's key"
         );
     }
 

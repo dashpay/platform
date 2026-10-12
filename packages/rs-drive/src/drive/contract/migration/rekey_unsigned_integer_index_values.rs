@@ -38,10 +38,10 @@ impl Drive {
     /// moves go in the same batch. Levels whose keys stay are not rewritten.
     ///
     /// Only the tree holding the moved keys takes another shape. A property
-    /// that ends an index range-summing a value that can be negative keeps
-    /// generation 0's keys (`serialize_value_for_key` 1), so that tree never
-    /// sums values of both signs, and no node sum can leave the signed
-    /// 64-bit range in any order.
+    /// that ends a `rangeSummable` index keeps generation 0's keys
+    /// (`serialize_value_for_key` 1) in every index of its type, so no tree
+    /// whose nodes keep sums is reordered, and no node sum can leave the
+    /// signed 64-bit range.
     ///
     /// Memory: Drive holds at most two pages of keys, and their moves, per
     /// tree level on the way down, and one batch of moves gathered across
@@ -518,6 +518,7 @@ mod tests {
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup::{setup_drive, setup_drive_with_initial_state_structure};
     use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::{DataContract, DataContractFactory};
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::{Document, DocumentV0, DocumentV0Setters};
@@ -1080,51 +1081,71 @@ mod tests {
         );
     }
 
-    /// A range-summable index over values that are never negative is
-    /// rewritten: the tree holding its grades keeps a sum in every node, and
-    /// no order of those values can make a node sum leave the range.
+    /// A summed property an update before protocol version 14 made unsigned
+    /// (removing its `minimum`) while the range-summable index held negative
+    /// values of it: the grades keep their earlier keys. Moved, grade 2 would
+    /// sit over grade 1 in value order, a node adding two values of
+    /// -(2^62 + 1), and the activation block would fail.
     #[test]
-    fn should_rekey_an_index_range_summing_values_that_are_never_negative() {
-        let contract = score_contract(
-            platform_value!({"type": "integer", "minimum": 0, "maximum": 4294967295u64, "position": 1}),
+    fn should_keep_the_keys_of_an_index_range_summing_values_an_update_made_unsigned() {
+        let signed = score_contract(
+            platform_value!({
+                "type": "integer",
+                "minimum": -5_000_000_000_000_000_000i64,
+                "maximum": 100,
+                "position": 1
+            }),
             true,
         );
-        let drive = setup_contract_at_13(&contract);
-        let large = i64::from(u32::MAX);
-        for (id, grade, weight) in [(1, 1, large), (2, 128, large), (3, 2, 7), (4, 129, 9)] {
+        let drive = setup_contract_at_13(&signed);
+        let low = -(1i64 << 62) - 1;
+        for (id, grade, weight) in [(1, 2, low), (2, 200, 2), (3, 1, low)] {
             insert_document(
                 &drive,
-                &contract,
+                &signed,
                 "score",
                 &score(id, grade, weight, "a"),
                 protocol_version_13(),
             );
         }
-        let before = dump_document_type(&drive, &contract, "score");
+        let mut unsigned = score_contract(
+            platform_value!({"type": "integer", "maximum": 100, "position": 1}),
+            true,
+        );
+        unsigned.set_version(2);
+        assert!(unsigned
+            .document_type_for_name("score")
+            .expect("expected the score type")
+            .flattened_properties()
+            .get("weight")
+            .expect("expected the weight")
+            .property_type
+            .has_unsigned_integer_tree_key());
+        drive
+            .apply_contract(
+                &unsigned,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                protocol_version_13(),
+            )
+            .expect("expected to update the contract");
+        let before = dump_document_type(&drive, &unsigned, "score");
 
         rekey(&drive);
 
         assert_eq!(
-            dump_document_type(&drive, &contract, "score"),
-            rekeyed_dump(before, &[("grade", 1)]),
-        );
-        assert_eq!(
-            query_values(
-                &drive,
-                &contract,
-                "score",
-                "select * from score where grade > 1 order by grade asc",
-                "grade",
-                PlatformVersion::latest(),
-            ),
-            vec![2, 128, 129]
+            dump_document_type(&drive, &unsigned, "score"),
+            before,
+            "the grades keep their earlier keys"
         );
     }
 
-    /// An index range-summing values of both signs keeps its earlier keys:
-    /// these sums fit in the old order, but every balanced tree of the new
-    /// order holds a node summing past `i64::MAX`. Protocol version 14 keys
-    /// its grades as generation 0 too, so reads and writes find them.
+    /// A range-summable index keeps its earlier keys: these sums of both
+    /// signs fit in the old order, but every balanced tree of the new order
+    /// holds a node summing past `i64::MAX`. Protocol version 14 keys its
+    /// grades as generation 0 too, so reads and writes find them.
     #[test]
     fn should_keep_and_use_the_keys_of_an_index_range_summing_signed_values() {
         const M: i64 = 1 << 62;
