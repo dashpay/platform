@@ -129,10 +129,7 @@ async fn should_restore_funding_indices_and_reserved_addresses_before_handing_ou
     let mut expected = Vec::new();
     for mut account in info.accounts.all_accounts_mut() {
         let account_type = account.managed_account_type().to_account_type();
-        let source = wallet
-            .accounts
-            .account_of_type(account_type)
-            .map(|keys| KeySource::Public(keys.account_xpub));
+        let source = public_key_source(&wallet, account_type);
         for pool in account.managed_account_type_mut().address_pools_mut() {
             let reserved_index = if let Some(source) = &source {
                 pool.generate_addresses(40, source, true).unwrap();
@@ -187,10 +184,7 @@ async fn should_restore_funding_indices_and_reserved_addresses_before_handing_ou
     let mut wm = wm.write().await;
     let restored = wm.get_wallet_info_mut(&wallet.wallet_id).unwrap();
     for (account_type, pool_type, addresses, reserved_index, highest_used) in expected {
-        let source = wallet
-            .accounts
-            .account_of_type(account_type)
-            .map(|keys| KeySource::Public(keys.account_xpub));
+        let source = public_key_source(&wallet, account_type);
         let mut accounts = restored.core_wallet.accounts.all_accounts_mut();
         let account = accounts
             .iter_mut()
@@ -746,14 +740,21 @@ fn with_pool<R>(
     edit(pool)
 }
 
+/// The public key an account's non-hardened pool derives from: an ECDSA
+/// xpub, or the operator account's BLS key. Platform-node keys are hardened
+/// and have none.
+fn public_key_source(wallet: &Wallet, account_type: AccountType) -> Option<KeySource> {
+    if let Some(account) = wallet.accounts.account_of_type(account_type) {
+        return Some(KeySource::Public(account.account_xpub));
+    }
+    wallet
+        .accounts
+        .bls_account_of_type(account_type)
+        .map(|account| KeySource::BLSPublic(account.bls_public_key.clone()))
+}
+
 fn account_key_source(wallet: &Wallet, account_type: AccountType) -> KeySource {
-    KeySource::Public(
-        wallet
-            .accounts
-            .account_of_type(account_type)
-            .expect("account keys")
-            .account_xpub,
-    )
+    public_key_source(wallet, account_type).expect("account keys")
 }
 
 /// Persists a wallet shaped by `prepare` next to a healthy sibling, runs the
