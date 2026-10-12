@@ -13,12 +13,9 @@ use crate::wallet::PlatformWallet;
 use std::time::Duration;
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
-use dashcore::Address;
 use dpp::prelude::Identifier;
-use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPubKey};
-use key_wallet::managed_account::address_pool::{
-    AddressPool, AddressPoolType, DerivedKey, KeySource,
-};
+use key_wallet::account::derivation::AccountDerivation;
+use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::transaction_checking::transaction_context::TransactionContext;
 use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
@@ -1429,7 +1426,7 @@ fn distrust_markers_of_foreign_external_pools(
                         .managed_account_type()
                         .address_pools()
                         .into_iter()
-                        .any(|pool| !pool_derives_from(pool, &account.account_xpub))
+                        .any(|pool| !pool_derives_from(pool, account))
                 })
         })
         .map(|(key, _)| *key)
@@ -1475,39 +1472,25 @@ fn clear_restored_outbound_markers(info: &mut PlatformWalletInfo) -> usize {
     cleared
 }
 
-/// Whether every address in `pool` is the one `xpub` derives at its index.
+/// Whether every address in `pool` is the one `account` derives at its index.
 ///
-/// Only the indices the pool actually holds are derived, one at a time, so
-/// the cost follows the restored rows: a sparse row at a huge index costs one
-/// derivation, not one per index below it. An index or derivation that fails
-/// counts as a mismatch.
-fn pool_derives_from(pool: &AddressPool, xpub: &ExtendedPubKey) -> bool {
-    let key_source = KeySource::Public(*xpub);
-    pool.addresses.iter().all(|(index, info)| {
-        derived_address(pool, &key_source, *index).is_some_and(|address| address == info.address)
-    })
-}
-
-/// The address `key_source` derives at `index` in a pool laid out like
-/// `pool` — the same relative path and P2PKH encoding key-wallet uses for an
-/// ECDSA pool. `None` when the index or the derivation is invalid, or the
-/// layout cannot be derived from a public key.
-fn derived_address(pool: &AddressPool, key_source: &KeySource, index: u32) -> Option<Address> {
-    let child = |i: u32| ChildNumber::from_normal_idx(i).ok();
-    let path = match pool.pool_type {
-        AddressPoolType::External => DerivationPath::from(vec![child(0)?, child(index)?]),
-        AddressPoolType::Internal => DerivationPath::from(vec![child(1)?, child(index)?]),
-        AddressPoolType::Absent => DerivationPath::from(vec![child(index)?]),
-        // A public key cannot derive hardened children.
-        AddressPoolType::AbsentHardened => return None,
-    };
-    match key_source.derive_at_path(&path).ok()? {
-        DerivedKey::ECDSA(derived) => Some(Address::p2pkh(
-            &dashcore::PublicKey::new(derived.public_key),
-            pool.network,
-        )),
-        _ => None,
+/// Each restored index is derived on its own through key-wallet's
+/// [`AccountDerivation::derive_address_at`] — the derivation that generates
+/// the pool — so the cost follows the restored rows (a sparse row at a huge
+/// index costs one derivation) and the check cannot drift from address
+/// generation. The comparison is by script, which is what the pool watches
+/// and pays to, so an address encoded for another network still matches its
+/// key. A failed derivation counts as a mismatch, and a hardened pool never
+/// matches: its children cannot be derived from a public key.
+fn pool_derives_from(pool: &AddressPool, account: &key_wallet::Account) -> bool {
+    if pool.pool_type == AddressPoolType::AbsentHardened {
+        return pool.addresses.is_empty();
     }
+    pool.addresses.iter().all(|(index, info)| {
+        account
+            .derive_address_at(pool.pool_type, *index, None)
+            .is_ok_and(|address| address.script_pubkey() == info.script_pubkey)
+    })
 }
 
 #[cfg(test)]
@@ -1761,49 +1744,59 @@ mod tests {
 
     /// Restored-address validation costs one derivation per restored row: a
     /// single sparse row at index 1,000,000 is checked directly, not by
-    /// deriving every index below it, and a mismatching one is still caught
+    /// deriving every index below it, and a row another xpub derived is still
+    /// caught. The expected addresses come from key-wallet's own per-index
+    /// derivation, so the validator cannot drift from it unnoticed
     /// (dashpay/platform#4302 review).
     #[test]
     fn restored_address_validation_is_proportional_to_the_restored_rows() {
-        use key_wallet::bip32::{DerivationPath, ExtendedPrivKey, ExtendedPubKey};
-        use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+        use key_wallet::account::derivation::AccountDerivation;
+        use key_wallet::account::AccountType;
+        use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::managed_account::ManagedCoreFundsAccount;
 
         let secp = dashcore::secp256k1::Secp256k1::new();
-        let xpub = |seed: u8| {
-            ExtendedPubKey::from_priv(
+        let account = |seed: u8| key_wallet::Account {
+            parent_wallet_id: None,
+            account_type: AccountType::DashpayExternalAccount {
+                index: 0,
+                user_identity_id: [0xAA; 32],
+                friend_identity_id: [0x01; 32],
+            },
+            network: dashcore::Network::Testnet,
+            account_xpub: ExtendedPubKey::from_priv(
                 &secp,
                 &ExtendedPrivKey::new_master(dashcore::Network::Testnet, &[seed; 32])
                     .expect("master"),
-            )
+            ),
+            is_watch_only: true,
         };
-        let (current, previous) = (xpub(1), xpub(2));
-        let mut pool = AddressPool::new_without_generation(
-            DerivationPath::from(vec![]),
-            AddressPoolType::Absent,
-            20,
-            dashcore::Network::Testnet,
-        );
-        pool.generate_addresses(1, &KeySource::Public(current), true)
-            .expect("index 0");
-        let template = pool.addresses[&0].clone();
-        let sparse = |address| {
+        let (current, previous) = (account(1), account(2));
+        let managed = ManagedCoreFundsAccount::from_account(&current);
+        let pool = managed.managed_account_type().address_pools()[0].clone();
+        assert_eq!(pool.pool_type, AddressPoolType::Absent);
+        assert!(super::pool_derives_from(&pool, &current));
+
+        let sparse = |from: &key_wallet::Account| {
             let mut pool = pool.clone();
-            let mut info = template.clone();
+            let mut info = pool.addresses[&0].clone();
             info.index = 1_000_000;
-            info.address = address;
+            info.address = from
+                .derive_address_at(AddressPoolType::Absent, 1_000_000, None)
+                .expect("key-wallet derives the row");
+            info.script_pubkey = info.address.script_pubkey();
             pool.addresses.insert(1_000_000, info);
             pool.highest_generated = Some(1_000_000);
             pool
         };
-        let at = |key: ExtendedPubKey| {
-            super::derived_address(&pool, &KeySource::Public(key), 1_000_000).expect("derives")
-        };
 
         let started = std::time::Instant::now();
-        assert!(super::pool_derives_from(&sparse(at(current)), &current));
+        assert!(super::pool_derives_from(&sparse(&current), &current));
         assert!(
-            !super::pool_derives_from(&sparse(at(previous)), &current),
-            "a row the current xpub does not derive is caught"
+            !super::pool_derives_from(&sparse(&previous), &current),
+            "a row the current account does not derive is caught"
         );
         assert!(
             started.elapsed() < std::time::Duration::from_secs(5),
