@@ -458,12 +458,11 @@ fn should_reject_a_concurrent_writer_while_a_wallet_load_transaction_is_open() {
 /// A failure while rebuilding a wallet reaches the caller as the storage
 /// error that caused it: Strict returns it typed, and Recovery names it as
 /// the dropped wallet's cause rather than an anonymous `backend`.
-#[test]
-fn should_attribute_a_platform_node_pool_failure_to_its_typed_cause() {
-    use platform_wallet::changeset::PersistenceError;
-    use platform_wallet_storage::{LoadPolicy, WalletStorageError};
-
-    let (persister, _tmp, path) = common::fresh_persister();
+/// A store whose only wallet has platform-node pool rows carrying a
+/// well-formed BLS key, on the account that only ever holds EdDSA keys.
+fn store_with_wrong_curve_platform_node_keys() -> (tempfile::TempDir, std::path::PathBuf, [u8; 32])
+{
+    let (persister, tmp, path) = common::fresh_persister();
     let wallet =
         Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
@@ -483,7 +482,6 @@ fn should_attribute_a_platform_node_pool_failure_to_its_typed_cause() {
     persister
         .store(wallet.wallet_id, registration(&wallet, &info))
         .unwrap();
-    // A well-formed BLS key on the account that only ever holds EdDSA keys.
     let rewritten = persister
         .lock_conn_for_test()
         .execute(
@@ -493,7 +491,37 @@ fn should_attribute_a_platform_node_pool_failure_to_its_typed_cause() {
         )
         .unwrap();
     assert_eq!(rewritten, platform_keys.len());
-    drop(persister);
+    (tmp, path, wallet.wallet_id)
+}
+
+/// A typed cause rarely names its wallet, and under Strict the load returns
+/// that cause as it is: the log is where the wallet is named.
+#[test]
+#[tracing_test::traced_test]
+fn should_log_which_wallet_a_strict_load_could_not_rebuild() {
+    let (_tmp, path, wallet_id) = store_with_wrong_curve_platform_node_keys();
+    let wallet = hex::encode(wallet_id);
+    assert!(!logs_contain(&wallet), "the fixture must not name it first");
+
+    let error = SqlitePersister::open(SqlitePersisterConfig::new(&path))
+        .unwrap()
+        .load()
+        .expect_err("a wrong-curve key must fail");
+    assert!(
+        !error.to_string().contains(&wallet),
+        "the error itself does not name the wallet: {error}"
+    );
+    for field in [wallet.as_str(), "error_kind=\"blob_decode\""] {
+        assert!(logs_contain(field), "missing from the log: {field}");
+    }
+}
+
+#[test]
+fn should_attribute_a_platform_node_pool_failure_to_its_typed_cause() {
+    use platform_wallet::changeset::PersistenceError;
+    use platform_wallet_storage::{LoadPolicy, WalletStorageError};
+
+    let (_tmp, path, wallet_id) = store_with_wrong_curve_platform_node_keys();
 
     let strict = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let error = strict.load().expect_err("a wrong-curve key must fail");
@@ -515,12 +543,12 @@ fn should_attribute_a_platform_node_pool_failure_to_its_typed_cause() {
     )
     .unwrap();
     let state = recovery.load().expect("recovery isolates the wallet");
-    assert!(!state.wallets.contains_key(&wallet.wallet_id));
+    assert!(!state.wallets.contains_key(&wallet_id));
     assert_eq!(
         recovery
             .last_load_degradation()
             .wallets_degraded
-            .get(&wallet.wallet_id)
+            .get(&wallet_id)
             .copied(),
         Some("blob_decode")
     );

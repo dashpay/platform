@@ -1941,7 +1941,17 @@ fn record_wallet_degradation(
             wallet_id,
             cause: original.to_string(),
         },
-    )?;
+    )
+    // Strict: the caller propagates its original error, and a typed cause
+    // rarely names the wallet it came from, so this is where it is named.
+    .inspect_err(|_| {
+        tracing::error!(
+            wallet_id = %hex::encode(wallet_id),
+            error_kind = cause,
+            error = %original,
+            "strict load: a wallet could not be rebuilt, so the load fails"
+        );
+    })?;
     ctx.note_wallet_degraded(wallet_id, cause);
     Ok(())
 }

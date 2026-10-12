@@ -553,6 +553,29 @@ fn derive_towards(
     Ok(())
 }
 
+/// Refuse a stored pool row.
+///
+/// The error says only what is wrong with the row, and under `Strict`
+/// nothing else records where the row sits, so its coordinates go to the log
+/// here. Neither its address nor its key is logged.
+fn refuse_pool_row(
+    wallet_id: &WalletId,
+    account_type: &key_wallet::account::AccountType,
+    pool_type: &dyn std::fmt::Debug,
+    address_index: Option<u32>,
+    reason: &'static str,
+) -> WalletStorageError {
+    tracing::error!(
+        wallet_id = %hex::encode(wallet_id),
+        account_type = ?account_type,
+        pool_type = ?pool_type,
+        address_index = ?address_index,
+        reason,
+        "core pool row refused; its wallet does not load"
+    );
+    WalletStorageError::blob_decode(reason)
+}
+
 /// Restore every persisted Core pool, including handed-out and pre-derived keys.
 ///
 /// A restored entry is an address the wallet goes on to hand out, so a row is
@@ -634,8 +657,13 @@ pub(crate) fn restore_pools(
             friend.as_slice(),
         ])?;
         while let Some(row) = stored.next()? {
-            if !pool_types.contains(&row.get(0)?) {
-                return Err(WalletStorageError::blob_decode(
+            let stored_pool_type: i64 = row.get(0)?;
+            if !pool_types.contains(&stored_pool_type) {
+                return Err(refuse_pool_row(
+                    wallet_id,
+                    &account_type,
+                    &stored_pool_type,
+                    None,
                     "core pool row names a pool its account does not have",
                 ));
             }
@@ -705,7 +733,11 @@ pub(crate) fn restore_pools(
                             _ => KEY_TYPE_ECDSA,
                         };
                         if kind != expected_kind {
-                            return Err(WalletStorageError::blob_decode(
+                            return Err(refuse_pool_row(
+                                wallet_id,
+                                &account_type,
+                                &pool.pool_type,
+                                Some(index),
                                 "core pool key type does not match its account",
                             ));
                         }
@@ -714,7 +746,11 @@ pub(crate) fn restore_pools(
                             KEY_TYPE_EDDSA => EDDSA_PUBLIC_KEY_LEN,
                             KEY_TYPE_BLS => BLS_PUBLIC_KEY_LEN,
                             _ => {
-                                return Err(WalletStorageError::blob_decode(
+                                return Err(refuse_pool_row(
+                                    wallet_id,
+                                    &account_type,
+                                    &pool.pool_type,
+                                    Some(index),
                                     "core_address_pool.key_type is outside 0..=2",
                                 ))
                             }
@@ -732,7 +768,11 @@ pub(crate) fn restore_pools(
                         })
                     }
                     _ => {
-                        return Err(WalletStorageError::blob_decode(
+                        return Err(refuse_pool_row(
+                            wallet_id,
+                            &account_type,
+                            &pool.pool_type,
+                            Some(index),
                             "core_address_pool.public_key and key_type nullability differ",
                         ))
                     }
@@ -761,7 +801,11 @@ pub(crate) fn restore_pools(
                         beyond_budget += 1;
                         continue;
                     }
-                    return Err(WalletStorageError::blob_decode(
+                    return Err(refuse_pool_row(
+                        wallet_id,
+                        &account_type,
+                        &pool.pool_type,
+                        Some(index),
                         "core pool row has no derived entry to be checked against",
                     ));
                 }
@@ -772,7 +816,11 @@ pub(crate) fn restore_pools(
                             .zip(info.public_key.as_ref())
                             .is_some_and(|(a, b)| a != b)
                 }) {
-                    return Err(WalletStorageError::blob_decode(
+                    return Err(refuse_pool_row(
+                        wallet_id,
+                        &account_type,
+                        &pool.pool_type,
+                        Some(index),
                         "core pool row conflicts with its derived address or key",
                     ));
                 }
@@ -781,7 +829,11 @@ pub(crate) fn restore_pools(
                     .get(&address)
                     .is_some_and(|other| *other != index)
                 {
-                    return Err(WalletStorageError::blob_decode(
+                    return Err(refuse_pool_row(
+                        wallet_id,
+                        &account_type,
+                        &pool.pool_type,
+                        Some(index),
                         "core pool address has multiple derivation indices",
                     ));
                 }
@@ -1224,6 +1276,61 @@ mod tests {
                 "nothing may be derived beyond the budget"
             );
         });
+    }
+
+    /// The typed error names what is wrong; the log has to name where, without
+    /// the address or the key.
+    #[test]
+    #[tracing_test::traced_test]
+    fn restore_pools_logs_where_a_refused_row_sits() {
+        const INDEX: u32 = 3;
+        let mut conn = migrated_conn();
+        let (wallet, mut info, address) = wallet_with_stored_external_pool(&mut conn);
+        let derived = with_pool_of(&mut info, &address, |pool, _| {
+            pool.addresses[&INDEX].address.clone()
+        });
+        let foreign = format!("76a914{}88ac", "42".repeat(20));
+        let rewritten = conn
+            .execute(
+                &format!(
+                    "UPDATE core_address_pool SET script = X'{foreign}' WHERE address_index = ?1"
+                ),
+                params![INDEX],
+            )
+            .unwrap();
+        assert_eq!(rewritten, 1);
+
+        let error = restore_pools(
+            &conn,
+            &wallet.wallet_id,
+            &wallet,
+            &mut info,
+            &LoadCtx::strict(),
+        )
+        .expect_err("a row that contradicts its derivation is refused");
+        assert!(
+            matches!(
+                error,
+                WalletStorageError::BlobDecode { reason }
+                    if reason == "core pool row conflicts with its derived address or key"
+            ),
+            "unexpected error: {error:?}"
+        );
+        for coordinate in [
+            hex::encode(wallet.wallet_id),
+            "BIP44Account".to_string(),
+            "pool_type=External".to_string(),
+            format!("address_index=Some({INDEX})"),
+            "core pool row conflicts with its derived address or key".to_string(),
+        ] {
+            assert!(
+                logs_contain(&coordinate),
+                "missing from the log: {coordinate}"
+            );
+        }
+        for withheld in [derived.to_string(), foreign, "42".repeat(20)] {
+            assert!(!logs_contain(&withheld), "must not be logged: {withheld}");
+        }
     }
 
     #[test]
