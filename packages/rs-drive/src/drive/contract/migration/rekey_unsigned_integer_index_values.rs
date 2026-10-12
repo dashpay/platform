@@ -41,6 +41,15 @@ impl Drive {
     /// sums values of both signs, and no node sum can leave the signed
     /// 64-bit range in any order.
     ///
+    /// Memory: Drive holds at most two pages of keys per tree level on the
+    /// way down and one batch of moves (`max_rekey_batch_moves`), but GroveDB
+    /// copies every record of a moved subtree to its new prefixes, and the
+    /// block's transaction holds every write until it commits. So the
+    /// activation block's memory grows with the bytes the moved subtrees hold,
+    /// which is accepted: it is bounded by the transaction the block writes
+    /// anyway, and what earlier protocol versions stored under unsigned index
+    /// values is small.
+    ///
     /// Only the layouts earlier protocol versions write exist when this runs:
     /// the value keys of ordinary index levels. Contest vote polls keep the
     /// generation-0 keys (`serialize_value_for_vote_poll_key`), so they are not
