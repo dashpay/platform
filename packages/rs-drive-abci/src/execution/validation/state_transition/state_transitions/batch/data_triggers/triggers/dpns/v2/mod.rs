@@ -26,7 +26,7 @@ use crate::execution::validation::state_transition::batch::data_triggers::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
 
-/// The DPNS `domain` create trigger from protocol version 14, when DPNS v3's
+/// The DPNS `domain` create trigger from protocol version 15, when DPNS v3's
 /// schema keywords check the rest of a create: the normalized names are
 /// generated from their counterparts (`generatedFrom`), the preorder is the
 /// creator's own from an earlier block and the create deletes it

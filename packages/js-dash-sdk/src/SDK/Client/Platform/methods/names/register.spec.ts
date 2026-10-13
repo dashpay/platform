@@ -15,8 +15,9 @@ const sha256d = (data: Buffer): Buffer => {
 };
 
 // The `domain` schema of DPNS v3: the creator reference finds the creator's own
-// preorder by the hash of the creator's id, the normalized label, '.' and the
-// normalized parent domain name, and a new name's records.identity is its owner
+// preorder by the hash of the normalized label, '.' and the normalized parent
+// domain name, and chooses the first preorder of the name holding the same hash
+// with its owner's id first; a new name's records.identity is its owner
 const dpnsV3DomainSchema = () => ({
   propertyConstraints: {
     recordsIdentityIsOwner: {
@@ -29,11 +30,26 @@ const dpnsV3DomainSchema = () => ({
   creatorRefersTo: {
     findBy: {
       $ownerId: '$ownerId',
-      ownerNameHash: {
+      nameHash: {
         function: 'sys.hash.sha256d',
-        params: ['$ownerId', 'normalizedLabel', { const: '.' }, 'normalizedParentDomainName'],
+        params: ['normalizedLabel', { const: '.' }, 'normalizedParentDomainName'],
       },
     },
+    where: { $ownerId: '$ownerId' },
+    constraints: {
+      minimumAgeBlocks: 1,
+      chooseFirst: {
+        among: 'nameHash',
+        validWhen: {
+          ownerNameHash: {
+            function: 'sys.hash.sha256d',
+            params: ['$ownerId', 'normalizedLabel', { const: '.' }, 'normalizedParentDomainName'],
+          },
+        },
+        by: ['$createdAtBlockHeight'],
+      },
+    },
+    consume: true,
   },
   properties: {
     preorderSalt: {},
@@ -275,7 +291,31 @@ describe('Platform', () => {
         expect(platformMock.documents.broadcast.called).to.equal(false);
       });
 
-      it('should look for a pending preorder by its owner and owner name hash under DPNS v3', async () => {
+      it('should refuse a creator reference without the chooseFirst hash before preordering', async () => {
+        const identityId = await generateRandomIdentifier();
+        identityMock.getId.returns(identityId);
+        platformMock.contracts.get.resolves({
+          getDocumentSchema: () => {
+            const schema: any = dpnsV3DomainSchema();
+            delete schema.creatorRefersTo.constraints;
+            return schema;
+          },
+        });
+
+        let error;
+        try {
+          await register.call(platformMock, 'User.dash', {
+            identity: identityId,
+          }, identityMock);
+        } catch (e: any) {
+          error = e;
+        }
+
+        expect(error.message).to.equal('The DPNS domain\'s creatorRefersTo declares no chooseFirst validWhen function.');
+        expect(platformMock.documents.create.called).to.equal(false);
+      });
+
+      it('should look for a pending preorder by its owner and name hash under DPNS v3', async () => {
         const identityId = await generateRandomIdentifier();
         identityMock.getId.returns(identityId);
         platformMock.contracts.get.resolves({
@@ -291,7 +331,7 @@ describe('Platform', () => {
           {
             where: [
               ['$ownerId', '==', identityId],
-              ['ownerNameHash', '==', dpnsV3Preorder(identityId).ownerNameHash],
+              ['nameHash', '==', dpnsV3Preorder(identityId).nameHash],
             ],
             limit: 1,
           },

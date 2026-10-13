@@ -65,7 +65,7 @@ mod creation_tests {
     use crate::execution::validation::state_transition::tests::{create_card_game_external_token_contract_with_owner_identity, create_card_game_internal_token_contract_with_owner_identity_transfer_tokens, create_token_contract_with_owner_identity};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::SuccessfulExecution;
 
-    /// The block after the one holding the preorders: from protocol version 14 a domain
+    /// The block after the one holding the preorders: from protocol version 15 a domain
     /// reveals a preorder made in an earlier block.
     fn block_after_the_preorders() -> BlockInfo {
         BlockInfo::default_with_height(1)
@@ -3648,8 +3648,8 @@ mod creation_tests {
         let SuccessfulExecution { fee_result, .. } = result else {
             panic!("expected the contender to join, got {result:?}");
         };
-        // From protocol version 14 the join consumes the contender's preorder, whose storage
-        // is refunded to it
+        // From protocol version 15 the join consumes the contender's preorder, which refunds
+        // nothing (it expires), though the check reads the refund to hold either way
         let preorder_refund = fee_result
             .fee_refunds
             .calculate_refunds_amount_for_identity(contender.id())

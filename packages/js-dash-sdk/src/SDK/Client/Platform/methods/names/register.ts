@@ -50,12 +50,13 @@ export async function register(
     throw new Error('DPNS is required to register a new name.');
   }
 
-  // The preorder holds the hashes the platform finds it by. From DPNS v3 the
-  // contract declares them: the domain's creatorRefersTo finds the creator's own
-  // preorder by a findBy function over the creator's id, the normalized label,
-  // '.' and the normalized parent, which the preorder holds under the property
-  // the function fills, and the same params without the creator's id give its
-  // nameHash. Before it, the domain reveals a salt: the preorder holds
+  // The preorder holds the hashes the platform finds and judges it by. From DPNS
+  // v3 the contract declares them: the domain's creatorRefersTo finds the
+  // creator's own preorder by a findBy function over the normalized label, '.'
+  // and the normalized parent, which the preorder holds under the property the
+  // function fills (nameHash), and its chooseFirst counts a preorder holding,
+  // under its validWhen property (ownerNameHash), the hash of its owner's id and
+  // the same values. Before it, the domain reveals a salt: the preorder holds
   // saltedDomainHash, of the salt and `${normalizedLabel}.${parentDomainName}`,
   // or the label as sent for a top-level name. The contract is the one the
   // network stores now, not one cached before an upgrade changed it, whose hash
@@ -64,10 +65,19 @@ export async function register(
   const { contractId } = this.client.getApps().get('dpns');
   const dpnsContract = await this.contracts.get(contractId, { skipCache: true });
   const domainSchema = dpnsContract ? dpnsContract.getDocumentSchema('domain') : undefined;
-  const [hashProperty, hashFunction] = Object.entries(
-    domainSchema?.creatorRefersTo?.findBy ?? {},
+  const creatorRefersTo = domainSchema?.creatorRefersTo;
+  const functionOf = (entries: Record<string, any> | undefined) => Object.entries(
+    entries ?? {},
   ).find(([, source]: [string, any]) => Array.isArray(source?.params)) ?? [];
+  const [hashProperty, hashFunction] = functionOf(creatorRefersTo?.findBy);
   const hashParams: any[] | undefined = (hashFunction as any)?.params;
+  const [validWhenProperty, validWhenFunction] = functionOf(
+    creatorRefersTo?.constraints?.chooseFirst?.validWhen,
+  );
+  const validWhenParams: any[] | undefined = (validWhenFunction as any)?.params;
+  if (Array.isArray(hashParams) && !Array.isArray(validWhenParams)) {
+    throw new Error('The DPNS domain\'s creatorRefersTo declares no chooseFirst validWhen function.');
+  }
 
   // From DPNS v3 a new name's records.identity must be its owner
   // (recordsIdentityIsOwner): refuse another before the preorder is paid
@@ -101,8 +111,8 @@ export async function register(
   const preorderProperties = Array.isArray(hashParams)
     ? {
       [hashProperty as string]: hash(Buffer.concat(hashParams.map(paramBytes))),
-      nameHash: hash(Buffer.concat(
-        hashParams.filter((param) => param !== '$ownerId').map(paramBytes),
+      [validWhenProperty as string]: hash(Buffer.concat(
+        (validWhenParams as any[]).map(paramBytes),
       )),
     }
     : {

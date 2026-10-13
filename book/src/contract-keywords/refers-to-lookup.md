@@ -239,6 +239,8 @@ and the `domain`, which can be transferred, declares on its creator:
 }
 ```
 
+DPNS v3 declares this reveal on its `domain` from protocol version 15, its preorders living an hour, with the `where` entry `"$ownerId": "$ownerId"` and `consume`, so the reveal deletes the preorder it found.
+
 `findBy` finds the writer's own preorder of the name, from an earlier block, by the hash of the name, which every preorder of the name holds, whoever made it. `among` names that property: the preorders holding the same value there are the group the found one is chosen among. `validWhen` says when a preorder of the group counts: it holds, at `ownerNameHash`, the hash of its own owner's id and the name, which only an identity knowing the name can compute (`"$ownerId"` there stands for each preorder's owner). `by` orders the group. When the domain is created, the platform checks the found preorder and then reads:
 
 ```sql

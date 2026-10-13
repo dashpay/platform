@@ -121,6 +121,10 @@ impl<C> Platform<C> {
             self.transition_to_version_14(block_info, transaction, platform_version)?;
         }
 
+        if previous_protocol_version < 15 && platform_version.protocol_version >= 15 {
+            self.transition_to_version_15(block_info, transaction, platform_version)?;
+        }
+
         Ok(())
     }
 
@@ -705,12 +709,10 @@ impl<C> Platform<C> {
     /// When transitioning to version 14 we re-store the DashPay contract whose
     /// v2 schema adds the optional public payment address fields to the
     /// `profile` document type (DIP-33), the withdrawals contract whose v2
-    /// schema admits the terminal FAILED value of the `status` property, the
-    /// DPNS contract whose v3 schema checks a domain create with keywords
-    /// instead of most of its data trigger, and register the app-connect
-    /// contract that carries the wallet-to-app login handshake and the
-    /// moderation charters contract that elected moderation teams apply
-    /// through.
+    /// schema admits the terminal FAILED value of the `status` property, and
+    /// register the app-connect contract that carries the wallet-to-app login
+    /// handshake and the moderation charters contract that elected moderation
+    /// teams apply through.
     fn transition_to_version_14(
         &self,
         block_info: &BlockInfo,
@@ -749,19 +751,6 @@ impl<C> Platform<C> {
             true,
             None,
             Some(transaction),
-            platform_version,
-        )?;
-
-        // DPNS contract v3 (v14 note 92): its preorders are unique per owner, which no
-        // contract update can turn a unique index into, so the `preorder` type is rebuilt
-        // and every preorder made before this block is deleted, unrefunded.
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
-
-        self.drive.apply_contract_rebuilding_document_types(
-            &dpns_contract,
-            &[preorder::NAME],
-            block_info,
-            transaction,
             platform_version,
         )?;
 
@@ -902,6 +891,31 @@ impl<C> Platform<C> {
         // earlier versions selecting this generation cannot execute the backfill.
         self.drive
             .backfill_historical_credit_pool_nullifiers(transaction, platform_version)?;
+
+        Ok(())
+    }
+
+    /// When transitioning to version 15 we re-store the DPNS contract whose v3
+    /// schema checks a domain create with keywords instead of most of its data
+    /// trigger.
+    fn transition_to_version_15(
+        &self,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        // DPNS contract v3 (v15 note 1): its preorders are unsalted, one per owner and name,
+        // which no contract update can turn a unique index into, so the `preorder` type is
+        // rebuilt and every preorder made before this block is deleted, unrefunded.
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
+
+        self.drive.apply_contract_rebuilding_document_types(
+            &dpns_contract,
+            &[preorder::NAME],
+            block_info,
+            transaction,
+            platform_version,
+        )?;
 
         Ok(())
     }

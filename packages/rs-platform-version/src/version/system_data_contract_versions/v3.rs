@@ -8,13 +8,8 @@ use crate::version::system_data_contract_versions::SystemDataContractVersions;
 // withdrawals whose asset unlock Core can never mine. The token history
 // contract v2 admits the value 2 (OncePerIdentity) of the claim document's
 // `distributionType`, written for once-per-identity distribution claims.
-// The DPNS contract v3 checks a domain create with schema keywords instead of
-// most of its data trigger: generated normalized names, the reveal and
-// deletion of the writer's own preorder from an earlier block (preorders unique
-// per owner, their hash binding the owner), and the new domain's identity record
-// held to its owner. Domains can no longer be deleted. v2 (dashpay: 1,
-// withdrawals: 1, token_history: 1, dpns: 2) remains for PROTOCOL_VERSION_13
-// chain replay.
+// v2 (dashpay: 1, withdrawals: 1, token_history: 1) remains for
+// PROTOCOL_VERSION_13 chain replay.
 //
 // The app-connect contract (app_connect: 1) also activates with
 // PROTOCOL_VERSION_14: it is registered at genesis from that version on and
@@ -29,7 +24,7 @@ use crate::version::system_data_contract_versions::SystemDataContractVersions;
 pub const SYSTEM_DATA_CONTRACT_VERSIONS_V3: SystemDataContractVersions =
     SystemDataContractVersions {
         withdrawals: 2,
-        dpns: 3,
+        dpns: 2,
         dashpay: 2,
         masternode_reward_shares: 1,
         wallet: 1,

@@ -18,9 +18,7 @@ use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use dpp::data_contract::document_type::{
-    DocumentType, DocumentTypeRef, LookupHashKey, LookupKeyParam,
-};
+use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef, LookupHashKey};
 use dpp::document::{DocumentV0, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -57,12 +55,9 @@ fn normalize_dpns_label(input: &str) -> String {
     convert_to_homograph_safe_chars(extract_dpns_label(input))
 }
 
-/// The property a DPNS v3 preorder holds the hash of its owner and the name under, as the
-/// contract names it. Spelled here rather than read from the bundled DPNS contract, which the
-/// SDK builds only with that contract's feature.
-const OWNER_NAME_HASH: &str = "ownerNameHash";
-
-/// The property a DPNS v3 preorder holds the hash of the name alone under.
+/// The property a DPNS v3 preorder holds the hash of the name alone under, as the contract
+/// names it, which the `ownerAndNameHash` index keys with its owner. Spelled here rather than
+/// read from the bundled DPNS contract, which the SDK builds only with that contract's feature.
 const NAME_HASH: &str = "nameHash";
 
 /// Hash a buffer twice using SHA256 (double SHA256)
@@ -76,13 +71,14 @@ fn hash_double(data: Vec<u8>) -> [u8; 32] {
 /// The hash properties a preorder by `owner_id` holds for a domain carrying
 /// `domain_properties`, as the DPNS contract the network runs declares them. From DPNS v3
 /// the domain's `creatorRefersTo` finds the creator's own preorder through a `findBy`
-/// function over the creator's id, the normalized label, `"."` and the normalized parent:
-/// the preorder holds that hash under the property the function fills (`ownerNameHash`),
-/// and the same hash without the creator's id under `nameHash`, both computed by the
-/// declaration as the platform computes them. Before it the domain declares no such
-/// reference, and the preorder holds `saltedDomainHash`, the hash of the domain's
-/// `preorderSalt` and `<normalizedLabel>.dash`. A creator reference without a `findBy`
-/// function is an error, never the older hash, which such a contract could not reveal.
+/// function over the normalized label, `"."` and the normalized parent, which the preorder
+/// holds under the property the function fills (`nameHash`), and chooses the first valid
+/// preorder of the name, one holding under its `validWhen` property (`ownerNameHash`) the
+/// hash of its owner's id and the same values: both computed by the declaration as the
+/// platform computes them. Before it the domain declares no such reference, and the
+/// preorder holds `saltedDomainHash`, the hash of the domain's `preorderSalt` and
+/// `<normalizedLabel>.dash`. A creator reference without a `findBy` function or a
+/// `chooseFirst` is an error, never the older hash, which such a contract could not reveal.
 fn preorder_hash_properties(
     domain_document_type: DocumentTypeRef,
     owner_id: Identifier,
@@ -104,15 +100,18 @@ fn preorder_hash_properties(
             Value::Bytes32(hash_double(salted_domain_buffer)),
         )]));
     };
-    let (owner_name_hash_property, key) = reference
+    let lookup = reference
         .as_any_document_reference()
         .and_then(|declaration| declaration.lookup)
-        .and_then(|lookup| lookup.hash_key())
         .ok_or_else(|| {
-            Error::Generic(
-                "the DPNS domain's creatorRefersTo declares no findBy function".to_string(),
-            )
+            Error::Generic("the DPNS domain's creatorRefersTo declares no findBy".to_string())
         })?;
+    let (name_hash_property, name_key) = lookup.hash_key().ok_or_else(|| {
+        Error::Generic("the DPNS domain's creatorRefersTo declares no findBy function".to_string())
+    })?;
+    let choose_first = lookup.choose_first.as_ref().ok_or_else(|| {
+        Error::Generic("the DPNS domain's creatorRefersTo declares no chooseFirst".to_string())
+    })?;
     let hash = |key: &LookupHashKey| {
         key.key_value(domain_document_type, None, owner_id, domain_properties)
             .map(|(hash, _)| Value::Bytes32(hash))
@@ -123,27 +122,21 @@ fn preorder_hash_properties(
                 ))
             })
     };
-    let name_key = LookupHashKey {
-        function: key.function,
-        params: key
-            .params
-            .iter()
-            .filter(|param| !matches!(param, LookupKeyParam::Writer))
-            .cloned()
-            .collect(),
-    };
     Ok(BTreeMap::from([
-        (owner_name_hash_property.to_string(), hash(key)?),
-        (NAME_HASH.to_string(), hash(&name_key)?),
+        (name_hash_property.to_string(), hash(name_key)?),
+        (
+            choose_first.valid_when_property.clone(),
+            hash(&choose_first.valid_when)?,
+        ),
     ]))
 }
 
-/// The query for the preorder `owner_id` holds with `owner_name_hash`, through the DPNS v3
+/// The query for the preorder `owner_id` holds with `name_hash`, through the DPNS v3
 /// `ownerAndNameHash` index: at most one exists.
 fn pending_preorder_query(
     dpns_contract: Arc<DataContract>,
     owner_id: Identifier,
-    owner_name_hash: Value,
+    name_hash: Value,
 ) -> DocumentQuery {
     DocumentQuery {
         select: SelectProjection::documents(),
@@ -156,9 +149,9 @@ fn pending_preorder_query(
                 value: Value::Identifier(owner_id.to_buffer()),
             },
             WhereClause {
-                field: OWNER_NAME_HASH.to_string(),
+                field: NAME_HASH.to_string(),
                 operator: WhereOperator::Equal,
-                value: owner_name_hash,
+                value: name_hash,
             },
         ],
         time_range_clauses: vec![],
@@ -198,7 +191,7 @@ pub struct RegisterDpnsNameInput<S: Signer<IdentityPublicKey>> {
 /// Result of a DPNS name registration
 #[derive(Debug)]
 pub struct RegisterDpnsNameResult {
-    /// The preorder document that was created. From protocol version 14 the domain
+    /// The preorder document that was created. From protocol version 15 the domain
     /// create deletes it, so it is no longer in state once the name is registered
     pub preorder_document: Document,
     /// The domain document that was created
@@ -537,7 +530,7 @@ impl Sdk {
     }
 
     /// The preorder `owner_id` already holds of the name `preorder_document` commits to,
-    /// found by its owner and its `ownerNameHash` (the `ownerAndNameHash` index), when
+    /// found by its owner and its `nameHash` (the `ownerAndNameHash` index), when
     /// `dpns_contract` is DPNS v3 or later; `None` when there is none, and before v3,
     /// whose preorders hash a fresh salt and so never repeat. A failed query is an error.
     async fn pending_dpns_preorder(
@@ -546,11 +539,10 @@ impl Sdk {
         owner_id: Identifier,
         preorder_document: &Document,
     ) -> Result<Option<Document>, Error> {
-        let Some(owner_name_hash) = preorder_document.properties().get(OWNER_NAME_HASH).cloned()
-        else {
+        let Some(name_hash) = preorder_document.properties().get(NAME_HASH).cloned() else {
             return Ok(None);
         };
-        let query = pending_preorder_query(Arc::new(dpns_contract), owner_id, owner_name_hash);
+        let query = pending_preorder_query(Arc::new(dpns_contract), owner_id, name_hash);
         // A proven absence comes back as entries holding `None`
         Ok(Document::fetch_many(self, query)
             .await?
@@ -1052,9 +1044,9 @@ mod tests {
     }
 
     /// The pending preorder is looked up through `ownerAndNameHash`: the owner and the
-    /// preorder's own `ownerNameHash`, at most one
+    /// preorder's own `nameHash`, at most one
     #[test]
-    fn should_query_a_pending_preorder_by_its_owner_and_owner_name_hash() {
+    fn should_query_a_pending_preorder_by_its_owner_and_name_hash() {
         let owner = Identifier::new([1u8; 32]);
         let hash = Value::Bytes32([4u8; 32]);
         let query = pending_preorder_query(Arc::new(dpns_v3()), owner, hash.clone());
@@ -1068,7 +1060,7 @@ mod tests {
                     value: Value::Identifier(owner.to_buffer()),
                 },
                 WhereClause {
-                    field: "ownerNameHash".to_string(),
+                    field: "nameHash".to_string(),
                     operator: WhereOperator::Equal,
                     value: hash,
                 },
@@ -1085,7 +1077,7 @@ mod tests {
         let query = pending_preorder_query(
             Arc::new(dpns_v3()),
             owner,
-            pending.properties()["ownerNameHash"].clone(),
+            pending.properties()["nameHash"].clone(),
         );
         sdk.mock()
             .expect_fetch_many::<Identifier, Document, _, Documents>(
@@ -1110,9 +1102,9 @@ mod tests {
         assert_eq!(
             found
                 .properties()
-                .get("ownerNameHash")
+                .get("nameHash")
                 .and_then(|hash| hash.as_bytes_slice().ok()),
-            pending.properties()["ownerNameHash"].as_bytes_slice().ok()
+            pending.properties()["nameHash"].as_bytes_slice().ok()
         );
     }
 
@@ -1124,7 +1116,7 @@ mod tests {
         let query = pending_preorder_query(
             Arc::new(dpns_v3()),
             owner,
-            preorder.properties()["ownerNameHash"].clone(),
+            preorder.properties()["nameHash"].clone(),
         );
         sdk.mock()
             .expect_fetch_many::<Identifier, Document, _, Documents>(

@@ -6,7 +6,7 @@ use dpp::version::PlatformVersion;
 
 /// The hash properties a DPNS preorder by `owner_id` holds for the name
 /// `normalized_label` under the normalized `parent`, as the DPNS system contract
-/// of `platform_version` declares them. From DPNS v3 (protocol version 14):
+/// of `platform_version` declares them. From DPNS v3 (protocol version 15):
 /// `ownerNameHash`, the double SHA-256 of the owner's id, the normalized label,
 /// `"."` and the parent, and `nameHash`, the same without the owner; `salt` is
 /// not read. Before it: `saltedDomainHash`, of `salt` and

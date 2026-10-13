@@ -46,10 +46,9 @@
       "documentType": "preorder",
       "findBy": {
         "$ownerId": "$ownerId",
-        "ownerNameHash": {
+        "nameHash": {
           "function": "sys.hash.sha256d",
           "params": [
-            "$ownerId",
             "normalizedLabel",
             {
               "const": "."
@@ -58,7 +57,31 @@
           ]
         }
       },
-      "minimumAgeBlocks": 1,
+      "where": {
+        "$ownerId": "$ownerId"
+      },
+      "constraints": {
+        "minimumAgeBlocks": 1,
+        "chooseFirst": {
+          "among": "nameHash",
+          "validWhen": {
+            "ownerNameHash": {
+              "function": "sys.hash.sha256d",
+              "params": [
+                "$ownerId",
+                "normalizedLabel",
+                {
+                  "const": "."
+                },
+                "normalizedParentDomainName"
+              ]
+            }
+          },
+          "by": [
+            "$createdAtBlockHeight"
+          ]
+        }
+      },
       "consume": true
     },
     "properties": {
@@ -184,7 +207,7 @@
             "$ownerId": "asc"
           },
           {
-            "ownerNameHash": "asc"
+            "nameHash": "asc"
           }
         ],
         "unique": true

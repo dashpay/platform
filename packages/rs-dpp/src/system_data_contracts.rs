@@ -1165,8 +1165,8 @@ mod dpns_v3_tests {
         DocumentTypeV0Getters, DocumentTypeV2Getters,
     };
     use crate::data_contract::document_type::{
-        DocumentReferenceKind, DocumentTypeRef, HashFunction, LookupHashKey, LookupKeyParam,
-        LookupKeySource,
+        ChooseFirstOrder, DocumentReferenceKind, DocumentTypeRef, HashFunction, LookupChooseFirst,
+        LookupHashKey, LookupKeyParam, LookupKeySource,
     };
     use crate::util::hash::hash_double;
     use platform_value::{Identifier, Value};
@@ -1184,11 +1184,20 @@ mod dpns_v3_tests {
             .unwrap_or_else(|_| panic!("the {name} type"))
     }
 
+    fn name_params() -> Vec<LookupKeyParam> {
+        vec![
+            LookupKeyParam::Property("normalizedLabel".to_string()),
+            LookupKeyParam::Const(".".to_string()),
+            LookupKeyParam::Property("normalizedParentDomainName".to_string()),
+        ]
+    }
+
     /// A domain finds its creator's own preorder by the creator's id and the hash of the
-    /// creator's id and the normalized name, made in an earlier block, and deletes it. The salt
-    /// stays declared, unused, so domains written under v1 and v2 decode
+    /// normalized name, made in an earlier block, chosen first by creation height among the
+    /// preorders of the name that hold the hash of their own owner's id and the name, and
+    /// deletes it. The salt stays declared, unused, so domains written under v1 and v2 decode
     #[test]
-    fn should_find_the_creators_own_preorder_by_the_hash_of_the_creator_and_the_name() {
+    fn should_find_the_creators_own_preorder_chosen_first_among_those_of_the_name() {
         let contract = dpns();
         let domain = document_type(&contract, "domain");
         let declaration = domain
@@ -1200,18 +1209,28 @@ mod dpns_v3_tests {
         let lookup = declaration.lookup.expect("found by findBy");
         assert_eq!(lookup.keys.get("$ownerId"), Some(&LookupKeySource::OwnerId));
         assert_eq!(
-            lookup.keys.get("ownerNameHash"),
+            lookup.keys.get("nameHash"),
             Some(&LookupKeySource::Hash(LookupHashKey {
                 function: HashFunction::Sha256d,
-                params: vec![
-                    LookupKeyParam::Writer,
-                    LookupKeyParam::Property("normalizedLabel".to_string()),
-                    LookupKeyParam::Const(".".to_string()),
-                    LookupKeyParam::Property("normalizedParentDomainName".to_string()),
-                ],
+                params: name_params(),
             }))
         );
         assert_eq!(lookup.minimum_age_blocks, Some(1));
+        assert_eq!(
+            lookup.choose_first,
+            Some(LookupChooseFirst {
+                among: "nameHash".to_string(),
+                valid_when_property: "ownerNameHash".to_string(),
+                valid_when: LookupHashKey {
+                    function: HashFunction::Sha256d,
+                    params: [vec![LookupKeyParam::Writer], name_params()].concat(),
+                },
+                by: vec![ChooseFirstOrder {
+                    property: "$createdAtBlockHeight".to_string(),
+                    ascending: true,
+                }],
+            })
+        );
         assert!(lookup.consume);
 
         let salt = domain
@@ -1224,16 +1243,27 @@ mod dpns_v3_tests {
         assert!(!domain.required_fields().contains("preorderSalt"));
     }
 
-    /// The preorder of `b0b.dash` by an identity commits to the double SHA-256 of that
-    /// identity's id, the normalized label, "." and the normalized parent
+    /// The preorder of `b0b.dash` by an identity holds the double SHA-256 of the normalized
+    /// label, "." and the normalized parent, and, to count, the same with that identity's id
+    /// first
     #[test]
-    fn should_hash_the_creator_and_the_normalized_name() {
+    fn should_hash_the_normalized_name_and_the_creator_with_it() {
         let contract = dpns();
         let domain = document_type(&contract, "domain");
-        let key = domain
+        let lookup = domain
+            .creator_reference()
+            .and_then(|target| target.as_any_document_reference())
+            .and_then(|declaration| declaration.lookup)
+            .expect("the creator reference is found by findBy");
+        let name_key = domain
             .creator_reference()
             .and_then(|target| target.lookup_hash_key())
             .expect("the creator reference holds a findBy function");
+        let owner_name_key = &lookup
+            .choose_first
+            .as_ref()
+            .expect("the creator reference chooses the first preorder")
+            .valid_when;
         let creator = Identifier::from([3; 32]);
         let data = BTreeMap::from([
             (
@@ -1246,17 +1276,21 @@ mod dpns_v3_tests {
             ),
         ]);
 
-        let (digest, _) = key
+        let (name_hash, _) = name_key
             .key_value(domain, None, creator, &data)
-            .expect("the preimage assembles");
+            .expect("the name preimage assembles");
+        let (owner_name_hash, _) = owner_name_key
+            .key_value(domain, None, creator, &data)
+            .expect("the owner and name preimage assembles");
 
+        assert_eq!(name_hash, hash_double(b"b0b.dash"));
         let mut preimage = creator.to_buffer().to_vec();
         preimage.extend(b"b0b.dash");
-        assert_eq!(digest, hash_double(preimage));
+        assert_eq!(owner_name_hash, hash_double(preimage));
     }
 
-    /// A preorder lives an hour, is unique per owner and owner-and-name hash, and is
-    /// indexed by its name hash and creation height
+    /// A preorder lives an hour, is unique per owner and name hash, and is indexed by its
+    /// name hash and creation height
     #[test]
     fn should_expire_preorders_after_an_hour_and_index_them_by_name_hash() {
         let contract = dpns();
@@ -1279,10 +1313,7 @@ mod dpns_v3_tests {
         };
         assert_eq!(
             index_properties("ownerAndNameHash"),
-            (
-                vec!["$ownerId".to_string(), "ownerNameHash".to_string()],
-                true
-            )
+            (vec!["$ownerId".to_string(), "nameHash".to_string()], true)
         );
         assert_eq!(
             index_properties("nameHashAndHeight"),

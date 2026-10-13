@@ -46,7 +46,7 @@ mod tests {
     const STACK_SIZE: usize = 4 * 1024 * 1024; // 4 MB
 
     /// The `preorder` op of `owner_id` for `label` under `dash` salted with `salt`, hashed as
-    /// the DPNS contract of `platform_version` declares, and the `domain` op revealing it. From protocol version 14 a domain must reveal its owner's
+    /// the DPNS contract of `platform_version` declares, and the `domain` op revealing it. From protocol version 15 a domain must reveal its owner's
     /// preorder made in an earlier block, so the preorder op runs in a block before the domain op.
     fn dpns_preorder_and_domain_ops(
         dpns_contract: &DataContract,

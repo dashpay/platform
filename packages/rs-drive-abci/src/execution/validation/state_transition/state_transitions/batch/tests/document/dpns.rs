@@ -1183,7 +1183,7 @@ mod dpns_username_transfer_tests {
             .expect("expected domain batch serialized state transition");
 
         // The preorder and the domain in consecutive blocks, since from protocol
-        // version 14 a domain reveals a preorder made in an earlier block, and both
+        // version 15 a domain reveals a preorder made in an earlier block, and both
         // before the transfers and sales of the tests below, which run at +3000: a
         // transfer at the domain's own creation time would be judged as its create
         let last_block_time_ms = platform_state
@@ -2883,8 +2883,9 @@ mod dpns_username_transfer_tests {
     /// now change hands.
     ///
     /// `Replace` is stopped before data triggers run because the domain
-    /// document type is not mutable. From protocol version 14 `Delete` is too:
-    /// DPNS v3 sets `canBeDeleted: false`, and the bindings no longer reject it.
+    /// document type is not mutable. From protocol version 15 `Delete` is too:
+    /// DPNS v3 sets `canBeDeleted: false`, which refuses it before the reject
+    /// binding would.
     #[tokio::test]
     async fn test_dpns_username_replace_and_delete_still_rejected() {
         run_dpns_username_replace_and_delete_still_rejected_at_protocol_version(
@@ -2893,11 +2894,11 @@ mod dpns_username_transfer_tests {
         .await;
     }
 
-    /// PROTOCOL_VERSION_13: DPNS v2's `domain` sets `canBeDeleted: true`, so
+    /// PROTOCOL_VERSION_14: DPNS v2's `domain` sets `canBeDeleted: true`, so
     /// `Delete` is stopped only by the reject data trigger.
     #[tokio::test]
-    async fn should_reject_dpns_username_replace_and_delete_at_protocol_version_13() {
-        run_dpns_username_replace_and_delete_still_rejected_at_protocol_version(13).await;
+    async fn should_reject_dpns_username_replace_and_delete_at_protocol_version_14() {
+        run_dpns_username_replace_and_delete_still_rejected_at_protocol_version(14).await;
     }
 
     async fn run_dpns_username_replace_and_delete_still_rejected_at_protocol_version(

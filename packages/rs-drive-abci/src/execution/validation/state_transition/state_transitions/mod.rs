@@ -1244,7 +1244,7 @@ pub(in crate::execution) mod tests {
 
         assert!(!domain.documents_mutable());
         // Deletion is refused by a data trigger on DPNS v2, by `canBeDeleted: false`
-        // from DPNS v3 (protocol version 14)
+        // from DPNS v3 (protocol version 15)
         assert_eq!(
             domain.documents_can_be_deleted(),
             platform_version.system_data_contracts.dpns < 3
@@ -1504,7 +1504,7 @@ pub(in crate::execution) mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        // One block after the preorders: from protocol version 14 a domain reveals a
+        // One block after the preorders: from protocol version 15 a domain reveals a
         // preorder made in an earlier block
         let processing_result = platform
             .platform
@@ -1821,7 +1821,7 @@ pub(in crate::execution) mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        // One block after the preorders: from protocol version 14 a domain reveals a
+        // One block after the preorders: from protocol version 15 a domain reveals a
         // preorder made in an earlier block
         let processing_result = platform
             .platform
@@ -2085,7 +2085,7 @@ pub(in crate::execution) mod tests {
 
         let transaction = platform.drive.grove.start_transaction();
 
-        // One block after the preorder: from protocol version 14 a domain reveals a
+        // One block after the preorder: from protocol version 15 a domain reveals a
         // preorder made in an earlier block
         let processing_result = platform
             .platform

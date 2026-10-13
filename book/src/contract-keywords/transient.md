@@ -36,7 +36,7 @@ The DPNS `domain` type of contracts v1 and v2, trimmed to two properties:
 }
 ```
 
-Registering a name took two steps. A `preorder` document first committed to a hash of the salt and the name, and the `domain` document then revealed both. Every domain create carried its 32-byte `preorderSalt`, which the type's create data trigger checked against the preorder. Once the domain was created the salt had done its job, and the stored domain does not hold it. DPNS v3 (protocol version 14) finds the preorder by the hash of the creator and the name instead ([Commit and reveal](refers-to-lookup.md#commit-and-reveal)), and keeps `preorderSalt` declared, transient and unused, so domains stored under v1 and v2 decode.
+Registering a name took two steps. A `preorder` document first committed to a hash of the salt and the name, and the `domain` document then revealed both. Every domain create carried its 32-byte `preorderSalt`, which the type's create data trigger checked against the preorder. Once the domain was created the salt had done its job, and the stored domain does not hold it. DPNS v3 (protocol version 15) finds the preorder by its creator and the hash of the name instead, choosing the first valid preorder of the name ([Choosing the first commitment](refers-to-lookup.md#choosing-the-first-commitment-choosefirst)), and keeps `preorderSalt` declared, transient and unused, so domains stored under v1 and v2 decode.
 
 ## How it works
 

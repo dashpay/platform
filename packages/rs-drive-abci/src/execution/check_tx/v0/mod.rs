@@ -1968,7 +1968,7 @@ mod tests {
             // contract bytes; the DPNS v3 preorder type the update copies in has its own
             // (its per-owner index, its non-unique `nameHashAndHeight` index registered at
             // 0.01 Dash, `$createdAt` and `$createdAtBlockHeight` required, a ttl)
-            28003229100
+            28003227100
         );
 
         let check_result = platform

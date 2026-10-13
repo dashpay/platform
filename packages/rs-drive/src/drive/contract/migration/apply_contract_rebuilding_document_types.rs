@@ -44,7 +44,7 @@ impl Drive {
     /// For a protocol upgrade that changes a system contract's document type in a way a
     /// contract update cannot follow, such as replacing a unique index; the documents deleted
     /// are not refunded. Runs once, on the first block of the protocol version that ships the
-    /// new contract (DPNS v3's `preorder` at protocol version 14). Like an update, it leaves
+    /// new contract (DPNS v3's `preorder` at protocol version 15). Like an update, it leaves
     /// the rewritten contract in the block cache.
     pub fn apply_contract_rebuilding_document_types(
         &self,
@@ -175,10 +175,10 @@ mod tests {
 
     #[test]
     fn should_serve_the_rebuilt_contract_to_reads_in_the_block() {
-        let platform_version_13 = PlatformVersion::get(13).expect("protocol version 13");
+        let platform_version_14 = PlatformVersion::get(14).expect("protocol version 14");
         let platform_version = PlatformVersion::latest();
-        let drive = setup_drive_with_initial_state_structure(Some(platform_version_13));
-        let dpns_v2 = load_system_data_contract(SystemDataContract::DPNS, platform_version_13)
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version_14));
+        let dpns_v2 = load_system_data_contract(SystemDataContract::DPNS, platform_version_14)
             .expect("DPNS v2 loads");
         drive
             .apply_contract(
@@ -187,13 +187,13 @@ mod tests {
                 true,
                 None,
                 None,
-                platform_version_13,
+                platform_version_14,
             )
             .expect("DPNS v2 is stored");
         let dpns_id = dpns_v2.id().to_buffer();
         // A committed-state read puts DPNS v2 in the global cache
         drive
-            .get_contract_with_fetch_info(dpns_id, true, None, platform_version_13)
+            .get_contract_with_fetch_info(dpns_id, true, None, platform_version_14)
             .expect("DPNS is read")
             .expect("DPNS is stored");
 
