@@ -1337,6 +1337,69 @@ mod tests {
     }
 
     #[test]
+    fn should_accept_values_that_leave_a_required_generated_property_to_be_generated() {
+        let contract = changed_contract(false, |schema| {
+            for (name, property) in [
+                (
+                    "name",
+                    platform_value!({ "type": "string", "maxLength": 32u32, "position": 3u32 }),
+                ),
+                (
+                    "normalizedName",
+                    platform_value!({
+                        "type": "string",
+                        "maxLength": 32u32,
+                        "position": 4u32,
+                        "generatedFrom": {
+                            "function": "sys.stringTransformations.homographSafeASCII",
+                            "params": ["name"],
+                        },
+                    }),
+                ),
+            ] {
+                schema
+                    .set_value_at_path("properties", name, property)
+                    .expect("property is set");
+            }
+            require(schema, "name");
+            require(schema, "normalizedName");
+            // On an indexOnly type only indexed values exist.
+            let mut indices = schema
+                .get_value_at_path("indices")
+                .expect("indices")
+                .clone();
+            append(
+                &mut indices.as_array_mut().expect("an array")[0],
+                "terminal",
+                "normalizedName",
+            );
+            schema
+                .set_value("indices", indices)
+                .expect("indices are set");
+            append(schema, "entryPayload", "name");
+        });
+        let required = login_key_response_type(&contract).required_fields().clone();
+        assert!(required.contains("normalizedName"), "{required:?}");
+
+        let (_, properties) = login_key_response_values();
+        let mut values: serde_json::Value =
+            serde_json::from_str(&properties).expect("properties parse");
+        values["name"] = serde_json::json!("Bob");
+        let document = build_login_key_response(&contract, &values.to_string())
+            .expect("the generated property is not asked for");
+        // The delete builder generates it; the document holds what was given.
+        assert!(!document.properties().contains_key("normalizedName"));
+
+        // The source itself is still asked for.
+        let error = build_login_key_response(&contract, &properties).unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::InvalidIdentityData(ref message)
+                if message.contains("requires \"name\"")),
+            "{error:?}"
+        );
+    }
+
+    #[test]
     fn should_carry_a_creation_time_only_when_one_is_given() {
         let (contract, properties) = login_key_response_values();
         let build = |properties: &str| {

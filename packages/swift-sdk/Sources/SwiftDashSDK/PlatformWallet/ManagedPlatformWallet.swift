@@ -4188,7 +4188,7 @@ extension ManagedPlatformWallet {
         let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await Task.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) { [self] in
             var documentIdBytes = [UInt8](repeating: 0, count: 32)
 
             let result = withExtendedLifetime(signer) {
