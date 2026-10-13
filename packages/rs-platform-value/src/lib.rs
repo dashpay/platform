@@ -261,7 +261,9 @@ fn validate_value_decode_depth(depth: usize) -> Result<(), DecodeError> {
 }
 
 /// Without `std` there is no thread-local scope, so the plain [`Decode`] impl always applies
-/// [`DEFAULT_MAX_VALUE_DECODE_DEPTH`]. Guests that need other limits use [`Value::decode_bounded`].
+/// [`DEFAULT_MAX_VALUE_DECODE_DEPTH`]. It stays the trusted path there too: it sizes containers
+/// and leaves from declared lengths, so guests decode bytes they did not produce with
+/// [`Value::decode_bounded`].
 #[cfg(not(feature = "std"))]
 fn validate_value_decode_depth(depth: usize) -> Result<(), DecodeError> {
     check_value_decode_depth(depth, Some(DEFAULT_MAX_VALUE_DECODE_DEPTH))

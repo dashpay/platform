@@ -453,6 +453,14 @@ where
 /// input plus a fresh [`CodecBudget`], and finally requires that every byte was
 /// consumed: trailing bytes are an error.
 ///
+/// The bounds hold only for what the closure reads through the bounded
+/// helpers in this module (with containers charged to the budget) or through
+/// an implementation built on them, such as `Value::decode_bounded`. The
+/// decoder is an ordinary bincode decoder with no byte limit, so calling
+/// bincode's own `Decode` for a length-prefixed type (`Vec`, `String`, a
+/// derived struct holding one) inside the closure allocates from the declared
+/// length before reading it. Fixed-width scalars are safe to decode directly.
+///
 /// This does not make the accepted encoding unique. bincode decodes overlong
 /// variable-length integers leniently, so distinct inputs can still decode to
 /// the same value; a caller that needs canonical bytes re-encodes the result
