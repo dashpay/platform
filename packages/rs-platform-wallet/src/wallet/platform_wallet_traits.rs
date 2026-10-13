@@ -173,27 +173,37 @@ impl WalletInfoInterface for PlatformWalletInfo {
         // record and the persister would store a mined send as unconfirmed.
         // A lock can reach a mined transaction: dash-spv applies one for as
         // long as its mempool manager tracks the transaction, which ends
-        // only when that manager handles the block's event. Keep the block
-        // context across the call; every slice of a mined transaction is in
-        // that block. As upstream, the mined record then does not carry the
-        // lock: an asset lock mined before its lock is proven by the chain
-        // lock, not by the InstantSend lock. Fixed upstream in
-        // dashpay/rust-dashcore#1037; drop this once the pin carries it.
-        let confirmed = self
+        // only when that manager handles the block's event. Keep each
+        // confirmed slice's own context across the call: the slices of one
+        // transaction share the block but not always the finality, so one
+        // slice's context must not stand in for another's. As upstream, the
+        // mined record then does not carry the lock: an asset lock mined
+        // before its lock is proven by the chain lock, not by the
+        // InstantSend lock. Fixed upstream in dashpay/rust-dashcore#1037;
+        // drop this once the pin carries it.
+        let confirmed: Vec<_> = self
             .core_wallet
             .accounts
             .all_accounts()
             .into_iter()
             .filter_map(|account| account.transactions().get(txid))
-            .find(|record| record.is_confirmed())
-            .map(|record| record.context.clone());
+            .filter(|record| record.is_confirmed())
+            .map(|record| (record.account_type, record.context.clone()))
+            .collect();
         let changed = self.core_wallet.mark_instant_send_utxos(txid, lock);
-        if let Some(context) = confirmed {
-            for mut account in self.core_wallet.accounts.all_accounts_mut() {
-                if let Some(record) = account.transactions_mut().get_mut(txid) {
-                    if !record.is_confirmed() {
-                        record.update_context(context.clone());
-                    }
+        if confirmed.is_empty() {
+            return changed;
+        }
+        for mut account in self.core_wallet.accounts.all_accounts_mut() {
+            let Some(record) = account.transactions_mut().get_mut(txid) else {
+                continue;
+            };
+            let held = confirmed
+                .iter()
+                .find(|(account_type, _)| *account_type == record.account_type);
+            if let Some((_, context)) = held {
+                if !record.is_confirmed() {
+                    record.update_context(context.clone());
                 }
             }
         }
