@@ -1,6 +1,7 @@
 //! Wallet creation, registration, and removal on [`PlatformWalletManager`].
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use dash_spv::chain::CheckpointManager;
 use key_wallet::mnemonic::Mnemonic;
@@ -44,6 +45,11 @@ fn already_registered(wallet_id: WalletId) -> PlatformWalletError {
 fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
     Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
 }
+
+/// How long a removal waits for the broadcast resolver's task to get past
+/// it (see `remove_wallet_with_teardown`). The task only has to finish the
+/// one command or result it is handling, a host callback at most.
+const RESOLVER_REMOVAL_BUDGET: Duration = Duration::from_secs(5);
 
 /// Test-only rendezvous fired inside [`PlatformWalletManager::remove_wallet_with_teardown`],
 /// between the inner-manager removal and the public-map removal.
@@ -919,6 +925,25 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     "remove_wallet: inner wallet-manager removal failed (state may be inconsistent)"
                 );
             }
+        }
+
+        // The removal above only queued the broadcast resolver's part. Its
+        // task could be publishing a verdict of this wallet's right now, and
+        // a host cannot tell one that arrives after this call returned from a
+        // verdict of a wallet registered under the same id since. Wait for
+        // the task to get past the removal, outside the wallet-manager lock
+        // (its reads take that lock). Bounded: a host handler that never
+        // returns must not hold a removal for ever.
+        if !self
+            .broadcast_resolver
+            .caught_up(RESOLVER_REMOVAL_BUDGET)
+            .await
+        {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                "remove_wallet: the broadcast resolver did not get to the removal in time; \
+                 a verdict for this wallet may still reach the host"
+            );
         }
 
         // Test-only rendezvous: the window a concurrent same-id registration can

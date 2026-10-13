@@ -54,6 +54,9 @@ public struct OutgoingTransactionProbeEvent: Sendable, Equatable {
 /// broadcast-probe callback reads its wallet's generation on the Rust thread
 /// that delivers it; `deleteWallet` bumps it once the native wallet is gone,
 /// so a verdict or clear still queued for the main actor is dropped there.
+/// The native removal returns only after the resolver's task is past it, so
+/// no verdict of the deleted wallet is handed to the callback after the
+/// bump and stamped with the new generation.
 /// A wallet restored under the same deterministic id keeps the bumped
 /// generation: the deleted wallet's queued callbacks stay stale, its own
 /// are current. For that reason an entry is never removed: one counter stays

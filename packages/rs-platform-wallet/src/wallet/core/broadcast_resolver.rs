@@ -1264,6 +1264,10 @@ enum Command {
     SyncComplete {
         tip: u32,
     },
+    /// Answered once every command sent before it has been handled, the
+    /// host callbacks those made included (see
+    /// [`BroadcastResolver::caught_up`]).
+    Barrier(oneshot::Sender<()>),
     /// Whether the wallet is idle: no pass running or queued, and none due
     /// at any height (see [`WalletEntry::wait_until`]). Answered in order
     /// with the other commands.
@@ -1849,6 +1853,10 @@ impl Actor {
                 self.wallets.insert(wallet_id, WalletEntry::default());
             }
             Command::WalletRemoved(wallet_id) => self.drop_wallet(&wallet_id, "removed"),
+            Command::Barrier(reply) => {
+                // The waiter may have given up: nothing to do then.
+                let _ = reply.send(());
+            }
             #[cfg(test)]
             Command::IsIdle { wallet_id, reply } => {
                 let idle = self.wallets.get(&wallet_id).is_some_and(|entry| {
@@ -2597,6 +2605,25 @@ impl BroadcastResolver {
     /// The last value passed to [`set_enabled`](Self::set_enabled).
     pub(crate) fn is_enabled(&self) -> bool {
         self.enabled.load(Ordering::SeqCst)
+    }
+
+    /// Wait until the resolver's task has handled everything sent to it
+    /// before this call, the host callbacks that made included, for at most
+    /// `budget`. Whether it did; `true` also when the task is gone, since
+    /// then nothing is published any more.
+    ///
+    /// After a removal ([`wallet_removed`](Self::wallet_removed)) this is
+    /// what makes "no verdict for the removed wallet from now on" true: the
+    /// removal is only queued, and the task could be publishing a verdict of
+    /// that wallet's at that moment. The task handles one thing at a time and
+    /// calls the host from itself, so once it has reached this barrier the
+    /// removal is behind it and so is every callback from before. Not to be
+    /// awaited under the wallet-manager lock: the task's reads take it.
+    pub(crate) async fn caught_up(&self, budget: Duration) -> bool {
+        let (reply, answer) = oneshot::channel();
+        self.send(Command::Barrier(reply));
+        // Not timed out: answered, or the task is gone.
+        tokio::time::timeout(budget, answer).await.is_ok()
     }
 
     /// Whether the actor holds the wallet idle (see [`Command::IsIdle`]).
