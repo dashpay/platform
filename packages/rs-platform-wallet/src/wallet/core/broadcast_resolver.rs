@@ -10,7 +10,7 @@
 //! signed transaction, so it goes out only under the lifecycle gate of the
 //! registration it was read from: a wallet's removal stops the one in
 //! flight and none is started after it (see [`gated_probe`]). Verdicts are positive
-//! only — accepted or mined — or unresolved: no answer the probe gets proves
+//! only — accepted — or unresolved: no answer the probe gets proves
 //! that a transaction can never land (see
 //! [`broadcast_probe`](crate::broadcast_probe)).
 //!
@@ -25,13 +25,12 @@
 //!
 //! What is published: verdicts per **own send**, which is what the host
 //! shows. A root's verdict goes to the root when it is the wallet's send.
-//! Every verdict is advisory, Mined included: only the wallet itself (a
-//! block, an InstantSend lock) settles a send, so a root found mined stays a
-//! root — probed on its schedule like any other — until the wallet settles
-//! it, and a later probe may turn it back into Accepted. Only changes are
-//! published: Unresolved never replaces a decided verdict (Accepted, Mined),
-//! so a Mined a reorg dropped stays published until a probe disagrees or the
-//! wallet settles the send. The host is told to drop a send's verdict
+//! Every verdict is advisory: only the wallet itself (a block, an
+//! InstantSend lock) settles a send, so a root the nodes accepted, in a
+//! mempool or in a block, stays a root — probed on its schedule like any
+//! other — until the wallet settles it. Only changes are published:
+//! Unresolved never replaces Accepted, so an Accepted stays published until
+//! the wallet settles the send. The host is told to drop a send's verdict
 //! (cleared) when the send settles or leaves the wallet, when its wallet is
 //! removed and, for every send, when probing is turned off; cleared says
 //! only "forget the verdict", not that the send settled. A
@@ -326,8 +325,8 @@ pub(crate) struct ChainGraph<'a> {
 }
 
 impl<'a> ChainGraph<'a> {
-    /// Only the wallet settles a transaction: a probe's verdict, Mined
-    /// included, changes nothing here.
+    /// Only the wallet settles a transaction: a probe's verdict changes
+    /// nothing here.
     pub(crate) fn new(views: &'a [OutgoingView]) -> Self {
         Self {
             by_txid: views.iter().map(|view| (view.txid, view)).collect(),
@@ -508,9 +507,7 @@ impl ProbeSchedule {
 }
 
 /// Whether two verdicts say the same thing. Every Unresolved counts as one,
-/// since its reason varies from probe to probe. Accepted and Mined differ —
-/// though the FFI host receives both as the same code (see
-/// `OUTGOING_PROBE_VERDICT_ACCEPTED`).
+/// since its reason varies from probe to probe.
 fn same_verdict(a: &ProbeVerdict, b: &ProbeVerdict) -> bool {
     match (a, b) {
         (ProbeVerdict::Unresolved { .. }, ProbeVerdict::Unresolved { .. }) => true,
@@ -619,8 +616,8 @@ impl ResolverState {
     }
 
     /// Record `verdict` for `send`; returns whether the host must hear it.
-    /// Unresolved never replaces a decided verdict (Accepted, Mined) — one
-    /// probe that only met transport errors says nothing new.
+    /// Unresolved never replaces Accepted — one probe that only met
+    /// transport errors says nothing new.
     fn publish(&mut self, key: (WalletId, Txid), verdict: &ProbeVerdict) -> bool {
         let changed = match self.published.get(&key) {
             None => true,
@@ -2185,8 +2182,7 @@ impl Actor {
                         continue;
                     };
                     // An echo says only that the send is out there: it adds
-                    // nothing to a decided verdict (and must not turn a Mined
-                    // back into Accepted).
+                    // nothing to a send already accepted.
                     if self
                         .state
                         .published
@@ -3558,12 +3554,6 @@ mod tests {
         [7u8; 32]
     }
 
-    /// The nodes' advisory word that a send is in a block: the root is still
-    /// probed until the wallet settles it.
-    fn mined() -> ProbeVerdict {
-        ProbeVerdict::Mined
-    }
-
     fn unresolved() -> ProbeVerdict {
         ProbeVerdict::Unresolved {
             reason: "no quorum".to_string(),
@@ -3827,25 +3817,23 @@ mod tests {
         }
     }
 
-    /// Nodes' word that a send is mined is not settlement: the root keeps
-    /// being probed on its schedule, a later probe that finds it only in a
-    /// mempool turns the verdict back into Accepted, a probe that learns
-    /// nothing keeps the last decided verdict, and only the wallet settling
-    /// the send ends it.
+    /// Nodes' word that a send is accepted, in a mempool or a block, is not
+    /// settlement: the root keeps being probed on its schedule, a repeat or
+    /// a probe that learns nothing publishes nothing, and only the wallet
+    /// settling the send ends it.
     #[tokio::test]
-    async fn should_keep_probing_a_mined_root_until_the_wallet_settles_it() {
+    async fn should_keep_probing_an_accepted_root_until_the_wallet_settles_it() {
         let state = Mutex::new(Harness::default());
-        let probe = SequenceProbe::new(&[ProbeVerdict::Mined, ProbeVerdict::Accepted]);
+        let probe = SequenceProbe::new(&[ProbeVerdict::Accepted, ProbeVerdict::Accepted]);
         let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 0)])];
 
         assert_eq!(
             pass(&state, &probe, 100, &views).await,
-            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Mined)]
+            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
         );
-        assert_eq!(
-            pass(&state, &probe, 101, &views).await,
-            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)],
-            "a later probe disagrees"
+        assert!(
+            pass(&state, &probe, 101, &views).await.is_empty(),
+            "a repeat is no news"
         );
         assert!(pass(&state, &probe, 102, &views).await.is_empty());
         assert_eq!(probe.calls(), 3, "only the root, on every block");
@@ -3925,9 +3913,8 @@ mod tests {
     }
 
     /// One probe that met only transport errors says nothing new about a send
-    /// already seen accepted or mined; the UI must not flicker back to
-    /// "unknown". Accepted and Mined replace each other — a later probe may
-    /// disagree with an earlier one either way — and a repeat is no news.
+    /// already seen accepted; the UI must not flicker back to "unknown". A
+    /// repeat is no news.
     #[test]
     fn should_publish_only_a_change_of_verdict() {
         let mut state = ResolverState::default();
@@ -3936,10 +3923,6 @@ mod tests {
         assert!(state.publish(key, &ProbeVerdict::Accepted));
         assert!(!state.publish(key, &unresolved()));
         assert!(!state.publish(key, &ProbeVerdict::Accepted));
-        assert!(state.publish(key, &ProbeVerdict::Mined));
-        assert!(!state.publish(key, &unresolved()));
-        assert!(!state.publish(key, &ProbeVerdict::Mined));
-        assert!(state.publish(key, &ProbeVerdict::Accepted));
     }
 
     // ---- the actor ----------------------------------------------------------
@@ -6000,11 +5983,11 @@ mod tests {
         );
     }
 
-    /// An echo adds nothing to a decided verdict: a send probed Mined stays
-    /// Mined, not turned back into Accepted.
+    /// An echo adds nothing to a send a probe already found accepted: no
+    /// second Accepted is published.
     #[tokio::test]
-    async fn should_not_turn_a_mined_send_back_into_accepted_on_its_echo() {
-        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), mined())]));
+    async fn should_not_publish_an_accepted_send_again_on_its_echo() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
         let mut rig = enabled(probe).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.send(Command::Seen {
@@ -6013,14 +5996,17 @@ mod tests {
         })
         .await;
         rig.send(Command::Uncertain(txid(1))).await;
-        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), mined())]);
+        assert_eq!(
+            rig.sent(),
+            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
+        );
 
         rig.send(Command::Echoed(txid(1))).await;
 
         assert!(rig.sent().is_empty());
         assert_eq!(
             rig.actor.state.published.get(&(wallet(), txid(1))),
-            Some(&mined())
+            Some(&ProbeVerdict::Accepted)
         );
     }
 
@@ -6215,7 +6201,11 @@ mod tests {
     /// it before, so it must not leave the wallet idle.
     #[tokio::test]
     async fn should_not_leave_idle_a_wallet_touched_during_its_pass() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(
+            txid(1),
+            ProbeVerdict::Accepted,
+        )])))
+        .await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.height(wallet(), 100).await;
 
@@ -6237,7 +6227,7 @@ mod tests {
     /// height re-publishes what was cleared.
     #[tokio::test]
     async fn should_republish_after_probing_goes_off_and_on() {
-        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), mined())]));
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
         let mut rig = enabled(probe.clone()).await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.follow(wallet(), 100).await;
@@ -6248,7 +6238,10 @@ mod tests {
 
         rig.send(Command::SetEnabled(true)).await;
         rig.height(wallet(), 102).await;
-        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), mined())]);
+        assert_eq!(
+            rig.sent(),
+            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
+        );
         assert_eq!(probe.probed(), vec![txid(1), txid(1)]);
     }
 
@@ -6256,7 +6249,11 @@ mod tests {
     /// dropped, nothing is published after the clears.
     #[tokio::test]
     async fn should_drop_a_pass_in_flight_when_probing_goes_off() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(
+            txid(1),
+            ProbeVerdict::Accepted,
+        )])))
+        .await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.height(wallet(), 100).await;
 
@@ -7067,7 +7064,7 @@ mod tests {
     #[tokio::test]
     async fn should_clear_a_verdict_as_soon_as_an_event_settles_its_send() {
         let mut rig = enabled(Arc::new(ScriptedProbe::new(&[
-            (txid(1), mined()),
+            (txid(1), ProbeVerdict::Accepted),
             (txid(2), unresolved()),
         ])))
         .await;
@@ -7193,7 +7190,11 @@ mod tests {
     /// verdict cleared, every schedule gone, so every root is due at once.
     #[tokio::test]
     async fn should_start_over_on_a_rewind() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(
+            txid(1),
+            ProbeVerdict::Accepted,
+        )])))
+        .await;
         rig.views(
             wallet(),
             vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],
@@ -7503,12 +7504,16 @@ mod tests {
         assert_eq!(probe.probed(), vec![txid(2)]);
     }
 
-    /// The first root's probe finishes Mined, then the root settles before
+    /// The first root's probe finishes Accepted, then the root settles before
     /// the result is handled: the leftover answer is not recorded against
     /// the next root in flight.
     #[tokio::test]
     async fn should_not_record_a_stopped_probe_answer_against_the_next_root() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(
+            txid(1),
+            ProbeVerdict::Accepted,
+        )])))
+        .await;
         rig.views(
             wallet(),
             vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
@@ -7528,7 +7533,7 @@ mod tests {
             Ok((_, JobDone::Probed { root, outcome, .. }))
                 if *root == txid(1)
                     && outcome.as_ref().map(|outcome| &outcome.verdict)
-                        == Some(&ProbeVerdict::Mined)
+                        == Some(&ProbeVerdict::Accepted)
         ));
 
         rig.handle(Command::Settled {
@@ -7540,10 +7545,10 @@ mod tests {
 
         assert!(!rig
             .sent()
-            .contains(&ResolverEvent::Verdict(txid(2), mined())));
+            .contains(&ResolverEvent::Verdict(txid(2), ProbeVerdict::Accepted)));
         assert_ne!(
             rig.actor.state.published.get(&(wallet(), txid(2))),
-            Some(&mined())
+            Some(&ProbeVerdict::Accepted)
         );
     }
 
@@ -7651,10 +7656,17 @@ mod tests {
     /// stale verdicts from before do not carry over.
     #[tokio::test]
     async fn should_start_a_re_registered_wallet_fresh() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(
+            txid(1),
+            ProbeVerdict::Accepted,
+        )])))
+        .await;
         rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
         rig.follow(wallet(), 100).await;
-        assert_eq!(rig.sent(), vec![ResolverEvent::Verdict(txid(1), mined())]);
+        assert_eq!(
+            rig.sent(),
+            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
+        );
         assert!(rig.actor.wallets[&wallet()].wait_until.is_some());
 
         rig.send(Command::WalletAdded(wallet())).await;
@@ -7693,12 +7705,16 @@ mod tests {
         assert!(rig.actor.state.published.is_empty());
     }
 
-    /// A probe sent before a rewind would answer Mined: the answer belongs to
+    /// A probe sent before a rewind would answer Accepted: the answer belongs to
     /// the state the rewind dropped — the rewind stops it, and nothing is told
     /// or recorded.
     #[tokio::test]
     async fn should_neither_tell_nor_record_a_pre_rewind_answer() {
-        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(txid(1), mined())]))).await;
+        let mut rig = enabled(Arc::new(ScriptedProbe::new(&[(
+            txid(1),
+            ProbeVerdict::Accepted,
+        )])))
+        .await;
         rig.views(
             wallet(),
             vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 1)])],

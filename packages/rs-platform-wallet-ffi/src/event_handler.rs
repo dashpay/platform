@@ -53,9 +53,7 @@ pub type DpnsMarketplaceSyncCompletedFn = unsafe extern "C" fn(
 );
 
 /// Verdict codes for [`OutgoingTransactionProbedFn`].
-/// A node holds the send in its mempool, or nodes have it in a block: the
-/// resolver's Accepted and Mined both arrive as this code, so a move between
-/// them (a later probe may disagree with an earlier one) delivers it again.
+/// A node holds the send, in its mempool or in a block.
 pub const OUTGOING_PROBE_VERDICT_ACCEPTED: u8 = 0;
 /// Reserved; not emitted by this version.
 pub const OUTGOING_PROBE_VERDICT_DEAD: u8 = 1;
@@ -324,7 +322,7 @@ impl PlatformEventHandler for FFIEventHandler {
         let (code, reason) = match verdict {
             // The host does not need to tell a mempool from a block: both mean
             // the payment is going through.
-            ProbeVerdict::Accepted | ProbeVerdict::Mined => (OUTGOING_PROBE_VERDICT_ACCEPTED, None),
+            ProbeVerdict::Accepted => (OUTGOING_PROBE_VERDICT_ACCEPTED, None),
             ProbeVerdict::Unresolved { reason } => {
                 (OUTGOING_PROBE_VERDICT_UNRESOLVED, Some(reason))
             }

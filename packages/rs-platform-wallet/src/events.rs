@@ -50,12 +50,9 @@ pub trait PlatformEventHandler: EventHandler {
 
     /// Fired when the verdict on an unconfirmed send of this wallet changes —
     /// the network was asked about the root of its chain. `Accepted` means a
-    /// node holds the transaction in its mempool (or one has it in a block);
-    /// `Mined` that two distinct nodes have it in a block within one probe —
-    /// advisory like `Accepted`: the resolver keeps asking until the wallet
-    /// settles the send, a later probe may turn it back into `Accepted`, and
-    /// one dropped by a reorg stays published until a probe disagrees or the
-    /// send settles; `Unresolved` that there is no verdict
+    /// node holds the transaction, in its mempool or in a block — advisory:
+    /// the resolver keeps asking until the wallet settles the send, and it
+    /// stays published until then; `Unresolved` that there is no verdict
     /// yet — refusals included, since no node's answer proves a transaction
     /// can never land; the resolver asks again on a later block. Nothing in
     /// the wallet changes either way.

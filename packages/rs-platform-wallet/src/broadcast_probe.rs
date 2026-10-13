@@ -17,8 +17,8 @@
 //! | spends an input that does not exist           | `-25 bad-txns-inputs-missingorspent`      |
 //! | spends an input an IS-locked tx already spent | `-26 tx-txlock-conflict`                  |
 //!
-//! The probe uses the positive answers: a node holding the transaction makes
-//! it accepted, and nodes having it in a block make it mined. A refusal never
+//! The probe uses the positive answers: a node holding the transaction, in its
+//! mempool or in a block, makes it accepted. A refusal never
 //! settles anything. Proving that a transaction can never land would need the
 //! finality of whatever spent its input, which these answers do not show — a
 //! node lagging behind a parent's block, an ancestor still propagating, or a
@@ -30,16 +30,11 @@
 //! `-25`), and the lookup is what finds it. Otherwise the transaction stays
 //! unresolved, with the refusal in the reason.
 //!
-//! Mined needs two distinct nodes reporting the transaction in a block
-//! ([`MINED_QUORUM`]); one such report makes it accepted — it exists — and the
-//! second opinion is asked by lookup, not by resubmitting. On a network with
-//! a single reachable evonode (a devnet pinned to one address) nothing is
-//! ever mined by probe, only accepted; the wallet's own block processing
-//! settles it. Each probe judges on its own: there is no adding up of nodes
-//! across probes. Mined is the nodes' word, not settlement — the resolver
-//! keeps probing a mined send like any other until the wallet settles it, and
-//! a later probe may say only accepted (a block a reorg dropped, or one the
-//! chain the wallet follows never had).
+//! The probe does not tell "in a mempool" from "in a block": no host and no
+//! schedule reads the difference, and a node's word on a block is not
+//! settlement — the block may be on a stale fork or about to be reorged out.
+//! The wallet's own block processing settles a send; until then the resolver
+//! keeps probing an accepted one like any other.
 //!
 //! The two DAPI implementations surface those codes differently — the JS
 //! server maps `-25` to `InvalidArgument`, rs-dapi to `FailedPrecondition` —
@@ -101,11 +96,9 @@ const TRANSPORT_MARKERS: &[&str] = &[
 /// What a single Core node said when handed a signed transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum NodeVerdict {
-    /// The node holds the transaction in its mempool — it accepted it now or
-    /// already had it.
+    /// The node holds the transaction: it accepted it now, already had it in
+    /// its mempool, or has it in a block (`-27`).
     Accepted,
-    /// The node has the transaction in a block (`-27`).
-    Mined,
     /// The node refused it for its inputs ([`REFUSAL_REASONS`]).
     Refused { reason: String },
     /// The node answered, but with no verdict: another rejection (such as
@@ -139,8 +132,9 @@ pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdi
             reason: format!("{code:?}: {message}"),
         };
     }
+    // `-27`: already in a block, by this node's word.
     if code == Code::AlreadyExists {
-        return NodeVerdict::Mined;
+        return NodeVerdict::Accepted;
     }
     if REFUSAL_REASONS
         .iter()
@@ -158,14 +152,11 @@ pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdi
 /// The answer a probe gives about one transaction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProbeVerdict {
-    /// A node holds the transaction in its mempool, or one node — short of
-    /// [`MINED_QUORUM`] — has it in a block. Not settlement: it can still
-    /// expire or lose to a conflict, so the resolver keeps asking.
+    /// A node holds the transaction, in its mempool or in a block. Not
+    /// settlement: it can still expire, lose to a conflict or sit in a block
+    /// a reorg drops, so the resolver keeps asking until the wallet settles
+    /// the send.
     Accepted,
-    /// Two different nodes have the transaction in a block, within one probe.
-    /// Advisory, like Accepted: the resolver keeps asking until the wallet
-    /// settles the send, and a later probe may turn it back into Accepted.
-    Mined,
     /// Not enough evidence that it landed; the transaction stays ambiguous.
     /// The reason says what the nodes answered, refusals included.
     Unresolved { reason: String },
@@ -174,8 +165,8 @@ pub enum ProbeVerdict {
 /// Whether one node knows a txid (DAPI `getTransaction`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum LookupAnswer {
-    /// The node has the transaction; `mined` when it is in a block.
-    Known { mined: bool },
+    /// The node has the transaction, in its mempool or in a block.
+    Known,
     /// The node answered and does not have it.
     NotFound,
     /// No answer: transport failure, timeout, anything else.
@@ -194,8 +185,7 @@ pub(crate) trait NodeSubmitter: Send + Sync {
 /// How many submissions one probe may spend looking for a verdict.
 const MAX_SUBMISSIONS_PER_PROBE: usize = 4;
 
-/// How many txid lookups one probe may spend: after refusals, or to get a
-/// second opinion on one node's "in a block".
+/// How many txid lookups one probe may spend after refusals.
 const MAX_LOOKUPS_PER_PROBE: usize = 4;
 
 /// How many *distinct* nodes must refuse a transaction for its inputs before
@@ -203,13 +193,6 @@ const MAX_LOOKUPS_PER_PROBE: usize = 4;
 /// tip; two make it worth asking whether it is a mined transaction whose
 /// outputs are all spent.
 const REFUSAL_QUORUM: usize = 2;
-
-/// How many *distinct* nodes must report a transaction in a block before it
-/// counts as mined, within one probe. One node on a stale fork, or one whose
-/// block is about to be reorged out, would otherwise report it mined on false
-/// evidence. A single such answer still shows the transaction exists: it
-/// counts as accepted.
-pub(crate) const MINED_QUORUM: usize = 2;
 
 /// Resubmits a transaction whose broadcast outcome is unknown and turns the
 /// nodes' answers into a verdict.
@@ -246,12 +229,11 @@ impl ProbeOutcome {
     }
 }
 
-/// Evidence rules shared by every probe: a node holding the transaction in its
-/// mempool makes it accepted; one reporting it in a block sends the probe to
-/// lookups for a second opinion ([`MINED_QUORUM`] distinct nodes make it
-/// mined); [`REFUSAL_QUORUM`] distinct nodes refusing it for its inputs send
-/// the probe to lookups too, which find a mined transaction whose outputs are
-/// all spent and otherwise leave it unresolved; give up after
+/// Evidence rules shared by every probe: a node holding the transaction, in
+/// its mempool or in a block, makes it accepted; [`REFUSAL_QUORUM`] distinct
+/// nodes refusing it for its inputs send the probe to lookups, which find a
+/// mined transaction whose outputs are all spent and otherwise leave it
+/// unresolved; give up after
 /// [`MAX_SUBMISSIONS_PER_PROBE`] submissions and [`MAX_LOOKUPS_PER_PROBE`]
 /// lookups.
 pub(crate) async fn probe_with(
@@ -274,18 +256,6 @@ pub(crate) async fn probe_with(
         );
         match verdict {
             NodeVerdict::Accepted => return ProbeOutcome::answered(ProbeVerdict::Accepted),
-            NodeVerdict::Mined => {
-                // In a block by this node's word. A second opinion comes from
-                // a lookup, not from sending it again.
-                return ProbeOutcome::answered(
-                    confirm_by_lookup(
-                        submitter,
-                        transaction,
-                        LookupFor::SecondOpinion { seen_by: node },
-                    )
-                    .await,
-                );
-            }
             NodeVerdict::Refused { reason } => {
                 // An unidentified node cannot count towards the quorum — it
                 // might be the node we already heard.
@@ -296,8 +266,7 @@ pub(crate) async fn probe_with(
                 if refusing_nodes.len() >= REFUSAL_QUORUM {
                     let reason = first.clone();
                     return ProbeOutcome::answered(
-                        confirm_by_lookup(submitter, transaction, LookupFor::Refused { reason })
-                            .await,
+                        look_up_refused(submitter, transaction, reason).await,
                     );
                 }
             }
@@ -324,54 +293,17 @@ pub(crate) async fn probe_with(
     ProbeOutcome { verdict, answered }
 }
 
-/// Why a probe turns to lookups.
-enum LookupFor {
-    /// A submission answered "already in a block" (from `seen_by`): a second
-    /// node is asked.
-    SecondOpinion { seen_by: Option<String> },
-    /// [`REFUSAL_QUORUM`] nodes refused it as `reason`: is it a mined
-    /// transaction whose outputs are all spent?
-    Refused { reason: String },
-}
-
-/// Nodes that reported the transaction in a block, by submission or lookup.
-#[derive(Default)]
-struct MinedEvidence {
-    nodes: HashSet<String>,
-    /// Any node said so, identified or not: the transaction exists.
-    seen: bool,
-}
-
-impl MinedEvidence {
-    /// Count one report; whether the quorum is reached. An unidentified node
-    /// cannot count — it might be one already heard.
-    fn add(&mut self, node: Option<String>) -> bool {
-        self.seen = true;
-        if let Some(node) = node {
-            self.nodes.insert(node);
-        }
-        self.nodes.len() >= MINED_QUORUM
-    }
-}
-
-/// Settle by `getTransaction` lookups. A node that knows the txid in its
-/// mempool makes it accepted; in a block, counts towards [`MINED_QUORUM`].
-/// After refusals, nothing better than unresolved comes of nodes not knowing
-/// it.
-async fn confirm_by_lookup(
+/// [`REFUSAL_QUORUM`] nodes refused the transaction as `reason`: ask by
+/// `getTransaction` whether the txid is known at all. A node that has it — a
+/// mined transaction whose outputs are all spent is refused the same way —
+/// makes it accepted; nothing better than unresolved comes of nodes not
+/// knowing it.
+async fn look_up_refused(
     submitter: &dyn NodeSubmitter,
     transaction: &Transaction,
-    purpose: LookupFor,
+    reason: String,
 ) -> ProbeVerdict {
     let txid = &transaction.txid();
-    let mut mined = MinedEvidence::default();
-    let refused = match purpose {
-        LookupFor::SecondOpinion { seen_by } => {
-            mined.add(seen_by);
-            None
-        }
-        LookupFor::Refused { reason } => Some(reason),
-    };
     let mut not_found: HashSet<String> = HashSet::new();
     let mut last_unknown = String::from("no lookup was answered");
     for _ in 0..MAX_LOOKUPS_PER_PROBE {
@@ -383,29 +315,20 @@ async fn confirm_by_lookup(
             "broadcast probe: txid lookup answered"
         );
         match answer {
-            LookupAnswer::Known { mined: true } => {
-                if mined.add(node) {
-                    return ProbeVerdict::Mined;
-                }
-            }
-            LookupAnswer::Known { mined: false } => return ProbeVerdict::Accepted,
+            LookupAnswer::Known => return ProbeVerdict::Accepted,
             LookupAnswer::NotFound => {
                 if let Some(node) = node {
                     not_found.insert(node);
                 }
-                // Nobody has it in a block and enough nodes say so: asking on
-                // learns nothing more.
-                if refused.is_some() && !mined.seen && not_found.len() >= REFUSAL_QUORUM {
+                // Enough nodes say they do not have it: asking on learns
+                // nothing more.
+                if not_found.len() >= REFUSAL_QUORUM {
                     break;
                 }
             }
             LookupAnswer::Unknown { reason } => last_unknown = reason,
         }
     }
-    // A node's word that it is in a block: it exists, not settled as final.
-    let Some(reason) = refused.filter(|_| !mined.seen) else {
-        return ProbeVerdict::Accepted;
-    };
     ProbeVerdict::Unresolved {
         reason: format!(
             "refused as {reason}; {} node(s) do not know the txid; last other lookup answer: {last_unknown}",
@@ -491,13 +414,13 @@ fn lookup_reply(
 /// no confirmations is a block off the node's active chain (a stale fork; both
 /// DAPI servers send height 0 for Core's -1): neither mined nor in a mempool.
 fn lookup_answer(tx: &GetTransactionResponse) -> LookupAnswer {
-    let mined = tx.height > 0 || tx.confirmations > 0;
-    if !mined && !tx.block_hash.is_empty() {
+    let in_block = tx.height > 0 || tx.confirmations > 0;
+    if !in_block && !tx.block_hash.is_empty() {
         return LookupAnswer::Unknown {
             reason: "known only from a block off the active chain".to_string(),
         };
     }
-    LookupAnswer::Known { mined }
+    LookupAnswer::Known
 }
 
 /// One node per request: the probe decides whether to ask another, and it has
@@ -656,12 +579,8 @@ mod tests {
         }
     }
 
-    fn in_block() -> LookupAnswer {
-        LookupAnswer::Known { mined: true }
-    }
-
-    fn in_mempool() -> LookupAnswer {
-        LookupAnswer::Known { mined: false }
+    fn known() -> LookupAnswer {
+        LookupAnswer::Known
     }
 
     fn conflict() -> NodeVerdict {
@@ -693,7 +612,7 @@ mod tests {
             (
                 Code::AlreadyExists,
                 "Transaction already in chain: Transaction already in block chain",
-                NodeVerdict::Mined,
+                NodeVerdict::Accepted,
             ),
             // -25, JS dapi.
             (
@@ -879,66 +798,40 @@ mod tests {
     }
 
     /// Core answers `missingorspent` for a mined transaction whose outputs
-    /// are all spent (testnet `e758f06a…`, 2026-09-29). Nodes that still know
-    /// the txid in a block must turn the refusals into Mined.
+    /// are all spent (testnet `e758f06a…`, 2026-09-29). A node that still
+    /// knows the txid turns the refusals into Accepted, at the first lookup.
     #[tokio::test]
-    async fn should_report_mined_for_a_refused_transaction_nodes_have_in_a_block() {
+    async fn should_accept_a_refused_transaction_a_node_still_knows() {
         let nodes = ScriptedNodes::with_lookups(
             vec![(Some("a"), refused()), (Some("b"), refused())],
-            vec![(Some("c"), in_block()), (Some("d"), in_block())],
+            vec![(Some("c"), known()), (Some("d"), known())],
         );
 
         assert_eq!(
             probe_with(&nodes, &transaction()).await.verdict,
-            ProbeVerdict::Mined
-        );
-        assert_eq!(nodes.lookups_made(), 2);
-    }
-
-    /// One node on a stale fork (or with a block about to be reorged out)
-    /// must not settle a transaction as mined: two distinct nodes must.
-    #[tokio::test]
-    async fn should_report_mined_only_when_two_distinct_nodes_have_it_in_a_block() {
-        let two = ScriptedNodes::with_lookups(
-            vec![(Some("a"), NodeVerdict::Mined)],
-            vec![(Some("b"), in_block())],
-        );
-        let same_twice = ScriptedNodes::with_lookups(
-            vec![(Some("a"), NodeVerdict::Mined)],
-            vec![(Some("a"), in_block())],
-        );
-
-        assert_eq!(
-            probe_with(&two, &transaction()).await.verdict,
-            ProbeVerdict::Mined
-        );
-        assert_eq!(two.submissions(), 1, "the second opinion is a lookup");
-        assert_eq!(
-            probe_with(&same_twice, &transaction()).await.verdict,
-            ProbeVerdict::Accepted,
-            "one node's word: it exists, not that it is final"
-        );
-    }
-
-    /// A node that has the transaction in a block makes it exist, whatever
-    /// the refusals and lookups that follow say.
-    #[tokio::test]
-    async fn should_accept_a_refused_transaction_one_node_has_in_a_block() {
-        let refused_then_seen_mined = ScriptedNodes::with_lookups(
-            vec![(Some("a"), refused()), (Some("b"), refused())],
-            vec![
-                (Some("c"), in_block()),
-                (Some("d"), LookupAnswer::NotFound),
-                (Some("e"), LookupAnswer::NotFound),
-            ],
-        );
-
-        assert_eq!(
-            probe_with(&refused_then_seen_mined, &transaction())
-                .await
-                .verdict,
             ProbeVerdict::Accepted
         );
+        assert_eq!(nodes.lookups_made(), 1);
+    }
+
+    /// A node's "already in a block" (`-27`) is acceptance, with no lookup
+    /// for a second opinion: the probe does not tell a block from a mempool.
+    #[tokio::test]
+    async fn should_accept_on_one_nodes_word_that_it_is_in_a_block() {
+        let nodes = ScriptedNodes::with_lookups(
+            vec![(
+                Some("a"),
+                classify_failed_submission(Code::AlreadyExists, "Transaction already in chain"),
+            )],
+            vec![(Some("b"), known())],
+        );
+
+        assert_eq!(
+            probe_with(&nodes, &transaction()).await.verdict,
+            ProbeVerdict::Accepted
+        );
+        assert_eq!(nodes.submissions(), 1);
+        assert_eq!(nodes.lookups_made(), 0);
     }
 
     #[test]
@@ -952,8 +845,8 @@ mod tests {
             })
         };
 
-        assert_eq!(answer(Vec::new(), 0, 0), in_mempool());
-        assert_eq!(answer(vec![1; 32], 100, 3), in_block());
+        assert_eq!(answer(Vec::new(), 0, 0), known());
+        assert_eq!(answer(vec![1; 32], 100, 3), known());
         assert!(matches!(
             answer(vec![1; 32], 0, 0),
             LookupAnswer::Unknown { .. }
@@ -997,8 +890,8 @@ mod tests {
         let (_, mismatched) = lookup_reply(&txid, reply(other));
         assert_eq!(mismatched, LookupAnswer::NotFound);
 
-        let (_, known) = lookup_reply(&txid, reply(consensus::serialize(&held)));
-        assert_eq!(known, in_mempool());
+        let (_, answer) = lookup_reply(&txid, reply(consensus::serialize(&held)));
+        assert_eq!(answer, known());
     }
 
     /// A node's answer stays the reason when later submissions reach no
@@ -1227,7 +1120,7 @@ mod tests {
     async fn should_accept_a_refused_transaction_a_node_holds_in_its_mempool() {
         let nodes = ScriptedNodes::with_lookups(
             vec![(Some("a"), refused()), (Some("b"), refused())],
-            vec![(Some("c"), in_mempool())],
+            vec![(Some("c"), known())],
         );
 
         assert_eq!(
