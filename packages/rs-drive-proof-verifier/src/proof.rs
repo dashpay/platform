@@ -88,15 +88,13 @@ use dpp::prelude::{AddressNonce, DataContract, Identifier, Identity};
 use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::state_transition::proof_result::StateTransitionProofOutcome;
 use dpp::state_transition::StateTransition;
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, LATEST_VERSION};
 use dpp::voting::votes::Vote;
-use drive::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
-use drive::grovedb::Error as GroveError;
 use drive::grovedb::GroveTrunkQueryResult;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::proposer_block_count_query::ProposerQueryType;
@@ -407,28 +405,8 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
     {
         let request = request.into();
         let response = response.into();
-        // Parse response to read proof and metadata
-        // note that proof in this case is different
-        // let proof = response.proof().or(Err(Error::NoProofInResult))?;
-        use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result, Version::V0,
-        };
-
-        let (proved_response, mtd) = match response.version {
-            Some(V0(v0)) => {
-                let proof = if let V0Result::Proof(p) = v0.result.ok_or(Error::NoProofInResult)? {
-                    p
-                } else {
-                    return Err(Error::NoProofInResult);
-                };
-
-                (proof, v0.metadata.ok_or(Error::EmptyResponseMetadata)?)
-            }
-            _ => return Err(Error::EmptyResponseMetadata),
-        };
-
-        // let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
-
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
         let (public_key_hash, after_identity) = match request.version.ok_or(Error::EmptyVersion)? {
             get_identity_by_non_unique_public_key_hash_request::Version::V0(v0) => {
                 let public_key_hash =
@@ -450,51 +428,35 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
             }
         };
 
-        // we need to convert some data to handle non-default proof structure for this response
-        let proof = proved_response
-            .grovedb_identity_public_key_hash_proof
-            .ok_or(Error::NoProofInResult)?;
-        require_supported_grovedb_proof_bytes(&proof.grovedb_proof)?;
-
-        if let Some(identity_proof) = proved_response.identity_proof_bytes.as_deref() {
-            require_supported_grovedb_proof_bytes(identity_proof)?;
+        // Metadata is untrusted until the signature succeeds. Bound lookup to real
+        // production tables, excluding reserved mock versions that may panic on lookup.
+        if mtd.protocol_version > LATEST_VERSION {
+            return Err(Error::ResponseDecodeError {
+                error: format!(
+                    "unsupported non-unique query construction protocol version {}",
+                    mtd.protocol_version
+                ),
+            });
         }
-
-        let proof_tuple = IdentityAndNonUniquePublicKeyHashDoubleProof {
-            identity_proof: proved_response.identity_proof_bytes,
-            identity_id_public_key_hash_proof: proof.grovedb_proof.clone(),
-        };
-
-        // Extract content from proof and verify Drive/GroveDB proofs
-        let (root_hash, maybe_identity) =
-            Drive::verify_full_identity_by_non_unique_public_key_hash(
-                &proof_tuple,
-                public_key_hash,
-                after_identity,
-                platform_version,
-            )
-            .map_err(|e| match e {
-                drive::error::Error::GroveDB(e) => {
-                    // If InvalidProof error is returned, extract the path query from it
-                    let maybe_query = match e.as_ref() {
-                        GroveError::InvalidProof(path_query, ..) => Some(path_query.clone()),
-                        _ => None,
-                    };
-
-                    Error::GroveDBError {
-                        proof_bytes: proof.grovedb_proof.clone(),
-                        path_query: maybe_query,
-                        height: mtd.height,
-                        time_ms: mtd.time_ms,
-                        error: e.to_string(),
-                    }
-                }
-                _ => e.into(),
+        let query_platform_version =
+            PlatformVersion::get(mtd.protocol_version).map_err(|_| Error::ResponseDecodeError {
+                error: format!(
+                    "unsupported non-unique query construction protocol version {}",
+                    mtd.protocol_version
+                ),
             })?;
 
-        verify_tenderdash_proof(&proof, &mtd, &root_hash, provider)?;
-
-        Ok((maybe_identity, mtd.clone(), proof))
+        let (root_hash, maybe_identity) =
+            Drive::verify_full_identity_by_non_unique_public_key_hash(
+                supported_grovedb_proof_bytes(proof)?,
+                public_key_hash,
+                after_identity,
+                query_platform_version,
+                platform_version,
+            )
+            .map_drive_error(proof, mtd)?;
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+        Ok((maybe_identity, mtd.clone(), proof.clone()))
     }
 }
 
@@ -3682,17 +3644,10 @@ mod tests {
         // Build a response with a proved result so we get past the response shape check
         // and hit the request validation.
         let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(
-                GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                    result: Some(V0Result::Proof(
-                        dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse {
-                            identity_proof_bytes: None,
-                            grovedb_identity_public_key_hash_proof: Some(Proof::default()),
-                        },
-                    )),
-                    metadata: Some(ResponseMetadata::default()),
-                },
-            )),
+            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
         };
 
         let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
@@ -3733,17 +3688,10 @@ mod tests {
         };
 
         let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(
-                GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                    result: Some(V0Result::Proof(
-                        dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityProvedResponse {
-                            identity_proof_bytes: None,
-                            grovedb_identity_public_key_hash_proof: Some(Proof::default()),
-                        },
-                    )),
-                    metadata: Some(ResponseMetadata::default()),
-                },
-            )),
+            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
         };
 
         let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
@@ -3773,30 +3721,24 @@ mod tests {
     }
 
     #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_v0_inner_proof() {
+    fn identity_by_non_unique_public_key_hash_rejects_v0_complete_proof() {
         use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
         use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::{
-                IdentityProvedResponse, Result as V0Result,
-            },
+            get_identity_by_non_unique_public_key_hash_response_v0::Result as V0Result,
             GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
         };
-
-        let config = bincode::config::standard().with_big_endian();
-        let v0_inner_proof =
-            bincode::encode_to_vec(0u32, config).expect("V0 envelope discriminant should encode");
-        let v1_outer_proof =
-            bincode::encode_to_vec(1u32, config).expect("V1 envelope discriminant should encode");
+        let proof = bincode::encode_to_vec(0u32, bincode::config::standard().with_big_endian())
+            .expect("V0 envelope discriminant");
         let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
             version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: Some(V0Result::Proof(IdentityProvedResponse {
-                    identity_proof_bytes: Some(v0_inner_proof),
-                    grovedb_identity_public_key_hash_proof: Some(Proof {
-                        grovedb_proof: v1_outer_proof,
-                        ..Proof::default()
-                    }),
+                result: Some(V0Result::Proof(Proof {
+                    grovedb_proof: proof,
+                    ..Proof::default()
                 })),
-                metadata: Some(ResponseMetadata::default()),
+                metadata: Some(ResponseMetadata {
+                    protocol_version: PlatformVersion::latest().protocol_version,
+                    ..ResponseMetadata::default()
+                }),
             })),
         };
         let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
@@ -3806,18 +3748,13 @@ mod tests {
                 prove: true,
             }
             .into();
-
-        let err = <Identity as FromProof<
-            platform::GetIdentityByNonUniquePublicKeyHashRequest,
-        >>::maybe_from_proof(
+        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
             request,
             response,
             Network::Testnet,
             default_platform_version(),
             &unreachable_provider(),
-        )
-        .unwrap_err();
-
+        ).unwrap_err();
         assert!(matches!(
             err,
             Error::UnsupportedGroveDBProofVersion { version: 0, .. }
@@ -3825,55 +3762,26 @@ mod tests {
     }
 
     #[test]
-    fn identity_by_non_unique_public_key_hash_rejects_v0_outer_proof() {
+    fn identity_by_non_unique_public_key_hash_rejects_retired_wire_tag() {
         use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
-        use platform::get_identity_by_non_unique_public_key_hash_response::{
-            get_identity_by_non_unique_public_key_hash_response_v0::{
-                IdentityProvedResponse, Result as V0Result,
-            },
-            GetIdentityByNonUniquePublicKeyHashResponseV0, Version,
-        };
-
-        let config = bincode::config::standard().with_big_endian();
-        let v1_inner_proof =
-            bincode::encode_to_vec(1u32, config).expect("V1 envelope discriminant should encode");
-        let v0_outer_proof =
-            bincode::encode_to_vec(0u32, config).expect("V0 envelope discriminant should encode");
-        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse {
-            version: Some(Version::V0(GetIdentityByNonUniquePublicKeyHashResponseV0 {
-                result: Some(V0Result::Proof(IdentityProvedResponse {
-                    identity_proof_bytes: Some(v1_inner_proof),
-                    grovedb_identity_public_key_hash_proof: Some(Proof {
-                        grovedb_proof: v0_outer_proof,
-                        ..Proof::default()
-                    }),
-                })),
-                metadata: Some(ResponseMetadata::default()),
-            })),
-        };
+        use dapi_grpc::Message;
+        // Outer V0 contains the retired result tag 2, including an old nested Proof.
+        // Protobuf discards reserved fields, so the standard response has no result.
+        let response = platform::GetIdentityByNonUniquePublicKeyHashResponse::decode(
+            &[0x0a, 0x06, 0x12, 0x04, 0x0a, 0x02, 0x0a, 0x00][..],
+        )
+        .expect("unknown retired fields decode");
         let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
             GetIdentityByNonUniquePublicKeyHashRequestV0 {
-                public_key_hash: vec![0u8; 20],
+                public_key_hash: vec![0; 20],
                 start_after: None,
                 prove: true,
             }
             .into();
-
-        let err = <Identity as FromProof<
-            platform::GetIdentityByNonUniquePublicKeyHashRequest,
-        >>::maybe_from_proof(
-            request,
-            response,
-            Network::Testnet,
-            default_platform_version(),
-            &unreachable_provider(),
-        )
-        .unwrap_err();
-
-        assert!(matches!(
-            err,
-            Error::UnsupportedGroveDBProofVersion { version: 0, .. }
-        ));
+        let err = <Identity as FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest>>::maybe_from_proof(
+            request, response, Network::Testnet, default_platform_version(), &unreachable_provider(),
+        ).unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult));
     }
 
     #[test]
@@ -3910,8 +3818,8 @@ mod tests {
     }
 
     #[test]
-    fn identity_by_non_unique_response_with_no_version_yields_empty_metadata() {
-        // response.version = None hits the `_ => EmptyResponseMetadata` arm.
+    fn identity_by_non_unique_response_with_no_version_yields_no_proof() {
+        // A missing response version has no proof through the generic accessor.
         use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request::GetIdentityByNonUniquePublicKeyHashRequestV0;
         let response = platform::GetIdentityByNonUniquePublicKeyHashResponse { version: None };
         let request: platform::GetIdentityByNonUniquePublicKeyHashRequest =
@@ -3930,7 +3838,7 @@ mod tests {
             &provider,
         )
         .unwrap_err();
-        assert!(matches!(err, Error::EmptyResponseMetadata), "got: {err:?}");
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
     }
 
     #[test]

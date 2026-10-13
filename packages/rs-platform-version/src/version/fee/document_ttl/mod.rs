@@ -32,7 +32,8 @@ pub struct DocumentTtlFeeTier {
 /// * A document created with a `ttl` also prepays its deletion as processing:
 ///   `cleanup_base_processing_cost`, plus `cleanup_processing_cost_per_index_level` for
 ///   every index level of its document type (each index counts its properties, times the
-///   number of overlapping windows of a `timeRange` index), plus
+///   number of overlapping windows of a `timeRange` or `integerRange` index, an index naming
+///   a typed array its levels from the array on once per element `maxItems` allows), plus
 ///   `cleanup_processing_cost_per_document_byte` for every byte of the stored document. A
 ///   change that grows the document prepays the deletion of the bytes it adds.
 ///

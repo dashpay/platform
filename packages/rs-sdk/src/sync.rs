@@ -1,6 +1,7 @@
 pub use dash_async::{block_on, AsyncError};
 
 use crate::error::Error;
+use dash_context_provider::ContextProviderError;
 use rs_dapi_client::{
     transport::sleep, update_address_ban_status, AddressList, CanRetry, ExecutionResult,
     RequestSettings,
@@ -80,12 +81,34 @@ where
     FutureFactoryFn: FnMut(RequestSettings) -> Fut,
     R: Send,
 {
-    retry_with_additional_error(address_list, settings, future_factory_fn, |_| false).await
+    retry_with_additional_error(
+        address_list,
+        settings,
+        future_factory_fn,
+        attempt_has_quorum_source_failure,
+    )
+    .await
 }
 
-/// Retry an operation-specific rejection only when its responding node can be
-/// excluded. This does not change the error's global retry classification.
-/// Callers must restrict the predicate to definitive, safe-to-repeat failures.
+/// Whether the response could not be checked because the context provider's
+/// trusted quorum source gave no answer about the quorum that signed it. That
+/// says nothing about the node, so it is not banned through the health ladder;
+/// it is stepped over briefly, because another node may be signed by a quorum
+/// the provider already holds.
+/// This checks one attempt's error; retry-exhaustion wrappers describe the
+/// completed retry loop and must not trigger another attempt here.
+fn attempt_has_quorum_source_failure(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(_))
+    )
+}
+
+/// Retry a failure that is not retryable on its own, such as an
+/// operation-specific rejection or a response the client could not check,
+/// only when its responding node can be excluded. This does not change the
+/// error's global retry classification. Callers must restrict the predicate to
+/// failures that are safe to repeat on another node.
 pub(crate) async fn retry_with_additional_error<Fut, FutureFactoryFn, R, AdditionalError>(
     address_list: &AddressList,
     settings: RequestSettings,
@@ -161,13 +184,14 @@ where
                 }
 
                 if retry_additional_error {
-                    // This rejection does not establish a health failure. Use
-                    // a short flat exclusion, never the exponential health ladder.
-                    // A node can retain rejected transaction hashes. Never
-                    // resend this rejection to the same node, including when
-                    // the caller disabled banning or the address is unknown.
-                    // Only exclude it when a retry to another node is possible;
-                    // a single-node client must remain usable after failure.
+                    // This failure does not establish a health failure. Use a
+                    // short flat exclusion, never the exponential health ladder.
+                    // The same node would answer the same way (a node can retain
+                    // rejected transaction hashes), so never send the request to
+                    // it again, including when the caller disabled banning or
+                    // the address is unknown. Only exclude it when a retry to
+                    // another node is possible; a single-node client must
+                    // remain usable after failure.
                     let excluded = current_settings.finalize().ban_failed_address
                         && error.address.as_ref().is_some_and(|address| {
                             address_list
@@ -181,7 +205,7 @@ where
                                 )
                         });
                     if !excluded || address_list.get_live_addresses().is_empty() {
-                        tracing::debug!(node = ?error.address, "DPNS failover stopped: no safely excluded alternative");
+                        tracing::debug!(node = ?error.address, error = %error.inner, "failover stopped: no safely excluded alternative");
                         let mut final_error = error;
                         final_error.retries = total_retries;
                         return Err(final_error);
@@ -335,6 +359,137 @@ mod test {
             call_count.load(Ordering::Relaxed),
             2,
             "should have called twice"
+        );
+    }
+
+    fn quorum_source_unavailable(address: &rs_dapi_client::Address) -> ExecutionError<Error> {
+        ExecutionError {
+            inner: Error::ContextProviderError(
+                dash_context_provider::ContextProviderError::QuorumSourceUnavailable(
+                    "quorum service unreachable".to_string(),
+                ),
+            ),
+            retries: 0,
+            address: Some(address.clone()),
+        }
+    }
+
+    fn two_nodes() -> (
+        AddressList,
+        rs_dapi_client::Address,
+        rs_dapi_client::Address,
+    ) {
+        let first: rs_dapi_client::Address = "http://127.0.0.1:1".parse().expect("address");
+        let second: rs_dapi_client::Address = "http://127.0.0.1:2".parse().expect("address");
+        let mut list = AddressList::new();
+        list.add(first.clone());
+        list.add(second.clone());
+        (list, first, second)
+    }
+
+    /// When the client's trusted quorum source gave no answer, the client
+    /// could not check the response, which says nothing about the node. The
+    /// request moves on, because another node may be signed by a quorum the
+    /// client already holds, and the node is only stepped over briefly.
+    #[tokio::test]
+    async fn should_fail_over_when_the_quorum_source_gave_no_answer() {
+        let (list, first, second) = two_nodes();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&calls);
+        let served = second.clone();
+        let failing = first.clone();
+        let closure = move |_settings: RequestSettings| {
+            let call = counted.fetch_add(1, Ordering::SeqCst);
+            let served = served.clone();
+            let failing = failing.clone();
+            async move {
+                if call == 0 {
+                    Err(quorum_source_unavailable(&failing))
+                } else {
+                    Ok(rs_dapi_client::ExecutionResponse {
+                        inner: (),
+                        retries: 0,
+                        address: served,
+                    })
+                }
+            }
+        };
+
+        let settings = RequestSettings {
+            retries: Some(3),
+            ..RequestSettings::default()
+        };
+
+        let response = retry(&list, settings, closure)
+            .await
+            .expect("another node answers");
+
+        assert_eq!(response.address, second);
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(
+            !list.get_live_addresses().contains(&first),
+            "the node that answered is stepped over for a moment"
+        );
+        let excluded_until = list
+            .ban_info()
+            .into_iter()
+            .find(|info| info.uri == first.uri().to_string())
+            .and_then(|info| info.banned_until)
+            .expect("the node is excluded for a while");
+        assert!(
+            excluded_until <= chrono::Utc::now() + chrono::Duration::seconds(2),
+            "a short flat exclusion, not the health ladder"
+        );
+    }
+
+    /// A single-node client must stay usable, and a client that turned
+    /// banning off must not have its nodes excluded: the request fails with
+    /// the quorum source error instead of failing over.
+    #[test_case::test_case(false, None; "single node")]
+    #[test_case::test_case(true, Some(false); "banning off")]
+    #[tokio::test]
+    async fn should_not_fail_over_a_quorum_source_failure_without_an_excludable_node(
+        two_nodes_listed: bool,
+        ban_failed_address: Option<bool>,
+    ) {
+        let (list, first, _) = if two_nodes_listed {
+            two_nodes()
+        } else {
+            let first: rs_dapi_client::Address = "http://127.0.0.1:1".parse().expect("address");
+            let mut list = AddressList::new();
+            list.add(first.clone());
+            (list, first.clone(), first)
+        };
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&calls);
+        let failing = first.clone();
+        let closure = move |_settings: RequestSettings| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            let failing = failing.clone();
+            async move {
+                Err::<rs_dapi_client::ExecutionResponse<()>, _>(quorum_source_unavailable(&failing))
+            }
+        };
+        let settings = RequestSettings {
+            retries: Some(3),
+            ban_failed_address,
+            ..RequestSettings::default()
+        };
+
+        let error = retry(&list, settings, closure)
+            .await
+            .expect_err("no node can be stepped over");
+
+        assert!(matches!(
+            error.inner,
+            Error::ContextProviderError(
+                dash_context_provider::ContextProviderError::QuorumSourceUnavailable(_)
+            )
+        ));
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(
+            list.get_live_addresses().contains(&first),
+            "no node is excluded"
         );
     }
 

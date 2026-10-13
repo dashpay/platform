@@ -4,7 +4,7 @@ An identifier (a 32-byte id) can hold any value. `refersTo` says what it points 
 
 | | |
 |---|---|
-| **Where** | An identifier property, at the top level or inside an object; the `items` of a typed array of identifiers, where every element is checked; for one form of `identityPublicKey`, an integer key id property; and a string or byte array property whose value a `findBy` function reveals (see [Commit and reveal](refers-to-lookup.md#commit-and-reveal)). `ownerRefersTo` and `creatorRefersTo` carry the same declaration at the document type level. |
+| **Where** | An identifier property, at the top level or inside an object; the `items` of a typed array of identifiers, where every element is checked; for one form of `identityPublicKey`, an integer key id property; and a string or byte array property whose value `findBy` reads, as is (see [A string or byte array key](refers-to-lookup.md#a-string-or-byte-array-key)) or through a function (see [Commit and reveal](refers-to-lookup.md#commit-and-reveal)). `ownerRefersTo` and `creatorRefersTo` carry the same declaration at the document type level. |
 | **Value** | An object: `type`, naming one [target](#targets), with the [keys](#keys) that target takes; or an object holding only `anyOf` or only `allOf` (see [Expressions](refers-to-expressions.md)). |
 | **Default** | Absent: the identifier is not checked against anything. |
 | **Since** | protocol version 14 |
@@ -20,16 +20,14 @@ An identifier (a 32-byte id) can hold any value. `refersTo` says what it points 
   "canBeDeleted": true,
   "properties": {
     "postId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "refersTo": { "type": "deletableDocument", "documentType": "post" },
       "position": 0
     },
     "mentions": {
       "type": "array", "minItems": 0, "maxItems": 5, "uniqueItems": true,
       "items": {
-        "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-        "contentMediaType": "application/x.dash.dpp.identifier",
+        "type": "identifier",
         "refersTo": { "type": "identity" }
       },
       "position": 1
@@ -52,9 +50,9 @@ An identifier (a 32-byte id) can hold any value. `refersTo` says what it points 
 | `identity` | the id of an existing identity | none |
 | `contract` | the id of an existing data contract | `contractRequirements` |
 | `token` | the id of an existing token | none |
-| `permanentDocument` | the id of an existing document of a type whose documents can never disappear; with `findBy`, one part of the key that finds it; with `inList`, one of the identifiers a list on it holds | `documentType` (required), `contractId`, `findBy`, `where`, `inList`, and beside a `findBy` function `minimumAgeBlocks` |
+| `permanentDocument` | the id of an existing document of a type whose documents can never disappear; with `findBy`, one part of the key that finds it; with `inList`, one of the identifiers a list on it holds | `documentType` (required), `contractId`, `findBy`, `where`, `inList`, and beside a `findBy` function `constraints` (`minimumAgeBlocks`) |
 | `moderatedDocument` | the id of an existing document of a type whose documents disappear only when the contract's moderators remove them, on the record | `documentType` (required), `contractId`, `where` |
-| `deletableDocument` | the id of an existing document of a type whose documents can disappear in any other way; with `findBy`, one part of the key that finds it | `documentType` (required), `contractId`, `findBy`, `where`, and beside a `findBy` function `minimumAgeBlocks` and `consume` |
+| `deletableDocument` | the id of an existing document of a type whose documents can disappear in any other way; with `findBy`, one part of the key that finds it | `documentType` (required), `contractId`, `findBy`, `where`, and beside a `findBy` function `consume` and `constraints` (`minimumAgeBlocks`, `chooseFirst`) |
 | `identityPublicKey` | an identity key that exists and is not disabled | `keyIdProperty` or `identityProperty` (one of them, required), `keyRequirements` |
 
 A key that belongs to another target is refused when the contract is registered.
@@ -79,8 +77,7 @@ The value is the id of a document of `documentType`, in this contract or in the 
 "reasons": {
   "type": "array", "minItems": 0, "maxItems": 64, "uniqueItems": true,
   "items": {
-    "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-    "contentMediaType": "application/x.dash.dpp.identifier",
+    "type": "identifier",
     "refersTo": { "type": "permanentDocument", "documentType": "reason" }
   },
   "position": 2
@@ -95,8 +92,7 @@ The same for a type whose documents disappear only when the contract's moderator
 
 ```json
 "postId": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-  "contentMediaType": "application/x.dash.dpp.identifier",
+  "type": "identifier",
   "refersTo": { "type": "moderatedDocument", "documentType": "post" },
   "position": 0
 }
@@ -104,7 +100,7 @@ The same for a type whose documents disappear only when the contract's moderator
 
 A reply to a `post` its author can not delete, which the moderators can take down. The post must exist when the reply is written. Once a moderator removes it, the reply keeps pointing at it, and a replace of the reply is checked as if the reference were permanent: an edit of the reply's text passes, and the reference now resolves to the removal record. What a replace can not do is point a reply at a removed post, or write a new reply to one: a value the write sets must name a document in state.
 
-A removed document has no values left but those its record keeps: its id, its owner, and the fields its type lists under [`moderatorAbilities.deleteKeepsFields`](deletion.md#moderatorabilitiesdeletekeepsfields). A `where` entry the replace checks again (its referring property changed, or it is a writer gate valued `"$ownerId"`) is checked against the record when it compares the referenced `$ownerId`, `$id` or a property the type keeps (a kept path, or one inside a kept object), with the same absence rule as against a document in state, and refused with `ReferencedDocumentRemovedError` (40145) when it compares any other property; the replace can repoint the reference at a document in state, or leave that property unchanged until the post is restored. A writer gate (a `where` entry valued `"$ownerId"`) is checked on every replace, so on a `moderatedDocument` reference it may compare only the referenced `$ownerId` or `$id` (`InvalidContractStructure`, 10231, otherwise), the only values sure to be in every record: a gate on anything else could refuse every replace once the post is removed. The value is kept as long as it is the one the stored document held, whatever else the replace changed in the same object or list. The value is always the document's id: `findBy`, `inList` and operands of an [expression](refers-to-expressions.md) are refused, since a removal frees the unique index keys a `findBy` finds by.
+A removed document has no values left but those its record keeps: its id, its owner, and the fields its type lists under [`moderatorAbilities.deleteKeepsFields`](deletion.md#moderatorabilitiesdeletekeepsfields). A `where` entry the replace checks again (its referring property changed, or it is a writer gate valued `"$ownerId"`) is checked against the record when it compares the referenced `$ownerId`, `$id` or a property the type keeps (a kept path, or one inside a kept object), with the same absence rule as against a document in state, and refused with `ReferencedDocumentRemovedError` (40145) when it compares any other property; the replace can repoint the reference at a document in state, or leave that property unchanged until the post is restored. A writer gate (a `where` entry valued `"$ownerId"`, or a `notEqual` bounded by it) is checked on every replace, so on a `moderatedDocument` reference it may compare only the referenced `$ownerId` or `$id` (`InvalidContractStructure`, 10231, otherwise), the only values sure to be in every record: a gate on anything else could refuse every replace once the post is removed. An ordering bounded by `$updatedAt` or `$transferredAt` (or one of their heights), and a `contains` of `"$ownerId"`, are checked on every replace too, and compare only a property the type keeps (40126 otherwise). A [rule reading the post](property-constraints.md#values-of-a-referenced-document) reads only its `$ownerId`, its `$id` and the properties its type keeps, for the same reason. The value is kept as long as it is the one the stored document held, whatever else the replace changed in the same object or list. The value is always the document's id: `findBy`, `inList` and operands of an [expression](refers-to-expressions.md) are refused, since a removal frees the unique index keys a `findBy` finds by.
 
 A chained or composite query that joins through a moderated reference proves each removed document's record beside the documents it joins, and reports the removal with it.
 
@@ -163,10 +159,10 @@ The contract holding `documentType`, as a base58 string or an array of 32 bytes.
 
 ### `where`
 
-States what the referenced document must hold once found: each entry `{ "<referenced property>": "<referring value>" }` must hold as an equality when the referring document is written. It takes 1 to 10 entries, on `permanentDocument`, `moderatedDocument` and `deletableDocument` references. `where` never finds the document: the value does, as its id, or [`findBy`](refers-to-lookup.md) does. `where` is checked against the document found.
+States what the referenced document must hold once found. It takes 1 to 10 entries, on `permanentDocument`, `moderatedDocument` and `deletableDocument` references, each keyed by a property of the referenced document. An entry valued with a referring value, `{ "<referenced property>": "<referring value>" }`, must hold as an equality when the referring document is written; an entry valued with an object holds a literal, an inequality, a list or an ordering instead (see [Conditions](#conditions)). Two typed arrays compare as lists (see [Typed arrays](#typed-arrays)). `where` never finds the document: the value does, as its id, or [`findBy`](refers-to-lookup.md) does. `where` is checked against the document found.
 
 - **The key** is the referenced side: a property of the referenced document type, a dotted path for a nested one, or one of the referenced document's own identifiers: `$ownerId` (its current owner, which follows it through transfers), `$creatorId` (its creator, which never changes, on types that record it, see [System Properties](system-properties.md)) or `$id` (its id). A system name needs an identifier on the referring side.
-- **The value** is the referring side: a property of the declaring document type, a dotted path for a nested one, or `"$ownerId"`, the writer. An entry whose value is `"$ownerId"` is a write gate: only an identity whose id equals the referenced side may create or replace the document. A referring value may appear once in `where`.
+- **The value** is the referring side: a property of the declaring document type, a dotted path for a nested one, or `"$ownerId"`, the writer. An entry whose value is `"$ownerId"` is a write gate: only an identity whose id equals the referenced side may create or replace the document. A referring value may appear once among the equalities.
 - **Absence counts.** Both sides absent agree; one side absent is a mismatch, as a different value is.
 - **Values, not keys.** The two sides compare as values of their type: strings as text (so `""` is not `"\0"`), byte arrays and identifiers as bytes (an identifier equals the same 32 bytes, however it is carried), integers as numbers whatever width they are carried at, floats exactly, bit for bit (so `-0.0` is not `0.0`). A value of any length compares, past the 255 bytes of an index key too.
 - The comparison reads the document already fetched for the existence check, so it costs nothing more. An entry that does not hold refuses the write with `ReferencedDocumentPropertyMismatchError` (40127); no document found is still `ReferencedEntityNotFoundError` (40120).
@@ -174,8 +170,7 @@ States what the referenced document must hold once found: each entry `{ "<refere
 
 ```json
 "submittedCharterId": {
-  "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-  "contentMediaType": "application/x.dash.dpp.identifier",
+  "type": "identifier",
   "refersTo": {
     "type": "permanentDocument",
     "documentType": "submittedCharter",
@@ -199,7 +194,79 @@ WHERE $id = :submittedCharterId                  -- the value, an id reference
   AND targetContractId = :targetContractId       -- where
 ```
 
-At registration both sides must exist and hold the same type of value (for integers, the same stored integer type). Neither side may be an object or a typed array, the referring side may not be the reference property itself, and the referenced side may not be `transient` (no stored document carries it; the referring side may be). An entry through which a [`preallocated`](index-only.md#preallocated) index is keyed needs a referenced property whose every value fits an index key, at most 255 bytes: a string of at most 63 characters or with `maxBytes` at most 255, or a byte array of at most 255 bytes. An entry breaking one of these is refused with `ReferencedDocumentPropertyAgreementInvalidError` (40126).
+At registration both sides must exist and hold the same type of value (for integers, the same stored integer type). Neither side may be an object, a typed array pairs only with a typed array (see [Typed arrays](#typed-arrays)), the referring side may not be the reference property itself, and the referenced side may not be `transient` (no stored document carries it; the referring side may be). An entry through which a [`preallocated`](index-only.md#preallocated) index is keyed needs a referenced property whose every value fits an index key, at most 255 bytes: a string of at most 63 characters or with `maxBytes` at most 255, or a byte array of at most 255 bytes. For a pair of typed arrays, every element must fit. A condition's referenced side must hold a single value a literal is compared with (an integer, a boolean, a string, an identifier or a byte array, not a float); every literal must read as its kind and be a value the property can hold (one of its `enum` values, of a length or size it takes, inside its `minimum` and `maximum`); an `in` must list values distinct once read (`"cafe"` and `"CAFE"` are one byte array); a `notEqual` compares two values of one kind (the writer an identifier), never the reference property itself, whose value found the document; and an ordering compares an integer with an integer bound, a time or height the declaring type records, an integer bound leaving some value of the property on its side. An entry breaking one of these is refused with `ReferencedDocumentPropertyAgreementInvalidError` (40126), whose referring property names the condition as written.
+
+#### Conditions
+
+An entry may hold an object with one key instead of a referring value:
+
+| Entry | Holds when the referenced side |
+|---|---|
+| `{ "const": v }` | equals the literal `v`. A side the document leaves out equals none |
+| `{ "notEqual": b }` | differs from `b`: a property of the declaring type, `"$ownerId"` (the writer) or a `{ "const": v }`. It is the negation of an equality, so two absent sides are equal and one absent side differs |
+| `{ "in": [v1, v2, ...] }` | equals one of two to thirty distinct literals of one kind. A side left out is in none |
+| `{ "greaterThan": b }`, `{ "greaterThanOrEqual": b }`, `{ "lessThan": b }`, `{ "lessThanOrEqual": b }` | is an integer that compares with `b` this way: an integer property of the declaring type, an integer `{ "const": n }`, or a time or height the declaring type lists in `required` (`"$createdAt"`, `"$updatedAtBlockHeight"`, ...). It holds only when both sides have a value |
+
+A literal is an integer, `true` or `false`, or a string, and it reads as the referenced property it is compared with: a string for a string property, a base58 identifier for an identifier (or `$ownerId`, `$creatorId`, `$id`), hex digits for a byte array (two a byte). The rule that a referring value appears once applies to the equalities only, so `"minPrice": { "lessThanOrEqual": "amount" }, "maxPrice": { "greaterThanOrEqual": "amount" }` bounds a bid by both ends of a range.
+
+```json
+"auctionId": {
+  "type": "identifier",
+  "refersTo": {
+    "type": "permanentDocument",
+    "documentType": "auction",
+    "where": {
+      "status": { "in": ["open", "extended"] },
+      "reservePrice": { "lessThanOrEqual": "amount" },
+      "endsAt": { "greaterThan": "$updatedAt" },
+      "$ownerId": { "notEqual": "$ownerId" }
+    }
+  },
+  "position": 0
+}
+```
+
+A bid names an auction that is open or extended, whose reserve its `amount` meets, that has not ended at the block of the write (the bid type lists `$updatedAt` in `required`), and that its writer does not own. A time or height reads as the referring document records it: a create's block for all of them, and on a replace the stored creation and transfer and the replace's block as the update. `$createdAt` and its heights never change, while `$updatedAt` and `$transferredAt` and their heights do without the referring document changing (a replace, a transfer), so an entry bounded by one of them is checked again on every replace, as a writer gate is, and so is a `notEqual` bounded by `"$ownerId"`.
+
+Conditions are checked when the reference is, against the same document, with the same refusal, 40127, whose referring property names the condition as written, in its declared order, a string quoted as JSON writes it (`{ "in": ["open", "extended"] }`). They work on every form of document reference: the elements of a typed array, a leaf of an [expression](refers-to-expressions.md), [`findBy`](refers-to-lookup.md) and [`inList`](refers-to-list-element.md). They never key a [`preallocated`](index-only.md#preallocated) index. Beside a `findBy` function, the property a condition is bounded by must be fixed once written or transient, as an equality's referring property must, and no condition may be bounded by `$updatedAt` or `$transferredAt` or their heights, which a later write changes while such a reference is judged on the create alone.
+
+A condition reads absence as a `where` entry does, not as a [`propertyConstraints`](property-constraints.md#values-of-a-referenced-document) rule reading the same value: a `notEqual` bounded by a property finds two absent sides equal and refuses, where the rule's `notEqual` holds for a string or an identifier left out; an ordering needs both sides, where the rule reads an integer left out as 0. Moving a check from one to the other changes what a document leaving the value out may do.
+
+Through a `moderatedDocument` reference a [`propertyConstraints`](property-constraints.md#values-of-a-referenced-document) rule reads, every replace checks the whole `where`, against the removal record once a moderator removes the document, so registration keeps every entry of such a reference, equality or condition, to `$id`, `$ownerId` and the fields the type lists under `deleteKeepsFields`.
+
+#### Typed arrays
+
+A typed array on the referenced side is compared as a list, in one of three ways:
+
+| Entry | Holds when the referenced typed array |
+|---|---|
+| `"<referenced array>": "<referring array>"` | has the same elements as the referring typed array, in the same order |
+| `{ "contains": b }` | holds an element equal to `b`: a property of the declaring type holding one value of the element kind, or `"$ownerId"` (the writer) for identifier elements |
+| `{ "containsAll": b }` | holds every element of `b`, a typed array of the declaring type of the same element kind, in any order |
+
+- **A list left out is the empty one**, as an indexed typed array without elements is absent. Two lists left out, or one left out and one empty, are equal; every list holds all of an empty `containsAll`; a list left out holds nothing, and a `contains` value the document leaves out is held by no list, as a value left out is `in` no list.
+- **Elements compare by value**, exactly as two single values do (see **Values, not keys** above): an identifier equals its 32 bytes however a transition carries them, and an integer is the same whatever width it is carried at.
+- **Billed by the element.** Unlike a comparison of single values, an entry comparing typed arrays is billed before it compares them, `where_list_credits_per_element` of the fee schedule (100 credits at protocol version 14) for each element it reads: both lists for an equality and a `containsAll`, the referenced list for a `contains`, a list left out none. A `containsAll` looks each element up in a set of the referenced ones, so its work grows with the lists' length, not its square.
+- **At registration** (40126): the referenced side is a stored typed array whose elements are integers, booleans, strings, identifiers or byte arrays, never floats; the referring typed array of an equality or a `containsAll` is stored (not `transient`) and its elements share the referenced elements' value kind; a `contains` value is of the element kind; neither is the reference property itself. `const`, `in`, `notEqual` and the orderings compare single values and refuse a typed array.
+- **Keying an index by the elements.** An equality between two typed arrays fixes the referring list to the referenced one, so it can key a [`preallocated`](index-only.md#preallocated) or [`summableOffCountIndex`](index-only.md#summableoffcountindex) index of an index-only type by the elements of the list, each element fitting an index key (see [Counting per element](index-only.md#counting-per-element)). `contains` and `containsAll` fix no element and never key one.
+- A `contains` of `"$ownerId"` is a writer gate: only an identity the list holds may create or replace the document, and every replace checks it again. Through a `moderatedDocument` reference its list must be one the type keeps under `deleteKeepsFields`, since once a moderator removes the document the check reads the removal record.
+
+```json
+"postId": {
+  "type": "identifier",
+  "refersTo": {
+    "type": "moderatedDocument",
+    "documentType": "post",
+    "where": {
+      "tags": "tags",
+      "$ownerId": "postAuthor"
+    }
+  },
+  "position": 0
+}
+```
+
+A like copies its post's `tags` (a typed array of at most 4 distinct strings) and its author, so a like can be found by tag without reading the post. `"members": { "contains": "$ownerId" }` lets only a member the post lists write, and `"tags": { "containsAll": "tags" }` lets a document name some of its post's tags in any order. `containsAny`, which the [document query](typed-arrays.md) has, is not a `where` entry.
 
 The keyword `propertyAgreement`, whose pairs were keyed the other way (`{ "<referring property>": "<referenced property>" }`), was replaced by `where` before protocol version 14 shipped. A declaration still carrying it is refused on every parse, with a message saying to key `where` by the referenced document's property. `"propertyAgreement": { "recipientId": "$ownerId" }` is now `"where": { "$ownerId": "recipientId" }`, and a symmetric pair such as `"$ownerId": "$ownerId"` reads the same.
 
@@ -252,7 +319,7 @@ At registration `boundTo` must name a document type of the contract, and one a k
 
 ### `findBy`, `inList`, `anyOf` and `allOf`
 
-- [`findBy`](refers-to-lookup.md) finds a `permanentDocument` or `deletableDocument` through the unique index of its type over exactly the properties it names, with the value as one part of the key. One entry may be a function, for a [commit and reveal](refers-to-lookup.md#commit-and-reveal), beside which the `refersTo` may declare `minimumAgeBlocks` and `consume`.
+- [`findBy`](refers-to-lookup.md) finds a `permanentDocument` or `deletableDocument` through the unique index of its type over exactly the properties it names, with the value as one part of the key. One entry may be a function, for a [commit and reveal](refers-to-lookup.md#commit-and-reveal), beside which the `refersTo` may declare `constraints` (`minimumAgeBlocks`, and on a `deletableDocument` [`chooseFirst`](refers-to-lookup.md#choosing-the-first-commitment-choosefirst)) and, on a `deletableDocument`, `consume`.
 - [`inList`](refers-to-list-element.md), on a `permanentDocument` whose `findBy` is `{ "$id": <property> }`, names the list on that document the value must be in.
 - [`anyOf` and `allOf`](refers-to-expressions.md) combine several targets in one declaration.
 
@@ -274,26 +341,27 @@ A replace checks a reference again only when its outcome could have changed:
 |---|---|
 | `identity`, `token`, `contract` | the value changed |
 | `contract` with an `owner` requirement, on a type whose documents can be transferred or traded | every replace |
-| `permanentDocument`, `moderatedDocument` | the value changed, or the referring value of a `where` entry changed |
-| any document reference with a `where` entry whose value is `"$ownerId"` | every replace |
+| `permanentDocument`, `moderatedDocument` | the value changed, or a referring property a `where` entry reads changed (an equality's referring side, a condition's bound) |
+| any document reference with a `where` entry whose value is `"$ownerId"`, a `notEqual` or `contains` bounded by `"$ownerId"`, or an ordering bounded by `$updatedAt`, `$transferredAt` or one of their heights | every replace |
+| a document reference a `propertyConstraints` rule reads through ([`referenced`](property-constraints.md#values-of-a-referenced-document)) | every replace: every replace judges every rule, and the rule reads the document as it is at the replace |
 | `permanentDocument` with `findBy`, `inList` included | also when a property `findBy` reads changed |
 | `deletableDocument`, by id or with `findBy` | every replace |
-| a document reference with a `findBy` function | never: the whole declaration, its `where` included, is judged on the create alone (see [Commit and reveal](refers-to-lookup.md#commit-and-reveal)) |
+| a document reference with a `findBy` function | never: the whole declaration, its `where` included, is judged on the create alone (see [Commit and reveal](refers-to-lookup.md#commit-and-reveal)); a type whose documents are never replaced has no replace at all |
 | `identityPublicKey` with `keyIdProperty` | the identity or the key id changed |
 | key id with `identityProperty: "$ownerId"` | every replace |
 | key id with `identityProperty: "$creatorId"` | the key id changed |
 | key id with an identity property path | the key id or that property changed |
 | `anyOf` or `allOf` | one of its operands would be checked again; the whole expression is then checked |
 
-A value changed when the replace set it differently, added it or removed it. Changes are tracked per top-level property, so a change anywhere in an object checks again every reference inside that object. When a typed array changed, only the elements the stored list did not hold are checked, unless a rule above that applies to every element does (the referring value of a `where` entry changed, a `where` entry valued `"$ownerId"`, an `owner` requirement on such a type, or a `deletableDocument` target); then every element is checked. The rules for `ownerRefersTo` and `creatorRefersTo` are in [Writer and Creator References](owner-refers-to.md).
+A value changed when the replace set it differently, added it or removed it. Changes are tracked per top-level property, so a change anywhere in an object checks again every reference inside that object. When a typed array changed, only the elements the stored list did not hold are checked, unless a rule above that applies to every element does (a referring property a `where` entry reads changed, a `where` entry checked on every replace, an `owner` requirement on such a type, or a `deletableDocument` target); then every element is checked. A reference checked again is checked whole: its existence and every `where` entry, against the document as it is at the replace. The rules for `ownerRefersTo` and `creatorRefersTo` are in [Writer and Creator References](owner-refers-to.md).
 
-The "every replace" rows exist because something the reference depends on can change without a write to the referring document: the writer after a transfer or purchase, or the target's existence for a deletable one. A moderated target that a moderator removed is not one of them: the reference resolves to its removal record, as described [above](#moderateddocument).
+The "every replace" rows exist because something the reference depends on can change without a write to the referring document: the writer after a transfer or purchase, the time of the write, the target's existence for a deletable one, or, for a reference a rule reads through, the target's own values (a `permanentDocument` target may be replaced since). Checking such a reference again costs the read its first check made, billed the same way: by id, or through the `findBy` index. A moderated target that a moderator removed is not one of them: the reference resolves to its removal record, as described [above](#moderateddocument).
 
 ### Transfers, purchases, deletes and restores
 
-- A transfer or a purchase checks no reference. A reference governs writing, not holding: a new owner meets the writer gates (a `where` entry valued `"$ownerId"`, `identityProperty: "$ownerId"`, an `owner` requirement) on their first replace.
-- Deleting a referring document checks nothing. Deleting a referenced document does not look for documents referring to it: a `permanentDocument` target cannot be deleted at all, a `moderatedDocument` target is removed by a moderator on the record the reference then resolves to, and a `deletableDocument` reference meets its missing target on the referring document's next replace.
-- A document a moderator removed and later restores comes back as it was, without its references being checked again (see [Restoring Documents](../data-model/contract-moderation.md#restoring-documents)).
+- A transfer or a purchase checks no reference. A reference governs writing, not holding: a new owner meets the writer gates (a `where` entry valued `"$ownerId"`, `identityProperty: "$ownerId"`, an `owner` requirement) on their first replace. Nor does it judge a rule reading a referenced document; registration keeps such a rule, on a type whose documents can be transferred or traded, from reading what a transfer, a purchase or a price update changes.
+- Deleting a referring document checks nothing. Deleting a referenced document does not look for documents referring to it: a `permanentDocument` target cannot be deleted at all, a `moderatedDocument` target is removed by a moderator on the record the reference then resolves to, and a `deletableDocument` reference meets its missing target on the referring document's next replace. A `deletableDocument` target can still refuse its owner's delete while documents refer to it: a [`deleteConstraints`](deletion.md#deleteconstraints) rule counting them by the target's own id, `{ "equal": [{ "countOf": ["vote", { "pollId": "$id" }] }, 0] }`, needs a countable index on the referring property, and holds the target in place until the last of them is gone.
+- A document a moderator removed and later restores comes back as it was, without its references being checked again (see [Restoring Documents](../data-model/contract-moderation.md#restoring-documents)), and without the rules reading a referenced document judged. A moderator's change of the fields a type keeps for its moderators judges none of them either, and a rule reading a referenced document may not read such a field.
 
 ## The reference budget
 
@@ -314,7 +382,7 @@ A contract's declarations are checked when it is registered, and again for the w
 - A declaration holds `type` and the keys its target takes, or a single `anyOf` or `allOf`.
 - A referenced `documentType` must exist (`ReferencedDocumentTypeNotFoundError`, 40121). The three document references are disjoint, each type admitting exactly one: its documents must never disappear for `permanentDocument` (`ReferencedDocumentTypeDeletableError`, 40122), disappear only through a moderator's recorded removal for `moderatedDocument` (`ReferencedDocumentTypeNotModeratedError`, 40143), and be able to disappear otherwise for `deletableDocument` (`ReferencedDocumentTypeNotDeletableError`, 40131, for a type whose documents never disappear; `ReferencedDocumentTypeModeratedError`, 40144, for one whose documents only moderators remove on the record). The last is refused at registration only: a `deletableDocument` reference promises less than such a type keeps, and a contract registered on a network before `moderatedDocument` existed may hold one, which stays writable. A `permanentDocument` with `inList` whose list is in the declaring contract is the exception: the parser checks its type and reports a deletable one as `InvalidContractStructure` (10231).
 - A reference that finds its document by the document's id (`permanentDocument`, `moderatedDocument` or `deletableDocument` without `findBy`, or with `inList`, whose list's document is read by its id) may not name an [`indexOnly`](index-only.md) type (`ReferencedDocumentTypeIndexOnlyError`, 40146): its documents exist only as index entries and can not be fetched by `$id`, so no write could check the reference. This holds for a type of the declaring contract and of another one alike. A `findBy` into such a type is refused by its own rules instead, since the type has no unique index.
-- Every `where` entry must be one that can hold (40126), every key reference must fit the document type (40125), every `boundTo` must name a type a key can be bound to (10231), and every [`findBy`](refers-to-lookup.md#rules-at-registration) and [list](refers-to-list-element.md#rules-at-registration) must resolve.
+- Every `where` entry must be one that can hold (40126), every key reference must fit the document type (40125), every `boundTo` must name a type a key can be bound to (10231), and every [`findBy`](refers-to-lookup.md#rules-at-registration) and [list](refers-to-list-element.md#rules-at-registration) must resolve. A rule reading a document of another contract's type through a reference must read what that type gives (40148).
 - An `immutable` property may not hold a `deletableDocument` reference that a replace could not remove: one inside an object, a typed array of them, or any `deletableDocument` found by `findBy`, except one whose key a `findBy` function computes, which is checked on the create alone. A single `deletableDocument` reference by id that is itself an immutable top-level property is allowed, but only listed without a condition: a replace the condition left free could set it to another document once it was cleared. A `contract` reference with an `owner` requirement may not sit under an immutable property of a type whose documents can be transferred or traded. All refused with `InvalidContractStructure` (10231); see [Mutability](mutability.md).
 - The type stays within the [reference budget](#the-reference-budget).
 - The earlier spellings `lookup`, `propertyAgreement` and `type: "listElement"`, replaced by `findBy`, `where` and `inList` before protocol version 14 shipped, are refused: by the meta-schema on registration and update (10101), and by the parser on every parse (10231), with a message naming what replaced each.
@@ -330,8 +398,8 @@ A contract's declarations are checked when it is registered, and again for the w
 | `ReferencedIdentityKeyNotFoundError` | 40123 | Write: the identity has no key with that id, or the identity does not exist. |
 | `ReferencedIdentityKeyDisabledError` | 40124 | Write: the key is disabled. |
 | `ReferencedKeyIdPropertyInvalidError` | 40125 | Registration: `keyIdProperty` or `identityProperty` names a property that does not fit, `$creatorId` on a type that records no creator ids, or a stored key id paired with a transient identity. Write: a key id without its identity, or an identity without its key id. |
-| `ReferencedDocumentPropertyAgreementInvalidError` | 40126 | Registration: a `where` entry names a missing, transient, object or typed array property, or two properties of different types, or `$creatorId` on a type that does not record it, or keys a preallocated index by a property that can hold more than 255 bytes. |
-| `ReferencedDocumentPropertyMismatchError` | 40127 | Write: the document found does not meet a `where` entry. |
+| `ReferencedDocumentPropertyAgreementInvalidError` | 40126 | Registration: a `where` entry names a missing, transient or object property, pairs a typed array with something other than a typed array of the same element kind, compares typed arrays of floats, or two properties of different types, or `$creatorId` on a type that does not record it, or keys a preallocated index by a property, or a typed array with an element, that can hold more than 255 bytes; or a [condition](#conditions) holds a literal of another kind than its property, compares two values of different kinds, orders something that is no integer, or is bounded by a time or height the declaring type does not record. |
+| `ReferencedDocumentPropertyMismatchError` | 40127 | Write: the document found does not meet a `where` entry; for a condition, the referring property is the condition as written. |
 | `ReferencedDocumentTypeNotDeletableError` | 40131 | Registration: a `deletableDocument` reference names a type whose documents can never disappear. |
 | `ReferencedContractRequirementNotMetError` | 40135 | Write: the referenced contract exists but does not meet a `contractRequirements` entry. |
 | `ReferencedIdentityKeyRequirementNotMetError` | 40136 | Write: the key exists and is enabled but does not meet a `keyRequirements` entry. |
@@ -341,8 +409,10 @@ A contract's declarations are checked when it is registered, and again for the w
 | `ReferencedDocumentTypeModeratedError` | 40144 | Registration: a `deletableDocument` reference names a type whose documents disappear only through a moderator's recorded removal. |
 | `ReferencedDocumentRemovedError` | 40145 | Write: a replace kept a `moderatedDocument` reference whose document a moderator removed, and a `where` entry checked again compares a property the removal record does not keep. |
 | `ReferencedDocumentTypeIndexOnlyError` | 40146 | Registration: a reference that finds its document by id (no `findBy`, or with `inList`) names an `indexOnly` type, whose documents can not be fetched by id. |
+| `ReferencedDocumentRuleReadInvalidError` | 40148 | Registration: a [`propertyConstraints` rule](property-constraints.md#values-of-a-referenced-document) reads, through a reference into another contract's document type, a field that type can not give it. A rule reading a type of the declaring contract is refused by the contract parse instead (10231). |
+| `ReferencedDocumentPrecededError` | 40149 | Write: the commitment a [`chooseFirst`](refers-to-lookup.md#choosing-the-first-commitment-choosefirst) reference found is preceded, in its `by` order, by a valid, unexpired commitment of another identity holding the same value at `among`. |
 
-The registration errors name the declaration as `<documentType>.<property>`, `<documentType>.<property>[]` for typed array elements, `<documentType>.$ownerId` or `<documentType>.$creatorId` for the writer and creator references, and add the operand for a leaf of an expression (`resignation.memberId.anyOf[1]`). When a document is written, the referenced document type is looked up and its kind checked again as a safeguard (40121, 40122, 40131, 40143), but a registered contract cannot fail those checks later: contracts and document types are never removed, and neither the deletion flags nor `ttl` nor `moderatorAbilities` can change. Nor can `indexOnly`, so the indexOnly rule (40146) is checked at registration only. The other codes in the range (40128 to 40130, 40132 to 40134, 40139 to 40142) belong to other keywords. See [Error Codes](../error-handling/error-codes.md).
+The registration errors name the declaration as `<documentType>.<property>`, `<documentType>.<property>[]` for typed array elements, `<documentType>.$ownerId` or `<documentType>.$creatorId` for the writer and creator references, and add the operand for a leaf of an expression (`resignation.memberId.anyOf[1]`). When a document is written, the referenced document type is looked up and its kind checked again as a safeguard (40121, 40122, 40131, 40143), but a registered contract cannot fail those checks later: contracts and document types are never removed, and neither the deletion flags nor `ttl` nor `moderatorAbilities` can change. Nor can `indexOnly`, so the indexOnly rule (40146) is checked at registration only. The other codes in the range (40128 to 40130, 40132 to 40134, 40139 to 40142, 40147) belong to other keywords. See [Error Codes](../error-handling/error-codes.md).
 
 ## More forms of reference
 
@@ -359,4 +429,5 @@ The registration errors name the declaration as `<documentType>.<property>`, `<d
 - [Typed Arrays](typed-arrays.md), [System Properties](system-properties.md), [Mutability](mutability.md), [Deletion](deletion.md), [Time To Live (ttl)](ttl.md) and [Creation, Transfers and Trading](ownership-and-trading.md) for the keywords references read.
 - [distinctFrom](distinct-from.md), which requires an identifier to differ from another, and [encryptedFor](encrypted-for.md), which names the key references an encrypted property was made with.
 - [Values of Referenced Documents](derived-index-properties.md), where an index holds a value of the document a `permanentDocument` or `moderatedDocument` reference points at.
+- [propertyConstraints](property-constraints.md#values-of-a-referenced-document), whose rules read the document a reference points at through `{ "referenced": [reference, field] }`.
 - [Contract Keywords](../contract-keywords.md) for the conventions these pages use.

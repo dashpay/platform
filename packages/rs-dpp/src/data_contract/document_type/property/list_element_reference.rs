@@ -33,7 +33,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::property::reference_lookup::schema_property_is_fixed_once_written;
 use crate::data_contract::document_type::property::{
-    is_transient, top_level_property, DocumentPropertyType,
+    is_transient, top_level_property, DocumentPropertyType, WhereCondition,
 };
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::property_names::ID;
@@ -60,6 +60,9 @@ pub struct ListElementReference {
     /// document the list is read from. The others are checked against that
     /// document as any agreement is.
     pub property_agreement: BTreeMap<String, String>,
+    /// The other `where` entries, by referenced property, checked against the
+    /// document holding the list ([`WhereCondition`]).
+    pub where_conditions: BTreeMap<String, WhereCondition>,
     /// The typed array of identifiers of `document_type_name` (a dotted path
     /// when nested) the value must be an element of.
     pub in_list: String,

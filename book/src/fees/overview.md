@@ -222,7 +222,12 @@ validation v1 judges the fee against the sponsor's balance and the signer only
 has to fund `removed_balance`; when the sponsor's balance falls short a batch
 that insists is refused unpaid (`GasSponsorInsufficientBalanceError`, 40222)
 and a batch that prefers falls back to the signer's balance. Execution v1 then
-charges whoever fee validation admitted. A batch that fails validation is never
+charges whoever fee validation admitted. The [user fee
+increase](#user-fee-increase) is never the sponsor's: the signer chose it, so
+the sponsor is judged on and charged the fee without it, and the signer pays
+the processing fee it adds, which its balance (and a budgeted signing key's
+budget) has to cover, or the batch is refused unpaid
+(`IdentityInsufficientBalanceError`, 40210). A batch that fails validation is never
 sponsored: its signer pays for the work that ran, and a request the document
 type does not offer is a paid rejection (`GasFeesPaidByNotAllowedError`,
 40129). Storage refunds still go to the document's owner, whoever paid the
@@ -242,7 +247,12 @@ check tx validates the batch of a signer under the fee minimum against the
 state in full, on the first check and on every recheck, as it does a
 masternode vote: what nobody could be charged for is refused there, or leaves
 the mempool once the tokens it counted on are spent, instead of being executed
-for free by a proposer.
+for free by a proposer. Before that state validation, once the batch is built
+and names who pays, a batch that resolved no sponsor (its document types offer
+none, so a `PreferContractOwner` request falls to the signer, or the signer owns
+the contract) is held to the fee minimum an unsponsored batch meets, and a
+signer under it is refused with the pre-check's own error: the state of a batch
+only its signer can pay for is never validated for free.
 
 ### Optional token costs
 
@@ -534,8 +544,21 @@ pub struct FeeVersion {
     pub data_contract_registration: FeeDataContractRegistrationVersion,
     pub state_transition_min_fees: StateTransitionMinFees,
     pub vote_resolution_fund_fees: VoteResolutionFundFees,
+    pub document_ttl: FeeDocumentTtlVersion,
+    pub document_reference: FeeDocumentReferenceVersion,
 }
 ```
+
+`document_ttl` and `document_reference` are read from protocol version 14:
+the fees of documents whose type declares a [`ttl`](../data-model/document-ttl.md),
+and the budget of a [`chooseFirst`](../contract-keywords/refers-to-lookup.md#choosing-the-first-commitment-choosefirst)
+competitor scan (`choose_first_credits_per_candidate`, 100,000 credits a
+candidate, times `SystemLimits::max_choose_first_candidates`), which check tx
+reserves on top of a reveal's estimated fee, and the processing fee of a
+[`where` entry comparing typed arrays](../contract-keywords/refers-to.md#typed-arrays)
+(`where_list_credits_per_element`, 100 credits for each list element it reads,
+billed before it compares them). Platform states store only
+`fee_version_number`, so neither group touches a stored format.
 
 Fee versions are stored in the `FEE_VERSIONS` array and looked up by number. The
 `uses_version_fee_multiplier_permille` field allows a global scaling factor

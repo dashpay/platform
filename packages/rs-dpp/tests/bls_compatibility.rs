@@ -282,6 +282,21 @@ fn should_preserve_identity_key_parsing_without_accepting_identity_signatures() 
 }
 
 #[test]
+fn should_tell_the_identity_key_from_a_valid_one() {
+    let mut identity = [0; 48];
+    identity[0] = 0xc0;
+    assert!(PublicKey::try_from(identity.as_slice())
+        .unwrap()
+        .is_identity());
+    assert!(PublicKey::default().is_identity());
+
+    let valid = bytes::<48>(&corpus().basic[0].public_key);
+    assert!(!PublicKey::try_from(valid.as_slice()).unwrap().is_identity());
+    let secret = SecretKey::from_be_bytes(&bytes(&corpus().basic[0].secret_key)).unwrap();
+    assert!(!secret.public_key().is_identity());
+}
+
+#[test]
 fn should_preserve_invalid_input_results_and_validation_order() {
     let v = &corpus().basic[0];
     let public_key = bytes::<48>(&v.public_key);

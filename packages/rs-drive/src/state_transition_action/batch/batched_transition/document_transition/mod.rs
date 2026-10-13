@@ -15,6 +15,8 @@ pub mod document_transfer_transition_action;
 mod document_transition_action_type;
 /// document_update_price_transition_action
 pub mod document_update_price_transition_action;
+/// property_constraint_reads
+pub mod property_constraint_reads;
 
 pub use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
 

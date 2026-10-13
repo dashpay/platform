@@ -78,6 +78,10 @@ fn parse_where_operator(op: &str) -> Result<WhereOperator, FFIError> {
         "<=" | "lte" => Ok(WhereOperator::LessThanOrEquals),
         "in" => Ok(WhereOperator::In),
         "startsWith" => Ok(WhereOperator::StartsWith),
+        // The elements of a typed array an index keys (protocol version 14):
+        // one element counted, or one count per element.
+        "contains" => Ok(WhereOperator::Contains),
+        "containsAny" => Ok(WhereOperator::ContainsAny),
         // Range bounds: value is `[lower, upper]`. Drive's
         // `range_clause_to_query_item` validates the 2-element
         // array + ordered bounds.

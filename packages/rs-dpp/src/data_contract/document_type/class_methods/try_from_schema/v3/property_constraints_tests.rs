@@ -16,7 +16,7 @@ use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::property_constraints::{
-    DocumentSystemValues, ElementKind, PropertyConstraint, PropertyRead, SystemProperty,
+    DocumentSystemValues, ElementKind, PropertyConstraint, PropertyRead, SystemProperty, SystemRead,
 };
 use crate::data_contract::methods::validate_update::DataContractUpdateValidationMethodsV0;
 use crate::data_contract::DataContract;
@@ -871,9 +871,10 @@ fn should_compare_identifier_properties_that_declare_refers_to() {
     }
 }
 
-/// `$ownerId` and the system times and heights are no properties of the type:
-/// every document has an owner, and a type that records a time holds it on
-/// every document. A presence test of one is refused on both paths (the
+/// `$ownerId`, the system times and heights and `$revision` are no properties
+/// of the type: every document has an owner, a type that records a time holds
+/// it on every document, and a type keeping a revision keeps it on every one.
+/// A presence test of one, of either version, is refused on both paths (the
 /// meta-schema admits them as paths, for comparisons and operands), and one of
 /// any other system property the meta-schema refuses when registering.
 #[test]
@@ -898,7 +899,20 @@ fn should_refuse_a_presence_test_of_a_system_property() {
             "tests the presence of \"$createdAt\", which is not a property of the document type",
         );
     }
-    let rules = json!({ "rule": { "present": "$revision" } });
+    for path in [
+        "$revision",
+        "$old.$revision",
+        "$old.$createdAt",
+        "$old.$ownerId",
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_order(json!({ "rule": { "present": path } }), full_validation),
+                &format!("tests the presence of \"{path}\", which is not a property"),
+            );
+        }
+    }
+    let rules = json!({ "rule": { "present": "$id" } });
     let registered = parse_order(rules.clone(), true);
     assert!(
         registered.as_ref().is_err_and(is_json_schema_error),
@@ -906,7 +920,7 @@ fn should_refuse_a_presence_test_of_a_system_property() {
     );
     expect_structure_error(
         parse_order(rules, false),
-        "tests the presence of \"$revision\", which is not a property of the document type",
+        "tests the presence of \"$id\", which is not a property of the document type",
     );
 }
 
@@ -971,6 +985,72 @@ fn should_test_the_presence_of_any_property_the_type_declares() {
     }
 }
 
+/// `countPresent` tests each property it lists as `present` does, on both
+/// paths: any property the type declares, an object included, but no path
+/// naming nothing, no system value and nothing transient. A path listed twice
+/// the meta-schema refuses when registering, and the parser on both paths.
+#[test]
+fn should_count_the_presence_of_properties_the_type_declares() {
+    let rules = json!({
+        "rule": {
+            "lessThanOrEqual": [{ "countPresent": ["note", "meta", "meta.tag", "price"] }, 1]
+        }
+    });
+    for full_validation in [true, false] {
+        let document_type = parse_order(rules.clone(), full_validation)
+            .unwrap_or_else(|e| panic!("full_validation {full_validation}: should parse: {e}"));
+        assert_eq!(
+            document_type.property_constraints()["rule"].property_reads(),
+            [
+                ("note", PropertyRead::Presence),
+                ("meta", PropertyRead::Presence),
+                ("meta.tag", PropertyRead::Presence),
+                ("price", PropertyRead::Presence)
+            ]
+        );
+    }
+
+    for path in ["missing", "meta.missing", "$ownerId", "$createdAt"] {
+        let rules = json!({ "rule": { "equal": [{ "countPresent": ["note", path] }, 1] } });
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_order(rules.clone(), full_validation),
+                &format!(
+                    "rule \"rule\" tests the presence of \"{path}\", which is not a property of \
+                     the document type"
+                ),
+            );
+        }
+    }
+
+    let schema = order_schema(
+        Some(json!({ "rule": { "equal": [{ "countPresent": ["price", "meta.tag"] }, 1] } })),
+        Some("meta"),
+    );
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                schema_value(schema.clone()),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "rule \"rule\" tests the presence of \"meta.tag\", which is transient or inside a \
+             transient object",
+        );
+    }
+
+    let repeated = json!({ "rule": { "equal": [{ "countPresent": ["note", "note"] }, 1] } });
+    let registered = parse_order(repeated.clone(), true);
+    assert!(
+        registered.as_ref().is_err_and(is_json_schema_error),
+        "the meta-schema should refuse it, got {registered:?}"
+    );
+    expect_structure_error(
+        parse_order(repeated, false),
+        "at equal[0].countPresent[1] repeats the path at equal[0].countPresent[0]",
+    );
+}
+
 /// Only an integer property's value is a number the rule can compute with: a
 /// string, a float, an array, an object and a system property are refused on
 /// both paths, as is a path naming nothing.
@@ -1014,8 +1094,8 @@ fn should_refuse_a_rule_reading_anything_but_an_integer_property() {
             "reads $createdAt, which the document type does not record: list it in required",
         ),
         (
-            "$revision",
-            "reads \"$revision\", which is not an integer or boolean property",
+            "$id",
+            "reads \"$id\", which is not an integer or boolean property",
         ),
     ] {
         for full_validation in [true, false] {
@@ -1025,11 +1105,11 @@ fn should_refuse_a_rule_reading_anything_but_an_integer_property() {
             );
             // The meta-schema refuses a `$` in a path when registering, but for
             // `$ownerId`, which only a comparison of identifiers may read, and the
-            // system times and heights an operand may read
+            // system times, heights and revision an operand may read
             if full_validation
                 && operand.starts_with('$')
                 && operand != "$ownerId"
-                && SystemProperty::from_name(operand).is_none()
+                && SystemRead::from_name(operand).is_none()
             {
                 assert!(
                     result.as_ref().is_err_and(is_json_schema_error),
@@ -1738,7 +1818,7 @@ fn should_read_the_system_times_and_heights_the_type_records() {
         let constraints = document_type.property_constraints();
         assert_eq!(
             constraints["depositAfterCreation"].system_reads(),
-            [SystemProperty::CreatedAt]
+            [SystemRead::from(SystemProperty::CreatedAt)]
         );
         assert_eq!(
             constraints["depositAfterCreation"].property_paths(),
@@ -1746,11 +1826,13 @@ fn should_read_the_system_times_and_heights_the_type_records() {
         );
         assert_eq!(
             constraints["pricedAboveHeight"].system_reads(),
-            [SystemProperty::UpdatedAtBlockHeight]
+            [SystemRead::from(SystemProperty::UpdatedAtBlockHeight)]
         );
         assert_eq!(
             constraints["transferredOnCore"].system_reads(),
-            [SystemProperty::TransferredAtCoreBlockHeight]
+            [SystemRead::from(
+                SystemProperty::TransferredAtCoreBlockHeight
+            )]
         );
 
         // Not recording `$updatedAtBlockHeight`, the type may not read it

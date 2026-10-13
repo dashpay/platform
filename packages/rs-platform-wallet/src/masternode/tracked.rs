@@ -43,7 +43,10 @@ use serde_json::{json, Value};
 
 use super::list::MasternodeListSummary;
 use super::locator::{p2pkh_script_hash, MasternodeKeyReference, MasternodeKeyRole};
-use super::record::{ListMembership, MasternodeRecord, MasternodeSource, MasternodeStatus};
+use super::record::{
+    owner_payout_script, platform_http_port, ListMembership, MasternodeRecord, MasternodeSource,
+    MasternodeStatus,
+};
 use crate::changeset::{PersistenceCapabilities, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::manager::PlatformWalletManager;
@@ -67,9 +70,11 @@ pub struct RegistrationDetails {
     pub owner_key_hash: [u8; 20],
     pub voting_key_hash: [u8; 20],
     pub operator_public_key: [u8; 48],
-    /// Raw payout script as registered.
+    /// Raw payout script as registered; empty when the registration names
+    /// no single payout script (see `owner_payout_script`).
     pub payout_script: Vec<u8>,
-    /// `"ip:port"` as registered.
+    /// `"ip:port"` as registered; `None` for a version-3 registration that
+    /// advertises no IPv4/IPv6 address.
     pub service_address: Option<String>,
     pub is_evonode: bool,
     pub platform_node_id: Option<[u8; 20]>,
@@ -176,7 +181,10 @@ impl TrackedMasternode {
         let payout_script = platform
             .and_then(|p| p.payout_key_hash)
             .map(|hash| p2pkh_script(&hash))
-            .or_else(|| reg.map(|r| r.payout_script.clone()));
+            .or_else(|| {
+                reg.map(|r| r.payout_script.clone())
+                    .filter(|script| !script.is_empty())
+            });
 
         MasternodeRecord {
             pro_tx_hash: self.pro_tx_hash,
@@ -1089,14 +1097,16 @@ pub fn registration_from_transaction(
         owner_key_hash,
         voting_key_hash,
         operator_public_key: *operator,
-        payout_script: p.script_payout.as_bytes().to_vec(),
+        payout_script: owner_payout_script(&p.script_payout, p.payouts.as_deref())
+            .map(|script| script.as_bytes().to_vec())
+            .unwrap_or_default(),
         service_address: p
             .service_address
             .primary_service_address()
             .map(|address| address.to_string()),
         is_evonode: p.masternode_type == ProviderMasternodeType::HighPerformance,
         platform_node_id: p.platform_node_id.map(|id| id.to_byte_array()),
-        platform_http_port: p.platform_http_port,
+        platform_http_port: platform_http_port(&p.service_address, p.platform_http_port),
     })
 }
 
@@ -1501,5 +1511,55 @@ mod tests {
             special_transaction_payload: None,
         };
         assert_eq!(registration_from_transaction(&plain, 1), None);
+    }
+
+    /// A tracked node's ProRegTx is fetched once and cached, so a version-3
+    /// registration must be read right the first time: its payout from the
+    /// payout list when it names one payout, none when it splits the reward
+    /// (never an empty script), and its platform HTTP port from the extended
+    /// address map.
+    #[test]
+    fn registration_details_lift_from_a_core_v24_proregtx() {
+        use super::super::record::core_v24_vectors::*;
+
+        let one = registration_from_transaction(&decode(PRO_REG_TX_ONE_PAYOUT), 15_146)
+            .expect("ProRegTx lifts");
+        assert_eq!(
+            devnet_address(&one.payout_script),
+            "yQohnoFhM5avKnzVzAX79xT8uCKviaPxj4"
+        );
+        assert_eq!(one.service_address, None, "it announces no address");
+        assert_eq!(one.platform_http_port, None);
+
+        let p2sh = registration_from_transaction(&decode(PRO_REG_TX_P2SH_PAYOUT), 15_166)
+            .expect("ProRegTx lifts");
+        assert_eq!(
+            devnet_address(&p2sh.payout_script),
+            "8yyRcXHGCXypDWTCNZMHUYZJJEC87GqLfK"
+        );
+
+        let split = registration_from_transaction(&decode(PRO_REG_TX_TWO_PAYOUTS), 15_153)
+            .expect("ProRegTx lifts");
+        assert!(split.payout_script.is_empty());
+        let tracked = TrackedMasternode {
+            pro_tx_hash: [0x31; 32],
+            label: None,
+            added_at: 0,
+            snapshot: TrackedMasternodeSnapshot {
+                registration: Some(split),
+                ..Default::default()
+            },
+        };
+        assert_eq!(tracked.record(None).payout_script, None);
+        assert_eq!(tracked.key_reference().payout_key_hash, None);
+
+        let details =
+            registration_from_transaction(&evonode_registration(), 15_146).expect("ProRegTx lifts");
+        assert!(details.is_evonode);
+        assert_eq!(
+            details.service_address.as_deref(),
+            Some("68.67.122.237:20001")
+        );
+        assert_eq!(details.platform_http_port, Some(1443));
     }
 }

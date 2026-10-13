@@ -460,6 +460,85 @@ mod tests {
         assert_eq!(proof.instant_lock, recovered.instant_lock);
         assert_eq!(proof.transaction.txid(), recovered.transaction.txid());
     }
+
+    // ---------------------------------------------------------------
+    // Consensus decoding of a real proof
+    // ---------------------------------------------------------------
+
+    /// An asset lock with one credit output, as Dash Core relayed it.
+    const CORE_ASSET_LOCK: &str = "03000800014d6d36c50d484aa79f7db080f971c3f6845407f652c7d5865756017fa06969c1010000006a47304402200136894a2ebb4967cf2766c10e238d69c53c24bf330758e4432eb4753def03de02202a2afb05475a064a419a6cc1c582e3504fcb36c2e22b610b5d320f7656573f7f0121028fdb0a3f730bb20f477536d98ca830efa56412dd05992c801219ba0ff35ad530ffffffff028801030000000000026a00288d9500000000001976a9148d40dfe30494080a1c1187c74066956043ff13fb88ac0000000024010188010300000000001976a914aa85a9fb4f84bc63046a574ac4f2ce3361f0db0d88ac";
+    /// The InstantSend lock Dash Core signed for it.
+    const CORE_INSTANT_LOCK: &str = "01014d6d36c50d484aa79f7db080f971c3f6845407f652c7d5865756017fa06969c1010000008155cc5d9fe5da3b0508c28d02c88fb6d3d4cf44ef4ffcd77162afa338d1a181ad7300e92255a7a7cf031d6de6bac99df9f1b94735ea603b3f03060c3ebf1f37acc4c1d8ddea77f3d4d816e467571f51ae216715fb3e47d68831adeee6aa1640b26cdf085bb8dd0b4920d15eed83e8c50de8b4b0508db47f08451f7807194d68758a92b367ef6074b516336f689c75c5e22b87aa71d50157875f1018a305a957";
+
+    /// Every node decodes an instant proof's transaction from its bytes, and
+    /// the transition's outcome follows from what it decodes. A rust-dashcore
+    /// upgrade must decode a real asset lock to the same transaction: the
+    /// same bytes back, the txid the InstantSend lock signs, and the same
+    /// credit output.
+    #[test]
+    fn test_raw_instant_lock_proof_decodes_a_core_asset_lock_unchanged() {
+        let transaction_bytes = hex::decode(CORE_ASSET_LOCK).unwrap();
+        let raw = RawInstantLockProof {
+            instant_lock: BinaryData::new(hex::decode(CORE_INSTANT_LOCK).unwrap()),
+            transaction: BinaryData::new(transaction_bytes.clone()),
+            output_index: 0,
+        };
+
+        let proof = InstantAssetLockProof::try_from(raw).expect("a Core asset lock decodes");
+
+        assert_eq!(
+            dashcore::consensus::serialize(proof.transaction()),
+            transaction_bytes
+        );
+        assert_eq!(
+            proof.transaction().txid().to_string(),
+            "81a1d138a3af6271d7fc4fef44cfd4d3b68fc8028dc208053bdae59f5dcc5581"
+        );
+        assert_eq!(proof.instant_lock().txid, proof.transaction().txid());
+        let Some(TransactionPayload::AssetLockPayloadType(payload)) =
+            &proof.transaction().special_transaction_payload
+        else {
+            panic!("an asset lock payload");
+        };
+        assert_eq!(payload.version, 1);
+        assert_eq!(payload.credit_outputs.len(), 1);
+        let output = proof.output().expect("credit output 0");
+        assert_eq!(output.value, 197_000);
+        assert_eq!(
+            hex::encode(output.script_pubkey.as_bytes()),
+            "76a914aa85a9fb4f84bc63046a574ac4f2ce3361f0db0d88ac"
+        );
+        // The identity the proof funds: sha256d of its outpoint.
+        assert_eq!(
+            proof.create_identifier().unwrap(),
+            Identifier::from_string(
+                "HY8jYYsTJxHPcuYreupv4Fb4nvdPRZfV6GoxybLt6vhu",
+                platform_value::string_encoding::Encoding::Base58,
+            )
+            .unwrap()
+        );
+    }
+
+    /// Core reads a special transaction payload only from transaction
+    /// version 3 (a signed 16-bit version), so below it, or negative, the
+    /// asset lock's payload is not part of the transaction. Its bytes, with
+    /// the payload still appended, are not a transaction a proof can carry.
+    #[test]
+    fn test_raw_instant_lock_proof_refuses_an_asset_lock_payload_below_version_3() {
+        for version in [1u16, 2, 0x8000, 0xffff] {
+            let mut transaction_bytes = hex::decode(CORE_ASSET_LOCK).unwrap();
+            transaction_bytes[0..2].copy_from_slice(&version.to_le_bytes());
+            let raw = RawInstantLockProof {
+                instant_lock: BinaryData::new(hex::decode(CORE_INSTANT_LOCK).unwrap()),
+                transaction: BinaryData::new(transaction_bytes),
+                output_index: 0,
+            };
+            assert!(
+                InstantAssetLockProof::try_from(raw).is_err(),
+                "version {version:#06x}"
+            );
+        }
+    }
 }
 
 #[cfg(all(

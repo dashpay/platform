@@ -5,9 +5,12 @@
 //! index property is either the referring property itself (whose value is the
 //! referenced document's `$id`) or a referring value of that property's
 //! `where` (whose value consensus enforces equal to a
-//! referenced-document property at write time). This module derives that
-//! function — the *binding* — from the index and the declaring document
-//! type's properties, so the two consumers cannot drift:
+//! referenced-document property at write time). A referring typed array bound
+//! by an equality with a referenced typed array (protocol version 14) holds
+//! exactly the referenced document's list, so its level of the path takes one
+//! key per element of that list. This module derives that function — the
+//! *binding* — from the index and the declaring document type's properties,
+//! so the two consumers cannot drift:
 //!
 //! - contract validation (`apply_index_only` in `try_from_schema::common`)
 //!   rejects the flag when no binding exists, and
@@ -36,8 +39,8 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::property::{
-    is_path_listed, DocumentProperty, DocumentPropertyType, DocumentReferenceDeclaration,
-    DocumentReferenceKind,
+    is_path_listed, typed_array_property, DocumentProperty, DocumentPropertyType,
+    DocumentReferenceDeclaration, DocumentReferenceKind,
 };
 use crate::data_contract::document_type::{DocumentTypeRef, Index};
 use crate::document::property_names::{ID, OWNER_ID};
@@ -56,11 +59,22 @@ pub enum PreallocatedKeySource<'a> {
     /// its value is the named property of the referenced document, which may
     /// be one of its `$ownerId` and `$creatorId` system identifiers as well
     /// as a schema property. The two sides are validated to share one value
-    /// kind, so encoding the referenced document's value yields the same key
-    /// bytes the referring side would produce; the insert path resolves the
-    /// name through the same document accessor the entry walkers key by,
-    /// which serves the two system names alongside the schema properties.
+    /// kind; the insert path resolves the name through the same document
+    /// accessor the entry walkers key by, which serves the two system names
+    /// alongside the schema properties, then keys the value as the referring
+    /// type keys its property (an unsigned integer can be keyed in a
+    /// different generation on each side).
     ReferencedDocumentProperty(&'a str),
+    /// The index property is a typed array bound by the reference's `where`
+    /// to the named typed array of the referenced document, an equality
+    /// between two lists (protocol version 14): every entry referencing the
+    /// created document holds exactly its list, in order, and the index enters
+    /// it once per distinct element, so the level takes one key per distinct
+    /// element of the referenced list (none for an empty or absent list, which
+    /// the index skips). Each element is keyed as the referring type keys the
+    /// elements of its property, as for
+    /// [`Self::ReferencedDocumentProperty`].
+    ReferencedDocumentListElements(&'a str),
 }
 
 /// One way a preallocated index's path is determined by a referenced
@@ -92,7 +106,8 @@ impl<'a> PreallocationBinding<'a> {
     /// `$ownerId` or a field its removal record keeps: one of `kept_fields`, the referenced
     /// type's `moderatorAbilities.deleteKeepsFields`, or inside an object
     /// listed there ([`is_path_listed`]). The record always keeps the
-    /// document's id and owner, never its creator.
+    /// document's id and owner, never its creator. A list keying a level by
+    /// its elements is kept as a whole, as a single value is.
     pub fn is_kept_on_removal(&self, kept_fields: &BTreeSet<String>) -> bool {
         self.first_key_dropped_on_removal(kept_fields).is_none()
     }
@@ -105,6 +120,7 @@ impl<'a> PreallocationBinding<'a> {
             .iter()
             .find_map(|key_source| match *key_source {
                 PreallocatedKeySource::ReferencedDocumentProperty(referenced)
+                | PreallocatedKeySource::ReferencedDocumentListElements(referenced)
                     if !referenced_value_kept_on_removal(self.kind, referenced, kept_fields) =>
                 {
                     Some(referenced)
@@ -215,8 +231,9 @@ impl Index {
             let Some(property) = flattened_properties.get(&candidate.name) else {
                 continue;
             };
-            // Only a scalar reference can bind: an index property is never a
-            // typed array, so element references never reach an index. A
+            // Only a scalar reference can bind: an element reference of a
+            // typed array is no scalar identifier, and its value is no
+            // referenced document's `$id`. A
             // lookup reference of either kind never matches either: its value
             // is not the referenced document's `$id`. Nor
             // does a reference expression (`anyOf` / `allOf`), even of
@@ -247,6 +264,24 @@ impl Index {
                             // it: that agreement is a write gate, and deriving an
                             // owner-prefixed path from it is left for later.
                             None
+                        } else if typed_array_property(flattened_properties, &index_property.name)
+                            .is_some()
+                        {
+                            // A typed array is bound only by an equality with a
+                            // referenced typed array: contract registration refuses
+                            // an equality pairing a list with anything else, and
+                            // `contains` / `containsAll` are no equalities and bind
+                            // nothing (the elements of a document whose list only
+                            // holds, or is held by, the referenced list are not
+                            // fixed by it). An entry then holds the referenced
+                            // list, and the index enters it under each element
+                            reference.property_agreement.get(&index_property.name).map(
+                                |referenced| {
+                                    PreallocatedKeySource::ReferencedDocumentListElements(
+                                        referenced.as_str(),
+                                    )
+                                },
+                            )
                         } else {
                             reference.property_agreement.get(&index_property.name).map(
                                 |referenced| {
@@ -274,6 +309,7 @@ impl Index {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_contract::document_type::index::summable_off_count_index::CountIndexDerivation;
     use crate::data_contract::document_type::property::DocumentPropertyReferenceTarget;
     use crate::data_contract::document_type::{
         DocumentReferenceLookup, IndexProperty, LookupKeySource, ReferenceOperands,
@@ -290,6 +326,7 @@ mod tests {
                 DocumentPropertyReferenceTarget::PermanentDocument {
                     contract_id,
                     document_type_name: target_type.to_string(),
+                    where_conditions: Default::default(),
                     property_agreement: agreement
                         .iter()
                         .map(|(referring, referenced)| {
@@ -370,7 +407,130 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }
+    }
+
+    fn tags_property() -> DocumentProperty {
+        use crate::data_contract::document_type::array::TypedArrayProperty;
+        use crate::data_contract::document_type::property::StringPropertySizes;
+        DocumentProperty {
+            property_type: DocumentPropertyType::TypedArray(TypedArrayProperty {
+                item_type: Box::new(DocumentPropertyType::String(StringPropertySizes {
+                    min_length: Some(1),
+                    max_length: Some(63),
+                    max_bytes: None,
+                })),
+                item_constraints: Default::default(),
+                min_items: None,
+                max_items: 4,
+                unique_items: true,
+            }),
+            ..string_property()
+        }
+    }
+
+    /// A `where` equality between two typed arrays fixes the referring list to
+    /// the referenced one: a preallocated path takes a key per element of the
+    /// referenced list at the array's level, and a `summableOffCountIndex`
+    /// group is fixed through it, at whatever position the array sits.
+    #[test]
+    fn should_bind_a_typed_array_through_a_pair_of_typed_arrays() {
+        let own_contract_id = Identifier::from([1u8; 32]);
+        let mut properties = IndexMap::new();
+        properties.insert("tags".to_string(), tags_property());
+        properties.insert(
+            "postId".to_string(),
+            identifier_reference_property("post", None, &[("tags", "tags")]),
+        );
+
+        for (index_properties, key_sources) in [
+            (
+                ["tags", "postId"],
+                vec![
+                    PreallocatedKeySource::ReferencedDocumentListElements("tags"),
+                    PreallocatedKeySource::ReferencedDocumentId,
+                ],
+            ),
+            (
+                ["postId", "tags"],
+                vec![
+                    PreallocatedKeySource::ReferencedDocumentId,
+                    PreallocatedKeySource::ReferencedDocumentListElements("tags"),
+                ],
+            ),
+        ] {
+            let index = index_on(&index_properties);
+            assert_eq!(
+                index.preallocation_bindings(&properties, own_contract_id),
+                vec![PreallocationBinding {
+                    referring_property: "postId",
+                    target_document_type_name: "post",
+                    kind: DocumentReferenceKind::Permanent,
+                    key_sources,
+                }]
+            );
+
+            let source = index_on(&["postId"]);
+            let mut counts = index;
+            counts.summable_off_count_index = Some(source.name.clone());
+            assert_eq!(
+                counts.count_index_derivations(&source, &properties, own_contract_id),
+                Ok(vec![CountIndexDerivation {
+                    property: "tags",
+                    referring_property: "postId",
+                    target_document_type_name: "post",
+                    kind: DocumentReferenceKind::Permanent,
+                    referenced: "tags",
+                }])
+            );
+        }
+    }
+
+    /// A typed array no `where` equality binds fixes nothing: no binding and
+    /// no derivation.
+    #[test]
+    fn should_bind_no_typed_array_without_a_where_equality() {
+        let own_contract_id = Identifier::from([1u8; 32]);
+        let mut properties = IndexMap::new();
+        properties.insert("tags".to_string(), tags_property());
+        properties.insert(
+            "postId".to_string(),
+            identifier_reference_property("post", None, &[]),
+        );
+
+        let index = index_on(&["tags", "postId"]);
+        assert!(index
+            .preallocation_bindings(&properties, own_contract_id)
+            .is_empty());
+
+        let source = index_on(&["postId"]);
+        let mut counts = index;
+        counts.summable_off_count_index = Some(source.name.clone());
+        assert_eq!(
+            counts.count_index_derivations(&source, &properties, own_contract_id),
+            Err("tags")
+        );
+    }
+
+    /// Through a moderatedDocument reference a list binding holds when the
+    /// removal record keeps the list, as a single value's does.
+    #[test]
+    fn should_keep_a_moderated_list_binding_only_when_its_record_keeps_the_list() {
+        let binding = PreallocationBinding {
+            referring_property: "postId",
+            target_document_type_name: "post",
+            kind: DocumentReferenceKind::Moderated,
+            key_sources: vec![
+                PreallocatedKeySource::ReferencedDocumentListElements("tags"),
+                PreallocatedKeySource::ReferencedDocumentId,
+            ],
+        };
+        assert!(binding.is_kept_on_removal(&["tags".to_string()].into()));
+        assert_eq!(
+            binding.first_key_dropped_on_removal(&BTreeSet::new()),
+            Some("tags")
+        );
     }
 
     #[test]
@@ -494,11 +654,13 @@ mod tests {
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "post".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
                 lookup: DocumentReferenceLookup {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    choose_first: None,
                 },
             },
         );
@@ -518,6 +680,7 @@ mod tests {
         let post = |document_type_name: &str| DocumentPropertyReferenceTarget::PermanentDocument {
             contract_id: None,
             document_type_name: document_type_name.to_string(),
+            where_conditions: Default::default(),
             property_agreement: BTreeMap::new(),
         };
         let index = index_on(&["postId"]);
@@ -554,6 +717,7 @@ mod tests {
                 contract_id,
                 document_type_name,
                 property_agreement,
+                ..
             },
         ) = property.property_type
         else {
@@ -563,6 +727,7 @@ mod tests {
             DocumentPropertyReferenceTarget::ModeratedDocument {
                 contract_id,
                 document_type_name,
+                where_conditions: Default::default(),
                 property_agreement,
             },
         );
@@ -602,6 +767,7 @@ mod tests {
             DocumentPropertyReferenceTarget::DeletableDocument {
                 contract_id: None,
                 document_type_name: "post".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
             },
         );
