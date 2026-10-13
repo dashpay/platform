@@ -35,7 +35,7 @@ use async_trait::async_trait;
 use dpp::address_funds::AddressWitness;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::data_contract::document_type::{index_only_row_commits_created_at, DocumentTypeRef};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::property_names::CREATED_AT;
@@ -958,17 +958,6 @@ fn document_with_values(
             document_type.name()
         )));
     }
-    if let Some(name) = document_type
-        .required_fields()
-        .iter()
-        .find(|name| !name.starts_with('$') && !properties.contains_key(*name))
-    {
-        return Err(PlatformWalletError::InvalidIdentityData(format!(
-            "Document type {:?} requires {name:?}: the delete needs every value the \
-             document was created with",
-            document_type.name()
-        )));
-    }
     if created_at.is_none()
         && index_only_row_commits_created_at(
             document_type.required_fields(),
@@ -982,6 +971,27 @@ fn document_with_values(
         )));
     }
     document_type.sanitize_document_properties(&mut properties);
+    // Required properties are looked for the way the delete will carry
+    // them: with every `generatedFrom` property generated, and by path, so
+    // a nested one is found inside its object.
+    let mut carried = properties.clone();
+    document_type
+        .regenerate_generated_properties(&mut carried, platform_version)
+        .map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to generate document properties: {e}"
+            ))
+        })?;
+    let carried = Value::from(carried);
+    if let Some(path) = document_type.required_fields().iter().find(|path| {
+        !path.starts_with('$') && matches!(carried.get_optional_value_at_path(path), Ok(None))
+    }) {
+        return Err(PlatformWalletError::InvalidIdentityData(format!(
+            "Document type {:?} requires {path:?}: the delete needs every value the \
+             document was created with",
+            document_type.name()
+        )));
+    }
     let mut document = document_type
         .create_document_from_data(
             properties.into(),
@@ -1006,8 +1016,10 @@ fn document_with_values(
 mod tests {
     use super::super::signing_key::tests::{lock_checking_signer, wallet_with_signing_keys};
     use super::*;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::data_contracts::SystemDataContract;
     use dpp::document::DocumentV0Getters;
+    use dpp::platform_value::platform_value;
     use dpp::system_data_contracts::load_system_data_contract;
 
     #[tokio::test]
@@ -1179,6 +1191,147 @@ mod tests {
         assert!(
             matches!(error, PlatformWalletError::InvalidIdentityData(ref message)
                 if message.contains("requires \"encryptedPayload\"")),
+            "{error:?}"
+        );
+    }
+
+    /// The App Connect contract with its `loginKeyResponse` schema changed
+    /// by `change`, for the shapes no shipped contract has.
+    fn contract_with_login_key_response(change: impl FnOnce(&mut Value)) -> DataContract {
+        changed_contract(true, change)
+    }
+
+    /// `validate` is off for a schema that only has to show how its
+    /// required paths are looked up, without placing every property in an
+    /// index the way a registered indexOnly type must.
+    fn changed_contract(validate: bool, change: impl FnOnce(&mut Value)) -> DataContract {
+        let (contract, _) = login_key_response_values();
+        let mut value = contract
+            .to_value(PlatformVersion::latest())
+            .expect("contract converts");
+        let mut schema = value
+            .remove_value_at_path("documentSchemas.loginKeyResponse")
+            .expect("loginKeyResponse schema");
+        change(&mut schema);
+        value
+            .set_value_at_path("documentSchemas", "loginKeyResponse", schema)
+            .expect("schema is set back");
+        DataContract::from_value(value, validate, PlatformVersion::latest())
+            .expect("changed contract builds")
+    }
+
+    fn require(schema: &mut Value, name: &str) {
+        append(schema, "required", name);
+    }
+
+    fn append(schema: &mut Value, list: &str, name: &str) {
+        let mut names = schema.get_value_at_path(list).expect("list").clone();
+        names
+            .as_array_mut()
+            .expect("an array")
+            .push(Value::Text(name.to_string()));
+        schema.set_value(list, names).expect("list is set");
+    }
+
+    fn build_login_key_response(
+        contract: &DataContract,
+        properties: &str,
+    ) -> Result<Document, PlatformWalletError> {
+        document_with_values(
+            login_key_response_type(contract),
+            &Identifier::default(),
+            &Identifier::default(),
+            properties,
+            PlatformVersion::latest(),
+        )
+    }
+
+    #[test]
+    fn should_refuse_a_type_whose_documents_can_not_be_deleted() {
+        let (_, properties) = login_key_response_values();
+        let contract = contract_with_login_key_response(|schema| {
+            schema
+                .set_value("canBeDeleted", Value::Bool(false))
+                .expect("canBeDeleted is set");
+        });
+
+        let error = build_login_key_response(&contract, &properties).unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::InvalidIdentityData(ref message)
+                if message.contains("can not be deleted")),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn should_refuse_a_missing_creation_time_on_a_type_that_commits_to_it() {
+        let (_, properties) = login_key_response_values();
+        let contract = contract_with_login_key_response(|schema| {
+            require(schema, "$createdAt");
+        });
+
+        let error = build_login_key_response(&contract, &properties).unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::InvalidIdentityData(ref message)
+                if message.contains("commits to $createdAt")),
+            "{error:?}"
+        );
+
+        let mut with_time: serde_json::Value =
+            serde_json::from_str(&properties).expect("properties parse");
+        with_time["$createdAt"] = serde_json::json!(1_700_000_000_000u64);
+        let document =
+            build_login_key_response(&contract, &with_time.to_string()).expect("document builds");
+        assert_eq!(document.created_at(), Some(1_700_000_000_000));
+    }
+
+    #[test]
+    fn should_find_a_required_property_inside_its_object() {
+        let contract = changed_contract(false, |schema| {
+            schema
+                .set_value_at_path(
+                    "properties",
+                    "device",
+                    platform_value!({
+                        "type": "object",
+                        "position": 3u32,
+                        "properties": {
+                            "name": { "type": "string", "maxLength": 32u32, "position": 0u32 },
+                        },
+                        "required": ["name"],
+                        "additionalProperties": false,
+                    }),
+                )
+                .expect("device is set");
+            require(schema, "device");
+            // On an indexOnly type only indexed values exist.
+            let mut indices = schema
+                .get_value_at_path("indices")
+                .expect("indices")
+                .clone();
+            append(
+                &mut indices.as_array_mut().expect("an array")[0],
+                "terminal",
+                "device.name",
+            );
+            schema
+                .set_value("indices", indices)
+                .expect("indices are set");
+        });
+        let required = login_key_response_type(&contract).required_fields().clone();
+        assert!(required.contains("device.name"), "{required:?}");
+
+        let (_, properties) = login_key_response_values();
+        let mut values: serde_json::Value =
+            serde_json::from_str(&properties).expect("properties parse");
+        values["device"] = serde_json::json!({ "name": "phone" });
+        build_login_key_response(&contract, &values.to_string()).expect("nested value is found");
+
+        values["device"] = serde_json::json!({});
+        let error = build_login_key_response(&contract, &values.to_string()).unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::InvalidIdentityData(ref message)
+                if message.contains("requires \"device.name\"")),
             "{error:?}"
         );
     }
