@@ -12,6 +12,7 @@ import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
+import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.QueriesNative
 
 /**
@@ -668,9 +669,12 @@ class Contracts internal constructor(private val sdk: Sdk) {
      *
      * Each rule lists the properties it reads and how
      * ([DocumentPropertyConstraint.reads]), whether it reads the owner
-     * ([DocumentPropertyConstraint.readsOwner]), the system times and
-     * heights it reads ([DocumentPropertyConstraint.readsSystem]) and the
-     * `countOf` and `sumOf` totals it reads ([DocumentPropertyConstraint.readsTotals]).
+     * ([DocumentPropertyConstraint.readsOwner]), the system times, heights
+     * and revisions it reads ([DocumentPropertyConstraint.readsSystem]),
+     * whether it reads the stored version of the document through `$old.`
+     * ([DocumentPropertyConstraint.readsStored]), the `countOf` and `sumOf`
+     * totals it reads ([DocumentPropertyConstraint.readsTotals]) and the values
+     * it reads of referenced documents ([DocumentPropertyConstraint.readsReferenced]).
      *
      * [serializedContract] is the contract's platform serialization, the bytes
      * kept beside a fetched contract ([ContractWithSerialization.binarySerialization],
@@ -705,15 +709,25 @@ class Contracts internal constructor(private val sdk: Sdk) {
      * with (what `DocumentTransactions.create` takes) and [ownerId] the 32-byte
      * identity that would own it, which `$ownerId` reads. Rust builds the
      * document the create path builds and judges it with the check consensus
-     * runs; nothing but the rules is checked. The device clock stands in for
-     * the block time the create records (`$createdAt`, `$updatedAt`,
-     * `$transferredAt`), so a rule comparing one is judged as of now; a rule
-     * reading a block height (`$createdAtBlockHeight`, ...) is not judged,
-     * since the height is unknown until the block, nor is a rule reading a
+     * runs; nothing but the rules is checked. A create has no stored version,
+     * so a rule reading one through `$old.`
+     * ([DocumentPropertyConstraint.readsStored]) is judged as consensus judges
+     * it on a create, every such read absent (a stored time, height or
+     * revision reads 0), and `$revision` reads 1, the revision a created
+     * document starts at. The device clock stands in for the block time the
+     * create records (`$createdAt`, `$updatedAt`, `$transferredAt`), so a
+     * rule comparing one is judged as of now; a rule reading a block height
+     * the create records (`$createdAtBlockHeight`, ..., without `$old.`) is
+     * not judged, since the height is unknown until the block (a stored
+     * height, `$old.$createdAtBlockHeight`, ..., reads 0 and is judged), nor
+     * is a rule reading a
      * `countOf` or `sumOf` total ([DocumentPropertyConstraint.readsTotals]),
-     * which the platform reads from state when the document is sent; consensus
-     * may still refuse the document for either. [serializedContract] is as for
-     * [propertyConstraints]; no network call.
+     * which the platform reads from state when the document is sent, nor one
+     * reading a value of a referenced document
+     * ([DocumentPropertyConstraint.readsReferenced]), which the platform reads
+     * when it checks the reference; consensus may still refuse the document
+     * for any of these. [serializedContract] is as for [propertyConstraints];
+     * no network call.
      *
      * @throws DashSdkError.InvalidParameter for empty contract bytes, an owner
      *   id that is not 32 bytes, or properties that are not a JSON object.
@@ -736,6 +750,29 @@ class Contracts internal constructor(private val sdk: Sdk) {
             )
         } ?: throw DashSdkError.InternalError("No propertyConstraints verdict returned")
         PropertyConstraintViolation.fromJson(json)
+    }
+
+    companion object {
+        /**
+         * [contractJson] (a contract as [fetchJson] and [fetchWithSerialization]
+         * return it) with its property type shorthands (protocol version 14)
+         * written in full: `"type": "identifier"` becomes the 32-byte identifier
+         * byte array and `"type": "bytes", "size": n` a byte array of exactly n
+         * bytes, in every document type schema (object members and typed array
+         * `items` included) and in `schemaDefs`. Everything else comes back as
+         * given. Rust expands them as Platform does when it parses the
+         * contract; the contract itself is stored as sent, so keep [contractJson]
+         * and read the schemas from this view. Needs no SDK; no network call.
+         * Port of the expansion Swift's `DataContractParser` runs before parsing.
+         *
+         * @throws DashSdkError.InvalidParameter for text that is not a JSON object.
+         */
+        fun expandPropertyTypeShorthands(contractJson: String): String {
+            NativeLoader.ensureLoaded()
+            return mapNativeErrors {
+                QueriesNative.dataContractJsonExpandPropertyTypeShorthands(contractJson)
+            } ?: throw DashSdkError.InternalError("No contract JSON returned")
+        }
     }
 }
 

@@ -139,7 +139,9 @@ fn index_value() -> StructureNode {
         KeyEncoding::SerializedValue,
         "The property's value serialized for ordering; \
          empty for null; a window start for a time or \
-         integer range property",
+         integer range property; one element for a typed \
+         array, a document being under each distinct \
+         element of its list",
     )
     .kinds(
         &[

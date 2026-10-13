@@ -3,8 +3,9 @@
 //! transition's token payment info asks, and `GasFeesPaidBy::resolve` names the payer: the
 //! contract owner is charged instead of the signer, an unfunded signer gets through check tx, an
 //! insistence the contract owner cannot honour is refused unpaid, a preference falls back to the
-//! signer, a request the document type does not offer is a paid rejection, and a sponsored
-//! transition that fails is paid for by its signer.
+//! signer, a request the document type does not offer is a paid rejection, a sponsored
+//! transition that fails is paid for by its signer, and the fee increase a signer chooses is
+//! always the signer's to pay.
 
 use super::*;
 
@@ -30,11 +31,13 @@ pub(crate) mod gas_sponsorship_tests {
         AgreedFeeMultiplier, DocumentActionFeeAgreement,
     };
     use dpp::data_contract::DataContract;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::document::Document;
     use dpp::identity::accessors::IdentitySettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::{Identity, IdentityPublicKey};
-    use dpp::prelude::{Identifier, Revision};
+    use dpp::prelude::{Identifier, Revision, UserFeeIncrease};
+    use dpp::platform_value::platform_value;
     use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
     use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
     use dpp::state_transition::StateTransition;
@@ -51,6 +54,7 @@ pub(crate) mod gas_sponsorship_tests {
     const GAS_FEES_PAID_BY_NOT_ALLOWED: u32 = 40129;
     pub(crate) const GAS_SPONSOR_INSUFFICIENT_BALANCE: u32 = 40222;
     pub(crate) const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
+    const IDENTITY_PUBLIC_KEY_BUDGET_EXCEEDED: u32 = 40218;
     const IDENTITY_DOES_NOT_HAVE_ENOUGH_TOKEN_BALANCE: u32 = 40700;
     const REQUIRED_TOKEN_PAYMENT_INFO_NOT_SET: u32 = 40115;
     const INVALID_DOCUMENT_REVISION: u32 = 40106;
@@ -389,8 +393,30 @@ pub(crate) mod gas_sponsorship_tests {
                 DocumentTransitionActionType::Create,
                 self.fee_schedule_multiplier(),
             );
-            self.card_creation_agreeing_by(creator, key, signer, requested, agreement)
+            self.card_creation_agreeing_by(creator, key, signer, requested, agreement, 0)
                 .await
+        }
+
+        /// The user's card creation asking `requested` for the gas and raising its processing
+        /// fee by `user_fee_increase` percent
+        async fn card_creation_with_fee_increase(
+            &self,
+            requested: GasFeesPaidBy,
+            user_fee_increase: UserFeeIncrease,
+        ) -> StateTransition {
+            let agreement = self.card_action_fee_agreement(
+                DocumentTransitionActionType::Create,
+                self.fee_schedule_multiplier(),
+            );
+            self.card_creation_agreeing_by(
+                &self.user,
+                &self.user_key,
+                &self.user_signer,
+                Some(requested),
+                agreement,
+                user_fee_increase,
+            )
+            .await
         }
 
         /// The fee multiplier of the fee schedule, with no tolerance: what a signer knows on a
@@ -434,11 +460,13 @@ pub(crate) mod gas_sponsorship_tests {
                 &self.user_signer,
                 Some(requested),
                 agreement,
+                0,
             )
             .await
         }
 
-        /// `creator`'s card creation carrying `agreement` as its action fee agreement
+        /// `creator`'s card creation carrying `agreement` as its action fee agreement and
+        /// raising its processing fee by `user_fee_increase` percent
         pub(crate) async fn card_creation_agreeing_by(
             &self,
             creator: &Identity,
@@ -446,6 +474,7 @@ pub(crate) mod gas_sponsorship_tests {
             signer: &SimpleSigner,
             requested: Option<GasFeesPaidBy>,
             agreement: Option<DocumentActionFeeAgreement>,
+            user_fee_increase: UserFeeIncrease,
         ) -> StateTransition {
             let (document, entropy) = self.card_of(creator);
 
@@ -457,7 +486,7 @@ pub(crate) mod gas_sponsorship_tests {
                 entropy.0,
                 key,
                 2,
-                0,
+                user_fee_increase,
                 requested.map(|gas_fees_paid_by| {
                     TokenPaymentInfo::V0(TokenPaymentInfoV0 {
                         payment_token_contract_id: None,
@@ -756,6 +785,77 @@ pub(crate) mod gas_sponsorship_tests {
     }
 
     #[tokio::test]
+    async fn should_make_the_signer_pay_for_duplicate_keys_in_a_sponsored_creation() {
+        let version = PlatformVersion::latest();
+        let setup = Sponsorship::build_customized(
+            version,
+            GasFeesPaidBy::ContractOwner,
+            false,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+            None,
+            |contract| {
+                let mut schema = contract
+                    .document_type_for_name("card")
+                    .unwrap()
+                    .schema()
+                    .clone();
+                let properties = schema.get_mut("properties").unwrap().unwrap();
+                let position = properties.as_map().unwrap().len() as u32;
+                properties.insert("meta".into(), platform_value!({
+                    "type": "object", "position": position,
+                    "properties": {"name": {"type": "string", "maxLength": 32, "position": 0}},
+                    "required": ["name"], "additionalProperties": false
+                })).unwrap();
+                contract
+                    .set_document_schema("card", schema, true, &mut Vec::new(), version)
+                    .unwrap();
+            },
+        );
+        let (mut document, entropy) = setup.card_of(&setup.user);
+        document.set(
+            "meta",
+            Value::Map(vec![
+                ("name".into(), "first".into()),
+                ("name".into(), "last".into()),
+            ]),
+        );
+        let transition = BatchTransition::new_document_creation_transition_from_document(
+            document,
+            setup.contract.document_type_for_name("card").unwrap(),
+            entropy.0,
+            &setup.user_key,
+            2,
+            0,
+            Some(TokenPaymentInfo::V0(TokenPaymentInfoV0 {
+                payment_token_contract_id: None,
+                token_contract_position: 0,
+                minimum_token_cost: None,
+                maximum_token_cost: Some(CARD_COST),
+                gas_fees_paid_by: GasFeesPaidBy::ContractOwner,
+            })),
+            &setup.user_signer,
+            version,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(setup.check_tx(&transition), vec![10103]);
+        let tx = setup.platform.drive.grove.start_transaction();
+        let result = setup.process(&transition, &tx);
+        assert_matches!(&result, PaidConsensusError {error, ..} if error.code() == 10103);
+        let fee = total_fee(&result);
+        assert!(fee > 0);
+        assert_eq!(setup.credits(&setup.user, &tx), dash_to_credits!(0.1) - fee);
+        assert_eq!(
+            setup.credits(&setup.contract_owner, &tx),
+            dash_to_credits!(0.1)
+        );
+        assert_eq!(setup.gold(&setup.user, &tx), 15);
+    }
+
+    #[tokio::test]
     async fn should_make_the_signer_pay_for_a_sponsored_creation_that_fails() {
         // The user asks the contract owner to pay, and can, but has too little gold: the state
         // check refuses the creation, and the user pays for that work, not the sponsor.
@@ -956,6 +1056,207 @@ pub(crate) mod gas_sponsorship_tests {
             Some(budget),
             "the creation moved nothing out of the identity, and the sponsor paid the fee"
         );
+    }
+
+    /// The user's card creation insisting on the contract owner for the gas and raising its
+    /// processing fee by `user_fee_increase` percent, processed on a fresh chain where the
+    /// contract owner holds 0.1 Dash and the user 1 Dash, enough for the largest increase: the
+    /// result, and what the contract owner and the user paid
+    async fn sponsored_creation_with_fee_increase(
+        user_fee_increase: UserFeeIncrease,
+    ) -> (StateTransitionExecutionResult, Credits, Credits) {
+        let setup = Sponsorship::new(
+            GasFeesPaidBy::ContractOwner,
+            dash_to_credits!(0.1),
+            dash_to_credits!(1),
+            15,
+        );
+        let transition = setup
+            .card_creation_with_fee_increase(GasFeesPaidBy::ContractOwner, user_fee_increase)
+            .await;
+        assert_eq!(setup.check_tx(&transition), Vec::<u32>::new());
+        let tx = setup.platform.drive.grove.start_transaction();
+        let result = setup.process(&transition, &tx);
+        assert_matches!(result, SuccessfulExecution { .. });
+        let owner_paid = dash_to_credits!(0.1) - setup.credits(&setup.contract_owner, &tx);
+        let user_paid = dash_to_credits!(1) - setup.credits(&setup.user, &tx);
+        (result, owner_paid, user_paid)
+    }
+
+    #[tokio::test]
+    async fn should_charge_the_fee_increase_to_the_signer_who_chose_it_and_not_the_contract_owner()
+    {
+        let (unraised, owner_paid_unraised, user_paid_unraised) =
+            sponsored_creation_with_fee_increase(0).await;
+        assert_eq!(user_paid_unraised, 0);
+        assert_eq!(owner_paid_unraised, total_fee(&unraised));
+        let SuccessfulExecution {
+            fee_result: unraised_fee,
+            ..
+        } = unraised
+        else {
+            panic!("expected a successful execution, got {unraised:?}");
+        };
+
+        let (raised, owner_paid, user_paid) =
+            sponsored_creation_with_fee_increase(UserFeeIncrease::MAX).await;
+        assert_eq!(
+            owner_paid, owner_paid_unraised,
+            "the contract owner pays the fee as if no increase was chosen"
+        );
+        assert_eq!(
+            user_paid,
+            unraised_fee.processing_fee * UserFeeIncrease::MAX as Credits / 100,
+            "the user pays the processing fee its increase adds"
+        );
+        assert_eq!(
+            total_fee(&raised),
+            owner_paid + user_paid,
+            "the result reports the fee both of them paid"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_let_a_contract_owner_who_covers_only_the_unincreased_gas_sponsor_a_fee_increase(
+    ) {
+        for gas_fees_paid_by in [
+            GasFeesPaidBy::ContractOwner,
+            GasFeesPaidBy::PreferContractOwner,
+        ] {
+            // The gas estimated with the contract owner paying and no increase, read off the
+            // same creation on an identical chain: exactly what their balance has to hold
+            let probe = Sponsorship::new(
+                gas_fees_paid_by,
+                dash_to_credits!(0.1),
+                dash_to_credits!(0.1),
+                15,
+            );
+            let transition = probe
+                .card_creation_with_fee_increase(gas_fees_paid_by, 0)
+                .await;
+            let tx = probe.platform.drive.grove.start_transaction();
+            let SuccessfulExecution {
+                estimated_fees: Some(estimated_fees),
+                ..
+            } = probe.process(&transition, &tx)
+            else {
+                panic!("expected a successful execution with an estimate");
+            };
+            let unincreased_gas = estimated_fees.total_base_fee();
+            // A 100% increase doubles the processing fee, so the gas with it no longer fits
+            assert!(estimated_fees.processing_fee > 0);
+
+            let setup =
+                Sponsorship::new(gas_fees_paid_by, unincreased_gas, dash_to_credits!(1), 15);
+            let transition = setup
+                .card_creation_with_fee_increase(gas_fees_paid_by, 100)
+                .await;
+            assert_eq!(setup.check_tx(&transition), Vec::<u32>::new());
+
+            let tx = setup.platform.drive.grove.start_transaction();
+            let result = setup.process(&transition, &tx);
+            assert_matches!(result, SuccessfulExecution { .. });
+            let owner_paid = unincreased_gas - setup.credits(&setup.contract_owner, &tx);
+            let user_paid = dash_to_credits!(1) - setup.credits(&setup.user, &tx);
+            assert!(owner_paid > 0, "the contract owner pays the gas");
+            assert!(user_paid > 0, "the user pays its fee increase");
+            assert_eq!(total_fee(&result), owner_paid + user_paid);
+        }
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_sponsored_creation_whose_signer_cannot_pay_its_fee_increase_unpaid() {
+        for gas_fees_paid_by in [
+            GasFeesPaidBy::ContractOwner,
+            GasFeesPaidBy::PreferContractOwner,
+        ] {
+            let setup = Sponsorship::new(gas_fees_paid_by, dash_to_credits!(0.1), 0, 15);
+            let transition = setup
+                .card_creation_with_fee_increase(gas_fees_paid_by, 100)
+                .await;
+
+            assert_eq!(
+                setup.check_tx(&transition),
+                vec![IDENTITY_INSUFFICIENT_BALANCE],
+                "check tx keeps it out of the mempool"
+            );
+
+            let tx = setup.platform.drive.grove.start_transaction();
+            let result = setup.process(&transition, &tx);
+            assert_matches!(
+                result,
+                UnpaidConsensusError(error) if error.code() == IDENTITY_INSUFFICIENT_BALANCE
+            );
+            assert_eq!(
+                setup.credits(&setup.contract_owner, &tx),
+                dash_to_credits!(0.1),
+                "the contract owner pays nothing"
+            );
+            assert_eq!(setup.gold(&setup.user, &tx), 15, "nothing was created");
+        }
+    }
+
+    #[tokio::test]
+    async fn should_spend_the_fee_increase_from_the_key_budget_when_the_contract_owner_pays() {
+        let budget = dash_to_credits!(0.05);
+        let setup = Sponsorship::build(
+            PlatformVersion::latest(),
+            GasFeesPaidBy::ContractOwner,
+            false,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+            Some(budget),
+        );
+        let transition = setup
+            .card_creation_with_fee_increase(GasFeesPaidBy::ContractOwner, 100)
+            .await;
+        let tx = setup.platform.drive.grove.start_transaction();
+        let result = setup.process(&transition, &tx);
+
+        assert_matches!(result, SuccessfulExecution { .. });
+        let user_paid = dash_to_credits!(0.1) - setup.credits(&setup.user, &tx);
+        assert!(user_paid > 0, "the user pays its fee increase");
+        let remaining_budget = setup
+            .platform
+            .drive
+            .fetch_identity_key_remaining_budget(
+                setup.user.id().to_buffer(),
+                setup.user_key.id(),
+                Some(&tx),
+                PlatformVersion::latest(),
+            )
+            .expect("expected to fetch the remaining budget");
+        assert_eq!(remaining_budget, Some(budget - user_paid));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_fee_increase_the_key_budget_cannot_cover_when_the_contract_owner_pays()
+    {
+        let setup = Sponsorship::build(
+            PlatformVersion::latest(),
+            GasFeesPaidBy::ContractOwner,
+            false,
+            dash_to_credits!(0.1),
+            dash_to_credits!(0.1),
+            15,
+            Some(1),
+        );
+        let transition = setup
+            .card_creation_with_fee_increase(GasFeesPaidBy::ContractOwner, 100)
+            .await;
+        let tx = setup.platform.drive.grove.start_transaction();
+        let result = setup.process(&transition, &tx);
+
+        assert_matches!(
+            result,
+            UnpaidConsensusError(error) if error.code() == IDENTITY_PUBLIC_KEY_BUDGET_EXCEEDED
+        );
+        assert_eq!(
+            setup.credits(&setup.contract_owner, &tx),
+            dash_to_credits!(0.1)
+        );
+        assert_eq!(setup.credits(&setup.user, &tx), dash_to_credits!(0.1));
     }
 
     #[tokio::test]

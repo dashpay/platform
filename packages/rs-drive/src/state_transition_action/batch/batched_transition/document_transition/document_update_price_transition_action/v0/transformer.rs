@@ -87,7 +87,7 @@ impl DocumentUpdatePriceTransitionActionV0 {
                 DocumentUpdatePriceTransitionActionV0 {
                     base,
                     document: modified_document,
-                    property_constraint_aggregates: Default::default(),
+                    property_constraint_reads: Default::default(),
                 }
                 .into(),
             ))

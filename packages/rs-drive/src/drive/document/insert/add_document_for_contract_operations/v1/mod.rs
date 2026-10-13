@@ -69,7 +69,8 @@ impl Drive {
     /// (`update_document_for_contract_operations` v1 redirects here). It is v1's insert, except
     /// that a document whose type declares a `ttl` gets no expirations tree entry and prepays
     /// only the deletion of the bytes the change may add: the change keeps the entry and the
-    /// deletion its creation prepaid. Update v1 calls this directly: the one table selecting it
+    /// deletion its creation prepaid. Nor does it preallocate the trees of referring indexes,
+    /// which the document's creation made and a change never writes. Update v1 calls this directly: the one table selecting it
     /// (`DRIVE_DOCUMENT_METHOD_VERSIONS_V4`) also selects this insert.
     #[allow(clippy::too_many_arguments)]
     pub(in crate::drive::document) fn estimate_document_change_as_insert_operations_v1(
@@ -289,15 +290,20 @@ impl Drive {
         // refersTo declaration, create that index's trees for entries
         // referencing this document now — see
         // `add_preallocated_index_tree_operations`. A no-op for every
-        // contract without the (PV14+, indexOnly-only) flag.
-        self.add_preallocated_index_tree_operations_for_referring_types(
-            &document_and_contract_info,
-            previous_batch_operations,
-            estimated_costs_only_with_layer_info,
-            transaction,
-            &mut batch_operations,
-            platform_version,
-        )?;
+        // contract without the (PV14+, indexOnly-only) flag. A change of
+        // the document preallocates nothing (its trees came with its
+        // creation, and an applied replace walks no preallocation), so its
+        // dry run leaves them out and still bounds what the change writes.
+        if !estimates_a_change {
+            self.add_preallocated_index_tree_operations_for_referring_types(
+                &document_and_contract_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+        }
 
         Ok(batch_operations)
     }

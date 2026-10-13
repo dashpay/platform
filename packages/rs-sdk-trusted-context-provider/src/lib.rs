@@ -10,6 +10,7 @@
 
 pub mod error;
 pub mod provider;
+mod quorum_refresh;
 pub mod types;
 
 pub use error::TrustedContextProviderError;

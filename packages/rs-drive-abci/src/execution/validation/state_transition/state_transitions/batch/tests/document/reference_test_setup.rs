@@ -50,6 +50,23 @@ pub(super) fn process_and_commit(
     transition: &StateTransition,
     platform_version: &PlatformVersion,
 ) -> StateTransitionsProcessingResult {
+    process_and_commit_at(
+        platform,
+        platform_state,
+        transition,
+        &BlockInfo::default(),
+        platform_version,
+    )
+}
+
+/// [`process_and_commit`] in the block `block_info`.
+pub(super) fn process_and_commit_at(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    platform_state: &PlatformState,
+    transition: &StateTransition,
+    block_info: &BlockInfo,
+    platform_version: &PlatformVersion,
+) -> StateTransitionsProcessingResult {
     let serialized = transition
         .serialize_to_bytes()
         .expect("expected the batch transition to serialize");
@@ -59,7 +76,7 @@ pub(super) fn process_and_commit(
         .process_raw_state_transitions(
             &[serialized],
             platform_state,
-            &BlockInfo::default(),
+            block_info,
             &transaction,
             platform_version,
             false,
@@ -99,6 +116,36 @@ pub(super) async fn create_document<S: Signer<IdentityPublicKey>>(
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> (Document, StateTransitionsProcessingResult) {
+    let (document, create) = create_transition(
+        contract,
+        type_name,
+        properties,
+        owner,
+        key,
+        nonce,
+        signer,
+        rng,
+        platform_version,
+    )
+    .await;
+    let result = process_and_commit(platform, platform_state, &create, platform_version);
+    (document, result)
+}
+
+/// The create transition of a document of `type_name` with exactly
+/// `properties` set, and the document it creates, not yet processed.
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn create_transition<S: Signer<IdentityPublicKey>>(
+    contract: &DataContract,
+    type_name: &str,
+    properties: &[(&str, Value)],
+    owner: Identifier,
+    key: &IdentityPublicKey,
+    nonce: u64,
+    signer: &S,
+    rng: &mut StdRng,
+    platform_version: &PlatformVersion,
+) -> (Document, StateTransition) {
     let document_type = contract
         .document_type_for_name(type_name)
         .expect("doctype exists");
@@ -136,10 +183,10 @@ pub(super) async fn create_document<S: Signer<IdentityPublicKey>>(
     )
     .await
     .expect("expected the create transition");
-    let result = process_and_commit(platform, platform_state, &create, platform_version);
-    (document, result)
+    (document, create)
 }
 
+/// Replaces `document` in the block `block_info`.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn replace_document<S: Signer<IdentityPublicKey>>(
     platform: &TempPlatform<MockCoreRPCLike>,
@@ -150,6 +197,7 @@ pub(super) async fn replace_document<S: Signer<IdentityPublicKey>>(
     key: &IdentityPublicKey,
     nonce: u64,
     signer: &S,
+    block_info: &BlockInfo,
     platform_version: &PlatformVersion,
 ) -> StateTransitionsProcessingResult {
     let document_type = contract
@@ -168,7 +216,13 @@ pub(super) async fn replace_document<S: Signer<IdentityPublicKey>>(
     )
     .await
     .expect("expected the replace transition");
-    process_and_commit(platform, platform_state, &replace, platform_version)
+    process_and_commit_at(
+        platform,
+        platform_state,
+        &replace,
+        block_info,
+        platform_version,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -275,6 +329,17 @@ impl ReferenceTestSetup {
         type_name: &str,
         document: &mut Document,
     ) -> StateTransitionsProcessingResult {
+        self.replace_at(type_name, document, &BlockInfo::default())
+            .await
+    }
+
+    /// [`Self::replace`] in the block `block_info`.
+    pub(super) async fn replace_at(
+        &mut self,
+        type_name: &str,
+        document: &mut Document,
+        block_info: &BlockInfo,
+    ) -> StateTransitionsProcessingResult {
         document.increment_revision().expect("revision increments");
         let nonce = self.next_nonce();
         let result = replace_document(
@@ -286,6 +351,7 @@ impl ReferenceTestSetup {
             &self.key,
             nonce,
             &self.signer,
+            block_info,
             PlatformVersion::latest(),
         )
         .await;

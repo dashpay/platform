@@ -34,6 +34,14 @@ impl<C> Platform<C> {
                 )),
             )));
         }
+        // GroveDB cannot prove an empty query; without a proof the answer is just empty.
+        if prove && ids.is_empty() {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument(
+                    "ids must contain at least one identifier when requesting a proof".to_string(),
+                ),
+            ));
+        }
         let contract_ids = check_validation_result_with_data!(ids
             .into_iter()
             .map(|contract_id_vec| {
@@ -100,7 +108,9 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::{assert_invalid_identifier, setup_platform};
+    use crate::query::tests::{
+        assert_invalid_argument_status, assert_invalid_identifier, setup_platform,
+    };
     use dpp::dashcore::Network;
 
     #[test]
@@ -207,6 +217,25 @@ mod tests {
                 result: Some(get_data_contracts_response_v0::Result::Proof(_)),
                 metadata: Some(_),
             })
+        ));
+    }
+
+    /// GroveDB cannot prove an empty query, so asking a proof of an empty list is refused as
+    /// the request's fault. Without a proof the answer is just empty.
+    #[test]
+    fn should_refuse_a_proof_of_an_empty_id_list_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let request = |prove| GetDataContractsRequestV0 { ids: vec![], prove };
+
+        let unproved = platform
+            .query_data_contracts_v0(request(false), &state, version)
+            .expect("expected query to succeed");
+        assert!(unproved.is_valid(), "{:?}", unproved.errors);
+
+        assert_invalid_argument_status(platform.query_data_contracts_v0(
+            request(true),
+            &state,
+            version,
         ));
     }
 }
