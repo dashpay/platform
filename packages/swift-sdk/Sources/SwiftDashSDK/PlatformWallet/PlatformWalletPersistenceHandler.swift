@@ -7010,11 +7010,15 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             guard complete else { continue }
             var amounts: [UInt64] = []
             var allOutputsOwned = true
-            let ownedVouts = Set(transaction.outputs.filter { !$0.isDeleted && Self.isWalletOwnedTxo($0) }.map(\.vout))
-            // An address-matched output with no linked TXO carries no wallet of
-            // its own, so it counts only for the spending wallets: another local
+            // An output counts only for the spending wallets — a linked TXO by
+            // its wallet, an address-matched one by its address's: another local
             // wallet's credit must not hide inside the sender's scalar.
             let spendingWallets = Set(inputs.compactMap { Self.resolvedWalletId(of: $0) })
+            let ownedVouts = Set(transaction.outputs.filter { output -> Bool in
+                guard !output.isDeleted, Self.isWalletOwnedTxo(output),
+                      let owner = Self.resolvedWalletId(of: output) else { return false }
+                return spendingWallets.contains(owner)
+            }.map(\.vout))
             for (index, output) in decoded.outputs.enumerated() {
                 // OP_RETURN burns (including asset locks) are not spendable Core outputs.
                 if output.isOpReturn { continue }

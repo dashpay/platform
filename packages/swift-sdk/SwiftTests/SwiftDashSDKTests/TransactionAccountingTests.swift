@@ -501,7 +501,7 @@ final class TransactionAccountingTests: XCTestCase {
         let tx = try localTransfer(in: container.mainContext, assetLock: true)
         let walletA = Data(repeating: 1, count: 32)
         let walletB = Data(repeating: 2, count: 32)
-        // A's Rust record is outgoing, while reconciliation sees both local wallets.
+        // A's Rust record is outgoing, and reconciliation keeps the stored scalar the sender's.
         tx.direction = CoreDirectionCode.outgoing
         XCTAssertEqual(tx.direction(for: walletA), CoreDirectionCode.outgoing)
         XCTAssertEqual(tx.direction(for: walletB), CoreDirectionCode.incoming)
@@ -510,7 +510,7 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertFalse(handler.loadWalletList().errored)
         let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>())
             .first { $0.txid == tx.txid })
-        XCTAssertEqual(row.direction, CoreDirectionCode.internalTransfer)
+        XCTAssertEqual(row.direction, CoreDirectionCode.outgoing)
         XCTAssertEqual(row.direction(for: walletA), CoreDirectionCode.outgoing)
         XCTAssertEqual(row.direction(for: walletB), CoreDirectionCode.incoming)
     }
@@ -625,6 +625,19 @@ final class TransactionAccountingTests: XCTestCase {
         let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>()).first { $0.txid == spender.txid })
         XCTAssertEqual(row.netAmount, -100, "the receiving wallet's credit is not the sender's")
         XCTAssertEqual(row.netAmount(for: senderId), -100)
+    }
+
+    func testShouldNotCountAnotherLocalWalletsLinkedOutputForTheSender() throws {
+        let container = try DashModelContainer.createInMemory()
+        let tx = try localTransfer(in: container.mainContext)
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        XCTAssertFalse(handler.loadWalletList().errored)
+        let row = try XCTUnwrap(ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>())
+            .first { $0.txid == tx.txid })
+        XCTAssertEqual(row.netAmount, -100, "the receiving wallet's linked credit is not the sender's")
+        XCTAssertEqual(row.direction, CoreDirectionCode.outgoing)
+        XCTAssertEqual(row.netAmount(for: Data(repeating: 1, count: 32)), -100)
+        XCTAssertEqual(row.netAmount(for: Data(repeating: 2, count: 32)), 90)
     }
 
     func testShouldExcludePersistedContactOutputsFromOwnedAccounting() throws {
