@@ -30,16 +30,10 @@ pub(crate) fn provider_hash_to_20(bytes: &[u8]) -> [u8; 20] {
 
 /// Render a ProUpServTx service address as `"ip:port"`, collapsing an
 /// IPv4-mapped IPv6 address to V4 so a normal masternode renders as
-/// `"1.2.3.4:port"`.
+/// `"1.2.3.4:port"`. A native IPv6 address is bracketed,
+/// `"[2001:db8::1]:port"`, as a ProRegTx's address renders.
 pub fn provider_ip_port(address: std::net::SocketAddr) -> String {
-    let ip = match address.ip() {
-        std::net::IpAddr::V6(v6) => v6
-            .to_ipv4_mapped()
-            .map(std::net::IpAddr::V4)
-            .unwrap_or(std::net::IpAddr::V6(v6)),
-        v4 => v4,
-    };
-    format!("{}:{}", ip, address.port())
+    std::net::SocketAddr::new(address.ip().to_canonical(), address.port()).to_string()
 }
 
 /// The script a ProRegTx / ProUpRegTx pays the owner reward to. Before
@@ -66,6 +60,7 @@ pub(crate) fn owner_payout_script<'a>(
 /// entry of its extended address map. Hosts reach the node's DAPI at the
 /// service address's IP with this port, so only an entry at that IP counts:
 /// one at another IP or a domain gives `None` rather than a wrong endpoint.
+/// An IPv4-mapped IPv6 address is the same IP as the IPv4 address it maps.
 pub(crate) fn platform_http_port(
     service_address: &MasternodeNetInfo,
     platform_http_port: Option<u16>,
@@ -73,7 +68,10 @@ pub(crate) fn platform_http_port(
     let MasternodeNetInfo::Extended(net_info) = service_address else {
         return platform_http_port;
     };
-    let service_ip = service_address.primary_service_address()?.ip();
+    let service_ip = service_address
+        .primary_service_address()?
+        .ip()
+        .to_canonical();
     let (_, https) = net_info
         .purposes
         .iter()
@@ -89,7 +87,7 @@ pub(crate) fn platform_http_port(
                 Bip155Network::Ipv6 => IpAddr::from(<[u8; 16]>::try_from(addr.as_slice()).ok()?),
                 _ => return None,
             };
-            (ip == service_ip).then_some(*port)
+            (ip.to_canonical() == service_ip).then_some(*port)
         }
         _ => None,
     })
@@ -1230,6 +1228,151 @@ mod tests {
             port: 443,
         });
         assert_eq!(platform_http_port(&domain, None), None);
+    }
+
+    /// The version-3 ProUpServTx's extended addresses with `core_p2p` as its
+    /// `CoreP2P` entries and `https` as its `PlatformHttps` entries.
+    fn v3_service_address(
+        core_p2p: Vec<NetInfoEntry>,
+        https: Vec<NetInfoEntry>,
+    ) -> MasternodeNetInfo {
+        use super::core_v24_vectors::*;
+        use dashcore::transaction::TransactionPayload;
+
+        let Some(TransactionPayload::ProviderUpdateServicePayloadType(update)) =
+            decode(EVO_PRO_UP_SERV_TX).special_transaction_payload
+        else {
+            panic!("ProUpServTx");
+        };
+        let mut service_address = update.service_address;
+        let MasternodeNetInfo::Extended(net_info) = &mut service_address else {
+            panic!("version 3 carries extended addresses");
+        };
+        let mut replaced = 0;
+        for (purpose, entries) in &mut net_info.purposes {
+            match purpose {
+                NetInfoPurpose::CoreP2P => *entries = core_p2p.clone(),
+                NetInfoPurpose::PlatformHttps => *entries = https.clone(),
+                NetInfoPurpose::PlatformP2P => continue,
+            }
+            replaced += 1;
+        }
+        assert_eq!(replaced, 2, "the vector has CoreP2P and PlatformHttps");
+        service_address
+    }
+
+    /// An IPv4 service entry at `octets` with `port`.
+    fn ipv4_entry(octets: [u8; 4], port: u16) -> NetInfoEntry {
+        NetInfoEntry::Service {
+            network: Bip155Network::Ipv4,
+            addr: octets.to_vec(),
+            port,
+        }
+    }
+
+    /// An IPv6 service entry holding the IPv4-mapped form of `octets`.
+    fn ipv4_mapped_entry(octets: [u8; 4], port: u16) -> NetInfoEntry {
+        NetInfoEntry::Service {
+            network: Bip155Network::Ipv6,
+            addr: std::net::Ipv4Addr::from(octets)
+                .to_ipv6_mapped()
+                .octets()
+                .to_vec(),
+            port,
+        }
+    }
+
+    /// An IPv4-mapped IPv6 address is the IPv4 address it maps, on either
+    /// side of the comparison: an HTTPS entry written one way serves a
+    /// service address written the other way.
+    #[test]
+    fn should_match_an_ipv4_mapped_https_entry_to_the_service_ip() {
+        let ip = [68, 67, 122, 237];
+
+        let mapped_https = v3_service_address(
+            vec![ipv4_entry(ip, 20001)],
+            vec![ipv4_mapped_entry(ip, 443)],
+        );
+        assert_eq!(platform_http_port(&mapped_https, None), Some(443));
+
+        let mapped_service = v3_service_address(
+            vec![ipv4_mapped_entry(ip, 20001)],
+            vec![ipv4_entry(ip, 443)],
+        );
+        assert_eq!(platform_http_port(&mapped_service, None), Some(443));
+    }
+
+    /// Each `PlatformHttps` entry that cannot give the port is skipped on its
+    /// own, so a matching entry after it still gives the port: one at another
+    /// IP, a domain, one on a network without an IP address, IPv4 and IPv6
+    /// entries of the wrong length, and an invalid entry. Every skipped
+    /// entry has its own port, so taking any of them shows in the result.
+    #[test]
+    fn should_skip_each_unusable_https_entry_before_a_matching_one() {
+        let ip = [68, 67, 122, 237];
+        let https = vec![
+            ipv4_entry([10, 0, 0, 1], 441),
+            NetInfoEntry::Domain {
+                host: "dapi.example.org".to_string(),
+                port: 442,
+            },
+            NetInfoEntry::Service {
+                network: Bip155Network::TorV3,
+                addr: vec![7; 32],
+                port: 443,
+            },
+            NetInfoEntry::Service {
+                network: Bip155Network::Ipv4,
+                addr: ip[..3].to_vec(),
+                port: 444,
+            },
+            NetInfoEntry::Service {
+                network: Bip155Network::Ipv6,
+                addr: ip.to_vec(),
+                port: 445,
+            },
+            NetInfoEntry::Invalid,
+            ipv4_entry(ip, 8443),
+        ];
+
+        let service_address = v3_service_address(vec![ipv4_entry(ip, 20001)], https);
+        assert_eq!(platform_http_port(&service_address, None), Some(8443));
+    }
+
+    /// A native IPv6 service address renders bracketed, `[ip]:port`, so a
+    /// host can split it into IP and port, and a ProRegTx and a ProUpServTx
+    /// render the same address alike. An IPv4-mapped address renders as
+    /// IPv4.
+    #[test]
+    fn should_bracket_a_native_ipv6_service_address() {
+        use dashcore::transaction::TransactionPayload;
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let native: SocketAddr = "[2001:db8::1]:20001".parse().expect("socket address");
+        let mut registration = decode_tx(PROREG_HEX);
+        if let Some(TransactionPayload::ProviderRegistrationPayloadType(p)) =
+            &mut registration.special_transaction_payload
+        {
+            p.service_address = MasternodeNetInfo::Legacy(native);
+        }
+        let mut update = decode_tx(PROUPSERV_HEX);
+        if let Some(TransactionPayload::ProviderUpdateServicePayloadType(p)) =
+            &mut update.special_transaction_payload
+        {
+            p.service_address = MasternodeNetInfo::Legacy(native);
+        }
+        for tx in [&registration, &update] {
+            assert_eq!(
+                provider_payload_fields(tx).service_address.as_deref(),
+                Some("[2001:db8::1]:20001")
+            );
+        }
+
+        let mapped = SocketAddr::new(
+            Ipv4Addr::new(52, 36, 64, 148).to_ipv6_mapped().into(),
+            19999,
+        );
+        assert_eq!(provider_ip_port(mapped), "52.36.64.148:19999");
     }
 
     /// An empty script is never the owner payout: not an empty
