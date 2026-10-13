@@ -90,10 +90,16 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         DriveOperation::refuse_repeated_token_balance_writes(&operations)?;
         self.refuse_repeated_counter_moves(&operations, block_info, transaction, platform_version)?;
-        let operations = DriveOperation::merge_balance_writes(operations)?;
+        let mut operations = DriveOperation::merge_balance_writes(operations)?;
         let mut processing_pool_credits: Credits = 0;
-        let mut ordinary_operations = Vec::with_capacity(operations.len());
-        for operation in operations {
+        for operation in operations.extract_if(.., |operation| {
+            matches!(
+                operation,
+                DriveOperation::SystemOperation(
+                    SystemOperationType::AddToCurrentEpochProcessingPool { .. }
+                )
+            )
+        }) {
             if let DriveOperation::SystemOperation(
                 SystemOperationType::AddToCurrentEpochProcessingPool { amount },
             ) = operation
@@ -104,11 +110,8 @@ impl Drive {
                         .ok_or(Error::Fee(FeeError::Overflow(
                             "overflow when accumulating processing pool credits",
                         )))?;
-            } else {
-                ordinary_operations.push(operation);
             }
         }
-        let operations = ordinary_operations;
         if operations.is_empty() && (!apply || processing_pool_credits == 0) {
             return Ok(FeeResult::default());
         }
