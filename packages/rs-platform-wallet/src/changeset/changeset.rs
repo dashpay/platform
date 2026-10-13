@@ -148,7 +148,10 @@ pub struct CoreChangeSet {
     /// Populated from `WalletEvent::TransactionInstantLocked`. A persister
     /// that keeps locks stores them from here; the record's own context
     /// reaches it through the record the same event re-emits in `records`
-    /// when the wallet still holds one.
+    /// when the wallet still holds one. One exception: a lock for a
+    /// transaction already finalized, whose chain-locked record was pruned,
+    /// comes without records even when a sibling account still holds an
+    /// unconfirmed slice of it.
     /// Chain-locked records skip this map entirely — by the time a
     /// transaction is chain-locked it's final, and IS-lock state is
     /// no longer informative.

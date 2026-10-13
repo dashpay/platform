@@ -1117,43 +1117,54 @@ async fn reconstruct_asset_locks_for_event(
 
 /// The changeset of an InstantSend lock: the lock, and the locked record as
 /// the manager holds it now.
+///
+/// Two exceptions, both judged on the wallet's own accounts (a contact's
+/// watch-only slice never reaches the stored row, so its finality says
+/// nothing about that row):
+/// - a chain-locked slice is held: nothing, the chain lock supersedes the
+///   lock;
+/// - the transaction is finalized with its record pruned: the lock alone.
 async fn instant_lock_changeset(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
     txid: &Txid,
     instant_lock: &InstantLock,
 ) -> CoreChangeSet {
-    // One read for the finality checks and the re-emitted slices, so all
-    // come from the same snapshot. No wallet or no slices (wallet gone,
-    // record pruned) leave just the lock.
-    let (slices, verdicts, finalized) = {
-        let guard = wallet_manager.read().await;
-        match guard.get_wallet_info(wallet_id) {
-            Some(info) => {
-                let (slices, verdicts) = slices_and_verdicts_for_txid(info, txid);
-                let finalized = info
-                    .core_wallet
-                    .accounts
-                    .all_accounts()
-                    .into_iter()
-                    .any(|account| account.transaction_is_finalized(txid));
-                (slices, verdicts, finalized)
-            }
-            None => Default::default(),
-        }
+    let mut cs = CoreChangeSet::default();
+    // One guard for the finality checks and the re-emitted slices, so all
+    // come from the same snapshot.
+    let guard = wallet_manager.read().await;
+    let Some(info) = guard.get_wallet_info(wallet_id) else {
+        // Wallet gone: just the lock.
+        cs.instant_locks_for_non_final_records
+            .insert(*txid, instant_lock.clone());
+        return cs;
+    };
+    let own_accounts = || {
+        info.core_wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .filter(|account| {
+                !account
+                    .managed_account_type()
+                    .to_account_type()
+                    .is_contact_owned()
+            })
     };
     // IS-lock is informative only for non-final records. If the wallet
     // holds a chain-locked slice of this txid, drop the lock — chain-lock
     // supersedes IS finality. Any slice counts: a chain lock promotes only
     // the slices already in the block, so a sibling can still read
     // unconfirmed.
-    if slices
-        .iter()
-        .any(|record| matches!(record.context, TransactionContext::InChainLockedBlock(_)))
-    {
-        return CoreChangeSet::default();
+    let chain_locked = own_accounts().any(|account| {
+        account.transactions().get(txid).is_some_and(|record| {
+            matches!(record.context, TransactionContext::InChainLockedBlock(_))
+        })
+    });
+    if chain_locked {
+        return cs;
     }
-    let mut cs = CoreChangeSet::default();
     cs.instant_locks_for_non_final_records
         .insert(*txid, instant_lock.clone());
     // With `keep-finalized-transactions` off (the default) a chain-locked
@@ -1162,9 +1173,12 @@ async fn instant_lock_changeset(
     // sibling of the pruned one. Re-emitted alone it would replace the
     // stored chain-locked row with one account's unconfirmed share, so the
     // lock goes out without records.
-    if finalized {
+    if own_accounts().any(|account| account.transaction_is_finalized(txid)) {
         return cs;
     }
+    // No slices (record pruned everywhere, or never held) leave just the
+    // lock as well.
+    let (slices, verdicts) = slices_and_verdicts_for_txid(info, txid);
     // The persister learns a record's context only from a re-emitted
     // record; the lock map above does not carry it there. The wallet rewrote
     // an unconfirmed record's context to `InstantSend` before emitting this
@@ -2954,10 +2968,11 @@ mod contact_watch_only_projection_tests {
     use dashcore::hashes::Hash;
     use dashcore::{Address as DashAddress, BlockHash, Txid};
     use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Witness};
-    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::account::{Account, AccountType, StandardAccountType};
     use key_wallet::managed_account::transaction_record::{
         InputDetail, OutputDetail, TransactionDirection,
     };
+    use key_wallet::managed_account::ManagedCoreFundsAccount;
     use key_wallet::test_utils::TestWalletContext;
     use key_wallet::transaction_checking::transaction_router::TransactionType;
     use key_wallet::transaction_checking::BlockInfo;
@@ -4238,6 +4253,90 @@ mod contact_watch_only_projection_tests {
         assert!(cs.records.is_empty(), "the sibling slice is not re-emitted");
         assert!(cs.account_records.is_empty());
         assert!(cs.utxo_credit_verdicts.is_empty());
+        // With finalized records kept, the chain-locked slice is still held
+        // and the lock is dropped with the records (the test above).
+        #[cfg(not(feature = "keep-finalized-transactions"))]
+        assert!(
+            cs.instant_locks_for_non_final_records.contains_key(&txid),
+            "the lock itself is kept"
+        );
+    }
+
+    /// A contact's watch-only slice never reaches the stored row, so its
+    /// chain lock says nothing about that row: the wallet's own slices of
+    /// the same transaction are still re-emitted with the lock.
+    #[tokio::test]
+    async fn should_re_emit_own_slices_beside_a_chain_locked_contact_slice() {
+        let (mut ctx, spend) = dual_account_mempool_spend().await;
+        let txid = spend.txid();
+        let xpub = ctx
+            .wallet
+            .accounts
+            .standard_bip32_accounts
+            .get(&0)
+            .expect("bip32 account")
+            .account_xpub;
+        ctx.managed_wallet
+            .accounts
+            .insert_funds_bearing_account(ManagedCoreFundsAccount::from_account(&Account {
+                parent_wallet_id: Some(ctx.wallet.wallet_id),
+                account_type: contact_external_account(),
+                network: Network::Testnet,
+                account_xpub: xpub,
+                is_watch_only: true,
+            }))
+            .expect("insert the contact account");
+        let mut info = platform_info(ctx.managed_wallet);
+        let contact_slice = record_with(
+            &spend,
+            contact_external_account(),
+            in_block(2),
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            vec![],
+            vec![output(
+                0,
+                OutputRole::Received,
+                &contact_address(),
+                spend.output[0].value,
+            )],
+            spend.output[0].value as i64,
+        );
+        for mut account in info.core_wallet.accounts.all_accounts_mut() {
+            if account.managed_account_type().to_account_type() == contact_external_account() {
+                account
+                    .transactions_mut()
+                    .insert(txid, contact_slice.clone());
+            }
+        }
+        // The block reached the contact's slice only, then its chain lock.
+        info.apply_chain_lock(ChainLock {
+            block_height: 2,
+            block_hash: BlockHash::all_zeros(),
+            signature: BLSSignature::from([0u8; 96]),
+        });
+        let lock = InstantLock::default();
+        info.mark_instant_send_utxos(&txid, &lock);
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+        let event = WalletEvent::TransactionInstantLocked {
+            wallet_id,
+            txid,
+            instant_lock: lock,
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+
+        let cs = build_core_changeset(&Arc::new(RwLock::new(wm)), &event).await;
+
+        assert!(cs.instant_locks_for_non_final_records.contains_key(&txid));
+        assert_eq!(cs.account_records.len(), 2, "both own slices");
+        assert_eq!(cs.records.len(), 1);
+        assert!(
+            matches!(cs.records[0].context, TransactionContext::InstantSend(_)),
+            "got {:?}",
+            cs.records[0].context
+        );
     }
 
     /// An InstantSend lock for a txid a known wallet holds no record for
