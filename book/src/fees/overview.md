@@ -222,7 +222,12 @@ validation v1 judges the fee against the sponsor's balance and the signer only
 has to fund `removed_balance`; when the sponsor's balance falls short a batch
 that insists is refused unpaid (`GasSponsorInsufficientBalanceError`, 40222)
 and a batch that prefers falls back to the signer's balance. Execution v1 then
-charges whoever fee validation admitted. A batch that fails validation is never
+charges whoever fee validation admitted. The [user fee
+increase](#user-fee-increase) is never the sponsor's: the signer chose it, so
+the sponsor is judged on and charged the fee without it, and the signer pays
+the processing fee it adds, which its balance (and a budgeted signing key's
+budget) has to cover, or the batch is refused unpaid
+(`IdentityInsufficientBalanceError`, 40210). A batch that fails validation is never
 sponsored: its signer pays for the work that ran, and a request the document
 type does not offer is a paid rejection (`GasFeesPaidByNotAllowedError`,
 40129). Storage refunds still go to the document's owner, whoever paid the
