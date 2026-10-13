@@ -36,7 +36,9 @@ use dpp::address_funds::AddressWitness;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
-use dpp::data_contract::document_type::{index_only_row_commits_created_at, DocumentTypeRef};
+use dpp::data_contract::document_type::{
+    index_only_row_commits_created_at, DocumentProperty, DocumentPropertyType, DocumentTypeRef,
+};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::property_names::CREATED_AT;
 use dpp::document::Document;
@@ -906,7 +908,8 @@ impl IdentityWallet {
 /// Refuses, before anything is signed, what Platform would only refuse
 /// after the transition is broadcast and paid for: a type that is not
 /// `indexOnly` or whose documents can not be deleted, a property the type
-/// does not declare, a `$` field other than `$createdAt`, a missing
+/// does not declare (also inside a declared object), a `$` field other
+/// than `$createdAt`, a missing
 /// required property, and a missing `$createdAt` on a type whose entries
 /// commit to it. A value of the wrong shape is not checked here. The
 /// document carries a creation time only when the caller gave one.
@@ -949,10 +952,12 @@ fn document_with_values(
             ))
         })?),
     };
-    if let Some(name) = properties
-        .keys()
-        .find(|name| name.starts_with('$') || !document_type.properties().contains_key(*name))
-    {
+    if let Some(name) = undeclared_property(
+        &mut properties
+            .iter()
+            .map(|(name, value)| (name.as_str(), value)),
+        &|name| document_type.properties().get(name),
+    ) {
         return Err(PlatformWalletError::InvalidIdentityData(format!(
             "Document type {:?} has no property {name:?} to delete by",
             document_type.name()
@@ -1010,6 +1015,33 @@ fn document_with_values(
     // caller's value or none.
     document.set_created_at(created_at);
     Ok(document)
+}
+
+/// The path of the first value the schema does not declare, looking inside
+/// declared objects. A `$` name is never declared. A value of the wrong
+/// kind for its property (a map where the schema has no object, or the
+/// other way round) is left for Platform to refuse.
+fn undeclared_property<'a>(
+    values: &mut dyn Iterator<Item = (&'a str, &'a Value)>,
+    declared: &dyn Fn(&str) -> Option<&'a DocumentProperty>,
+) -> Option<String> {
+    for (name, value) in values {
+        let Some(property) = declared(name).filter(|_| !name.starts_with('$')) else {
+            return Some(name.to_string());
+        };
+        let (DocumentPropertyType::Object(members), Value::Map(entries)) =
+            (&property.property_type, value)
+        else {
+            continue;
+        };
+        let mut nested = entries
+            .iter()
+            .filter_map(|(key, value)| key.as_text().map(|key| (key, value)));
+        if let Some(path) = undeclared_property(&mut nested, &|name| members.get(name)) {
+            return Some(format!("{name}.{path}"));
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -1396,6 +1428,91 @@ mod tests {
             matches!(error, PlatformWalletError::InvalidIdentityData(ref message)
                 if message.contains("requires \"name\"")),
             "{error:?}"
+        );
+    }
+
+    #[test]
+    fn should_refuse_an_undeclared_property_inside_a_declared_object() {
+        let contract = changed_contract(false, |schema| {
+            schema
+                .set_value_at_path(
+                    "properties",
+                    "device",
+                    platform_value!({
+                        "type": "object",
+                        "position": 3u32,
+                        "properties": {
+                            "name": { "type": "string", "maxLength": 32u32, "position": 0u32 },
+                            "screen": {
+                                "type": "object",
+                                "position": 1u32,
+                                "properties": {
+                                    "width": { "type": "integer", "minimum": 0u32, "position": 0u32 },
+                                },
+                                "required": ["width"],
+                                "additionalProperties": false,
+                            },
+                        },
+                        "required": ["name", "screen"],
+                        "additionalProperties": false,
+                    }),
+                )
+                .expect("device is set");
+            require(schema, "device");
+            // On an indexOnly type only indexed values exist.
+            let mut indices = schema
+                .get_value_at_path("indices")
+                .expect("indices")
+                .clone();
+            for name in ["device.screen.width", "device.name"] {
+                append(
+                    &mut indices.as_array_mut().expect("an array")[0],
+                    "terminal",
+                    name,
+                );
+            }
+            schema
+                .set_value("indices", indices)
+                .expect("indices are set");
+        });
+        let (_, properties) = login_key_response_values();
+        let with_device = |device: serde_json::Value| {
+            let mut values: serde_json::Value =
+                serde_json::from_str(&properties).expect("properties parse");
+            values["device"] = device;
+            build_login_key_response(&contract, &values.to_string())
+        };
+
+        with_device(serde_json::json!({ "name": "phone", "screen": { "width": 390 } }))
+            .expect("declared nested values build");
+
+        for (device, path) in [
+            (
+                serde_json::json!({ "name": "phone", "model": "one" }),
+                "device.model",
+            ),
+            (
+                serde_json::json!({ "screen": { "width": 390, "height": 844 } }),
+                "device.screen.height",
+            ),
+        ] {
+            let error = with_device(device).unwrap_err();
+            assert!(
+                matches!(error, PlatformWalletError::InvalidIdentityData(ref message)
+                    if message.contains(&format!("has no property {path:?}"))),
+                "{path}: {error:?}"
+            );
+        }
+
+        // A value of the wrong kind is not this check's to refuse.
+        let wrong_kind = with_device(serde_json::json!({
+            "name": { "first": "phone" },
+            "screen": { "width": 390 },
+        }));
+        assert!(
+            !matches!(wrong_kind, Err(PlatformWalletError::InvalidIdentityData(ref message))
+                if message.contains("has no property")),
+            "{wrong_kind:?}"
         );
     }
 

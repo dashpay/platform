@@ -4191,7 +4191,8 @@ extension ManagedPlatformWallet {
         return try await Task.detached(priority: .userInitiated) { [self] in
             var documentIdBytes = [UInt8](repeating: 0, count: 32)
 
-            let result = withExtendedLifetime(signer) {
+            // The wallet too: its `deinit` destroys the handle the call uses.
+            let result = withExtendedLifetime((self, signer)) {
                 ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
                     contractBytes.withUnsafeBufferPointer { contractBp -> PlatformWalletFFIResult in
                         documentType.withCString { typePtr in
