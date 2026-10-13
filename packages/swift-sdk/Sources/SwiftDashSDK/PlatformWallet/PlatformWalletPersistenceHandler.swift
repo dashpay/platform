@@ -25,6 +25,10 @@ private enum AssetLockPersistenceError: Error {
     case requiresChangeset
 }
 
+private enum ShieldedRestoreError: Error {
+    case malformedWalletId
+}
+
 struct LiveModelFetcher: ModelFetching {
     func fetch<T: PersistentModel>(
         _ descriptor: FetchDescriptor<T>,
@@ -5928,14 +5932,31 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// network (legacy callers that haven't threaded `network` through),
     /// signalling "don't filter" so those paths keep their pre-refactor
     /// cross-network behavior. Caller must be on `onQueue`.
-    private func inNetworkWalletIds() -> Set<Data>? {
+    private func inNetworkWalletIds() throws -> Set<Data>? {
         guard let network = self.network else { return nil }
         let raw = network.rawValue
         let descriptor = FetchDescriptor<PersistentWallet>(
             predicate: #Predicate { $0.networkRaw == raw }
         )
-        let wallets = (try? backgroundContext.fetch(descriptor)) ?? []
+        let wallets = try modelFetcher.fetch(descriptor, in: backgroundContext)
+        guard wallets.allSatisfy({ $0.walletId.count == 32 }) else {
+            throw ShieldedRestoreError.malformedWalletId
+        }
         return Set(wallets.map { $0.walletId })
+    }
+
+    /// A malformed wallet ID cannot safely be classified as another network.
+    /// Validate it before filtering, and propagate scope-fetch failures instead
+    /// of returning a successful empty snapshot. Recovery needs the complete
+    /// scan snapshot to preserve unrelated receipts when replacing history.
+    private func shieldedRowsForNetwork<Row>(
+        _ rows: [Row], walletId: (Row) -> Data
+    ) throws -> [Row] {
+        guard rows.allSatisfy({ walletId($0).count == 32 }) else {
+            throw ShieldedRestoreError.malformedWalletId
+        }
+        guard let ids = try inNetworkWalletIds() else { return rows }
+        return rows.filter { ids.contains(walletId($0)) }
     }
 
     /// Build the host-allocated `ShieldedNoteRestoreFFI` array Rust
@@ -5952,47 +5973,33 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         var resultErrored = false
         onQueue {
             let descriptor = FetchDescriptor<PersistentShieldedNote>()
-            var rows: [PersistentShieldedNote]
+            let rows: [PersistentShieldedNote]
             do {
-                rows = try backgroundContext.fetch(descriptor)
+                rows = try shieldedRowsForNetwork(
+                    modelFetcher.fetch(descriptor, in: backgroundContext), walletId: { $0.walletId }
+                )
             } catch {
                 resultErrored = true
                 return
             }
-            // Scope to the handler's bound network so a per-network
-            // manager never rehydrates another network's shielded notes
-            // (the commitment tree DB is network-scoped). `nil` ids =>
-            // no in-network wallets => nothing to restore.
-            if let inNetworkIds = self.inNetworkWalletIds() {
-                rows = rows.filter { inNetworkIds.contains($0.walletId) }
-            }
             if rows.isEmpty {
                 return
             }
+            // Validate the complete snapshot before allocating or returning any
+            // rows. Omitting a corrupt unrelated note would let reconciliation
+            // replace an aggregate history entry without preserving that note.
+            guard rows.allSatisfy({
+                $0.cmx.count == 32 && $0.nullifier.count == 32 && $0.noteData.count == 115
+            }) else {
+                resultErrored = true
+                return
+            }
             let allocation = ShieldedLoadAllocation()
-            // Allocate the entries buffer up front; populate slots
-            // one by one and track `entriesInitialized` so a
-            // mid-loop bail-out can deinit only the populated
-            // slots. (Today nothing fails in this loop, but
-            // matching the existing `LoadAllocation` pattern keeps
-            // future field additions safe.)
             let buf = UnsafeMutablePointer<ShieldedNoteRestoreFFI>.allocate(capacity: rows.count)
             allocation.entries = buf
             allocation.entriesCount = rows.count
-            // `written` is the next free slot in `buf`; we increment it
-            // only after a row's struct is fully populated, so the
-            // returned prefix `[0..written)` is contiguous initialized
-            // memory regardless of how many rows are skipped by the
-            // length guards below. Indexing by `rows.enumerated()`'s
-            // `idx` here would leave gaps when an early row is skipped
-            // and Rust would read uninitialized bytes off the
-            // `slice::from_raw_parts(ptr, count)` it builds in
-            // `FFIPersister::load`.
             var written = 0
             for row in rows {
-                guard row.walletId.count == 32 else { continue }
-                guard row.cmx.count == 32 else { continue }
-                guard row.nullifier.count == 32 else { continue }
                 let noteDataBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: row.noteData.count)
                 row.noteData.copyBytes(to: noteDataBuf, count: row.noteData.count)
                 allocation.scalarBuffers.append((noteDataBuf, row.noteData.count))
@@ -6065,21 +6072,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         var resultErrored = false
         onQueue {
             let descriptor = FetchDescriptor<PersistentShieldedOutgoingNote>()
-            var rows: [PersistentShieldedOutgoingNote]
+            let rows: [PersistentShieldedOutgoingNote]
             do {
-                rows = try backgroundContext.fetch(descriptor)
+                rows = try shieldedRowsForNetwork(
+                    modelFetcher.fetch(descriptor, in: backgroundContext), walletId: { $0.walletId }
+                )
             } catch {
                 resultErrored = true
                 return
             }
-            // Scope to the handler's bound network so a per-network
-            // manager never rehydrates another network's send history
-            // (the commitment tree DB is network-scoped). `nil` ids =>
-            // no in-network wallets => nothing to restore.
-            if let inNetworkIds = self.inNetworkWalletIds() {
-                rows = rows.filter { inNetworkIds.contains($0.walletId) }
-            }
             if rows.isEmpty {
+                return
+            }
+            guard rows.allSatisfy({ $0.cmx.count == 32 && $0.recipient.count == 43 }) else {
+                resultErrored = true
                 return
             }
             let allocation = ShieldedOutgoingNoteLoadAllocation()
@@ -6088,32 +6094,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
             allocation.entries = buf
             allocation.entriesCount = rows.count
-            // Same `written`-counter discipline as `loadShieldedNotes`:
-            // increment only after a slot is fully populated so the
-            // returned prefix `[0..written)` is contiguous initialized
-            // memory even when malformed rows are skipped.
             var written = 0
             for row in rows {
-                guard row.walletId.count == 32 else { continue }
-                guard row.cmx.count == 32 else { continue }
-                // `recipient` is a fixed 43-byte raw Orchard address.
-                // A wrong-length blob is a corrupt row — skip it (with
-                // a log) rather than zero-padding it into a wrong
-                // address. Mirrors the Rust persist side, which rejects
-                // non-43-byte recipients before they reach SwiftData.
-                guard row.recipient.count == 43 else {
-                    SDKLogger.event(
-                        "persistence_shielded_outgoing_row_skipped",
-                        category: .persistence,
-                        severity: .warning,
-                        fields: [
-                            "actual_length": .integer(Int64(row.recipient.count)),
-                            "expected_length": .integer(43),
-                            "reason": .publicText("malformed_recipient"),
-                        ]
-                    )
-                    continue
-                }
                 let memoBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: row.memo.count)
                 if row.memo.count > 0 {
                     row.memo.copyBytes(to: memoBuf, count: row.memo.count)
@@ -6181,15 +6163,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             let descriptor = FetchDescriptor<PersistentShieldedActivity>()
             var rows: [PersistentShieldedActivity]
             do {
-                rows = try modelFetcher.fetch(descriptor, in: backgroundContext)
-                if let network = self.network {
-                    let raw = network.rawValue
-                    let wallets = try modelFetcher.fetch(FetchDescriptor<PersistentWallet>(
-                        predicate: #Predicate { $0.networkRaw == raw }
-                    ), in: backgroundContext)
-                    let ids = Set(wallets.map { $0.walletId })
-                    rows = rows.filter { ids.contains($0.walletId) }
-                }
+                rows = try shieldedRowsForNetwork(
+                    modelFetcher.fetch(descriptor, in: backgroundContext), walletId: { $0.walletId }
+                )
             } catch {
                 resultErrored = true
                 return
@@ -6305,18 +6281,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         var resultErrored = false
         onQueue {
             let descriptor = FetchDescriptor<PersistentShieldedSyncState>()
-            var rows: [PersistentShieldedSyncState]
+            let rows: [PersistentShieldedSyncState]
             do {
-                rows = try backgroundContext.fetch(descriptor)
+                rows = try shieldedRowsForNetwork(
+                    modelFetcher.fetch(descriptor, in: backgroundContext), walletId: { $0.walletId }
+                )
             } catch {
                 resultErrored = true
                 return
-            }
-            // Same network scoping as `loadShieldedNotes` — keep both
-            // loaders consistent so a per-network manager doesn't restore
-            // foreign-network sync watermarks.
-            if let inNetworkIds = self.inNetworkWalletIds() {
-                rows = rows.filter { inNetworkIds.contains($0.walletId) }
             }
             if rows.isEmpty {
                 return
@@ -6327,12 +6299,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             )
             allocation.entries = buf
             allocation.entriesCount = rows.count
-            // Same `written`-counter pattern as `loadShieldedNotes`:
-            // skip malformed rows without leaving holes in the
-            // contiguous prefix Rust will read.
             var written = 0
             for row in rows {
-                guard row.walletId.count == 32 else { continue }
                 var walletIdTuple: FFIByteTuple32 = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
                 row.walletId.withUnsafeBytes { src in
                     Swift.withUnsafeMutableBytes(of: &walletIdTuple) { dst in
@@ -6380,26 +6348,20 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         var resultErrored = false
         onQueue {
             let descriptor = FetchDescriptor<PersistentShieldedViewingKey>()
-            var rows: [PersistentShieldedViewingKey]
+            let rows: [PersistentShieldedViewingKey]
             do {
-                rows = try backgroundContext.fetch(descriptor)
+                rows = try shieldedRowsForNetwork(
+                    modelFetcher.fetch(descriptor, in: backgroundContext), walletId: { $0.walletId }
+                )
             } catch {
                 resultErrored = true
                 return
-            }
-            // Same network scoping as the other shielded loaders — the
-            // FVK embeds the coin type, so serving another network's
-            // rows would fail the Rust-side bind, not corrupt it, but
-            // the loaders stay consistent regardless.
-            if let inNetworkIds = self.inNetworkWalletIds() {
-                rows = rows.filter { inNetworkIds.contains($0.walletId) }
             }
             if rows.isEmpty {
                 return
             }
             // Fail closed on a present-but-malformed row, BEFORE any
-            // allocation: silently skipping it (the sync-state
-            // loader's pattern) would make Rust see the account as
+            // allocation: silently skipping it would make Rust see the account as
             // "no persisted key" and fall back to a mnemonic resolve,
             // masking persistence corruption — the exact opposite of
             // `bind_shielded_from_persisted`'s documented contract,

@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 import SwiftData
 import XCTest
 @testable import SwiftDashSDK
@@ -146,5 +147,230 @@ final class ShieldedActivityReconciliationTests: XCTestCase {
         XCTAssertTrue(restored.errored)
         XCTAssertNil(restored.entries)
         XCTAssertEqual(restored.count, 0)
+    }
+
+
+    private enum RestoreKind: CaseIterable {
+        case notes, outgoing, syncStates, viewingKeys, activity
+
+        var model: any PersistentModel.Type {
+            switch self {
+            case .notes: return PersistentShieldedNote.self
+            case .outgoing: return PersistentShieldedOutgoingNote.self
+            case .syncStates: return PersistentShieldedSyncState.self
+            case .viewingKeys: return PersistentShieldedViewingKey.self
+            case .activity: return PersistentShieldedActivity.self
+            }
+        }
+    }
+
+    /// Exercise the actual callbacks Rust consumes, including their ownership
+    /// contract: a failed load must expose neither an allocation nor a prefix.
+    private func restore(_ kind: RestoreKind, with handler: PlatformWalletPersistenceHandler)
+        -> (code: Int32, count: UInt, hasEntries: Bool) {
+        let callbacks = handler.makeCallbacks()
+        defer { callbacks.release_fn?(callbacks.context) }
+        func load<Entry>(
+            _ type: Entry.Type,
+            read: (UnsafeMutablePointer<UnsafePointer<Entry>?>, UnsafeMutablePointer<UInt>) -> Int32,
+            free: (UnsafePointer<Entry>?, UInt) -> Void
+        ) -> (code: Int32, count: UInt, hasEntries: Bool) {
+            var entries: UnsafePointer<Entry>?
+            var count: UInt = 99 // The callback must clear stale output on failure.
+            let code = read(&entries, &count)
+            defer { if let entries { free(entries, count) } }
+            return (code, count, entries != nil)
+        }
+        switch kind {
+        case .notes:
+            return load(ShieldedNoteRestoreFFI.self,
+                read: { callbacks.on_load_shielded_notes_fn!(callbacks.context, $0, $1) },
+                free: { callbacks.on_load_shielded_notes_free_fn!(callbacks.context, $0, $1) })
+        case .outgoing:
+            return load(ShieldedOutgoingNoteRestoreFFI.self,
+                read: { callbacks.on_load_shielded_outgoing_notes_fn!(callbacks.context, $0, $1) },
+                free: { callbacks.on_load_shielded_outgoing_notes_free_fn!(callbacks.context, $0, $1) })
+        case .syncStates:
+            return load(ShieldedSubwalletSyncStateFFI.self,
+                read: { callbacks.on_load_shielded_sync_states_fn!(callbacks.context, $0, $1) },
+                free: { callbacks.on_load_shielded_sync_states_free_fn!(callbacks.context, $0, $1) })
+        case .viewingKeys:
+            return load(ShieldedViewingKeyRestoreFFI.self,
+                read: { callbacks.on_load_shielded_viewing_keys_fn!(callbacks.context, $0, $1) },
+                free: { callbacks.on_load_shielded_viewing_keys_free_fn!(callbacks.context, $0, $1) })
+        case .activity:
+            return load(ShieldedActivityRestoreFFI.self,
+                read: { callbacks.on_load_shielded_activity_fn!(callbacks.context, $0, $1) },
+                free: { callbacks.on_load_shielded_activity_free_fn!(callbacks.context, $0, $1) })
+        }
+    }
+
+    private func assertRestoreFails(_ kind: RestoreKind, with handler: PlatformWalletPersistenceHandler,
+                                    file: StaticString = #filePath, line: UInt = #line) {
+        let result = restore(kind, with: handler)
+        XCTAssertNotEqual(result.code, 0, "\(kind)", file: file, line: line)
+        XCTAssertEqual(result.count, 0, "\(kind)", file: file, line: line)
+        XCTAssertFalse(result.hasEntries, "\(kind)", file: file, line: line)
+    }
+
+    private func note(_ id: UInt8, wallet: Data? = nil) -> PersistentShieldedNote {
+        PersistentShieldedNote(walletId: wallet ?? walletId, accountIndex: 0,
+            position: UInt64(id), cmx: Data(repeating: id, count: 32),
+            nullifier: Data(repeating: id + 50, count: 32), blockHeight: 1,
+            isSpent: false, value: UInt64(id) * 100, noteData: Data(repeating: id, count: 115))
+    }
+
+    func testMalformedUnrelatedNoteRejectsCallbackAndPreservesAggregateAfterReopen() throws {
+        // A is the drain's output. B is an unrelated receipt in the same scan
+        // aggregate. No partial snapshot may let A's completion discard B.
+        let fields: [ReferenceWritableKeyPath<PersistentShieldedNote, Data>] = [
+            \.walletId, \.cmx, \.nullifier, \.noteData,
+        ]
+        for field in fields {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let url = directory.appendingPathComponent("wallet.store")
+            try autoreleasepool {
+                let container = try DashModelContainer.create(url: url)
+                seed(PlatformWalletPersistenceHandler(modelContainer: container))
+                let context = ModelContext(container)
+                context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+                context.insert(note(1))
+                let unrelated = note(2)
+                unrelated[keyPath: field] = Data([2])
+                context.insert(unrelated)
+                try context.save()
+                let reader = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+                assertRestoreFails(.notes, with: reader)
+            }
+            try autoreleasepool {
+                let reopened = try DashModelContainer.create(url: url)
+                let reader = PlatformWalletPersistenceHandler(modelContainer: reopened, network: .testnet)
+                assertRestoreFails(.notes, with: reader)
+                let context = ModelContext(reopened)
+                let histories = try context.fetch(FetchDescriptor<PersistentShieldedActivity>())
+                let aggregate = try XCTUnwrap(histories.first { $0.walletId == walletId && $0.accountIndex == 0 })
+                XCTAssertEqual(aggregate.entryId, Data(repeating: 9, count: 32))
+                XCTAssertEqual(aggregate.amount, 300)
+                XCTAssertEqual(aggregate.noteCmxs, Data(repeating: 1, count: 32) + Data(repeating: 2, count: 32))
+                XCTAssertEqual(try reader.loadCachedAssetLocks(walletId: walletId).first?.statusRaw, 0)
+                let rows = try context.fetch(FetchDescriptor<PersistentShieldedNote>())
+                XCTAssertEqual(rows.count, 2)
+                let unrelated = try XCTUnwrap(rows.first { $0.position == 2 })
+                unrelated[keyPath: field] = note(2)[keyPath: field]
+                try context.save()
+                let repaired = PlatformWalletPersistenceHandler(modelContainer: reopened, network: .testnet)
+                let restored = restore(.notes, with: repaired)
+                XCTAssertEqual(restored.code, 0)
+                XCTAssertEqual(restored.count, 2)
+                XCTAssertTrue(restored.hasEntries)
+            }
+        }
+    }
+
+    func testOutgoingRestoreRejectsMalformedRowsWithoutReturningValidPrefix() throws {
+        let fields: [ReferenceWritableKeyPath<PersistentShieldedOutgoingNote, Data>] = [
+            \.walletId, \.cmx, \.recipient,
+        ]
+        for field in fields {
+            let container = try DashModelContainer.createInMemory()
+            let context = ModelContext(container)
+            context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+            for id: UInt8 in [1, 2] {
+                let row = PersistentShieldedOutgoingNote(walletId: walletId, accountIndex: 0,
+                    cmx: Data(repeating: id, count: 32), recipient: Data(repeating: id, count: 43),
+                    value: 100, memo: Data(), blockHeight: 1)
+                if id == 2 { row[keyPath: field] = Data([2]) }
+                context.insert(row)
+            }
+            try context.save()
+            assertRestoreFails(.outgoing, with: PlatformWalletPersistenceHandler(
+                modelContainer: container, network: .testnet))
+        }
+    }
+
+    func testSyncStateRestoreRejectsMalformedWalletBeforeNetworkFiltering() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        context.insert(PersistentShieldedSyncState(walletId: walletId, accountIndex: 0, lastSyncedIndex: 2))
+        context.insert(PersistentShieldedSyncState(walletId: Data([2]), accountIndex: 1, lastSyncedIndex: 4))
+        try context.save()
+        assertRestoreFails(.syncStates, with: PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet))
+    }
+
+    func testActivityAndViewingKeyRestoreRejectMalformedWalletBeforeFiltering() throws {
+        let container = try DashModelContainer.createInMemory()
+        seed(PlatformWalletPersistenceHandler(modelContainer: container))
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        let histories = try context.fetch(FetchDescriptor<PersistentShieldedActivity>())
+        let history = try XCTUnwrap(histories.first { $0.walletId == walletId })
+        history.walletId = Data([2])
+        context.insert(PersistentShieldedViewingKey(walletId: walletId, accountIndex: 0,
+            fvkBytes: Data(repeating: 1, count: 96)))
+        context.insert(PersistentShieldedViewingKey(walletId: Data([2]), accountIndex: 1,
+            fvkBytes: Data(repeating: 2, count: 96)))
+        try context.save()
+        for kind in [RestoreKind.activity, .viewingKeys] {
+            assertRestoreFails(kind, with: PlatformWalletPersistenceHandler(
+                modelContainer: container, network: .testnet))
+        }
+    }
+
+    func testShieldedRestorePropagatesTableAndNetworkScopeFetchFailures() throws {
+        let container = try DashModelContainer.createInMemory()
+        for kind in RestoreKind.allCases {
+            for model in [kind.model, PersistentWallet.self] {
+                let fetcher = FetchFaultInjector(faulting: model)
+                assertRestoreFails(kind, with: PlatformWalletPersistenceHandler(
+                    modelContainer: container, network: .testnet, modelFetcher: fetcher))
+                XCTAssertTrue(fetcher.observedReads.contains(String(describing: model)))
+            }
+        }
+    }
+
+    func testShieldedRestoreRejectsMalformedWalletScope() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: Data([1]), network: .testnet))
+        try context.save()
+        for kind in RestoreKind.allCases {
+            assertRestoreFails(kind, with: PlatformWalletPersistenceHandler(
+                modelContainer: container, network: .testnet))
+        }
+    }
+
+    func testValidScanRestoreStillScopesByNetworkAndAllowsEmptySnapshots() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        context.insert(PersistentWallet(walletId: otherWalletId, network: .mainnet))
+        for (id, wallet) in [(UInt8(1), walletId), (UInt8(2), otherWalletId)] {
+            context.insert(note(id, wallet: wallet))
+            context.insert(PersistentShieldedOutgoingNote(walletId: wallet, accountIndex: 0,
+                cmx: Data(repeating: id, count: 32), recipient: Data(repeating: id, count: 43),
+                value: 100, memo: Data(), blockHeight: 1))
+            context.insert(PersistentShieldedSyncState(walletId: wallet, accountIndex: 0, lastSyncedIndex: 2))
+            context.insert(PersistentShieldedViewingKey(walletId: wallet, accountIndex: 0,
+                fvkBytes: Data(repeating: id, count: 96)))
+        }
+        try context.save()
+        for kind in [RestoreKind.notes, .outgoing, .syncStates, .viewingKeys] {
+            let scoped = restore(kind, with: PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet))
+            XCTAssertEqual(scoped.code, 0)
+            XCTAssertEqual(scoped.count, 1)
+            XCTAssertTrue(scoped.hasEntries)
+            let unscoped = restore(kind, with: PlatformWalletPersistenceHandler(modelContainer: container))
+            XCTAssertEqual(unscoped.code, 0)
+            XCTAssertEqual(unscoped.count, 2)
+            let empty = restore(kind, with: PlatformWalletPersistenceHandler(
+                modelContainer: try DashModelContainer.createInMemory(), network: .testnet))
+            XCTAssertEqual(empty.code, 0)
+            XCTAssertEqual(empty.count, 0)
+            XCTAssertFalse(empty.hasEntries)
+        }
     }
 }

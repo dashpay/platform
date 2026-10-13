@@ -322,6 +322,21 @@ impl PlatformWallet {
                 operation,
                 ..
             } => {
+                // A drain requires owned-output evidence for restart recovery.
+                // Refuse missing keys before Core funding while shield_guard
+                // serializes this operation with key binding and removal.
+                if self
+                    .shielded_keys
+                    .read()
+                    .await
+                    .as_ref()
+                    .is_none_or(|keys| keys.is_empty())
+                {
+                    return Err(PlatformWalletError::ShieldedBuildError(
+                        "wallet drain requires bound shielded viewing keys before Core funding"
+                            .into(),
+                    ));
+                }
                 let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
                 AssetLockFunding::DrainWalletBalance {
                     account_index,

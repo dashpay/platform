@@ -1538,6 +1538,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn should_refuse_drain_without_viewing_keys_before_core_funding() {
+        for empty_binding in [false, true] {
+            let (mut lock, keys, _) = evidence_fixture();
+            lock.operation_id = None;
+            let recipient = dpp::address_funds::OrchardAddress::from(keys[&0].default_address);
+            let (wallet, persistence, coordinator, _dir) =
+                wallet_fixture(&lock, keys.clone()).await;
+            *wallet.shielded_keys.write().await = empty_binding.then(BTreeMap::new);
+            let coordinator = Arc::new(coordinator);
+            let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
+            let prover = super::super::prover::CachedOrchardProver::new();
+            let operation = Arc::new(AssetLockOperationContext::new([0x97; 16]));
+            let error = wallet
+                .shielded_fund_from_asset_lock(
+                    &coordinator,
+                    crate::wallet::asset_lock::AssetLockFunding::DrainWalletBalance {
+                        account_index: 0,
+                        minimum_lock_duffs: None,
+                        operation: operation.clone(),
+                    },
+                    vec![(recipient, None)],
+                    &signer,
+                    &prover,
+                    None,
+                    0,
+                    None,
+                    None,
+                )
+                .await
+                .unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("requires bound shielded viewing keys"),
+                "{error}"
+            );
+            assert_eq!(operation.snapshot().state, AssetLockOperationState::NotSent);
+            assert!(operation.snapshot().out_point.is_none());
+            assert_eq!(persistence.committed.lock().unwrap().len(), 1);
+            assert!(persistence.staged.lock().unwrap().is_empty());
+            assert_eq!(wallet.asset_locks.list_tracked_locks().await.len(), 1);
+            // Binding keys leaves the same UUID available for a fresh attempt.
+            *wallet.shielded_keys.write().await = Some(keys);
+            let _registration = wallet.register_wallet_drain_operation(operation.clone());
+            assert_eq!(
+                wallet
+                    .asset_locks
+                    .begin_wallet_drain(&operation)
+                    .await
+                    .unwrap(),
+                None
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn should_refuse_drain_without_atomic_activity_capability_before_build() {
         let (lock, keys, _) = evidence_fixture();
         let (wallet, persistence, _, _dir) = wallet_fixture(&lock, keys).await;
