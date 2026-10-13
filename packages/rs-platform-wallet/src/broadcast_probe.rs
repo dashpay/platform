@@ -154,8 +154,9 @@ pub(crate) fn classify_failed_submission(code: Code, message: &str) -> NodeVerdi
 pub enum ProbeVerdict {
     /// A node holds the transaction, in its mempool or in a block. Not
     /// settlement: it can still expire, lose to a conflict or sit in a block
-    /// a reorg drops, so the resolver keeps asking until the wallet settles
-    /// the send.
+    /// a reorg drops. The resolver keeps probing the send until the wallet
+    /// settles it, which hands the nodes its bytes again; the verdict itself
+    /// does not go back to Unresolved.
     Accepted,
     /// Not enough evidence that it landed; the transaction stays ambiguous.
     /// The reason says what the nodes answered, refusals included.
@@ -798,13 +799,15 @@ mod tests {
     }
 
     /// Core answers `missingorspent` for a mined transaction whose outputs
-    /// are all spent (testnet `e758f06a…`, 2026-09-29). A node that still
-    /// knows the txid turns the refusals into Accepted, at the first lookup.
+    /// are all spent (testnet `e758f06a…`, 2026-09-29), and for one still in
+    /// a mempool that lost a double-spend race on the refusing nodes. A node
+    /// that knows the txid turns the refusals into Accepted, at the first
+    /// lookup.
     #[tokio::test]
     async fn should_accept_a_refused_transaction_a_node_still_knows() {
         let nodes = ScriptedNodes::with_lookups(
             vec![(Some("a"), refused()), (Some("b"), refused())],
-            vec![(Some("c"), known()), (Some("d"), known())],
+            vec![(Some("c"), known())],
         );
 
         assert_eq!(
@@ -1112,20 +1115,5 @@ mod tests {
         probe_with(&nodes, &transaction()).await;
 
         assert_eq!(nodes.lookups_made(), 0);
-    }
-
-    /// Refused for its inputs yet still in a node's mempool (a double-spend
-    /// race the node lost locally): not mined — keep asking.
-    #[tokio::test]
-    async fn should_accept_a_refused_transaction_a_node_holds_in_its_mempool() {
-        let nodes = ScriptedNodes::with_lookups(
-            vec![(Some("a"), refused()), (Some("b"), refused())],
-            vec![(Some("c"), known())],
-        );
-
-        assert_eq!(
-            probe_with(&nodes, &transaction()).await.verdict,
-            ProbeVerdict::Accepted
-        );
     }
 }

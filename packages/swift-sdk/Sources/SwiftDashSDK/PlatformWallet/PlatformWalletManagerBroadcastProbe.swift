@@ -151,8 +151,8 @@ extension PlatformWalletManager {
     /// probe in flight once per block; a later one waits for that pass.
     /// It publishes each *change* of
     /// verdict for the wallet's own sends in `outgoingTransactionVerdicts` /
-    /// `lastOutgoingTransactionProbe` (an accepted send whose nodes' block
-    /// evidence comes or goes may be published accepted again). Every verdict
+    /// `lastOutgoingTransactionProbe` (an accepted send stays accepted until
+    /// its entry is removed). Every verdict
     /// is advisory: only the wallet's own sync settles a send. An entry is removed when its send
     /// settles or leaves the wallet, when its wallet is deleted, and every
     /// entry when probing is turned off; a removal does not mean the send

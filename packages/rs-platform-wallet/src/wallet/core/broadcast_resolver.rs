@@ -28,9 +28,11 @@
 //! Every verdict is advisory: only the wallet itself (a block, an
 //! InstantSend lock) settles a send, so a root the nodes accepted, in a
 //! mempool or in a block, stays a root — probed on its schedule like any
-//! other — until the wallet settles it. Only changes are published:
-//! Unresolved never replaces Accepted, so an Accepted stays published until
-//! the wallet settles the send. The host is told to drop a send's verdict
+//! other — until the wallet settles it; those probes hand the signed bytes
+//! to the nodes again and tell the host nothing new. Only changes are
+//! published: Unresolved never replaces Accepted, so an Accepted stays
+//! published until the wallet settles the send, also for a send that was
+//! evicted or reorged out since. The host is told to drop a send's verdict
 //! (cleared) when the send settles or leaves the wallet, when its wallet is
 //! removed and, for every send, when probing is turned off; cleared says
 //! only "forget the verdict", not that the send settled. A
@@ -506,19 +508,6 @@ impl ProbeSchedule {
     }
 }
 
-/// Whether two verdicts say the same thing. Every Unresolved counts as one,
-/// since its reason varies from probe to probe.
-fn same_verdict(a: &ProbeVerdict, b: &ProbeVerdict) -> bool {
-    match (a, b) {
-        (ProbeVerdict::Unresolved { .. }, ProbeVerdict::Unresolved { .. }) => true,
-        _ => a == b,
-    }
-}
-
-fn is_decided(verdict: &ProbeVerdict) -> bool {
-    !matches!(verdict, ProbeVerdict::Unresolved { .. })
-}
-
 /// What the host must hear, per own send.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ResolverEvent {
@@ -615,15 +604,20 @@ impl ResolverState {
             .collect()
     }
 
-    /// Record `verdict` for `send`; returns whether the host must hear it.
-    /// Unresolved never replaces Accepted — one probe that only met
-    /// transport errors says nothing new.
+    /// Record `verdict` for `send`; returns whether the host must hear it:
+    /// a first verdict, or Accepted after Unresolved. Accepted stays until
+    /// the send is cleared — Unresolved never replaces it, since one probe
+    /// that only met transport errors says nothing new — and every
+    /// Unresolved counts as one, its reason varying from probe to probe.
     fn publish(&mut self, key: (WalletId, Txid), verdict: &ProbeVerdict) -> bool {
-        let changed = match self.published.get(&key) {
-            None => true,
-            Some(previous) if is_decided(previous) && !is_decided(verdict) => false,
-            Some(previous) => !same_verdict(previous, verdict),
-        };
+        let changed = matches!(
+            (self.published.get(&key), verdict),
+            (None, _)
+                | (
+                    Some(ProbeVerdict::Unresolved { .. }),
+                    ProbeVerdict::Accepted
+                )
+        );
         if changed {
             self.published.insert(key, verdict.clone());
         }
@@ -2181,16 +2175,8 @@ impl Actor {
                     let Some(entry) = self.wallets.get(&wallet_id) else {
                         continue;
                     };
-                    // An echo says only that the send is out there: it adds
-                    // nothing to a send already accepted.
-                    if self
-                        .state
-                        .published
-                        .get(&(wallet_id, txid))
-                        .is_some_and(is_decided)
-                    {
-                        continue;
-                    }
+                    // An echo says only that the send is out there: for one
+                    // already accepted this publishes nothing.
                     let height = entry.height.unwrap_or(0);
                     self.state.publish_all(
                         wallet_id,
@@ -3818,11 +3804,10 @@ mod tests {
     }
 
     /// Nodes' word that a send is accepted, in a mempool or a block, is not
-    /// settlement: the root keeps being probed on its schedule, a repeat or
-    /// a probe that learns nothing publishes nothing, and only the wallet
-    /// settling the send ends it.
+    /// settlement: the root is still probed, and only the wallet settling
+    /// the send clears it and makes its child the root.
     #[tokio::test]
-    async fn should_keep_probing_an_accepted_root_until_the_wallet_settles_it() {
+    async fn should_clear_an_accepted_root_only_when_the_wallet_settles_it() {
         let state = Mutex::new(Harness::default());
         let probe = SequenceProbe::new(&[ProbeVerdict::Accepted, ProbeVerdict::Accepted]);
         let views = [send(1, &[outpoint(90, 0)]), send(2, &[outpoint(1, 0)])];
@@ -3920,6 +3905,11 @@ mod tests {
         let mut state = ResolverState::default();
         let key = (wallet(), txid(1));
 
+        assert!(state.publish(key, &unresolved()));
+        let other_reason = ProbeVerdict::Unresolved {
+            reason: "another reason".to_string(),
+        };
+        assert!(!state.publish(key, &other_reason), "still unresolved");
         assert!(state.publish(key, &ProbeVerdict::Accepted));
         assert!(!state.publish(key, &unresolved()));
         assert!(!state.publish(key, &ProbeVerdict::Accepted));
