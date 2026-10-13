@@ -82,6 +82,13 @@ use crate::version::drive_versions::drive_document_method_versions::{
 /// value in a count tree, so the contender count a join is checked against
 /// (`max_contenders_per_contest`) is one element read. A poll started before
 /// keeps its plain tree for the rest of its life.
+///
+/// ## 4. Cursors on summable types
+///
+/// `query.start_at_document: 0 → 1`: a `startAt`/`startAfter` cursor document
+/// is read from any item element. A `documentsSummable` type stores its
+/// documents as `ItemWithSumItem`, which v0 refused as a corrupted path, so no
+/// query on such a type could take a cursor before v14.
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
@@ -102,6 +109,10 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             non_primary_key_single_in_path_query: 0,
             non_primary_key_multiple_in_path_query: 0,
             where_clause_grouping: 1,
+            // v1 at protocol v14: the startAt/startAfter cursor document is read
+            // from any item element, so a `documentsSummable` type (stored as
+            // `ItemWithSumItem`) can be paginated.
+            start_at_document: 1,
         },
         delete: DriveDocumentDeleteMethodVersions {
             add_estimation_costs_for_remove_document_to_primary_storage: 0,
@@ -173,7 +184,8 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
             validate_document_transfer_transition_action_uniqueness: 1,
             validate_document_purchase_transition_action_uniqueness: 1,
             validate_document_update_price_transition_action_uniqueness: 1,
-            validate_restored_document_uniqueness: 0,
+            validate_moderated_document_uniqueness: 0,
+            validate_uniqueness_of_data: 2, // changed: dotted index property names are read as paths into nested objects
         },
         // Unchanged from V3 — see V3's comment for the v12-gated
         // count/sum composition rationale.

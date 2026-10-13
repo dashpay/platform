@@ -6,9 +6,9 @@ inputs:
     description: Rust toolchain to use, stable / nightly / beta, or exact version; uses rust-toolchain.toml if not specified
     default: ""
   target:
-    description: Target Rust platform
+    description: Additional Rust target to install; defaults to the runner's native target
     required: false
-    default: x86_64-unknown-linux-gnu
+    default: ""
   components:
     description: List of additional Rust toolchain components to install
     required: false
@@ -149,10 +149,10 @@ runs:
           ${{ steps.resolved_home.outputs.home }}/.cargo/registry/index
           ${{ steps.resolved_home.outputs.home }}/.cargo/registry/cache
           ${{ steps.resolved_home.outputs.home }}/.cargo/git
-        key: ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}/${{ runner.arch }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
-          ${{ runner.os }}/cargo/registry/
+          ${{ runner.os }}/${{ runner.arch }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
+          ${{ runner.os }}/${{ runner.arch }}/cargo/registry/
 
     # This composite is also used by hosted release, nightly and book jobs.
     # Keep their bootstrap path; only persistent runners require a prebaked image.

@@ -1,4 +1,5 @@
 use crate::error::Error;
+use dpp::block::block_info::BlockInfo;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::validation::state_transition::transformer::StateTransitionSignerAwareActionTransformer;
 use crate::execution::validation::state_transition::shield_from_asset_lock::StateTransitionShieldFromAssetLockTransitionActionTransformer;
@@ -16,7 +17,10 @@ use dpp::state_transition::StateTransition;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
+use crate::execution::validation::state_transition::batch::choose_first_reservation;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::address_witnesses::{StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0};
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
@@ -363,15 +367,52 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 None
             };
 
-            let action = if state_transition.validates_full_state_on_check_tx()
-                || relies_on_gas_sponsor_to_pay
-            {
+            // The batch, now built, names who pays. A signer who relied on a sponsor the
+            // document types do not offer, or who is their own contract's owner, pays
+            // themselves, and is held to the floor the pre-check holds an unsponsored batch to
+            // before any of its state is validated
+            if let (true, Some(identity), Some(action)) = (
+                relies_on_gas_sponsor_to_pay,
+                maybe_identity.as_ref(),
+                action.as_ref(),
+            ) {
+                let result = state_transition
+                    .validate_identity_minimum_balance_once_gas_payer_is_known(
+                        identity,
+                        action,
+                        platform_version,
+                    )?;
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+            }
+
+            let validates_state =
+                state_transition.validates_full_state_on_check_tx() || relies_on_gas_sponsor_to_pay;
+            let action = if validates_state {
+                // A sponsored batch joins the next block, so its state is judged at that
+                // block's height: an age counted in blocks (a `refersTo`'s
+                // `minimumAgeBlocks`) is then the one the block sees
+                let last_block_info = platform.state.last_block_info();
+                let next_block_info = BlockInfo {
+                    height: last_block_info.height.saturating_add(1),
+                    ..*last_block_info
+                };
+                let block_info = if relies_on_gas_sponsor_to_pay {
+                    &next_block_info
+                } else {
+                    last_block_info
+                };
                 // Validating structure
                 let result = state_transition.validate_state(
                     action,
                     platform,
                     ValidationMode::CheckTx,
-                    platform.state.last_block_info(),
+                    block_info,
                     &mut state_transition_execution_context,
                     None,
                 )?;
@@ -432,6 +473,17 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         ),
                     );
                 }
+            }
+
+            // A create choosing the first of the commitments to its values reads up to its scan's
+            // budget of competitors in a block; its state was not validated here, so the signer
+            // is held to that budget too
+            if !validates_state {
+                reserve_choose_first_scans(
+                    &action,
+                    &mut state_transition_execution_context,
+                    platform_version,
+                );
             }
 
             let execution_event = ExecutionEvent::create_from_state_transition_action(
@@ -562,6 +614,25 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
                 let action = state_transition_action_result.into_data()?;
 
+                // As on the first check: a batch naming no sponsor is the signer's to pay
+                if let (true, Some(identity)) =
+                    (relies_on_gas_sponsor_to_pay, maybe_identity.as_ref())
+                {
+                    let result = state_transition
+                        .validate_identity_minimum_balance_once_gas_payer_is_known(
+                            identity,
+                            &action,
+                            platform_version,
+                        )?;
+                    if !result.is_valid() {
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
+                    }
+                }
+
                 let action = if relies_on_gas_sponsor_to_pay {
                     let result = state_transition.validate_state(
                         Some(action),
@@ -599,6 +670,15 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     }
                 }
 
+                // As on the first check: the budget of a scan whose state was not validated
+                if !relies_on_gas_sponsor_to_pay {
+                    reserve_choose_first_scans(
+                        &action,
+                        &mut state_transition_execution_context,
+                        platform_version,
+                    );
+                }
+
                 let execution_event = ExecutionEvent::create_from_state_transition_action(
                     action,
                     maybe_identity,
@@ -617,6 +697,20 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
         _ => Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
             "CheckTxLevel must be first time check or recheck",
         ))),
+    }
+}
+
+/// Reserves, on top of the estimated fee of `action`, what the `chooseFirst` checks of its
+/// creates may bill in a block (see `choose_first_reservation`: their two hashes and the
+/// competitor scan's budget), for an action whose state check tx did not validate. Fee
+/// validation then admits only a signer who could pay for them.
+fn reserve_choose_first_scans(
+    action: &StateTransitionAction,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) {
+    for operation in choose_first_reservation(action, platform_version) {
+        execution_context.add_operation(operation);
     }
 }
 

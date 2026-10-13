@@ -14,7 +14,7 @@ use crate::consensus::basic::contract_group::{
 use crate::consensus::basic::contract_moderation::{
     ContractModerationReasonTooLongError, ContractModerationSelfTargetError,
     DocumentActionFeesWithoutModerationError, InvalidContractModerationConfigError,
-    InvalidContractModerationReasonDocumentsError,
+    InvalidContractModerationDocumentFieldsError, InvalidContractModerationReasonDocumentsError,
 };
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::{
@@ -37,12 +37,13 @@ use crate::consensus::basic::data_contract::{
     InvalidTokenDistributionFunctionInvalidParameterTupleError, InvalidTokenLanguageCodeError,
     InvalidTokenNameCharacterError, InvalidTokenNameLengthError, MainGroupIsNotDefinedError,
     NewTokensDestinationIdentityOptionRequiredError, NonContiguousContractGroupPositionsError,
-    NonContiguousContractTokenPositionsError, PreProgrammedDistributionAmountOverLimitError,
+    NonContiguousContractTokenPositionsError, NonTransferableTokenPaymentMustBurnError,
+    NonTransferableTokenShieldedPoolError, PreProgrammedDistributionAmountOverLimitError,
     RedundantDocumentPaidForByTokenWithContractId, SystemPropertyIndexAlreadyPresentError,
-    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
-    UnknownDocumentCreationRestrictionModeError, UnknownGasFeesPaidByError,
-    UnknownSecurityLevelError, UnknownStorageKeyRequirementsError, UnknownTradeModeError,
-    UnknownTransferableTypeError,
+    TokenShieldedPoolIncompatibleRulesError, UndefinedIndexPropertyError,
+    UniqueIndicesLimitReachedError, UnknownDocumentCreationRestrictionModeError,
+    UnknownGasFeesPaidByError, UnknownSecurityLevelError, UnknownStorageKeyRequirementsError,
+    UnknownTradeModeError, UnknownTransferableTypeError,
 };
 use crate::consensus::basic::data_contract::{
     InvalidJsonSchemaRefError, TokenPaymentByBurningOnlyAllowedOnInternalTokenError,
@@ -56,10 +57,10 @@ use crate::consensus::basic::document::{
     DocumentCreationNotAllowedError, DocumentFieldMaxSizeExceededError,
     DocumentPropertyConstraintViolatedError, DocumentPropertyMaxBytesExceededError,
     DocumentPropertyNotDistinctError, DocumentPropertyNotGeneratedError,
-    DocumentTransitionsAreAbsentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
+    DocumentReferencePreimageInvalidError, DocumentTransitionsAreAbsentError,
+    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
+    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, InvalidEncryptedPropertyShapeError,
     MaxDocumentsTransitionsExceededError, MissingDataContractIdBasicError,
     MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
     MissingDocumentTypeError, MissingPositionsInDocumentTypePropertiesError, NonceOutOfBoundsError,
@@ -841,6 +842,28 @@ pub enum BasicError {
     // (protocol version 14).
     #[error(transparent)]
     DocumentPropertyNotGeneratedError(DocumentPropertyNotGeneratedError),
+
+    // The fields a moderator's document change sets (protocol version 14).
+    #[error(transparent)]
+    InvalidContractModerationDocumentFieldsError(InvalidContractModerationDocumentFieldsError),
+
+    // A create that cannot assemble the preimage of a `refersTo` lookup key it reveals
+    // (protocol version 14).
+    #[error(transparent)]
+    DocumentReferencePreimageInvalidError(DocumentReferencePreimageInvalidError),
+
+    // A token opting into a shielded pool keeps no freeze rules (protocol version 14).
+    #[error(transparent)]
+    TokenShieldedPoolIncompatibleRulesError(TokenShieldedPoolIncompatibleRulesError),
+
+    // A non-transferable token cannot have a shielded pool (protocol version 14).
+    #[error(transparent)]
+    NonTransferableTokenShieldedPoolError(NonTransferableTokenShieldedPoolError),
+
+    // A document type pays its contract's own non-transferable token to the contract owner
+    // instead of burning it (protocol version 14).
+    #[error(transparent)]
+    NonTransferableTokenPaymentMustBurnError(NonTransferableTokenPaymentMustBurnError),
 }
 
 impl From<BasicError> for ConsensusError {
@@ -1006,6 +1029,48 @@ mod tests {
                 )
             )),
             200
+        );
+        // The fields a moderator's document change sets (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::InvalidContractModerationDocumentFieldsError(
+                InvalidContractModerationDocumentFieldsError::new("no field".to_string())
+            )),
+            201
+        );
+        // A create that cannot assemble the preimage of a `refersTo` lookup key it reveals
+        // (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::DocumentReferencePreimageInvalidError(
+                DocumentReferencePreimageInvalidError::new(
+                    "domain".to_string(),
+                    "$creatorId".to_string(),
+                    "normalizedLabel".to_string(),
+                    "reason".to_string(),
+                )
+            )),
+            202
+        );
+        // A token opting into a shielded pool keeps no freeze rules (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::TokenShieldedPoolIncompatibleRulesError(
+                TokenShieldedPoolIncompatibleRulesError::new(0, "freezeRules".to_string())
+            )),
+            203
+        );
+        // A non-transferable token with a shielded pool (protocol version 14).
+        assert_eq!(
+            discriminant_of(BasicError::NonTransferableTokenShieldedPoolError(
+                NonTransferableTokenShieldedPoolError::new(0)
+            )),
+            204
+        );
+        // A document type paying its own non-transferable token to the contract owner
+        // (protocol version 14): the tail of the enum.
+        assert_eq!(
+            discriminant_of(BasicError::NonTransferableTokenPaymentMustBurnError(
+                NonTransferableTokenPaymentMustBurnError::new(0, "create".to_string())
+            )),
+            205
         );
     }
 

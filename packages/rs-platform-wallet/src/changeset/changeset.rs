@@ -1462,6 +1462,38 @@ pub struct AssetLockEntry {
     pub proof: Option<AssetLockProof>,
 }
 
+impl AssetLockEntry {
+    /// Preserve the immutable operation association and every known signed
+    /// attempt when folding or replaying a possibly stale snapshot. Returns
+    /// false for a conflicting UUID: the caller must discard the whole snapshot
+    /// so its lifecycle or evidence cannot be attached to a different operation.
+    #[must_use = "a conflicting operation snapshot must not be applied"]
+    pub(crate) fn preserve_recovery_metadata(
+        &mut self,
+        previous_operation_id: Option<[u8; 16]>,
+        previous_attempts: &[Vec<u8>],
+    ) -> bool {
+        if let Some(previous_id) = previous_operation_id {
+            if self
+                .operation_id
+                .is_some_and(|incoming| incoming != previous_id)
+            {
+                tracing::warn!(out_point = %self.out_point, "Ignoring asset-lock snapshot with a conflicting operation ID");
+                return false;
+            }
+            self.operation_id = Some(previous_id);
+        }
+        let mut attempts = previous_attempts.to_vec();
+        for attempt in std::mem::take(&mut self.shielded_funding_attempts) {
+            if !attempts.contains(&attempt) {
+                attempts.push(attempt);
+            }
+        }
+        self.shielded_funding_attempts = attempts;
+        true
+    }
+}
+
 impl Merge for AssetLockChangeSet {
     fn merge(&mut self, other: Self) {
         // Last write wins, with ONE lifecycle exception: `Consumed` is
@@ -1478,30 +1510,21 @@ impl Merge for AssetLockChangeSet {
         // swift-sdk `persistAssetLocks`), making the store order of
         // racing snapshots immaterial.
         for (out_point, mut entry) in other.asset_locks {
-            if entry.operation_id.is_none() {
-                entry.operation_id = self
-                    .asset_locks
-                    .get(&out_point)
-                    .and_then(|previous| previous.operation_id);
-            }
-            if let Some(previous) = self.asset_locks.get(&out_point) {
-                // A stale snapshot cannot erase an already signed attempt.
-                let mut attempts = previous.shielded_funding_attempts.clone();
-                for attempt in &entry.shielded_funding_attempts {
-                    if !attempts.contains(attempt) {
-                        attempts.push(attempt.clone());
-                    }
+            if let Some(existing) = self.asset_locks.get_mut(&out_point) {
+                if !entry.preserve_recovery_metadata(
+                    existing.operation_id,
+                    &existing.shielded_funding_attempts,
+                ) {
+                    continue;
                 }
-                entry.shielded_funding_attempts = attempts;
-            }
-            if entry.status != AssetLockStatus::Consumed {
-                if let Some(existing) = self.asset_locks.get_mut(&out_point) {
-                    if existing.status == AssetLockStatus::Consumed {
-                        // Terminality guards lifecycle state, never discards
-                        // exact signed evidence carried by a delayed snapshot.
-                        existing.shielded_funding_attempts = entry.shielded_funding_attempts;
-                        continue;
-                    }
+                if existing.status == AssetLockStatus::Consumed
+                    && entry.status != AssetLockStatus::Consumed
+                {
+                    // Terminality guards lifecycle state, never discards
+                    // exact signed evidence carried by a delayed snapshot.
+                    existing.operation_id = entry.operation_id;
+                    existing.shielded_funding_attempts = entry.shielded_funding_attempts;
+                    continue;
                 }
             }
             // Every ACCEPTED upsert supersedes an earlier-folded tombstone
@@ -2599,6 +2622,33 @@ mod tests {
             folded.asset_locks[&outpoint].status,
             AssetLockStatus::Consumed
         );
+
+        // A conflicting operation cannot replace either lifecycle or evidence.
+        let mut original = cs_with(AssetLockStatus::Broadcast);
+        original
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .operation_id = Some([42; 16]);
+        original
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .shielded_funding_attempts = vec![vec![18, 1]];
+        let mut conflicting = cs_with(AssetLockStatus::Consumed);
+        conflicting
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .operation_id = Some([43; 16]);
+        conflicting
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .shielded_funding_attempts = vec![vec![18, 2]];
+        let expected = original.clone();
+        original.merge(conflicting);
+        assert_eq!(original.asset_locks, expected.asset_locks);
 
         // The legitimate direction still lands.
         let mut folded = cs_with(AssetLockStatus::RecoveredFromChain);

@@ -110,7 +110,7 @@
             "refersTo": {
               "type": "permanentDocument",
               "documentType": "reason",
-              "propertyAgreement": {
+              "where": {
                 "$ownerId": "$ownerId"
               }
             }
@@ -144,7 +144,7 @@
             "refersTo": {
               "type": "permanentDocument",
               "documentType": "reason",
-              "propertyAgreement": {
+              "where": {
                 "topic": "topic"
               }
             }

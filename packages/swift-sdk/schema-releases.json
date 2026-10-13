@@ -151,6 +151,17 @@
     }
   },
   "releases": {
+    "5b8cbff0-0c0f-4385-b79b-1248d2d8e142": {
+      "app_id": "1206647026",
+      "app_version": "9.1.2",
+      "build_id": "03c26744-be42-4467-a5d1-2126466e2680",
+      "build_number": "8",
+      "bundle_id": "org.dashfoundation.dash",
+      "data_commit": "ab4e73484cb13ab904efabcb607fe73dceaf92ec",
+      "manifest_sha256": "d8896af5756865f369d8d6f90659c8c0955eb30df58bc4bed23792b9c703f33c",
+      "platform_sha": "e826b8f98819541990ad5652cd4e9822c568b897",
+      "schema_version": "3.0.0"
+    },
     "acc8c673-bebe-43f2-9384-3be68a76db6f": {
       "app_id": "1206647026",
       "app_version": "9.1.1",

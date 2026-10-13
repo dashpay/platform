@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_contest_document_with_same_id_already_present_error::DocumentContestDocumentWithSameIdAlreadyPresentError;
 use dpp::consensus::state::document::document_contest_maximum_contenders_reached_error::DocumentContestMaximumContendersReachedError;
@@ -5,6 +6,8 @@ use dpp::consensus::state::document::document_contest_not_paid_for_error::Docume
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use dpp::identifier::Identifier;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
@@ -21,17 +24,19 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v1::DocumentCreateTransitionActionStateValidationV1;
-use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::DocumentReferenceValidation;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::{ConsumedLookupDocument, DocumentReferenceValidation};
 use crate::execution::validation::state_transition::batch::state::v0::fetch_documents::has_contested_document_with_document_id;
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentCreateTransitionActionStateValidationV2
 {
+    #[allow(clippy::too_many_arguments)]
     fn validate_state_v2(
         &mut self,
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -44,6 +49,7 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
         platform: &PlatformStateRef,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -123,21 +129,57 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
             self.set_prefunded_voting_fund(fund_to_join);
         }
 
-        // The creator of a document being created is its writer
+        // The creator of a document being created is its writer; the commitments the create
+        // reveals and consumes are collected for the batch to delete with it, and the values
+        // of the type's derived index properties, from the documents the references fetched,
+        // for Drive to key the document by without reading those documents again. The
+        // document is recorded in this block, for every time and height a `where` entry
+        // reads, and the values the type's rules read of the documents its references point
+        // at are collected from those documents too
+        let system = DocumentSystemValues::created_in_block(owner_id, &self.block_info());
+        let mut derived_index_values = BTreeMap::new();
+        let mut referenced_documents = BTreeMap::new();
         let reference_result = self.base().validate_document_references(
             self.data(),
             owner_id,
             Some(owner_id),
+            &system,
             None,
             None,
             platform,
             block_info,
+            consumed_documents,
+            Some(&mut derived_index_values),
+            &mut referenced_documents,
             transaction,
             execution_context,
             platform_version,
         )?;
         if !reference_result.is_valid() {
             return Ok(reference_result);
+        }
+        self.set_derived_index_values(derived_index_values);
+
+        // The rules reading a document a reference points at (protocol version 14), judged
+        // once the references hold, with the values their checks read: the structure
+        // validation judged every other rule, and could not judge these before the reads.
+        // A type without such a rule judges nothing more, and copies nothing
+        let result = self
+            .base()
+            .document_type()?
+            .validate_referencing_property_constraints(
+                self.data(),
+                referenced_documents,
+                DocumentSystemValues {
+                    aggregates: Some(self.property_constraint_aggregates().clone()),
+                    consensus: true,
+                    ..system
+                },
+                platform_version,
+            )
+            .map_err(Error::Protocol)?;
+        if !result.is_valid() {
+            return Ok(result);
         }
 
         // A non-contested create must not take the id of a live contested

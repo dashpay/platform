@@ -67,6 +67,12 @@ struct ShieldedFundingAttemptsWire {
 }
 impl_persistable_blob!(ShieldedFundingAttemptsWire);
 
+/// Nullable recovery columns read independently of the frozen lifecycle blob.
+struct AssetLockRecoveryRow {
+    operation_id: Option<Vec<u8>>,
+    shielded_funding_attempts_blob: Option<Vec<u8>>,
+}
+
 fn decode_attempts(bytes: Option<&[u8]>) -> Result<Vec<Vec<u8>>, WalletStorageError> {
     let Some(bytes) = bytes else {
         return Ok(Vec::new());
@@ -178,13 +184,19 @@ pub fn apply(
         for (op, entry) in &cs.asset_locks {
             let op_bytes = blob::encode_outpoint(op)?;
             let lifecycle_blob = blob::encode(&AssetLockEntryWire::from_entry(entry)?)?;
-            let existing: Option<(Option<Vec<u8>>, Option<Vec<u8>>)> = tx.query_row(
+            let existing: Option<AssetLockRecoveryRow> = tx.query_row(
                 "SELECT operation_id, shielded_funding_attempts_blob FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
                 params![wallet_id.as_slice(), &op_bytes[..]],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok(AssetLockRecoveryRow {
+                    operation_id: row.get(0)?,
+                    shielded_funding_attempts_blob: row.get(1)?,
+                }),
             ).optional()?;
-            let old_attempts =
-                decode_attempts(existing.as_ref().and_then(|(_, bytes)| bytes.as_deref()))?;
+            let old_attempts = decode_attempts(
+                existing
+                    .as_ref()
+                    .and_then(|row| row.shielded_funding_attempts_blob.as_deref()),
+            )?;
             let incoming = &entry.shielded_funding_attempts;
             if incoming.iter().any(Vec::is_empty)
                 || (!incoming.starts_with(&old_attempts) && !old_attempts.starts_with(incoming))
@@ -202,7 +214,11 @@ pub fn apply(
                 .operation_id
                 .as_ref()
                 .map(|id| id.as_slice())
-                .or_else(|| existing.as_ref().and_then(|(id, _)| id.as_deref()));
+                .or_else(|| {
+                    existing
+                        .as_ref()
+                        .and_then(|row| row.operation_id.as_deref())
+                });
             if !attempts.is_empty() && operation_id.is_none() {
                 return Err(WalletStorageError::blob_decode(
                     "shielded funding attempts require an operation ID",

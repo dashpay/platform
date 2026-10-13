@@ -32,7 +32,7 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "note",
-            "propertyAgreement": {
+            "where": {
               "$ownerId": "$ownerId"
             }
           }

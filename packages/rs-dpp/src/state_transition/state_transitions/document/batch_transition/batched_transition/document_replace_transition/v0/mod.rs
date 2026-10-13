@@ -257,6 +257,8 @@ impl DocumentFromReplaceTransitionV0 for Document {
                 updated_at_core_block_height,
                 transferred_at_core_block_height,
                 creator_id,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -344,6 +346,8 @@ impl DocumentFromReplaceTransitionV0 for Document {
                 updated_at_core_block_height,
                 transferred_at_core_block_height,
                 creator_id,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

@@ -154,8 +154,8 @@ behaviour-preserving. Add the next `SYSTEM_LIMITS_V{n+1}` for the unreleased
 protocol version with the new value. Keep a real method version only where the
 logic differs: in `packages/rs-dpp/src/withdrawal/daily_withdrawal_limit/`,
 `v0` computes a tiered percentage of total credits and `v2` reads
-`daily_withdrawal_limit_percent` and `max_daily_withdrawal_amount` from
-`SystemLimits`; that is a logic change and earns its own version. Raising the
+`daily_withdrawal_limit_percent` from `SystemLimits`; that is a logic change
+and earns its own version. Raising the
 percentage later would be a table edit, not a `v3`.
 
 Why: reviewers look for limits in the tables. A constant hidden in a method
@@ -265,7 +265,8 @@ Rules that fall out of the table:
 - Preserve mempool coverage. `Batch` runs advanced structure with state during
   `check_tx`, while full state validation is skipped there
   (`validates_full_state_on_check_tx` defaults to `false`; masternode votes
-  are the one transition that opts in, because they are unpaid). Moving a
+  are the one transition that opts in, because a block refuses them unpaid,
+  and they run advanced structure with state there too). Moving a
   contract-dependent structural check into state validation would remove that
   rejection from mempool admission.
 - Validation outcomes are `ConsensusValidationResult`, returned as `Ok`. A

@@ -57,12 +57,9 @@
       "ownerRefersTo": {
         "type": "permanentDocument",
         "documentType": "addedModerator",
-        "lookup": {
-          "index": "byElectedCharterMember",
-          "keys": {
-            "electedCharterId": "electedCharterId",
-            "memberId": "."
-          }
+        "findBy": {
+          "electedCharterId": "electedCharterId",
+          "memberId": "."
         }
       },
       "properties": {
@@ -91,16 +88,13 @@
       "ownerRefersTo": {
         "type": "permanentDocument",
         "documentType": "addedModerator",
-        "propertyAgreement": {
-          "role": "role",
-          "$ownerId": "memberId"
+        "findBy": {
+          "electedCharterId": "electedCharterId",
+          "memberId": "."
         },
-        "lookup": {
-          "index": "byElectedCharterMember",
-          "keys": {
-            "electedCharterId": "electedCharterId",
-            "memberId": "."
-          }
+        "where": {
+          "role": "role",
+          "memberId": "$ownerId"
         }
       },
       "properties": {
@@ -147,12 +141,9 @@
       "creatorRefersTo": {
         "type": "permanentDocument",
         "documentType": "addedModerator",
-        "lookup": {
-          "index": "byElectedCharterMember",
-          "keys": {
-            "electedCharterId": "electedCharterId",
-            "memberId": "."
-          }
+        "findBy": {
+          "electedCharterId": "electedCharterId",
+          "memberId": "."
         }
       },
       "properties": {
@@ -243,23 +234,17 @@
           {
             "type": "permanentDocument",
             "documentType": "addedModerator",
-            "lookup": {
-              "index": "byElectedCharterMember",
-              "keys": {
-                "electedCharterId": "electedCharterId",
-                "memberId": "."
-              }
+            "findBy": {
+              "electedCharterId": "electedCharterId",
+              "memberId": "."
             }
           },
           {
             "type": "permanentDocument",
             "documentType": "founderSeat",
-            "lookup": {
-              "index": "byElectedCharterFounder",
-              "keys": {
-                "electedCharterId": "electedCharterId",
-                "founderId": "."
-              }
+            "findBy": {
+              "electedCharterId": "electedCharterId",
+              "founderId": "."
             }
           }
         ]
@@ -326,12 +311,9 @@
       "ownerRefersTo": {
         "type": "deletableDocument",
         "documentType": "deletableSeat",
-        "lookup": {
-          "index": "byElectedCharterMember",
-          "keys": {
-            "electedCharterId": "electedCharterId",
-            "memberId": "."
-          }
+        "findBy": {
+          "electedCharterId": "electedCharterId",
+          "memberId": "."
         }
       },
       "properties": {

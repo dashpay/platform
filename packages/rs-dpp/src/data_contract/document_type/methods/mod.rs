@@ -26,8 +26,9 @@ use crate::data_contract::document_type::methods::versioned_methods::DocumentTyp
 use crate::data_contract::document_type::property_constraints::{
     DocumentSystemValues, SystemChange,
 };
+use crate::data_contract::document_type::DocumentPropertyType;
 #[cfg(feature = "validation")]
-use crate::data_contract::document_type::{DocumentPropertyType, StringPropertySizes};
+use crate::data_contract::document_type::StringPropertySizes;
 use crate::fee::Credits;
 use crate::voting::vote_polls::VotePoll;
 use platform_value::btreemap_extensions::{
@@ -58,10 +59,30 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
         }
     }
 
+    /// Whether the type lists fields only its contract's moderators write
+    /// (`moderatorAbilities.changeFields`, protocol version 14): a moderator's
+    /// change is stored as an update, so such a type keeps a `$revision` on its
+    /// documents even when their owners can not replace them. False on every
+    /// generation before the keyword.
+    fn has_moderator_changeable_fields(&self) -> bool {
+        false
+    }
+
+    /// The type of the value a derived index property of the type holds (an
+    /// index property `"<reference property>.<field>"` read from the referenced
+    /// document, protocol version 14), `None` for any other name and on every
+    /// generation before them. Encodes the values of such a property into keys,
+    /// as [`DocumentTypeV0Getters::flattened_properties`] gives the types of the
+    /// properties the documents hold.
+    fn derived_index_property_type(&self, _name: &str) -> Option<&DocumentPropertyType> {
+        None
+    }
+
     fn requires_revision(&self) -> bool {
         self.documents_mutable()
             || self.documents_transferable().is_transferable()
             || self.trade_mode().seller_sets_price()
+            || self.has_moderator_changeable_fields()
     }
 
     /// Checks the shape of every `encryptedFor` property `properties` supplies
@@ -487,16 +508,38 @@ pub trait DocumentTypeBasicMethods: DocumentTypeV0Getters {
 }
 
 /// A map on the way to a path holds the path's key more than once.
-#[cfg(feature = "validation")]
-struct RepeatedKey;
+pub struct RepeatedKey;
 
 /// The value at a dotted `path` of a document's properties: `Ok(None)` when it is absent or
 /// the path runs through a value that is not a map (the schema validation refuses that
-/// shape on its own), `Err` when a map on the way holds the path's key more than once.
+/// shape on its own), `Err` when a map on the way holds the path's key more than once. The
+/// schema validation and the stored document keep the last of repeated keys, where a plain
+/// path read finds the first, so a value checked through the first could differ from the
+/// one stored: every check that must read what is stored reads through here.
 #[cfg(feature = "validation")]
 fn read_at_path<'a>(properties: &'a Value, path: &str) -> Result<Option<&'a Value>, RepeatedKey> {
-    let mut current = properties;
-    for segment in path.split('.') {
+    read_path_segments(properties, path.split('.'))
+}
+
+/// The value at a dotted `path` of a document's data, read as [`read_at_path`] reads it.
+pub fn read_data_at_path<'a>(
+    data: &'a BTreeMap<String, Value>,
+    path: &str,
+) -> Result<Option<&'a Value>, RepeatedKey> {
+    let mut segments = path.split('.');
+    let Some(value) = segments.next().and_then(|first| data.get(first)) else {
+        return Ok(None);
+    };
+    read_path_segments(value, segments)
+}
+
+/// The value `segments` lead to from `current`, refusing a map that holds a segment's key
+/// more than once.
+fn read_path_segments<'a, 'p>(
+    mut current: &'a Value,
+    segments: impl Iterator<Item = &'p str>,
+) -> Result<Option<&'a Value>, RepeatedKey> {
+    for segment in segments {
         let Value::Map(map) = current else {
             return Ok(None);
         };
@@ -700,9 +743,10 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .serialize_value_for_key
         {
             0 => self.serialize_value_for_key_v0(key, value),
+            1 => self.serialize_value_for_key_v1(key, value),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "serialize_value_for_key".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -721,9 +765,126 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .deserialize_value_for_key
         {
             0 => self.deserialize_value_for_key_v0(key, serialized_value),
+            1 => self.deserialize_value_for_key_v1(key, serialized_value),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "deserialize_value_for_key".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
+    }
+
+    /// Whether the generations of [`Self::serialize_value_for_key`] key
+    /// `key_name`, a property or derived index property, differently: an
+    /// unsigned integer that does not keep generation 0's keys
+    /// ([`Self::unsigned_integer_tree_key_property_type`]).
+    fn tree_keys_differ_between_generations(&self, key_name: &str) -> bool {
+        self.unsigned_integer_tree_key_property_type(key_name)
+            .is_some()
+    }
+
+    /// A contested index's value as the paths of its vote poll key it:
+    /// generation 0's key ([`Self::serialize_value_for_key`] before protocol
+    /// version 14), whatever generation keys the document type's own indexes.
+    /// A poll, the contenders and votes under it and the vote records of the
+    /// masternodes that voted address one another by these paths, so a poll
+    /// keeps one path for its whole life, across a protocol version that
+    /// changes the key generation.
+    fn serialize_value_for_vote_poll_key(
+        &self,
+        key_name: &str,
+        value: &Value,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        self.serialize_value_for_key_v0(key_name, value)
+    }
+
+    /// Reads a key [`Self::serialize_value_for_vote_poll_key`] wrote.
+    fn deserialize_value_for_vote_poll_key(
+        &self,
+        key_name: &str,
+        key: &[u8],
+    ) -> Result<Value, ProtocolError> {
+        self.deserialize_value_for_key_v0(key_name, key)
+    }
+
+    /// The key [`Self::serialize_value_for_key`] of `platform_version` writes
+    /// for `key_name` for the value a generation-0 `key` holds: the inverse of
+    /// [`Self::tree_key_in_generation_0`], for the first block of protocol
+    /// version 14, which rewrites the keys generation 0 wrote.
+    ///
+    /// Versioned on `serialize_value_for_key` like its inverse, so a new
+    /// generation needs its own arm in both.
+    fn tree_key_from_generation_0(
+        &self,
+        key_name: &str,
+        key: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .serialize_value_for_key
+        {
+            0 => Ok(key.to_vec()),
+            // Generation 1 differs only by the top bit of an unsigned integer
+            // key, and flipping it again undoes it
+            1 => self.tree_key_in_generation_0(key_name, key, platform_version),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "tree_key_from_generation_0".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
+    }
+
+    /// `key`, which [`Self::serialize_value_for_key`] of `platform_version`
+    /// wrote for `key_name`, as generation 0 of it writes the same value: for
+    /// a key that keeps generation 0 whatever generation keys the indexes, a
+    /// contested index's value in the path of its vote poll
+    /// ([`Self::serialize_value_for_vote_poll_key`]), when only the key of the
+    /// current generation is at hand.
+    ///
+    /// Versioned on `serialize_value_for_key`, since it undoes exactly what
+    /// that generation changed: unchanged under generation 0, and under
+    /// generation 1 an unsigned integer key has its top bit flipped back.
+    fn tree_key_in_generation_0(
+        &self,
+        key_name: &str,
+        key: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        self.tree_key_into_generation_0(key_name, key.to_vec(), platform_version)
+    }
+
+    /// [`Self::tree_key_in_generation_0`] on an owned key, converted in place:
+    /// a key both generations write the same is returned as it is.
+    fn tree_key_into_generation_0(
+        &self,
+        key_name: &str,
+        key: Vec<u8>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .serialize_value_for_key
+        {
+            0 => Ok(key),
+            1 => Ok(
+                match self.unsigned_integer_tree_key_property_type(key_name) {
+                    Some(property_type) => {
+                        property_type.unsigned_tree_key_into_other_generation(key)
+                    }
+                    None => key,
+                },
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "tree_key_into_generation_0".to_string(),
+                known_versions: vec![0, 1],
                 received: version,
             }),
         }
@@ -968,10 +1129,14 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     /// `DocumentPropertyConstraintViolatedError` (10422), naming the rule and why (the rule
     /// does not hold, or evaluating it overflowed, divided by zero, raised to a negative
     /// power or read a value that is not an integer). A property the document
-    /// leaves out counts as 0, or as its `ifAbsent` value; `$ownerId` and the system
-    /// times and heights read `system`, the values of the document version being written
-    /// (an owner the caller does not know equals no identifier, and a rule reading a time
-    /// or height it does not know is not judged). Reads the properties and `system` alone:
+    /// leaves out counts as 0, or as its `ifAbsent` value; `$ownerId`, the system
+    /// times and heights and `$revision` read `system`, the values of the document version
+    /// being written (an owner the caller does not know equals no identifier, and a rule
+    /// reading a time, a height or a revision it does not know is not judged), and a read
+    /// through `$old.` the stored version `system` gives (a rule reading one it does not give
+    /// is not judged). A write changing only some fields of a stored document
+    /// (`system.changed_fields`, a moderator's change) is judged only against the rules
+    /// reading what it changes. Reads the properties and `system` alone:
     /// `DataContract::validate_document_properties` runs it after the schema validation,
     /// so document create and replace, and every client validating a document, apply it.
     ///
@@ -995,9 +1160,50 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
             .validate_property_constraints
         {
             None => Ok(SimpleConsensusValidationResult::default()),
-            Some(0) => Ok(self.validate_property_constraints_v0(data, system)),
+            Some(0) => self.validate_property_constraints_v0(data, system),
             Some(version) => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_property_constraints".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Judges a document being created or replaced against the rules of the document
+    /// type's `propertyConstraints` that read a document one of its references points at
+    /// (`{ "referenced": [reference, field] }`), in name order: the first rule it breaks
+    /// fails with `DocumentPropertyConstraintViolatedError` (10422), as
+    /// [`Self::validate_property_constraints`] would. `data` holds the document's
+    /// properties and `referenced`, by reference property, the values those rules read of
+    /// the documents the references point at, which consensus reads with the references it
+    /// checks; `system` holds the rest, the totals and the stored version included, taken
+    /// by value so that marking the referenced values given copies none of it. Every other
+    /// rule of the type was judged before the references were checked, and is not judged
+    /// again. A type with no such rule costs nothing, the data not even copied.
+    ///
+    /// Versioned with [`Self::validate_property_constraints`]: `None` before protocol
+    /// version 14, where no parsed document type carries a rule.
+    fn validate_referencing_property_constraints(
+        &self,
+        data: &BTreeMap<String, Value>,
+        referenced: BTreeMap<String, Value>,
+        system: DocumentSystemValues,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_property_constraints
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => self.validate_referencing_property_constraints_v0(data, referenced, system),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_referencing_property_constraints".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
@@ -1007,12 +1213,15 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
     /// Judges a stored document's properties, `data`, against the rules of the document
     /// type's `propertyConstraints` that `change` can break, with `system` the document's
     /// system values after it, in name order. A transfer or a purchase gives the document a
-    /// new owner and a new transfer time and heights, and a price update a new update time
-    /// and heights; neither changes a property, so the rules reading what it changes are
-    /// the only ones it can break ([`PropertyConstraint::reads_change`]), and the first
-    /// broken fails with `DocumentPropertyConstraintViolatedError` (10422) as it would on a
-    /// write. The document type's other rules held when the document was written and still
-    /// do. A type with no such rule costs nothing, and its data is not copied.
+    /// new owner, a new transfer time and heights and the next revision, a price update a
+    /// new update time and heights and the next revision, and a moderator's restore brings
+    /// it back as it was while the totals around it may have moved; none changes a property,
+    /// so the rules reading what it changes, of the document or, through `$old.`, of the
+    /// stored version `system` gives, are the only ones it can break
+    /// ([`PropertyConstraint::reads_change`]), and the first broken fails with
+    /// `DocumentPropertyConstraintViolatedError` (10422) as it would on a write. The document
+    /// type's other rules held when the document was last written and still do. A type with
+    /// no such rule costs nothing, and its data is not copied.
     ///
     /// Versioned with [`Self::validate_property_constraints`]: `None` before protocol
     /// version 14, where no parsed document type carries a rule.
@@ -1037,10 +1246,48 @@ pub trait DocumentTypeV0Methods: DocumentTypeV0Getters + DocumentTypeV0MethodsVe
         {
             None => Ok(SimpleConsensusValidationResult::default()),
             Some(0) => {
-                Ok(self.validate_property_constraints_for_system_change_v0(data, system, change))
+                self.validate_property_constraints_for_system_change_v0(data, system, change)
             }
             Some(version) => Err(ProtocolError::UnknownVersionMismatch {
                 method: "validate_property_constraints_for_system_change".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Judges the owner's delete of a stored document, with id `document_id` and properties
+    /// `data` (a map), against every rule of the document type's `deleteConstraints`, in name
+    /// order:
+    /// the first rule the stored document breaks fails with
+    /// `DocumentDeleteConstraintViolatedError` (40147), naming the document, the rule and
+    /// why, as `propertyConstraints` would. `system` holds the stored document's owner and
+    /// its times and heights, and the `countOf` and `sumOf` totals consensus read as they
+    /// will be once the document is gone. A type with no rule costs nothing.
+    ///
+    /// Versioned with [`Self::validate_property_constraints`]: `None` before protocol
+    /// version 14, where no parsed document type carries a rule.
+    fn validate_delete_constraints(
+        &self,
+        document_id: Identifier,
+        data: &Value,
+        system: &DocumentSystemValues,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>
+    where
+        Self: DocumentTypeV2Getters,
+    {
+        match platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_property_constraints
+        {
+            None => Ok(SimpleConsensusValidationResult::default()),
+            Some(0) => self.validate_delete_constraints_v0(document_id, data, system),
+            Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                method: "validate_delete_constraints".to_string(),
                 known_versions: vec![0],
                 received: version,
             }),
@@ -1475,6 +1722,269 @@ mod tests {
             props.get("known").unwrap(),
             &Value::Text("hello".to_string())
         );
+    }
+
+    // --------------------------------------------------------------
+    // serialize_value_for_key / deserialize_value_for_key generations
+    // --------------------------------------------------------------
+
+    /// A `grade` type with an unsigned 8-bit `grade` (its bounds pick u8), a
+    /// signed `delta` and a `name`, each indexed.
+    fn grade_schema() -> Value {
+        platform_value!({
+            "type": "object",
+            "indices": [
+                {"name": "byGrade", "properties": [{"grade": "asc"}]},
+                {"name": "byDelta", "properties": [{"delta": "asc"}]},
+                {"name": "byName", "properties": [{"name": "asc"}]},
+            ],
+            "properties": {
+                "grade": {"type": "integer", "minimum": 0, "maximum": 255, "position": 0},
+                "delta": {"type": "integer", "minimum": -100, "maximum": 100, "position": 1},
+                "name": {"type": "string", "maxLength": 20, "position": 2},
+            },
+            "required": ["grade", "delta", "name"],
+            "additionalProperties": false,
+        })
+    }
+
+    fn grade_key(value: u8, platform_version: &PlatformVersion) -> Vec<u8> {
+        build_doc_type_at("grade", grade_schema(), platform_version)
+            .as_ref()
+            .serialize_value_for_key("grade", &Value::U8(value), platform_version)
+            .expect("a u8 grade is keyed")
+    }
+
+    #[test]
+    fn should_key_an_unsigned_property_with_its_top_bit_flipped_before_protocol_version_14() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+        assert_eq!(grade_key(100, platform_version), vec![0xE4]);
+        assert_eq!(grade_key(200, platform_version), vec![0x48]);
+        // The flip that puts 200 below 100
+        assert!(grade_key(200, platform_version) < grade_key(100, platform_version));
+    }
+
+    /// A schema whose `[grade]` index sums `weight` (of the given schema),
+    /// range-summably when `range_summable`, beside a `[grade, name]` index.
+    fn summed_grade_schema(weight: Value, range_summable: bool) -> Value {
+        platform_value!({
+            "type": "object",
+            "indices": [
+                {
+                    "name": "byGrade",
+                    "properties": [{"grade": "asc"}],
+                    "summable": "weight",
+                    "rangeSummable": range_summable,
+                },
+                {"name": "byGradeName", "properties": [{"grade": "asc"}, {"name": "asc"}]},
+            ],
+            "properties": {
+                "grade": {"type": "integer", "minimum": 0, "maximum": 255, "position": 0},
+                "weight": weight,
+                "name": {"type": "string", "maxLength": 20, "position": 2},
+            },
+            "required": ["grade", "weight", "name"],
+            "additionalProperties": false,
+        })
+    }
+
+    #[test]
+    fn should_keep_generation_0_keys_for_a_property_ending_a_range_summable_index() {
+        let platform_version = PlatformVersion::latest();
+        let grade_200 = |weight: Value, range_summable: bool| {
+            let document_type = build_doc_type_at(
+                "score",
+                summed_grade_schema(weight, range_summable),
+                platform_version,
+            );
+            let document_type = document_type.as_ref();
+            let key = document_type
+                .serialize_value_for_key("grade", &Value::U8(200), platform_version)
+                .expect("a u8 grade is keyed");
+            // The conversions between the generations: the key as generation
+            // 0 wrote it, and the generation-0 key as the current one writes it
+            let in_generation_0 = document_type
+                .tree_key_in_generation_0("grade", &key, platform_version)
+                .expect("a key in generation 0");
+            let from_generation_0 = document_type
+                .tree_key_from_generation_0("grade", &[0x48], platform_version)
+                .expect("a key from generation 0");
+            (
+                key,
+                document_type.tree_keys_differ_between_generations("grade"),
+                in_generation_0,
+                from_generation_0,
+            )
+        };
+        let signed =
+            platform_value!({"type": "integer", "minimum": -10, "maximum": 10, "position": 1});
+        let unsigned =
+            platform_value!({"type": "integer", "minimum": 0, "maximum": 10, "position": 1});
+        assert_eq!(
+            grade_200(signed.clone(), true),
+            (vec![0x48], false, vec![0x48], vec![0x48]),
+            "range-summed: generation 0's key, which the conversions keep"
+        );
+        assert_eq!(
+            grade_200(unsigned, true),
+            (vec![0x48], false, vec![0x48], vec![0x48]),
+            "range-summed values that are never negative by type: generation 0's key too"
+        );
+        assert_eq!(
+            grade_200(signed, false),
+            (vec![0xC8], true, vec![0x48], vec![0xC8]),
+            "summed without range sums: generation 1's key"
+        );
+    }
+
+    #[test]
+    fn should_key_an_unsigned_property_in_value_order() {
+        let platform_version = PlatformVersion::latest();
+        assert_eq!(grade_key(100, platform_version), vec![100]);
+        assert_eq!(grade_key(200, platform_version), vec![200]);
+        let keys: Vec<Vec<u8>> = [0, 1, 127, 128, 200, 255]
+            .into_iter()
+            .map(|grade| grade_key(grade, platform_version))
+            .collect();
+        assert!(keys.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn should_key_signed_strings_and_system_fields_the_same_in_both_generations() {
+        let old = PlatformVersion::get(13).expect("protocol version 13");
+        let new = PlatformVersion::latest();
+        let key = |name: &str, value: Value, platform_version: &PlatformVersion| {
+            build_doc_type_at("grade", grade_schema(), platform_version)
+                .as_ref()
+                .serialize_value_for_key(name, &value, platform_version)
+                .expect("the value is keyed")
+        };
+        for (name, value) in [
+            ("delta", Value::I8(-5)),
+            ("delta", Value::I8(5)),
+            ("name", Value::Text("ann".to_string())),
+            ("$createdAtBlockHeight", Value::U64(1_000)),
+            ("$createdAtCoreBlockHeight", Value::U32(1_000)),
+            ("$createdAt", Value::U64(1_700_000_000_000)),
+        ] {
+            assert_eq!(
+                key(name, value.clone(), old),
+                key(name, value, new),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_read_back_an_unsigned_key_in_each_generation() {
+        for platform_version in [
+            PlatformVersion::get(13).expect("protocol version 13"),
+            PlatformVersion::latest(),
+        ] {
+            let document_type = build_doc_type_at("grade", grade_schema(), platform_version);
+            for grade in [0u8, 127, 128, 255] {
+                let key = document_type
+                    .as_ref()
+                    .serialize_value_for_key("grade", &Value::U8(grade), platform_version)
+                    .expect("a u8 grade is keyed");
+                assert_eq!(
+                    document_type
+                        .as_ref()
+                        .deserialize_value_for_key("grade", &key, platform_version)
+                        .expect("the key reads back"),
+                    Value::U8(grade),
+                    "protocol version {}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_key_a_vote_poll_value_as_generation_0_in_every_version() {
+        for platform_version in [
+            PlatformVersion::get(13).expect("protocol version 13"),
+            PlatformVersion::latest(),
+        ] {
+            let document_type = build_doc_type_at("grade", grade_schema(), platform_version);
+            let key = document_type
+                .as_ref()
+                .serialize_value_for_vote_poll_key("grade", &Value::U8(200))
+                .expect("a u8 grade is keyed");
+            assert_eq!(key, vec![0x48], "the generation-0 key of 200");
+            assert_eq!(
+                document_type
+                    .as_ref()
+                    .deserialize_value_for_vote_poll_key("grade", &key)
+                    .expect("the key reads back"),
+                Value::U8(200)
+            );
+        }
+    }
+
+    #[test]
+    fn should_convert_keys_between_generation_0_and_the_version_generation() {
+        let old = PlatformVersion::get(13).expect("protocol version 13");
+        let new = PlatformVersion::latest();
+        let at = |platform_version| build_doc_type_at("grade", grade_schema(), platform_version);
+        // Generation 0 is the key generation before protocol version 14
+        assert_eq!(
+            at(old)
+                .as_ref()
+                .tree_key_from_generation_0("grade", &[0x48], old)
+                .expect("converts"),
+            vec![0x48]
+        );
+        assert_eq!(
+            at(new)
+                .as_ref()
+                .tree_key_from_generation_0("grade", &[0x48], new)
+                .expect("converts"),
+            vec![200]
+        );
+        assert_eq!(
+            at(new)
+                .as_ref()
+                .tree_key_in_generation_0("grade", &[200], new)
+                .expect("converts"),
+            vec![0x48]
+        );
+        // A signed property and a system field keep their keys
+        let delta = DocumentPropertyType::encode_i8(-5);
+        assert_eq!(
+            at(new)
+                .as_ref()
+                .tree_key_from_generation_0("delta", &delta, new)
+                .expect("converts"),
+            delta
+        );
+        let height = DocumentPropertyType::encode_u64(1_000);
+        assert_eq!(
+            at(new)
+                .as_ref()
+                .tree_key_from_generation_0("$createdAtBlockHeight", &height, new)
+                .expect("converts"),
+            height
+        );
+        assert!(at(new)
+            .as_ref()
+            .tree_keys_differ_between_generations("grade"));
+        assert!(!at(new)
+            .as_ref()
+            .tree_keys_differ_between_generations("delta"));
+        assert!(!at(new)
+            .as_ref()
+            .tree_keys_differ_between_generations("$createdAtBlockHeight"));
+    }
+
+    #[test]
+    fn should_refuse_an_unsigned_key_of_the_wrong_width() {
+        let platform_version = PlatformVersion::latest();
+        let document_type = build_doc_type_at("grade", grade_schema(), platform_version);
+        assert!(document_type
+            .as_ref()
+            .deserialize_value_for_key("grade", &[1, 2], platform_version)
+            .is_err());
     }
 
     // --------------------------------------------------------------

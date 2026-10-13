@@ -86,6 +86,12 @@ Defaults to `true`. Controls what happens when **all** indexed properties of a d
 
 The flag only affects the all-null case. A document with *some* null values gets indexed regardless.
 
+### `skip_if_absent: bool` and `skip_if_absent_properties: Vec<String>`
+
+From protocol version 14 an index may skip documents that omit a property of its **skip set** (`skipIfAbsent`: `true` for every optional property of the index, or an array naming them). A skipped document gets no reference in the index and builds none of the index's own trees, wherever the skip property sits in the property list. The other optional properties of a stored type's skip index keep the null layout below. `skip_if_absent_properties` holds the resolved set, so `true` and the array of the same properties parse to equal indexes; the level info at the index's end carries it too, since the walkers only see merged levels. See [Null Handling](#null-handling) for how the walkers apply it, and [Conditional participation](index-only-document-types.md#conditional-participation-skipifabsent) for the indexOnly rules.
+
+An index naming a typed array (protocol version 14) has the array in its skip set whether or not the keyword is declared: a document whose list is empty or absent has no element to be entered under. `skip_if_absent` keeps what the contract declared, and `indexed_array` names the array, so only the declared skip properties follow the keyword's rules and query gate: an index naming an array is read only with its elements bound (`contains` or `containsAny`, any element, an empty string included), and a declared skip property beside it still only by a value no missing one can meet.
+
 ### `contested_index: Option<ContestedIndexInformation>`
 
 When set, this index identifies a **scarce, contested resource** (the canonical example is a DPNS name like `dash`). Documents trying to register the same value under a contested index don't auto-fail with a uniqueness error — they enter a masternode-vote resolution where each contender's claim is held until voting concludes. Contested indexes must also be `unique: true`; the parser rejects the combination otherwise.
@@ -158,6 +164,8 @@ flowchart TD
 The `ownerId` level is shared between both indexes. The `docType` and `status` levels each set `has_index_with_type` on themselves with their own `unique` / `countable` / `null_searchable` flags. A third index that *also* started with `ownerId` would attach further sub-levels under `ownerId` instead of duplicating it.
 
 This trie shape directly mirrors the GroveDB path shape used at insert / query time.
+
+A level reached through a typed array property (protocol version 14) is stamped with the array's `maxItems` (`IndexLevel::stamp_indexed_arrays`, called by the document type parser, which alone knows the property types). The walkers fan the document out there: one value tree per distinct element, each with every level below it, as a `timeRange` or `integerRange` level fans it out over its windows. Under a window, an array level multiplies the fan-out (`windows × elements` entries for the index).
 
 ## GroveDB Layout
 
@@ -722,14 +730,16 @@ Same convention as the layout diagram above: rectangles are tree-type elements, 
 
 ## Null Handling
 
-The `any_fields_null` and `all_fields_null` flags are accumulated as Drive descends the index property list during insertion ([`add_indices_for_index_level_for_contract_operations/v0/mod.rs:170-171`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/drive/document/insert/add_indices_for_index_level_for_contract_operations/v0/mod.rs#L170-L171)):
+The `any_fields_null` and `all_fields_null` flags follow the path Drive descends during insertion: each sub-level gets its parent's flags combined with its own value ([`add_indices_for_index_level_for_contract_operations/v2/mod.rs`](https://github.com/dashpay/platform/blob/v4.2-dev/packages/rs-drive/src/drive/document/insert/add_indices_for_index_level_for_contract_operations/v2/mod.rs)):
 
 ```rust
-any_fields_null |= document_index_field.is_empty();
-all_fields_null &= document_index_field.is_empty();
+let sub_level_any_fields_null = any_fields_null || document_index_field.is_empty();
+let sub_level_all_fields_null = all_fields_null && document_index_field.is_empty();
 ```
 
-`any_fields_null` becomes `true` the moment the walker hits any null/empty value at any level (first, middle, or last) and stays true for the rest of the descent. `all_fields_null` only stays true if every value seen so far is null.
+`any_fields_null` becomes `true` the moment the walker hits any null/empty value on an index's path (first, middle, or last property) and stays true below it. `all_fields_null` only stays true if every value on the path so far is null. A sibling sub-level's value never enters them: under the index trie's shared levels, each index is judged by its own properties.
+
+Before protocol version 14 the walkers updated the flags in place as they moved from one sibling sub-level to the next, so a sibling's missing value also marked every later sibling's path: a unique index could then hold its entry in the sub-tree shape with none of its own values missing, and a `nullSearchable: false` index could get an entry for a document missing all of its values because a sibling had one. The replace walker of those versions also chose a unique index's shape from `all_fields_null`, so a replace left an index with some of its values missing in the bare-Reference shape. From version 14, where one of those earlier writers could disagree with the rule, the delete walker and the replace walker read what is stored at `[0]` (and, for a `nullSearchable: false` index the rule skips, whether an entry is there) and remove or refresh the entry where it is. The read is unbilled bookkeeping, like the time-range walkers' removability reads, so a dry run and the applied operation bill the same; a type with a `ttl`, which exists only from version 14, skips it.
 
 By the time the recursion reaches the terminal:
 
@@ -739,19 +749,25 @@ By the time the recursion reaches the terminal:
 
 This means *different documents under the same unique index can land in different storage shapes* depending on which of their indexed fields are null. A document with all required fields populated takes the bare-Reference shape; a document with a null in an optional indexed property takes the sub-tree shape, side by side under the same index.
 
+A `skipIfAbsent` index is decided before any of this: a document missing a property of the index's skip set takes no part in it (`document_takes_part_in_index`), so the terminal call is not made for it at all. The walkers also build a level only when an index the document takes part in ends at or below it (`level_reaches_entry`), so a skipped index leaves no tree of its own behind, while a level it shares with a taking-part index is built as usual. The delete walkers apply the same predicates to the stored document. A replace compares the old and the new document's participation per index: it removes the old reference only if the old version took part and writes the new one (with the trees it hangs from) only if the new version does, so a replace that adds or drops a skip property moves the document into or out of the index and leaves exactly the tree a fresh insert of the new version would.
+
 ## Insert Flow Summary
 
 Putting it together, when Drive inserts a document into a contract `C` of type `T`:
 
 1. **`add_indices_for_top_index_level_for_contract_operations`** — for each top-level entry in the document type's index trie (each first-property of any declared index), pushes the property name and the document's value for that property onto the path, computes the initial `any_fields_null` / `all_fields_null` for that single value, and recurses.
-2. **`add_indices_for_index_level_for_contract_operations`** (recursive) — for each sub-level of the trie, pushes the property name and value onto the path, OR-accumulates `any_fields_null`, AND-accumulates `all_fields_null`, and recurses. If the current level has `has_index_with_type = Some(...)`, it also calls into step 3 *before* recursing further (because an index can terminate at a non-leaf trie level when another index continues past it).
+2. **`add_indices_for_index_level_for_contract_operations`** (recursive) — for each sub-level of the trie, pushes the property name and value onto the path, derives the sub-level's `any_fields_null` (OR) and `all_fields_null` (AND) from its parent's flags and its own value, and recurses. If the current level has `has_index_with_type = Some(...)`, it also calls into step 3 *before* recursing further (because an index can terminate at a non-leaf trie level when another index continues past it).
 3. **`add_reference_for_index_level_for_contract_operations`** — the terminal call. Decides between unique and non-unique-style storage using the matrix above; for the non-unique-style path it picks a `NormalTree` / `CountTree` / `ProvableCountTree` based on `countable`; finally inserts the document reference (or sub-tree containing it).
+
+At a level stamped as a typed array, steps 1 and 2 push one value per distinct element of the document (`get_raw_array_elements_for_document_type`) and recurse under each. A replace of a document is a set diff for every index naming an array, or bucketing its first property: the entries of the old and the new document (one per combination of window and element) are compared, new entries are inserted and common ones refreshed first, and old ones deleted last, so the upward prune of a removed entry sees the inserts of the same batch and stops below any tree still in use.
 
 Deletion mirrors the same walk in reverse — see [`packages/rs-drive/src/drive/document/delete/`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/drive/document/delete/).
 
 ## Query Traversal
 
 When a query arrives at drive-abci, the document-query construction path picks one of the document type's indexes that "covers" the query — i.e., whose property prefix matches the query's equality clauses, in order. The picker is in [`packages/rs-drive/src/query/mod.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/mod.rs) (look for `fn construct_path_query` and the index-selection helpers it calls). For count queries specifically there's a separate, count-tree-aware picker ([`drive_document_count_query/mod.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/mod.rs)) — see [Document Count Trees](document-count-trees.md) for that path.
+
+An index naming a typed array is admissible only to a query binding the array with `contains` (an equality on one element's key) or `containsAny` (an `in` over several). A `containsAny` page drops the repeats of a document reached under more than one element, on the server and in proof verification alike, and a `contains` cursor is placed by the element the query reads, which the cursor document must hold.
 
 Once an index is picked, the query-engine builds a `PathQuery` whose path is exactly the prefix shape the insert code produced: `[DataContractDocuments, contract_id, 1, doc_type, prop, value, prop, value, …]`. GroveDB then walks the path in O(log n per level), reading the terminal sub-tree (or single reference) and returning matching documents.
 

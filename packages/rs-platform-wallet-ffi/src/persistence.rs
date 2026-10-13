@@ -321,6 +321,8 @@ pub type PersistShieldedFundingAttemptFn = unsafe extern "C" fn(
 ) -> i32;
 
 /// Load all attempts, including consumed tombstones. Missing rows/read errors fail.
+/// Ownership transfers to Rust only on success (return value zero). On failure,
+/// the host retains ownership and must release any buffers it allocated.
 pub type LoadShieldedFundingAttemptsFn = unsafe extern "C" fn(
     context: *mut c_void,
     wallet_id: *const u8,
@@ -1508,7 +1510,8 @@ pub struct FFIPersister {
     /// spent-marker rows while both `store()` calls still return `Ok`,
     /// bypassing the durable-watermark fault latch and recreating
     /// dashpay/platform#4069. Holding this lock for the whole round makes
-    /// each round atomic with respect to every other round.
+    /// each round atomic with respect to every other round and the complete
+    /// restore read (including additive sidecars).
     round_lock: Mutex<RoundGuardState>,
 }
 
@@ -3367,6 +3370,16 @@ impl PlatformWalletPersistence for FFIPersister {
     }
 
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
+        // Host loaders may read the same context that store() stages into.
+        // Keep base rows and every sidecar in one committed snapshot: a load
+        // between per-kind callbacks and end must never expose a Consumed row
+        // whose commit can still fail. Callbacks must not re-enter this API.
+        let round = self.round_lock.lock();
+        if round.in_round {
+            return Err(PersistenceError::backend(
+                "FFIPersister: cannot restore from an unclosed changeset round",
+            ));
+        }
         // If Swift hasn't wired up `on_load_wallet_list_fn` there's
         // nothing to restore — treat as a fresh client.
         let Some(load_cb) = self.callbacks.on_load_wallet_list_fn else {
@@ -6161,7 +6174,8 @@ fn load_asset_lock_operation_ids(
     Ok(())
 }
 
-/// Own host buffers until copying finishes, including every failure path.
+/// Own successfully returned buffers until copying finishes, including decode
+/// failures. A failed host callback retains ownership of its output buffers.
 fn load_shielded_funding_attempts(
     callback: LoadShieldedFundingAttemptsFn,
     free: FreeShieldedFundingAttemptsFn,
@@ -6193,18 +6207,18 @@ fn load_shielded_funding_attempts(
                 &mut count,
             )
         };
-        let _guard = Guard {
-            free,
-            context,
-            entries,
-            count,
-        };
         if rc != 0 {
             return Err(persist_callback_error(
                 rc,
                 "Loading shielded funding attempts failed",
             ));
         }
+        let _guard = Guard {
+            free,
+            context,
+            entries,
+            count,
+        };
         if count > isize::MAX as usize / std::mem::size_of::<ShieldedFundingAttemptFFI>()
             || (count != 0 && (entries.is_null() || lock.operation_id.is_none()))
         {
@@ -9246,7 +9260,7 @@ mod tests {
             &mut locks
         )
         .is_err());
-        assert!(host.freed);
+        assert!(!host.freed, "failed callbacks retain buffer ownership");
         host.freed = false;
         host.fail = false;
         host.rows[0].bytes = std::ptr::null();
@@ -11415,6 +11429,176 @@ mod tests {
 
     // ── Round serialization + defensive state machine (dashpay/platform#4069) ──
 
+    #[test]
+    fn should_restore_only_committed_asset_lock_status_after_a_failed_round() {
+        use dashcore::hashes::Hash;
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+        use std::sync::{mpsc, Condvar, Mutex as StdMutex};
+        use std::time::Duration;
+
+        struct Host {
+            transaction: Vec<u8>,
+            status: AtomicUsize,
+            // The end callback pauses after staging Consumed and before a
+            // failed commit rolls it back, like Swift's shared ModelContext.
+            end: StdMutex<(bool, bool)>,
+            changed: Condvar,
+        }
+        unsafe extern "C" fn stage(
+            context: *mut c_void,
+            _: *const u8,
+            entries: *const AssetLockEntryFFI,
+            count: usize,
+            _: *const [u8; 36],
+            _: usize,
+        ) -> i32 {
+            assert_eq!(count, 1);
+            (&*context.cast::<Host>())
+                .status
+                .store((*entries).status as usize, Ordering::SeqCst);
+            0
+        }
+        unsafe extern "C" fn reject_commit(
+            context: *mut c_void,
+            _: *const u8,
+            success: bool,
+        ) -> i32 {
+            assert!(success);
+            let host = &*context.cast::<Host>();
+            let mut end = host.end.lock().unwrap();
+            end.0 = true;
+            host.changed.notify_all();
+            while !end.1 {
+                end = host.changed.wait(end).unwrap();
+            }
+            host.status.store(1, Ordering::SeqCst); // rollback to Broadcast
+            -1
+        }
+        unsafe extern "C" fn load(
+            context: *mut c_void,
+            entries: *mut *const WalletRestoreEntryFFI,
+            count: *mut usize,
+        ) -> i32 {
+            let host = &*context.cast::<Host>();
+            let mut out_point = [3; 36];
+            out_point[32..].fill(0);
+            let lock = Box::new(AssetLockEntryFFI {
+                out_point,
+                transaction_bytes: host.transaction.as_ptr(),
+                transaction_bytes_len: host.transaction.len(),
+                account_index: 0,
+                funding_type: 5,
+                identity_index: 0,
+                amount_duffs: 1000,
+                status: host.status.load(Ordering::SeqCst) as u8,
+                proof_bytes: std::ptr::null(),
+                proof_bytes_len: 0,
+            });
+            *entries = Box::into_raw(Box::new(WalletRestoreEntryFFI {
+                wallet_id: [42; 32],
+                tracked_asset_locks: Box::into_raw(lock),
+                tracked_asset_locks_count: 1,
+                ..Default::default()
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free(_: *mut c_void, entries: *const WalletRestoreEntryFFI, _: usize) {
+            let wallet = Box::from_raw(entries.cast_mut());
+            drop(Box::from_raw(wallet.tracked_asset_locks.cast_mut()));
+        }
+        let entry = platform_wallet::changeset::AssetLockEntry {
+            out_point: dashcore::OutPoint {
+                txid: dashcore::Txid::from_byte_array([3; 32]),
+                vout: 0,
+            },
+            transaction: dashcore::Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::AssetLockShieldedAddressTopUp,
+            identity_index: 0,
+            amount_duffs: 1000,
+            status: platform_wallet::AssetLockStatus::Consumed,
+            proof: None,
+            operation_id: None,
+            shielded_funding_attempts: Vec::new(),
+        };
+        let out_point = entry.out_point;
+        let host = Arc::new(Host {
+            transaction: dashcore::consensus::serialize(&entry.transaction),
+            status: AtomicUsize::new(1),
+            end: StdMutex::new((false, false)),
+            changed: Condvar::new(),
+        });
+        let persister = Arc::new(FFIPersister::new(PersistenceCallbacks {
+            context: Arc::as_ptr(&host).cast_mut().cast(),
+            on_persist_asset_locks_fn: Some(stage),
+            on_changeset_end_fn: Some(reject_commit),
+            on_load_wallet_list_fn: Some(load),
+            on_load_wallet_list_free_fn: Some(free),
+            ..Default::default()
+        }));
+        let writer = {
+            let persister = Arc::clone(&persister);
+            std::thread::spawn(move || {
+                persister.store(
+                    [42; 32],
+                    PlatformWalletChangeSet {
+                        asset_locks: Some(platform_wallet::changeset::AssetLockChangeSet {
+                            asset_locks: [(entry.out_point, entry)].into(),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                )
+            })
+        };
+        {
+            let mut end = host.end.lock().unwrap();
+            while !end.0 {
+                end = host.changed.wait(end).unwrap();
+            }
+        }
+        let (started_tx, started_rx) = mpsc::channel();
+        let (loaded_tx, loaded_rx) = mpsc::channel();
+        let reader = {
+            let persister = Arc::clone(&persister);
+            std::thread::spawn(move || {
+                started_tx.send(()).unwrap();
+                let loaded = persister.load();
+                loaded_tx.send(()).unwrap();
+                loaded
+            })
+        };
+        started_rx.recv().unwrap();
+        let returned_before_commit = loaded_rx.recv_timeout(Duration::from_millis(100)).is_ok();
+        // Always release the writer before asserting, including on regressions.
+        host.end.lock().unwrap().1 = true;
+        host.changed.notify_all();
+        assert!(writer.join().unwrap().is_err());
+        let loaded = reader.join().unwrap().unwrap();
+        assert!(
+            !returned_before_commit,
+            "restore observed an uncommitted round"
+        );
+        assert_eq!(
+            loaded.wallets[&[42; 32]].unused_asset_locks[&0][&out_point].status,
+            platform_wallet::AssetLockStatus::Broadcast
+        );
+    }
+
+    #[test]
+    fn should_refuse_restore_after_an_unclosed_persistence_round() {
+        let persister = FFIPersister::new(PersistenceCallbacks::default());
+        persister.round_lock.lock().begin_round().unwrap();
+        assert!(persister.load().is_err());
+    }
+
     use std::os::raw::c_void as TestCVoid;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -11793,5 +11977,41 @@ mod tests {
                 .all(|a| matches!(a.state, AddressState::Used)),
             "every emitted marked-used address must carry used == true"
         );
+    }
+
+    /// A cold restore must hand every persisted owned DPNS label to the
+    /// in-memory identity, so a later capped fetch only adds to it and no
+    /// snapshot emitted before the next complete fetch drops an owned pick
+    /// that lies outside the fetched prefix.
+    #[test]
+    fn restored_identity_carries_its_persisted_dpns_names() {
+        use super::build_wallet_identity_bucket;
+        use crate::wallet_restore_types::{IdentityRestoreEntryFFI, WalletRestoreEntryFFI};
+        use std::ffi::CString;
+        use std::os::raw::c_char;
+
+        let labels: Vec<CString> = ["alice", "bob", "carol"]
+            .iter()
+            .map(|l| CString::new(*l).unwrap())
+            .collect();
+        let pointers: Vec<*const c_char> = labels.iter().map(|l| l.as_ptr()).collect();
+        let mut identity: IdentityRestoreEntryFFI = unsafe { std::mem::zeroed() };
+        identity.identity_id = [7; 32];
+        identity.dpns_names = pointers.as_ptr();
+        identity.dpns_names_count = pointers.len();
+        let entry = WalletRestoreEntryFFI {
+            wallet_id: [42; 32],
+            identities: &identity,
+            identities_count: 1,
+            ..Default::default()
+        };
+
+        let bucket = build_wallet_identity_bucket(&entry).expect("identity must restore");
+        let restored: Vec<&str> = bucket[&0]
+            .dpns_names
+            .iter()
+            .map(|n| n.label.as_str())
+            .collect();
+        assert_eq!(restored, ["alice", "bob", "carol"]);
     }
 }

@@ -153,9 +153,9 @@ impl PlatformWallet {
             AssetLockFunding::DrainWalletBalance { operation, .. } => Some(operation.clone()),
             _ => None,
         };
-        if let Some(operation) = &operation {
-            self.register_wallet_drain_operation(operation.clone());
-        }
+        let _operation_registration = operation
+            .as_ref()
+            .map(|operation| self.register_wallet_drain_operation(operation.clone()));
         let _shield_guard = self.shield_guard.lock().await;
         if operation.is_some() {
             self.reconcile_wallet_drains(coordinator).await?;
@@ -570,6 +570,27 @@ impl PlatformWallet {
             )
             .await?;
 
+        // A Type18 affected-state response proves only the asset-lock state,
+        // not execution of this exact Orchard bundle. Drains use the same
+        // dual-evidence gate as restart recovery, including on a fresh submit.
+        if let Some(out_point) = tracked_out_point {
+            if self
+                .asset_locks
+                .list_tracked_locks()
+                .await
+                .iter()
+                .any(|lock| lock.out_point == out_point && lock.operation_id.is_some())
+            {
+                return if self.reconcile_wallet_drain(coordinator, out_point).await? {
+                    Ok(())
+                } else {
+                    Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                        "drain awaits authenticated exact outputs and full original-outpoint consumption".into(),
+                    ))
+                };
+            }
+        }
+
         // Record a live `ShieldFromAssetLock` activity entry over the
         // landed bundle. One entry per call (= one per seed-pool batch),
         // `direction in`, amount = the real shielded note value (dummy
@@ -586,19 +607,6 @@ impl PlatformWallet {
         // address-funding, which writes proof-attested balances back
         // into `ManagedPlatformAccount`).
         if let Some(out_point) = tracked_out_point {
-            if let Some(operation_id) = self
-                .asset_locks
-                .list_tracked_locks()
-                .await
-                .into_iter()
-                .find(|lock| lock.out_point == out_point)
-                .and_then(|lock| lock.operation_id)
-            {
-                self.asset_locks
-                    .complete_wallet_drain(out_point, operation_id)
-                    .await?;
-                return Ok(());
-            }
             // Platform DID accept the shield ST — propagating an Err
             // here would misreport the protocol outcome. The lock row
             // stays non-Consumed and surfaces in the Resumable
@@ -710,9 +718,9 @@ impl PlatformWallet {
     /// that account), falling back to the lowest bound account — mirrors
     /// the `sender_ovk` selection above.
     #[cfg(feature = "shielded")]
-    async fn record_shield_from_asset_lock_activity(
+    pub(super) async fn record_shield_from_asset_lock_activity(
         &self,
-        coordinator: &std::sync::Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        coordinator: &crate::wallet::shielded::NetworkShieldedCoordinator,
         actions: &[dpp::shielded::SerializedAction],
         shield_amount: Credits,
     ) {
@@ -721,43 +729,47 @@ impl PlatformWallet {
         };
         use crate::wallet::shielded::activity_recorder::{build_pending_entry, with_status};
 
-        let guard = self.shielded_keys.read().await;
-        let Some(keys_map) = guard.as_ref() else {
-            return;
-        };
-        // Prefer the account whose keyset actually recognizes a visible
-        // output in the landed bundle (the funded note decrypts under its
-        // IVK / recovers under its OVK) — the row must land under THAT
-        // account or the recorder builds with the wrong keys, recovers no
-        // cmx, and silently drops the entry; it would also break the
-        // shared-id natural key against the eventual scan-derived row.
-        // Fall back to the lowest bound account only when nothing
-        // matches (a shield to a fully external recipient).
-        let matched = keys_map.iter().find(|(_, ks)| {
-            !crate::wallet::shielded::activity_recorder::visible_output_cmxs(actions, ks).is_empty()
-        });
-        let Some((&account, keyset)) = matched.or_else(|| keys_map.iter().next()) else {
-            return;
-        };
+        let (account, pending) = {
+            let guard = self.shielded_keys.read().await;
+            let Some(keys_map) = guard.as_ref() else {
+                return;
+            };
+            // Prefer the account whose keyset actually recognizes a visible
+            // output in the landed bundle (the funded note decrypts under its
+            // IVK / recovers under its OVK) — the row must land under THAT
+            // account or the recorder builds with the wrong keys, recovers no
+            // cmx, and silently drops the entry; it would also break the
+            // shared-id natural key against the eventual scan-derived row.
+            // Fall back to the lowest bound account only when nothing
+            // matches (a shield to a fully external recipient).
+            let matched = keys_map.iter().find(|(_, ks)| {
+                !crate::wallet::shielded::activity_recorder::visible_output_cmxs(actions, ks)
+                    .is_empty()
+            });
+            let Some((&account, keyset)) = matched.or_else(|| keys_map.iter().next()) else {
+                return;
+            };
 
-        let Some(pending) = build_pending_entry(
-            keyset,
-            crate::wallet::shielded::activity_recorder::LiveEntryParams {
-                kind: ShieldedActivityKind::ShieldFromAssetLock,
-                direction: ShieldedDirection::In,
-                amount: shield_amount,
-                // The flat pool fee is charged on the L1 side (asset-lock
-                // value − shield_amount); the note value is exactly
-                // `shield_amount`, so no shielded-pool fee is derivable
-                // from the bundle here.
-                fee: None,
-                counterparty: None,
-                memo: None,
-                actions,
-                spent_notes: &[],
-            },
-        ) else {
-            return;
+            let Some(pending) = build_pending_entry(
+                keyset,
+                crate::wallet::shielded::activity_recorder::LiveEntryParams {
+                    kind: ShieldedActivityKind::ShieldFromAssetLock,
+                    direction: ShieldedDirection::In,
+                    amount: shield_amount,
+                    // The flat pool fee is charged on the L1 side (asset-lock
+                    // value − shield_amount); the note value is exactly
+                    // `shield_amount`, so no shielded-pool fee is derivable
+                    // from the bundle here.
+                    fee: None,
+                    counterparty: None,
+                    memo: None,
+                    actions,
+                    spent_notes: &[],
+                },
+            ) else {
+                return;
+            };
+            (account, pending)
         };
 
         let confirmed = with_status(&pending, ShieldedActivityStatus::Confirmed, None);
@@ -851,7 +863,7 @@ where
     AS: ::key_wallet::signer::Signer,
     P: OrchardProver,
 {
-    use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+    use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
     use dpp::state_transition::StateTransition;
 
     let out_point = out_point_from_proof(&proof);
@@ -870,12 +882,8 @@ where
     )
     .await?;
 
-    // `actions` is a public field on the V0 struct (no accessor trait for
-    // Shield / ShieldFromAssetLock).
     let actions = match &st {
-        StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(v0)) => {
-            v0.actions.clone()
-        }
+        StateTransition::ShieldFromAssetLock(transition) => transition.actions().to_vec(),
         _ => Vec::new(),
     };
 

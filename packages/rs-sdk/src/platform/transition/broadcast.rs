@@ -24,7 +24,6 @@ use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::SystemDataContract;
 use dpp::util::hash::hash_single;
 use dpp::ProtocolError;
-use drive_proof_verifier::FromProof;
 use rs_dapi_client::AddressList;
 use rs_dapi_client::CanRetry;
 use rs_dapi_client::ExecutionResult;
@@ -45,7 +44,9 @@ pub trait BroadcastStateTransition {
     /// transition executed. For the transition families whose proofs can
     /// only authenticate the affected state (balance top-ups, credit
     /// transfers and withdrawals, address funds movements, shields,
-    /// no-history token operations, key limits updates), this returns
+    /// no-history token operations, key limits updates, contract updates,
+    /// contract moderation and fee claims, and creates and deletes of
+    /// indexOnly documents), this returns
     /// [`Error::ExecutionNotProved`] — use
     /// [`wait_for_affected_state`](Self::wait_for_affected_state) for those
     /// flows and treat the result as a height-pinned snapshot.
@@ -395,7 +396,7 @@ pub fn require_execution_proved(
         StateTransitionProofGuarantee::ExecutionProved => Ok(result),
         StateTransitionProofGuarantee::AffectedState => Err(Error::ExecutionNotProved(
             format!(
-                "received a verified {} snapshot for this transition family; use the *_affected_state wait APIs and treat the result as a height-pinned snapshot",
+                "received a verified {} snapshot for this transition family; wait with the affected-state APIs instead (wait_for_affected_state in Rust, waitForAffectedState or broadcastAndWaitForAffectedState in JavaScript) and treat the result as a height-pinned snapshot",
                 result
             ),
         )),
@@ -502,25 +503,25 @@ impl WaitForOutcome for StateTransition {
 
             // Verify through the `FromProof` impl: it runs the GroveDB structural check AND
             // `verify_tenderdash_proof` (the quorum BLS signature gate) that authenticates
-            // `metadata`. The request must be reconstructed to feed that verifier.
+            // `metadata`. The request must be reconstructed to feed that verifier. A quorum
+            // key the provider has not cached is fetched and this same response verified
+            // again, so a transition that executed is not reported as failed.
             let request: BroadcastStateTransitionRequest = self
                 .broadcast_request_for_state_transition()
                 .wrap_to_execution_result(&response)?
                 .inner;
 
             trace!("wait: verifying proof and quorum signature");
-            let (maybe_outcome, metadata, _proof) = <StateTransitionProofOutcome as FromProof<
-                BroadcastStateTransitionRequest,
-            >>::maybe_from_proof_with_metadata(
-                request,
-                grpc_response.clone(),
-                sdk.network,
-                sdk.version(),
-                &context_provider,
-            )
-            .map_err(Error::from)
-            .wrap_to_execution_result(&response)?
-            .inner;
+            let (maybe_outcome, metadata, _proof) = sdk
+                .verify_fetching_quorum_key::<BroadcastStateTransitionRequest, StateTransitionProofOutcome>(
+                    request,
+                    grpc_response.clone(),
+                    &context_provider,
+                    "wait_for_state_transition_result",
+                )
+                .await
+                .wrap_to_execution_result(&response)?
+                .inner;
 
             // The current `FromProof` impl always yields `Some`; this guards only a future
             // impl change, so it stays a typed error rather than an unwrap.
@@ -530,14 +531,6 @@ impl WaitForOutcome for StateTransition {
                         "state transition result missing from verified proof".to_string(),
                     )
                 })
-                .wrap_to_execution_result(&response)?
-                .inner;
-
-            // `metadata` is quorum-authenticated only after the verification above, so the
-            // protocol-version ratchet must run here, never before. A `StaleNode` error is
-            // retryable and prompts another server.
-            let _: () = sdk
-                .verify_response_metadata("wait_for_state_transition_result", &metadata)
                 .wrap_to_execution_result(&response)?
                 .inner;
 
@@ -719,8 +712,18 @@ mod tests {
                 );
             }
             if round == 0 {
-                tokio::time::sleep(std::time::Duration::from_millis(2100)).await;
-                assert_eq!(addresses.get_live_addresses().len(), addresses.len());
+                // Bans expire by the wall clock, which a CI runner can step
+                // back against the monotonic clock behind tokio's sleep, so
+                // a fixed sleep races the expiry. Poll instead: the deadline
+                // is far above the 2-second exclusion and far below the 60s
+                // first rung of the health ladder.
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    while addresses.get_live_addresses().len() < addresses.len() {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                })
+                .await
+                .expect("every short exclusion expires");
             }
         }
     }

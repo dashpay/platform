@@ -1,8 +1,10 @@
-//! Restart recovery for a drain's exact Type18 attempts. Only proof-verified
-//! note sightings close the crash-after-dispatch window; balances and remote
-//! rejection messages never establish completion.
+//! Restart recovery for a drain's exact Type18 attempts. Completion requires
+//! both authenticated exact output sightings and proof-verified full consumption
+//! of the original outpoint. Neither evidence alone establishes completion.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
+use std::time::Duration;
 
 use dash_sdk::platform::shielded::{try_decrypt_note, try_recover_outgoing_note};
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
@@ -11,9 +13,11 @@ use dash_sdk::query_types::ShieldedEncryptedNote;
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
 use dashcore::hashes::{sha256d, Hash};
 use dashcore::OutPoint;
+use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable, Signable};
+use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use dpp::state_transition::StateTransition;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -194,11 +198,13 @@ impl PlatformWallet {
             return Ok(());
         };
         let bytes = transition.serialize_to_bytes().map_err(invalid)?;
-        let keys = self.shielded_keys.read().await;
-        let keys = keys
-            .as_ref()
-            .ok_or_else(|| invalid("shielded viewing keys are not bound"))?;
-        attempt_outputs(&lock, &bytes, keys)?;
+        {
+            let keys = self.shielded_keys.read().await;
+            let keys = keys
+                .as_ref()
+                .ok_or_else(|| invalid("shielded viewing keys are not bound"))?;
+            attempt_outputs(&lock, &bytes, keys)?;
+        }
         self.asset_locks
             .persist_wallet_drain_attempt(out_point, bytes)
             .await
@@ -212,6 +218,42 @@ impl PlatformWallet {
         coordinator: &NetworkShieldedCoordinator,
         out_point: OutPoint,
     ) -> Result<bool, PlatformWalletError> {
+        self.reconcile_wallet_drain_with_consumption_check(
+            coordinator,
+            out_point,
+            |transition| async move {
+                // Status is read-only and must not inherit the long submission
+                // deadline. Bound the streaming wait as well as each request.
+                let timeout = Duration::from_secs(3);
+                let mut settings = PutSettings::default();
+                settings.request_settings.connect_timeout = Some(timeout);
+                settings.request_settings.timeout = Some(timeout);
+                settings.request_settings.retries = Some(0);
+                settings.wait_timeout = Some(timeout);
+                tokio::time::timeout(
+                    timeout,
+                    transition.wait_for_affected_state::<StateTransitionProofResult>(
+                        &self.sdk,
+                        Some(settings),
+                    ),
+                )
+                .await
+                .map_err(|_| dash_sdk::Error::Generic("drain consumption proof timed out".into()))?
+            },
+        )
+        .await
+    }
+
+    async fn reconcile_wallet_drain_with_consumption_check<F, Fut>(
+        &self,
+        coordinator: &NetworkShieldedCoordinator,
+        out_point: OutPoint,
+        check_consumption: F,
+    ) -> Result<bool, PlatformWalletError>
+    where
+        F: FnOnce(StateTransition) -> Fut,
+        Fut: Future<Output = Result<StateTransitionProofResult, dash_sdk::Error>>,
+    {
         let Some(lock) = self
             .asset_locks
             .list_tracked_locks()
@@ -252,16 +294,56 @@ impl PlatformWallet {
             }
             observed
         };
-        if !attempts.iter().any(|outputs| outputs.is_subset(&observed)) {
+        let Some((_, bytes)) = attempts
+            .iter()
+            .zip(&lock.shielded_funding_attempts)
+            .find(|(outputs, _)| outputs.is_subset(&observed))
+        else {
             return Ok(false);
+        };
+        // The SDK verifies the affected-state proof against this exact signed
+        // transition's outpoint, already validated by attempt_outputs above.
+        // Orchard commitments alone do not bind an asset-lock outpoint.
+        let transition =
+            StateTransition::deserialize_from_bytes_untrusted(bytes).map_err(invalid)?;
+        let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(attempt)) =
+            &transition
+        else {
+            return Err(invalid("expected the matched Type18 attempt"));
+        };
+        // Every retry randomizes its Orchard bundle. History must describe the
+        // persisted attempt whose exact outputs were observed, not the latest
+        // submitted attempt, which may never have executed.
+        let actions = attempt.actions.clone();
+        let shield_amount = attempt.value_balance;
+        match check_consumption(transition).await {
+            Ok(
+                StateTransitionProofResult::VerifiedAssetLockConsumed(
+                    StoredAssetLockInfo::FullyConsumed,
+                )
+                | StateTransitionProofResult::VerifiedAssetLockConsumedWithAddressInfos(
+                    StoredAssetLockInfo::FullyConsumed,
+                    _,
+                ),
+            ) => {}
+            Ok(_) => return Ok(false),
+            Err(error) => {
+                tracing::info!(%out_point, %error, "drain awaits authenticated full consumption of its original outpoint");
+                return Ok(false);
+            }
         }
         let operation_id = lock
             .operation_id
             .ok_or_else(|| invalid("operation UUID missing"))?;
+        // Queue authenticated history before publishing the terminal row. If
+        // interrupted here, recovery repeats the same natural-key upsert;
+        // it cannot skip history because a tombstone was already committed.
+        self.record_shield_from_asset_lock_activity(coordinator, &actions, shield_amount)
+            .await;
         self.asset_locks
             .complete_wallet_drain(out_point, operation_id)
             .await?;
-        tracing::info!(%out_point, "wallet drain completed from authenticated exact output sightings");
+        tracing::info!(%out_point, "wallet drain completed from authenticated exact outputs and full original-outpoint consumption");
         Ok(true)
     }
 
@@ -291,6 +373,9 @@ mod tests {
     use crate::spv::SpvRuntime;
     use crate::test_support::funded_wallet_manager;
     use crate::wallet::asset_lock::{AssetLockOperationContext, AssetLockOperationState};
+    use crate::wallet::shielded::activity::{
+        compute_activity_id, ShieldedActivityKind, ShieldedActivityStatus,
+    };
     use crate::wallet::shielded::{FileBackedShieldedStore, OrchardKeySet, ShieldedNote};
     use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
     use dashcore::{Network, ScriptBuf, Transaction, TxOut};
@@ -445,6 +530,8 @@ mod tests {
         staged: Mutex<BTreeMap<OutPoint, AssetLockEntry>>,
         fail_store: AtomicBool,
         fail_flush: AtomicBool,
+        fail_load: AtomicBool,
+        before_store: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     }
     impl PlatformWalletPersistence for RecoveryPersistence {
         fn persistence_capabilities(&self) -> PersistenceCapabilities {
@@ -455,6 +542,9 @@ mod tests {
             _wallet_id: [u8; 32],
             cs: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            if let Some(before_store) = self.before_store.lock().unwrap().as_ref() {
+                before_store();
+            }
             if self.fail_store.load(Ordering::SeqCst) {
                 return Err(PersistenceError::backend("store failed"));
             }
@@ -474,6 +564,9 @@ mod tests {
             Ok(())
         }
         fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            if self.fail_load.load(Ordering::SeqCst) {
+                return Err(PersistenceError::backend("load failed"));
+            }
             let locks = self
                 .committed
                 .lock()
@@ -543,6 +636,8 @@ mod tests {
             staged: Mutex::new(BTreeMap::new()),
             fail_store: AtomicBool::new(false),
             fail_flush: AtomicBool::new(false),
+            fail_load: AtomicBool::new(false),
+            before_store: Mutex::new(None),
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap());
         let spv = Arc::new(SpvRuntime::new(
@@ -639,6 +734,277 @@ mod tests {
             .unwrap();
     }
 
+    async fn reconcile_fully_consumed(
+        wallet: &PlatformWallet,
+        coordinator: &NetworkShieldedCoordinator,
+        out_point: OutPoint,
+    ) -> Result<bool, PlatformWalletError> {
+        wallet
+            .reconcile_wallet_drain_with_consumption_check(
+                coordinator,
+                out_point,
+                |transition| async move {
+                    let StateTransition::ShieldFromAssetLock(transition) = transition else {
+                        panic!("expected Type18");
+                    };
+                    assert_eq!(transition.asset_lock_proof().out_point(), Some(out_point));
+                    Ok(StateTransitionProofResult::VerifiedAssetLockConsumed(
+                        StoredAssetLockInfo::FullyConsumed,
+                    ))
+                },
+            )
+            .await
+    }
+
+    async fn assert_exact_drain_history(
+        wallet: &PlatformWallet,
+        coordinator: &NetworkShieldedCoordinator,
+        outputs: &BTreeSet<(u32, [u8; 32])>,
+    ) {
+        let history = coordinator
+            .store()
+            .read()
+            .await
+            .get_activity(SubwalletId::new(wallet.wallet_id(), 0), 0, 10)
+            .unwrap();
+        assert_eq!(history.len(), 1, "recovery upserts one canonical transfer");
+        let entry = &history[0];
+        let cmxs = outputs.iter().map(|(_, cmx)| *cmx).collect::<Vec<_>>();
+        assert_eq!(entry.id, compute_activity_id(&cmxs));
+        assert_eq!(entry.kind, ShieldedActivityKind::ShieldFromAssetLock);
+        assert_eq!(entry.status, ShieldedActivityStatus::Confirmed);
+        assert_eq!(entry.amount, 2_000);
+        assert_eq!(
+            entry.note_cmxs.iter().copied().collect::<BTreeSet<_>>(),
+            cmxs.into_iter().collect()
+        );
+    }
+
+    #[tokio::test]
+    async fn should_release_viewing_key_lock_before_the_persistence_callback() {
+        let (lock, keys, st) = evidence_fixture();
+        let (wallet, persistence, _, _dir) = wallet_fixture(&lock, keys).await;
+        let keys = wallet.shielded_keys.clone();
+        *persistence.before_store.lock().unwrap() = Some(Box::new(move || {
+            assert!(
+                keys.try_write().is_ok(),
+                "viewing-key writers must not wait on persistence callbacks"
+            );
+        }));
+        wallet
+            .persist_drain_shielded_attempt(lock.out_point, &st)
+            .await
+            .unwrap();
+        assert_eq!(
+            persistence.committed.lock().unwrap()[&lock.out_point]
+                .shielded_funding_attempts
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn should_release_registration_after_returned_prebuild_load_failure() {
+        let (mut lock, keys, _) = evidence_fixture();
+        lock.operation_id = None;
+        let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+        let coordinator = Arc::new(coordinator);
+        let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let prover = super::super::prover::CachedOrchardProver::new();
+        let operation = Arc::new(AssetLockOperationContext::new([0x78; 16]));
+        for failed_load in [true, false] {
+            persistence.fail_load.store(failed_load, Ordering::SeqCst);
+            let result = wallet
+                .shielded_fund_from_asset_lock(
+                    &coordinator,
+                    crate::wallet::asset_lock::AssetLockFunding::DrainWalletBalance {
+                        account_index: 0,
+                        minimum_lock_duffs: None,
+                        operation: operation.clone(),
+                    },
+                    vec![],
+                    &signer,
+                    &prover,
+                    None,
+                    0,
+                    None,
+                    None,
+                )
+                .await;
+            if failed_load {
+                assert!(matches!(result, Err(PlatformWalletError::Persistence(_))));
+                assert_eq!(operation.snapshot().state, AssetLockOperationState::Pending);
+            } else {
+                // Reaching ordinary recipient validation proves the abandoned
+                // registration no longer blocks this same-context UUID retry.
+                assert!(matches!(
+                    result,
+                    Err(PlatformWalletError::AddressOperation(_))
+                ));
+            }
+        }
+        assert_eq!(
+            wallet
+                .asset_locks
+                .wallet_drain_operation_status(operation.operation_id)
+                .await
+                .unwrap()
+                .state,
+            AssetLockOperationState::NotSent
+        );
+        assert!(operation.snapshot().out_point.is_none());
+    }
+
+    #[tokio::test]
+    async fn should_require_both_exact_outputs_and_fully_consumed_original_outpoint() {
+        let (lock, keys, st) = evidence_fixture();
+        let outputs = attempt_outputs(&lock, &st.serialize_to_bytes().unwrap(), &keys).unwrap();
+        let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+        wallet
+            .persist_drain_shielded_attempt(lock.out_point, &st)
+            .await
+            .unwrap();
+        // A successful affected-state response alone cannot complete a fresh
+        // submit or a recovery: its exact outputs must have been scanned too.
+        assert!(
+            !reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
+                .await
+                .unwrap()
+        );
+        for (index, (account, cmx)) in outputs.iter().enumerate() {
+            observe(
+                &coordinator,
+                wallet.wallet_id(),
+                *account,
+                *cmx,
+                index as u64,
+            )
+            .await;
+        }
+        let partial = dpp::asset_lock::reduced_asset_lock_value::AssetLockValue::new(
+            1_000_000,
+            vec![],
+            500_000,
+            vec![],
+            dpp::version::PlatformVersion::latest(),
+        )
+        .unwrap();
+        // The bundle can be replayed with another lock: sightings do not prove
+        // that this original lock is fully consumed. Absence, partial use,
+        // unrelated response variants and unavailable proofs stay pending.
+        for result in [
+            Ok(StateTransitionProofResult::VerifiedAssetLockConsumed(
+                StoredAssetLockInfo::NotPresent,
+            )),
+            Ok(StateTransitionProofResult::VerifiedAssetLockConsumed(
+                StoredAssetLockInfo::PartiallyConsumed(partial),
+            )),
+            Ok(StateTransitionProofResult::VerifiedShieldedNullifiers(
+                vec![],
+            )),
+            Err(dash_sdk::Error::Generic(
+                "consumption proof unavailable".into(),
+            )),
+        ] {
+            assert!(!wallet
+                .reconcile_wallet_drain_with_consumption_check(
+                    &coordinator,
+                    lock.out_point,
+                    |transition| async move {
+                        let StateTransition::ShieldFromAssetLock(transition) = transition else {
+                            panic!("expected Type18")
+                        };
+                        assert_eq!(
+                            transition.asset_lock_proof().out_point(),
+                            Some(lock.out_point)
+                        );
+                        result
+                    },
+                )
+                .await
+                .unwrap());
+            assert_ne!(
+                persistence.committed.lock().unwrap()[&lock.out_point].status,
+                AssetLockStatus::Consumed
+            );
+            assert!(
+                coordinator
+                    .store()
+                    .read()
+                    .await
+                    .get_activity(SubwalletId::new(wallet.wallet_id(), 0), 0, 10)
+                    .unwrap()
+                    .is_empty(),
+                "one-sided evidence must not create confirmed history"
+            );
+        }
+        assert!(
+            reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
+                .await
+                .unwrap()
+        );
+        assert_exact_drain_history(&wallet, &coordinator, &outputs).await;
+    }
+
+    #[tokio::test]
+    async fn should_release_cancelled_drain_waiting_for_the_shield_guard() {
+        let (mut lock, keys, _) = evidence_fixture();
+        lock.operation_id = None;
+        let (wallet, _, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+        let coordinator = Arc::new(coordinator);
+        let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let prover = super::super::prover::CachedOrchardProver::new();
+        let operation = Arc::new(AssetLockOperationContext::new([0x77; 16]));
+        let blocker = wallet.shield_guard.lock().await;
+        let mut future = Box::pin(wallet.shielded_fund_from_asset_lock(
+            &coordinator,
+            crate::wallet::asset_lock::AssetLockFunding::DrainWalletBalance {
+                account_index: 0,
+                minimum_lock_duffs: None,
+                operation: operation.clone(),
+            },
+            vec![],
+            &signer,
+            &prover,
+            None,
+            0,
+            None,
+            None,
+        ));
+        assert!(futures::poll!(&mut future).is_pending());
+        assert_eq!(
+            wallet
+                .asset_locks
+                .wallet_drain_operation_status(operation.operation_id)
+                .await
+                .unwrap()
+                .state,
+            AssetLockOperationState::Pending
+        );
+        drop(future);
+        drop(blocker);
+        assert_eq!(operation.snapshot().state, AssetLockOperationState::Pending);
+        assert_eq!(
+            wallet
+                .asset_locks
+                .wallet_drain_operation_status(operation.operation_id)
+                .await
+                .unwrap()
+                .state,
+            AssetLockOperationState::NotSent
+        );
+        let _registration = wallet.register_wallet_drain_operation(operation.clone());
+        assert_eq!(
+            wallet
+                .asset_locks
+                .begin_wallet_drain(&operation)
+                .await
+                .unwrap(),
+            None
+        );
+        assert!(operation.snapshot().out_point.is_none());
+    }
+
     #[tokio::test]
     async fn should_reconcile_drain_after_dispatch_crash_using_an_earlier_exact_attempt() {
         let (lock, keys, st) = evidence_fixture();
@@ -699,6 +1065,29 @@ mod tests {
             )
             .await;
         }
+        // History must be queued before the terminal tombstone, with no
+        // viewing-key guard held across either persistence callback.
+        let activity_store = coordinator.store().clone();
+        let key_slot = wallet.shielded_keys.clone();
+        let subwallet = SubwalletId::new(wallet.wallet_id(), 0);
+        *persistence.before_store.lock().unwrap() = Some(Box::new(move || {
+            assert!(key_slot.try_write().is_ok());
+            assert_eq!(
+                activity_store
+                    .try_read()
+                    .unwrap()
+                    .get_activity(subwallet, 0, 10)
+                    .unwrap()
+                    .len(),
+                1
+            );
+        }));
+        assert!(
+            reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
+                .await
+                .unwrap()
+        );
+        assert_exact_drain_history(&wallet, &coordinator, &outputs).await;
         let status = wallet
             .shielded_wallet_drain_operation_status(&coordinator, [0x33; 16])
             .await
@@ -718,10 +1107,12 @@ mod tests {
                 .state,
             AssetLockOperationState::Completed
         );
+        let next = Arc::new(AssetLockOperationContext::new([0x44; 16]));
+        let _registration = wallet.register_wallet_drain_operation(next.clone());
         assert!(
             wallet
                 .asset_locks
-                .begin_wallet_drain(&Arc::new(AssetLockOperationContext::new([0x44; 16])))
+                .begin_wallet_drain(&next)
                 .await
                 .unwrap()
                 .is_none(),
@@ -767,10 +1158,11 @@ mod tests {
             .await;
         }
         persistence.fail_flush.store(true, Ordering::SeqCst);
-        assert!(wallet
-            .reconcile_wallet_drain(&coordinator, lock.out_point)
-            .await
-            .is_err());
+        assert!(
+            reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
+                .await
+                .is_err()
+        );
         assert_ne!(
             wallet.asset_locks.list_tracked_locks().await[0].status,
             AssetLockStatus::Consumed
@@ -779,11 +1171,14 @@ mod tests {
             persistence.committed.lock().unwrap()[&lock.out_point].status,
             AssetLockStatus::Consumed
         );
+        assert_exact_drain_history(&wallet, &coordinator, &outputs).await;
         persistence.fail_flush.store(false, Ordering::SeqCst);
-        assert!(wallet
-            .reconcile_wallet_drain(&coordinator, lock.out_point)
-            .await
-            .unwrap());
+        assert!(
+            reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
+                .await
+                .unwrap()
+        );
+        assert_exact_drain_history(&wallet, &coordinator, &outputs).await;
     }
 
     #[test]

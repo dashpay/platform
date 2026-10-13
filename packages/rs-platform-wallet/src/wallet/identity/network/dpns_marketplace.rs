@@ -313,6 +313,53 @@ pub(crate) struct DpnsMarketplaceSyncProgress {
     pub(crate) pending_departures: VecDeque<DpnsNameInfo>,
 }
 
+/// Names that left `identity_id` since the last completed ownership scan:
+/// every label the identity carries, plus every `Owned` marketplace row
+/// tracked for it, whose normalized label the scan did not see.
+///
+/// The label list is the primary trigger: a username fetch never drops a
+/// label from a wallet-owned identity (`apply_fetched_dpns_names` only
+/// merges there), so a departed name normally stays on the list until this
+/// sweep classifies it. The rows are belt-and-braces for a label list lost
+/// without its rows (a restore, or a host that persisted the rows but not
+/// the list): without them the sweep would never classify that departure,
+/// update its row, or refresh a seller's balance. Each normalized label is
+/// queued once, the label list first.
+fn departure_candidates(
+    identity_id: &Identifier,
+    previous_labels: &[DpnsNameInfo],
+    previous_rows: &BTreeMap<Identifier, DpnsNameStateEntry>,
+    seen_normalized_labels: &BTreeSet<String>,
+) -> VecDeque<DpnsNameInfo> {
+    let mut queued: BTreeSet<String> = BTreeSet::new();
+    let mut departures = VecDeque::new();
+    let from_labels = previous_labels
+        .iter()
+        .map(|name| (convert_to_homograph_safe_chars(&name.label), name.clone()));
+    let from_rows = previous_rows
+        .values()
+        .filter(|row| {
+            row.wallet_identity_id == *identity_id
+                && matches!(row.status, DpnsNameSaleStatus::Owned)
+        })
+        .map(|row| {
+            (
+                row.normalized_label.clone(),
+                DpnsNameInfo {
+                    label: row.label.clone(),
+                    acquired_at: row.transferred_at_ms.or(row.created_at_ms),
+                },
+            )
+        });
+    for (normalized, name) in from_labels.chain(from_rows) {
+        if seen_normalized_labels.contains(&normalized) || !queued.insert(normalized) {
+            continue;
+        }
+        departures.push_back(name);
+    }
+    departures
+}
+
 // ---------------------------------------------------------------------------
 // System contracts
 // ---------------------------------------------------------------------------
@@ -521,6 +568,7 @@ fn domain_by_normalized_label_query(
             },
         ],
         time_range_clauses: vec![],
+        integer_range_clauses: vec![],
         sub_queries: vec![],
         group_by: vec![],
         having: vec![],
@@ -564,6 +612,7 @@ fn history_by_source_document_query(
             },
         ],
         time_range_clauses: vec![],
+        integer_range_clauses: vec![],
         sub_queries: vec![],
         group_by: vec![],
         having: vec![],
@@ -667,6 +716,7 @@ impl IdentityWallet {
             document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
             where_clauses,
             time_range_clauses: vec![],
+            integer_range_clauses: vec![],
             sub_queries: vec![],
             group_by: vec![],
             having: vec![],
@@ -773,6 +823,7 @@ impl IdentityWallet {
                 value: Value::Identifier(identity_id.to_buffer()),
             }],
             time_range_clauses: vec![],
+            integer_range_clauses: vec![],
             sub_queries: vec![],
             group_by: vec![],
             having: vec![],
@@ -1635,15 +1686,12 @@ impl IdentityWallet {
 
                 if complete {
                     progress.cursor = None;
-                    progress.pending_departures = previous_labels
-                        .iter()
-                        .filter(|name| {
-                            !progress
-                                .seen_normalized_labels
-                                .contains(&convert_to_homograph_safe_chars(&name.label))
-                        })
-                        .cloned()
-                        .collect();
+                    progress.pending_departures = departure_candidates(
+                        &identity_id,
+                        &previous_labels,
+                        &previous_rows,
+                        &progress.seen_normalized_labels,
+                    );
                     progress.seen_normalized_labels.clear();
                 } else {
                     progress.cursor = next_cursor;
@@ -2367,6 +2415,9 @@ mod tests {
         /// mirror. Lets a test assert not merely what a sync summary
         /// CLAIMS but what actually reached the persistence boundary.
         stored_dpns: std::sync::Mutex<Vec<DpnsNameStateChangeSet>>,
+        /// The DPNS label list of every identity snapshot handed to
+        /// [`Self::store`], in order, keyed by identity id.
+        stored_identity_labels: std::sync::Mutex<Vec<(Identifier, Vec<String>)>>,
     }
 
     impl MirrorPersister {
@@ -2384,6 +2435,7 @@ mod tests {
                 lookups: std::sync::Mutex::new(Vec::new()),
                 fail: std::sync::Mutex::new(None),
                 stored_dpns: std::sync::Mutex::new(Vec::new()),
+                stored_identity_labels: std::sync::Mutex::new(Vec::new()),
             }
         }
 
@@ -2418,6 +2470,18 @@ mod tests {
                 .flat_map(|cs| cs.removed.iter().copied())
                 .collect()
         }
+
+        /// The DPNS label list of every stored snapshot of `identity_id`,
+        /// in store order.
+        fn stored_label_lists(&self, identity_id: &Identifier) -> Vec<Vec<String>> {
+            self.stored_identity_labels
+                .lock()
+                .expect("stored identity log")
+                .iter()
+                .filter(|(id, _)| id == identity_id)
+                .map(|(_, labels)| labels.clone())
+                .collect()
+        }
     }
 
     impl PlatformWalletPersistence for MirrorPersister {
@@ -2428,6 +2492,16 @@ mod tests {
         ) -> Result<(), PersistenceError> {
             if let Some(cs) = changeset.dpns_name_states {
                 self.stored_dpns.lock().expect("stored log").push(cs);
+            }
+            if let Some(cs) = changeset.identities {
+                let mut log = self
+                    .stored_identity_labels
+                    .lock()
+                    .expect("stored identity log");
+                for (id, entry) in cs.identities {
+                    let labels = entry.dpns_names.into_iter().map(|n| n.label).collect();
+                    log.push((id, labels));
+                }
             }
             Ok(())
         }
@@ -3530,6 +3604,72 @@ mod tests {
         );
     }
 
+    /// A wallet identity whose label list lost a departed name (a restore
+    /// that brought back the marketplace rows but not the list — a username
+    /// fetch never prunes a wallet identity's labels) still has the name's
+    /// `Owned` row. The sweep must discover the departure from that row,
+    /// resolve it, and retire the row — otherwise the sale/transfer is never
+    /// classified and the stale row stays.
+    #[tokio::test]
+    async fn sync_pass_resolves_a_departure_whose_label_was_already_pruned() {
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::Identity;
+
+        let document_id = Identifier::from([0xC1; 32]);
+        let identity_id = Identifier::from([0xC2; 32]);
+        let row = mirrored_row(document_id, identity_id);
+        let mirror = Arc::new(MirrorPersister::hydrated(vec![row.clone()]));
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::clone(&mirror),
+            sdk_for_departed_identity_sync(&identity_id, DEPARTED_LABEL).await,
+        );
+
+        // The identity does not carry the label (its list was lost); only
+        // the tracked marketplace row remembers the name.
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .expect("wallet info");
+            info.identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id: identity_id,
+                        public_keys: BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    0,
+                    wallet.wallet_id,
+                    &wallet.persister,
+                )
+                .expect("add identity");
+            info.dpns_name_states.insert(document_id, row);
+        }
+        assert!(dpns_labels(&wallet, &identity_id).await.is_empty());
+
+        let summary = wallet
+            .sync_dpns_marketplace()
+            .await
+            .expect("sync pass must succeed");
+
+        assert_eq!(
+            summary.names_departed,
+            vec![DepartedDpnsName {
+                identity_id,
+                label: DEPARTED_LABEL.to_string(),
+                document_id: Some(document_id),
+                status: None,
+            }],
+            "the departure must be discovered from the tracked row"
+        );
+        assert_eq!(
+            mirror.stored_dpns_removals(),
+            vec![document_id],
+            "the departed row must be retired"
+        );
+    }
+
     /// A live `IdentityWallet` over a bare mock SDK (no expectations, so
     /// every network read fails) whose persister is `mirror`.
     fn mirror_backed_identity_wallet(mirror: Arc<MirrorPersister>) -> IdentityWallet {
@@ -3706,6 +3846,7 @@ mod tests {
                 value: Value::Identifier(identity_id.to_buffer()),
             }],
             time_range_clauses: vec![],
+            integer_range_clauses: vec![],
             sub_queries: vec![],
             group_by: vec![],
             having: vec![],
@@ -4004,6 +4145,348 @@ mod tests {
             !matches!(error, PlatformWalletError::InvalidParameter(_)),
             "a price of 1 credit must pass the zero-price guard and fail later, \
              at the network: {error:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // Username sync: the `DpnsFetch` each call site forwards
+    // -----------------------------------------------------------------
+
+    /// The identity a username sync test watches (out-of-wallet bucket, so
+    /// a complete fetch is allowed to drop names).
+    const WATCHED_IDENTITY: [u8; 32] = [0xD1; 32];
+
+    /// The label and document id of the `n`th fetched username; ids ascend
+    /// with `n`, as Platform returns them on the `records.identity` index.
+    fn fetched_username(n: u32) -> (String, Identifier) {
+        let mut id = [0xE0; 32];
+        id[28..].copy_from_slice(&n.to_be_bytes());
+        (format!("name-{n:04}"), Identifier::from(id))
+    }
+
+    /// A parseable DPNS `domain` document for the `n`th fetched username.
+    fn fetched_username_document(
+        identity_id: Identifier,
+        n: u32,
+    ) -> (Identifier, Option<Document>) {
+        let (label, id) = fetched_username(n);
+        let mut properties = BTreeMap::new();
+        properties.insert(
+            "normalizedLabel".to_string(),
+            Value::Text(convert_to_homograph_safe_chars(&label)),
+        );
+        properties.insert("label".to_string(), Value::Text(label));
+        properties.insert(
+            "normalizedParentDomainName".to_string(),
+            Value::Text(DPNS_PARENT_DOMAIN.to_string()),
+        );
+        properties.insert(
+            "records".to_string(),
+            Value::Map(vec![(
+                Value::Text("identity".to_string()),
+                Value::Identifier(identity_id.to_buffer()),
+            )]),
+        );
+        let document = Document::V0(dpp::document::DocumentV0 {
+            id,
+            owner_id: identity_id,
+            properties,
+            revision: Some(1),
+            ..Default::default()
+        });
+        (id, Some(document))
+    }
+
+    /// Serves the bundled DPNS contract (nothing else), the way a host's
+    /// context provider does, so the username query resolves its contract
+    /// without a network fetch or a dump directory.
+    struct DpnsContractProvider(Arc<DataContract>);
+
+    impl dash_sdk::platform::ContextProvider for DpnsContractProvider {
+        fn get_data_contract(
+            &self,
+            id: &Identifier,
+            _platform_version: &dpp::version::PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, dash_sdk::error::ContextProviderError> {
+            Ok((*id == self.0.id()).then(|| Arc::clone(&self.0)))
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<
+            Option<dpp::data_contract::associated_token::token_configuration::TokenConfiguration>,
+            dash_sdk::error::ContextProviderError,
+        > {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], dash_sdk::error::ContextProviderError> {
+            Err(dash_sdk::error::ContextProviderError::Config(
+                "no quorum keys in this test".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, dash_sdk::error::ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// A mock SDK pinned to `version` answering the paged username query
+    /// for `identity_id` with pages of `page_sizes` consecutive usernames
+    /// (numbered from 0), each continuation keyed on the previous page's
+    /// last document id —
+    /// the exact requests `Sdk::get_all_dpns_usernames_by_identity` issues.
+    /// A request without an expectation fails the fetch.
+    async fn sdk_answering_username_pages(
+        version: &'static dpp::version::PlatformVersion,
+        identity_id: Identifier,
+        page_sizes: &[u32],
+    ) -> Arc<dash_sdk::Sdk> {
+        let contract = Arc::new(
+            dpp::system_data_contracts::load_system_data_contract(
+                dpp::data_contracts::SystemDataContract::DPNS,
+                dpp::version::PlatformVersion::latest(),
+            )
+            .expect("bundled DPNS contract"),
+        );
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_version(version)
+            .with_context_provider(DpnsContractProvider(Arc::clone(&contract)))
+            .build()
+            .expect("mock sdk");
+        let mut start_after: Option<Identifier> = None;
+        let mut next = 0u32;
+        for &size in page_sizes {
+            let range = next..next + size;
+            next += size;
+            let query = DocumentQuery {
+                select: SelectProjection::documents(),
+                data_contract: Arc::clone(&contract),
+                document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
+                where_clauses: vec![WhereClause {
+                    field: "records.identity".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(identity_id.to_buffer()),
+                }],
+                time_range_clauses: vec![],
+                integer_range_clauses: vec![],
+                sub_queries: vec![],
+                group_by: vec![],
+                having: vec![],
+                order_by_clauses: vec![],
+                limit: DPNS_USERNAMES_PAGE_LIMIT,
+                offset: None,
+                start: start_after.map(|id| Start::StartAfter(id.to_vec())),
+            };
+            let page: dash_sdk::query_types::Documents = range
+                .clone()
+                .map(|n| fetched_username_document(identity_id, n))
+                .collect();
+            start_after = range.last().map(|n| fetched_username(n).1);
+            sdk.mock()
+                .expect_fetch_many::<Identifier, Document, _, dash_sdk::query_types::Documents>(
+                    query,
+                    Some(page),
+                )
+                .await
+                .expect("username page expectation");
+        }
+        Arc::new(sdk)
+    }
+
+    /// A wallet over `sdk` watching [`WATCHED_IDENTITY`], which already
+    /// carries `known` labels (a name that left it, plus the first fetched
+    /// one). Returns the wallet, its mirror and the identity id.
+    async fn wallet_watching_identity_with(
+        sdk: Arc<dash_sdk::Sdk>,
+        known: &[&str],
+    ) -> (IdentityWallet, Arc<MirrorPersister>, Identifier) {
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::Identity;
+
+        let identity_id = Identifier::from(WATCHED_IDENTITY);
+        let mirror = Arc::new(MirrorPersister::hydrated(Vec::new()));
+        let wallet = mirror_backed_identity_wallet_with_sdk(Arc::clone(&mirror), sdk);
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .expect("wallet info");
+            info.identity_manager
+                .add_out_of_wallet_identity(
+                    Identity::V0(IdentityV0 {
+                        id: identity_id,
+                        public_keys: BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    &wallet.persister,
+                )
+                .expect("watch identity");
+            info.identity_manager
+                .managed_identity_mut(&identity_id)
+                .expect("watched identity")
+                .set_dpns_names(
+                    known
+                        .iter()
+                        .map(|label| DpnsNameInfo {
+                            label: label.to_string(),
+                            acquired_at: Some(1),
+                        })
+                        .collect(),
+                    &wallet.persister,
+                );
+        }
+        (wallet, mirror, identity_id)
+    }
+
+    async fn watched_labels(wallet: &IdentityWallet, identity_id: &Identifier) -> Vec<String> {
+        let wm = wallet.wallet_manager.read().await;
+        wm.get_wallet_info(&wallet.wallet_id)
+            .expect("wallet info")
+            .identity_manager
+            .managed_identity(identity_id)
+            .expect("watched identity")
+            .dpns_names
+            .iter()
+            .map(|name| name.label.clone())
+            .collect()
+    }
+
+    fn username_labels(range: std::ops::Range<u32>) -> Vec<String> {
+        range.map(|n| fetched_username(n).0).collect()
+    }
+
+    /// A full page followed by a short one is the identity's whole owned
+    /// set: `sync_dpns_names` must forward `DpnsFetch::Complete`, so the
+    /// watched identity's list is replaced (the departed name drops out) in
+    /// a single store.
+    #[tokio::test]
+    async fn sync_dpns_names_replaces_a_watched_list_after_a_short_page() {
+        let limit = DPNS_USERNAMES_PAGE_LIMIT;
+        let identity_id = Identifier::from(WATCHED_IDENTITY);
+        let sdk = sdk_answering_username_pages(
+            dpp::version::PlatformVersion::latest(),
+            identity_id,
+            &[limit, 1],
+        )
+        .await;
+        let first = fetched_username(0).0;
+        let (wallet, mirror, identity_id) =
+            wallet_watching_identity_with(sdk, &["departed", &first]).await;
+        let stores_before = mirror.stored_label_lists(&identity_id).len();
+
+        let added = wallet
+            .sync_dpns_names(&identity_id)
+            .await
+            .expect("both pages answer");
+
+        let expected = username_labels(0..limit + 1);
+        assert_eq!(added, limit, "every fetched name but the known first one");
+        assert_eq!(watched_labels(&wallet, &identity_id).await, expected);
+        let stores = mirror.stored_label_lists(&identity_id);
+        assert_eq!(
+            &stores[stores_before..],
+            [expected],
+            "one snapshot for the whole fetch"
+        );
+    }
+
+    /// Reaching the page budget with every page full proves nothing about
+    /// what lies beyond: `sync_dpns_names` must forward `DpnsFetch::Partial`,
+    /// so the watched identity's list only grows.
+    #[tokio::test]
+    async fn sync_dpns_names_only_grows_a_watched_list_when_the_page_budget_runs_out() {
+        let limit = DPNS_USERNAMES_PAGE_LIMIT;
+        let max_pages = DPNS_USERNAMES_MAX_PAGES as u32;
+        let identity_id = Identifier::from(WATCHED_IDENTITY);
+        let sdk = sdk_answering_username_pages(
+            dpp::version::PlatformVersion::latest(),
+            identity_id,
+            &vec![limit; max_pages as usize],
+        )
+        .await;
+        let first = fetched_username(0).0;
+        let (wallet, mirror, identity_id) =
+            wallet_watching_identity_with(sdk, &["kept", &first]).await;
+        let stores_before = mirror.stored_label_lists(&identity_id).len();
+
+        let added = wallet
+            .sync_dpns_names(&identity_id)
+            .await
+            .expect("every page within the budget answers");
+
+        let mut expected = vec!["kept".to_string()];
+        expected.extend(username_labels(0..max_pages * limit));
+        assert_eq!(added, max_pages * limit - 1);
+        assert_eq!(
+            watched_labels(&wallet, &identity_id).await,
+            expected,
+            "a lower bound must not drop the name it did not see"
+        );
+        assert_eq!(
+            mirror.stored_label_lists(&identity_id).len(),
+            stores_before + 1
+        );
+    }
+
+    /// On a platform version whose query lowering cannot continue a page
+    /// (protocol version <= 13), a full first page is all that is read, and
+    /// it is only a lower bound: the watched list only grows. Only the first
+    /// page has an expectation, so a continuation would fail the sync.
+    #[tokio::test]
+    async fn sync_dpns_names_only_grows_a_watched_list_after_a_full_page_on_the_v0_lowering() {
+        let limit = DPNS_USERNAMES_PAGE_LIMIT;
+        let v13 = dpp::version::PlatformVersion::get(13).expect("protocol version 13");
+        let identity_id = Identifier::from(WATCHED_IDENTITY);
+        let sdk = sdk_answering_username_pages(v13, identity_id, &[limit]).await;
+        let (wallet, _mirror, identity_id) = wallet_watching_identity_with(sdk, &["kept"]).await;
+
+        let added = wallet
+            .sync_dpns_names(&identity_id)
+            .await
+            .expect("only the first page is requested");
+
+        let mut expected = vec!["kept".to_string()];
+        expected.extend(username_labels(0..limit));
+        assert_eq!(added, limit);
+        assert_eq!(watched_labels(&wallet, &identity_id).await, expected);
+    }
+
+    /// `refresh_dpns_names` forwards the same `DpnsFetch`: a complete fetch
+    /// replaces a watched identity's list in one store.
+    #[tokio::test]
+    async fn refresh_dpns_names_replaces_a_watched_list_after_a_complete_fetch() {
+        let identity_id = Identifier::from(WATCHED_IDENTITY);
+        let sdk = sdk_answering_username_pages(
+            dpp::version::PlatformVersion::latest(),
+            identity_id,
+            &[2],
+        )
+        .await;
+        let first = fetched_username(0).0;
+        let (wallet, mirror, identity_id) =
+            wallet_watching_identity_with(sdk, &["departed", &first]).await;
+        let stores_before = mirror.stored_label_lists(&identity_id).len();
+
+        wallet
+            .refresh_dpns_names()
+            .await
+            .expect("refresh must succeed");
+
+        let expected = username_labels(0..2);
+        assert_eq!(watched_labels(&wallet, &identity_id).await, expected);
+        assert_eq!(
+            &mirror.stored_label_lists(&identity_id)[stores_before..],
+            [expected]
         );
     }
 }

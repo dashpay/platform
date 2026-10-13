@@ -10,11 +10,8 @@
         "type": "permanentDocument",
         "contractId": "4uAB6wAdt6FJ7djwjYrLnooVhYeQpzgkssBmgmvZ9WnM",
         "documentType": "joinRequest",
-        "lookup": {
-          "index": "byMessage",
-          "keys": {
-            "message": "."
-          }
+        "findBy": {
+          "message": "."
         }
       },
       "properties": {

@@ -88,7 +88,7 @@ pub unsafe extern "C" fn dash_sdk_document_create(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
 
     let contract_id_str = match CStr::from_ptr(params.data_contract_id).to_str() {
         Ok(s) => s,
@@ -335,6 +335,8 @@ pub unsafe extern "C" fn dash_sdk_document_make_handle(
         updated_at_core_block_height: None,
         transferred_at_core_block_height: None,
         creator_id: None,
+        moderated_at: None,
+        moderated_by: None,
     });
 
     // Box and return as handle

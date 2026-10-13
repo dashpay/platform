@@ -195,8 +195,10 @@ extension PlatformWalletManager {
         }.value
     }
 
-    /// Read one operation by its UUID, including after restart. A read failure
-    /// throws; it is never converted into evidence that the operation was not sent.
+    /// Read one operation by its UUID, including after restart. A durable-state
+    /// read failure throws; unavailable completion proofs leave it pending.
+    /// Neither is evidence that the operation was not sent.
+    /// Reconciliation may query authenticated network state and never broadcasts.
     public func shieldedWalletDrainStatus(
         walletId: Data,
         operationId: UUID

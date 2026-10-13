@@ -624,17 +624,24 @@ impl<'a> DriveDocumentQuery<'a> {
                 // We should set the starts at document to be included for the query if there are
                 // left over index properties.
 
-                // A time-range index's transformed first level stores bucket
-                // *starts*, so the cursor document's raw timestamp is not
-                // comparable to this level's keys: an included cursor created
-                // mid-bucket orders after the bucket-start key and would
-                // suppress it, validly proving an empty page. The resolved
-                // equality already pins this level to one key; the terminal
-                // document-id query attached below applies the cursor.
-                let last_clause_is_on_transformed_source = index
-                    .time_range
-                    .as_ref()
-                    .is_some_and(|transform| transform.source == where_clause.field);
+                // A bucketed (time- or integer-range) index's transformed
+                // first level stores window *starts*, so the cursor
+                // document's raw value is not comparable to this level's
+                // keys: an included cursor valued mid-window orders after
+                // the window-start key and would suppress it, validly proving
+                // an empty page. The resolved equality already pins this
+                // level to one key; the terminal document-id query attached
+                // below applies the cursor.
+                //
+                // Every protocol version selects this generation. Reading the
+                // grid through `bucketing()` instead of `time_range` changes
+                // nothing before protocol version 14: `integerRange`, like
+                // `timeRange`, only parses from document meta-schema v3, so
+                // `bucketing()` is `None` wherever `time_range` was.
+                let transformed_source_bucketing = index
+                    .bucketing()
+                    .filter(|bucketing| bucketing.source() == where_clause.field);
+                let last_clause_is_on_transformed_source = transformed_source_bucketing.is_some();
 
                 let query_starts_at_document = if sibling_aware_cursor_lowering {
                     // Keep the cursor's outer branch for both startAt and
@@ -729,10 +736,11 @@ impl<'a> DriveDocumentQuery<'a> {
                             let cursor_in_bucket = match &starts_at_document {
                                 None => None,
                                 Some((document, included)) => {
-                                    let transform = index
-                                        .time_range
-                                        .as_ref()
-                                        .expect("checked by last_clause_is_on_transformed_source");
+                                    let transform = transformed_source_bucketing.as_ref().ok_or(
+                                        Error::Drive(DriveError::CorruptedCodeExecution(
+                                            "checked by last_clause_is_on_transformed_source",
+                                        )),
+                                    )?;
                                     let bucket_key = self.document_type.serialize_value_for_key(
                                         where_clause.field.as_str(),
                                         &where_clause.value,

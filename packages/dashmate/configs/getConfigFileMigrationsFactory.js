@@ -1777,6 +1777,35 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '5.0.0-beta.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // Drive's withdrawal limit (protocol version 14) reads Core's credit pool
+            // balance from each block's coinbase (getspecialtxes). Core refuses it to the
+            // consensus user until its whitelist names it, and loads the whitelist only
+            // when Core itself restarts.
+            if (options.core?.rpc?.users?.drive_consensus) {
+              options.core.rpc.users.drive_consensus.whitelist = base.getStored('core.rpc.users.drive_consensus.whitelist');
+            }
+          });
+
+        return configFile;
+      },
+      '5.0.0-beta.4': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // The quorum list service reloads from Core on this interval and answers
+            // from that copy only. Local networks take the short interval of the local
+            // preset; every other network keeps the service's own 60 s.
+            const quorumList = options.platform?.quorumList;
+            if (quorumList && quorumList.cacheTtlSeconds === undefined) {
+              quorumList.cacheTtlSeconds = getDefaultConfigByNetwork(options.network)
+                .get('platform.quorumList.cacheTtlSeconds');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 

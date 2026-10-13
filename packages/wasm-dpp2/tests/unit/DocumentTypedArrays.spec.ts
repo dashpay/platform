@@ -84,13 +84,15 @@ const schemas = {
   },
 };
 
-function buildContract(contractSchemas: Record<string, unknown>, platformVersion = 14) {
+// Full validation runs the document meta-schema first in this build (it has
+// dpp's `validation` feature); a parser rule is reached with it off.
+function buildContract(contractSchemas: Record<string, unknown>, platformVersion = 14, fullValidation = true) {
   return new wasm.DataContract({
     ownerId,
     identityNonce: BigInt(2),
     schemas: contractSchemas,
     definitions: null,
-    fullValidation: true,
+    fullValidation,
     platformVersion: new PlatformVersion(platformVersion),
   });
 }
@@ -182,7 +184,7 @@ describe('DataContract: typed arrays (v14)', () => {
               refersTo: {
                 type: 'permanentDocument',
                 documentType: 'reason',
-                propertyAgreement: { topic: 'topic' },
+                where: { topic: 'topic' },
               },
             },
             position: 0,
@@ -197,7 +199,7 @@ describe('DataContract: typed arrays (v14)', () => {
       type: string;
       contractId: { toBase58(): string };
       documentType: string;
-      propertyAgreement?: Record<string, string>;
+      where?: Record<string, string>;
     };
 
     it('should report the element reference on the typed array items', () => {
@@ -212,7 +214,7 @@ describe('DataContract: typed arrays (v14)', () => {
       expect(reasons.items.refersTo.type).to.equal('permanentDocument');
       expect(reasons.items.refersTo.contractId.toBase58()).to.equal(contract.id.toBase58());
       expect(reasons.items.refersTo.documentType).to.equal('reason');
-      expect(reasons.items.refersTo.propertyAgreement).to.deep.equal({ topic: 'topic' });
+      expect(reasons.items.refersTo.where).to.deep.equal({ topic: 'topic' });
     });
 
     it('should list the element reference among the references at its list path', () => {
@@ -253,9 +255,10 @@ describe('DataContract: typed arrays (v14)', () => {
         },
       };
 
-      expect(() => buildContract(schemasWithKeyReference)).to.throw(
+      expect(() => buildContract(schemasWithKeyReference, 14, false)).to.throw(
         /identityPublicKey refersTo is not allowed on the elements of a typed array/,
       );
+      expect(() => buildContract(schemasWithKeyReference)).to.throw(/JsonSchemaError/);
     });
   });
 

@@ -6,7 +6,7 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
@@ -36,7 +36,10 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>;
 
-    /// Puts a document on platform and waits for the confirmation proof
+    /// Puts a document on platform and waits for the confirmation proof. For an
+    /// indexOnly document type the proof shows the document's entry at the proof's
+    /// block, not that this put wrote it: no stronger proof exists for such a
+    /// document.
     #[allow(clippy::too_many_arguments)]
     async fn put_to_platform_and_wait_for_response(
         &self,
@@ -204,6 +207,7 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Document, Error> {
+        let index_only = document_type.index_only();
         let state_transition = self
             .put_to_platform(
                 sdk,
@@ -216,6 +220,13 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
             )
             .await?;
 
+        // An indexOnly document keeps no row: its proof shows the entry the create leaves, not
+        // that this create executed, and no stronger proof exists for it.
+        if index_only {
+            return wait_for_document_and_owner_balance(sdk, state_transition, settings)
+                .await
+                .map(|(document, _owner_balance)| document);
+        }
         Self::wait_for_response(sdk, state_transition, settings).await
     }
 }

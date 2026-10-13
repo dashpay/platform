@@ -16,6 +16,11 @@ and again when rechecking mempool contents. It performs a lighter validation:
 signature verification, basic structure, and balance checks. The goal is to filter out
 obvious garbage cheaply, without doing expensive state lookups.
 
+A `MasternodeVote` is the exception. A block refuses a failed vote without charging anyone,
+and the proposer drops it from the block without a trace, so check_tx runs the vote's advanced
+structure and state validation as well. A vote that a block would refuse, such as a Lock vote
+on a contest without locking, is refused when it is broadcast, with its error.
+
 This is implemented in
 `packages/rs-drive-abci/src/execution/validation/state_transition/check_tx_verification/mod.rs`:
 
@@ -150,8 +155,9 @@ let remaining_address_balances =
 
 ## Stage 5: Identity Nonce Validation
 
-Nonces prevent replay attacks. Each identity-signed transition carries a nonce that must
-be strictly greater than the last used nonce for that identity (or identity-contract pair).
+Nonces prevent replay attacks. Each nonce must be unused for that identity (or
+identity-contract pair) and fall within the bounded nonce window. Nonces can be
+accepted out of order; see [Identity Nonces](../data-model/identities.md#identity-nonces).
 The platform checks this against the stored nonce in state.
 
 ```rust

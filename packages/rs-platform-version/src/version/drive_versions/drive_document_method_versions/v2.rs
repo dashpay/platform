@@ -28,6 +28,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
             non_primary_key_single_in_path_query: 0,
             non_primary_key_multiple_in_path_query: 0,
             where_clause_grouping: 0,
+            start_at_document: 0,
         },
         delete: DriveDocumentDeleteMethodVersions {
             add_estimation_costs_for_remove_document_to_primary_storage: 0,
@@ -86,7 +87,8 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
             validate_document_transfer_transition_action_uniqueness: 1, // Changed
             validate_document_purchase_transition_action_uniqueness: 1, // Changed
             validate_document_update_price_transition_action_uniqueness: 1, // Changed
-            validate_restored_document_uniqueness: 0,
+            validate_moderated_document_uniqueness: 0,
+            validate_uniqueness_of_data: 1,
         },
         // FROZEN AT 0 for platform versions 10 and 11. Both protocol
         // versions select this table (`DRIVE_DOCUMENT_METHOD_VERSIONS_V2`)

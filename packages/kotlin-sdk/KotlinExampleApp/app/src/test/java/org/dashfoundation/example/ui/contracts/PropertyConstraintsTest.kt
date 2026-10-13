@@ -8,6 +8,8 @@ import kotlinx.serialization.json.putJsonObject
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.queries.DocumentPropertyConstraint
 import org.dashfoundation.dashsdk.queries.PropertyConstraintRead
+import org.dashfoundation.dashsdk.queries.PropertyConstraintReferencedRead
+import org.dashfoundation.dashsdk.queries.PropertyConstraintTotalRead
 import org.dashfoundation.dashsdk.queries.PropertyConstraintViolation
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -248,14 +250,132 @@ class PropertyConstraintsTest {
         assertNull(propertyConstraintSystemReadsText(rule))
     }
 
+    /** A rule reading a count by owner twice, a whole-type count and a sum by category. */
+    private val totalledRule = DocumentPropertyConstraint(
+        name = "withinLimits",
+        ruleJson = "{}",
+        reads = emptyList(),
+        readsOwner = true,
+        readsTotals = listOf(
+            PropertyConstraintTotalRead(
+                PropertyConstraintTotalRead.Kind.CountOf,
+                "listing",
+                null,
+                listOf("${'$'}ownerId"),
+            ),
+            PropertyConstraintTotalRead(
+                PropertyConstraintTotalRead.Kind.SumOf,
+                "listing",
+                "price",
+                listOf("category", "status"),
+            ),
+            PropertyConstraintTotalRead(
+                PropertyConstraintTotalRead.Kind.CountOf,
+                "listing",
+                null,
+                listOf("${'$'}ownerId"),
+            ),
+            PropertyConstraintTotalRead(
+                PropertyConstraintTotalRead.Kind.CountOf,
+                "listing",
+                null,
+                emptyList(),
+            ),
+        ),
+    )
+
+    /** Each total once, its filter keys after "by"; the SwiftExampleApp builds the same text. */
+    @Test
+    fun `should list each total a rule reads once`() {
+        assertEquals(
+            "Reads totals: countOf listing by ${'$'}ownerId; sumOf price of listing by " +
+                "category, status; countOf listing",
+            propertyConstraintTotalsText(totalledRule),
+        )
+        assertNull(propertyConstraintTotalsText(timedRule))
+    }
+
+    /** The note under a rule reading a total; the SwiftExampleApp shows the same text. */
+    @Test
+    fun `should say the check before sending cannot catch a rule reading a total`() {
+        assertEquals(
+            "The platform reads these totals when the document is sent; the check before " +
+                "sending does not, so it cannot catch this rule.",
+            PROPERTY_CONSTRAINT_TOTALS_NOTE,
+        )
+    }
+
+    /** A rule reading the status of the poll `pollId` refers to twice, and its owner. */
+    private val referencingRule = DocumentPropertyConstraint(
+        name = "openPollOfItsOwner",
+        ruleJson = "{}",
+        reads = listOf(PropertyConstraintRead("pollOwnerId", PropertyConstraintRead.Kind.Identifier)),
+        readsOwner = false,
+        readsReferenced = listOf(
+            PropertyConstraintReferencedRead("pollId", "status", PropertyConstraintRead.Kind.Text),
+            PropertyConstraintReferencedRead("pollId", "${'$'}ownerId", PropertyConstraintRead.Kind.Identifier),
+            PropertyConstraintReferencedRead("pollId", "status", PropertyConstraintRead.Kind.Text),
+        ),
+    )
+
+    /** Each referenced read once, as `reference.path (kind)`; the SwiftExampleApp builds the same text. */
+    @Test
+    fun `should list each value a rule reads of a referenced document once`() {
+        assertEquals(
+            "Reads referenced documents: pollId.status (text), pollId.${'$'}ownerId (identifier)",
+            propertyConstraintReferencedReadsText(referencingRule),
+        )
+        assertNull(propertyConstraintReferencedReadsText(totalledRule))
+    }
+
+    /** The note under a rule reading a referenced document; the SwiftExampleApp shows the same text. */
+    @Test
+    fun `should say the check before sending cannot catch a rule reading a referenced document`() {
+        assertEquals(
+            "The platform reads the referenced documents when it checks the references; the " +
+                "check before sending does not, so it cannot catch this rule.",
+            PROPERTY_CONSTRAINT_REFERENCED_NOTE,
+        )
+    }
+
     /** The note under a rule reading a system value; the SwiftExampleApp shows the same text. */
     @Test
-    fun `should say which writes the update and transfer times answer to`() {
+    fun `should say which writes the update and transfer times and the revision answer to`() {
         assertEquals(
             "A price update is judged against the rules reading ${'$'}updatedAt or its block " +
-                "heights, and a transfer or purchase against those reading ${'$'}transferredAt or " +
-                "its block heights.",
+                "heights, a transfer or purchase against those reading ${'$'}transferredAt or " +
+                "its block heights, and each of them against those reading ${'$'}revision.",
             PROPERTY_CONSTRAINT_SYSTEM_READS_NOTE,
+        )
+    }
+
+    /** A rule comparing a property with its stored value, as Rust lists it. */
+    private val storedRule = DocumentPropertyConstraint(
+        name = "closedOnlyFromOpen",
+        ruleJson = """{"equal":["${'$'}old.status",{"const":"open"}]}""",
+        reads = listOf(PropertyConstraintRead("${'$'}old.status", PropertyConstraintRead.Kind.Text)),
+        readsOwner = false,
+        readsStored = true,
+    )
+
+    /** The line under a rule reading the stored version; the SwiftExampleApp shows the same text. */
+    @Test
+    fun `should show the stored version line only for a rule reading it`() {
+        assertEquals(
+            "Reads the stored version (${'$'}old.), the one a write replaces",
+            propertyConstraintStoredReadsText(storedRule),
+        )
+        assertNull(propertyConstraintStoredReadsText(rule))
+        assertNull(propertyConstraintStoredReadsText(timedRule))
+    }
+
+    /** The note under a rule reading the stored version; the SwiftExampleApp shows the same text. */
+    @Test
+    fun `should say a create reads every stored value as absent`() {
+        assertEquals(
+            "A create has no stored version: there, and in the check before sending, every " +
+                "${'$'}old. read is absent.",
+            PROPERTY_CONSTRAINT_STORED_READS_NOTE,
         )
     }
 

@@ -74,7 +74,18 @@ use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod delete_constraints;
+mod deletion_options;
+mod derived_index_properties;
+mod duplicate_keys;
+mod moderated_document_reference;
+mod moderator_fields;
+mod preallocated_through_moderated_reference;
+mod referenced_rules;
+mod restore_constraints;
+mod retraction;
 mod seated_team;
+mod typed_array_where;
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;
 const CONTRACT_MODERATION_SELF_TARGET: u32 = 10901;
@@ -110,6 +121,7 @@ const INVALID_CONTRACT_STRUCTURE: u32 = 10231;
 const INVALID_CONTRACT_MODERATION_CONFIG: u32 = 10900;
 const DOCUMENT_TYPE_UPDATE: u32 = 40212;
 const REFERENCED_DOCUMENT_TYPE_DELETABLE: u32 = 40122;
+const REFERENCED_DOCUMENT_TYPE_MODERATED: u32 = 40144;
 
 pub(crate) const CRITICAL_KEY_ID: KeyID = 1;
 const DOCUMENT_TYPE: &str = "niceDocument";
@@ -483,7 +495,7 @@ impl Setup {
     /// Proves the committed state for a document deletion or restore and checks the proof
     /// shows its record. A restore's verifier reads the document's id out of the bytes under
     /// the contract's document type, so it is given the contract, as a client holding it is;
-    /// a deletion's needs none.
+    /// a deletion's needs it only for a type that keeps no records.
     fn assert_removal_proved(&self, transition: &StateTransition) -> ContractDocumentRemoval {
         let platform_version = PlatformVersion::latest();
         let proof = self
@@ -1490,25 +1502,104 @@ async fn should_fix_the_lists_a_contract_keeps_when_it_is_created() {
     );
 }
 
+/// A contract none of whose document types lets a seated team delete its settled documents keeps
+/// no team actions: an approval names none (41207), refused before the moderators are read.
+#[tokio::test]
+async fn should_refuse_an_approval_on_a_contract_without_team_actions() {
+    let setup = Setup::new(Some(moderation(true, true, THE_MODERATOR))).await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let approval = setup
+        .moderate(
+            &setup.owner,
+            ContractUserModerationAction::ApproveTeamAction {
+                action_id: Identifier::new([0x44; 32]),
+            },
+        )
+        .await;
+    assert_paid_with_code(&setup.process(&approval, &transaction), 41207);
+}
+
 #[tokio::test]
 async fn should_not_be_active_before_protocol_version_14() {
     let platform_version = PlatformVersion::get(13).expect("protocol version 13");
     let setup = Setup::new_at(None, platform_version).await;
     let transaction = setup.platform.drive.grove.start_transaction();
-    let ban = setup
-        .moderate(&setup.owner, ban_action(setup.user.id()))
-        .await;
-    let execution = setup.process(&ban, &transaction);
-    // The transition type does not exist before protocol version 14, so the node cannot even
-    // decode it as active: the same refusal every transition added since the fork gets.
-    assert!(
-        matches!(
-            &execution,
-            StateTransitionExecutionResult::InternalError(message)
-                if message.contains("ContractUserModeration") && message.contains("not active")
-        ),
-        "expected the transition to be inactive before protocol version 14, got {execution:?}"
-    );
+    let owner_balance = setup.balance(setup.owner.id(), Some(&transaction));
+    let owner_nonce = setup
+        .platform
+        .drive
+        .fetch_identity_contract_nonce(
+            setup.owner.id().to_buffer(),
+            setup.contract.id().to_buffer(),
+            true,
+            Some(&transaction),
+            platform_version,
+        )
+        .unwrap();
+    // A team action's proposal and approval among them: the shipped prover and verifier v0
+    // have their arms, which no transition of an earlier protocol version reaches.
+    for action in [
+        ban_action(setup.user.id()),
+        ContractUserModerationAction::DeleteSettledDocument {
+            document_type_name: POST.to_string(),
+            document_id: Identifier::new([0x66; 32]),
+            reason: ContractModerationReason::from_text("doxxing"),
+        },
+        ContractUserModerationAction::ApproveTeamAction {
+            action_id: Identifier::new([0x67; 32]),
+        },
+        restore_action(POST, vec![0]),
+    ] {
+        let moderation = setup.moderate(&setup.owner, action).await;
+        let execution = setup.process(&moderation, &transaction);
+        // The transition type does not exist before protocol version 14, so the node cannot
+        // even decode it as active: the same refusal every transition added since the fork gets.
+        assert!(
+            matches!(
+                &execution,
+                StateTransitionExecutionResult::InternalError(message)
+                    if message.contains("ContractUserModeration") && message.contains("not active")
+            ),
+            "expected the transition to be inactive before protocol version 14, got {execution:?}"
+        );
+        let admission = {
+            let state = setup.platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &setup.platform.drive,
+                state: &state,
+                config: &setup.platform.config,
+                core_rpc: &setup.platform.core_rpc,
+            };
+            setup.platform.check_tx(
+                &moderation.serialize_to_bytes().unwrap(),
+                FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+        };
+        let admission_error = format!("{:?}", admission.expect_err("expected inactive transition"));
+        assert!(admission_error.contains("StateTransitionIsNotActiveError"));
+        assert!(admission_error.contains("ContractUserModeration"));
+        assert!(admission_error.contains("current_protocol_version: 13"));
+        assert_eq!(
+            setup.balance(setup.owner.id(), Some(&transaction)),
+            owner_balance
+        );
+        assert_eq!(
+            setup
+                .platform
+                .drive
+                .fetch_identity_contract_nonce(
+                    setup.owner.id().to_buffer(),
+                    setup.contract.id().to_buffer(),
+                    true,
+                    Some(&transaction),
+                    platform_version,
+                )
+                .unwrap(),
+            owner_nonce
+        );
+    }
 }
 
 #[tokio::test]
@@ -2207,8 +2298,51 @@ fn post_schema(deletable_by_moderators: bool) -> Value {
         },
         "required": ["text"],
         "additionalProperties": false,
-        "canBeDeletedByModerators": deletable_by_moderators,
+        "moderatorAbilities": { "delete": deletable_by_moderators },
     })
+}
+
+/// A creation by `actor` of a document of `document_type_name` holding exactly
+/// `properties`
+async fn create_with(
+    setup: &Setup,
+    actor: &Actor,
+    document_type_name: &str,
+    properties: Vec<(&str, Value)>,
+) -> (Document, StateTransition) {
+    setup
+        .create_document_of_type_with(actor, document_type_name, |document| {
+            document.properties_mut().clear();
+            for (property, value) in properties {
+                document.set(property, value);
+            }
+        })
+        .await
+}
+
+/// The replacement of `document` by `actor`, its owner, its revision bumped
+async fn replacement(
+    actor: &Actor,
+    contract: &DataContract,
+    document_type_name: &str,
+    document: &mut Document,
+) -> StateTransition {
+    document.increment_revision().expect("revision increments");
+    BatchTransition::new_document_replacement_transition_from_document(
+        document.clone(),
+        contract
+            .document_type_for_name(document_type_name)
+            .expect("expected the document type"),
+        &actor.key,
+        actor.contract_nonce(),
+        0,
+        None,
+        &actor.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .expect("expected to build the replacement")
 }
 
 fn add_document_type(contract: &mut DataContract, name: &str, schema: Value) {
@@ -2310,6 +2444,7 @@ async fn should_let_a_moderator_delete_a_post_leave_its_record_and_refund_nobody
         removed_at: BLOCK_TIME_MS,
         document_hash,
         restoration: None,
+        kept_fields: Default::default(),
     };
     assert_eq!(setup.post_removal(post.id(), None), Some(expected.clone()));
     assert_eq!(setup.assert_removal_proved(&delete), expected);
@@ -2557,7 +2692,10 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
         .schema()
         .clone();
     nice_document_schema
-        .insert("canBeDeletedByModerators".to_string(), Value::Bool(true))
+        .insert(
+            "moderatorAbilities".to_string(),
+            platform_value!({ "delete": true }),
+        )
         .expect("expected to set the keyword");
     add_document_type(&mut flipped, DOCUMENT_TYPE, nice_document_schema);
     let update = setup.contract_update(flipped).await;
@@ -2587,7 +2725,7 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
     assert_success(&setup.process(&delete, &transaction));
     assert!(setup.post_removal(post.id(), Some(&transaction)).is_some());
 
-    // And it can not be the target of a permanent reference: its documents can vanish.
+    // And it can not be the target of a permanent reference: its documents can leave state.
     let mut referring = setup.contract.clone();
     referring.increment_version();
     add_document_type(
@@ -2616,29 +2754,48 @@ async fn should_fix_the_keyword_of_a_document_type_and_let_an_update_add_a_type_
         REFERENCED_DOCUMENT_TYPE_DELETABLE,
     );
 
-    // A deletable reference is what points at it: deletable means by anyone, the moderators
-    // included, whatever `canBeDeleted` says about a post's own author.
+    // Its documents leave state only when a moderator deletes one, and every such deletion
+    // leaves a record (`deleteKeepsRecord` is true unless declared false), so a moderated
+    // reference is what points at it: resolving to the post, or to the record of its removal.
+    // The three kinds are disjoint, so a deletable reference, which promises no record, is
+    // refused as well.
     let bookmark_schema = referring
         .document_type_for_name("bookmark")
         .expect("expected the bookmark type")
         .schema()
         .clone();
-    let mut deletable_reference = bookmark_schema;
-    deletable_reference
-        .get_mut("properties")
-        .ok()
-        .flatten()
-        .and_then(|properties| properties.get_mut("postId").ok().flatten())
-        .and_then(|post_id| post_id.get_mut("refersTo").ok().flatten())
-        .expect("expected the refersTo declaration")
-        .insert(
-            "type".to_string(),
-            Value::Text("deletableDocument".to_string()),
-        )
-        .expect("expected to set the reference kind");
+    let with_reference_kind = |kind: &str| {
+        let mut schema = bookmark_schema.clone();
+        schema
+            .get_mut("properties")
+            .ok()
+            .flatten()
+            .and_then(|properties| properties.get_mut("postId").ok().flatten())
+            .and_then(|post_id| post_id.get_mut("refersTo").ok().flatten())
+            .expect("expected the refersTo declaration")
+            .insert("type".to_string(), Value::Text(kind.to_string()))
+            .expect("expected to set the reference kind");
+        schema
+    };
     let mut referring = setup.contract.clone();
     referring.increment_version();
-    add_document_type(&mut referring, "bookmark", deletable_reference);
+    add_document_type(
+        &mut referring,
+        "bookmark",
+        with_reference_kind("deletableDocument"),
+    );
+    let update = setup.contract_update(referring).await;
+    assert_paid_with_code(
+        &setup.process(&update, &transaction),
+        REFERENCED_DOCUMENT_TYPE_MODERATED,
+    );
+    let mut referring = setup.contract.clone();
+    referring.increment_version();
+    add_document_type(
+        &mut referring,
+        "bookmark",
+        with_reference_kind("moderatedDocument"),
+    );
     let update = setup.contract_update(referring.clone()).await;
     assert_success(&setup.process(&update, &transaction));
     setup.contract = referring;
@@ -2886,7 +3043,10 @@ async fn setup_with_a_moderation_window() -> Setup {
                 contract,
                 POST,
                 post_schema_with(platform_value!({
-                    "canBeDeletedByModeratorsFor": MODERATION_WINDOW_SECONDS,
+                    "moderatorAbilities": {
+                        "delete": true,
+                        "deleteWithin": MODERATION_WINDOW_SECONDS,
+                    },
                     "documentsMutable": true,
                     "required": ["text", "$updatedAt"],
                 })),
@@ -2986,7 +3146,10 @@ async fn should_measure_the_window_from_the_creation_of_a_post_that_never_change
                 contract,
                 POST,
                 post_schema_with(platform_value!({
-                    "canBeDeletedByModeratorsFor": MODERATION_WINDOW_SECONDS,
+                    "moderatorAbilities": {
+                        "delete": true,
+                        "deleteWithin": MODERATION_WINDOW_SECONDS,
+                    },
                     "documentsMutable": false,
                     "required": ["text", "$createdAt"],
                 })),
@@ -3039,20 +3202,13 @@ async fn should_fix_the_window_of_a_document_type() {
             .expect("expected the post type")
             .schema()
             .clone();
-        match window {
-            Some(seconds) => {
-                schema
-                    .insert("canBeDeletedByModeratorsFor".to_string(), seconds.into())
-                    .expect("expected to set the window");
-            }
-            None => {
-                if let Value::Map(map) = &mut schema {
-                    map.retain(|(key, _)| {
-                        key != &Value::Text("canBeDeletedByModeratorsFor".to_string())
-                    });
-                }
-            }
-        }
+        let abilities = match window {
+            Some(seconds) => platform_value!({ "delete": true, "deleteWithin": seconds }),
+            None => platform_value!({ "delete": true }),
+        };
+        schema
+            .insert("moderatorAbilities".to_string(), abilities)
+            .expect("expected to set the window");
         add_document_type(&mut changed, POST, schema);
         let update = setup.contract_update(changed).await;
         assert_paid_with_code(&setup.process(&update, &transaction), DOCUMENT_TYPE_UPDATE);
@@ -3551,7 +3707,17 @@ async fn should_let_any_moderator_restore_a_deleted_post_within_a_week_and_delet
         .moderate(&setup.moderator, delete_action(POST, post.id()))
         .await;
     let transaction = setup.platform.drive.grove.start_transaction();
-    assert_success(&setup.process_at(&delete_again, removed_again_at, &transaction));
+    let execution = setup.process_at(&delete_again, removed_again_at, &transaction);
+    // The fresh record is shorter than the restored one it replaces: the owner, who restored
+    // the post and paid for the record's restoration, is refunded the bytes that frees, while
+    // the post's own storage refunds nobody.
+    let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = &execution else {
+        panic!("expected the deletion to pass, got {execution:?}");
+    };
+    assert_eq!(
+        fee_result.fee_refunds.0.keys().copied().collect::<Vec<_>>(),
+        vec![setup.owner.id().to_buffer()]
+    );
     setup.commit(transaction);
     assert_eq!(
         setup.post_removal(post.id(), None),

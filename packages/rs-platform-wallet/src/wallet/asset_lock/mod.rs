@@ -6,7 +6,8 @@
 mod build;
 mod operation;
 pub use operation::{
-    AssetLockOperationContext, AssetLockOperationSnapshot, AssetLockOperationState,
+    AssetLockOperationContext, AssetLockOperationRegistration, AssetLockOperationSnapshot,
+    AssetLockOperationState,
 };
 pub mod lock_notify_handler;
 pub mod manager;

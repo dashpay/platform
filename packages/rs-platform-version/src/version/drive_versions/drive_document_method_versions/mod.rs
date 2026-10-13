@@ -106,6 +106,13 @@ pub struct DriveDocumentQueryMethodVersions {
     /// structurally and reports duplicate-field and overlap errors
     /// instead. Flips together with `non_primary_key_path_query`.
     pub where_clause_grouping: FeatureVersion,
+    /// Reading a query's `startAt`/`startAfter` cursor document from the
+    /// type's primary-key tree. v0 decodes only a plain `Item` and refuses
+    /// any other element as a corrupted path, so a cursor on a
+    /// `documentsSummable` type, whose documents are stored as
+    /// `ItemWithSumItem`, fails every query; v1 (protocol version 14)
+    /// decodes any item element, as the proof verifier always has.
+    pub start_at_document: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -185,7 +192,12 @@ pub struct DriveDocumentIndexUniquenessMethodVersions {
     pub validate_document_transfer_transition_action_uniqueness: FeatureVersion,
     pub validate_document_purchase_transition_action_uniqueness: FeatureVersion,
     pub validate_document_update_price_transition_action_uniqueness: FeatureVersion,
-    pub validate_restored_document_uniqueness: FeatureVersion,
+    pub validate_moderated_document_uniqueness: FeatureVersion,
+    /// The shared uniqueness check every method above reaches. 0 takes the
+    /// V0 request (protocol versions 1 to 9), 1 the V1 request (10 to 13),
+    /// 2 the V1 request and reads a dotted index property name as a path
+    /// into nested objects, the way the insert path reads it (14 on).
+    pub validate_uniqueness_of_data: FeatureVersion,
 }
 
 #[cfg(test)]

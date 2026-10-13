@@ -1,3 +1,4 @@
+use crate::drive::contract::moderation::types::ContractTeamActionWrite;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
@@ -14,7 +15,8 @@ use platform_version::version::PlatformVersion;
 use std::collections::HashMap;
 
 /// Operations on a moderated contract's banlist, suspension list, warning list, document
-/// removal records and, for an elected contract, its team's moderation action counts.
+/// removal records and, for an elected contract, its team's moderation action counts and the
+/// actions it votes on.
 #[derive(Clone, Debug)]
 pub enum ContractModerationOperationType {
     /// Puts an identity on the banlist.
@@ -93,18 +95,43 @@ pub enum ContractModerationOperationType {
         /// The id the document had.
         document_id: Identifier,
         /// Whose it was, who removed it, why and when, what it was, and whether it was
-        /// restored since.
-        removal: ContractDocumentRemoval,
-        /// Whether the document already has a record, which is then replaced.
-        replaces_existing: bool,
+        /// restored since. Boxed: with the fields it keeps, it outweighs every other
+        /// operation of the kind.
+        removal: Box<ContractDocumentRemoval>,
+        /// The stored size of the record the document already has, which is then replaced;
+        /// `None` for a fresh record. An estimate prices a replacement by what it adds.
+        replaced_record_size: Option<u32>,
+        /// What the type's records are estimated to keep
+        /// (`types::estimated_document_removal_kept_fields_size`): the size the records a
+        /// write walks past are estimated at.
+        estimated_kept_fields_size: u32,
         /// The identity that pays for the record, or for the bytes a replacement adds, and
         /// receives its refund: the moderator that removed the document, or the one that
         /// restored it.
         moderator_id: Identifier,
     },
-    /// Writes nothing: marks the batch it is in as one whose storage removals refund nobody
-    /// (`Drive::apply_drive_operations` generation 1). A moderator's document deletion carries
-    /// it, so the deleted document's owner gets no storage refund.
+    /// Writes a seated moderation team member's proposal or approval of one of the contract's
+    /// team actions, closing the action when it meets its rule: see
+    /// `Drive::add_contract_team_action_signature_operations`.
+    AddTeamActionSignature {
+        /// The contract whose seated team votes on the action.
+        contract_id: Identifier,
+        /// The action.
+        action_id: Identifier,
+        /// The member that proposes or approves, who pays for what it adds.
+        signer_id: Identifier,
+        /// What the signature writes: a proposal, an approval, or the closing approval.
+        write: ContractTeamActionWrite,
+    },
+    /// Writes nothing: marks the batch it is in as one whose document operations' storage
+    /// removals refund nobody (`Drive::apply_drive_operations` generation 1, which applies them
+    /// as a GroveDB batch of their own when the batch also frees moderation storage someone is
+    /// owed). A
+    /// moderator's document deletion carries it, so whoever paid for the deleted document, its
+    /// owner or an earlier one, gets no storage refund, and nor does whoever created an index
+    /// subtree the deletion empties, unless the document's type refunds the owner
+    /// (`moderatorAbilities.deleteRefundsOwner`); the removal record the deletion replaces and
+    /// the team action approvals it moves refund as ever.
     ForfeitStorageRefunds,
     /// Writes a seated moderation team member's count of moderation actions on an elected
     /// contract since the moderators pot was last settled.
@@ -227,15 +254,32 @@ impl DriveLowLevelOperationConverter for ContractModerationOperationType {
                 document_type_name,
                 document_id,
                 removal,
-                replaces_existing,
+                replaced_record_size,
+                estimated_kept_fields_size,
                 moderator_id,
             } => drive.add_contract_document_removal_operations(
                 contract_id,
                 &document_type_name,
                 document_id,
                 &removal,
-                replaces_existing,
+                replaced_record_size,
+                estimated_kept_fields_size,
                 moderator_id,
+                block_info,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
+            ContractModerationOperationType::AddTeamActionSignature {
+                contract_id,
+                action_id,
+                signer_id,
+                write,
+            } => drive.add_contract_team_action_signature_operations(
+                contract_id,
+                action_id,
+                signer_id,
+                &write,
                 block_info,
                 estimated_costs_only_with_layer_info,
                 transaction,

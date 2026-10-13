@@ -16,12 +16,25 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
 /// `record_total_credits_history_for_withdrawals` (`Some(0)`), the per-block record of the total
 /// credits in Platform that the day-lagged daily withdrawal limit reads, and bumps
 /// `cleanup_expired_locks_of_withdrawal_amounts` to 1 so the per-block cleanup also prunes the
-/// expired entries of the credit inflows sum tree the net daily withdrawal limit reads, and
+/// expired entries of the credit inflows sum tree the net daily withdrawal limit reads and the
+/// Core credit pool balances older than the Core-anchored limit's window, and
 /// bumps `rebroadcast_expired_withdrawal_documents` to 2 so an expired withdrawal whose
 /// payout is below Core's dust threshold is marked FAILED instead of re-signed forever.
+/// `pool_withdrawals_into_transactions_queue` 2 pools only what also fits the Core-anchored
+/// withdrawal limit (`calculate_core_anchored_withdrawal_limit`, `Some(0)`), fed by
+/// `scan_core_blocks_for_withdrawals` (`Some(0)`), which records Core's credit pool balance per
+/// Core block.
 /// `decode_raw_state_transitions` 1 refuses bytes left over after a raw state transition.
 /// `add_distribute_storage_fee_to_epochs_operations` 1 claws each pending storage refund back
 /// from the epochs it was priced for.
+/// `create_owner_identity` 2 and `update_masternode_identities` 1 decide the owner identity of
+/// the masternodes Dash Core lists from v24 on, on which version 1 fails: none without an owner
+/// address (a shared masternode), the version 1 identity for a legacy payout address or a sole
+/// payout with a matching P2PKH script, and only the OWNER key for other payout lists.
+/// Payout-list changes reconcile TRANSFER keys: retain, re-enable or add the supported sole
+/// recipient and disable obsolete authority; split, empty or unsupported lists disable all
+/// TRANSFER keys while preserving OWNER and balance. Historical updater behavior and legacy
+/// payout-address rotation remain unchanged.
 /// Everything else matches `DRIVE_ABCI_METHOD_VERSIONS_V9`.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
@@ -37,7 +50,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
     },
     core_based_updates: DriveAbciCoreBasedUpdatesMethodVersions {
         update_core_info: 0,
-        update_masternode_list: 0,
+        update_masternode_list: 1, // resolves nested platform ports before storing masternodes
         update_quorum_info: 0,
         masternode_updates: DriveAbciMasternodeIdentitiesUpdatesMethodVersions {
             get_voter_identity_key: 0,
@@ -47,10 +60,10 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
             get_voter_identifier_from_masternode_list_item: 0,
             get_operator_identifier_from_masternode_list_item: 0,
             create_operator_identity: 0,
-            create_owner_identity: 1,
+            create_owner_identity: 2, // no owner identity without an owner; TRANSFER authority requires a sole supported payout
             create_voter_identity: 0,
             disable_identity_keys: 0,
-            update_masternode_identities: 0,
+            update_masternode_identities: 1, // tolerates absent owner identities and reconciles payout-list TRANSFER authority
             update_operator_identity: 0,
             update_owner_withdrawal_address: 1,
             update_voter_identity: 0,
@@ -94,14 +107,16 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         build_untied_withdrawal_transactions_from_documents: 0,
         dequeue_and_build_unsigned_withdrawal_transactions: 0,
         fetch_transactions_block_inclusion_status: 0,
-        pool_withdrawals_into_transactions_queue: 1,
+        pool_withdrawals_into_transactions_queue: 2, // changed in v14: pools only what also fits the Core-anchored limit
         update_broadcasted_withdrawal_statuses: 0,
         rebroadcast_expired_withdrawal_documents: 2, // changed in v14: an expired withdrawal whose payout is Core dust is marked FAILED instead of re-signed
         append_signatures_and_broadcast_withdrawal_transactions: 0,
         has_pending_withdrawal_work: 0,
-        cleanup_expired_locks_of_withdrawal_amounts: 1, // changed in v14: also prunes expired entries of the credit inflows sum tree
+        cleanup_expired_locks_of_withdrawal_amounts: 1, // changed in v14: also prunes expired entries of the credit inflows sum tree and old Core credit pool balances
         record_credit_inflows_for_withdrawals: Some(0), // new in v14: the block's credit mints recorded as an inflow for the net daily withdrawal limit
         record_total_credits_history_for_withdrawals: Some(0), // changed in v14: per-block total credits history for the day-lagged daily withdrawal limit
+        scan_core_blocks_for_withdrawals: Some(0), // new in v14: Core credit pool balances for the Core-anchored withdrawal limit
+        calculate_core_anchored_withdrawal_limit: Some(0), // new in v14: withdrawals also fit a stricter copy of Core's unlock limit
     },
     voting: DriveAbciVotingMethodVersions {
         keep_record_of_finished_contested_resource_vote_poll: 0,
@@ -142,6 +157,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
         update_checkpoints: Some(0),
         record_shielded_pool_anchor: Some(0),
         prune_shielded_pool_anchors: Some(0),
+        record_token_shielded_pool_anchors: Some(0),
         expire_documents: Some(0), // new in v14: document ttl cleanup
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {

@@ -53,6 +53,7 @@ pub const CONTRACT_VERSIONS_V3: DPPContractVersions = DPPContractVersions {
             parse_typed_array: None,
             parse_property_constraints: None,
             apply_generated_from: None,
+            expand_property_type_shorthands: None,
             validate_max_depth: 0,
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
@@ -82,5 +83,10 @@ pub const CONTRACT_VERSIONS_V3: DPPContractVersions = DPPContractVersions {
     token_versions: TokenVersions {
         validate_structure_interval: 0,
         validate_pre_programmed_distribution_amounts: 0,
+        token_configuration_format: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
     },
 };

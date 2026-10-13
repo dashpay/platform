@@ -92,7 +92,7 @@ pub(super) fn parse_typed_array_v0(
 /// sibling key id, and an `identityProperty` declaration sits on the key id
 /// itself, neither of which can pair with many elements. The contract-level
 /// checks of the declaration (the referenced document type, the
-/// `propertyAgreement` sides and value kinds) need other contracts and run at
+/// `where` sides and value kinds) need other contracts and run at
 /// registration in drive-abci, which visits element references too.
 fn parse_element_type(
     items: &Value,

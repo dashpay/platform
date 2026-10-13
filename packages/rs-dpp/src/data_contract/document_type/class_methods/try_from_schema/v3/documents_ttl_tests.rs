@@ -315,8 +315,7 @@ fn should_allow_a_time_to_live_with_every_owner_and_moderation_feature() {
         }));
     let document_type = parse_with_config(
         note_schema(platform_value!({
-            "canBeDeletedByModerators": true,
-            "canBeDeletedByModeratorsFor": 3600,
+            "moderatorAbilities": { "delete": true, "deleteWithin": 3600 },
             "documentsMutable": false,
         })),
         &moderated,

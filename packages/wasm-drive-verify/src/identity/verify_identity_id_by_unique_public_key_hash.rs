@@ -42,7 +42,7 @@ pub fn verify_identity_id_by_unique_public_key_hash(
         .map_err(|e| JsValue::from_str(&format!("Invalid platform version: {:?}", e)))?;
 
     let (root_hash, identity_id_option) = Drive::verify_identity_id_by_unique_public_key_hash(
-        supported_grovedb_proof(&proof_vec, platform_version)?,
+        supported_grovedb_proof(&proof_vec)?,
         is_proof_subset,
         public_key_hash_bytes,
         platform_version,

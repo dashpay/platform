@@ -195,9 +195,10 @@ fn shielded_fee_formula(
 /// - `2` → ShieldedWithdrawal (`compute_shielded_withdrawal_fee` — base +
 ///   the flat Core withdrawal-document cost),
 /// - `3` → ShieldFromIdentity (`compute_shielded_identity_balance_write_fee`:
-///   the conservative complete-fee floor, compute + note storage allowance +
-///   identity write allowance, that consensus requires the identity to hold on
-///   top of the amount; the exact fee is metered at execution),
+///   the conservative complete-fee floor, compute + note and nullifier write
+///   allowance + identity write allowance, that consensus requires the
+///   identity to hold on top of the amount; the exact fee is metered at
+///   execution),
 /// - `4` → IdentityTopUpFromShieldedPool (`compute_shielded_identity_top_up_fee`:
 ///   base + the flat identity-balance write cost, carved from the value balance).
 ///

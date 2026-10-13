@@ -196,6 +196,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_wallet_drain
 
     let operation = Arc::new(AssetLockOperationContext::new(operation_id));
     let worker_operation = Arc::clone(&operation);
+    let mut registration = None;
     let (result, outcome) = wallet_drain_result(
         || operation.snapshot(),
         || {
@@ -212,7 +213,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_wallet_drain
                 Ok(value) => value,
                 Err(error) => return error,
             };
-            wallet.register_wallet_drain_operation(Arc::clone(&worker_operation));
+            registration =
+                Some(wallet.register_wallet_drain_operation(Arc::clone(&worker_operation)));
             let network = wallet.network();
             let core_signer_addr = core_signer_handle as usize;
             match block_on_worker(async move {
@@ -248,10 +250,12 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_wallet_drain
         },
     );
     *out_outcome = outcome;
+    drop(registration);
     result
 }
 
-/// Reconcile exact outputs from authenticated local scan data; never broadcasts.
+/// Reconcile authenticated exact outputs and full consumption of their asset
+/// lock. May read proof-verified network state; never broadcasts.
 ///
 /// # Safety
 /// IDs point to 32 and 16 readable bytes. `out_outcome` is writable.

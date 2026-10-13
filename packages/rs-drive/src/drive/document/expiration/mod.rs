@@ -21,18 +21,26 @@
 //!
 //! [`Drive::remove_expired_documents`]: crate::drive::Drive::remove_expired_documents
 
+#[cfg(feature = "server")]
 mod add_document_expiration_operations;
+#[cfg(feature = "server")]
 mod add_estimation_costs_for_document_expiration;
+#[cfg(feature = "server")]
 mod fetch_expired_documents;
+#[cfg(feature = "server")]
 mod insert_document_ttl_trees;
 /// Paths of the documents expirations tree
 pub mod paths;
 /// Prices of the bytes and the deletion of documents with a time to live
 pub mod pricing;
+#[cfg(feature = "server")]
 mod remove_document_expiration_operations;
+#[cfg(feature = "server")]
 mod remove_expired_documents;
 
+#[cfg(feature = "server")]
 pub use fetch_expired_documents::ExpiredDocument;
+#[cfg(feature = "server")]
 pub use remove_expired_documents::RemovedExpiredDocuments;
 
 use crate::error::drive::DriveError;

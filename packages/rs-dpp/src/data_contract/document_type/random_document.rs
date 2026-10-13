@@ -418,6 +418,8 @@ pub trait CreateRandomDocument:
                 updated_at_core_block_height,
                 transferred_at_core_block_height,
                 creator_id: None,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

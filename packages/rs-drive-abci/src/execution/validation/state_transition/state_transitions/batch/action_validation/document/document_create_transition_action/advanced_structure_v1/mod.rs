@@ -1,6 +1,9 @@
 use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::basic::document::{DocumentCreationNotAllowedError, InvalidDocumentTypeError};
+use dpp::consensus::basic::document::{
+    DocumentCreationNotAllowedError, DocumentReferencePreimageInvalidError, InvalidDocumentTypeError,
+};
+use dpp::data_contract::document_type::first_unrevealable_lookup_key;
 use dpp::consensus::state::document::document_contest_index_mismatch_error::DocumentContestIndexMismatchError;
 use dpp::consensus::state::document::document_contest_not_paid_for_error::DocumentContestNotPaidForError;
 use dpp::consensus::state::document::document_contest_not_required_error::DocumentContestNotRequiredError;
@@ -146,7 +149,8 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
                 document_type_name,
                 self.data().into(),
                 &DocumentSystemValues {
-                    aggregates: self.property_constraint_aggregates().clone(),
+                    aggregates: Some(self.property_constraint_aggregates().clone()),
+                    consensus: true,
                     ..DocumentSystemValues::created_in_block(owner_id, &self.block_info())
                 },
                 platform_version,
@@ -171,9 +175,34 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
         // The schema validation above established every supplied value is a byte array
         // where the type says so; what is left is whether an `encryptedFor` property has
         // the shape its scheme produces, which is all consensus can tell about a ciphertext.
-        document_type
+        let result = document_type
             .validate_encrypted_property_shapes(self.data(), platform_version)
-            .map_err(Error::Protocol)
+            .map_err(Error::Protocol)?;
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        // A `refersTo` lookup with a computed key reveals a commitment: the create must carry
+        // every value its preimage reads, and a variable-length value may not hold the
+        // separator that follows it, or the preimage could split into its params more than one
+        // way. The values are on the transition, so this is a structure check, refused before
+        // the lookup reads state; it runs after the schema validation above so every value is
+        // of its property's kind. Only the protocol version 14 parser produces a computed key,
+        // and this generation runs from that version alone
+        if let Some((path, error)) =
+            first_unrevealable_lookup_key(document_type, self.data(), owner_id)
+        {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                DocumentReferencePreimageInvalidError::new(
+                    document_type_name.clone(),
+                    path,
+                    error.param,
+                    error.reason,
+                )
+                .into(),
+            ));
+        }
+        Ok(result)
         // -->> End Introduced in V1 <<--
     }
 }
@@ -278,13 +307,17 @@ mod tests {
                 gas_fees_paid_by: GasFeesPaidBy::default(),
                 contract_gas_fees_paid_by: GasFeesPaidBy::default(),
                 declared_action_fee: None,
+                shielded_token_payment: None,
             }),
             block_info: BlockInfo::default(),
             data,
             prefunded_voting_balance,
             current_store_contest_info: None,
             should_store_contest_info: None,
-            property_constraint_aggregates: Default::default(),
+            property_constraint_reads: Default::default(),
+            moderated: false,
+            consumed_documents: Vec::new(),
+            derived_index_values: None,
         })
     }
 
@@ -554,13 +587,17 @@ mod tests {
                 gas_fees_paid_by: GasFeesPaidBy::default(),
                 contract_gas_fees_paid_by: GasFeesPaidBy::default(),
                 declared_action_fee: None,
+                shielded_token_payment: None,
             }),
             block_info: BlockInfo::default(),
             data,
             prefunded_voting_balance,
             current_store_contest_info: None,
             should_store_contest_info: None,
-            property_constraint_aggregates: Default::default(),
+            property_constraint_reads: Default::default(),
+            moderated: false,
+            consumed_documents: Vec::new(),
+            derived_index_values: None,
         })
     }
 

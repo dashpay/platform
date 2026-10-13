@@ -57,7 +57,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
 
     // Parse document ID
     let document_id_str = match CStr::from_ptr(document_id).to_str() {
@@ -218,7 +218,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
 
     info!("[DOCUMENT DELETE] starting document delete operation");
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
     // Parse document ID
@@ -413,6 +413,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         Box::new(document)

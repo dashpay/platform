@@ -39,14 +39,11 @@
       "ownerRefersTo": {
         "type": "permanentDocument",
         "documentType": "moderator",
-        "propertyAgreement": {
-          "missing": "memberId"
+        "findBy": {
+          "memberId": "."
         },
-        "lookup": {
-          "index": "byMember",
-          "keys": {
-            "memberId": "."
-          }
+        "where": {
+          "memberId": "missing"
         }
       },
       "properties": {

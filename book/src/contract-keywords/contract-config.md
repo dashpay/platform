@@ -194,9 +194,9 @@ Declares which moderation lists the contract keeps and who edits them. An identi
 - `{ "$type": "appointedModerators", "identities": [...] }`: the owner and 1 to 16 named identities, each acting alone. Every named identity must exist (`ContractModeratorIdentityNotFoundError`, 41110).
 - `{ "$type": "elected", ... }`: a team elected by masternodes moderates, with the abilities the declaration gives it. See [Elected Moderation](../data-model/contract-moderation.md#elected-moderation).
 
-A declaration keeps at least one list, unless a document type sets `canBeDeletedByModerators`, and is refused otherwise (`InvalidContractModerationConfigError`, 10900). An unknown key is refused rather than ignored, so a misspelled list name cannot silently leave the contract without it. Because the lists are fixed, a contract that will ever need moderation declares it when it is created.
+A declaration keeps at least one list, unless a document type gives its moderators an ability (`moderatorAbilities`: deleting its documents or writing the fields it keeps for them), and is refused otherwise (`InvalidContractModerationConfigError`, 10900). An unknown key is refused rather than ignored, so a misspelled list name cannot silently leave the contract without it. Because the lists are fixed, a contract that will ever need moderation declares it when it is created.
 
-`moderation` is what `canBeDeletedByModerators` (see [Deletion](deletion.md)) and the moderators' share of [`actionFees`](action-fees.md) require.
+`moderation` is what [`moderatorAbilities`](moderator-abilities.md) and the moderators' share of [`actionFees`](action-fees.md) require.
 
 ## See also
 

@@ -450,9 +450,9 @@ mod tests {
     }
 
     #[test]
-    fn should_accept_a_lookup_on_a_document_refers_to_in_v3_document_schema() {
+    fn should_accept_find_by_on_a_document_refers_to_in_v3_document_schema() {
         for reference_type in ["permanentDocument", "deletableDocument"] {
-            for keys in [
+            for find_by in [
                 json!({ "submittedCharterId": "submittedCharterId", "$ownerId": "." }),
                 json!({ "submittedCharterId": ".", "$ownerId": "$ownerId" }),
                 json!({ "meta.charterId": "meta.charterId", "$ownerId": "." }),
@@ -460,35 +460,36 @@ mod tests {
                 let schema = document_schema_with_refers_to(json!({
                     "type": reference_type,
                     "documentType": "joinRequest",
-                    "lookup": { "index": "bySubmittedCharter", "keys": keys }
+                    "findBy": find_by,
+                    "where": { "title": "title" }
                 }));
 
                 assert!(
                     DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
-                    "expected a {reference_type} lookup with keys {keys} to be valid"
+                    "expected a {reference_type} found by {find_by} to be valid"
                 );
             }
         }
     }
 
     #[test]
-    fn should_reject_malformed_or_misplaced_lookups_in_v3_document_schema() {
-        let keys = json!({ "$ownerId": "." });
+    fn should_reject_malformed_or_misplaced_find_by_in_v3_document_schema() {
+        let find_by = json!({ "$ownerId": "." });
         for refers_to in [
-            json!({ "type": "identity", "lookup": { "index": "byOwner", "keys": keys } }),
-            json!({ "type": "contract", "lookup": { "index": "byOwner", "keys": keys } }),
-            json!({ "type": "token", "lookup": { "index": "byOwner", "keys": keys } }),
-            json!({ "type": "identityPublicKey", "keyIdProperty": "keyId", "lookup": { "index": "byOwner", "keys": keys } }),
-            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "keys": keys } }),
-            json!({ "type": "deletableDocument", "documentType": "note", "lookup": { "index": "byOwner" } }),
-            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner" } }),
-            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "", "keys": keys } }),
-            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "x".repeat(33), "keys": keys } }),
-            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": {} } }),
-            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": { "$ownerId": 1 } } }),
-            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": { "$ownerId": "$createdAt" } } }),
-            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": { "$ownerId": "bad-name" } } }),
-            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": keys, "extra": 1 } }),
+            json!({ "type": "identity", "findBy": find_by }),
+            json!({ "type": "contract", "findBy": find_by }),
+            json!({ "type": "token", "findBy": find_by }),
+            json!({ "type": "identityPublicKey", "keyIdProperty": "keyId", "findBy": find_by }),
+            json!({ "type": "permanentDocument", "documentType": "note", "findBy": {} }),
+            json!({ "type": "permanentDocument", "documentType": "note", "findBy": { "$ownerId": 1 } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "findBy": { "$ownerId": "$createdAt" } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "findBy": { "$ownerId": "bad-name" } }),
+            // $id names a document by id only to find the one holding a list
+            json!({ "type": "permanentDocument", "documentType": "note", "findBy": { "$id": "noteId" } }),
+            // The keywords findBy and where replaced
+            json!({ "type": "permanentDocument", "documentType": "note", "lookup": { "index": "byOwner", "keys": find_by } }),
+            json!({ "type": "permanentDocument", "documentType": "note", "propertyAgreement": { "title": "title" } }),
+            json!({ "type": "listElement", "documentType": "note", "inList": "members" }),
         ] {
             let schema = document_schema_with_refers_to(refers_to.clone());
 
@@ -500,38 +501,43 @@ mod tests {
     }
 
     #[test]
-    fn should_accept_a_list_element_refers_to_in_v3_document_schema() {
-        for (property_agreement, in_list) in [
-            (json!({ "electedCharterId": "$id" }), "members"),
+    fn should_accept_a_list_the_value_is_in_in_v3_document_schema() {
+        for (find_by, where_entries, in_list) in [
+            (json!({ "$id": "electedCharterId" }), None, "members"),
             (
-                json!({ "meta.charterId": "$id", "charterTitle": "title" }),
+                json!({ "$id": "meta.charterId" }),
+                Some(json!({ "title": "charterTitle" })),
                 "seats.members",
             ),
         ] {
-            let schema = document_schema_with_refers_to(json!({
-                "type": "listElement",
+            let mut refers_to = json!({
+                "type": "permanentDocument",
                 "documentType": "electedCharter",
-                "propertyAgreement": property_agreement,
+                "findBy": find_by,
                 "inList": in_list
-            }));
+            });
+            if let Some(where_entries) = where_entries {
+                refers_to["where"] = where_entries;
+            }
+            let schema = document_schema_with_refers_to(refers_to.clone());
 
             assert!(
                 DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
-                "expected a listElement agreeing on {property_agreement} into {in_list} to be valid"
+                "expected refersTo {refers_to} to be valid"
             );
         }
 
         // With a contract id, and as a leaf of a reference expression
         for refers_to in [
             json!({
-                "type": "listElement",
+                "type": "permanentDocument",
                 "contractId": "4uAB6wAdt6FJ7djwjYrLnooVhYeQpzgkssBmgmvZ9WnM",
                 "documentType": "electedCharter",
-                "propertyAgreement": { "electedCharterId": "$id" },
+                "findBy": { "$id": "electedCharterId" },
                 "inList": "members"
             }),
             json!({ "anyOf": [
-                { "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" }, "inList": "members" },
+                { "type": "permanentDocument", "documentType": "electedCharter", "findBy": { "$id": "electedCharterId" }, "inList": "members" },
                 { "type": "permanentDocument", "documentType": "electedCharter" }
             ] }),
         ] {
@@ -544,20 +550,18 @@ mod tests {
     }
 
     #[test]
-    fn should_reject_malformed_or_misplaced_list_element_keywords_in_v3_document_schema() {
+    fn should_reject_malformed_or_misplaced_in_list_in_v3_document_schema() {
         for refers_to in [
-            // Every listElement keyword is required
-            json!({ "type": "listElement", "propertyAgreement": { "electedCharterId": "$id" }, "inList": "members" }),
-            json!({ "type": "listElement", "documentType": "electedCharter", "inList": "members" }),
-            json!({ "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" } }),
-            json!({ "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" }, "inList": "members", "lookup": { "index": "byOwner", "keys": { "$ownerId": "." } } }),
-            json!({ "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" }, "inList": "bad-name" }),
-            json!({ "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$id" }, "inList": "" }),
-            json!({ "type": "listElement", "documentType": "electedCharter", "propertyAgreement": { "electedCharterId": "$documentId" }, "inList": "members" }),
-            // inList belongs to listElement alone
-            json!({ "type": "identity", "inList": "members" }),
+            // documentType, and findBy naming the document's $id alone
+            json!({ "type": "permanentDocument", "findBy": { "$id": "electedCharterId" }, "inList": "members" }),
             json!({ "type": "permanentDocument", "documentType": "electedCharter", "inList": "members" }),
-            json!({ "type": "deletableDocument", "documentType": "electedCharter", "inList": "members" }),
+            json!({ "type": "permanentDocument", "documentType": "electedCharter", "findBy": { "$ownerId": ".", "$id": "electedCharterId" }, "inList": "members" }),
+            json!({ "type": "permanentDocument", "documentType": "electedCharter", "findBy": { "$ownerId": "." }, "inList": "members" }),
+            json!({ "type": "permanentDocument", "documentType": "electedCharter", "findBy": { "$id": "electedCharterId" }, "inList": "bad-name" }),
+            json!({ "type": "permanentDocument", "documentType": "electedCharter", "findBy": { "$id": "electedCharterId" }, "inList": "" }),
+            // A permanentDocument alone names a list
+            json!({ "type": "identity", "inList": "members" }),
+            json!({ "type": "deletableDocument", "documentType": "electedCharter", "findBy": { "$id": "electedCharterId" }, "inList": "members" }),
         ] {
             let schema = document_schema_with_refers_to(refers_to.clone());
 
@@ -654,7 +658,7 @@ mod tests {
         }
     }
 
-    fn document_schema_with_agreement(agreement: serde_json::Value) -> serde_json::Value {
+    fn document_schema_with_where(where_entries: serde_json::Value) -> serde_json::Value {
         json!({
             "$schema": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v1/document-meta.json",
             "type": "object",
@@ -677,7 +681,7 @@ mod tests {
                     "refersTo": {
                         "type": "permanentDocument",
                         "documentType": "post",
-                        "propertyAgreement": agreement
+                        "where": where_entries
                     }
                 }
             },
@@ -686,9 +690,9 @@ mod tests {
     }
 
     #[test]
-    fn should_accept_referenced_system_identifiers_in_property_agreement() {
+    fn should_accept_referenced_system_identifiers_in_where() {
         for referenced in ["$ownerId", "$creatorId", "$id"] {
-            let schema = document_schema_with_agreement(json!({ "authorId": referenced }));
+            let schema = document_schema_with_where(json!({ referenced: "authorId" }));
 
             assert!(
                 DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
@@ -701,7 +705,7 @@ mod tests {
     fn should_reject_other_system_properties_on_the_referenced_side_of_an_agreement() {
         // `$id`, `$ownerId` and `$creatorId` are the referenced side's system names
         for referenced in ["$createdAt", "$revision", "$owner", "$documentId"] {
-            let schema = document_schema_with_agreement(json!({ "authorId": referenced }));
+            let schema = document_schema_with_where(json!({ referenced: "authorId" }));
 
             assert!(
                 DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),
@@ -713,7 +717,7 @@ mod tests {
     #[test]
     fn should_accept_the_writer_owner_id_on_the_referring_side_of_an_agreement() {
         for referenced in ["$ownerId", "$creatorId", "authorId"] {
-            let schema = document_schema_with_agreement(json!({ "$ownerId": referenced }));
+            let schema = document_schema_with_where(json!({ referenced: "$ownerId" }));
 
             assert!(
                 DOCUMENT_META_SCHEMA_V3.validate(&schema).is_ok(),
@@ -725,7 +729,7 @@ mod tests {
     #[test]
     fn should_reject_other_system_properties_on_the_referring_side_of_an_agreement() {
         for referring in ["$creatorId", "$id", "$createdAt"] {
-            let schema = document_schema_with_agreement(json!({ referring: "$ownerId" }));
+            let schema = document_schema_with_where(json!({ "$ownerId": referring }));
 
             assert!(
                 DOCUMENT_META_SCHEMA_V3.validate(&schema).is_err(),

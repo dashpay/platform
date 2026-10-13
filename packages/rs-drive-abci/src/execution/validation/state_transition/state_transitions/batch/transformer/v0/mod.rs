@@ -23,17 +23,14 @@
 // fields rather than rename this file.
 
 mod contract_moderation_gate;
-mod property_constraint_aggregates;
+mod moderator_fields;
+pub(crate) mod property_constraint_aggregates;
+mod retraction;
 
 use contract_moderation_gate::{BatchTransitionContractModerationGate, ContractModerationRefusal};
-use dpp::data_contract::document_type::property_constraints::SystemChange;
-use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::DocumentReplaceTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionActionAccessorsV0;
-use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
-use property_constraint_aggregates::{read_property_constraint_aggregates, DocumentVersion};
+use moderator_fields::judge_moderator_field_write;
+use property_constraint_aggregates::attach_property_constraint_reads;
+use retraction::judge_barred_replace;
 use std::borrow::Cow;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
@@ -58,7 +55,11 @@ use dpp::consensus::state::document::document_incorrect_purchase_price_error::Do
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
 use dpp::document::property_names::PRICE;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
+use dpp::shielded::compute_shielded_verification_fee;
+use dpp::tokens::token_payment_info::v1::v1_accessors::TokenPaymentInfoAccessorsV1;
+use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::prelude::{Revision, UserFeeIncrease};
 use dpp::validation::SimpleConsensusValidationResult;
@@ -101,6 +102,13 @@ use drive::state_transition_action::batch::batched_transition::token_transition:
 use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_transition_action::TokenMintTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_claim_transition_action::TokenClaimTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_transition_action::TokenDirectPurchaseTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_shield_transition_action::TokenShieldTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_shielded_transfer_transition_action::TokenShieldedTransferTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_unshield_transition_action::TokenUnshieldTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_mint_to_pool_transition_action::TokenMintToPoolTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_burn_from_pool_transition_action::TokenBurnFromPoolTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_claim_to_pool_transition_action::TokenClaimToPoolTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_set_price_for_direct_purchase_transition_action::TokenSetPriceForDirectPurchaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_transfer_transition_action::TokenTransferTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionAction;
@@ -147,6 +155,7 @@ trait BatchTransitionInternalTransformerV0 {
         owner_id: Identifier,
         document_transitions: &[&DocumentTransition],
         user_fee_increase: UserFeeIncrease,
+        retraction_bar: Option<&ConsensusError>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -190,6 +199,7 @@ trait BatchTransitionInternalTransformerV0 {
         replaced_documents: &[Document],
         user_fee_increase: UserFeeIncrease,
         owner_id: Identifier,
+        retraction_bar: Option<&ConsensusError>,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error>;
@@ -457,9 +467,10 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         };
 
         // Contract moderation (protocol version 14): a moderated contract refuses the document
-        // transitions of a banned or suspended signer, its deletions excepted. The gate is its own versioned helper,
-        // selected by `batch_state_transition.contract_moderation_gate`, so that this shared
-        // transformer does for earlier protocol versions exactly what it did before.
+        // transitions of a banned or suspended signer, its deletions and retractions excepted.
+        // The gate is its own versioned helper, selected by
+        // `batch_state_transition.contract_moderation_gate`, so that this shared transformer
+        // does for earlier protocol versions exactly what it did before.
         let refusal = Self::contract_moderation_gate(
             drive,
             block_info,
@@ -472,15 +483,22 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             platform_version,
         )?;
         // What the gate lets through carries on next to the refusal: a barred signer's
-        // deletions, and everything on the types an elected contract's interim does not block.
-        let (refused, document_transitions) = match refusal {
-            Some(ContractModerationRefusal { refused, passed }) => {
+        // deletions and its replaces on the types declaring `retractedWhen`, judged with the bar
+        // once their stored documents are fetched, and everything on the types an elected
+        // contract's interim does not block.
+        let (refused, document_transitions, retraction_bar) = match refusal {
+            Some(ContractModerationRefusal {
+                refused,
+                passed,
+                retraction_bar,
+            }) => {
                 if passed.is_empty() {
-                    return Ok(refused);
+                    // Everything was refused (the batch is never empty)
+                    return Ok(refused.unwrap_or_default());
                 }
-                (Some(refused), Cow::Owned(passed))
+                (refused, Cow::Owned(passed), retraction_bar)
             }
-            None => (None, Cow::Borrowed(document_transitions)),
+            None => (None, Cow::Borrowed(document_transitions), None),
         };
 
         let mut validation_result = document_transitions
@@ -495,6 +513,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     owner_id,
                     document_transitions,
                     user_fee_increase,
+                    retraction_bar.as_ref(),
                     execution_context,
                     transaction,
                     platform_version,
@@ -518,6 +537,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         owner_id: Identifier,
         document_transitions: &[&DocumentTransition],
         user_fee_increase: UserFeeIncrease,
+        retraction_bar: Option<&ConsensusError>,
         execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -602,6 +622,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         &replaced_documents,
                         user_fee_increase,
                         owner_id,
+                        retraction_bar,
                         execution_context,
                         platform_version,
                     )
@@ -751,6 +772,81 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 Ok(batched_action)
             }
+            // Every token shielded pool arm below is refused before it is reached on protocol
+            // versions 1 through 13: the batch's `is_allowed` gate rejects each pool transition
+            // kind unpaid until the version that admits them. From that version on these arms
+            // are the live path, because `try_into_action_v0` is the shared transformer body of
+            // `transform_into_action` 0, 1 and 2 -- they are not exhaustiveness filler.
+            TokenTransition::Shield(token_shield) => {
+                let (batched_action, fee_result) = TokenShieldTransitionAction::try_from_borrowed_token_shield_transition_with_contract_lookup(drive, owner_id, token_shield, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::MintToPool(token_mint_to_pool) => {
+                let (batched_action, fee_result) = TokenMintToPoolTransitionAction::try_from_borrowed_token_mint_to_pool_transition_with_contract_lookup(drive, owner_id, token_mint_to_pool, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::BurnFromPool(token_burn_from_pool) => {
+                let (batched_action, fee_result) = TokenBurnFromPoolTransitionAction::try_from_borrowed_token_burn_from_pool_transition_with_contract_lookup(drive, owner_id, token_burn_from_pool, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::ClaimToPool(token_claim_to_pool) => {
+                let (batched_action, fee_result) = TokenClaimToPoolTransitionAction::try_from_borrowed_token_claim_to_pool_transition_with_contract_lookup(drive, owner_id, token_claim_to_pool, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::DirectPurchaseToPool(token_direct_purchase_to_pool) => {
+                let (batched_action, fee_result) = TokenDirectPurchaseToPoolTransitionAction::try_from_borrowed_token_direct_purchase_to_pool_transition_with_contract_lookup(drive, owner_id, token_direct_purchase_to_pool, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::Unshield(token_unshield) => {
+                let (batched_action, fee_result) = TokenUnshieldTransitionAction::try_from_borrowed_token_unshield_transition_with_contract_lookup(drive, owner_id, token_unshield, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
+            TokenTransition::ShieldedTransfer(token_shielded_transfer) => {
+                let (batched_action, fee_result) = TokenShieldedTransferTransitionAction::try_from_borrowed_token_shielded_transfer_transition_with_contract_lookup(drive, owner_id, token_shielded_transfer, approximate_for_costs, transaction, block_info, user_fee_increase, |_identifier| {
+                    Ok(data_contract_fetch_info.clone())
+                }, platform_version)?;
+
+                execution_context
+                    .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+                Ok(batched_action)
+            }
         }
     }
 
@@ -794,9 +890,37 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         replaced_documents: &[Document],
         user_fee_increase: UserFeeIncrease,
         owner_id: Identifier,
+        retraction_bar: Option<&ConsensusError>,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<BatchedTransitionAction>, Error> {
+        // A token cost paid out of the token's shielded pool carries an Orchard bundle whose
+        // Halo 2 verification and per-action work GroveDB cannot meter: charged here, before
+        // anything can fail, so CheckTx admission and block execution price it identically and
+        // a rejected document still pays for the proof it made the validators check.
+        //
+        // Inert on protocol versions 1 through 13, which select this shared transformer body
+        // through `transform_into_action` 0 and 1: only a `TokenPaymentInfo::V1` carries a
+        // shielded payment at all, and a batch holding a document whose payment info carries one
+        // is refused unpaid at the batch's `is_allowed` gate, which runs before the transformer,
+        // so this charge is never reached and no fee moves there.
+        if let Some(payment) = transition
+            .base()
+            .token_payment_info_ref()
+            .as_ref()
+            .and_then(|token_payment_info| token_payment_info.shielded_payment())
+        {
+            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+                FeeResult {
+                    processing_fee: compute_shielded_verification_fee(
+                        payment.actions.len(),
+                        platform_version,
+                    )?,
+                    ..Default::default()
+                },
+            ));
+        }
+
         if let Some(max_depth) = platform_version.system_limits.max_document_value_depth {
             if let Some(actual_depth) = transition.first_data_depth_exceeding(max_depth as usize) {
                 return Self::failed_per_transition_action(
@@ -823,28 +947,39 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                // The `countOf` and `sumOf` totals the rules read, the new document counted
-                if let Some(BatchedTransitionAction::DocumentAction(
-                    DocumentTransitionAction::CreateAction(action),
-                )) = document_create_action.data.as_mut()
-                {
-                    let aggregates = read_property_constraint_aggregates(
-                        drive,
-                        &data_contract_fetch_info.contract,
-                        document_create_transition.base().document_type_name(),
-                        DocumentVersion {
-                            properties: action.data(),
-                            owner_id,
-                        },
-                        None,
-                        None,
-                        block_info,
-                        execution_context,
-                        transaction,
+                // A field only the contract's moderators write, set by a writer who does not
+                // moderate it, refused; set by one who does, stamped as a moderator's
+                if let Some(error) = judge_moderator_field_write(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &mut document_create_action,
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )? {
+                    return Self::failed_per_transition_action(
+                        document_create_transition.base(),
+                        owner_id,
+                        vec![error],
                         platform_version,
-                    )?;
-                    action.set_property_constraint_aggregates(aggregates);
+                    );
                 }
+
+                // The `countOf` and `sumOf` totals the rules judging the write read, and the
+                // stored version they read through `$old.`
+                attach_property_constraint_reads(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &mut document_create_action,
+                    None,
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?;
                 Ok(document_create_action)
             }
             DocumentTransition::Replace(document_replace_transition) => {
@@ -918,32 +1053,58 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                // The `countOf` and `sumOf` totals the rules read, the document counted as it will be
-                // stored and no longer as it was
-                if let Some(BatchedTransitionAction::DocumentAction(
-                    DocumentTransitionAction::ReplaceAction(action),
-                )) = document_replace_action.data.as_mut()
-                {
-                    let aggregates = read_property_constraint_aggregates(
-                        drive,
+                // A banned or suspended owner's replace, let through by the moderation gate as a
+                // retraction, refused with the bar unless it writes a retracted document
+                if let Some(bar) = retraction_bar {
+                    if let Some(error) = judge_barred_replace(
                         &data_contract_fetch_info.contract,
-                        document_replace_transition.base().document_type_name(),
-                        DocumentVersion {
-                            properties: action.data(),
+                        &document_replace_action,
+                        original_document,
+                        owner_id,
+                        bar,
+                    ) {
+                        return Self::failed_per_transition_action(
+                            document_replace_transition.base(),
                             owner_id,
-                        },
-                        Some(DocumentVersion {
-                            properties: original_document.properties(),
-                            owner_id: original_document.owner_id(),
-                        }),
-                        None,
-                        block_info,
-                        execution_context,
-                        transaction,
-                        platform_version,
-                    )?;
-                    action.set_property_constraint_aggregates(aggregates);
+                            vec![error],
+                            platform_version,
+                        );
+                    }
                 }
+
+                // A field only the contract's moderators write, changed, added or removed by a
+                // writer who does not moderate it, refused; by one who does, stamped
+                if let Some(error) = judge_moderator_field_write(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &mut document_replace_action,
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )? {
+                    return Self::failed_per_transition_action(
+                        document_replace_transition.base(),
+                        owner_id,
+                        vec![error],
+                        platform_version,
+                    );
+                }
+
+                // The `countOf` and `sumOf` totals the rules judging the write read, and the
+                // stored version they read through `$old.`
+                attach_property_constraint_reads(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &mut document_replace_action,
+                    Some(original_document),
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?;
 
                 Ok(document_replace_action)
             }
@@ -1049,32 +1210,19 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                // The `countOf` and `sumOf` totals of the rules the new owner can break, the document
-                // counted as its new owner's and no longer as the old one's
-                if let Some(BatchedTransitionAction::DocumentAction(
-                    DocumentTransitionAction::TransferAction(action),
-                )) = document_transfer_action.data.as_mut()
-                {
-                    let aggregates = read_property_constraint_aggregates(
-                        drive,
-                        &data_contract_fetch_info.contract,
-                        document_transfer_transition.base().document_type_name(),
-                        DocumentVersion {
-                            properties: action.document().properties(),
-                            owner_id: action.document().owner_id(),
-                        },
-                        Some(DocumentVersion {
-                            properties: original_document.properties(),
-                            owner_id: original_document.owner_id(),
-                        }),
-                        Some(SystemChange::Transfer),
-                        block_info,
-                        execution_context,
-                        transaction,
-                        platform_version,
-                    )?;
-                    action.set_property_constraint_aggregates(aggregates);
-                }
+                // The `countOf` and `sumOf` totals the rules judging the write read, and the
+                // stored version they read through `$old.`
+                attach_property_constraint_reads(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &mut document_transfer_action,
+                    Some(original_document),
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?;
 
                 Ok(document_transfer_action)
             }
@@ -1141,32 +1289,19 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                // The `countOf` and `sumOf` totals of the rules the update's time can break,
-                // which the document's own count leaves as they are
-                if let Some(BatchedTransitionAction::DocumentAction(
-                    DocumentTransitionAction::UpdatePriceAction(action),
-                )) = document_update_price_action.data.as_mut()
-                {
-                    let aggregates = read_property_constraint_aggregates(
-                        drive,
-                        &data_contract_fetch_info.contract,
-                        document_update_price_transition.base().document_type_name(),
-                        DocumentVersion {
-                            properties: action.document().properties(),
-                            owner_id: action.document().owner_id(),
-                        },
-                        Some(DocumentVersion {
-                            properties: original_document.properties(),
-                            owner_id: original_document.owner_id(),
-                        }),
-                        Some(SystemChange::PriceUpdate),
-                        block_info,
-                        execution_context,
-                        transaction,
-                        platform_version,
-                    )?;
-                    action.set_property_constraint_aggregates(aggregates);
-                }
+                // The `countOf` and `sumOf` totals the rules judging the write read, and the
+                // stored version they read through `$old.`
+                attach_property_constraint_reads(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &mut document_update_price_action,
+                    Some(original_document),
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?;
 
                 Ok(document_update_price_action)
             }
@@ -1271,32 +1406,19 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                // The `countOf` and `sumOf` totals of the rules the buyer can break, the document
-                // counted as the buyer's and no longer as the seller's
-                if let Some(BatchedTransitionAction::DocumentAction(
-                    DocumentTransitionAction::PurchaseAction(action),
-                )) = document_purchase_action.data.as_mut()
-                {
-                    let aggregates = read_property_constraint_aggregates(
-                        drive,
-                        &data_contract_fetch_info.contract,
-                        document_purchase_transition.base().document_type_name(),
-                        DocumentVersion {
-                            properties: action.document().properties(),
-                            owner_id: action.document().owner_id(),
-                        },
-                        Some(DocumentVersion {
-                            properties: original_document.properties(),
-                            owner_id: original_document.owner_id(),
-                        }),
-                        Some(SystemChange::Transfer),
-                        block_info,
-                        execution_context,
-                        transaction,
-                        platform_version,
-                    )?;
-                    action.set_property_constraint_aggregates(aggregates);
-                }
+                // The `countOf` and `sumOf` totals the rules judging the write read, and the
+                // stored version they read through `$old.`
+                attach_property_constraint_reads(
+                    drive,
+                    &data_contract_fetch_info.contract,
+                    &mut document_purchase_action,
+                    Some(original_document),
+                    owner_id,
+                    block_info,
+                    execution_context,
+                    transaction,
+                    platform_version,
+                )?;
 
                 Ok(document_purchase_action)
             }

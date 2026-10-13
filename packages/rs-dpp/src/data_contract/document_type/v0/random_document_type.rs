@@ -202,6 +202,7 @@ impl DocumentTypeV0 {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             }
         };
 
@@ -598,6 +599,7 @@ impl DocumentTypeV0 {
                 distinct_from: None,
                 encrypted_for: None,
                 generated_from: None,
+                revealed_reference: None,
             }
         };
 

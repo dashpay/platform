@@ -1572,6 +1572,7 @@ mod tests {
         stored: Mutex<Vec<PlatformWalletChangeSet>>,
         flushes: std::sync::atomic::AtomicUsize,
         fail_flush: bool,
+        fail_load: std::sync::atomic::AtomicBool,
         fail_on_flush: Option<usize>,
         restored_wallet: Option<(Wallet, ManagedWalletInfo)>,
     }
@@ -1631,6 +1632,9 @@ mod tests {
         }
 
         fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            if self.fail_load.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(PersistenceError::backend("simulated restore failure"));
+            }
             let mut state = ClientStartState::default();
             if let Some((wallet, info)) = &self.restored_wallet {
                 state.wallets.insert(
@@ -3847,6 +3851,7 @@ mod tests {
             Err(PlatformWalletError::Persistence(_))
         ));
         let operation = Arc::new(super::AssetLockOperationContext::new([81; 16]));
+        let _registration = manager.register_wallet_drain_operation(operation.clone());
         assert!(matches!(
             manager.begin_wallet_drain(&operation).await,
             Err(PlatformWalletError::Persistence(_))
@@ -3860,6 +3865,106 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn should_wallet_drain_release_only_the_last_matching_prebuild_registration() {
+        let (wallet_manager, wallet_id, _, _) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let (manager, _) = asset_lock_manager_over(
+            wallet_manager,
+            wallet_id,
+            Arc::new(CountingOkBroadcaster::default()),
+        );
+        let operation = Arc::new(super::AssetLockOperationContext::new([82; 16]));
+        let outer = manager.register_wallet_drain_operation(operation.clone());
+        let inner = manager.register_wallet_drain_operation(operation.clone());
+        manager.begin_wallet_drain(&operation).await.unwrap();
+        let same_id = Arc::new(super::AssetLockOperationContext::new([82; 16]));
+        let unrelated = manager.register_wallet_drain_operation(same_id.clone());
+        drop(inner);
+        assert_eq!(
+            manager
+                .wallet_drain_operation_status([82; 16])
+                .await
+                .unwrap()
+                .state,
+            super::AssetLockOperationState::Pending,
+            "another Arc or a nested worker cannot clear the owner's registration"
+        );
+        drop(outer);
+        assert_eq!(
+            manager
+                .wallet_drain_operation_status([82; 16])
+                .await
+                .unwrap()
+                .state,
+            super::AssetLockOperationState::Pending,
+            "the queued same-UUID contender must remain visible after the owner exits"
+        );
+        assert!(manager.begin_wallet_drain(&same_id).await.is_err());
+        drop(unrelated);
+        assert_eq!(
+            operation.snapshot().state,
+            super::AssetLockOperationState::Pending
+        );
+        assert_eq!(
+            manager
+                .wallet_drain_operation_status([82; 16])
+                .await
+                .unwrap()
+                .state,
+            super::AssetLockOperationState::NotSent
+        );
+        let _retry = manager.register_wallet_drain_operation(operation.clone());
+        assert_eq!(manager.begin_wallet_drain(&operation).await.unwrap(), None);
+        assert_eq!(manager.broadcaster.calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn should_wallet_drain_retry_after_prebuild_load_failure() {
+        let (wallet_manager, wallet_id, _, _) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let (manager, persistence) = asset_lock_manager_over(
+            wallet_manager,
+            wallet_id,
+            Arc::new(CountingOkBroadcaster::default()),
+        );
+        let operation = Arc::new(super::AssetLockOperationContext::new([83; 16]));
+        persistence
+            .fail_load
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        {
+            let _registration = manager.register_wallet_drain_operation(operation.clone());
+            assert!(matches!(
+                manager.begin_wallet_drain(&operation).await,
+                Err(PlatformWalletError::Persistence(_))
+            ));
+        }
+        assert_eq!(
+            operation.snapshot().state,
+            super::AssetLockOperationState::Pending
+        );
+        persistence
+            .fail_load
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            manager
+                .wallet_drain_operation_status([83; 16])
+                .await
+                .unwrap()
+                .state,
+            super::AssetLockOperationState::NotSent
+        );
+        // Both a fresh context for the same UUID and a new explicit request
+        // can proceed once durable loading works again.
+        for id in [[83; 16], [84; 16]] {
+            let retry = Arc::new(super::AssetLockOperationContext::new(id));
+            let _registration = manager.register_wallet_drain_operation(retry.clone());
+            assert_eq!(manager.begin_wallet_drain(&retry).await.unwrap(), None);
+        }
+        assert_eq!(manager.broadcaster.calls(), 0);
+        assert!(manager.list_tracked_locks().await.is_empty());
+    }
+
+    #[tokio::test]
     async fn should_wallet_drain_pool_standard_families_without_change() {
         let (wallet_manager, wallet_id, _, signer) =
             funded_wallet_manager_dual_standard(&[700_000, 900_000], &[800_000]).await;
@@ -3869,7 +3974,7 @@ mod tests {
             Arc::new(CountingOkBroadcaster::default()),
         );
         let operation = Arc::new(super::AssetLockOperationContext::new([11; 16]));
-        manager.register_wallet_drain_operation(operation.clone());
+        let _registration = manager.register_wallet_drain_operation(operation.clone());
         assert_eq!(
             manager
                 .wallet_drain_operation_status([11; 16])
@@ -3918,11 +4023,13 @@ mod tests {
         // UUID replay resolves the existing lock, and a fresh UUID cannot
         // bypass pending state even if the host lost its local marker.
         let replay = Arc::new(super::AssetLockOperationContext::new([11; 16]));
+        let _replay_registration = manager.register_wallet_drain_operation(replay.clone());
         assert_eq!(
             manager.begin_wallet_drain(&replay).await.unwrap(),
             Some(outpoint)
         );
         let second = Arc::new(super::AssetLockOperationContext::new([12; 16]));
+        let _second_registration = manager.register_wallet_drain_operation(second.clone());
         assert!(manager.begin_wallet_drain(&second).await.is_err());
         assert_eq!(
             second.snapshot().state,
@@ -4045,6 +4152,7 @@ mod tests {
             WalletPersister::new(wallet_id, persistence),
         );
         let operation = Arc::new(super::AssetLockOperationContext::new([41; 16]));
+        let _registration = manager.register_wallet_drain_operation(operation.clone());
         manager.begin_wallet_drain(&operation).await.unwrap();
         let result = manager
             .broadcast_funded_asset_lock_with_operation(
@@ -4060,6 +4168,7 @@ mod tests {
             )
             .await;
         assert!(matches!(result, Err(PlatformWalletError::Persistence(_))));
+        drop(_registration);
         assert_eq!(broadcaster.calls(), 0);
         assert!(manager.list_tracked_locks().await.is_empty());
         assert!(operation.snapshot().out_point.is_some());
@@ -4075,6 +4184,7 @@ mod tests {
             operation.snapshot()
         );
         let second = Arc::new(super::AssetLockOperationContext::new([42; 16]));
+        let _second_registration = manager.register_wallet_drain_operation(second.clone());
         assert!(manager.begin_wallet_drain(&second).await.is_err());
     }
 
@@ -4088,6 +4198,7 @@ mod tests {
             Arc::new(AlwaysRejectedBroadcaster),
         );
         let operation = Arc::new(super::AssetLockOperationContext::new([51; 16]));
+        let _registration = manager.register_wallet_drain_operation(operation.clone());
         manager.begin_wallet_drain(&operation).await.unwrap();
         let result = manager
             .broadcast_funded_asset_lock_with_operation(
@@ -4127,6 +4238,7 @@ mod tests {
             super::AssetLockOperationState::NotSent
         );
         let second = Arc::new(super::AssetLockOperationContext::new([52; 16]));
+        let _second_registration = manager.register_wallet_drain_operation(second.clone());
         assert_eq!(manager.begin_wallet_drain(&second).await.unwrap(), None);
     }
 
@@ -4148,6 +4260,7 @@ mod tests {
             WalletPersister::new(wallet_id, persistence.clone()),
         );
         let operation = Arc::new(super::AssetLockOperationContext::new([61; 16]));
+        let _registration = manager.register_wallet_drain_operation(operation.clone());
         manager.begin_wallet_drain(&operation).await.unwrap();
         let result = manager
             .broadcast_funded_asset_lock_with_operation(
@@ -4226,6 +4339,7 @@ mod tests {
             WalletPersister::new(wallet_id, persistence),
         ));
         let operation = Arc::new(super::AssetLockOperationContext::new([71; 16]));
+        let _registration = manager.register_wallet_drain_operation(operation.clone());
         manager.begin_wallet_drain(&operation).await.unwrap();
         let task_manager = manager.clone();
         let task_operation = operation.clone();

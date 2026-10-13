@@ -17,7 +17,9 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::DEFAULT_FEE_PER_KB;
-use crate::wallet::asset_lock::{AssetLockOperationContext, AssetLockOperationSnapshot};
+use crate::wallet::asset_lock::{
+    AssetLockOperationContext, AssetLockOperationRegistration, AssetLockOperationSnapshot,
+};
 use crate::wallet::core::resolved_funding_accounts;
 use crate::wallet::PlatformWallet;
 use crate::ASSET_LOCK_FUNDING_SOURCES;
@@ -46,8 +48,11 @@ pub struct WalletDrainPreview {
 
 impl PlatformWallet {
     /// Make a queued drain visible to status readers before spawning its worker.
-    pub fn register_wallet_drain_operation(&self, operation: Arc<AssetLockOperationContext>) {
-        self.asset_locks.register_wallet_drain_operation(operation);
+    pub fn register_wallet_drain_operation(
+        &self,
+        operation: Arc<AssetLockOperationContext>,
+    ) -> AssetLockOperationRegistration {
+        self.asset_locks.register_wallet_drain_operation(operation)
     }
 
     pub async fn shielded_wallet_drain_operation_status(

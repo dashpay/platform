@@ -21,9 +21,7 @@ use thiserror::Error;
     PlatformDeserializeUntrusted,
     DecodeUntrusted,
 )]
-#[error(
-    "State transition type {state_transition_type} is not yet active. Current protocol version is {current_protocol_version}, required protocol version is {required_protocol_version}"
-)]
+#[error("{}", self.describe())]
 #[platform_serialize(unversioned)]
 pub struct StateTransitionNotActiveError {
     /*
@@ -57,8 +55,35 @@ impl StateTransitionNotActiveError {
         self.current_protocol_version
     }
 
+    /// The boundary of the transition's active range that `current_protocol_version` missed, which
+    /// is the range's start when the version is below it and the range's end when it is above.
+    /// Read it with `current_protocol_version`: alone it does not say which side was missed, and a
+    /// version above the range is not reached by moving to the one reported.
     pub fn required_protocol_version(&self) -> ProtocolVersion {
         self.required_protocol_version
+    }
+
+    /// Both sides of the range read differently, so each is spelled out rather than sharing a
+    /// wording that would be accurate for both and actionable for neither.
+    fn describe(&self) -> String {
+        if self.current_protocol_version > self.required_protocol_version {
+            format!(
+                "State transition type {} is no longer accepted at protocol version {}: protocol \
+                 version {} was the last that accepted it, and a newer transition version carries \
+                 it from here",
+                self.state_transition_type,
+                self.current_protocol_version,
+                self.required_protocol_version
+            )
+        } else {
+            format!(
+                "State transition type {} is not active at protocol version {}: it becomes active \
+                 at protocol version {}",
+                self.state_transition_type,
+                self.current_protocol_version,
+                self.required_protocol_version
+            )
+        }
     }
 }
 

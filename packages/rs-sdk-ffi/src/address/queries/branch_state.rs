@@ -3,7 +3,7 @@
 use dash_sdk::dapi_client::{DapiRequest, IntoInner, RequestSettings};
 use dash_sdk::dapi_grpc::platform::v0::{
     get_addresses_branch_state_request, get_addresses_branch_state_response,
-    GetAddressesBranchStateRequest,
+    GetAddressesBranchStateRequest, GetAddressesBranchStateResponse,
 };
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::drive::drive::Drive;
@@ -129,7 +129,6 @@ unsafe fn dash_sdk_address_fetch_branch_state_inner(
         };
 
         // Execute the request
-        use dash_sdk::dapi_grpc::platform::v0::GetAddressesBranchStateResponse;
         let response: GetAddressesBranchStateResponse = request
             .execute(&wrapper.sdk, RequestSettings::default())
             .await
@@ -146,7 +145,13 @@ unsafe fn dash_sdk_address_fetch_branch_state_inner(
             }
         };
 
-        // Get platform version
+        // Branch responses have no signed metadata; the caller authenticates
+        // their root through a trunk proof. Address-funds leaves are item rows,
+        // whose proof encoding the newest GroveDB rules preserve, so these
+        // rules are compatible and strongest even for a pinned SDK. Revisit
+        // this choice if item-row proof encoding changes, address-funds gains
+        // subtree children, or a newer table changes the branch verification
+        // method version or depth bounds.
         let platform_version = PlatformVersion::latest();
 
         // Verify the proof and get branch result

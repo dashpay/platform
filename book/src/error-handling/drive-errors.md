@@ -1,8 +1,49 @@
 # Drive Errors
 
-The previous two chapters covered consensus errors -- the carefully serialized, code-stable errors that get sent across the network. Drive errors are a different beast entirely. They are **internal** errors that arise from the storage layer, the database, and the logic that sits between state transitions and GroveDB. They never leave the node. They are not serialized. And they do not need stable numeric codes.
+The previous two chapters covered consensus errors -- the carefully serialized, code-stable errors that get sent across the network. Drive errors are a different beast entirely. They are **internal** errors that arise from the storage layer, the database, and the logic that sits between state transitions and GroveDB. They are not serialized as consensus errors, and they do not need stable numeric codes. The one place they reach a client is a query's gRPC status, described in [Query errors on the wire](#query-errors-on-the-wire).
 
 But they do need to be well-organized, because Drive is where most of the platform's complexity lives. When something goes wrong in Drive, you need to know immediately whether it is a corrupted database, a protocol-level validation failure, a fee calculation error, or a bug in your own code.
+
+## Query errors on the wire
+
+A gRPC query answers a failed request with a status code, and clients read that code to decide whose fault the failure is. `rs-dapi-client` takes `INVALID_ARGUMENT` as the caller's mistake: the error goes back to the caller, and nothing else happens. It normally takes `UNKNOWN` and `INTERNAL` as a fault of the node: the client stops using that node for a while (a ban) and sends the request to the next one. Known older-node request-refusal messages are exceptions: the client does not retry statuses containing `storage: query: `, `drive error: query: ` or `proved path queries can not be for limit 0`. A request error answered as `INTERNAL` therefore gets every node banned in turn, since every node refuses the request the same way.
+
+The mapping lives in `packages/rs-drive-abci/src/query/service.rs`:
+
+| Error | Status |
+|---|---|
+| `QueryError::InvalidArgument`, `QueryError::TooManyElements` | `INVALID_ARGUMENT` |
+| A `QuerySyntaxError`, whether the handler reports it (`QueryError::Query`, `QueryError::Drive(Error::Query)`) or returns it (`Error::Drive(Error::Query)`) | `INVALID_ARGUMENT` |
+| `QueryError::NotFound` | `NOT_FOUND` |
+| `QueryError::ResourceExhausted` | `RESOURCE_EXHAUSTED` |
+| A decoding error, an unsupported request version, or another unexpected `QueryError` | `UNKNOWN`; undecodable or newer requests may succeed on another node |
+| Any other `Err` a handler returns | `INTERNAL` |
+
+A long status message retains at most a 1024-byte UTF-8 prefix, followed by `... (N bytes truncated)`. The complete message is therefore longer than 1024 bytes. Tonic percent-encodes it in the `grpc-message` HTTP/2 header; bounding the prefix prevents an echoed request field from exceeding the peer's header-list limit. Otherwise the client may see a retryable transport error instead of the original validation status.
+
+A handler checks the request before Drive sees it, and refuses what no node can answer with a validation error, never with `?`. Two rules decide what it refuses:
+
+- **Preserve usable answers.** Empty unproved selections and documented defaults remain supported. Some unusable proved selections and out-of-range inputs require refusal, even if an older node returned a response.
+- **GroveDB cannot prove an empty query, or one with a limit of 0.** When a proof is asked, an empty id list or a limit of 0 is refused; without a proof, the answer is empty.
+
+| Request | Without a proof | With a proof |
+|---|---|---|
+| Empty id list: data contracts, identities balances, identities contract keys (ids or purposes), evonode blocks by ids, identity and identities token balances and infos, token statuses, addresses infos | Empty answer | `INVALID_ARGUMENT` |
+| Identity keys with limit 0, epochs info with count 0 | Empty answer | `INVALID_ARGUMENT` |
+| Limit or count 0 on contract history (or above 10), protocol upgrade vote status, evonode blocks by range, identity votes, pre-programmed distributions, group infos, group actions | `INVALID_ARGUMENT` | `INVALID_ARGUMENT` |
+| Identity keys search without a limit | `INVALID_ARGUMENT` | Served |
+| Specific identity keys with a limit below their number of ids | The first keys that exist, in encoded-key order | The same keys, proved |
+| Documents v0 with limit 0, shielded encrypted notes with count 0 | 0 means the default | 0 means the default |
+
+An empty identities balances request with a proof changes from `OK` with an unusable proof to `INVALID_ARGUMENT`. A proof that fails to verify is treated as a node fault too, so refusing that request matters as much as the status codes. Address branch depths are checked before narrowing the wire `u32`: a value such as 263 is refused rather than wrapping to the previously accepted depth 7. Status text and validation priority can also change.
+
+These are query API changes, shared by the protocol versions selecting the affected query generations. They do not change block execution, persisted state or proof formats. The composite by-ID page validation also serves protocol versions 12 and 13; older schemas support value-bounded lookup joins, but predate the property-reference declarations needed for by-ID joins. At those versions, capped composite queries that require per-instance query limits are refused with `INVALID_ARGUMENT`. Drive checks executed capped composite queries against the protocol version's GroveDB capability before reading or proving them; other storage failures remain `INTERNAL`. An empty page that derives no capped child query remains supported.
+
+Non-zero offsets on proved identity-key queries (except `SpecificKeys`, which ignores offsets), contract-history, document-history and identity-vote queries are refused with `INVALID_ARGUMENT`. An unproved key search also refuses non-zero offsets; an explicit zero offset behaves like omission. Supported raw pagination and ignored `SpecificKeys` offsets remain unchanged. Structural validation precedes these checks, which run before storage lookups: a valid proved document-history request with a non-zero offset returns the offset error even when its contract or document type is missing, while the corresponding raw request still returns `NOT_FOUND`.
+
+SearchKey selection and CurrentKey alias limitations remain: its conditional branches lack query items, and identity key storage does not populate the empty CurrentKey alias. At protocol versions 12 and 13, an unproved AllKeysOfKind search with no offset can still return `INTERNAL` for unbounded terminal ranges; a CurrentKey search with more purpose/level pairs than its limit can exceed the terminal-key budget. SDK identity-vote offset paging remains unsupported and now receives `INVALID_ARGUMENT` rather than causing node bans.
+
+Nodes released before these rules answer the same requests with `UNKNOWN`, `INTERNAL`, or that unusable proof. Client versions that reject unusable proved selections before choosing a node can protect callers of older nodes; server classification also covers requests that reach the wire. These server checks do not add SDK preflight validation or offset-proof pagination.
 
 ## The Drive `Error` enum
 

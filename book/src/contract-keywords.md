@@ -19,8 +19,7 @@ A contract's `documentSchemas` maps each document type name to its schema. Keywo
   "properties": {
     "text": { "type": "string", "maxLength": 280, "maxBytes": 560, "position": 0 },
     "replyTo": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "refersTo": { "type": "deletableDocument", "documentType": "post" },
       "position": 1
     }
@@ -33,6 +32,8 @@ A contract's `documentSchemas` maps each document type name to its schema. Keywo
 - **Document type keywords** sit at the top of the schema (`documentsMutable`, `canBeDeleted`, `indices`, `required`). They say what may happen to a document of the type and who may do it.
 - **Index keywords** sit inside an entry of `indices` (`name`, `properties`).
 - **Property keywords** sit inside a property's schema (`type`, `maxLength`, `maxBytes`, `position`, `refersTo`). Most are ordinary JSON Schema; the rest are Platform's own.
+
+The examples write identifiers and fixed-size byte arrays with the protocol version 14 [shorthands](contract-keywords/property-schemas.md#shorthands-identifier-and-bytes), `"type": "identifier"` and `"type": "bytes"` with `size`. Excerpts of the system contracts (DPNS, DashPay, moderation charters) are quoted as those contracts are written, in the long form the shorthands stand for.
 
 The contract around the document types has keys of its own, and a `config` object: see [Contract-Level Keys and config](contract-keywords/contract-config.md).
 
@@ -55,7 +56,7 @@ The document meta-schema has changed three times:
 | v0 | 1 to 11 | The original keywords. A document type key the meta-schema did not know was ignored. |
 | v1 | 12 | Unknown document type keys are refused. The count, sum and average keywords. |
 | v2 | 13 | `keepsTransferHistory`, `keepsPurchaseHistory`, `keepsPricingHistory`. |
-| v3 | 14 | References, typed arrays, `requiredSince`, `immutable`, `ttl`, `propertyConstraints`, `actionFees`, moderation deletion, ranked and time-range indexes, index-only types, and the rest marked 14 in these chapters. |
+| v3 | 14 | References, typed arrays, `requiredSince`, `immutable`, `ttl`, `propertyConstraints`, `deleteConstraints`, `actionFees`, moderation deletion, ranked, time-range and integer-range indexes, index-only types, and the rest marked 14 in these chapters. |
 
 Most keywords of v0 took effect at protocol version 1. The exceptions are `tokenCost` (9) and the index keyword `countable` (12).
 
@@ -120,11 +121,11 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | `$schema`, `$defs` | added by the platform | The meta-schema URL and the contract's `schemaDefs`. A document type writing either is refused. | 1 | [$schema and $defs](contract-keywords/document-shape.md#schema-and-defs) |
 | `transient` | array of top-level names | Properties validated on the transition but never stored. | 1 | [transient](contract-keywords/transient.md) · [internals](data-model/documents.md#transient-properties) |
 | `documentsMutable` | boolean, default `true` | `false`: documents cannot be replaced. | 1 | [documentsMutable](contract-keywords/mutability.md#documentsmutable) |
-| `immutable` | array of top-level names | Properties frozen at creation on a mutable type. | 14 | [immutable](contract-keywords/mutability.md#immutable) · [internals](data-model/documents.md#immutable-properties-on-mutable-document-types) |
-| `immutableAllowSetting` | array of names from `immutable` | Immutable properties a replace may still set once, while they have no value. | 14 | [immutableAllowSetting](contract-keywords/mutability.md#immutableallowsetting) |
-| `canBeDeleted` | boolean, default `true` | `false`: a document's owner cannot delete it. | 1 | [canBeDeleted](contract-keywords/deletion.md#canbedeleted) |
-| `canBeDeletedByModerators` | boolean | The contract's moderators may delete documents of the type. | 14 | [canBeDeletedByModerators](contract-keywords/deletion.md#canbedeletedbymoderators) · [internals](data-model/contract-moderation.md#deleting-documents) |
-| `canBeDeletedByModeratorsFor` | seconds | Limits moderator deletion to this long after a document's last change. | 14 | [canBeDeletedByModeratorsFor](contract-keywords/deletion.md#canbedeletedbymoderatorsfor) |
+| `immutable` | array of top-level names and `{ property, when }` | Properties frozen at creation, or while a condition holds, on a mutable type. | 14 | [immutable](contract-keywords/mutability.md#immutable) · [internals](data-model/documents.md#immutable-properties-on-mutable-document-types) |
+| `canBeDeleted` | boolean or `"onlyWhenConsumed"`, default `true` | `false`: a document's owner cannot delete it. `"onlyWhenConsumed"` (14): only a create that consumes it deletes it. | 1 | [canBeDeleted](contract-keywords/deletion.md#canbedeleted) |
+| `deleteConstraints` | object of named rules, at most 16 | Rules, in the grammar of `propertyConstraints`, the stored document meets for its owner to delete it: a poll deleted only while no vote points at it. | 14 | [deleteConstraints](contract-keywords/deletion.md#deleteconstraints) |
+| `retractedWhen` | one condition, as an `immutable` entry's `when` | The replace a banned or suspended owner may still make on a moderated contract: one whose written document meets the condition. | 14 | [retractedWhen](contract-keywords/deletion.md#retractedwhen) · [internals](data-model/contract-moderation.md#the-document-gate) |
+| `moderatorAbilities` | object: `delete`, `deleteWithin` (seconds), `deleteKeepsRecord`, `deleteRefundsOwner`, `deleteSettled` (`leader`, `approvals`, `approversPredateDocument`), `deleteKeepsFields` (array of property paths), `changeFields` (array of top-level names) | What the contract's moderators may do to documents of the type: delete them, within a window after their last change, past it only when so many members of a seated team agree (the leader among them when the rule says so, members the leader added only for documents written after their addition unless the rule says otherwise), with or without a removal record keeping the fields that stay public and a refund to the owner, and write the fields only they write. | 14 | [Moderator Abilities](contract-keywords/moderator-abilities.md) · [delete](contract-keywords/deletion.md#moderatorabilitiesdelete) · [internals](data-model/contract-moderation.md#changing-document-fields) |
 | `ttl` | seconds, 3600 to 31536000 | The platform deletes each document this long after its creation. | 14 | [Time To Live](contract-keywords/ttl.md) · [internals](data-model/document-ttl.md) |
 | `creationRestrictionMode` | `0` anyone, `1` contract owner, `2` nobody | Who may create documents. | 1 | [creationRestrictionMode](contract-keywords/ownership-and-trading.md#creationrestrictionmode) |
 | `transferable` | `0` never, `1` always | Whether an owner may give a document to another identity. | 1 | [transferable](contract-keywords/ownership-and-trading.md#transferable) |
@@ -151,6 +152,7 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | Key | Takes | What it does | Since | Read more |
 |---|---|---|---|---|
 | `type` | `string`, `integer`, `number`, `boolean`, `object`, `array` | The kind of value. An array is a byte array or a typed array. | 1 | [type](contract-keywords/property-schemas.md#type) |
+| `type` (shorthands) | `identifier`, or `bytes` with `size` | One keyword for an identifier, or for a byte array of exactly `size` bytes (1 to 5120); read as the long form, stored as sent. | 14 | [Shorthands](contract-keywords/property-schemas.md#shorthands-identifier-and-bytes) |
 | `position` | integer | The property's place in the stored document. Required; top-level positions run 0, 1, 2 with no gap. | 1 | [position](contract-keywords/property-schemas.md#position) · [Document Serialization](serialization/document-serialization.md) |
 | `minLength`, `maxLength` | integer | A string's length in characters. | 1 | [Strings](contract-keywords/property-schemas.md#strings) |
 | `pattern` | regular expression | A string must match it. Needs `maxLength` of at most 50000. | 1 | [Strings](contract-keywords/property-schemas.md#strings) |
@@ -176,7 +178,7 @@ Every key a contract can write, grouped by where it goes. **Since** is the proto
 | `generatedFrom.params` | property paths | The properties the function reads, in order. | 14 | [Params](contract-keywords/generated-from.md#params) |
 | `refersTo` | a declaration | What an identifier points at, checked when a document is written. See the [keys](#refersto). | 14 | [References](contract-keywords/refers-to.md) · [internals](data-model/documents.md#document-references-refersto) |
 
-A typed array's element (`items`) takes `type`, `enum`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `format`, `minItems` and `maxItems` (bytes of a byte array element), `byteArray`, `contentMediaType`, `maxBytes`, `distinctFrom`, `refersTo`, `$comment` and `description`. It takes no `position`, `const`, `uniqueItems` or `examples`.
+A typed array's element (`items`) takes `type` (the `identifier` and `bytes` shorthands included, with `size`), `enum`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`, `format`, `minItems` and `maxItems` (bytes of a byte array element), `byteArray`, `contentMediaType`, `maxBytes`, `distinctFrom`, `refersTo`, `$comment` and `description`. It takes no `position`, `const`, `uniqueItems` or `examples`.
 
 ### refersTo
 
@@ -186,17 +188,19 @@ A typed array's element (`items`) takes `type`, `enum`, `minimum`, `maximum`, `e
 | `type: "identity"` | | The value is the id of an existing identity. | 14 | [identity](contract-keywords/refers-to.md#identity) |
 | `type: "contract"` | | The value is the id of an existing data contract. | 14 | [contract](contract-keywords/refers-to.md#contract) |
 | `type: "token"` | | The value is the id of an existing token. | 14 | [token](contract-keywords/refers-to.md#token) |
-| `type: "permanentDocument"` | | The value is the id of a document whose type can never lose its documents. | 14 | [permanentDocument](contract-keywords/refers-to.md#permanentdocument) |
-| `type: "deletableDocument"` | | The value is the id of a document that can be deleted; checked again on every replace. | 14 | [deletableDocument](contract-keywords/refers-to.md#deletabledocument) |
+| `type: "permanentDocument"` | | The value is the id of a document whose type can never lose its documents; with `findBy`, part of the key that finds it; with `inList`, an element of its list. | 14 | [permanentDocument](contract-keywords/refers-to.md#permanentdocument) |
+| `type: "deletableDocument"` | | The value is the id of a document that can be deleted, or with `findBy` part of the key that finds it; checked again on every replace. | 14 | [deletableDocument](contract-keywords/refers-to.md#deletabledocument) |
 | `type: "identityPublicKey"` | | The value names an identity key that exists and is not disabled. | 14 | [identityPublicKey](contract-keywords/refers-to.md#identitypublickey) |
-| `type: "listElement"` | | The value is one of the identifiers a list on another document holds. | 14 | [List Elements](contract-keywords/refers-to-list-element.md) · [internals](data-model/documents.md#an-element-of-a-list-listelement) |
 | `documentType` | document type name | The referenced document type. | 14 | [documentType](contract-keywords/refers-to.md#documenttype) |
 | `contractId` | identifier | The contract holding `documentType`, when it is not this one. | 14 | [contractId](contract-keywords/refers-to.md#contractid) |
-| `propertyAgreement` | 1 to 10 pairs `{ "<here>": "<there>" }` | Properties of the two documents that must be equal. `$ownerId` here makes a write gate. | 14 | [propertyAgreement](contract-keywords/refers-to.md#propertyagreement) |
-| `lookup` | `{ "index", "keys" }` | Finds the document through a unique index, with the value as one part of the key. | 14 | [Lookups](contract-keywords/refers-to-lookup.md) · [internals](data-model/documents.md#resolved-through-a-unique-index-lookup) |
-| `lookup.index` | index name | A unique index of `documentType`. | 14 | [Lookups](contract-keywords/refers-to-lookup.md#assembling-the-key) |
-| `lookup.keys` | index property → `"."`, `"$ownerId"` or a path | Where each part of the key comes from; `"."` is the value itself. | 14 | [Lookups](contract-keywords/refers-to-lookup.md#assembling-the-key) |
-| `inList` | typed array path | The list on the referenced document the value must be in. | 14 | [List Elements](contract-keywords/refers-to-list-element.md) |
+| `findBy` | 1 to 10 entries: referenced property → `"."`, `"$ownerId"`, a path or a function | Finds the document through the unique index of `documentType` over exactly these properties, in any order; `"."` is the value itself. Without it the value is the document's `$id`. | 14 | [findBy](contract-keywords/refers-to-lookup.md) · [internals](data-model/documents.md#found-by-a-unique-index-findby) |
+| `findBy.<property>` | `{ "function": "sys.hash.sha256d", "params" }` | A function entry: the referenced property holds the hash of `params` (paths, `{ "const": text }`, `"."` for a value without a path), which fills that part of the key, finding a commitment made earlier. At most one. | 14 | [Commit and reveal](contract-keywords/refers-to-lookup.md#commit-and-reveal) · [internals](data-model/documents.md#commit-and-reveal-a-findby-function) |
+| `where` | 1 to 10 entries `{ "<referenced property>": "<referring value>" }` | Checked on the document found: each referenced property (or `$ownerId`, `$creatorId`, `$id`) must equal the referring property. A value of `"$ownerId"`, the writer, makes a write gate. Never finds the document. | 14 | [where](contract-keywords/refers-to.md#where) |
+| `constraints` | `{ "minimumAgeBlocks"?, "chooseFirst"? }` | Beside `findBy`, on a reference judged on the create alone (a `findBy` function, or a type whose documents are never replaced): what the document found must meet when the referring document is created. | 14 | [Commit and reveal](contract-keywords/refers-to-lookup.md#commit-and-reveal) |
+| `constraints.minimumAgeBlocks` | 1 to 4294967295 | The document found was created at least this many blocks before the create. | 14 | [Commit and reveal](contract-keywords/refers-to-lookup.md#commit-and-reveal) |
+| `consume` | `true` | Beside `findBy`, on a reference judged on the create alone (a `findBy` function, or a type whose documents are never replaced), on a `deletableDocument` with the `where` entry `"$ownerId": "$ownerId"`, into a type with `canBeDeleted` `true` or `"onlyWhenConsumed"` and no `deleteConstraints`: the create deletes the writer's commitment. | 14 | [Commit and reveal](contract-keywords/refers-to-lookup.md#commit-and-reveal) |
+| `constraints.chooseFirst` | `{ "among", "validWhen": { "<property>": { "function", "params" } }, "by": [...] }` | On a `deletableDocument` whose `findBy` holds just `"$ownerId": "$ownerId"` and a function filling `among`, into a type that expires (`ttl`): the document found must be the first valid commitment among those holding the same value there, valid when it holds `validWhen` computed with its own owner, in the order `by` lists (index properties ascending or descending, a last `$id` breaking ties). A create is refused (40149) while a valid commitment comes before its own; copies, expired commitments and ties do not count. Not on sponsored creates. | 14 | [Choosing the first commitment](contract-keywords/refers-to-lookup.md#choosing-the-first-commitment-choosefirst) · [internals](data-model/documents.md#choosing-the-first-commitment-choosefirst) |
+| `inList` | typed array path | On a `permanentDocument` whose `findBy` is `{ "$id": <property> }`: the list on that document the value must be in. | 14 | [List Elements](contract-keywords/refers-to-list-element.md) · [internals](data-model/documents.md#an-element-of-a-list-inlist) |
 | `keyIdProperty` | integer property path | On an identity property: the property holding the key id. | 14 | [keyIdProperty and identityProperty](contract-keywords/refers-to.md#keyidproperty-and-identityproperty) |
 | `identityProperty` | `"$ownerId"`, `"$creatorId"` or a path | On a key id property: whose key it is. | 14 | [keyIdProperty and identityProperty](contract-keywords/refers-to.md#keyidproperty-and-identityproperty) |
 | `keyRequirements.purpose` | `authentication`, `encryption`, `decryption`, `transfer`, `voting`, `owner` | The key's purpose. | 14 | [keyRequirements](contract-keywords/refers-to.md#keyrequirements) |
@@ -226,7 +230,7 @@ A typed array's element (`items`) takes `type`, `enum`, `minimum`, `maximum`, `e
 
 ### propertyConstraints
 
-A rule is one condition. Conditions:
+A rule is one condition, in `propertyConstraints` and in `deleteConstraints` alike. Conditions:
 
 | Key | Takes | Holds when | Since | Read more |
 |---|---|---|---|---|
@@ -236,6 +240,10 @@ A rule is one condition. Conditions:
 | `present`, `absent` | a path | The document holds the property, or leaves it out (or null, or an object with no member present). | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 | `anyOf`, `allOf` | two or more conditions | At least one, or every, condition holds, checked in order. | 14 | [Evaluation order](contract-keywords/property-constraints.md#evaluation-order-and-short-circuiting) |
 | `not` | a condition | The condition does not hold. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
+| `ifThen`, `ifThenElse` | `[if, then]`, `[if, then, else]` | The second condition holds when the first does (and, for `ifThenElse`, the third when it does not); only the branch taken is evaluated. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
+| `notIn` | `[a, [values]]` | `a` takes none of the listed values. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
+| `startsWith`, `endsWith` | `[text, affix]` | A string starts or ends with another, byte for byte; or a byte array with another, or with a hex constant. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions), [Byte arrays](contract-keywords/property-constraints.md#byte-arrays) |
+| `contains` | `[array, value]` | A typed array holds an element equal to the value. | 14 | [Conditions](contract-keywords/property-constraints.md#conditions) |
 
 Expressions:
 
@@ -245,19 +253,24 @@ Expressions:
 | a path | `"price"`, `"meta.total"` | An integer or boolean property's value; 0 when left out. | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
 | `add`, `multiply` | two or more operands | The sum or product. | 14 | [Arithmetic](contract-keywords/property-constraints.md#arithmetic) |
 | `subtract`, `divide`, `modulo`, `power` | `[a, b]` | The difference, Euclidean quotient or remainder, or power. | 14 | [Arithmetic](contract-keywords/property-constraints.md#arithmetic) |
+| `min`, `max`, `abs` | two or more operands, or one for `abs` | The least, the greatest, or the absolute value. | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
+| `countOf`, `sumOf` | `[type, filter?]`, `[type, property, filter?]` | How many documents of a type of the contract match the filter, or the total of an integer property over them, from its count or sum trees. | 14 | [Totals of other documents](contract-keywords/property-constraints.md#totals-of-other-documents) |
 | `ifAbsent` | `[path, default]` | The property's value, or the default when left out (an integer, or a string for a string property). | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
 | `length`, `byteLength` | a string path | A string's length in characters, or in UTF-8 bytes. | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
 | `count` | an array path | The elements of a typed array, or the bytes of a byte array. | 14 | [Expressions](contract-keywords/property-constraints.md#expressions) |
+| `countPresent` | `[path, path, ...]` | How many of two or more properties the document holds, each as `present` tests it. | 14 | [How many of a group](contract-keywords/property-constraints.md#how-many-of-a-group) |
+| `byteAt` | `[path, index]` | The byte, 0 to 255, at an index of a byte array; 0 when the array does not hold it or is left out. | 14 | [Byte arrays](contract-keywords/property-constraints.md#byte-arrays) |
 | `$createdAt`, `$updatedAt`, `$transferredAt`, `$createdAtBlockHeight`, `$updatedAtBlockHeight`, `$transferredAtBlockHeight`, `$createdAtCoreBlockHeight`, `$updatedAtCoreBlockHeight`, `$transferredAtCoreBlockHeight` | a path | A time or height the document records, when listed in `required`. | 14 | [Times and heights](contract-keywords/property-constraints.md#times-and-heights) |
-| `const` | a string | A string constant, or a base58 identifier, as one side of `equal` or `notEqual`. | 14 | [Strings](contract-keywords/property-constraints.md#strings) |
+| `const` | a string | A string constant, or a base58 identifier, as one side of `equal` or `notEqual`; hex digits as one side of a `startsWith` or `endsWith` of byte arrays. | 14 | [Strings](contract-keywords/property-constraints.md#strings) |
 | `$ownerId` | | The document's owner, as an identifier side. | 14 | [Identifiers and $ownerId](contract-keywords/property-constraints.md#identifiers-and-ownerid) |
+| `$id` | | The document's id, as the value a `countOf` or `sumOf` filter matches by: `{ "pollId": "$id" }`, the documents pointing at it. | 14 | [Totals of other documents](contract-keywords/property-constraints.md#totals-of-other-documents) |
 
 ### Index
 
 | Key | Takes | What it does | Since | Read more |
 |---|---|---|---|---|
 | `name` | 1 to 32 characters, required | The index's name, unique in the type. | 1 | [name](contract-keywords/indexes.md#name) |
-| `properties` | 1 to 10 `{ "<path>": "asc" }` | The indexed properties, in order. A flat index of an index-only type leaves it out. | 1 | [properties](contract-keywords/indexes.md#properties) · [internals](drive/indexes.md) |
+| `properties` | 1 to 10 `{ "<path>": "asc" }` | The indexed properties, in order. A flat index of an index-only type leaves it out. From protocol version 14 a path may read through a reference, `"<reference property>.<field>"`, a value of the referenced document the document does not store. | 1 | [properties](contract-keywords/indexes.md#properties) · [Values of Referenced Documents](contract-keywords/derived-index-properties.md) · [internals](drive/indexes.md) |
 | `unique` | boolean | No two documents share the indexed values. | 1 | [unique](contract-keywords/indexes.md#unique) |
 | `nullSearchable` | boolean, default `true` | `false` leaves out documents whose indexed values are all null. | 1 | [nullSearchable](contract-keywords/indexes.md#nullsearchable) |
 | `contested` | object | Matching values are decided by a masternode vote, not first come. | 1 | [Contested Indexes](contract-keywords/contested.md) · [internals](data-model/contested-documents.md) |
@@ -269,15 +282,20 @@ Expressions:
 | `averageable` | property name | Shorthand for `countable` plus `summable`. | 12 | [averageable](contract-keywords/aggregates.md#averageable) |
 | `rangeCountable`, `rangeSummable`, `rangeAverageable` | boolean | Provable counts, sums or averages over ranges of the indexed value. | 12 | [Index range keys](contract-keywords/aggregates.md#index-rangecountable-rangesummable-rangeaverageable) |
 | `rankedCountable` | boolean or `{ "at": ... }` | Orders the indexed values by document count, for "top K" queries; `at` names the levels ranked. | 14 | [rankedCountable](contract-keywords/ranked.md#rankedcountable) · [internals](drive/document-ranked-trees.md#contract-grammar) |
-| `rankedSummable`, `rankedAverageable` | boolean | Orders them by sum, or by average. | 14 | [Ranked Indexes](contract-keywords/ranked.md#rankedsummable) |
+| `rankedSummable`, `rankedAverageable` | boolean, or `{ "at": ... }` on a `summableOffCountIndex` index | Orders them by sum, or by average. | 14 | [Ranked Indexes](contract-keywords/ranked.md#rankedsummable) |
 | `timeRange` | `{ "on", "range", "step", "phase", "ttl" }` | Buckets a system timestamp into time windows, for trending queries. | 14 | [Time-Range Indexes](contract-keywords/time-range.md) · [internals](drive/time-range-ttl.md) |
 | `timeRange.on` | `"$createdAt"`, `"$updatedAt"`, `"$transferredAt"` | The timestamp to bucket: the index's first property. | 14 | [The keys](contract-keywords/time-range.md#the-keys) |
 | `timeRange.range`, `.step` | seconds | Each window's length, and the time between window starts. | 14 | [The keys](contract-keywords/time-range.md#the-keys) |
 | `timeRange.phase` | seconds, default 0 | Shifts the window boundaries. | 14 | [The keys](contract-keywords/time-range.md#the-keys) |
 | `timeRange.ttl` | seconds, at most one week | Expires the index's entries after their window; on an index-only type, the rows leave this index. | 14 | [The keys](contract-keywords/time-range.md#the-keys) · [internals](drive/time-range-ttl.md#cleanup) |
+| `integerRange` | `{ "on", "range", "step", "phase" }` | Buckets an integer property into value windows, for counts and rankings per band. | 14 | [Integer-Range Indexes](contract-keywords/integer-range.md) |
+| `integerRange.on` | property name | The integer property to bucket: the index's first property, required. | 14 | [The keys](contract-keywords/integer-range.md#the-keys) |
+| `integerRange.range`, `.step`, `.phase` | integers, `phase` default 0 | Each window's length, the distance between window starts, and the shift of the window boundaries. | 14 | [The keys](contract-keywords/integer-range.md#the-keys) |
 | `terminal` | property name or list | On an index-only type, what keys each entry in place of the document id. | 14 | [terminal](contract-keywords/index-only.md#terminal) |
 | `preallocated` | boolean | On an index-only type, creates the index's trees with the referenced document. | 14 | [preallocated](contract-keywords/index-only.md#preallocated) · [internals](drive/index-only-document-types.md#preallocated-index-paths) |
-| `skipIfAbsent` | boolean | On an index-only type, a document without the first property writes no entry. | 14 | [skipIfAbsent](contract-keywords/index-only.md#skipifabsent) · [internals](drive/index-only-document-types.md#conditional-participation-skipifabsent) |
+| `summableOffCountIndex` | index name | On an index-only type, keeps one counter per group of how many entries the named index keeps for it, in place of an entry per document: `count(*)` and the sum read the named index's entries, and the average divides them by the groups. | 14 | [summableOffCountIndex](contract-keywords/index-only.md#summableoffcountindex) |
+| `outlivesDelete` | boolean | On an index-only type's time window with a `ttl`, a delete leaves the index's entries to expire, and a create writes over one already there. | 14 | [outlivesDelete](contract-keywords/index-only.md#outlivesdelete) · [internals](drive/index-only-document-types.md#entries-that-outlive-a-delete-outlivesdelete) |
+| `skipIfAbsent` | `true` or property names | A document missing a property of the skip set writes no entry into the index. | 14 | [skipIfAbsent](contract-keywords/indexes.md#skipifabsent) · [internals](drive/index-only-document-types.md#conditional-participation-skipifabsent) |
 
 ### System properties
 
@@ -290,6 +308,7 @@ Expressions:
 | `$createdAtBlockHeight`, `$updatedAtBlockHeight`, `$transferredAtBlockHeight` | Platform block heights of the same events. | when listed in `required` | 1 | [Block heights](contract-keywords/system-properties.md#block-heights) |
 | `$createdAtCoreBlockHeight`, `$updatedAtCoreBlockHeight`, `$transferredAtCoreBlockHeight` | Core chain block heights of the same events. | when listed in `required` | 1 | [Block heights](contract-keywords/system-properties.md#block-heights) |
 | `$creatorId` | The identity that created the document. | on transferable or tradeable types of format-1 contracts | 10 | [$creatorId](contract-keywords/system-properties.md#creatorid) |
+| `$moderatedAt`, `$moderatedBy` | Block time and moderator of the last write of the fields only moderators write. | on types listing `moderatorAbilities.changeFields`, once a moderator writes them | 14 | [$moderatedAt and $moderatedBy](contract-keywords/system-properties.md#moderatedat-and-moderatedby) |
 
 ## Limits
 
@@ -307,5 +326,8 @@ The first three limits come from the meta-schema, the rest from protocol version
 | `max_reference_expression_depth` | 4 | nesting of reference expressions |
 | `max_property_constraints` | 16 | rules in one `propertyConstraints` |
 | `max_property_constraint_nodes` | 32 | nodes in one rule |
+| `max_choose_first_candidates` | 1000 | commitments a create reads for a [`chooseFirst`](contract-keywords/refers-to-lookup.md#choosing-the-first-commitment-choosefirst) |
 | `min_document_ttl_seconds`, `max_document_ttl_seconds` | 3600, 31536000 | `ttl` |
 | `max_time_range_ttl_seconds` | 604800 | a `timeRange` index's `ttl` |
+| `max_contested_summed_value_magnitude` | 134217728 (2^27) | the `minimum` and `maximum` of a summed property on a type with a contested index |
+| `max_expiring_signed_summed_value_magnitude` | 134217728 (2^27) | the `minimum` and `maximum` of a summed property that admits negative values, on a type with a `ttl` |

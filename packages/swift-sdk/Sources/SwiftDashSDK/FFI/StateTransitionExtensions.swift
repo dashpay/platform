@@ -543,7 +543,7 @@ extension SDK {
 
                 defer {
                     // Clean up document handle when done
-                    dash_sdk_document_handle_destroy(documentHandle)
+                    dash_sdk_document_free(documentHandle)
                 }
 
                 // 2. Create identity public key handle directly from our local data (no network fetch)
@@ -628,6 +628,10 @@ extension SDK {
                         continuation.resume(returning: ["status": "success", "raw": jsonString])
                     }
                 } else {
+                    if putResult.data_type == DashSDKFFI.ResultDocumentHandle,
+                       let createdHandle = putResult.data {
+                        dash_sdk_document_free(OpaquePointer(createdHandle))
+                    }
                     print("✅ [DOCUMENT CREATE] Success! Total operation time: \(Date().timeIntervalSince(startTime)) seconds")
                     continuation.resume(returning: ["status": "success", "message": "Document created successfully"])
                 }
@@ -1005,8 +1009,7 @@ extension SDK {
                 let docFetchTime = Date().timeIntervalSince(docFetchStartTime)
                 print("📝 [DOCUMENT TRANSFER] Document fetch took \(docFetchTime) seconds")
 
-                guard fetchResult.error == nil,
-                      let documentHandle = fetchResult.data else {
+                guard fetchResult.error == nil else {
                     let error = fetchResult.error.pointee
                     let errorMsg = String(cString: error.message)
                     dash_sdk_error_free(fetchResult.error)
@@ -1015,43 +1018,22 @@ extension SDK {
                     return
                 }
 
-                defer {
-                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
-                }
-
-                print("✅ [DOCUMENT TRANSFER] Document fetched successfully")
-                print("🔄 [DOCUMENT TRANSFER] Step 3: Creating transfer transition...")
-
-                let transferStartTime = Date()
-
-                // First, try to create the state transition without waiting
-                print("🔄 [DOCUMENT TRANSFER] Creating state transition...")
-                let transitionResult = dash_sdk_document_transfer_to_identity(
-                    handle,
-                    OpaquePointer(documentHandle),
-                    toIdentityCString,
-                    contractIdCString,
-                    documentTypeCString,
-                    keyHandle,
-                    signerBox.p,
-                    nil,  // token_payment_info
-                    nil,  // put_settings
-                    nil   // state_transition_creation_options
-                )
-
-                guard transitionResult.error == nil else {
-                    let error = transitionResult.error.pointee
-                    let errorMsg = String(cString: error.message)
-                    dash_sdk_error_free(transitionResult.error)
-                    print("❌ [DOCUMENT TRANSFER] Failed to create transition: \(errorMsg)")
-                    continuation.resume(throwing: SDKError.stateTransitionFailure(
-                        errorMsg, ffiError: error, otherwise: SDKError.protocolError))
+                guard let documentHandle = fetchResult.data else {
+                    print("❌ [DOCUMENT TRANSFER] Document not found")
+                    continuation.resume(throwing: SDKError.notFound("Document not found"))
                     return
                 }
 
+                defer {
+                    dash_sdk_document_free(OpaquePointer(documentHandle))
+                }
 
-                // Now try the _and_wait version which handles broadcasting internally
-                print("🔄 [DOCUMENT TRANSFER] Broadcasting and waiting for confirmation...")
+                print("✅ [DOCUMENT TRANSFER] Document fetched successfully")
+                print("🔄 [DOCUMENT TRANSFER] Step 3: Signing, broadcasting and waiting for confirmation...")
+
+                let transferStartTime = Date()
+
+                // Signs the transfer once, broadcasts it and waits for the result.
                 let result = dash_sdk_document_transfer_to_identity_and_wait(
                     handle,
                     OpaquePointer(documentHandle),
@@ -1092,6 +1074,11 @@ extension SDK {
                     continuation.resume(throwing: SDKError.stateTransitionFailure(
                         errorMsg, ffiError: error, otherwise: SDKError.protocolError))
                     return
+                }
+
+                if result.data_type == DashSDKFFI.ResultDocumentHandle,
+                   let transferredHandle = result.data {
+                    dash_sdk_document_free(OpaquePointer(transferredHandle))
                 }
 
                 // Document transfer was successful
@@ -1192,7 +1179,7 @@ extension SDK {
                 }
 
                 defer {
-                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
+                    dash_sdk_document_free(OpaquePointer(documentHandle))
                 }
 
                 print("✅ [DOCUMENT UPDATE PRICE] Document fetched successfully")
@@ -1236,6 +1223,11 @@ extension SDK {
                     continuation.resume(throwing: SDKError.stateTransitionFailure(
                         errorMsg, ffiError: error, otherwise: SDKError.protocolError))
                     return
+                }
+
+                if updateResult.data_type == DashSDKFFI.ResultDocumentHandle,
+                   let updatedHandle = updateResult.data {
+                    dash_sdk_document_free(OpaquePointer(updatedHandle))
                 }
 
                 let totalTime = Date().timeIntervalSince(startTime)
@@ -1342,7 +1334,7 @@ extension SDK {
                 }
 
                 defer {
-                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
+                    dash_sdk_document_free(OpaquePointer(documentHandle))
                 }
 
                 print("📝 [DOCUMENT PURCHASE] Document fetched in \(Date().timeIntervalSince(documentFetchStart)) seconds")
@@ -1401,7 +1393,7 @@ extension SDK {
                     }
 
                     // Clean up the purchased document handle
-                    dash_sdk_document_destroy(handle, purchasedDocHandle)
+                    dash_sdk_document_free(purchasedDocHandle)
 
                     let totalTime = Date().timeIntervalSince(startTime)
                     print("✅ [DOCUMENT PURCHASE] Purchase completed and confirmed in \(totalTime) seconds")

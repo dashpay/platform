@@ -628,7 +628,7 @@ mod resolve_classification_tests {
     ) -> i32 {
         let phrase = b"not a bip39 phrase at all";
         assert!(cap >= phrase.len());
-        std::ptr::copy_nonoverlapping(phrase.as_ptr(), out as *mut u8, phrase.len());
+        std::ptr::copy_nonoverlapping(phrase.as_ptr(), out.cast::<u8>(), phrase.len());
         *out_len = phrase.len();
         mnemonic_resolver_result::SUCCESS
     }

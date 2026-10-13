@@ -38,11 +38,8 @@
       "ownerRefersTo": {
         "type": "permanentDocument",
         "documentType": "moderator",
-        "lookup": {
-          "index": "byMember",
-          "keys": {
-            "memberId": "."
-          }
+        "findBy": {
+          "memberId": "."
         }
       },
       "properties": {

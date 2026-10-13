@@ -54,7 +54,7 @@ pub fn verify_full_identity_by_identity_id(
     let platform_version = get_platform_version_with_validation(platform_version_number)?;
 
     let (root_hash, identity_option) = Drive::verify_full_identity_by_identity_id(
-        supported_grovedb_proof(&proof_vec, platform_version)?,
+        supported_grovedb_proof(&proof_vec)?,
         is_proof_subset,
         identity_id_bytes,
         platform_version,

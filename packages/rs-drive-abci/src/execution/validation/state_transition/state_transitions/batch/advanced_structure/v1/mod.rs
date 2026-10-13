@@ -1,8 +1,10 @@
 use crate::error::Error;
 use dpp::consensus::signature::ContractBoundedKeyOutOfBoundsError;
 use dpp::contract_group::{ContractGroupMember, ContractGroupMembership};
-use dpp::identity::contract_bounds::BatchedTransitionBoundsCheck;
+use dpp::identity::contract_bounds::{BatchedTransitionBoundsCheck, ContractBounds};
 use dpp::identity::Purpose;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::ProtocolError;
 use std::collections::BTreeSet;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::document::InvalidDocumentTransitionIdError;
@@ -29,6 +31,8 @@ use crate::execution::validation::state_transition::state_transitions::batch::ac
 use crate::execution::validation::state_transition::state_transitions::batch::action_validation::document::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::v0::DocumentDeleteTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_index_only_delete_transition_action::v0::DocumentIndexOnlyDeleteTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionActionAccessorsV0;
@@ -36,6 +40,10 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_update_price_transition_action::DocumentUpdatePriceTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use drive::state_transition_action::batch::batched_transition::token_transition::token_base_transition_action::TokenBaseTransitionActionAccessorsV0;
+use drive::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
+use dpp::consensus::state::token::TokenNotTransferableError;
+use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 use drive::state_transition_action::StateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::execution::ExecutionError;
@@ -192,6 +200,59 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                             {
                                 out_of_bounds = true;
                                 break;
+                            }
+                        }
+                    }
+                }
+                // A create may consume documents of other types of its own contract
+                // (`consume`), deleting them with the key that signs it: the key must be
+                // allowed to act on those types as well
+                if !out_of_bounds {
+                    'creates: for transition in action.transitions() {
+                        let BatchedTransitionAction::DocumentAction(
+                            DocumentTransitionAction::CreateAction(create),
+                        ) = transition
+                        else {
+                            continue;
+                        };
+                        let contract = &create.base().data_contract_fetch_info().contract;
+                        let document_type = contract
+                            .document_type_for_name(create.base().document_type_name())
+                            .map_err(ProtocolError::from)?;
+                        for consumed_type in document_type.consumable_document_type_names() {
+                            let allowed = match bounds {
+                                // The create itself is inside the contract
+                                ContractBounds::SingleContract { .. } => true,
+                                ContractBounds::SingleContractDocumentType {
+                                    document_type_name,
+                                    ..
+                                } => document_type_name == consumed_type,
+                                ContractBounds::ContractGroup { id } => {
+                                    let resolved = action
+                                        .contract_group_memberships(&contract.id())
+                                        .ok_or(Error::Execution(
+                                            ExecutionError::CorruptedCodeExecution(
+                                                "the create's own bounds check resolved its contract's group memberships",
+                                            ),
+                                        ))?;
+                                    [
+                                        ContractGroupMember::Contract,
+                                        ContractGroupMember::DocumentType(
+                                            consumed_type.to_string(),
+                                        ),
+                                    ]
+                                    .into_iter()
+                                    .any(|member| {
+                                        resolved.memberships.contains(&ContractGroupMembership {
+                                            contract_group_id: *id,
+                                            member,
+                                        })
+                                    })
+                                }
+                            };
+                            if !allowed {
+                                out_of_bounds = true;
+                                break 'creates;
                             }
                         }
                     }
@@ -389,7 +450,8 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                     }
                 },
                 BatchedTransitionAction::TokenAction(token_transition_action) => {
-                    // token actions only need to do advanced structure validation on the base action
+                    // token actions do advanced structure validation on the base action, and a
+                    // transfer is refused for a token that is not transferable
                     let result = token_transition_action
                         .base()
                         .validate_structure(platform_version)?;
@@ -401,6 +463,30 @@ impl DocumentsBatchStateTransitionStructureValidationV1 for BatchTransition {
                         return Ok(ConsensusValidationResult::new_with_data_and_errors(
                             bump_action,
                             result.errors,
+                        ));
+                    }
+                    // The token's configuration comes with the contract the action already
+                    // carries, so the check needs no read and the mempool refuses the transfer
+                    // as well. The base validation above established the token exists.
+                    if matches!(
+                        token_transition_action,
+                        TokenTransitionAction::TransferAction(_)
+                    ) && !token_transition_action
+                        .base()
+                        .token_configuration()?
+                        .is_transferable()
+                    {
+                        let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                            BumpIdentityDataContractNonceAction::from_borrowed_token_base_transition_action(token_transition_action.base(), self.owner_id(), self.user_fee_increase()),
+                        );
+
+                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            bump_action,
+                            vec![TokenNotTransferableError::new(
+                                token_transition_action.base().token_id(),
+                                "a token transfer".to_string(),
+                            )
+                            .into()],
                         ));
                     }
                 }

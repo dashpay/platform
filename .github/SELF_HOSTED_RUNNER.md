@@ -5,7 +5,8 @@
 Source, locked dependencies, deployment examples and publishing workflow:
 **[dashpay/dash-selfhosted-image](https://github.com/dashpay/dash-selfhosted-image)**.
 Use its `linux/amd64` contract-1 image for persistent Linux `kotlin-ci` / `rust-ci`
-runners. The shared Rust action requires `/opt/ci/contract-version` to be `1` on
+runners, or its native `linux/arm64` Rust-only image on Apple Silicon Linux VMs.
+The shared Rust action requires `/opt/ci/contract-version` to be `1` on
 self-hosted Linux and fails early if an old/native runner picks up the job.
 
 Platform's desired versions and checksums now live in
@@ -14,6 +15,12 @@ commit. Persistent Linux jobs verify **both** the installed lock and recipe
 revision; a contract-1 marker by itself is not sufficient. The earlier published
 bootstrap image must be replaced by a matching candidate before these changes
 can be merged.
+
+ARM64 Rust jobs select [runner-requirements.arm64.json](runner-requirements.arm64.json)
+using the **actual** job's `RUNNER_OS=Linux` / `RUNNER_ARCH=ARM64`. They verify its
+exact recipe and ARM64 lock, not the AMD64 lock and not just tool version strings.
+The shared Rust action defaults to the native compilation target. Kotlin/Android
+remains AMD64-only; ARM64 does not export or pretend to provide Android tooling.
 
 The image locks Ubuntu 24.04 by digest, apt to a signed archive snapshot, and
 downloaded toolchains to exact URLs and SHA-256 hashes. It includes:
@@ -108,6 +115,48 @@ Run the routing checks with:
 python3 -m unittest discover -s .github/scripts/tests -v
 ~~~
 
+## Apple Silicon rollout and ARM64 requirements changes
+
+The Rust workspace and wallet jobs select `[self-hosted, Linux, rust-ci]`. This
+includes Linux containers on Macs; it does **not** remove Mac hardware from CI.
+Keep native macOS registrations for Swift, Xcode and simulator jobs. Never reuse
+their registration, HOME or workspaces inside a container. Rust and Swift may run
+concurrently, so reserve host resources rather than assigning both the whole Mac.
+Use Linux-owned named volumes for build/cache data, not macOS bind mounts.
+
+Initial ARM64 recipe: `772673c94f2c0b39e7e796198a6ea407c087dd72`, published by
+[image run 36419475060](https://github.com/dashpay/dash-selfhosted-image/actions/runs/36419475060).
+Its tested immutable reference is
+`dashpay/dash-selfhosted-image@sha256:2ef7934f6877b4b78bdc3d4b81c07ee260d1648c0338c86145cec02760390a24`.
+The existing AMD64 requirements and deployed images are unchanged.
+
+Before merging/routing ordinary CI, provision each Mac's ARM64 VM and validate
+the digest with the image's smoke test. Register it separately in the existing
+selected-repository group with `rust-ci-validation`, prove a real Platform
+workspace job on that exact runner, and verify unattended restart. Only validated
+instances get `rust-ci`; keep the validation label for future image qualification.
+Do not count image-build CI, local unit tests or skipped fork jobs as this proof.
+
+The existing automatic PR-candidate publisher/controller is **AMD64-only**.
+ARM64 requirements currently use explicit operator deployment, not that publisher:
+
+1. Build/publish the ARM64 recipe and pin its exact lock and recipe here.
+2. Deploy the tested digest to an idle validation runner, preserving rollback.
+3. `ARM64 runner image validation` runs the **full** Rust workspace on ARM64 when
+   this manifest changes. Exact lock/recipe mismatch fails before compilation.
+   Its selector compares the PR-head manifest with the checked-out merge tree;
+   an AMD64 candidate status cannot satisfy ARM64 validation.
+   That PR's ordinary Rust job stays on AMD64 so it cannot land on ARM64
+   production capacity still running the old image; unrelated PRs use both
+   architectures as usual.
+4. Require successful real ARM64 validation before merging the requirements and
+   rolling out other Mac-backed capacity. If AMD64 requirements also change,
+   their separate Rust/Kotlin candidate gates still apply.
+
+Keep shared Rust/helper versions aligned across both manifests. Automatic ARM64
+candidate creation/promotion is not implemented; never infer ARM64 validation or
+deployment from an AMD64 publisher result.
+
 ## Hosted Linux and native macOS remain distinct
 
 The shared Rust action branches on `runner.environment`: persistent Linux verifies
@@ -115,10 +164,9 @@ the image's native libraries and protoc, while GitHub-hosted consumers retain ap
 provisioning and the user-local protoc cache.
 Both select clang through `CC`/`CXX`, without mutating system alternatives.
 
-The Linux image does not provision macOS. Native macOS `rust-ci` runners still
-need the existing Homebrew dependencies plus llvm-cov 0.9.1, nextest 0.9.144 and
-machete 0.9.2; the wallet fast path needs machete 0.9.2. Provision and verify these
-separately before rollout. Do not silently install tools or swallow failures in
+The Linux image does not provision macOS. Native macOS runners retain their
+existing Swift/Homebrew dependencies and registrations; generic Rust jobs now
+use the Linux image pool. Do not silently install tools or swallow failures in
 persistent jobs.
 
 Kotlin release builds use persistent `kotlin-ci` capacity and retain their separate

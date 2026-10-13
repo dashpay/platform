@@ -58,12 +58,17 @@ const schemas = {
       sourceContract: identifierProperty(1, { type: 'contract' }),
       paidWith: identifierProperty(2, { type: 'token' }),
       // `contractId` omitted: targets the declaring contract itself.
-      // `propertyAgreement` binds the referring document's property to
-      // the referenced document's (write-time equality, PV14 #4505).
+      // `where` binds the referenced document's property to the
+      // referring document's (write-time equality, PV14 #4505), and holds
+      // the parent's recipient key id to at most this note's signer key id
+      // (a condition, an ordering by a referring property)
       parentNoteId: identifierProperty(3, {
         type: 'permanentDocument',
         documentType: 'note',
-        propertyAgreement: { signerKeyId: 'signerKeyId' },
+        where: {
+          signerKeyId: 'signerKeyId',
+          recipientKeyId: { lessThanOrEqual: 'signerKeyId' },
+        },
       }),
       otherDoc: identifierProperty(4, {
         type: 'permanentDocument',
@@ -148,8 +153,20 @@ type Reference = {
   keyIdProperty?: string;
   keyRequirements?: { purpose?: string; boundTo?: string };
   identityProperty?: string;
-  propertyAgreement?: Record<string, string>;
-  lookup?: { index: string; keys: Record<string, string> };
+  findBy?: Record<
+    string,
+    string | { function: string; params: Array<string | { const: string }> }
+  >;
+  where?: Record<string, string | Record<string, unknown>>;
+  consume?: boolean;
+  constraints?: {
+    minimumAgeBlocks?: number;
+    chooseFirst?: {
+      among: string;
+      validWhen: Record<string, { function: string; params: Array<string | { const: string }> }>;
+      by: Array<Record<string, 'asc' | 'desc'>>;
+    };
+  };
   inList?: string;
 };
 
@@ -167,11 +184,11 @@ const plainIdentifier = {
   position: 0,
 };
 
-const lookupSchemas = {
+const findBySchemas = {
   joinRequest: {
     type: 'object',
     canBeDeleted: false,
-    // A permanentDocument lookup needs a key the join request keeps for good
+    // A permanentDocument found by findBy needs a key the join request keeps for good
     documentsMutable: false,
     properties: {
       submittedCharterId: plainIdentifier,
@@ -193,10 +210,7 @@ const lookupSchemas = {
       memberId: identifierProperty(1, {
         type: 'permanentDocument',
         documentType: 'joinRequest',
-        lookup: {
-          index: 'bySubmittedCharter',
-          keys: { submittedCharterId: 'submittedCharterId', $ownerId: '.' },
-        },
+        findBy: { submittedCharterId: 'submittedCharterId', $ownerId: '.' },
       }),
     },
     required: ['submittedCharterId'],
@@ -273,12 +287,15 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(other.documentType).to.equal('thing');
     });
 
-    it('should carry the propertyAgreement map when declared', () => {
+    it('should carry the where map when declared', () => {
       const contract = buildContract(14);
       const references = contract.documentTypeReferences('note') as Reference[];
       const parent = references.find((reference) => reference.path === 'parentNoteId')!;
 
-      expect(parent.propertyAgreement).to.deep.equal({ signerKeyId: 'signerKeyId' });
+      expect(parent.where).to.deep.equal({
+        signerKeyId: 'signerKeyId',
+        recipientKeyId: { lessThanOrEqual: 'signerKeyId' },
+      });
     });
 
     /**
@@ -286,12 +303,12 @@ describe('DataContract — refersTo declarations (v14)', () => {
      * matching the schema's own omission and the absent-field convention
      * of the other optional target fields.
      */
-    it('should omit propertyAgreement for a reference declaring none', () => {
+    it('should omit where for a reference declaring none', () => {
       const contract = buildContract(14);
       const references = contract.documentTypeReferences('note') as Reference[];
       const other = references.find((reference) => reference.path === 'otherDoc')!;
 
-      expect(other).to.not.have.property('propertyAgreement');
+      expect(other).to.not.have.property('where');
     });
 
     it('should carry keyIdProperty for an identityPublicKey reference', () => {
@@ -372,12 +389,12 @@ describe('DataContract — refersTo declarations (v14)', () => {
     });
   });
 
-  describe('lookup', () => {
-    it('should carry the lookup of a reference resolved through a unique index', () => {
+  describe('findBy', () => {
+    it('should carry the findBy of a reference found through a unique index', () => {
       const contract = new wasm.DataContract({
         ownerId,
         identityNonce: BigInt(2),
-        schemas: lookupSchemas,
+        schemas: findBySchemas,
         definitions: null,
         fullValidation: true,
         platformVersion: new PlatformVersion(14),
@@ -387,14 +404,11 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(member.path).to.equal('memberId');
       expect(member.type).to.equal('permanentDocument');
       expect(member.documentType).to.equal('joinRequest');
-      expect(member.lookup).to.deep.equal({
-        index: 'bySubmittedCharter',
-        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
-      });
+      expect(member.findBy).to.deep.equal({ $ownerId: '.', submittedCharterId: 'submittedCharterId' });
     });
 
-    it('should carry the lookup the elements of a typed array declare', () => {
-      const withMembers = structuredClone(lookupSchemas);
+    it('should carry the findBy the elements of a typed array declare', () => {
+      const withMembers = structuredClone(findBySchemas);
       (withMembers.charter.properties as Record<string, object>).members = {
         type: 'array',
         minItems: 0,
@@ -424,22 +438,219 @@ describe('DataContract — refersTo declarations (v14)', () => {
       )!;
 
       expect(members.type).to.equal('permanentDocument');
-      expect(members.lookup).to.deep.equal({
-        index: 'bySubmittedCharter',
-        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
-      });
+      expect(members.findBy).to.deep.equal({ $ownerId: '.', submittedCharterId: 'submittedCharterId' });
     });
 
-    it('should omit lookup for a reference holding the referenced document id', () => {
+    it('should omit findBy for a reference holding the referenced document id', () => {
       const contract = buildContract(14);
       const references = contract.documentTypeReferences('note') as Reference[];
       const other = references.find((reference) => reference.path === 'otherDoc')!;
 
-      expect(other).to.not.have.property('lookup');
+      expect(other).to.not.have.property('findBy');
     });
 
-    it('should refuse a lookup into an index that is not unique', () => {
-      const notUnique = structuredClone(lookupSchemas);
+    it('should list a byte array revealing its value through a findBy function', () => {
+      const salt = {
+        type: 'array',
+        byteArray: true,
+        minItems: 32,
+        maxItems: 32,
+        position: 2,
+      };
+      const contract = new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(2),
+        schemas: {
+          preorder: {
+            type: 'object',
+            documentsMutable: false,
+            canBeDeleted: true,
+            properties: { saltedDomainHash: { ...salt, position: 0 } },
+            indices: [
+              { name: 'saltedHash', properties: [{ saltedDomainHash: 'asc' }], unique: true },
+            ],
+            required: ['$createdAtBlockHeight', 'saltedDomainHash'],
+            additionalProperties: false,
+          },
+          domain: {
+            type: 'object',
+            documentsMutable: false,
+            properties: {
+              normalizedLabel: { type: 'string', maxLength: 63, position: 0 },
+              parentDomainName: { type: 'string', maxLength: 63, position: 1 },
+              preorderSalt: {
+                ...salt,
+                refersTo: {
+                  type: 'deletableDocument',
+                  documentType: 'preorder',
+                  findBy: {
+                    saltedDomainHash: {
+                      function: 'sys.hash.sha256d',
+                      params: ['preorderSalt', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
+                    },
+                  },
+                  where: { $ownerId: '$ownerId' },
+                  constraints: { minimumAgeBlocks: 1 },
+                  consume: true,
+                },
+              },
+            },
+            required: ['normalizedLabel', 'parentDomainName', 'preorderSalt'],
+            transient: ['preorderSalt'],
+            additionalProperties: false,
+          },
+        },
+        definitions: null,
+        fullValidation: true,
+        platformVersion: new PlatformVersion(14),
+      });
+      const [salted] = contract.documentTypeReferences('domain') as Reference[];
+
+      // The function is the findBy entry it was declared as; where and what
+      // the commitment must be sit beside it
+      expect(salted.path).to.equal('preorderSalt');
+      expect(salted.type).to.equal('deletableDocument');
+      expect(salted.findBy).to.deep.equal({
+        saltedDomainHash: {
+          function: 'sys.hash.sha256d',
+          params: ['preorderSalt', 'normalizedLabel', { const: '.' }, 'parentDomainName'],
+        },
+      });
+      expect(salted.where).to.deep.equal({ $ownerId: '$ownerId' });
+      expect(salted.constraints).to.deep.equal({ minimumAgeBlocks: 1 });
+      expect(salted.consume).to.equal(true);
+    });
+
+    const nameParams = ['normalizedLabel', { const: '.' }, 'normalizedParentDomainName'];
+
+    // A name registration whose preorders hold the hash of the writer and the
+    // name, and that of the name alone, ordered by `orderProperty`: their
+    // creation height, or a required integer property of that name
+    const chooseFirstSchemas = (orderProperty = '$createdAtBlockHeight') => {
+      const hash = {
+        type: 'array',
+        byteArray: true,
+        minItems: 32,
+        maxItems: 32,
+      };
+      const ordersBySchemaProperty = !orderProperty.startsWith('$');
+      return {
+        namePreorder: {
+          type: 'object',
+          documentsMutable: false,
+          canBeDeleted: true,
+          ttl: 3600,
+          properties: {
+            ownerNameHash: { ...hash, position: 0 },
+            nameHash: { ...hash, position: 1 },
+            ...(ordersBySchemaProperty
+              ? { [orderProperty]: { type: 'integer', minimum: 0, position: 2 } }
+              : {}),
+          },
+          indices: [
+            {
+              name: 'ownerAndNameHash',
+              properties: [{ $ownerId: 'asc' }, { ownerNameHash: 'asc' }],
+              unique: true,
+            },
+            {
+              name: 'ownerAndName',
+              properties: [{ $ownerId: 'asc' }, { nameHash: 'asc' }],
+              unique: true,
+            },
+            {
+              name: 'nameHashInOrder',
+              properties: [{ nameHash: 'asc' }, { [orderProperty]: 'asc' }],
+            },
+          ],
+          required: [
+            '$createdAt',
+            '$createdAtBlockHeight',
+            'ownerNameHash',
+            'nameHash',
+            ...(ordersBySchemaProperty ? [orderProperty] : []),
+          ],
+          additionalProperties: false,
+        },
+        name: {
+          type: 'object',
+          documentsMutable: false,
+          transferable: 1,
+          properties: {
+            normalizedLabel: { type: 'string', maxLength: 63, position: 0 },
+            normalizedParentDomainName: { type: 'string', maxLength: 63, position: 1 },
+          },
+          required: ['normalizedLabel', 'normalizedParentDomainName'],
+          creatorRefersTo: {
+            type: 'deletableDocument',
+            documentType: 'namePreorder',
+            findBy: {
+              $ownerId: '$ownerId',
+              nameHash: { function: 'sys.hash.sha256d', params: nameParams },
+            },
+            constraints: {
+              minimumAgeBlocks: 1,
+              chooseFirst: {
+                among: 'nameHash',
+                validWhen: {
+                  ownerNameHash: {
+                    function: 'sys.hash.sha256d',
+                    params: ['$ownerId', ...nameParams],
+                  },
+                },
+                by: [{ [orderProperty]: 'asc' }],
+              },
+            },
+          },
+          additionalProperties: false,
+        },
+      };
+    };
+
+    const chooseFirstContract = (typeSchemas: Record<string, unknown>) => new wasm.DataContract({
+      ownerId,
+      identityNonce: BigInt(2),
+      schemas: typeSchemas,
+      definitions: null,
+      fullValidation: true,
+      platformVersion: new PlatformVersion(14),
+    });
+
+    it('should report chooseFirst in the constraints beside findBy', () => {
+      const contract = chooseFirstContract(chooseFirstSchemas());
+      const [creator] = contract.documentTypeReferences('name') as Reference[];
+
+      // The constraints are reported as the schema spells them, the writer
+      // being the "$ownerId" param of validWhen
+      expect(creator.path).to.equal('$creatorId');
+      expect(creator.findBy).to.deep.equal({
+        $ownerId: '$ownerId',
+        nameHash: { function: 'sys.hash.sha256d', params: nameParams },
+      });
+      expect(creator.constraints).to.deep.equal({
+        minimumAgeBlocks: 1,
+        chooseFirst: {
+          among: 'nameHash',
+          validWhen: {
+            ownerNameHash: { function: 'sys.hash.sha256d', params: ['$ownerId', ...nameParams] },
+          },
+          by: [{ $createdAtBlockHeight: 'asc' }],
+        },
+      });
+    });
+
+    it('should report a chooseFirst order by a property named __proto__ as an own entry', () => {
+      // A computed key, unlike a literal `__proto__:`, makes an own property
+      const contract = chooseFirstContract(chooseFirstSchemas('__proto__'));
+      const [creator] = contract.documentTypeReferences('name') as Reference[];
+      const { by } = creator.constraints!.chooseFirst!;
+
+      expect(Object.keys(by[0])).to.deep.equal(['__proto__']);
+      expect(JSON.stringify(by)).to.equal('[{"__proto__":"asc"}]');
+    });
+
+    it('should refuse findBy naming exactly the properties of an index that is not unique', () => {
+      const notUnique = structuredClone(findBySchemas);
       delete (notUnique.joinRequest.indices[0] as { unique?: boolean }).unique;
 
       const build = () => new wasm.DataContract({
@@ -455,7 +666,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
     });
   });
 
-  describe('listElement', () => {
+  describe('inList', () => {
     /**
      * An `electedCharter` that can be neither deleted nor replaced holds its
      * `members`, and a `resignation` names its charter (`electedCharterId`)
@@ -489,9 +700,9 @@ describe('DataContract — refersTo declarations (v14)', () => {
         properties: {
           electedCharterId: plainIdentifier,
           memberId: identifierProperty(1, {
-            type: 'listElement',
+            type: 'permanentDocument',
             documentType: 'electedCharter',
-            propertyAgreement: { electedCharterId: '$id' },
+            findBy: { $id: 'electedCharterId' },
             inList: 'members',
           }),
         },
@@ -508,16 +719,17 @@ describe('DataContract — refersTo declarations (v14)', () => {
       platformVersion: new PlatformVersion(14),
     });
 
-    it('should carry the list and the agreement pair naming its document', () => {
+    it('should carry the list and the findBy naming its document', () => {
       const contract = buildListElementContract(listElementSchemas);
       const member = (contract.documentTypeReferences('resignation') as Reference[]).find(
         (reference) => reference.path === 'memberId',
       )!;
 
-      expect(member.type).to.equal('listElement');
+      expect(member.type).to.equal('permanentDocument');
       expect(member.contractId!.toBase58()).to.equal(contract.id.toBase58());
       expect(member.documentType).to.equal('electedCharter');
-      expect(member.propertyAgreement).to.deep.equal({ electedCharterId: '$id' });
+      expect(member.findBy).to.deep.equal({ $id: 'electedCharterId' });
+      expect(member).to.not.have.property('where');
       expect(member.inList).to.equal('members');
     });
 
@@ -536,7 +748,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
      * document names.
      */
     const expressionSchemas = {
-      joinRequest: lookupSchemas.joinRequest,
+      joinRequest: findBySchemas.joinRequest,
       addedModerator: {
         type: 'object',
         canBeDeleted: false,
@@ -561,14 +773,11 @@ describe('DataContract — refersTo declarations (v14)', () => {
           submittedCharterId: plainIdentifier,
           memberId: identifierProperty(1, {
             anyOf: [
-              (lookupSchemas.charter.properties.memberId as { refersTo: object }).refersTo,
+              (findBySchemas.charter.properties.memberId as { refersTo: object }).refersTo,
               {
                 type: 'permanentDocument',
                 documentType: 'addedModerator',
-                lookup: {
-                  index: 'byModerator',
-                  keys: { submittedCharterId: 'submittedCharterId', moderatorId: '.' },
-                },
+                findBy: { submittedCharterId: 'submittedCharterId', moderatorId: '.' },
               },
             ],
           }),
@@ -578,13 +787,16 @@ describe('DataContract — refersTo declarations (v14)', () => {
       },
     };
 
-    function buildExpressionContract(documentSchemas: object) {
+    // Full validation runs the meta-schema first in this build (it has
+    // dpp's `validation` feature); the refusals below check the parser's own
+    // rule with full validation off, and that full validation refuses too.
+    function buildExpressionContract(documentSchemas: object, fullValidation = true) {
       return new wasm.DataContract({
         ownerId,
         identityNonce: BigInt(2),
         schemas: documentSchemas,
         definitions: null,
-        fullValidation: true,
+        fullValidation,
         platformVersion: new PlatformVersion(14),
       });
     }
@@ -601,21 +813,15 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(joinRequest.type).to.equal('permanentDocument');
       expect(joinRequest.documentType).to.equal('joinRequest');
       expect(joinRequest.contractId!.toBase58()).to.equal(contract.id.toBase58());
-      expect(joinRequest.lookup).to.deep.equal({
-        index: 'bySubmittedCharter',
-        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
-      });
+      expect(joinRequest.findBy).to.deep.equal({ $ownerId: '.', submittedCharterId: 'submittedCharterId' });
       expect(addedModerator.documentType).to.equal('addedModerator');
-      expect(addedModerator.lookup).to.deep.equal({
-        index: 'byModerator',
-        keys: { moderatorId: '.', submittedCharterId: 'submittedCharterId' },
-      });
+      expect(addedModerator.findBy).to.deep.equal({ moderatorId: '.', submittedCharterId: 'submittedCharterId' });
       // Each target is a target object of its own, never a nested anyOf
       expect(joinRequest).to.not.have.property('anyOf');
       expect(joinRequest).to.not.have.property('path');
     });
 
-    it('should carry a deletableDocument operand found through a lookup, with its lookup', () => {
+    it('should carry a deletableDocument operand found by findBy, with its findBy', () => {
       // The leader takes an added moderator off by deleting the addition
       const deletable = structuredClone(expressionSchemas);
       deletable.addedModerator.canBeDeleted = true;
@@ -627,10 +833,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       const [, addedModerator] = member.anyOf!;
       expect(addedModerator.type).to.equal('deletableDocument');
       expect(addedModerator.documentType).to.equal('addedModerator');
-      expect(addedModerator.lookup).to.deep.equal({
-        index: 'byModerator',
-        keys: { moderatorId: '.', submittedCharterId: 'submittedCharterId' },
-      });
+      expect(addedModerator.findBy).to.deep.equal({ moderatorId: '.', submittedCharterId: 'submittedCharterId' });
     });
 
     it('should refuse a deletableDocument operand found by id', () => {
@@ -694,9 +897,10 @@ describe('DataContract — refersTo declarations (v14)', () => {
         anyOf: [{ type: 'identity' }, { type: 'contract' }],
       };
 
-      expect(() => buildExpressionContract(withContract)).to.throw(
+      expect(() => buildExpressionContract(withContract, false)).to.throw(
         /refersTo anyOf\[1\] is a reference of type contract, which a reference expression does not take/,
       );
+      expect(() => buildExpressionContract(withContract)).to.throw(/JsonSchemaError/);
     });
 
     it('should refuse an anyOf directly inside an anyOf', () => {
@@ -706,9 +910,235 @@ describe('DataContract — refersTo declarations (v14)', () => {
         anyOf: [{ type: 'identity' }, { anyOf: memberId.refersTo.anyOf }],
       };
 
-      expect(() => buildExpressionContract(flat)).to.throw(
+      expect(() => buildExpressionContract(flat, false)).to.throw(
         /refersTo anyOf\[1\] is an anyOf directly inside an anyOf/,
       );
+      expect(() => buildExpressionContract(flat)).to.throw(/JsonSchemaError/);
+    });
+  });
+
+  describe('moderatedDocument', () => {
+    /**
+     * A reply to a post only moderators take down, on the record, whose
+     * writer must be the post's author. Which types a moderated reference may
+     * name is checked against state at registration, so the parse here takes
+     * any `post`.
+     */
+    const moderatedSchemas = {
+      post: {
+        type: 'object',
+        canBeDeleted: false,
+        properties: { text: { type: 'string', maxLength: 50, position: 0 } },
+        additionalProperties: false,
+      },
+      reply: {
+        type: 'object',
+        properties: {
+          postId: identifierProperty(0, {
+            type: 'moderatedDocument',
+            documentType: 'post',
+            where: { $ownerId: '$ownerId' },
+          }),
+          body: { type: 'string', maxLength: 50, position: 1 },
+        },
+        required: ['postId'],
+        additionalProperties: false,
+      },
+    };
+
+    function buildModeratedContract(documentSchemas: object, fullValidation = true) {
+      return new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(3),
+        schemas: documentSchemas,
+        definitions: null,
+        fullValidation,
+        platformVersion: new PlatformVersion(14),
+      });
+    }
+
+    function withPostIdRefersTo(refersTo: object) {
+      const replaced = structuredClone(moderatedSchemas);
+      (replaced.reply.properties.postId as { refersTo: object }).refersTo = refersTo;
+      return replaced;
+    }
+
+    it('should carry a moderatedDocument reference with its contractId, documentType and where', () => {
+      const contract = buildModeratedContract(moderatedSchemas);
+      const [postId] = contract.documentTypeReferences('reply') as Reference[];
+
+      expect(postId.path).to.equal('postId');
+      expect(postId.type).to.equal('moderatedDocument');
+      expect(postId.contractId!.toBase58()).to.equal(contract.id.toBase58());
+      expect(postId.documentType).to.equal('post');
+      expect(postId.where).to.deep.equal({ $ownerId: '$ownerId' });
+      expect(postId).to.not.have.property('findBy');
+      expect(postId).to.not.have.property('inList');
+    });
+
+    it('should refuse a moderatedDocument reference found otherwise than by its id', () => {
+      for (const refersTo of [
+        { type: 'moderatedDocument', documentType: 'post', findBy: { text: '.' } },
+        { anyOf: [{ type: 'identity' }, { type: 'moderatedDocument', documentType: 'post' }] },
+      ]) {
+        for (const fullValidation of [true, false]) {
+          expect(
+            () => buildModeratedContract(withPostIdRefersTo(refersTo), fullValidation),
+            `${JSON.stringify(refersTo)} (full validation ${fullValidation})`,
+          ).to.throw();
+        }
+      }
+    });
+
+    /**
+     * A property of the referenced type may be named `__proto__`: the `where`
+     * entry naming it is an own key of the listing, not its prototype. The
+     * schemas come from JSON, where `__proto__` is an ordinary key.
+     */
+    it('should keep a where entry named __proto__ as an own key', () => {
+      const protoSchemas = JSON.parse(`{
+        "post": {
+          "type": "object",
+          "canBeDeleted": false,
+          "properties": {
+            "__proto__": { "type": "string", "maxLength": 10, "position": 0 }
+          },
+          "additionalProperties": false
+        },
+        "reply": {
+          "type": "object",
+          "properties": {
+            "postId": {
+              "type": "array",
+              "byteArray": true,
+              "minItems": 32,
+              "maxItems": 32,
+              "contentMediaType": "application/x.dash.dpp.identifier",
+              "position": 0,
+              "refersTo": {
+                "type": "moderatedDocument",
+                "documentType": "post",
+                "where": { "__proto__": { "const": "open" } }
+              }
+            }
+          },
+          "required": ["postId"],
+          "additionalProperties": false
+        }
+      }`);
+      const [postId] = buildModeratedContract(protoSchemas).documentTypeReferences(
+        'reply',
+      ) as Reference[];
+
+      expect(Object.keys(postId.where!)).to.deep.equal(['__proto__']);
+      expect(Object.getPrototypeOf(postId.where)).to.equal(Object.prototype);
+      expect(JSON.stringify(postId.where)).to.equal('{"__proto__":{"const":"open"}}');
+    });
+
+    it('should refuse a writer gate a removal record can not answer', () => {
+      const refersTo = {
+        type: 'moderatedDocument',
+        documentType: 'post',
+        where: { $creatorId: '$ownerId' },
+      };
+      for (const fullValidation of [true, false]) {
+        expect(
+          () => buildModeratedContract(withPostIdRefersTo(refersTo), fullValidation),
+        ).to.throw(/compares the writer/);
+      }
+    });
+  });
+
+  describe('where over typed arrays', () => {
+    const tags = (position: number) => ({
+      type: 'array',
+      items: { type: 'string', minLength: 1, maxLength: 63 },
+      maxItems: 4,
+      uniqueItems: true,
+      position,
+    });
+
+    /**
+     * A like copying its post's tags, and a note naming one of them, written
+     * only by one of the post's members.
+     */
+    const listSchemas = {
+      post: {
+        type: 'object',
+        canBeDeleted: false,
+        documentsMutable: false,
+        properties: {
+          tags: tags(0),
+          members: {
+            type: 'array',
+            items: {
+              type: 'array',
+              byteArray: true,
+              minItems: 32,
+              maxItems: 32,
+              contentMediaType: 'application/x.dash.dpp.identifier',
+            },
+            maxItems: 4,
+            position: 1,
+          },
+        },
+        additionalProperties: false,
+      },
+      like: {
+        type: 'object',
+        properties: {
+          postId: identifierProperty(0, {
+            type: 'permanentDocument',
+            documentType: 'post',
+            where: { tags: 'tags' },
+          }),
+          tags: tags(1),
+        },
+        required: ['postId'],
+        additionalProperties: false,
+      },
+      note: {
+        type: 'object',
+        properties: {
+          postId: identifierProperty(0, {
+            type: 'permanentDocument',
+            documentType: 'post',
+            where: {
+              members: { contains: '$ownerId' },
+              tags: { containsAll: 'tags' },
+            },
+          }),
+          tags: tags(1),
+        },
+        required: ['postId'],
+        additionalProperties: false,
+      },
+    };
+
+    function buildListContract() {
+      return new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(4),
+        schemas: listSchemas,
+        definitions: null,
+        fullValidation: true,
+        platformVersion: new PlatformVersion(14),
+      });
+    }
+
+    it('should carry an equality between typed arrays as an equality', () => {
+      const [postId] = buildListContract().documentTypeReferences('like') as Reference[];
+
+      expect(postId.where).to.deep.equal({ tags: 'tags' });
+    });
+
+    it('should carry contains and containsAll as the schema writes them', () => {
+      const [postId] = buildListContract().documentTypeReferences('note') as Reference[];
+
+      expect(postId.where).to.deep.equal({
+        members: { contains: '$ownerId' },
+        tags: { containsAll: 'tags' },
+      });
     });
   });
 
@@ -719,16 +1149,13 @@ describe('DataContract — refersTo declarations (v14)', () => {
      * value is the writer rather than a property's value.
      */
     const ownerSchemas = {
-      joinRequest: lookupSchemas.joinRequest,
+      joinRequest: findBySchemas.joinRequest,
       resignation: {
         type: 'object',
         ownerRefersTo: {
           type: 'permanentDocument',
           documentType: 'joinRequest',
-          lookup: {
-            index: 'bySubmittedCharter',
-            keys: { submittedCharterId: 'submittedCharterId', $ownerId: '.' },
-          },
+          findBy: { submittedCharterId: 'submittedCharterId', $ownerId: '.' },
         },
         properties: {
           submittedCharterId: plainIdentifier,
@@ -766,10 +1193,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(writer.type).to.equal('permanentDocument');
       expect(writer.documentType).to.equal('joinRequest');
       expect(writer.contractId!.toBase58()).to.equal(contract.id.toBase58());
-      expect(writer.lookup).to.deep.equal({
-        index: 'bySubmittedCharter',
-        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
-      });
+      expect(writer.findBy).to.deep.equal({ $ownerId: '.', submittedCharterId: 'submittedCharterId' });
       expect(
         (contract.documentReferences as Map<string, Reference[]>).get('resignation')!
           .map((reference) => reference.path),
@@ -814,10 +1238,7 @@ describe('DataContract — refersTo declarations (v14)', () => {
         'author',
       ]);
       expect(references[0].type).to.equal('permanentDocument');
-      expect(references[0].lookup).to.deep.equal({
-        index: 'bySubmittedCharter',
-        keys: { $ownerId: '.', submittedCharterId: 'submittedCharterId' },
-      });
+      expect(references[0].findBy).to.deep.equal({ $ownerId: '.', submittedCharterId: 'submittedCharterId' });
     });
 
     it('should refuse a creator reference on a type that records no creator ids', () => {
@@ -887,6 +1308,13 @@ describe('DataContract — refersTo declarations (v14)', () => {
       expect(wasm.DocumentReferenceErrorCode.ReferencedIdentityKeyRequirementNotMet).to.equal(40136);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentLookupInvalid).to.equal(40137);
       expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentListInvalid).to.equal(40138);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRequirementNotMet).to.equal(40142);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeNotModerated).to.equal(40143);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeModerated).to.equal(40144);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRemoved).to.equal(40145);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentTypeIndexOnly).to.equal(40146);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentRuleReadInvalid).to.equal(40148);
+      expect(wasm.DocumentReferenceErrorCode.ReferencedDocumentPreceded).to.equal(40149);
     });
 
     it('should resolve a code back to its name', () => {

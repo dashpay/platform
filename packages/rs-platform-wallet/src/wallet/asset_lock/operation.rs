@@ -1,9 +1,11 @@
 //! Exact, restart-safe association of a host drain request with its asset lock.
 
+use std::collections::BTreeMap;
 #[cfg(any(feature = "shielded", test))]
 use std::collections::BTreeSet;
 #[cfg(any(feature = "shielded", test))]
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use dashcore::OutPoint;
@@ -36,6 +38,7 @@ pub struct AssetLockOperationContext {
     pub operation_id: [u8; 16],
     #[cfg(any(feature = "shielded", test))]
     started: AtomicBool,
+    registrations: AtomicUsize,
     snapshot: Mutex<AssetLockOperationSnapshot>,
 }
 
@@ -45,6 +48,7 @@ impl AssetLockOperationContext {
             operation_id,
             #[cfg(any(feature = "shielded", test))]
             started: AtomicBool::new(false),
+            registrations: AtomicUsize::new(0),
             snapshot: Mutex::new(AssetLockOperationSnapshot {
                 state: AssetLockOperationState::Pending,
                 out_point: None,
@@ -65,6 +69,37 @@ impl AssetLockOperationContext {
             .lock()
             .unwrap_or_else(|error| error.into_inner()) =
             AssetLockOperationSnapshot { state, out_point };
+    }
+}
+
+/// Keeps a queued or running drain visible until its invocation finishes.
+/// Dropping the last registration releases a pre-build operation, including
+/// on cancellation or an early error. Once an outpoint may be durable, its
+/// context remains registered until durable recovery establishes its outcome.
+#[must_use = "hold the registration until the drain worker and outcome snapshot finish"]
+#[derive(Debug)]
+pub struct AssetLockOperationRegistration {
+    operations: Arc<Mutex<BTreeMap<[u8; 16], Arc<AssetLockOperationContext>>>>,
+    operation: Arc<AssetLockOperationContext>,
+}
+
+impl Drop for AssetLockOperationRegistration {
+    fn drop(&mut self) {
+        let mut operations = self
+            .operations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let last = self.operation.registrations.fetch_sub(1, Ordering::SeqCst) == 1;
+        if last
+            && self.operation.snapshot().out_point.is_none()
+            && operations
+                .get(&self.operation.operation_id)
+                .is_some_and(|current| Arc::ptr_eq(current, &self.operation))
+        {
+            operations.remove(&self.operation.operation_id);
+        }
+        // Do not change the caller's snapshot: only a later successful durable
+        // read can resolve an uncertain pre-build return to NotSent.
     }
 }
 
@@ -243,12 +278,27 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
     /// Register before queueing a worker, making status fail closed while
     /// the operation has not reached its first asynchronous poll yet.
-    pub fn register_wallet_drain_operation(&self, operation: Arc<AssetLockOperationContext>) {
-        self.drain_operations
+    pub fn register_wallet_drain_operation(
+        &self,
+        operation: Arc<AssetLockOperationContext>,
+    ) -> AssetLockOperationRegistration {
+        let mut operations = self
+            .drain_operations
             .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .entry(operation.operation_id)
-            .or_insert(operation);
+            .unwrap_or_else(|error| error.into_inner());
+        let current = operations.entry(operation.operation_id).or_insert_with(|| {
+            #[cfg(any(feature = "shielded", test))]
+            operation.started.store(false, Ordering::SeqCst);
+            Arc::clone(&operation)
+        });
+        // A same-UUID contender leases the existing owner's visibility too.
+        // Otherwise the owner could exit while the contender is still queued,
+        // leaving status falsely NotSent until that contender starts polling.
+        current.registrations.fetch_add(1, Ordering::SeqCst);
+        AssetLockOperationRegistration {
+            operations: Arc::clone(&self.drain_operations),
+            operation: Arc::clone(current),
+        }
     }
 
     /// Called under the wallet's shield single-flight guard. Reusing a UUID
@@ -258,7 +308,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         &self,
         operation: &Arc<AssetLockOperationContext>,
     ) -> Result<Option<OutPoint>, PlatformWalletError> {
-        self.register_wallet_drain_operation(Arc::clone(operation));
         let first_attempt = !operation.started.swap(true, Ordering::SeqCst);
         let previous = self
             .wallet_drain_operation_status_inner(
@@ -286,6 +335,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 });
             }
             AssetLockOperationState::NotSent => {}
+        }
+        // A concurrent invocation may have registered the same UUID first and
+        // just resolved to NotSent. Its guard still owns the slot until drop;
+        // an unregistered contender must retry instead of building invisibly.
+        if !self
+            .drain_operations
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(&operation.operation_id)
+            .is_some_and(|current| Arc::ptr_eq(current, operation))
+        {
+            return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                "previous drain invocation is still settling; retry after its outcome resolves"
+                    .into(),
+            ));
         }
         // A second UUID is not a bypass around an unresolved drain. This
         // check also covers another SDK caller or a host that lost its marker.
@@ -339,10 +403,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             ));
         }
         operation.set(AssetLockOperationState::Pending, None);
-        self.drain_operations
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .insert(operation.operation_id, Arc::clone(operation));
         Ok(None)
     }
 }

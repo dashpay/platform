@@ -401,6 +401,33 @@ mod moderation_charters_tests {
             .errors
     }
 
+    /// The members a charter elects bound how many approvals a `deleteSettled` rule may ask
+    /// for, through `SystemLimits::max_moderation_charter_elected_members`: the limit and the
+    /// schema must agree.
+    #[test]
+    fn should_elect_as_many_members_as_the_system_limit_says() {
+        let contract = contract();
+        let members = document_type(&contract, ELECTED_CHARTER_DOCUMENT_TYPE_NAME)
+            .schema()
+            .get_optional_value("properties")
+            .ok()
+            .flatten()
+            .and_then(|properties| properties.get_optional_value("members").ok().flatten())
+            .and_then(|members| {
+                members
+                    .get_optional_integer::<u16>("maxItems")
+                    .ok()
+                    .flatten()
+            })
+            .expect("electedCharter.members declares maxItems");
+        assert_eq!(
+            members,
+            PlatformVersion::latest()
+                .system_limits
+                .max_moderation_charter_elected_members
+        );
+    }
+
     #[test]
     fn should_spell_the_same_id_in_the_crate_and_in_dpp() {
         assert_eq!(
@@ -661,7 +688,12 @@ mod moderation_charters_tests {
             }) => {
                 assert_eq!(document_type_name, JOIN_REQUEST_DOCUMENT_TYPE_NAME);
                 assert_eq!(max_items, 15);
-                assert_eq!(lookup.index, "bySubmittedCharter");
+                assert_eq!(
+                    lookup.resolve_index(
+                        document_type(&contract, JOIN_REQUEST_DOCUMENT_TYPE_NAME).as_ref()
+                    ),
+                    Ok("bySubmittedCharter".to_string())
+                );
                 assert_eq!(
                     lookup.keys.get(property_names::SUBMITTED_CHARTER_ID),
                     Some(&LookupKeySource::Property(
@@ -971,7 +1003,12 @@ mod moderation_charters_tests {
                 },
             ) => {
                 assert_eq!(document_type_name, JOIN_REQUEST_DOCUMENT_TYPE_NAME);
-                assert_eq!(lookup.index, "bySubmittedCharter");
+                assert_eq!(
+                    lookup.resolve_index(
+                        document_type(&contract, JOIN_REQUEST_DOCUMENT_TYPE_NAME).as_ref()
+                    ),
+                    Ok("bySubmittedCharter".to_string())
+                );
                 assert_eq!(
                     lookup.keys.get("$ownerId"),
                     Some(&LookupKeySource::ReferenceValue)
@@ -1080,7 +1117,12 @@ mod moderation_charters_tests {
                     Some(property_names::ELECTED_CHARTER_ID)
                 );
                 assert_eq!(document_type_name, ADDED_MODERATOR_DOCUMENT_TYPE_NAME);
-                assert_eq!(lookup.index, "byElectedCharterMember");
+                assert_eq!(
+                    lookup.resolve_index(
+                        document_type(&contract, ADDED_MODERATOR_DOCUMENT_TYPE_NAME).as_ref()
+                    ),
+                    Ok("byElectedCharterMember".to_string())
+                );
                 assert_eq!(
                     lookup.keys.get(property_names::MEMBER_ID),
                     Some(&LookupKeySource::ReferenceValue)

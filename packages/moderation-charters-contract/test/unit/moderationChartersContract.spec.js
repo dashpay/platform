@@ -412,9 +412,9 @@ describe('Moderation Charters Contract', () => {
       const { refersTo } = moderationChartersContractDocumentsSchema.removedModerator.properties.memberId;
 
       expect(refersTo).to.deep.equal({
-        type: 'listElement',
+        type: 'permanentDocument',
         documentType: 'electedCharter',
-        propertyAgreement: { electedCharterId: '$id' },
+        findBy: { $id: 'electedCharterId' },
         inList: 'members',
       });
     });
@@ -445,7 +445,7 @@ describe('Moderation Charters Contract', () => {
       const { anyOf } = moderationChartersContractDocumentsSchema.resignationRequest.ownerRefersTo;
 
       expect(anyOf.map(({ type, documentType }) => [type, documentType])).to.deep.equal([
-        ['listElement', 'electedCharter'],
+        ['permanentDocument', 'electedCharter'],
         ['deletableDocument', 'addedModerator'],
       ]);
     });

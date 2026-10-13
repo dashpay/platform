@@ -10,7 +10,7 @@ use crate::serialization::json_safe_fields;
 use crate::serialization::JsonSafeFields;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSignable;
-use platform_value::BinaryData;
+use platform_value::{BinaryData, Value};
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -18,10 +18,11 @@ use crate::data_contract::config::moderation::ContractModerationReason;
 use crate::identity::{KeyID, TimestampMillis};
 use crate::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
 use crate::ProtocolError;
+use std::collections::BTreeMap;
 use std::fmt;
 
 /// What the moderator does on the contract: to one identity, or to one document.
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, DecodeUntrusted)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -68,7 +69,7 @@ pub enum ContractUserModerationAction {
         #[cfg_attr(feature = "serde-conversion", serde(rename = "identityId"))]
         identity_id: Identifier,
     },
-    /// Deletes a document of a document type that sets `canBeDeletedByModerators`, whoever
+    /// Deletes a document of a document type that sets `moderatorAbilities.delete`, whoever
     /// owns it, except the contract owner and the moderators. The document's owner gets no
     /// storage refund, and a `ContractDocumentRemoval` stays under the contract.
     DeleteDocument {
@@ -90,6 +91,51 @@ pub enum ContractUserModerationAction {
         /// The document as it was serialized when it was removed.
         document: BinaryData,
     },
+    /// Sets or removes fields of a document that only moderators write, the ones its document
+    /// type lists under `moderatorAbilities.changeFields`, whoever owns it. Every other
+    /// property, `$updatedAt` among them, stays as it was; `$revision` goes up by one, so a
+    /// replace its owner built on the earlier revision is refused. The signer pays for the
+    /// bytes the change adds, and a refund of the document's storage stays the owner's.
+    ChangeDocumentFields {
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "documentTypeName"))]
+        document_type_name: String,
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "documentId"))]
+        document_id: Identifier,
+        /// Each field's new value, by its top-level property name; `null` removes the field.
+        /// Read from an object or JSON in its canonical form
+        /// ([`ContractUserModerationAction::canonical_field_value`]), so a transition built by
+        /// a client and read back signs the same bytes.
+        #[cfg_attr(
+            feature = "serde-conversion",
+            serde(deserialize_with = "deserialize_canonical_fields")
+        )]
+        fields: BTreeMap<String, Value>,
+        /// Why, checked against a seated team's proposal like every other reason.
+        reason: ContractModerationReason,
+    },
+    /// Proposes the deletion of a settled document: one of a document type that says who must
+    /// approve it (`moderatorAbilities.deleteSettled`), past the window its moderators delete
+    /// in alone (`moderatorAbilities.deleteWithin`). Only a member of the contract's seated
+    /// team proposes, and the proposal is its approval. It is kept under the contract as a
+    /// team action, by an id the proposer's client computes
+    /// ([`ContractTeamAction::settled_deletion_action_id`](crate::data_contract::config::moderation::ContractTeamAction::settled_deletion_action_id)),
+    /// which the other members approve with [`Self::ApproveTeamAction`]. The approval that
+    /// meets the rule, the leader among the approvals when the rule says so, deletes the
+    /// document as a `DeleteDocument` would; a rule the proposer meets alone deletes it at once.
+    DeleteSettledDocument {
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "documentTypeName"))]
+        document_type_name: String,
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "documentId"))]
+        document_id: Identifier,
+        /// Why: stored with the proposal and with the removal record the deletion leaves.
+        reason: ContractModerationReason,
+    },
+    /// Approves a team action another member of the contract's seated team proposed, by its
+    /// id: what it does and why are the proposal's.
+    ApproveTeamAction {
+        #[cfg_attr(feature = "serde-conversion", serde(rename = "actionId"))]
+        action_id: Identifier,
+    },
 }
 
 impl Default for ContractUserModerationAction {
@@ -101,7 +147,90 @@ impl Default for ContractUserModerationAction {
     }
 }
 
+/// The fields of a change, each value in its canonical form: an object or JSON form does not
+/// say which integer width or which binary variant the transition was built with.
+#[cfg(feature = "serde-conversion")]
+fn deserialize_canonical_fields<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let fields = BTreeMap::<String, Value>::deserialize(deserializer)?;
+    Ok(fields
+        .into_iter()
+        .map(|(name, value)| {
+            (
+                name,
+                ContractUserModerationAction::canonical_field_value(value),
+            )
+        })
+        .collect())
+}
+
 impl ContractUserModerationAction {
+    /// A field value in the one form its content has, the form clients build a change's fields
+    /// in: an integer as a `U64`, or an `I64` when negative (`U128` and `I128` beyond them), 32
+    /// bytes as an `Identifier` and any other binary value as `Bytes`, maps and arrays
+    /// recursively. The signed bytes carry the variant, which an object or JSON form loses (a
+    /// JavaScript bigint reads back as the signed width, an identifier as plain bytes), so the
+    /// fields are read back in this form and built in it.
+    pub fn canonical_field_value(value: Value) -> Value {
+        let integer = match &value {
+            Value::U128(v) => Some(i128::try_from(*v).map_err(|_| *v)),
+            Value::U64(v) => Some(Ok(*v as i128)),
+            Value::U32(v) => Some(Ok(*v as i128)),
+            Value::U16(v) => Some(Ok(*v as i128)),
+            Value::U8(v) => Some(Ok(*v as i128)),
+            Value::I128(v) => Some(Ok(*v)),
+            Value::I64(v) => Some(Ok(*v as i128)),
+            Value::I32(v) => Some(Ok(*v as i128)),
+            Value::I16(v) => Some(Ok(*v as i128)),
+            Value::I8(v) => Some(Ok(*v as i128)),
+            _ => None,
+        };
+        match integer {
+            // Beyond i128, only a U128 holds it
+            Some(Err(beyond)) => return Value::U128(beyond),
+            Some(Ok(integer)) => {
+                return if let Ok(unsigned) = u64::try_from(integer) {
+                    Value::U64(unsigned)
+                } else if let Ok(signed) = i64::try_from(integer) {
+                    Value::I64(signed)
+                } else if let Ok(unsigned) = u128::try_from(integer) {
+                    Value::U128(unsigned)
+                } else {
+                    Value::I128(integer)
+                };
+            }
+            None => {}
+        }
+        match value {
+            Value::Map(entries) => Value::Map(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| {
+                        (
+                            Self::canonical_field_value(key),
+                            Self::canonical_field_value(value),
+                        )
+                    })
+                    .collect(),
+            ),
+            Value::Array(items) => {
+                Value::Array(items.into_iter().map(Self::canonical_field_value).collect())
+            }
+            Value::Identifier(_) => value,
+            value => match value.as_bytes_slice() {
+                Ok(bytes) => match <[u8; 32]>::try_from(bytes) {
+                    Ok(identifier) => Value::Identifier(identifier),
+                    Err(_) => Value::Bytes(bytes.to_vec()),
+                },
+                Err(_) => value,
+            },
+        }
+    }
+
     /// The identity the action targets. `None` for a document deletion: it names a document,
     /// and whose it is is only known once the document is read.
     pub fn identity_id(&self) -> Option<Identifier> {
@@ -113,13 +242,18 @@ impl ContractUserModerationAction {
             | ContractUserModerationAction::Warn { identity_id, .. }
             | ContractUserModerationAction::ClearWarnings { identity_id } => Some(*identity_id),
             ContractUserModerationAction::DeleteDocument { .. }
-            | ContractUserModerationAction::RestoreDocument { .. } => None,
+            | ContractUserModerationAction::RestoreDocument { .. }
+            | ContractUserModerationAction::ChangeDocumentFields { .. }
+            | ContractUserModerationAction::DeleteSettledDocument { .. }
+            | ContractUserModerationAction::ApproveTeamAction { .. } => None,
         }
     }
 
     /// The document a deletion targets, as its document type name and its id. `None` for an
-    /// action on an identity, and for a restore, which carries the document itself: its id is
-    /// only known once the bytes are decoded under the document type.
+    /// action on an identity, for a field change ([`Self::changed_document`]), for the approval
+    /// of a settled document's deletion ([`Self::settled_document`]), and for a restore, which
+    /// carries the document itself: its id is only known once the bytes are decoded under the
+    /// document type.
     pub fn document(&self) -> Option<(&str, Identifier)> {
         match self {
             ContractUserModerationAction::DeleteDocument {
@@ -127,6 +261,27 @@ impl ContractUserModerationAction {
                 document_id,
                 ..
             } => Some((document_type_name.as_str(), *document_id)),
+            _ => None,
+        }
+    }
+
+    /// The settled document whose deletion a proposal targets, as its document type name and
+    /// its id, with the reason. `None` for every other action.
+    pub fn settled_document(&self) -> Option<(&str, Identifier, &ContractModerationReason)> {
+        match self {
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name,
+                document_id,
+                reason,
+            } => Some((document_type_name.as_str(), *document_id, reason)),
+            _ => None,
+        }
+    }
+
+    /// The team action an approval approves, by its id. `None` for every other action.
+    pub fn approved_team_action(&self) -> Option<Identifier> {
+        match self {
+            ContractUserModerationAction::ApproveTeamAction { action_id } => Some(*action_id),
             _ => None,
         }
     }
@@ -143,14 +298,34 @@ impl ContractUserModerationAction {
         }
     }
 
-    /// The document type name a deletion or a restore names, `None` for an action on an
-    /// identity.
+    /// The document a field change targets, as its document type name and its id, with the
+    /// fields it sets (a `null` value removes one). `None` for every other action.
+    pub fn changed_document(&self) -> Option<(&str, Identifier, &BTreeMap<String, Value>)> {
+        match self {
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name,
+                document_id,
+                fields,
+                ..
+            } => Some((document_type_name.as_str(), *document_id, fields)),
+            _ => None,
+        }
+    }
+
+    /// The document type name a deletion, a restore, a field change or the approval of a
+    /// settled document's deletion names, `None` for an action on an identity.
     pub fn document_type_name(&self) -> Option<&str> {
         match self {
             ContractUserModerationAction::DeleteDocument {
                 document_type_name, ..
             }
             | ContractUserModerationAction::RestoreDocument {
+                document_type_name, ..
+            }
+            | ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name, ..
+            }
+            | ContractUserModerationAction::DeleteSettledDocument {
                 document_type_name, ..
             } => Some(document_type_name.as_str()),
             _ => None,
@@ -165,18 +340,22 @@ impl ContractUserModerationAction {
         }
     }
 
-    /// The reason a ban, a suspend, a warn or a document deletion carries, `None` for an
-    /// action that takes an identity off a list.
+    /// The reason a ban, a suspend, a warn, a document deletion, a field change or the approval
+    /// of a settled document's deletion carries, `None` for an action that takes an identity
+    /// off a list, and for a restore.
     pub fn reason(&self) -> Option<&ContractModerationReason> {
         match self {
             ContractUserModerationAction::Ban { reason, .. }
             | ContractUserModerationAction::Suspend { reason, .. }
             | ContractUserModerationAction::Warn { reason, .. }
-            | ContractUserModerationAction::DeleteDocument { reason, .. } => Some(reason),
+            | ContractUserModerationAction::DeleteDocument { reason, .. }
+            | ContractUserModerationAction::ChangeDocumentFields { reason, .. }
+            | ContractUserModerationAction::DeleteSettledDocument { reason, .. } => Some(reason),
             ContractUserModerationAction::Unban { .. }
             | ContractUserModerationAction::Unsuspend { .. }
             | ContractUserModerationAction::ClearWarnings { .. }
-            | ContractUserModerationAction::RestoreDocument { .. } => None,
+            | ContractUserModerationAction::RestoreDocument { .. }
+            | ContractUserModerationAction::ApproveTeamAction { .. } => None,
         }
     }
 
@@ -191,6 +370,9 @@ impl ContractUserModerationAction {
             ContractUserModerationAction::ClearWarnings { .. } => "clearWarnings",
             ContractUserModerationAction::DeleteDocument { .. } => "deleteDocument",
             ContractUserModerationAction::RestoreDocument { .. } => "restoreDocument",
+            ContractUserModerationAction::ChangeDocumentFields { .. } => "changeDocumentFields",
+            ContractUserModerationAction::DeleteSettledDocument { .. } => "deleteSettledDocument",
+            ContractUserModerationAction::ApproveTeamAction { .. } => "approveTeamAction",
         }
     }
 }
@@ -210,6 +392,20 @@ impl fmt::Display for ContractUserModerationAction {
             } => {
                 write!(f, "delete {} document {}", document_type_name, document_id)
             }
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name,
+                document_id,
+                ..
+            } => {
+                write!(
+                    f,
+                    "propose the deletion of settled {} document {}",
+                    document_type_name, document_id
+                )
+            }
+            ContractUserModerationAction::ApproveTeamAction { action_id } => {
+                write!(f, "approve team action {}", action_id)
+            }
             ContractUserModerationAction::RestoreDocument {
                 document_type_name,
                 document,
@@ -219,6 +415,20 @@ impl fmt::Display for ContractUserModerationAction {
                     "restore {} document of {} bytes",
                     document_type_name,
                     document.len()
+                )
+            }
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name,
+                document_id,
+                fields,
+                ..
+            } => {
+                write!(
+                    f,
+                    "change {} of {} document {}",
+                    fields.keys().cloned().collect::<Vec<_>>().join(", "),
+                    document_type_name,
+                    document_id
                 )
             }
             ContractUserModerationAction::Ban { identity_id, .. }
@@ -234,15 +444,16 @@ impl fmt::Display for ContractUserModerationAction {
 
 // `until` is a u64, but basic structure validation refuses one past
 // `SystemLimits::max_contract_suspension_until` (2^53 - 1), so it is exact in JSON. The
-// reason holds a u16 and a string.
+// reason holds a u16 and a string. The fields of a field change are document values, which
+// travel in JSON as a document's own do.
 #[cfg(feature = "json-conversion")]
 impl JsonSafeFields for ContractUserModerationAction {}
 
 /// Edits the banlist, the suspension list or the warning list of a moderated data contract,
-/// or deletes or restores a document of one of its document types that moderators may
-/// delete. Signed by the
-/// contract owner or a moderator named in the contract's config, with a CRITICAL
-/// authentication key, under the signer's contract-scoped nonce.
+/// deletes or restores a document of one of its document types that moderators may delete,
+/// approves the deletion of a settled one, or changes the fields only moderators write of one
+/// of its documents. Signed by the contract owner or a moderator named in the contract's
+/// config, with a CRITICAL authentication key, under the signer's contract-scoped nonce.
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Encode, Decode, PlatformSignable, Debug, Clone, PartialEq, DecodeUntrusted)]
 #[cfg_attr(
@@ -475,6 +686,77 @@ mod test {
         assert!(json.get("documentId").is_some());
         let back: ContractUserModerationAction = serde_json::from_value(json).expect("from json");
         assert_eq!(back, action);
+    }
+
+    fn field_change() -> ContractUserModerationAction {
+        ContractUserModerationAction::ChangeDocumentFields {
+            document_type_name: "report".to_string(),
+            document_id: Identifier::from([7; 32]),
+            fields: BTreeMap::from([
+                ("status".to_string(), Value::U8(2)),
+                ("resolution".to_string(), Value::Null),
+            ]),
+            reason: ContractModerationReason::from_text("handled"),
+        }
+    }
+
+    #[test]
+    fn should_name_the_document_and_the_fields_of_a_change() {
+        let action = field_change();
+        // A field change names a document, not an identity, and is not a deletion: the proof
+        // of a deletion is a removal record, which a change does not leave.
+        assert_eq!(action.identity_id(), None);
+        assert_eq!(action.document(), None);
+        assert_eq!(action.restored_document(), None);
+        let (document_type_name, document_id, fields) = action
+            .changed_document()
+            .expect("a change names its document");
+        assert_eq!(document_type_name, "report");
+        assert_eq!(document_id, Identifier::from([7; 32]));
+        assert_eq!(fields.len(), 2);
+        assert_eq!(action.document_type_name(), Some("report"));
+        assert_eq!(
+            action.reason(),
+            Some(&ContractModerationReason::from_text("handled"))
+        );
+        assert_eq!(action.name(), "changeDocumentFields");
+        assert_eq!(
+            action.to_string(),
+            format!(
+                "change resolution, status of report document {}",
+                Identifier::from([7; 32])
+            )
+        );
+    }
+
+    #[cfg(feature = "json-conversion")]
+    #[test]
+    fn should_tag_a_field_change_on_the_wire() {
+        let action = field_change();
+        let json = serde_json::to_value(&action).expect("to json");
+        assert_eq!(json["$type"], "changeDocumentFields");
+        assert_eq!(json["documentTypeName"], "report");
+        assert!(json.get("documentId").is_some());
+        assert_eq!(json["fields"]["status"], 2);
+        assert!(json["fields"]["resolution"].is_null());
+        let back: ContractUserModerationAction = serde_json::from_value(json).expect("from json");
+        assert_eq!(
+            back.changed_document().map(|(_, id, _)| id),
+            Some(Identifier::from([7; 32]))
+        );
+    }
+
+    #[test]
+    fn should_round_trip_a_field_change_through_bincode() {
+        let transition = ContractUserModerationTransitionV0 {
+            action: field_change(),
+            ..make_v0()
+        };
+        let bytes =
+            bincode::encode_to_vec(&transition, bincode::config::standard()).expect("encode");
+        let (back, _): (ContractUserModerationTransitionV0, usize) =
+            bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("decode");
+        assert_eq!(back, transition);
     }
 
     #[test]

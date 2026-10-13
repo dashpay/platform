@@ -31,7 +31,11 @@
 //! refuses any divergence from the bootstrap, any result outside a
 //! derived value set, and (for by-id joins on `refersTo:
 //! permanentDocument` properties, which cannot dangle) any missing
-//! referenced document. A by-id join on a `refersTo: deletableDocument`
+//! referenced document. A by-id join on a `refersTo: moderatedDocument`
+//! property proves the removal records of its derived ids beside their
+//! documents (see [`moderated_join`](crate::query::moderated_join)), and
+//! reports a derived id with no document by its record; one with neither
+//! is refused. A by-id join on a `refersTo: deletableDocument`
 //! property leaves a derived id with no document out instead: the
 //! target may have been deleted since, and the absence is proven (every
 //! derived id is a queried key grovedb must show present or absent). A
@@ -42,12 +46,15 @@
 //! Three sub-query shapes, one binding rule:
 //!
 //! - **Documents by id** (`bind.field == "$id"`): the classic join. The
-//!   source property must declare `refersTo: permanentDocument` or
-//!   `refersTo: deletableDocument` targeting the sub-query's type — the
-//!   result is the referenced documents in first-appearance order. For a
-//!   `permanentDocument` source every derived id MUST resolve, so the
-//!   result is set-equal to the derived ids; for a `deletableDocument`
-//!   source a derived id whose document was deleted is left out.
+//!   source property must declare `refersTo: permanentDocument`,
+//!   `refersTo: moderatedDocument` or `refersTo: deletableDocument`
+//!   targeting the sub-query's type — the result is the referenced
+//!   documents in first-appearance order. For a `permanentDocument`
+//!   source every derived id MUST resolve, so the result is set-equal to
+//!   the derived ids; for a `moderatedDocument` source a derived id whose
+//!   document a moderator removed is reported with its removal record;
+//!   for a `deletableDocument` source a derived id whose document was
+//!   deleted is left out.
 //! - **Documents by an indexed property** (`bind.field` is `$ownerId` or
 //!   an indexed property): a lookup, `WHERE <fixed clauses> AND <field>
 //!   IN <derived values>`, with an explicit limit unless the values
@@ -86,21 +93,30 @@
 //! so is an unordered sibling under a descending page: order it, in the
 //! page's direction.
 
+use crate::drive::contract::moderation::types::ContractDocumentRemovalEntry;
+use crate::drive::contract::paths::contract_document_type_removals_path_vec;
 use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::drive_document_count_query::point_lookup_count_entries;
 use crate::query::index_only_synthesis::synthesize_index_only_document;
+#[cfg(feature = "server")]
+use crate::query::is_absent_path;
+#[cfg(feature = "server")]
+use crate::query::moderated_join::fetch_removals;
+use crate::query::moderated_join::{
+    decode_removals, pair_missing_with_removals, removals_path_query,
+};
 use crate::query::{
-    DriveDocumentCountQuery, DriveDocumentQuery, InternalClauses, OrderClause, SplitCountEntry,
-    WhereClause, WhereOperator,
+    key_array_element_clauses, DriveDocumentCountQuery, DriveDocumentQuery, InternalClauses,
+    OrderClause, SplitCountEntry, WhereClause, WhereOperator,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
-    DocumentTypeRef,
+    DocumentReferenceKind, DocumentTypeRef, Index,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -231,6 +247,13 @@ pub struct CompositeDocumentsResult {
     /// `permanentDocument` property a missing document is refused
     /// instead. On the proof path each reported id is a proven absence.
     pub sub_result_missing_ids: Vec<Vec<Identifier>>,
+    /// One list per sub-query, in request order: for a by-id join off a
+    /// `refersTo: moderatedDocument` property, the removal records of the
+    /// derived ids whose document the contract's moderators removed, in
+    /// first-appearance order; empty for every other sub-query. A derived
+    /// id with neither a document nor a record is refused. On the proof
+    /// path each is a proven absence of the document and a proven record.
+    pub sub_result_removals: Vec<Vec<ContractDocumentRemovalEntry>>,
 }
 
 /// The values one binding derived, deduplicated to first appearance.
@@ -242,6 +265,20 @@ pub(crate) type ProvedTrio = (Vec<Vec<u8>>, Vec<u8>, Option<Element>);
 
 /// A proved triple whose element is present.
 pub(crate) type PresentTrio = (Vec<Vec<u8>>, Vec<u8>, Element);
+
+/// The component path queries of a composite proof, as
+/// [`DriveDocumentQuery::proof_path_queries`] builds them: the page, one entry per
+/// sub-query (`None` for a bound one that derived nothing), and the removal records
+/// components of the by-id joins off `moderatedDocument` properties.
+pub type CompositeProofPathQueries = (PathQuery, Vec<Option<PathQuery>>, Vec<PathQuery>);
+
+/// The proved removal records of a composite proof, keyed and valued as they were
+/// proved, by the path of the records component that covers them.
+type RemovalEntriesByPath = BTreeMap<Vec<Vec<u8>>, Vec<(Vec<u8>, Element)>>;
+
+/// What the by-id joins report of the derived ids that have no document, one list per
+/// sub-query: the missing ids, and the removal records.
+type SubResultAbsences = (Vec<Vec<Identifier>>, Vec<Vec<ContractDocumentRemovalEntry>>);
 
 /// A component of the merged proof: the page or one sub-query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -269,6 +306,30 @@ fn merge_error_to_shape_error(error: grovedb::Error) -> Error {
         )),
         other => Error::from(other),
     }
+}
+
+/// An unserved cap is a property of the read-only query, not a storage fault.
+/// This execution check does not affect block execution or proof construction.
+#[cfg(feature = "server")]
+fn check_composite_instance_limits(
+    path_query: &PathQuery,
+    platform_version: &PlatformVersion,
+) -> Result<(), Error> {
+    if platform_version
+        .drive
+        .grove_version
+        .grovedb_versions
+        .path_query_methods
+        .per_instance_query_limits
+        == 0
+        && path_query.has_instance_limits()
+    {
+        return Err(unsupported(
+            "composite query limits require a protocol version that supports per-instance limits"
+                .to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// The bound identifier a document carries for `field`, or `None` when
@@ -309,7 +370,7 @@ fn sorted_values(values: &[Identifier]) -> Vec<Identifier> {
 /// The document reference a property type declares, of either kind. Only
 /// a scalar reference counts: a binding reads one identifier out of the
 /// property, and a typed array whose elements are references holds many,
-/// is no index property and so is never a join field.
+/// read only by their elements (`contains`), so it is never a join field.
 fn document_reference_of(
     property_type: &DocumentPropertyType,
 ) -> Option<DocumentReferenceDeclaration<'_>> {
@@ -420,6 +481,22 @@ impl<'a> DriveDocumentQuery<'a> {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let label = |message: &str| unsupported(format!("sub-query {}: {}", index, message));
+
+        // A sub-query's documents are read out of the merged proof as they
+        // were walked, without the repeats a `containsAny` walk reaches a
+        // document under (`DriveDocumentQuery::drop_repeated_element_matches`
+        // runs on a page only), and a count sub-query answers per bound
+        // value, not per element. So a sub-query reads one element at most.
+        if sub_query
+            .where_clauses
+            .iter()
+            .any(|clause| clause.operator == WhereOperator::ContainsAny)
+        {
+            return Err(label(
+                "containsAny is not supported in a sub-query: a document holding several of \
+                 the elements would be returned or counted once per element; use contains",
+            ));
+        }
 
         let Some(binding) = &sub_query.binding else {
             // A sibling: an independent documents query.
@@ -614,22 +691,24 @@ impl<'a> DriveDocumentQuery<'a> {
                 // names the type the derived ids resolve in. A
                 // permanentDocument one guarantees every derived id
                 // resolves, which lets a missing document be an invalid
-                // proof; a deletableDocument one does not, and a missing
+                // proof; a moderatedDocument one guarantees it resolves or
+                // has a removal record, proven beside it; a
+                // deletableDocument one guarantees neither, and a missing
                 // document is then a proven absence (see
                 // `assemble_documents`).
-                // A lookup reference's values are not document ids, so
-                // `document_reference_of` leaves it out; it is named here so
-                // the refusal says why
+                // The values of a reference found by `findBy` are not document
+                // ids, so `document_reference_of` leaves it out; it is named
+                // here so the refusal says why
                 if let Some(DocumentPropertyType::IdentifierWithReference(
                     DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. }
                     | DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. },
                 )) = source_property_type
                 {
                     return Err(label(&format!(
-                        "the source property's refersTo finds its document through the unique \
-                         index \"{}\", so its values are not document ids: a by-id join needs \
-                         a reference whose value is the referenced document's $id",
-                        lookup.index,
+                        "the source property's refersTo finds its document by findBy ({}), so \
+                         its values are not document ids: a by-id join needs a reference whose \
+                         value is the referenced document's $id",
+                        lookup.find_by_names(),
                     )));
                 }
                 // A reference expression names no single type the derived ids
@@ -666,9 +745,9 @@ impl<'a> DriveDocumentQuery<'a> {
                     None => {
                         return Err(label(&format!(
                             "a by-id join needs a source property declaring `refersTo: \
-                             permanentDocument` or `refersTo: deletableDocument` (\"{}\" \
-                             does not): the declaration names the document type the derived \
-                             ids resolve in",
+                             permanentDocument`, `refersTo: moderatedDocument` or `refersTo: \
+                             deletableDocument` (\"{}\" does not): the declaration names the \
+                             document type the derived ids resolve in",
                             binding.source_property,
                         )));
                     }
@@ -1137,12 +1216,20 @@ impl<'a> DriveDocumentQuery<'a> {
         &'b self,
         sub_query: &'b DriveSubQuery<'a>,
         values: &[Identifier],
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<DriveDocumentCountQuery<'b>, Error> {
         let Some(binding) = &sub_query.binding else {
             return Err(unsupported("a count sub-query must be bound".to_string()));
         };
-        let mut where_clauses = sub_query.where_clauses.clone();
+        // A typed array's `contains` pin is keyed as the equality its index
+        // level holds, as the count surface keys it; a sub-query reads one
+        // element at most (see `validate_sub_query`).
+        let mut where_clauses = key_array_element_clauses(
+            sub_query.where_clauses.clone(),
+            sub_query.document_type,
+            false,
+            platform_version,
+        )?;
         where_clauses.push(WhereClause {
             field: binding.field.clone(),
             operator: WhereOperator::In,
@@ -1160,7 +1247,7 @@ impl<'a> DriveDocumentQuery<'a> {
         )
         .ok_or_else(|| {
             unsupported(format!(
-                "count sub-query on \"{}\" needs a `countable: true` index covering its fixed \
+                "count sub-query on \"{}\" needs a `countable: true` (or summableOffCountIndex) index covering its fixed \
                  clauses and the bound field \"{}\"",
                 sub_query.document_type.name(),
                 binding.field,
@@ -1258,7 +1345,9 @@ impl<'a> DriveDocumentQuery<'a> {
 
     /// The component path queries the merged proof covers, in component
     /// order: the page, then one entry per sub-query — `None` for a
-    /// bound sub-query whose binding derived nothing (it has no branch).
+    /// bound sub-query whose binding derived nothing (it has no branch) —
+    /// and last the removal records components of the by-id joins off
+    /// `moderatedDocument` properties ([`Self::removal_path_queries`]).
     /// Every sub-query walks in the page's direction: documents must
     /// already agree, while counts and by-id joins may be aligned without
     /// changing their selected sets. ONE builder both the prover and the
@@ -1268,7 +1357,7 @@ impl<'a> DriveDocumentQuery<'a> {
         &self,
         derived: &[DerivedValues],
         platform_version: &PlatformVersion,
-    ) -> Result<(PathQuery, Vec<Option<PathQuery>>), Error> {
+    ) -> Result<CompositeProofPathQueries, Error> {
         if derived.len() != self.sub_queries.len() {
             return Err(Error::Drive(DriveError::CorruptedCodeExecution(
                 "one derived value list per sub-query",
@@ -1355,7 +1444,11 @@ impl<'a> DriveDocumentQuery<'a> {
                 }
             }
         }
-        Ok((page, sub_path_queries))
+        // The removal records sit under the contract's other tree, beside
+        // its documents tree, so no documents or count component walks
+        // through them, nor they through one
+        let removal_path_queries = self.removal_path_queries(derived, direction);
+        Ok((page, sub_path_queries, removal_path_queries))
     }
 
     /// Whether a component walks through this count terminal to a deeper
@@ -1391,10 +1484,12 @@ impl<'a> DriveDocumentQuery<'a> {
     pub fn merged_path_query(
         page: &PathQuery,
         sub_path_queries: &[Option<PathQuery>],
+        removal_path_queries: &[PathQuery],
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         let mut components: Vec<&PathQuery> = vec![page];
         components.extend(sub_path_queries.iter().flatten());
+        components.extend(removal_path_queries);
         if components.len() == 1 {
             return Ok(page.clone());
         }
@@ -1412,6 +1507,9 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<Vec<Document>, Error> {
         if query.document_type.index_only() {
             let index = query.index_only_query_index(platform_version)?;
+            // Edited in place to pass the platform version, which picks the
+            // key generation synthesis decodes with: only an indexOnly type
+            // reaches this line, and only protocol version 14 parses one.
             return trios
                 .into_iter()
                 .map(|(path, key, element)| {
@@ -1422,6 +1520,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         &path,
                         &key,
                         Some(&element),
+                        platform_version,
                     )
                 })
                 .collect();
@@ -1462,9 +1561,14 @@ impl<'a> DriveDocumentQuery<'a> {
     /// past the base path when the walk descended through trailing
     /// equalities, and IS the key otherwise (the same layout
     /// `verify_point_lookup_count_proof` reads).
-    fn decode_count_trios(base_path_len: usize, trios: Vec<PresentTrio>) -> Vec<SplitCountEntry> {
+    fn decode_count_trios(
+        index: &Index,
+        base_path_len: usize,
+        trios: Vec<PresentTrio>,
+    ) -> Vec<SplitCountEntry> {
         // A composite count is always bound, so it always carries an `IN`.
         let mut entries = point_lookup_count_entries(
+            index,
             base_path_len,
             true,
             trios
@@ -1477,43 +1581,64 @@ impl<'a> DriveDocumentQuery<'a> {
         entries
     }
 
-    /// The derived ids of each by-id join that have no document among its
-    /// assembled result, in first-appearance order; an empty list for
-    /// every other sub-query. [`Self::assemble_documents`] has already
-    /// refused a missing document of a `permanentDocument` join, so what
-    /// is left here are the deleted targets of `deletableDocument` joins.
-    fn sub_result_missing_ids(
+    /// What each by-id join reports of the derived ids its assembled result
+    /// has no document for, in first-appearance order, one list of each per
+    /// sub-query: off a `deletableDocument` property the ids themselves (the
+    /// missing ids), off a `moderatedDocument` property their removal records
+    /// (see [`pair_missing_with_removals`]), and nothing for every other
+    /// sub-query. [`Self::assemble_documents`] has already refused a missing
+    /// document of a `permanentDocument` join. `removals` holds the decoded
+    /// records by the path of the component that covers them.
+    fn sub_result_absences(
         &self,
         derived: &[DerivedValues],
         sub_results: &[SubQueryResult],
-    ) -> Vec<Vec<Identifier>> {
-        self.sub_queries
-            .iter()
-            .zip(derived)
-            .zip(sub_results)
-            .map(|((sub_query, values), result)| {
-                if !sub_query.is_by_id_join() {
-                    return Vec::new();
+        removals: &BTreeMap<Vec<Vec<u8>>, BTreeMap<Identifier, ContractDocumentRemovalEntry>>,
+    ) -> Result<SubResultAbsences, Error> {
+        let none = BTreeMap::new();
+        let mut missing_ids = Vec::with_capacity(self.sub_queries.len());
+        let mut sub_result_removals = Vec::with_capacity(self.sub_queries.len());
+        for ((sub_query, values), result) in self.sub_queries.iter().zip(derived).zip(sub_results) {
+            let kind = self.sub_query_join_kind(sub_query);
+            let missing: Vec<Identifier> = match kind {
+                Some(DocumentReferenceKind::Deletable | DocumentReferenceKind::Moderated) => {
+                    let present: BTreeSet<Identifier> = result
+                        .documents()
+                        .iter()
+                        .map(|document| document.id())
+                        .collect();
+                    values
+                        .iter()
+                        .filter(|value| !present.contains(*value))
+                        .copied()
+                        .collect()
                 }
-                let present: BTreeSet<Identifier> = result
-                    .documents()
-                    .iter()
-                    .map(|document| document.id())
-                    .collect();
-                values
-                    .iter()
-                    .filter(|value| !present.contains(*value))
-                    .copied()
-                    .collect()
-            })
-            .collect()
+                _ => Vec::new(),
+            };
+            if kind == Some(DocumentReferenceKind::Moderated) {
+                let path = contract_document_type_removals_path_vec(
+                    sub_query.contract.id().as_slice(),
+                    sub_query.document_type.name(),
+                );
+                sub_result_removals.push(pair_missing_with_removals(
+                    &missing,
+                    removals.get(&path).unwrap_or(&none),
+                )?);
+                missing_ids.push(Vec::new());
+            } else {
+                sub_result_removals.push(Vec::new());
+                missing_ids.push(missing);
+            }
+        }
+        Ok((missing_ids, sub_result_removals))
     }
 
-    /// Whether a by-id join's source property guarantees its targets stay
-    /// in state (`permanentDocument`) or not (`deletableDocument`). A
-    /// source that is neither, which `validate_sub_query` refuses, is held
-    /// to the strict rule.
-    fn by_id_join_target_is_permanent(&self, binding: &SubQueryBinding) -> bool {
+    /// What a by-id join's source property guarantees of its targets:
+    /// that they stay in state (`permanentDocument`), leave it only on a
+    /// moderator's record (`moderatedDocument`), or nothing
+    /// (`deletableDocument`). A source that is none of them, which
+    /// `validate_sub_query` refuses, is held to the strict rule.
+    fn by_id_join_kind(&self, binding: &SubQueryBinding) -> DocumentReferenceKind {
         let source_type = match binding.source {
             BindingSource::Page => Some(self.document_type),
             BindingSource::SubQuery(source_index) => self
@@ -1522,13 +1647,56 @@ impl<'a> DriveDocumentQuery<'a> {
                 .map(|source| source.document_type),
         };
         let Some(source_type) = source_type else {
-            return true;
+            return DocumentReferenceKind::Permanent;
         };
         source_type
             .flattened_properties()
             .get(binding.source_property.as_str())
             .and_then(|property| document_reference_of(&property.property_type))
-            .is_none_or(|declaration| declaration.permanent)
+            .map_or(DocumentReferenceKind::Permanent, |declaration| {
+                declaration.kind
+            })
+    }
+
+    /// The kind of a sub-query that is a by-id join, `None` for every other
+    /// sub-query.
+    fn sub_query_join_kind(&self, sub_query: &DriveSubQuery<'a>) -> Option<DocumentReferenceKind> {
+        match &sub_query.binding {
+            Some(binding) if sub_query.is_by_id_join() => Some(self.by_id_join_kind(binding)),
+            _ => None,
+        }
+    }
+
+    /// The removal records components of the merged proof: one per
+    /// document type the by-id joins off `moderatedDocument` properties
+    /// target, over every id those joins derived (see
+    /// [`removals_path_query`]), walking in the page's `direction`. One
+    /// component per type, never one per join, so two joins into the same
+    /// type do not select the same records tree twice. In (contract, type)
+    /// order, so the prover and the verifier merge the same list.
+    fn removal_path_queries(&self, derived: &[DerivedValues], direction: bool) -> Vec<PathQuery> {
+        let mut ids_by_type: BTreeMap<(Identifier, &str), BTreeSet<Identifier>> = BTreeMap::new();
+        for (sub_query, values) in self.sub_queries.iter().zip(derived) {
+            if values.is_empty()
+                || self.sub_query_join_kind(sub_query) != Some(DocumentReferenceKind::Moderated)
+            {
+                continue;
+            }
+            ids_by_type
+                .entry((
+                    sub_query.contract.id(),
+                    sub_query.document_type.name().as_str(),
+                ))
+                .or_default()
+                .extend(values.iter().copied());
+        }
+        ids_by_type
+            .into_iter()
+            .map(|((contract_id, document_type_name), ids)| {
+                let ids: Vec<Identifier> = ids.into_iter().collect();
+                removals_path_query(contract_id, document_type_name, &ids, direction)
+            })
+            .collect()
     }
 
     /// Assembles one documents sub-query's result from its decoded
@@ -1536,7 +1704,8 @@ impl<'a> DriveDocumentQuery<'a> {
     /// a by-id join, putting them in first-appearance order. A derived id
     /// with no document is refused when the source property is a
     /// `permanentDocument` reference (exact set equality: it cannot
-    /// dangle) and left out when it is a `deletableDocument` reference
+    /// dangle) and left out when it is a `moderatedDocument` reference
+    /// (its removal record is reported instead) or a `deletableDocument` reference
     /// (the target was deleted since, and the fetch that found nothing
     /// under it is the query the proof covers). Shared by the server
     /// (where a violation is corrupted state) and the verifier (where it
@@ -1566,7 +1735,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     )));
                 }
             }
-            let target_is_permanent = self.by_id_join_target_is_permanent(binding);
+            let target_is_permanent = self.by_id_join_kind(binding).is_permanent();
             let mut ordered = Vec::with_capacity(values.len());
             for value in values {
                 match by_id.remove(value) {
@@ -1579,7 +1748,9 @@ impl<'a> DriveDocumentQuery<'a> {
                             value
                         )));
                     }
-                    // A deletableDocument target that is no longer in state.
+                    // A moderatedDocument target a moderator removed, reported
+                    // by its record (`sub_result_absences`), or a
+                    // deletableDocument target that is no longer in state.
                     None => {}
                 }
             }
@@ -1622,13 +1793,18 @@ impl<'a> DriveDocumentQuery<'a> {
     /// component's result. Every trio must land in a component, and
     /// every decoded item must be claimed by one — an entry the
     /// derivation never asked for means the responding node steered the
-    /// composition.
+    /// composition. `sum_bearing_items_are_documents` reads every item
+    /// variant as a document (the composite verifier from version 1), where
+    /// version 0 reads only a plain `Item` as one.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn assemble_from_trios(
         &self,
         derived: &[DerivedValues],
         page_path_query: &PathQuery,
         sub_path_queries: &[Option<PathQuery>],
+        removal_path_queries: &[PathQuery],
         trios: Vec<ProvedTrio>,
+        sum_bearing_items_are_documents: bool,
         platform_version: &PlatformVersion,
     ) -> Result<CompositeDocumentsResult, Error> {
         // Group documents by base path. Counts instead route by their
@@ -1668,11 +1844,31 @@ impl<'a> DriveDocumentQuery<'a> {
         let mut trios_by_group: Vec<Vec<PresentTrio>> = vec![Vec::new(); groups.len()];
         let mut count_trios_by_sub: Vec<Vec<PresentTrio>> =
             vec![Vec::new(); self.sub_queries.len()];
+        // A removal record sits at exactly its component's path, which no
+        // documents or count component's path equals
+        let mut removal_entries_by_path: RemovalEntriesByPath = removal_path_queries
+            .iter()
+            .map(|path_query| (path_query.path.clone(), Vec::new()))
+            .collect();
         for (path, key, element) in trios {
             let Some(element) = element else {
                 continue;
             };
-            if !matches!(element, Element::Item(..)) {
+            if let Some(entries) = removal_entries_by_path.get_mut(&path) {
+                entries.push((key, element));
+                continue;
+            }
+            // A document is an item; a count is a tree or a counter. From the
+            // composite verifier's version 1 (`sum_bearing_items_are_documents`),
+            // the sum-bearing items of a `documentsSummable` type or a
+            // `summable` indexOnly index are documents too (the items
+            // `decode_document_trios` reads), which version 0 reads as counts.
+            let is_document = if sum_bearing_items_are_documents {
+                element.has_basic_item()
+            } else {
+                matches!(element, Element::Item(..))
+            };
+            if !is_document {
                 let position = (path, key);
                 let members = count_members_by_position.get(&position).ok_or_else(|| {
                     corrupted_proof(
@@ -1787,7 +1983,17 @@ impl<'a> DriveDocumentQuery<'a> {
             let Some(path_query) = &sub_path_queries[index] else {
                 continue;
             };
-            let entries = Self::decode_count_trios(path_query.path.len(), count_trios);
+            // Only the covering index is read here, which the bound field's
+            // clause resolves whatever identifiers it holds: one value spares
+            // sorting every derived value into a clause again
+            let values = &derived[index];
+            let count_query = self.sub_query_count_query(
+                &self.sub_queries[index],
+                &values[..values.len().min(1)],
+                platform_version,
+            )?;
+            let entries =
+                Self::decode_count_trios(count_query.index, path_query.path.len(), count_trios);
             sub_results[index] = Some(SubQueryResult::Counts(Self::assemble_counts(
                 &derived[index],
                 entries,
@@ -1804,11 +2010,17 @@ impl<'a> DriveDocumentQuery<'a> {
                 })
             })
             .collect();
-        let sub_result_missing_ids = self.sub_result_missing_ids(derived, &sub_results);
+        let removals = removal_entries_by_path
+            .into_iter()
+            .map(|(path, entries)| Ok((path, decode_removals(entries)?)))
+            .collect::<Result<BTreeMap<_, _>, Error>>()?;
+        let (sub_result_missing_ids, sub_result_removals) =
+            self.sub_result_absences(derived, &sub_results, &removals)?;
         Ok(CompositeDocumentsResult {
             page_documents: page_documents.unwrap_or_default(),
             sub_results,
             sub_result_missing_ids,
+            sub_result_removals,
         })
     }
 
@@ -1817,27 +2029,20 @@ impl<'a> DriveDocumentQuery<'a> {
     /// the primary tree.
     fn page_ids(&self) -> Result<BTreeSet<Identifier>, Error> {
         let mut ids = BTreeSet::new();
+        // The clauses hold the client's values, so a malformed one is the request's fault, with
+        // the plain query path's errors.
         if let Some(clause) = &self.internal_clauses.primary_key_equal_clause {
             ids.insert(clause.value.to_identifier().map_err(|_| {
-                Error::Drive(DriveError::CorruptedCodeExecution(
-                    "a primary-key equality clause holds an identifier",
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "primary key equality must compare an identifier",
                 ))
             })?);
         }
         if let Some(clause) = &self.internal_clauses.primary_key_in_clause {
-            for value in clause
-                .in_values()
-                .into_data()
-                .map_err(|_| {
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "a primary-key in clause holds an array",
-                    ))
-                })?
-                .iter()
-            {
+            for value in clause.in_values().into_data_with_error()??.iter() {
                 ids.insert(value.to_identifier().map_err(|_| {
-                    Error::Drive(DriveError::CorruptedCodeExecution(
-                        "a primary-key in clause holds identifiers",
+                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                        "primary key IN must contain identifiers",
                     ))
                 })?);
             }
@@ -1902,22 +2107,6 @@ impl<'a> DriveDocumentQuery<'a> {
     }
 }
 
-/// Whether a grovedb error says the queried path does not exist yet (no
-/// document of the type, no entry under the index), which a query
-/// answers with no rows.
-#[cfg(feature = "server")]
-fn is_absent_path(error: &Error) -> bool {
-    matches!(
-        error,
-        Error::GroveDB(e) if matches!(
-            e.as_ref(),
-            grovedb::Error::PathKeyNotFound(_)
-                | grovedb::Error::PathNotFound(_)
-                | grovedb::Error::PathParentLayerNotFound(_)
-        )
-    )
-}
-
 #[cfg(feature = "server")]
 impl<'a> DriveDocumentQuery<'a> {
     /// Materializes a documents component without a proof, from the
@@ -1929,8 +2118,9 @@ impl<'a> DriveDocumentQuery<'a> {
     /// so the two can fill a page differently. Everything derived from
     /// the page rides on this selection, so it has to be the proof's.
     /// indexOnly projections are synthesized from their positions,
-    /// stored documents deserialized.
-    fn materialize_component(
+    /// stored documents deserialized. A chained query reads its inner
+    /// page through here too.
+    pub(crate) fn materialize_component(
         query: &DriveDocumentQuery<'a>,
         path_query: &PathQuery,
         drive: &crate::drive::Drive,
@@ -2013,6 +2203,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     direction,
                     platform_version,
                 )?;
+                check_composite_instance_limits(&path_query, platform_version)?;
                 let documents = Self::materialize_component(
                     &query,
                     &path_query,
@@ -2026,10 +2217,11 @@ impl<'a> DriveDocumentQuery<'a> {
                 ))
             }
             SubQueryKind::Count => {
-                let path_query = self
-                    .sub_query_count_query(sub_query, values, platform_version)?
-                    .point_lookup_count_path_query(platform_version)?;
+                let count_query =
+                    self.sub_query_count_query(sub_query, values, platform_version)?;
+                let path_query = count_query.point_lookup_count_path_query(platform_version)?;
                 let base_path_len = path_query.path.len();
+                check_composite_instance_limits(&path_query, platform_version)?;
                 let (results, _skipped) = match drive.grove_get_path_query(
                     &path_query,
                     transaction,
@@ -2038,14 +2230,7 @@ impl<'a> DriveDocumentQuery<'a> {
                     &platform_version.drive,
                 ) {
                     // No count tree yet under this index: every count is zero.
-                    Err(Error::GroveDB(e))
-                        if matches!(
-                            e.as_ref(),
-                            grovedb::Error::PathKeyNotFound(_)
-                                | grovedb::Error::PathNotFound(_)
-                                | grovedb::Error::PathParentLayerNotFound(_)
-                        ) =>
-                    {
+                    Err(error) if is_absent_path(&error) => {
                         return Ok(SubQueryResult::Counts(Vec::new()));
                     }
                     other => other?,
@@ -2058,7 +2243,7 @@ impl<'a> DriveDocumentQuery<'a> {
                         _ => None,
                     })
                     .collect();
-                let entries = Self::decode_count_trios(base_path_len, trios);
+                let entries = Self::decode_count_trios(count_query.index, base_path_len, trios);
                 Ok(SubQueryResult::Counts(Self::assemble_counts(
                     values, entries,
                 )?))
@@ -2078,6 +2263,26 @@ impl<'a> DriveDocumentQuery<'a> {
 
         let page_path_query = self.page_path_query(platform_version)?;
         let direction = page_path_query.query.query.left_to_right;
+        // Documents are serialized whole, as a documents query's are: refused
+        // before any read when an indexOnly page or documents sub-query reads
+        // through an index lacking a property. A sub-query is judged with one
+        // representative value: the index it resolves may be a pivot index the
+        // read itself, binding more values than its limit, passes over for one
+        // holding more properties, so this can refuse a read its real values
+        // would have served, never admit one they would not.
+        self.refuse_an_uncovered_index_only_projection(platform_version)?;
+        for sub_query in &self.sub_queries {
+            if sub_query.kind == SubQueryKind::Documents && sub_query.document_type.index_only() {
+                self.sub_query_document_query_with_direction(
+                    sub_query,
+                    &[Identifier::default()],
+                    direction,
+                    platform_version,
+                )?
+                .refuse_an_uncovered_index_only_projection(platform_version)?;
+            }
+        }
+        check_composite_instance_limits(&page_path_query, platform_version)?;
         let page_documents = Self::materialize_component(
             self,
             &page_path_query,
@@ -2106,12 +2311,28 @@ impl<'a> DriveDocumentQuery<'a> {
         // Count-tree conflicts depend on the actual derived values, not
         // just the representative shapes checked by validate(). Reject
         // them on the materialized entry point as on the proof entry point.
-        self.proof_path_queries(&derived, platform_version)?;
-        let sub_result_missing_ids = self.sub_result_missing_ids(&derived, &sub_results);
+        let (_, _, removal_path_queries) = self.proof_path_queries(&derived, platform_version)?;
+        // The same removal records components the proof covers
+        let mut removals = BTreeMap::new();
+        for path_query in &removal_path_queries {
+            removals.insert(
+                path_query.path.clone(),
+                fetch_removals(
+                    drive,
+                    path_query,
+                    transaction,
+                    drive_operations,
+                    platform_version,
+                )?,
+            );
+        }
+        let (sub_result_missing_ids, sub_result_removals) =
+            self.sub_result_absences(&derived, &sub_results, &removals)?;
         Ok(CompositeDocumentsResult {
             page_documents,
             sub_results,
             sub_result_missing_ids,
+            sub_result_removals,
         })
     }
 
@@ -2154,6 +2375,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 .root_hash(None, &platform_version.drive.grove_version)
                 .unwrap()?;
 
+            check_composite_instance_limits(&page_path_query, platform_version)?;
             let page_documents = Self::materialize_component(
                 self,
                 &page_path_query,
@@ -2187,12 +2409,17 @@ impl<'a> DriveDocumentQuery<'a> {
                 derived.push(values);
             }
 
-            let (page_path_query, sub_path_queries) =
+            let (page_path_query, sub_path_queries, removal_path_queries) =
                 self.proof_path_queries(&derived, platform_version)?;
             // The same builder the verifier re-merges with, so the proof
             // covers exactly the query the verifier reconstructs.
-            let merged_query =
-                Self::merged_path_query(&page_path_query, &sub_path_queries, platform_version)?;
+            let merged_query = Self::merged_path_query(
+                &page_path_query,
+                &sub_path_queries,
+                &removal_path_queries,
+                platform_version,
+            )?;
+            check_composite_instance_limits(&merged_query, platform_version)?;
             let proof = drive
                 .grove
                 .prove_query(&merged_query, None, &platform_version.drive.grove_version)

@@ -11,6 +11,7 @@ on:
       - '.github/workflows/npm-runner-validation.yml'
       - '.github/workflows/release.yml'
       - '.github/workflows/release-npm-build.yml'
+      - '.github/workflows/release-kotlin-sdk.yml'
       - 'packages/dapi-grpc/**'
   workflow_dispatch:
 permissions:

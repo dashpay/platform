@@ -11,6 +11,9 @@
 //! - **Idempotent.** Applying the same changeset N times produces the
 //!   same state as applying it once. Callers may re-run apply on
 //!   startup or after a partial write without additional bookkeeping.
+//! - **Monotonic asset-lock recovery.** A stale snapshot cannot erase an
+//!   operation UUID, shorten signed-attempt history or regress a consumed
+//!   tombstone. A conflicting UUID cannot rebind the existing operation.
 //! - **No re-emission.** `apply_changeset` returns `Result<(), _>`, not
 //!   a new changeset. Mutation bookkeeping that internally produces
 //!   changesets (e.g. `update_balance`) discards them.
@@ -46,7 +49,7 @@
 use key_wallet::wallet::Wallet;
 
 use crate::changeset::PlatformWalletChangeSet;
-use crate::wallet::asset_lock::tracked::TrackedAssetLock;
+use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Errors returned by [`PlatformWalletInfo::apply_changeset`] and the
@@ -352,12 +355,27 @@ impl PlatformWalletInfo {
         //    Replaying the persisted tombstone therefore preserves the
         //    same classification after a restart.
         if let Some(al_cs) = asset_locks {
-            for (out_point, entry) in al_cs.asset_locks {
+            for (out_point, mut entry) in al_cs.asset_locks {
+                if let Some(existing) = self.tracked_asset_locks.get_mut(&out_point) {
+                    if !entry.preserve_recovery_metadata(
+                        existing.operation_id,
+                        &existing.shielded_funding_attempts,
+                    ) {
+                        continue;
+                    }
+                    if existing.status == AssetLockStatus::Consumed
+                        && entry.status != AssetLockStatus::Consumed
+                    {
+                        existing.operation_id = entry.operation_id;
+                        existing.shielded_funding_attempts = entry.shielded_funding_attempts;
+                        continue;
+                    }
+                }
                 self.tracked_asset_locks.insert(
                     out_point,
                     TrackedAssetLock {
                         operation_id: entry.operation_id,
-                        shielded_funding_attempts: entry.shielded_funding_attempts.clone(),
+                        shielded_funding_attempts: entry.shielded_funding_attempts,
                         out_point: entry.out_point,
                         transaction: entry.transaction,
                         account_index: entry.account_index,
@@ -370,6 +388,15 @@ impl PlatformWalletInfo {
                 );
             }
             for out_point in al_cs.removed {
+                // Match changeset folding and durable stores: a stale removal
+                // cannot erase the terminal operation-recovery tombstone.
+                if self
+                    .tracked_asset_locks
+                    .get(&out_point)
+                    .is_some_and(|entry| entry.status == AssetLockStatus::Consumed)
+                {
+                    continue;
+                }
                 self.tracked_asset_locks.remove(&out_point);
             }
         }
@@ -768,13 +795,148 @@ mod tests {
             AssetLockStatus::Consumed
         );
 
-        // An explicit removal tombstone still removes it.
+        // A stale removal cannot discard the terminal recovery tombstone.
         let mut al_cs = AssetLockChangeSet::default();
         al_cs.removed.insert(out_point);
         let mut cs = PlatformWalletChangeSet::default();
         cs.asset_locks = Some(al_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply remove");
-        assert!(!info.tracked_asset_locks.contains_key(&out_point));
+        assert_eq!(
+            info.tracked_asset_locks[&out_point].status,
+            AssetLockStatus::Consumed
+        );
+    }
+
+    fn recovery_asset_lock(
+        status: AssetLockStatus,
+        operation_id: Option<[u8; 16]>,
+        attempts: Vec<Vec<u8>>,
+    ) -> AssetLockEntry {
+        AssetLockEntry {
+            operation_id,
+            shielded_funding_attempts: attempts,
+            out_point: OutPoint::default(),
+            transaction: dashcore::Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::AssetLockShieldedAddressTopUp,
+            identity_index: 0,
+            amount_duffs: 5_000,
+            status,
+            proof: None,
+        }
+    }
+
+    fn apply_recovery_asset_lock(
+        info: &mut PlatformWalletInfo,
+        wallet: &mut Wallet,
+        entry: AssetLockEntry,
+    ) {
+        let mut locks = AssetLockChangeSet::default();
+        locks.asset_locks.insert(entry.out_point, entry);
+        info.apply_changeset(
+            wallet,
+            PlatformWalletChangeSet {
+                asset_locks: Some(locks),
+                ..Default::default()
+            },
+        )
+        .expect("apply asset-lock snapshot");
+    }
+
+    #[test]
+    fn should_preserve_asset_lock_recovery_metadata_when_applying_stale_snapshots() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let operation_id = Some([42; 16]);
+        let attempts = vec![vec![18, 1], vec![18, 2]];
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::Broadcast, operation_id, attempts.clone()),
+        );
+
+        for stale_attempts in [vec![attempts[0].clone()], Vec::new()] {
+            apply_recovery_asset_lock(
+                &mut info,
+                &mut wallet,
+                recovery_asset_lock(AssetLockStatus::RecoveredFromChain, None, stale_attempts),
+            );
+            let restored = &info.tracked_asset_locks[&OutPoint::default()];
+            assert_eq!(restored.operation_id, operation_id);
+            assert_eq!(restored.shielded_funding_attempts, attempts);
+        }
+
+        let all_attempts = vec![vec![18, 1], vec![18, 2], vec![18, 3]];
+        let newest = recovery_asset_lock(
+            AssetLockStatus::ChainLocked,
+            operation_id,
+            all_attempts.clone(),
+        );
+        apply_recovery_asset_lock(&mut info, &mut wallet, newest.clone());
+        apply_recovery_asset_lock(&mut info, &mut wallet, newest);
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.operation_id, operation_id);
+        assert_eq!(restored.shielded_funding_attempts, all_attempts);
+        assert_eq!(restored.status, AssetLockStatus::ChainLocked);
+    }
+
+    #[test]
+    fn should_keep_consumed_asset_locks_terminal_when_applying_stale_snapshots() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let operation_id = Some([42; 16]);
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::Consumed, operation_id, vec![vec![18, 1]]),
+        );
+        let attempts = vec![vec![18, 1], vec![18, 2]];
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::Broadcast, None, attempts.clone()),
+        );
+        let mut removed = AssetLockChangeSet::default();
+        removed.removed.insert(OutPoint::default());
+        info.apply_changeset(
+            &mut wallet,
+            PlatformWalletChangeSet {
+                asset_locks: Some(removed),
+                ..Default::default()
+            },
+        )
+        .expect("apply stale removal");
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.operation_id, operation_id);
+        assert_eq!(restored.shielded_funding_attempts, attempts);
+        assert_eq!(restored.status, AssetLockStatus::Consumed);
+    }
+
+    #[test]
+    fn should_ignore_conflicting_asset_lock_operation_snapshots() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let original = recovery_asset_lock(
+            AssetLockStatus::Broadcast,
+            Some([42; 16]),
+            vec![vec![18, 1]],
+        );
+        apply_recovery_asset_lock(&mut info, &mut wallet, original.clone());
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::Consumed, Some([43; 16]), vec![vec![18, 2]]),
+        );
+        assert_eq!(
+            AssetLockEntry::from(&info.tracked_asset_locks[&OutPoint::default()]),
+            original
+        );
     }
 
     /// Token-balance changesets are accepted by `apply_changeset` for

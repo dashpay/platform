@@ -44,15 +44,24 @@
 //! A keyword that still has no rule is frozen as well: its change is reported
 //! as incompatible instead of failing the update as an unsupported keyword.
 //! Generation 0 fails on a diff under any of them as an unsupported keyword.
+//!
+//! Both schemas are compared with their property type shorthands
+//! (`"type": "identifier"`, `"type": "bytes"` with a `size`) rewritten into
+//! the long form they stand for, as the parse reads them
+//! ([`DocumentType::expand_property_type_shorthands`]), so rewriting a
+//! property, or a definition of the `{"$defs": ..}` comparison, from one
+//! spelling to the other is no change. Only this generation does: the
+//! shorthands exist from protocol version 14, the only version selecting it.
 
 use crate::data_contract::document_type::property_names::{
-    ACTION_FEES, CAN_BE_DELETED_BY_MODERATORS, CAN_BE_DELETED_BY_MODERATORS_FOR, CONTAINS,
-    DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE, ENTRY_PAYLOAD, INDEX_ONLY,
-    KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY, KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES,
-    MIN_PROPERTIES, PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE,
+    ACTION_FEES, CONTAINS, DELETE_CONSTRAINTS, DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE,
+    DOCUMENTS_SUMMABLE, ENTRY_PAYLOAD, INDEX_ONLY, KEEPS_PRICING_HISTORY, KEEPS_PURCHASE_HISTORY,
+    KEEPS_TRANSFER_HISTORY, MAX_PROPERTIES, MIN_PROPERTIES, MODERATOR_ABILITIES,
+    PROPERTY_CONSTRAINTS, RANGE_AVERAGEABLE, RANGE_COUNTABLE, RANGE_SUMMABLE, RETRACTED_WHEN,
     TOKEN_COST, TRANSIENT, TTL,
 };
 use crate::data_contract::document_type::schema::IncompatibleJsonSchemaOperation;
+use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::{DataContractError, JsonSchemaError};
 use crate::data_contract::JsonValue;
 use crate::validation::SimpleValidationResult;
@@ -65,6 +74,8 @@ use json_schema_compatibility_validator::{
     KEYWORD_COMPATIBILITY_RULES,
 };
 use once_cell::sync::Lazy;
+use platform_value::Value;
+use platform_version::version::PlatformVersion;
 use std::borrow::Cow;
 use std::ops::Deref;
 
@@ -100,6 +111,9 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
     // The top-level `propertyConstraints` gets it too: a rule added later
     // would judge replaces of documents stored without it, and a rule changed
     // or removed would leave stored documents judged by one no longer there.
+    // `deleteConstraints` too: a rule added later would hold back deletes the
+    // owners of stored documents were promised, and one changed or removed
+    // would free deletes those who point at them counted on being refused.
     // So does every keyword in `FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE`.
     let refers_to_rule = KEYWORD_COMPATIBILITY_RULES.get("refersTo");
     let frozen_doctype_rules = [
@@ -107,6 +121,7 @@ static OPTIONS: Lazy<Options> = Lazy::new(|| {
         "creatorRefersTo",
         TRANSIENT,
         PROPERTY_CONSTRAINTS,
+        DELETE_CONSTRAINTS,
     ]
     .into_iter()
     .chain(FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE)
@@ -157,8 +172,8 @@ const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 19] = [
     RANGE_SUMMABLE,
     DOCUMENTS_AVERAGEABLE,
     RANGE_AVERAGEABLE,
-    CAN_BE_DELETED_BY_MODERATORS,
-    CAN_BE_DELETED_BY_MODERATORS_FOR,
+    MODERATOR_ABILITIES,
+    RETRACTED_WHEN,
     MIN_PROPERTIES,
     MAX_PROPERTIES,
     CONTAINS,
@@ -168,13 +183,12 @@ const FROZEN_KEYWORDS_WITHOUT_A_SHARED_RULE: [&str; 19] = [
 /// dedicated checks in `validate_update` v1 instead of the JSON diff:
 /// `indices` (index definitions compared by name), `required`
 /// (`validate_required_fields_update`, which admits new-property additions
-/// annotated with `requiredSince`), and `immutable` together with
-/// `immutableAllowSetting` (`validate_immutable_fields_update`: the first may
-/// only grow, the second may only shrink except for newly immutable
-/// properties). The differ has no rule for the last three at all and would
-/// hard-error on any change to them.
-const TOP_LEVEL_VALIDATED_KEYS: [&str; 4] =
-    ["indices", "required", "immutable", "immutableAllowSetting"];
+/// annotated with `requiredSince`), and `immutable`
+/// (`validate_immutable_fields_update`: the properties it lists without a
+/// condition may only grow, and a condition may only be dropped for listing
+/// the property without one). The differ has no rule for the last two at all
+/// and would hard-error on any change to them.
+const TOP_LEVEL_VALIDATED_KEYS: [&str; 3] = ["indices", "required", "immutable"];
 
 /// The document type's own top-level lists of property names that the parse
 /// reads as sets: `transient`, and `entryPayload`, whose properties are framed
@@ -212,21 +226,46 @@ fn prepared_for_diff(schema: &JsonValue) -> Cow<'_, JsonValue> {
     }
 }
 
+/// `schema` with its property type shorthands rewritten into the long form, or
+/// `schema` itself when it holds none. Both schemas compared were parsed with
+/// their contracts, so the rewrite refuses nothing here; the JSON goes through
+/// a `Value` and back, which keeps every value it does not rewrite.
+fn with_shorthands_expanded<'a>(
+    schema: &'a JsonValue,
+    platform_version: &PlatformVersion,
+) -> Result<Cow<'a, JsonValue>, ProtocolError> {
+    match DocumentType::expand_property_type_shorthands(
+        &Value::from(schema),
+        false,
+        platform_version,
+    )? {
+        Some(expanded) => Ok(Cow::Owned(
+            expanded
+                .try_into_validating_json()
+                .map_err(ProtocolError::ValueError)?,
+        )),
+        None => Ok(Cow::Borrowed(schema)),
+    }
+}
+
 /// Pairing invariant: stripping `indices`, top-level `required` and
 /// `immutable` unconditionally is only safe because every `PlatformVersion`
 /// that selects this generation (`validate_schema_compatibility: 1`) also
 /// selects a `validate_update` generation of at least 1
 /// (`dpp.validation.document_type.validate_update`), which rejects every
 /// real index change, every disallowed required-set change and every
-/// shrinking of the immutable list before this check runs. A future version
+/// loosening of what `immutable` freezes before this check runs. A future version
 /// table that bumps one without the other would let those changes bypass
 /// compatibility validation entirely.
 pub(super) fn validate_schema_compatibility_v1(
     original_schema: &JsonValue,
     new_schema: &JsonValue,
+    platform_version: &PlatformVersion,
 ) -> Result<SimpleValidationResult<IncompatibleJsonSchemaOperation>, ProtocolError> {
-    let original_schema = prepared_for_diff(original_schema);
-    let new_schema = prepared_for_diff(new_schema);
+    let original_schema = with_shorthands_expanded(original_schema, platform_version)?;
+    let new_schema = with_shorthands_expanded(new_schema, platform_version)?;
+    let original_schema = prepared_for_diff(&original_schema);
+    let new_schema = prepared_for_diff(&new_schema);
 
     match validate_schemas_compatibility(&original_schema, &new_schema, OPTIONS.deref()) {
         Ok(result) => {
@@ -344,8 +383,7 @@ mod tests {
                 "a": {"type": "string", "position": 0},
                 "b": {"type": "string", "position": 1},
             },
-            "immutable": ["a", "b"],
-            "immutableAllowSetting": ["b"],
+            "immutable": ["a", { "property": "b", "when": { "present": "$old.b" } }],
             "additionalProperties": false,
         });
 
@@ -630,6 +668,45 @@ mod tests {
         );
     }
 
+    /// The owners of stored documents were promised the deletes the rules allow, and
+    /// whoever points at one counted on those they refuse, so `deleteConstraints` is
+    /// frozen as `propertyConstraints` is: adding, removing or changing a rule is
+    /// incompatible.
+    #[test]
+    fn should_report_every_delete_constraints_change_as_incompatible() {
+        let platform_version = PlatformVersion::latest();
+        let with_delete_constraints = |rules: Option<serde_json::Value>| {
+            let mut schema = with_property_constraints(None);
+            if let Some(rules) = rules {
+                schema["deleteConstraints"] = rules;
+            }
+            schema
+        };
+        let rule = json!({ "unclaimed": { "equal": ["a", 0] } });
+        for (original, new, change_name, change_path) in [
+            (None, Some(rule.clone()), "add", "/deleteConstraints"),
+            (Some(rule.clone()), None, "remove", "/deleteConstraints"),
+            (
+                Some(rule.clone()),
+                Some(json!({ "unclaimed": { "equal": ["a", 1] } })),
+                "replace",
+                "/deleteConstraints/unclaimed/equal/1",
+            ),
+        ] {
+            let result = validate_schema_compatibility(
+                &with_delete_constraints(original.clone()),
+                &with_delete_constraints(new.clone()),
+                platform_version,
+            )
+            .expect("a deleteConstraints change is judged, not an unsupported keyword");
+            assert_matches!(
+                result.errors.as_slice(),
+                [change] if change.name == change_name && change.path == change_path,
+                "{original:?} -> {new:?}"
+            );
+        }
+    }
+
     fn document_type_schema() -> serde_json::Value {
         json!({
             "type": "object",
@@ -679,6 +756,24 @@ mod tests {
                 "/entryPayload/1",
             ),
             (
+                "/moderatorAbilities",
+                json!({"delete": true}),
+                json!({"delete": false}),
+                "/moderatorAbilities/delete",
+            ),
+            (
+                "/moderatorAbilities",
+                json!({"delete": true, "deleteWithin": 3600}),
+                json!({"delete": true, "deleteWithin": 7200}),
+                "/moderatorAbilities/deleteWithin",
+            ),
+            (
+                "/moderatorAbilities",
+                json!({"changeFields": ["a", "b"]}),
+                json!({"changeFields": ["a", "c"]}),
+                "/moderatorAbilities/changeFields/1",
+            ),
+            (
                 "/properties/list/contains",
                 json!({"minimum": 1}),
                 json!({"minimum": 0}),
@@ -698,8 +793,6 @@ mod tests {
             ("/rangeSummable", json!(true), json!(false)),
             ("/documentsAverageable", json!("a"), json!("b")),
             ("/rangeAverageable", json!(true), json!(false)),
-            ("/canBeDeletedByModerators", json!(true), json!(false)),
-            ("/canBeDeletedByModeratorsFor", json!(3600), json!(7200)),
             ("/minProperties", json!(1), json!(0)),
             ("/maxProperties", json!(2), json!(3)),
             ("/properties/object/minProperties", json!(1), json!(0)),
@@ -918,6 +1011,74 @@ mod tests {
             ProtocolError::DataContractError(DataContractError::JsonSchema(
                 JsonSchemaError::SchemaCompatibilityValidationError(message)
             )) if message == "schema keyword 'tokenCost' at path '/tokenCost/create/amount' is not supported"
+        );
+    }
+
+    /// A document type schema with `hash` and the definition `owner`, each
+    /// written with a shorthand (`shorthand`) or in full.
+    fn spelled(shorthand: bool) -> (serde_json::Value, serde_json::Value) {
+        let (hash, owner) = if shorthand {
+            (
+                json!({ "type": "bytes", "size": 32, "position": 0 }),
+                json!({ "type": "identifier" }),
+            )
+        } else {
+            (
+                json!({ "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32, "position": 0 }),
+                json!({
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier"
+                }),
+            )
+        };
+        (
+            json!({
+                "type": "object",
+                "properties": {
+                    "hash": hash,
+                    "ownerId": { "$ref": "#/$defs/owner", "position": 1 }
+                },
+                "additionalProperties": false
+            }),
+            json!({ "$defs": { "owner": owner } }),
+        )
+    }
+
+    /// Both spellings are the same schema: rewriting a property or a
+    /// definition from one to the other, in either direction, is no change.
+    #[test]
+    fn should_compare_a_shorthand_as_the_long_form_it_stands_for() {
+        let platform_version = PlatformVersion::latest();
+        for (old, new) in [(true, false), (false, true)] {
+            let (old_schema, old_defs) = spelled(old);
+            let (new_schema, new_defs) = spelled(new);
+            let result = validate_schema_compatibility(&old_schema, &new_schema, platform_version)
+                .expect("the schemas compare");
+            assert!(result.is_valid(), "{old} -> {new}: {:?}", result.errors);
+            let result = validate_schema_compatibility(&old_defs, &new_defs, platform_version)
+                .expect("the definitions compare");
+            assert!(result.is_valid(), "{old} -> {new}: {:?}", result.errors);
+        }
+    }
+
+    /// A real change is still one: an identifier is no plain 32-byte array.
+    #[test]
+    fn should_still_report_a_change_behind_a_shorthand() {
+        let platform_version = PlatformVersion::latest();
+        let (_, old_defs) = spelled(true);
+        let new_defs = json!({ "$defs": { "owner": { "type": "bytes", "size": 32 } } });
+        let result = validate_schema_compatibility(&old_defs, &new_defs, platform_version)
+            .expect("the definitions compare");
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|operation| operation.path == "/$defs/owner/contentMediaType"),
+            "{:?}",
+            result.errors
         );
     }
 }

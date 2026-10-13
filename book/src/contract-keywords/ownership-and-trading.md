@@ -45,7 +45,7 @@ Who may create documents of the type.
 
 ### Rules at registration
 
-- A type with mode `1` or `2` may not carry `canBeDeletedByModerators` (`InvalidContractStructure`, 10231): its documents belong to the contract owner or the platform, and no moderator may delete those. See [Deletion](deletion.md).
+- A type with mode `1` or `2` may not carry `moderatorAbilities.delete` (`InvalidContractStructure`, 10231): its documents belong to the contract owner or the platform, and no moderator may delete those. See [Deletion](deletion.md).
 
 ## `transferable`
 
@@ -65,7 +65,7 @@ Whether an owner may give a document to another identity.
 - The owner sends a transfer transition naming the document, the recipient and a `$revision` one higher than the stored one (`InvalidDocumentRevisionError`, 40106). Only the owner may transfer (`DocumentOwnerIdMismatchError`, 40102). The recipient does not have to agree.
 - The document gets the recipient as its `$ownerId` and a new `$revision`. A price it was listed at is removed, so a transferred document is no longer for sale. When the type lists `$transferredAt` in `required`, it is set to the block's time, and likewise `$transferredAtBlockHeight` and `$transferredAtCoreBlockHeight` to the block heights.
 - A transfer carries no property values, and `$creatorId` keeps naming the identity that created the document. The one change the platform makes itself: from protocol version 13, a DPNS `domain` that is transferred or sold has its `records.identity` pointed at the new owner.
-- The document is checked as it will be stored, with its new owner: against the type's unique indexes (`DuplicateUniqueIndexError`, 40105), against a `distinctFrom: "$ownerId"` property (`DocumentPropertyNotDistinctError`, 10419), and against `propertyConstraints` rules that read `$ownerId` (`DocumentPropertyConstraintViolatedError`, 10422).
+- The document is checked as it will be stored, with its new owner: against the type's unique indexes (`DuplicateUniqueIndexError`, 40105), against a `distinctFrom: "$ownerId"` property (`DocumentPropertyNotDistinctError`, 10419), and against the `propertyConstraints` rules that read what a transfer changes: `$ownerId`, `$transferredAt` and its heights or `$revision`, of the document or, through `$old.`, of the version before the transfer, or a total that depends on the owner (`DocumentPropertyConstraintViolatedError`, 10422; see [propertyConstraints](property-constraints.md#how-it-works)).
 - On a moderated contract, a transfer to a banned or suspended identity is refused (`ContractModerationCounterpartyBarredError`, 41114).
 - A transfer of a document past its `ttl` expiry is refused (`DocumentExpiredError`, 40140).
 - With `keepsTransferHistory: true`, each transfer is also recorded in the document history contract. See [History](history.md).
@@ -88,7 +88,7 @@ Whether documents of the type can be sold through the platform's built-in market
 - **Listing.** The owner sends a price update transition with a price in credits and the next `$revision`. Only the owner may set the price (40102). The price is stored with the document, the revision goes up, and `$updatedAt` is set when the type lists it in `required`.
 - **Buying.** Any identity other than the owner sends a purchase transition naming the document, the next `$revision` and the price. A document with no price set is not for sale (`DocumentNotForSaleError`, 40108), and the price in the transition must equal the listed price exactly (`DocumentIncorrectPurchasePriceError`, 40109). An owner cannot buy its own document (10404).
 - **What a purchase does.** The price moves from the buyer's credit balance to the seller's. The document gets the buyer as its `$ownerId` and a new `$revision`, the listing is removed, and `$transferredAt` is set when the type lists it in `required`. The buyer's credit balance must cover the price.
-- The new owner is checked exactly as for a transfer: unique indexes (40105), `distinctFrom: "$ownerId"` (10419) and `propertyConstraints` rules that read `$ownerId` (10422).
+- The new owner is checked exactly as for a transfer: unique indexes (40105), `distinctFrom: "$ownerId"` (10419) and the `propertyConstraints` rules that read `$ownerId`, `$transferredAt` and its heights or `$revision`, of either version, or a total that depends on the owner (10422).
 - On a moderated contract, a banned or suspended buyer is refused like any barred writer, and so is a purchase from a banned or suspended seller (`ContractModerationCounterpartyBarredError`, 41114).
 - A price update or a purchase of a document past its `ttl` expiry is refused (`DocumentExpiredError`, 40140).
 - With `keepsPricingHistory` and `keepsPurchaseHistory`, each price update and each purchase is also recorded in the document history contract. See [History](history.md).
@@ -108,7 +108,7 @@ All refusals below are `InvalidContractStructure` (10231).
 - `ownerRefersTo` is refused on a type whose documents can be transferred or traded: a document could end up with an owner the declaration never checked. Such a type uses `creatorRefersTo`, which checks the creator, who never changes. `creatorRefersTo` is only accepted on such a type. See [Writer and Creator References](owner-refers-to.md).
 - An `indexOnly` type can be neither transferable nor tradeable. See [Index-Only Types](index-only.md).
 - On a transferable or tradeable type, an `immutable` property may not hold a `contract` reference with an `owner` requirement. See [Mutability](mutability.md).
-- `creationRestrictionMode` `1` or `2` is refused together with `canBeDeletedByModerators`.
+- `creationRestrictionMode` `1` or `2` is refused together with `moderatorAbilities.delete`.
 
 ## See also
 

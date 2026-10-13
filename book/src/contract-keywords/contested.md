@@ -71,8 +71,9 @@ The fund, the windows, the tallies and the special case of moderation elections 
 - A document type has at most one contested index, and no other unique index beside it (`ContestedUniqueIndexWithUniqueIndexError`, 10249).
 - `resolution` is present and is `0` or `1`; `1` is refused before protocol version 14.
 - `fieldMatches`, when present, holds at least one entry, and each `regexPattern` is a valid regular expression (`RegexError`, 10247).
-- A contested index cannot carry a [`timeRange`](time-range.md) or a ranking (a ranking needs a non-unique index), and an [index-only type](index-only.md) cannot have one.
-- A document type with a contested index cannot set [`ttl`](ttl.md), nor `canBeDeletedByModerators` (see [Deletion](deletion.md)): a moderator's restore puts a document back by an ordinary insert, and a contested value is only awarded through a vote.
+- A contested index cannot carry a [`timeRange`](time-range.md), an [`integerRange`](integer-range.md) or a ranking (a ranking needs a non-unique index), and an [index-only type](index-only.md) cannot have one.
+- A document type with a contested index cannot set [`ttl`](ttl.md), nor `moderatorAbilities.delete` (see [Deletion](deletion.md)): a moderator's restore puts a document back by an ordinary insert, and a contested value is only awarded through a vote.
+- From protocol version 14, a document type with a contested index that sums a property ([`summable`, `averageable`, `documentsSummable` or `documentsAverageable`](aggregates.md)) declares that property with a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27, `max_contested_summed_value_magnitude`). The end of a contest adds the winner's value to the type's sums, after any number of other documents were written, and a sum that left the signed 64-bit range there could not be stored. Values this small keep the sums in range short of 2^36 documents. Checked when a contract is registered or updated, so contracts registered earlier keep their bounds.
 
 ## See also
 

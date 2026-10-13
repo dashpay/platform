@@ -32,8 +32,8 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "note",
-            "propertyAgreement": {
-              "authorId": "$id"
+            "where": {
+              "$id": "authorId"
             }
           }
         },

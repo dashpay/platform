@@ -28,7 +28,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DocumentReferenceErrorCodeWasm {
     /// The referenced identity, contract, token or document (permanent or
-    /// deletable) does not exist, or a `listElement` value is not an element
+    /// deletable) does not exist, or a value with `inList` is not an element
     /// of the list it must be in (or was set while the property finding the
     /// list's document was not).
     ReferencedEntityNotFound = 40120,
@@ -64,24 +64,77 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// meet what the reference's `keyRequirements` require of it: its
     /// purpose, or a binding to a document type of the declaring contract.
     ReferencedIdentityKeyRequirementNotMet = 40136,
-    /// A `refersTo` lookup into a document type of another contract cannot
-    /// resolve there, reported at contract registration: the named index is
-    /// missing or not unique, the keys do not cover it exactly, or a source
-    /// holds a different kind of value than its index property. (A lookup into
-    /// the declaring contract is refused by the contract parse instead.)
+    /// A `refersTo` `findBy` into a document type of another contract cannot
+    /// resolve there, reported at contract registration: no unique index is
+    /// over exactly the properties it names, or a source holds a different
+    /// kind of value than the property it fills. (A `findBy` into the
+    /// declaring contract is refused by the contract parse instead.)
     ReferencedDocumentLookupInvalid = 40137,
-    /// A `refersTo: listElement` whose list lives in a document type of
+    /// A `refersTo` with `inList` whose list lives in a document type of
     /// another contract cannot be served by it, reported at contract
     /// registration: that type's documents can be deleted, the list is not a
     /// stored typed array of identifiers of it, or a replace could change the
     /// list. (A list in the declaring contract is refused by the contract parse
     /// instead.)
     ReferencedDocumentListInvalid = 40138,
+    /// The document a `refersTo` `findBy` function found, the commitment the
+    /// create reveals, exists but does not meet the reference's
+    /// `minimumAgeBlocks`: it was created too recently, in the same block
+    /// with a minimum of 1. Retry in a later block.
+    ReferencedDocumentRequirementNotMet = 40142,
+    /// The referenced document type's documents can leave state otherwise
+    /// than through a moderator's recorded removal. Only types declaring
+    /// `canBeDeleted: false`, no `ttl`, and `moderatorAbilities.delete`
+    /// keeping removal records may be the target of a `moderatedDocument`
+    /// reference.
+    ReferencedDocumentTypeNotModerated = 40143,
+    /// The referenced document type's documents leave state only through a
+    /// moderator's recorded removal: a `moderatedDocument` reference is the
+    /// one for it, not a `deletableDocument` one.
+    ReferencedDocumentTypeModerated = 40144,
+    /// A replace kept a `moderatedDocument` reference whose document the
+    /// contract's moderators removed, and had to check a `where` entry
+    /// against a property its removal record does not keep (a record keeps
+    /// the document's id, its owner and the fields its type lists under
+    /// `moderatorAbilities.deleteKeepsFields`). Point the reference at a
+    /// document in state, or leave the properties `where` reads unchanged
+    /// until the document is restored.
+    ReferencedDocumentRemoved = 40145,
+    /// A reference that finds its document by the document's id (a
+    /// `permanentDocument`, `deletableDocument` or `moderatedDocument`
+    /// reference without `findBy`, or one with `inList`, whose list's
+    /// document is read by its id) names an `indexOnly` document type,
+    /// reported at contract registration. Such a type's documents exist only
+    /// as index entries and cannot be fetched by id, so no write could check
+    /// the reference.
+    ReferencedDocumentTypeIndexOnly = 40146,
+    /// A `propertyConstraints` rule reads, through a reference into a document
+    /// type of another contract (`{ "referenced": [reference, field] }`), a
+    /// field that type can not give it, reported at contract registration: one
+    /// it does not have, a transient one, one of another kind than the rule
+    /// reads, a time or height or a `$creatorId` it does not record, a constant
+    /// its `enum` does not list, or, through a `moderatedDocument` reference, a
+    /// field its removal record does not keep. (A rule reading a type of the
+    /// declaring contract is refused by the contract parse instead.)
+    ReferencedDocumentRuleReadInvalid = 40148,
+    /// The commitment a create's `refersTo` found, its writer's own, is
+    /// preceded by another identity's: a commitment to the same values (the
+    /// same value at the property the reference's `chooseFirst` groups by)
+    /// ordered before it by the `chooseFirst`'s `by`, not expired, and valid,
+    /// made by an identity that knew the values and not copied. The first
+    /// valid commitment in that order wins (the earliest block's, ordered by
+    /// `$createdAtBlockHeight` ascending).
+    ReferencedDocumentPreceded = 40149,
+    /// A create cannot reveal the preimage of a `refersTo` `findBy`
+    /// function: a value a param reads is absent, or a variable-length
+    /// value holds the one-byte separator that follows it in the preimage.
+    DocumentReferencePreimageInvalid = 10423,
 }
 
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
-    /// is not in the 40120-40125 range, 40131 or 40135-40138.
+    /// is not in the 40120-40125 range, 40131, 40135-40138, 40142-40146,
+    /// 40148, 40149 or 10423.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -95,13 +148,21 @@ impl DocumentReferenceErrorCodeWasm {
             40136 => Some(Self::ReferencedIdentityKeyRequirementNotMet),
             40137 => Some(Self::ReferencedDocumentLookupInvalid),
             40138 => Some(Self::ReferencedDocumentListInvalid),
+            40142 => Some(Self::ReferencedDocumentRequirementNotMet),
+            40143 => Some(Self::ReferencedDocumentTypeNotModerated),
+            40144 => Some(Self::ReferencedDocumentTypeModerated),
+            40145 => Some(Self::ReferencedDocumentRemoved),
+            40146 => Some(Self::ReferencedDocumentTypeIndexOnly),
+            40148 => Some(Self::ReferencedDocumentRuleReadInvalid),
+            40149 => Some(Self::ReferencedDocumentPreceded),
+            10423 => Some(Self::DocumentReferencePreimageInvalid),
             _ => None,
         }
     }
 }
 
 /// Consensus error codes emitted by the immutable-property check on document
-/// replaces (`immutable` / `immutableAllowSetting`, protocol version 14+).
+/// replaces (`immutable`, protocol version 14+).
 ///
 /// Branch on an error's `code` against this instead of matching its message:
 ///
@@ -118,8 +179,8 @@ impl DocumentReferenceErrorCodeWasm {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DocumentImmutabilityErrorCodeWasm {
     /// The replace changed, added or removed a property the document type
-    /// lists under `immutable`, and the change was not the one first-time
-    /// set `immutableAllowSetting` permits.
+    /// lists under `immutable`: by name, or with a condition that held for
+    /// the replace.
     DocumentImmutablePropertyChanged = 40128,
 }
 
@@ -335,7 +396,9 @@ impl ConsensusErrorWasm {
     }
 
     /// The reference-validation error this is, or `undefined` when it is
-    /// not one of codes 40120-40125, 40131, 40135 and 40136.
+    /// not one of codes 40120-40125, 40131, 40135-40138, 40142-40146, 40148,
+    /// 40149
+    /// and 10423.
     #[wasm_bindgen(getter = "documentReferenceErrorCode")]
     pub fn document_reference_error_code(&self) -> Option<DocumentReferenceErrorCodeWasm> {
         DocumentReferenceErrorCodeWasm::from_code(self.0.code())
@@ -383,16 +446,31 @@ impl ConsensusErrorWasm {
     }
 }
 
+impl From<ConsensusError> for ConsensusErrorWasm {
+    fn from(error: ConsensusError) -> Self {
+        ConsensusErrorWasm(error)
+    }
+}
+
 impl_wasm_type_info!(ConsensusErrorWasm, ConsensusError);
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::basic::document::DocumentReferencePreimageInvalidError;
     use dpp::consensus::state::document::referenced_contract_requirement_not_met_error::ReferencedContractRequirementNotMetError;
     use dpp::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
     use dpp::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
+    use dpp::consensus::state::document::referenced_document_preceded_error::ReferencedDocumentPrecededError;
+    use dpp::consensus::state::document::referenced_document_removed_error::ReferencedDocumentRemovedError;
+    use dpp::consensus::state::document::referenced_document_requirement_not_met_error::ReferencedDocumentRequirementNotMetError;
+    use dpp::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
     use dpp::consensus::state::document::referenced_document_type_deletable_error::ReferencedDocumentTypeDeletableError;
+    use dpp::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
+    use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
     use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
+    use dpp::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
     use dpp::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
     use dpp::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
     use dpp::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
@@ -708,6 +786,94 @@ mod tests {
                 )
                 .into(),
                 DocumentReferenceErrorCodeWasm::ReferencedKeyIdPropertyInvalid,
+            ),
+            (
+                StateError::ReferencedDocumentRequirementNotMetError(
+                    ReferencedDocumentRequirementNotMetError::new(
+                        id(),
+                        "minimumAgeBlocks".to_string(),
+                        "1".to_string(),
+                        "preorderSalt".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentRequirementNotMet,
+            ),
+            (
+                StateError::ReferencedDocumentTypeNotModeratedError(
+                    ReferencedDocumentTypeNotModeratedError::new(
+                        id(),
+                        "post".to_string(),
+                        "replyTo".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentTypeNotModerated,
+            ),
+            (
+                StateError::ReferencedDocumentTypeModeratedError(
+                    ReferencedDocumentTypeModeratedError::new(
+                        id(),
+                        "post".to_string(),
+                        "replyTo".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentTypeModerated,
+            ),
+            (
+                StateError::ReferencedDocumentRemovedError(ReferencedDocumentRemovedError::new(
+                    id(),
+                    "replyTo".to_string(),
+                    "threadId".to_string(),
+                ))
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentRemoved,
+            ),
+            (
+                StateError::ReferencedDocumentTypeIndexOnlyError(
+                    ReferencedDocumentTypeIndexOnlyError::new(
+                        id(),
+                        "like".to_string(),
+                        "likeId".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentTypeIndexOnly,
+            ),
+            (
+                StateError::ReferencedDocumentRuleReadInvalidError(
+                    ReferencedDocumentRuleReadInvalidError::new(
+                        "vote".to_string(),
+                        "castBeforeTheEnd".to_string(),
+                        "pollId".to_string(),
+                        "endsAt is a string".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentRuleReadInvalid,
+            ),
+            (
+                StateError::ReferencedDocumentPrecededError(ReferencedDocumentPrecededError::new(
+                    id(),
+                    Identifier::from([2u8; 32]),
+                    "nameHash".to_string(),
+                    "$creatorId".to_string(),
+                ))
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentPreceded,
+            ),
+            (
+                BasicError::DocumentReferencePreimageInvalidError(
+                    DocumentReferencePreimageInvalidError::new(
+                        "domain".to_string(),
+                        "preorderSalt".to_string(),
+                        "parentDomainName".to_string(),
+                        "the value is absent".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::DocumentReferencePreimageInvalid,
             ),
         ]
     }

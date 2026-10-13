@@ -39,8 +39,9 @@ pub const INITIAL_REVISION: u64 = 1;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::document_methods::{
-    DocumentGetRawForContractV0, DocumentGetRawForDocumentTypeV0, DocumentHashV0Method,
-    DocumentIsEqualIgnoringTimestampsV0, DocumentMethodsV0,
+    DocumentGetRawArrayElementsForDocumentTypeV0, DocumentGetRawForContractV0,
+    DocumentGetRawForDocumentTypeV0, DocumentHashV0Method, DocumentIsEqualIgnoringTimestampsV0,
+    DocumentMethodsV0,
 };
 use crate::document::errors::DocumentError;
 use crate::version::PlatformVersion;
@@ -140,6 +141,41 @@ impl DocumentMethodsV0 for Document {
                         known_versions: vec![0],
                         received: version,
                     }),
+                }
+            }
+        }
+    }
+
+    fn get_raw_array_elements_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<u8>>, ProtocolError> {
+        match self {
+            Document::V0(document_v0) => {
+                match platform_version
+                    .dpp
+                    .document_versions
+                    .document_method_versions
+                    .get_raw_array_elements_for_document_type
+                {
+                    Some(0) => document_v0.get_raw_array_elements_for_document_type_v0(
+                        key_path,
+                        document_type,
+                        platform_version,
+                    ),
+                    Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+                        method: "DocumentMethodV0::get_raw_array_elements_for_document_type"
+                            .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    }),
+                    None => Err(ProtocolError::UnknownVersionError(
+                        "DocumentMethodV0::get_raw_array_elements_for_document_type is not \
+                         active before protocol version 14"
+                            .to_string(),
+                    )),
                 }
             }
         }
@@ -363,6 +399,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let s = format!("{}", doc);
@@ -391,6 +429,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: Some(42),
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let s = format!("{}", doc);
@@ -430,6 +470,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: Some(creator),
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let s = format!("{}", doc);
@@ -458,6 +500,8 @@ mod tests {
             updated_at_core_block_height: Some(60),
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let s = format!("{}", doc);
@@ -489,6 +533,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         doc.increment_revision()
@@ -514,6 +560,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let result = doc.increment_revision();
@@ -643,6 +691,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
         let err = doc.increment_revision().expect_err("MAX + 1 must overflow");
         match err {
@@ -673,6 +723,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         };
         let document: Document = v0.clone().into();
         match document {
@@ -703,6 +755,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
         let s = format!("{}", doc);
         assert!(
@@ -770,6 +824,8 @@ mod json_convertible_tests {
             updated_at_core_block_height: Some(51),
             transferred_at_core_block_height: None,
             creator_id: Some(Identifier::new([0xc3; 32])),
+            moderated_at: None,
+            moderated_by: None,
         })
     }
 
@@ -835,5 +891,29 @@ mod json_convertible_tests {
         );
         let recovered = Document::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn should_carry_the_moderation_stamp_through_json_and_value() {
+        let mut original = fixture();
+        original.set_moderated_at(Some(1_700_000_002_000));
+        original.set_moderated_by(Some(Identifier::new([0xd4; 32])));
+
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json["$moderatedAt"], json!(1_700_000_002_000u64));
+        assert_eq!(json["$moderatedBy"], json!(Identifier::new([0xd4; 32])));
+        assert_eq!(Document::from_json(json).expect("from_json"), original);
+
+        let value = original.to_object().expect("to_object");
+        let map = value.to_btree_ref_string_map().expect("a map");
+        assert_eq!(
+            map.get("$moderatedAt"),
+            Some(&&platform_value::Value::U64(1_700_000_002_000))
+        );
+        assert_eq!(
+            map.get("$moderatedBy"),
+            Some(&&platform_value::Value::Identifier([0xd4; 32]))
+        );
+        assert_eq!(Document::from_object(value).expect("from_object"), original);
     }
 }

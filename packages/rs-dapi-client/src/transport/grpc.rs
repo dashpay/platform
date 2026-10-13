@@ -32,12 +32,17 @@ impl TransportClient for PlatformGrpcClient {
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
     ) -> Result<Self, TransportError> {
-        Ok(pool
-            .get_or_create(
-                PoolPrefix::Platform,
-                &uri,
-                Some(settings),
-                || match create_channel(uri.clone(), Some(settings)) {
+        Self::with_uri_and_settings_and_generation(uri, settings, pool).map(|(client, _)| client)
+    }
+
+    fn with_uri_and_settings_and_generation(
+        uri: Uri,
+        settings: &AppliedRequestSettings,
+        pool: &ConnectionPool,
+    ) -> Result<(Self, u64), TransportError> {
+        let (item, generation) =
+            pool.get_or_create_with_generation(PoolPrefix::Platform, &uri, Some(settings), || {
+                match create_channel(uri.clone(), Some(settings)) {
                     Ok(channel) => {
                         let mut client = Self::new(channel);
                         if let Some(max_size) = settings.max_decoding_message_size {
@@ -49,9 +54,9 @@ impl TransportClient for PlatformGrpcClient {
                         "Channel creation failed: {}",
                         e
                     ))),
-                },
-            )?
-            .into())
+                }
+            })?;
+        Ok((item.into(), generation))
     }
 }
 
@@ -75,12 +80,17 @@ impl TransportClient for CoreGrpcClient {
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
     ) -> Result<Self, TransportError> {
-        Ok(pool
-            .get_or_create(
-                PoolPrefix::Core,
-                &uri,
-                Some(settings),
-                || match create_channel(uri.clone(), Some(settings)) {
+        Self::with_uri_and_settings_and_generation(uri, settings, pool).map(|(client, _)| client)
+    }
+
+    fn with_uri_and_settings_and_generation(
+        uri: Uri,
+        settings: &AppliedRequestSettings,
+        pool: &ConnectionPool,
+    ) -> Result<(Self, u64), TransportError> {
+        let (item, generation) =
+            pool.get_or_create_with_generation(PoolPrefix::Core, &uri, Some(settings), || {
+                match create_channel(uri.clone(), Some(settings)) {
                     Ok(channel) => {
                         let mut client = Self::new(channel);
                         if let Some(max_size) = settings.max_decoding_message_size {
@@ -92,17 +102,37 @@ impl TransportClient for CoreGrpcClient {
                         "Channel creation failed: {}",
                         e
                     ))),
-                },
-            )?
-            .into())
+                }
+            })?;
+        Ok((item.into(), generation))
     }
 }
+
+/// Text a node released before request errors were answered with INVALID_ARGUMENT puts in an
+/// UNKNOWN or INTERNAL status when the request itself is wrong. Every node refuses such a
+/// request the same way, so sending it to the next node only gets that one banned too.
+const OLDER_NODE_REQUEST_REFUSALS: [&str; 3] = [
+    // A Drive query syntax error the handler returned as an error: INTERNAL.
+    "storage: query: ",
+    // A Drive query syntax error the handler reported: UNKNOWN.
+    "drive error: query: ",
+    // GroveDB declining to prove a query that asks for nothing, such as a limit of 0.
+    "proved path queries can not be for limit 0",
+];
 
 impl CanRetry for dapi_grpc::tonic::Status {
     fn can_retry(&self) -> bool {
         let code = self.code();
 
         use dapi_grpc::tonic::Code::*;
+
+        if matches!(code, Unknown | Internal)
+            && OLDER_NODE_REQUEST_REFUSALS
+                .iter()
+                .any(|refusal| self.message().contains(refusal))
+        {
+            return false;
+        }
 
         matches!(
             code,
@@ -214,7 +244,14 @@ impl CanRetry for dapi_grpc::tonic::Status {
 /// - Implement the `method_name` function to return the name of the method as a string.
 /// - Implement the `execute_transport` function to execute the transport request using the provided client and settings.
 macro_rules! impl_transport_request_grpc {
+    // `names_nothing: |request| ...;` gives the request's `TransportRequest::names_nothing`.
+    (names_nothing: $names_nothing:expr; $request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
+        impl_transport_request_grpc!(@impl $names_nothing; $request, $response, $client, $settings, $($method)+);
+    };
     ($request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
+        impl_transport_request_grpc!(@impl |_| None; $request, $response, $client, $settings, $($method)+);
+    };
+    (@impl $names_nothing:expr; $request:ty, $response:ty, $client:ty, $settings:expr, $($method:tt)+) => {
         impl TransportRequest for $request {
             type Client = $client;
 
@@ -224,6 +261,11 @@ macro_rules! impl_transport_request_grpc {
 
             fn method_name(&self) -> &'static str {
                 stringify!($($method)+)
+            }
+
+            fn names_nothing(&self) -> Option<&'static str> {
+                let names_nothing: fn(&$request) -> Option<&'static str> = $names_nothing;
+                names_nothing(self)
             }
 
             fn execute_transport<'c>(
@@ -251,6 +293,14 @@ macro_rules! impl_transport_request_grpc {
 // Link to each platform gRPC request what client and method to use:
 
 const STREAMING_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+
+/// Attempt timeout for unary requests whose responses run to megabytes.
+///
+/// The timeout bounds the whole attempt including the response body (see
+/// `RequestSettings::timeout`), so the 10 s default would fail these responses
+/// on a slow link every time and ban the node that was sending them. Dead
+/// connections are still caught early by the channel's HTTP/2 keepalive.
+const LARGE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 impl_transport_request_grpc!(
     platform_proto::GetIdentityRequest,
@@ -328,6 +378,33 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_contract_document_removals
+);
+
+// rpc getContractTeamActions(GetContractTeamActionsRequest) returns (GetContractTeamActionsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractTeamActionsRequest,
+    platform_proto::GetContractTeamActionsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_team_actions
+);
+
+// rpc getContractTeamActionSigners(GetContractTeamActionSignersRequest) returns (GetContractTeamActionSignersResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractTeamActionSignersRequest,
+    platform_proto::GetContractTeamActionSignersResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_team_action_signers
+);
+
+// rpc getContractModerationActionCounts(GetContractModerationActionCountsRequest) returns (GetContractModerationActionCountsResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetContractModerationActionCountsRequest,
+    platform_proto::GetContractModerationActionCountsResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_contract_moderation_action_counts
 );
 
 // rpc getContractFeePots(GetContractFeePotsRequest) returns (GetContractFeePotsResponse);
@@ -420,6 +497,12 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_identities_balances_request::Version::V0(v0)) if v0.prove && v0.ids.is_empty() => Some(
+            "ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetIdentitiesBalancesRequest,
     platform_proto::GetIdentitiesBalancesResponse,
     PlatformGrpcClient,
@@ -460,6 +543,18 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_identities_contract_keys_request::Version::V0(v0)) if v0.prove => {
+            if v0.identities_ids.is_empty() {
+                Some("identities_ids must contain at least one identifier when requesting a proof")
+            } else if v0.purposes.is_empty() {
+                Some("purposes must contain at least one purpose when requesting a proof")
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
     platform_proto::GetIdentitiesContractKeysRequest,
     platform_proto::GetIdentitiesContractKeysResponse,
     PlatformGrpcClient,
@@ -508,6 +603,12 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_data_contracts_request::Version::V0(v0)) if v0.prove && v0.ids.is_empty() => Some(
+            "ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetDataContractsRequest,
     platform_proto::GetDataContractsResponse,
     PlatformGrpcClient,
@@ -560,6 +661,12 @@ impl_transport_request_grpc!(
 
 // rpc GetEvonodesProposedEpochBlocksByIdsRequest(GetEvonodesProposedEpochBlocksByIdsRequest) returns (GetEvonodesProposedEpochBlocksResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_evonodes_proposed_epoch_blocks_by_ids_request::Version::V0(v0)) if v0.prove && v0.ids.is_empty() => Some(
+            "ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetEvonodesProposedEpochBlocksByIdsRequest,
     platform_proto::GetEvonodesProposedEpochBlocksResponse,
     PlatformGrpcClient,
@@ -617,7 +724,12 @@ impl_transport_request_grpc!(
     platform_proto::GetShieldedEncryptedNotesRequest,
     platform_proto::GetShieldedEncryptedNotesResponse,
     PlatformGrpcClient,
-    RequestSettings::default(),
+    RequestSettings {
+        // A full chunk carries thousands of encrypted notes (megabytes), and
+        // the notes sync fetches several chunks in parallel over one link.
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
+        ..RequestSettings::default()
+    },
     get_shielded_encrypted_notes
 );
 
@@ -745,6 +857,12 @@ impl_transport_request_grpc!(
 
 // rpc getIdentityTokenBalances(GetIdentityTokenBalancesRequest) returns (GetIdentityTokenBalancesResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_identity_token_balances_request::Version::V0(v0)) if v0.prove && v0.token_ids.is_empty() => Some(
+            "token_ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetIdentityTokenBalancesRequest,
     platform_proto::GetIdentityTokenBalancesResponse,
     PlatformGrpcClient,
@@ -754,6 +872,12 @@ impl_transport_request_grpc!(
 
 // rpc getIdentitiesTokenBalances(GetIdentitiesTokenBalancesRequest) returns (GetIdentitiesTokenBalancesResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_identities_token_balances_request::Version::V0(v0)) if v0.prove && v0.identity_ids.is_empty() => Some(
+            "identity_ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetIdentitiesTokenBalancesRequest,
     platform_proto::GetIdentitiesTokenBalancesResponse,
     PlatformGrpcClient,
@@ -763,6 +887,12 @@ impl_transport_request_grpc!(
 
 // rpc getIdentityTokenInfos(GetIdentityTokenInfosRequest) returns (GetIdentityTokenInfosResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_identity_token_infos_request::Version::V0(v0)) if v0.prove && v0.token_ids.is_empty() => Some(
+            "token_ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetIdentityTokenInfosRequest,
     platform_proto::GetIdentityTokenInfosResponse,
     PlatformGrpcClient,
@@ -772,6 +902,12 @@ impl_transport_request_grpc!(
 
 // rpc getIdentitiesTokenInfos(GetIdentitiesTokenInfosRequest) returns (GetIdentitiesTokenInfosResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_identities_token_infos_request::Version::V0(v0)) if v0.prove && v0.identity_ids.is_empty() => Some(
+            "identity_ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetIdentitiesTokenInfosRequest,
     platform_proto::GetIdentitiesTokenInfosResponse,
     PlatformGrpcClient,
@@ -781,6 +917,12 @@ impl_transport_request_grpc!(
 
 // rpc getTokenStatuses(GetTokenStatusesRequest) returns (GetTokenStatusesResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_token_statuses_request::Version::V0(v0)) if v0.prove && v0.token_ids.is_empty() => Some(
+            "token_ids must contain at least one identifier when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetTokenStatusesRequest,
     platform_proto::GetTokenStatusesResponse,
     PlatformGrpcClient,
@@ -880,6 +1022,12 @@ impl_transport_request_grpc!(
 
 // rpc getAddressesInfos(GetAddressesInfosRequest) returns (GetAddressesInfosResponse);
 impl_transport_request_grpc!(
+    names_nothing: |request| match &request.version {
+        Some(platform_proto::get_addresses_infos_request::Version::V0(v0)) if v0.prove && v0.addresses.is_empty() => Some(
+            "addresses must contain at least one address when requesting a proof",
+        ),
+        _ => None,
+    };
     platform_proto::GetAddressesInfosRequest,
     platform_proto::GetAddressesInfosResponse,
     PlatformGrpcClient,
@@ -923,6 +1071,7 @@ impl_transport_request_grpc!(
         // GetRecentCompactedAddressBalanceChangesResponse can have 100 values * 2048 addresses * ~44  bytes each = ~9MB
         // We set it to 16MB to be safe
         max_decoding_message_size: Some(16 * 1024 * 1024),
+        timeout: Some(LARGE_RESPONSE_TIMEOUT),
         ..RequestSettings::default()
     },
     get_recent_compacted_address_balance_changes

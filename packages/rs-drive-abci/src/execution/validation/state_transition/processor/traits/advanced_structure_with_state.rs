@@ -138,10 +138,15 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
     /// possession fail never enters the mempool: the address witnesses do not sign those proofs,
     /// so their owners should not be charged for them. Admission is not consensus, so every
     /// protocol version gets this.
+    ///
+    /// A masternode vote is checked here for the same reason: a block refuses a vote with the
+    /// wrong voting key unpaid. Its state validation, which check_tx also runs, needs the action.
     fn requires_advanced_structure_validation_with_state_on_check_tx(&self) -> bool {
         matches!(
             self,
-            StateTransition::Batch(_) | StateTransition::IdentityCreateFromAddresses(_)
+            StateTransition::Batch(_)
+                | StateTransition::IdentityCreateFromAddresses(_)
+                | StateTransition::MasternodeVote(_)
         )
     }
 }
@@ -270,7 +275,7 @@ mod tests {
         use super::*;
 
         #[test]
-        fn should_return_true_only_for_batch_and_identity_create_from_addresses() {
+        fn should_return_true_only_for_batch_identity_create_from_addresses_and_masternode_vote() {
             let batch = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default()));
             assert!(batch.requires_advanced_structure_validation_with_state_on_check_tx());
             let identity_create_from_addresses = StateTransition::IdentityCreateFromAddresses(
@@ -280,6 +285,10 @@ mod tests {
             );
             assert!(identity_create_from_addresses
                 .requires_advanced_structure_validation_with_state_on_check_tx());
+            let masternode_vote = StateTransition::MasternodeVote(MasternodeVoteTransition::V0(
+                MasternodeVoteTransitionV0::default(),
+            ));
+            assert!(masternode_vote.requires_advanced_structure_validation_with_state_on_check_tx());
         }
 
         #[test]
@@ -289,12 +298,6 @@ mod tests {
                     "IdentityCreate",
                     StateTransition::IdentityCreate(IdentityCreateTransition::V0(
                         IdentityCreateTransitionV0::default(),
-                    )),
-                ),
-                (
-                    "MasternodeVote",
-                    StateTransition::MasternodeVote(MasternodeVoteTransition::V0(
-                        MasternodeVoteTransitionV0::default(),
                     )),
                 ),
                 ("DataContractCreate", make_data_contract_create_st()),

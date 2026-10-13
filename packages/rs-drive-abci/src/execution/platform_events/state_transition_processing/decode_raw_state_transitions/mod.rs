@@ -15,7 +15,10 @@ where
     /// Processes the given raw state transitions based on the `block_info` and `transaction`.
     ///
     /// Version 0 ignores bytes left over after a transition; version 1 (from protocol version
-    /// 14) refuses them as an invalid encoding.
+    /// 14) refuses them as an invalid encoding, and reports a transition whose version is outside
+    /// its active range as a coded consensus refusal rather than a decode failure. The boundary
+    /// that refusal names is the range's start when the version is below it and the range's end
+    /// when it is above.
     ///
     /// # Arguments
     ///

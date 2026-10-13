@@ -28,11 +28,11 @@
           "contentMediaType": "application/x.dash.dpp.identifier",
           "position": 1,
           "refersTo": {
-            "type": "listElement",
+            "type": "permanentDocument",
             "contractId": "9AJn2N8f1Sz9wNA9ShzGWBTwALcULn7QhGMBoesgg4zG",
             "documentType": "electedCharter",
-            "propertyAgreement": {
-              "electedCharterId": "$id"
+            "findBy": {
+              "$id": "electedCharterId"
             },
             "inList": "members"
           }

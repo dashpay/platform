@@ -3,18 +3,37 @@ pub mod v0;
 use std::collections::{BTreeMap, BTreeSet};
 
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
+use dpp::data_contract::document_type::DocumentPropertyReferenceTarget;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::query::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::ConsumedDocument;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::v0::DocumentReferenceValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
+
+/// A document a create consumes: the commitment a `refersTo` lookup with a computed key
+/// declaring `consume` found, with what a refusal naming the reference needs should the
+/// batch touch the same document elsewhere.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ConsumedLookupDocument {
+    /// The document the create deletes.
+    pub(crate) document: ConsumedDocument,
+    /// The value the reference was checked for: the writer, the creator, or the property's
+    /// value (one element's for a typed array).
+    pub(crate) referenced_id: Identifier,
+    /// The leaf declaring the lookup.
+    pub(crate) reference_target: DocumentPropertyReferenceTarget,
+    /// How the reference errors name the reference.
+    pub(crate) path: String,
+}
 
 pub(crate) trait DocumentReferenceValidation {
     /// Whether the top-level `property` of this document's type is a
@@ -48,7 +67,7 @@ pub(crate) trait DocumentReferenceValidation {
     ///
     /// When `changed_fields` is provided (replace transitions), only references on
     /// those fields are validated. A reference also counts as changed when a
-    /// property bound to it changed: a `propertyAgreement` referring property
+    /// property bound to it changed: a `where` referring value
     /// or an `identityPublicKey` key id property. A writer gate, an agreement
     /// keyed by `$ownerId`, is validated on every replace regardless, and so
     /// is a `contract` reference whose `contractRequirements` carry an
@@ -61,8 +80,8 @@ pub(crate) trait DocumentReferenceValidation {
     /// property changed, a writer gate or such an owner requirement applies
     /// or its target is deletable.
     ///
-    /// `owner_id` is the writer, the transition's owner: a `propertyAgreement`
-    /// whose referring side is `$ownerId` compares it, an `identityPublicKey`
+    /// `owner_id` is the writer, the transition's owner: a `where` entry whose
+    /// referring value is `$ownerId` compares it, an `identityPublicKey`
     /// reference on a key id property with `identityProperty: $ownerId` names
     /// its key, and the document type's `ownerRefersTo` declaration is checked
     /// with it as the value (under the replace rules of its target), since it
@@ -74,16 +93,41 @@ pub(crate) trait DocumentReferenceValidation {
     /// (registration then admits neither), or it was written before its type
     /// did: a `$creatorId` key id property a contract update added may then
     /// not be set, and an update cannot add a `creatorRefersTo`.
+    ///
+    /// A lookup with a computed key reveals a commitment and is judged on a create only
+    /// (`changed_fields` is `None`): the document it finds must meet the reference's
+    /// `minimumAgeBlocks`, and when the reference declares `consume` the document is pushed onto
+    /// `consumed_documents` for the caller to delete with the create once it accepts it. A
+    /// replace leaves it alone, since nothing it reads can have changed.
+    ///
+    /// When `derived_index_values` is given (a create, protocol version 14), an accepted write
+    /// records there the value of each derived index property of the document type, read from
+    /// the document its reference points at, which this validation fetched: Drive keys the
+    /// new document by them without reading those documents again. A value whose document it
+    /// did not fetch is left out, for Drive to read.
+    ///
+    /// `referring_system` holds the system values of the document being written (its owner,
+    /// times and heights, as a `propertyConstraints` rule judges it), which a `where` entry
+    /// bounded by a time or height reads. A reference the type's `propertyConstraints` rules
+    /// read through (`{ "referenced": [reference, field] }`) is checked on every replace, and
+    /// an accepted write records in `referenced_documents`, under the reference property, the
+    /// values those rules read of the document its check found (or of its removal record),
+    /// for the caller to judge the rules on without another read. A reference left out
+    /// records nothing.
     #[allow(clippy::too_many_arguments)]
     fn validate_document_references(
         &self,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
         creator_id: Option<Identifier>,
+        referring_system: &DocumentSystemValues,
         changed_fields: Option<&BTreeSet<String>>,
         stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
+        derived_index_values: Option<&mut BTreeMap<String, Value>>,
+        referenced_documents: &mut BTreeMap<String, Value>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -131,10 +175,14 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
         creator_id: Option<Identifier>,
+        referring_system: &DocumentSystemValues,
         changed_fields: Option<&BTreeSet<String>>,
         stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
+        consumed_documents: &mut Vec<ConsumedLookupDocument>,
+        derived_index_values: Option<&mut BTreeMap<String, Value>>,
+        referenced_documents: &mut BTreeMap<String, Value>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -150,10 +198,14 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
                 document_data,
                 owner_id,
                 creator_id,
+                referring_system,
                 changed_fields,
                 stored_values,
                 platform,
                 block_info,
+                consumed_documents,
+                derived_index_values,
+                referenced_documents,
                 transaction,
                 execution_context,
                 platform_version,

@@ -9,7 +9,7 @@
 | **Default** | Absent: no action costs tokens |
 | **Since** | protocol version 9. `gasFeesPaidBy` is accepted from 9 and acted on from 14; `optional` is 14 |
 | **On update** | Fixed: a cost may not be added, changed or removed on an existing document type (`DocumentTypeUpdateError`, 40212) |
-| **Errors** | On a document transition: `RequiredTokenPaymentInfoNotSetError` (40115), `IdentityHasNotAgreedToPayRequiredTokenAmountError` (40116), `IdentityTryingToPayWithWrongTokenError` (40117), `IdentityTokenAccountFrozenError` (40702), `IdentityDoesNotHaveEnoughTokenBalanceError` (40700), `GasFeesPaidByNotAllowedError` (40129), `InconsistentGasFeesPaidByInBatchError` (40130), `GasSponsorInsufficientBalanceError` (40222). At registration: `InvalidTokenPositionError` (10451), `RedundantDocumentPaidForByTokenWithContractId` (10275), `TokenPaymentByBurningOnlyAllowedOnInternalTokenError` (10261), `DataContractNotFoundError` (40008), `InvalidTokenPositionStateError` (40009) |
+| **Errors** | On a document transition: `RequiredTokenPaymentInfoNotSetError` (40115), `IdentityHasNotAgreedToPayRequiredTokenAmountError` (40116), `IdentityTryingToPayWithWrongTokenError` (40117), `IdentityTokenAccountFrozenError` (40702), `IdentityDoesNotHaveEnoughTokenBalanceError` (40700), `GasFeesPaidByNotAllowedError` (40129), `InconsistentGasFeesPaidByInBatchError` (40130), `GasSponsorInsufficientBalanceError` (40222). At registration: `InvalidTokenPositionError` (10451), `RedundantDocumentPaidForByTokenWithContractId` (10275), `TokenPaymentByBurningOnlyAllowedOnInternalTokenError` (10261), `NonTransferableTokenPaymentMustBurnError` (10280), `DataContractNotFoundError` (40008), `InvalidTokenPositionStateError` (40009), `TokenNotTransferableError` (40726) |
 
 The keys of each cost object:
 
@@ -74,6 +74,10 @@ When the transition is processed:
 3. A cost outside the signer's `minimumTokenCost` and `maximumTokenCost` is refused (`IdentityHasNotAgreedToPayRequiredTokenAmountError`, 40116).
 4. The signer's gas request must be one the cost offers, and the whole batch must name one payer (40129, 40130).
 5. Against state: a signer whose account for the token is frozen is refused (`IdentityTokenAccountFrozenError`, 40702), and so is one whose balance is below `amount` (`IdentityDoesNotHaveEnoughTokenBalanceError`, 40700).
+6. From protocol version 14, a transparent payment that transfers or burns tokens is then refused if the token is paused (`TokenIsPausedError`, 40711).
+7. From protocol version 14, for a transfer to a different identity, the contract owner's account for the token is checked next. A frozen recipient is refused (40702) only when the token issuer's `allowTransferToFrozenBalance` is `false`; its default is `true`. For another contract's token, the issuing contract's policy applies, and the recipient remains the document contract's owner.
+
+Every state read is charged, including on refusal. From protocol version 14, the issuer metadata and, for an external token, its contract are read only when the recipient is frozen. A transparent owner self-payment retains the payer freeze and balance checks and makes no transfer, so it performs neither the pause nor recipient checks. A [payment from the shielded pool](../data-model/token-shielded-pools.md#documents-paid-from-the-pool) retains its separate pool validation.
 
 The signer pays: the creator for a create, the owner for a replace, delete, transfer or price update, and the buyer for a purchase.
 
@@ -81,6 +85,8 @@ The signer pays: the creator for a create, the owner for a replace, delete, tran
 
 - `0`, the default, moves the tokens from the signer to the owner of the contract that holds the document type. When the contract owner performs the action themselves nothing moves, though their balance is still checked.
 - `1` burns the tokens from the signer's balance, lowering the token's supply. Only a token of the contract's own can be burned (`TokenPaymentByBurningOnlyAllowedOnInternalTokenError`, 10261, at registration).
+
+A [non-transferable token](../data-model/non-transferable-tokens.md) (protocol version 14) can only be burned: paying the contract owner would move it to another identity, so a cost in the contract's own non-transferable token must set `effect: 1` (`NonTransferableTokenPaymentMustBurnError`, 10280, at registration). Another contract's non-transferable token cannot be charged at all, since it cannot be burned (`TokenNotTransferableError`, 40726, at registration).
 
 ## Tokens of another contract: `contractId`
 
@@ -115,7 +121,8 @@ Together with `gasFeesPaidBy` this gives a "free usage" pattern: an app hands ou
 
 - The meta-schema checks the shape (`JsonSchemaError`, 10101): only the six action keys; `tokenPosition` and `amount` required in each cost; values in the ranges above; no other key. Before protocol version 14 it also refuses `optional`.
 - Without `contractId`, `tokenPosition` must be a token of this contract (`InvalidTokenPositionError`, 10451).
-- With `contractId`: not this contract's own id (10275), no burn (10261), and a contract that exists with a token at that position (40008, 40009).
+- With `contractId`: not this contract's own id (10275), no burn (10261), and a contract that exists with a token at that position (40008, 40009). From protocol version 14 that token must be transferable (40726).
+- Without `contractId`, from protocol version 14, a non-transferable token must be burned (10280).
 
 ## See also
 
