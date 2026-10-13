@@ -277,8 +277,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     v1 judges the fee against the sponsor's balance, refusing an insisting
 ///     batch unpaid when it falls short (`GasSponsorInsufficientBalanceError`,
 ///     40222) and handing a preferring one back to the signer; `execute_event`
-///     v1 charges whoever was admitted. The batch's signer only funds the
-///     principal, and its minimum balance pre-check v1
+///     v1 charges whoever was admitted. The batch's signer funds the principal
+///     and the processing fee its own `user_fee_increase` adds: the sponsor is
+///     judged on and charged the fee without the increase, the signer's balance
+///     and key budget have to cover the increase (refused unpaid with
+///     `IdentityInsufficientBalanceError`, 40210, when the balance does not),
+///     and execution charges it to the signer as a fee of its own. Its minimum
+///     balance pre-check v1
 ///     (`identity_minimum_balance_pre_check`) asks no more of a batch that
 ///     requests sponsorship. A failed batch is never sponsored, so check tx
 ///     validates the state of a sponsored batch whose signer is under the fee
