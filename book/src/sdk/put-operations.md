@@ -55,8 +55,11 @@ There are two methods:
 
 - **`put_to_platform`** broadcasts the transition and returns immediately. You get back
   the `StateTransition` that was broadcast but no confirmation that it was applied.
-- **`put_to_platform_and_wait_for_response`** broadcasts and then waits for the
-  platform to include the transition in a block, returning the confirmed `Document`.
+- **`put_to_platform_and_wait_for_response`** broadcasts and then waits for a
+  proof-backed result. Ordinary document types require `ExecutionProved` and return
+  the executed `Document`. For `indexOnly` types, it accepts `AffectedState` and
+  returns the document entry at the proof's block; this does not prove that the put
+  executed.
 
 ## The Nonce-Build-Broadcast-Wait Pipeline
 
