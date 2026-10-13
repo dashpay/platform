@@ -1403,6 +1403,15 @@ struct WalletEntry {
     /// The height at which a run last gave way to a forced request (see
     /// [`yield_to_forced`]).
     yielded_at: Option<u32>,
+    /// The tip of a sync that completed while the wallet's last reported
+    /// height was still well below it. Sync events and wallet events come
+    /// from separate tasks, so a completion can be handled before the height
+    /// step it follows: the catch-up step that then brings the wallet to that
+    /// tip is its arrival there, and runs the pass the completion could not.
+    /// Replaced by every later completion, so a wallet that really is
+    /// rescanning gets its pass when it reaches the latest tip, not a stale
+    /// one.
+    completed_ahead: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1625,7 +1634,21 @@ impl Actor {
                     let events = self.state.forget_wallet(&wallet_id, "rewound");
                     deliver(&self.sink, events);
                 }
-                let catch_up = is_catch_up_step(previous, height);
+                // A step up to the tip of a sync that already completed is
+                // the wallet arriving at the tip, however large the step: its
+                // completion was handled first. A rewind is a new scan, which
+                // the completion did not cover.
+                let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+                    return;
+                };
+                let arrived = !rewound
+                    && entry
+                        .completed_ahead
+                        .is_some_and(|tip| near_tip(height, tip));
+                if rewound || entry.completed_ahead.is_some_and(|tip| height >= tip) || arrived {
+                    entry.completed_ahead = None;
+                }
+                let catch_up = is_catch_up_step(previous, height) && !arrived;
                 if catch_up {
                     // The tip moved on, unfollowed: no lower wallet's steps
                     // may run the echo windows now.
@@ -1780,6 +1803,16 @@ impl Actor {
                 // without a step since launch reads its own height. While
                 // probing is off this does nothing (queue_followed_pass): the
                 // next completion, after the next block, covers it.
+                //
+                // A wallet below the tip may also be one whose height step
+                // has not been handled yet: remember the tip for it (see
+                // `WalletEntry::completed_ahead`).
+                for entry in self.wallets.values_mut() {
+                    let below = entry
+                        .height
+                        .is_some_and(|height| height < tip && !near_tip(height, tip));
+                    entry.completed_ahead = below.then_some(tip);
+                }
                 let at_tip: Vec<(WalletId, u32)> = self
                     .wallets
                     .iter()
@@ -4534,6 +4567,65 @@ mod tests {
             rig.settle().await; // the old timer fires
             assert_eq!(probe.calls(), calls, "the old retry does nothing");
         }
+    }
+
+    /// Sync events and wallet events come from separate tasks: a completion
+    /// can be handled before the height step it follows. The step that then
+    /// brings the wallet to that tip runs the pass the completion could not,
+    /// instead of waiting for the next block as a catch-up step does.
+    #[tokio::test]
+    async fn should_probe_at_the_tip_when_the_completion_overtook_the_height_step() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.height(wallet(), 100).await; // the first step after launch
+        assert_eq!(probe.probed().len(), 0);
+
+        // The wallet is at 150 already; the actor has not heard yet.
+        rig.source
+            .synced
+            .lock()
+            .expect("synced")
+            .insert(wallet(), 150);
+        rig.send(sync_complete(150)).await;
+        assert_eq!(
+            probe.probed().len(),
+            0,
+            "the actor still has the wallet at 100"
+        );
+
+        rig.height(wallet(), 150).await;
+
+        assert_eq!(probe.probed().len(), 1);
+        assert_eq!(
+            rig.actor.state.schedules[&(wallet(), txid(1))].window_start,
+            Some(150)
+        );
+    }
+
+    /// A completion a wallet is well below is remembered only until the
+    /// wallet reaches that tip: steps on the way stay catch-up, a later
+    /// completion replaces the tip, and a rewind forgets it.
+    #[tokio::test]
+    async fn should_keep_a_scan_below_a_completed_tip_as_catch_up() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.height(wallet(), 100).await;
+        rig.send(sync_complete(150)).await;
+
+        rig.height(wallet(), 120).await; // on the way
+        assert_eq!(probe.probed().len(), 0);
+        rig.send(sync_complete(200)).await; // the tip moved on
+        rig.height(wallet(), 150).await; // the old tip: still below
+        assert_eq!(probe.probed().len(), 0);
+        rig.height(wallet(), 110).await; // a rewind: a new scan
+        rig.height(wallet(), 200).await;
+        assert_eq!(
+            probe.probed().len(),
+            0,
+            "the completion did not cover the new scan"
+        );
     }
 
     /// The completion after a block whose pass already read the wallet adds
