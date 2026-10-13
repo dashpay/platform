@@ -278,12 +278,22 @@ impl FinalizeOptions {
     }
 }
 
+/// What a build would spend once its waiting coins are final: the outcome of
+/// [`trial_with_waiting_coins`].
+pub(crate) struct WaitingTrial {
+    /// The value of the not-yet-final coins the trial spends; never zero.
+    pub(crate) waiting: u64,
+    /// The unsigned transaction the trial built. Not for broadcast: it shows
+    /// what the build would produce (a drained amount, say).
+    pub(crate) transaction: Transaction,
+}
+
 /// Whether coins that are not final yet would fund a build that just fell
 /// short: key-wallet builds `make()` — a fresh copy of the build's
 /// configuration, made only when a waiting coin exists — funded like the
 /// build, with every not-yet-final coin of
-/// the funding accounts treated as final. Returns the value of the
-/// not-yet-final coins that trial spends, or `None` when it fails too
+/// the funding accounts treated as final. Returns that trial with the value of
+/// the not-yet-final coins it spends, or `None` when it fails too
 /// (confirmation would not help) or spends none of them; or the build's own
 /// refusal when the trial would meet it — what stands in the way then is not
 /// confirmation: a coin the configuration seeded that no funding account
@@ -316,7 +326,7 @@ pub(crate) fn trial_with_waiting_coins(
     seeds: &[Utxo],
     pinned: Option<&HashSet<OutPoint>>,
     height: u32,
-) -> Result<Option<u64>, PlatformWalletError> {
+) -> Result<Option<WaitingTrial>, PlatformWalletError> {
     let generation = Arc::clone(&info.generation);
     let accounts = &mut info.core_wallet.accounts;
     // One scan for the spendable coins that are not final, before anything
@@ -459,7 +469,10 @@ pub(crate) fn trial_with_waiting_coins(
         .iter()
         .filter_map(|input| waiting.get(&input.previous_output))
         .fold(0u64, |sum, value| sum.saturating_add(*value));
-    Ok((spent > 0).then_some(spent))
+    Ok((spent > 0).then_some(WaitingTrial {
+        waiting: spent,
+        transaction,
+    }))
 }
 
 /// A transaction that spends one outpoint twice is invalid (Core rejects
@@ -1388,7 +1401,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                         pinned.as_ref(),
                         height,
                     ) {
-                        Ok(waiting) => waiting,
+                        Ok(trial) => trial.map(|trial| trial.waiting),
                         Err(refused) => return refused,
                     };
                     match (too_many, waiting) {

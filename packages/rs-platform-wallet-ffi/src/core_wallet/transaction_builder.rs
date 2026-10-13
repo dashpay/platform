@@ -907,9 +907,6 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_selection_strategy(
     PlatformWalletFFIResult::ok()
 }
 
-/// Set the block height coin selection treats as the chain tip (used for
-/// coinbase maturity and locktime).
-///
 /// Accepted and ignored: the finalizers (the only way this builder is
 /// built) always build at the wallet's last processed height, so a height
 /// set here never reached a build.

@@ -1363,6 +1363,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                         )
                         .ok()
                         .flatten()
+                        .map(|trial| trial.waiting)
                     } else {
                         None
                     };

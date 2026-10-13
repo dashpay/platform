@@ -146,7 +146,10 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
         WalletManagerNative.coreTxBuilderSetSelectionStrategy(handle, strategy.ffiValue)
     }
 
-    /** Set the advisory chain-tip height (non-negative). */
+    /**
+     * Accepted and ignored: every build uses the wallet's last processed
+     * height, so [height] (non-negative) changes nothing about the build.
+     */
     internal fun setCurrentHeight(height: Int): CoreTransactionBuilder = apply {
         WalletManagerNative.coreTxBuilderSetCurrentHeight(handle, height)
     }

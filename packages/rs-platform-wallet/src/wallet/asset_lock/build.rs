@@ -318,11 +318,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     drain,
                 )
                 // A drain locks what it finds, so it builds over any waiting
-                // coin; it is waiting on the network only if those coins
-                // reach the floor. Their fee is not known here, so a balance
-                // within a fee of the floor can read as waiting and still
-                // land under the floor once final.
-                .filter(|waiting| !drain || *waiting > required);
+                // coin; it is waiting on the network only if the lock those
+                // coins complete reaches the floor. That is the trial's own
+                // credit output — every coin less the fee, the figure the
+                // floor check below judges a built drain by.
+                .filter(|trial| !drain || trial.locked >= required)
+                .map(|trial| trial.waiting);
                 let floor = required;
                 let too_many_inputs = matches!(
                     error,
@@ -1033,12 +1034,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // for `Exact` it equals the requested value; for `DrainAll` the
         // builder computed it (Σ inputs − fee) and this is the only place
         // it is known.
-        let locked_amount_duffs: u64 = match &tx.special_transaction_payload {
-            Some(
-                dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetLockPayloadType(p),
-            ) => p.credit_outputs.iter().map(|o| o.value).sum(),
-            _ => 0,
-        };
+        let locked_amount_duffs = locked_duffs(&tx);
 
         // Authoritative drain floor: judged on the BUILT payload, before the
         // lock is tracked or broadcast. An undersized drain (its consumers
@@ -1419,11 +1415,20 @@ fn map_builder_error(e: AssetLockError, requested: u64) -> PlatformWalletError {
     }
 }
 
+/// The asset lock a build would produce once its waiting coins are final.
+struct WaitingLock {
+    /// The value of the not-yet-final coins that lock spends.
+    waiting: u64,
+    /// What it locks: the credit outputs of its payload.
+    locked: u64,
+}
+
 /// Whether the coins that are not final yet would fund an asset lock that
-/// just failed with `error`: the value of those coins a trial of the same
-/// build spends, as for a plain send ([`trial_with_waiting_coins`]), so the
-/// same wallet reports the same thing for a payment and a top-up. `None` when
-/// the failure is not a shortfall, or waiting would not cure it.
+/// just failed with `error`: the lock a trial of the same build produces and
+/// the value of those coins it spends, as for a plain send
+/// ([`trial_with_waiting_coins`]), so the same wallet reports the same thing
+/// for a payment and a top-up. `None` when the failure is not a shortfall, or
+/// waiting would not cure it.
 ///
 /// The trial mirrors key-wallet's asset-lock configuration (fee rate, the
 /// payload with the one credit output, every coin for a drain) over the
@@ -1442,7 +1447,7 @@ fn waiting_coins_would_fund(
     source_index: u32,
     credit_output: TxOut,
     drain: bool,
-) -> Option<u64> {
+) -> Option<WaitingLock> {
     let AssetLockError::Builder(error) = error else {
         return None;
     };
@@ -1476,9 +1481,26 @@ fn waiting_coins_would_fund(
         })
     };
     let height = info.core_wallet.last_processed_height();
-    trial_with_waiting_coins(&make, wallet, info, &offered, &[], None, height)
+    let trial = trial_with_waiting_coins(&make, wallet, info, &offered, &[], None, height)
         .ok()
-        .flatten()
+        .flatten()?;
+    Some(WaitingLock {
+        waiting: trial.waiting,
+        locked: locked_duffs(&trial.transaction),
+    })
+}
+
+/// What an asset-lock transaction locks: the sum of its payload's credit
+/// outputs, zero for any other transaction.
+fn locked_duffs(transaction: &Transaction) -> u64 {
+    match &transaction.special_transaction_payload {
+        Some(TransactionPayload::AssetLockPayloadType(payload)) => payload
+            .credit_outputs
+            .iter()
+            .map(|output| output.value)
+            .sum(),
+        _ => 0,
+    }
 }
 
 #[cfg(test)]
@@ -2008,6 +2030,50 @@ mod tests {
         total
     }
 
+    /// Set which coins wait: a coin whose value `waits` accepts is neither
+    /// confirmed nor locked, every other coin is confirmed.
+    async fn make_coins_wait_if<B: TransactionBroadcaster>(
+        manager: &AssetLockManager<B>,
+        mut waits: impl FnMut(u64) -> bool,
+    ) {
+        let mut wm = manager.wallet_manager.write().await;
+        let (_, info) = wm
+            .get_wallet_mut_and_info_mut(&manager.wallet_id)
+            .expect("wallet");
+        for account in info.core_wallet.accounts.all_funding_accounts_mut() {
+            for utxo in account.utxos.values_mut() {
+                utxo.is_confirmed = !waits(utxo.value());
+                utxo.is_instantlocked = false;
+            }
+        }
+    }
+
+    /// An `AssetLockManager` over a BIP44 account holding one coin per value
+    /// in `outputs`.
+    async fn asset_lock_manager_with_outputs(
+        outputs: &[u64],
+    ) -> (Arc<AssetLockManager<CountingOkBroadcaster>>, WalletSigner) {
+        let (wallet_manager, wallet_id, _generation, signer) =
+            crate::test_support::funded_wallet_manager_with_outputs(
+                StandardAccountType::BIP44Account,
+                outputs,
+            )
+            .await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = Arc::new(AssetLockManager::new(
+            sdk,
+            wallet_manager,
+            wallet_id,
+            Arc::new(Notify::new()),
+            Arc::new(CountingOkBroadcaster::default()),
+            WalletPersister::new(
+                wallet_id,
+                Arc::new(CapturingPersistence::default()) as Arc<dyn PlatformWalletPersistence>,
+            ),
+        ));
+        (manager, signer)
+    }
+
     /// No source named funds from key-wallet's default pair, and so does the
     /// trial: waiting BIP44 coins are waiting on the network. Once they are
     /// final the same lock builds, so the trial left nothing reserved.
@@ -2056,36 +2122,8 @@ mod tests {
     /// on the network, and what it names as required is the floor.
     #[tokio::test]
     async fn should_name_the_floor_for_a_drain_over_final_dust_and_waiting_coins() {
-        let (wallet_manager, wallet_id, _generation, signer) =
-            crate::test_support::funded_wallet_manager_with_outputs(
-                StandardAccountType::BIP44Account,
-                &[300, 10_000_000],
-            )
-            .await;
-        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-        let manager = Arc::new(AssetLockManager::new(
-            sdk,
-            wallet_manager,
-            wallet_id,
-            Arc::new(Notify::new()),
-            Arc::new(CountingOkBroadcaster::default()),
-            WalletPersister::new(
-                wallet_id,
-                Arc::new(CapturingPersistence::default()) as Arc<dyn PlatformWalletPersistence>,
-            ),
-        ));
-        {
-            let mut wm = manager.wallet_manager.write().await;
-            let (_, info) = wm
-                .get_wallet_mut_and_info_mut(&manager.wallet_id)
-                .expect("wallet");
-            for account in info.core_wallet.accounts.all_funding_accounts_mut() {
-                for utxo in account.utxos.values_mut().filter(|u| u.value() > 300) {
-                    utxo.is_confirmed = false;
-                    utxo.is_instantlocked = false;
-                }
-            }
-        }
+        let (manager, signer) = asset_lock_manager_with_outputs(&[300, 10_000_000]).await;
+        make_coins_wait_if(&manager, |value| value > 300).await;
 
         let result = manager
             .build_asset_lock_transaction_with_funding(
@@ -2111,6 +2149,122 @@ mod tests {
                 })
             ),
             "got {result:?}"
+        );
+    }
+
+    /// A drain is judged by the lock it would build, not by its waiting coins
+    /// alone: 700 final duffs and 19,900 waiting ones clear a 20,000 floor
+    /// together, less the fee, though the waiting coins alone do not. A floor
+    /// that lock misses stays insufficient funds.
+    #[tokio::test]
+    async fn should_judge_a_drain_floor_by_the_whole_lock_the_waiting_coins_complete() {
+        let (manager, signer) = asset_lock_manager_with_outputs(&[700, 19_900]).await;
+        make_coins_wait_if(&manager, |value| value == 19_900).await;
+        let drain = |floor| {
+            manager.build_asset_lock_transaction_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: Some(floor),
+                },
+                &[AccountTypePreference::BIP44],
+                0,
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                &signer,
+            )
+        };
+
+        let waiting = drain(20_000).await;
+        assert!(
+            matches!(
+                waiting,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                    available: Some(700),
+                    waiting: 19_900,
+                    required: Some(20_000),
+                    outpoint: None,
+                })
+            ),
+            "got {waiting:?}"
+        );
+
+        // 20,600 less any fee is under this floor.
+        let short = drain(20_600).await;
+        assert!(
+            matches!(
+                short,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { .. })
+            ),
+            "got {short:?}"
+        );
+
+        make_coins_wait_if(&manager, |_| false).await;
+        let (transaction, ..) = drain(20_000).await.expect("final coins clear the floor");
+        assert!(super::locked_duffs(&transaction) >= 20_000);
+    }
+
+    /// An exact-amount lock that needs too many final inputs is waiting on
+    /// the network when a coin that is not final yet funds it with few: 600
+    /// final coins of 2,000 duffs need more than the input limit for
+    /// 1,100,900, and one waiting coin of 1,500,000 pays it once final. With
+    /// only another small coin waiting the limit still stands, and the
+    /// refusal stays the build's own.
+    ///
+    /// The amount is one no number of the small coins pays without change:
+    /// the builder's default selection prefers a change-free set, and for
+    /// 1,100,000 it takes 594 small coins over the one large coin even when
+    /// all are final, so waiting would not help there.
+    #[tokio::test]
+    async fn should_report_an_asset_lock_over_the_input_limit_as_waiting_on_a_larger_coin() {
+        let build = |manager: Arc<AssetLockManager<CountingOkBroadcaster>>,
+                     signer: WalletSigner| async move {
+            manager
+                .build_asset_lock_transaction_with_funding(
+                    super::AssetLockBuildAmount::Exact(1_100_900),
+                    &[AccountTypePreference::BIP44],
+                    0,
+                    AssetLockFundingType::AssetLockAddressTopUp,
+                    0,
+                    &signer,
+                )
+                .await
+        };
+
+        let mut outputs = vec![2_000u64; 600];
+        outputs.push(1_500_000);
+        let (manager, signer) = asset_lock_manager_with_outputs(&outputs).await;
+        make_coins_wait_if(&manager, |value| value == 1_500_000).await;
+        let waiting = build(Arc::clone(&manager), signer.clone()).await;
+        assert!(
+            matches!(
+                waiting,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                    available: None,
+                    waiting: 1_500_000,
+                    required: None,
+                    outpoint: None,
+                })
+            ),
+            "got {waiting:?}"
+        );
+        make_coins_wait_if(&manager, |_| false).await;
+        let (transaction, ..) = build(Arc::clone(&manager), signer)
+            .await
+            .expect("the large coin funds the lock once final");
+        assert_eq!(super::locked_duffs(&transaction), 1_100_900);
+        assert_eq!(transaction.input.len(), 1);
+
+        // The same final coins with one more small coin waiting.
+        let (manager, signer) = asset_lock_manager_with_outputs(&vec![2_000u64; 601]).await;
+        let mut first = true;
+        make_coins_wait_if(&manager, |_| std::mem::take(&mut first)).await;
+        let refused = build(manager, signer).await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::AssetLockTransaction(ref message))
+                    if message.contains("inputs")
+            ),
+            "got {refused:?}"
         );
     }
 

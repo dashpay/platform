@@ -929,10 +929,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_c
     })
 }
 
-/// `core_wallet_tx_builder_set_current_height` — set the chain-tip height
-/// coin selection treats as the tip (advisory; `set_funding` /
-/// `build_signed` override it with the wallet's last processed height).
-/// Rejects a negative value at the boundary.
+/// `core_wallet_tx_builder_set_current_height` — accepted and ignored:
+/// every build uses the wallet's last processed height. Rejects a negative
+/// value at the boundary.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_coreTxBuilderSetCurrentHeight(
     mut env: JNIEnv,

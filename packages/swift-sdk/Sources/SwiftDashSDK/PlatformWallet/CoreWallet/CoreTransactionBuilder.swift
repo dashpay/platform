@@ -323,6 +323,8 @@ public final class CoreTransactionBuilder {
         return self
     }
 
+    /// Accepted and ignored: every build uses the wallet's last processed
+    /// height, so `height` changes neither coinbase maturity nor locktime.
     @discardableResult
     public func setCurrentHeight(_ height: UInt32) throws -> CoreTransactionBuilder {
         try core_wallet_tx_builder_set_current_height(handle, height).check()
