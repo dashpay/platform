@@ -63,7 +63,9 @@
 //! first, then after twice and four times that again (at most
 //! [`MAX_NO_ANSWER_RETRIES`] per height). Probes never ban a DAPI address
 //! themselves. Each Uncertain report forces a probe of its chain's current
-//! root in the next pass (reports queued together share it); a pass under
+//! roots in the next pass (reports queued together share it), at most
+//! [`MAX_FORCED_ROOTS_PER_PASS`] of them, the wallet's own sends first; the
+//! others take their turn among the scheduled roots. A pass under
 //! way in a wallet whose own send it is gives way to it after its probe in
 //! flight — once per height; a later request waits behind it. A pass probes at most
 //! [`MAX_ROOTS_PER_PASS`] scheduled roots, those probed longest ago first —
@@ -143,13 +145,25 @@ pub(crate) const SLOW_INTERVAL: u32 = 10;
 pub(crate) const MAX_SLOW_PROBES: u32 = 55;
 
 /// Scheduled roots a pass probes at most; forced ones (an `Uncertain`
-/// report's, a no-answer retry's) come on top. A wallet's records are not
+/// report's, a no-answer retry's) come on top, at most
+/// [`MAX_FORCED_ROOTS_PER_PASS`] of them. A wallet's records are not
 /// all its own doing — a peer can feed it transactions that make many roots —
 /// so the work of one pass is bounded, and within it the roots probed
 /// longest ago (or never) go first: the rest stay due and come round at the
 /// next heights. The roots of sends reported `Uncertain` and not settled yet
 /// go first, but take at most half of the slots while other roots wait.
 pub(crate) const MAX_ROOTS_PER_PASS: usize = 8;
+
+/// Forced roots a pass probes at most. One report can force many: a send's
+/// chain reaches every unsettled ancestor, and a peer can feed the wallet
+/// incoming parents for it to spend, so the roots of a single reported send
+/// are not bounded by what the wallet did. The wallet's own sends go first,
+/// then those probed longest ago (or never). A forced root beyond the
+/// allowance is not forced any more: it takes its turn among the scheduled
+/// roots, where a reported send's roots go first, in this pass if it follows
+/// the tip and at the next heights. As many as a scheduled pass probes, so a
+/// retry can repeat every root of the pass no node answered.
+pub(crate) const MAX_FORCED_ROOTS_PER_PASS: usize = MAX_ROOTS_PER_PASS;
 
 /// How long after a probe that no node answered (all of DAPI unreachable —
 /// the network just coming back, its addresses still banned for at least a
@@ -731,7 +745,7 @@ pub(crate) struct PassStart {
 /// roots of every `forced` transaction's chain (dash-spv has just reported
 /// it `Uncertain`) are due regardless of their schedule — even if one went
 /// out at this height already: a repeat probe is cheaper than bookkeeping
-/// that tells the two apart.
+/// that tells the two apart — up to [`MAX_FORCED_ROOTS_PER_PASS`] of them.
 /// `anchor`: the tip height
 /// a height-driven pass knows the wallet follows — a root it takes starts
 /// its every-block window when its probe goes out (see [`mark_sent`]).
@@ -771,7 +785,10 @@ pub(crate) fn begin_pass(
     let roots = graph.roots();
     let forced_roots = graph.roots_of(forced.iter().copied());
 
-    // Forced roots first, then at most `MAX_ROOTS_PER_PASS` scheduled ones
+    // Forced roots first, at most `MAX_FORCED_ROOTS_PER_PASS`: own sends
+    // before the rest (a reported send that is its own root is what the
+    // report is about; its unsettled ancestors can be a peer's doing), then
+    // in turn. Then at most `MAX_ROOTS_PER_PASS` scheduled ones
     // in turn: those probed longest ago first, a never-probed one by the
     // height it was first seen at — a queue, so fresh roots (a peer can feed
     // them at will) wait behind older ones and cannot starve them. Reported
@@ -786,31 +803,46 @@ pub(crate) fn begin_pass(
         forced,
         retry: false,
     };
-    let mut due = VecDeque::new();
     type Turn = (u32, bool, Txid);
-    let mut first: Vec<(Turn, &OutgoingView)> = Vec::new();
-    let mut rest: Vec<(Turn, &OutgoingView)> = Vec::new();
+    let mut forced_queue: Vec<((bool, Turn), &OutgoingView)> = Vec::new();
+    let mut scheduled_queue: Vec<(Turn, bool, &OutgoingView)> = Vec::new();
     for view in &roots {
         let schedule = state.schedules.entry((wallet_id, view.txid)).or_default();
         if let Some(anchor) = anchor {
             schedule.seen_at.get_or_insert(anchor);
         }
+        // At the same height, one still waiting for its first probe goes
+        // before one probed there.
+        let turn = (
+            schedule.last_probe.or(schedule.seen_at).unwrap_or(0),
+            schedule.last_probe.is_some(),
+            view.txid,
+        );
         if forced_roots.contains(&view.txid) {
-            due.push_back(due_root(view, true));
-        } else if anchor.is_some() && schedule.is_due(height) {
-            // Without an anchor the pass is confined to forced roots.
-            // At the same height, one still waiting for its first probe goes
-            // before one probed there.
-            let turn = (
-                schedule.last_probe.or(schedule.seen_at).unwrap_or(0),
-                schedule.last_probe.is_some(),
-                view.txid,
-            );
-            if priority.contains(&view.txid) && !schedule.panicked {
-                first.push((turn, view));
-            } else {
-                rest.push((turn, view));
-            }
+            forced_queue.push(((!graph.is_own(&view.txid), turn), view));
+        }
+        // Without an anchor the pass is confined to forced roots.
+        if anchor.is_some() && schedule.is_due(height) {
+            let first = priority.contains(&view.txid) && !schedule.panicked;
+            scheduled_queue.push((turn, first, view));
+        }
+    }
+    let forced_due = take_in_turn(forced_queue, MAX_FORCED_ROOTS_PER_PASS);
+    let taken: HashSet<Txid> = forced_due.iter().map(|(_, view)| view.txid).collect();
+    let mut due: VecDeque<DueRoot> = forced_due
+        .into_iter()
+        .map(|(_, view)| due_root(view, true))
+        .collect();
+    let mut first: Vec<(Turn, &OutgoingView)> = Vec::new();
+    let mut rest: Vec<(Turn, &OutgoingView)> = Vec::new();
+    for (turn, goes_first, view) in scheduled_queue {
+        if taken.contains(&view.txid) {
+            continue;
+        }
+        if goes_first {
+            first.push((turn, view));
+        } else {
+            rest.push((turn, view));
         }
     }
     let first_slots = first
@@ -2153,8 +2185,10 @@ impl Actor {
                     return;
                 }
                 // A pass of exactly those roots, ahead of the per-pass cap and
-                // of nothing else: it takes no scheduled roots (they would
-                // fail too while no node answers) and starts no window.
+                // of nothing else, within the forced allowance
+                // (`MAX_FORCED_ROOTS_PER_PASS`): it takes no scheduled roots
+                // (they would fail too while no node answers) and starts no
+                // window.
                 let pending = entry.pending.get_or_insert_with(PendingPass::default);
                 pending.height = pending.height.max(height);
                 pending.retried.extend(roots);
@@ -2264,8 +2298,9 @@ impl Actor {
     /// then twice and four times that again (about 1, 3 and 7 minutes after
     /// the first probe), at most [`MAX_NO_ANSWER_RETRIES`] per height, while
     /// no block has come. A retry is a pass of exactly those roots (still
-    /// roots), ahead of the per-pass cap: it takes no scheduled roots and
-    /// starts no window. While DAPI
+    /// roots), ahead of the per-pass cap and within
+    /// [`MAX_FORCED_ROOTS_PER_PASS`] (the rest wait for the next block): it
+    /// takes no scheduled roots and starts no window. While DAPI
     /// stays down, an unanswered root is due once at every block (in its turn
     /// under [`MAX_ROOTS_PER_PASS`] when a backlog is larger) plus the
     /// retries, which go ahead of the cap, until the next block comes. One info line per such root and
@@ -4869,6 +4904,100 @@ mod tests {
 
         let since = &probe.probed()[before..];
         assert_eq!(since.first(), Some(&txid(200)), "{since:?}");
+    }
+
+    /// A send that spends twenty unsettled incoming parents, with those
+    /// parents: one report of it forces twenty roots.
+    fn send_over_many_parents(send_n: u8) -> Vec<OutgoingView> {
+        let parents = 10..30u8;
+        let spent: Vec<OutPoint> = parents.clone().map(|parent| outpoint(parent, 0)).collect();
+        let mut views: Vec<OutgoingView> = parents
+            .map(|parent| incoming(parent, &[outpoint(parent.wrapping_add(100), 0)]))
+            .collect();
+        views.push(send(send_n, &spent));
+        views
+    }
+
+    /// One reported send can force more roots than a pass may probe (a peer
+    /// can feed the parents it spends): the pass takes
+    /// `MAX_FORCED_ROOTS_PER_PASS` of them and no more, anchored or not, and
+    /// an anchored pass adds its scheduled slots on top.
+    #[test]
+    fn should_bound_the_roots_one_report_forces() {
+        let views = send_over_many_parents(200);
+        let forced: HashSet<Txid> = [txid(200)].into();
+
+        let mut state = ResolverState::default();
+        let unanchored = begin_pass(&mut state, wallet(), 100, &views, &forced, &forced, None);
+        assert_eq!(unanchored.due.len(), MAX_FORCED_ROOTS_PER_PASS);
+        assert!(unanchored.due.iter().all(|root| root.forced));
+
+        let mut state = ResolverState::default();
+        let anchored = begin_pass(
+            &mut state,
+            wallet(),
+            100,
+            &views,
+            &forced,
+            &forced,
+            Some(100),
+        );
+        let forced_roots = anchored.due.iter().filter(|root| root.forced).count();
+        assert_eq!(forced_roots, MAX_FORCED_ROOTS_PER_PASS);
+        assert_eq!(
+            anchored.due.len(),
+            MAX_FORCED_ROOTS_PER_PASS + MAX_ROOTS_PER_PASS
+        );
+        let distinct: HashSet<Txid> = anchored.due.iter().map(|root| root.txid).collect();
+        assert_eq!(distinct.len(), anchored.due.len(), "no root twice");
+    }
+
+    /// Among forced roots the wallet's own sends go first: a reported send
+    /// that is its own root is not left behind the peer-fed parents of
+    /// another reported send.
+    #[test]
+    fn should_put_own_sends_first_among_forced_roots() {
+        let mut views = send_over_many_parents(200);
+        views.push(send(201, &[outpoint(251, 0)]));
+        let forced: HashSet<Txid> = [txid(200), txid(201)].into();
+        let mut state = ResolverState::default();
+
+        let start = begin_pass(&mut state, wallet(), 100, &views, &forced, &forced, None);
+
+        assert_eq!(start.due.len(), MAX_FORCED_ROOTS_PER_PASS);
+        assert_eq!(start.due.front().map(|root| root.txid), Some(txid(201)));
+    }
+
+    /// A report whose send has more ancestor roots than a pass may force
+    /// costs a bounded pass, and a send reported after it is probed at once,
+    /// not behind the rest of those roots. Following the tip then brings
+    /// every one of them round within a few blocks.
+    #[tokio::test]
+    async fn should_probe_a_later_report_without_waiting_for_an_oversized_one() {
+        let probe = Arc::new(ScriptedProbe::new(&[]));
+        let mut rig = enabled(probe.clone()).await;
+        let mut views = send_over_many_parents(200);
+        views.push(send(201, &[outpoint(251, 0)]));
+        rig.views(wallet(), views);
+
+        rig.send(Command::Uncertain(txid(200))).await;
+        let oversized = probe.probed();
+        assert_eq!(oversized.len(), MAX_FORCED_ROOTS_PER_PASS, "{oversized:?}");
+
+        rig.send(Command::Uncertain(txid(201))).await;
+        assert_eq!(probe.probed()[oversized.len()..], [txid(201)]);
+
+        // The roots the forced pass reached were probed longer ago than the
+        // others were first seen, so they take the first followed pass; the
+        // twelve left over fill the next two.
+        rig.follow(wallet(), 100).await;
+        rig.height(wallet(), 102).await;
+        rig.height(wallet(), 103).await;
+        let probed: HashSet<Txid> = probe.probed().into_iter().collect();
+        let missed: Vec<u8> = (10..30)
+            .filter(|parent| !probed.contains(&txid(*parent)))
+            .collect();
+        assert!(missed.is_empty(), "left over and never probed: {missed:?}");
     }
 
     /// A forced root no node answered stays ahead of the cap at its retry,
