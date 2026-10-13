@@ -1031,13 +1031,16 @@ mod tests {
         );
     }
 
-    /// A probe never bans the address it reached, and asks one node per
-    /// request.
+    /// A probe never bans the address it reached, asks one node per request,
+    /// and gives each request its own deadline, inside the probe's backstop,
+    /// so the SDK's timeout (or its absence) does not decide it.
     #[test]
-    fn should_probe_without_banning_and_without_retries() {
+    fn should_probe_without_banning_without_retries_and_with_its_own_deadline() {
         let settings = single_node();
         assert_eq!(settings.ban_failed_address, Some(false));
         assert_eq!(settings.retries, Some(0));
+        assert_eq!(settings.timeout, Some(REQUEST_DEADLINE));
+        assert!(REQUEST_DEADLINE < REQUEST_BACKSTOP);
     }
 
     /// A failed lookup: gRPC `NOT_FOUND` is the node not knowing the txid,
