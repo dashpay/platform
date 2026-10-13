@@ -30,7 +30,9 @@ use key_wallet::wallet::Wallet;
 
 use crate::changeset::{AccountRegistrationEntry, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
-use crate::wallet::core::{resolved_funding_accounts, trial_with_waiting_coins, waiting_may_help};
+use crate::wallet::core::{
+    resolved_funding_accounts, trial_with_waiting_coins, waiting_may_help, WaitingTrial,
+};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::ASSET_LOCK_FUNDING_SOURCES;
 
@@ -320,9 +322,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // A drain locks what it finds, so it builds over any waiting
                 // coin; it is waiting on the network only if the lock those
                 // coins complete reaches the floor. That is the trial's own
-                // credit output — every coin less the fee, the figure the
-                // floor check below judges a built drain by.
-                .filter(|trial| !drain || trial.locked >= required)
+                // credit output — every coin less the fee, the figure
+                // `broadcast_funded_asset_lock_with_funding` judges a built
+                // drain's floor by.
+                .filter(|trial| !drain || locked_duffs(&trial.transaction) >= required)
                 .map(|trial| trial.waiting);
                 let floor = required;
                 let too_many_inputs = matches!(
@@ -1415,14 +1418,6 @@ fn map_builder_error(e: AssetLockError, requested: u64) -> PlatformWalletError {
     }
 }
 
-/// The asset lock a build would produce once its waiting coins are final.
-struct WaitingLock {
-    /// The value of the not-yet-final coins that lock spends.
-    waiting: u64,
-    /// What it locks: the credit outputs of its payload.
-    locked: u64,
-}
-
 /// Whether the coins that are not final yet would fund an asset lock that
 /// just failed with `error`: the lock a trial of the same build produces and
 /// the value of those coins it spends, as for a plain send
@@ -1447,7 +1442,7 @@ fn waiting_coins_would_fund(
     source_index: u32,
     credit_output: TxOut,
     drain: bool,
-) -> Option<WaitingLock> {
+) -> Option<WaitingTrial> {
     let AssetLockError::Builder(error) = error else {
         return None;
     };
@@ -1481,13 +1476,9 @@ fn waiting_coins_would_fund(
         })
     };
     let height = info.core_wallet.last_processed_height();
-    let trial = trial_with_waiting_coins(&make, wallet, info, &offered, &[], None, height)
+    trial_with_waiting_coins(&make, wallet, info, &offered, &[], None, height)
         .ok()
-        .flatten()?;
-    Some(WaitingLock {
-        waiting: trial.waiting,
-        locked: locked_duffs(&trial.transaction),
-    })
+        .flatten()
 }
 
 /// What an asset-lock transaction locks: the sum of its payload's credit
@@ -1530,8 +1521,8 @@ mod tests {
     };
     use crate::test_support::{
         funded_wallet_manager, funded_wallet_manager_dual_standard,
-        funded_wallet_manager_with_contact, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
-        AlwaysRejectedBroadcaster, WalletSigner,
+        funded_wallet_manager_with_contact, funded_wallet_manager_with_outputs,
+        AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
     };
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
@@ -2015,18 +2006,12 @@ mod tests {
     /// Mark every coin of the wallet as neither confirmed nor
     /// InstantSend-locked; returns their total value.
     async fn make_coins_wait<B: TransactionBroadcaster>(manager: &AssetLockManager<B>) -> u64 {
-        let mut wm = manager.wallet_manager.write().await;
-        let (_, info) = wm
-            .get_wallet_mut_and_info_mut(&manager.wallet_id)
-            .expect("wallet");
         let mut total = 0;
-        for account in info.core_wallet.accounts.all_funding_accounts_mut() {
-            for utxo in account.utxos.values_mut() {
-                utxo.is_confirmed = false;
-                utxo.is_instantlocked = false;
-                total += utxo.value();
-            }
-        }
+        make_coins_wait_if(manager, |value| {
+            total += value;
+            true
+        })
+        .await;
         total
     }
 
@@ -2054,11 +2039,7 @@ mod tests {
         outputs: &[u64],
     ) -> (Arc<AssetLockManager<CountingOkBroadcaster>>, WalletSigner) {
         let (wallet_manager, wallet_id, _generation, signer) =
-            crate::test_support::funded_wallet_manager_with_outputs(
-                StandardAccountType::BIP44Account,
-                outputs,
-            )
-            .await;
+            funded_wallet_manager_with_outputs(StandardAccountType::BIP44Account, outputs).await;
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let manager = Arc::new(AssetLockManager::new(
             sdk,
@@ -2103,23 +2084,14 @@ mod tests {
             "got {waiting:?}"
         );
 
-        {
-            let mut wm = manager.wallet_manager.write().await;
-            let (_, info) = wm
-                .get_wallet_mut_and_info_mut(&manager.wallet_id)
-                .expect("wallet");
-            for account in info.core_wallet.accounts.all_funding_accounts_mut() {
-                for utxo in account.utxos.values_mut() {
-                    utxo.is_confirmed = true;
-                }
-            }
-        }
+        make_coins_wait_if(&manager, |_| false).await;
         build().await.expect("final coins fund the lock");
     }
 
     /// A drain over a few final duffs fails inside key-wallet with its own
-    /// fee-and-dust figure. With waiting coins above the floor it is waiting
-    /// on the network, and what it names as required is the floor.
+    /// fee-and-dust figure. With waiting coins that complete a lock at the
+    /// floor it is waiting on the network, and what it names as required is
+    /// the floor.
     #[tokio::test]
     async fn should_name_the_floor_for_a_drain_over_final_dust_and_waiting_coins() {
         let (manager, signer) = asset_lock_manager_with_outputs(&[300, 10_000_000]).await;
@@ -2269,8 +2241,9 @@ mod tests {
     }
 
     /// The same for a CoinJoin drain, the form the shielded flow funds with:
-    /// waiting coins above the floor are waiting on the network, below it
-    /// insufficient, and a drain without a floor names no required amount.
+    /// waiting coins that complete a lock at the floor are waiting on the
+    /// network, short of it insufficient, and a drain without a floor names
+    /// no required amount.
     #[tokio::test]
     async fn should_report_a_coinjoin_drain_over_waiting_coins_as_waiting() {
         let broadcaster = Arc::new(CountingOkBroadcaster::default());
@@ -2878,12 +2851,11 @@ mod tests {
     async fn concurrent_invitation_builds_cannot_roll_back_the_used_index_snapshot() {
         use key_wallet::account::AccountType;
 
-        let (wallet_manager, wallet_id, _balance, signer) =
-            crate::test_support::funded_wallet_manager_with_outputs(
-                StandardAccountType::BIP44Account,
-                &[10_000_000, 10_000_000],
-            )
-            .await;
+        let (wallet_manager, wallet_id, _balance, signer) = funded_wallet_manager_with_outputs(
+            StandardAccountType::BIP44Account,
+            &[10_000_000, 10_000_000],
+        )
+        .await;
 
         let persistence = Arc::new(GatedPoolPersistence {
             stored: Mutex::new(Vec::new()),
