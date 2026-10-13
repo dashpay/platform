@@ -490,6 +490,170 @@ mod tests {
         assert_eq!(identity_balance, expected_identity_balance);
     }
 
+    /// Neither the InstantSend lock nor the transition's signature covers an instant proof's
+    /// asset-lock payload length prefix, and every node has always read the payload whatever
+    /// length the prefix announces. Anyone relaying a pending IdentityCreate can change the
+    /// prefix, so the changed transition must execute on every node exactly as the original:
+    /// the same identity, at the same fee, with the same balance.
+    #[tokio::test]
+    async fn should_create_the_same_identity_from_a_proof_with_another_payload_length_prefix() {
+        let original = create_identity_with_proof_payload_length_prefix_shifted_by(0).await;
+        for shift in [1, -1] {
+            assert_eq!(
+                create_identity_with_proof_payload_length_prefix_shifted_by(shift).await,
+                original,
+                "prefix shifted by {shift}"
+            );
+        }
+    }
+
+    /// Executes, at the latest protocol version, an IdentityCreate whose serialized instant
+    /// proof has its asset-lock payload length prefix shifted by `shift`, and returns the
+    /// processing fee and the new identity's balance.
+    async fn create_identity_with_proof_payload_length_prefix_shifted_by(
+        shift: i16,
+    ) -> (dpp::fee::Credits, dpp::fee::Credits) {
+        use dpp::dashcore::consensus::serialize;
+        use dpp::prelude::AssetLockProof;
+
+        let platform_version = PlatformVersion::latest();
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_state = platform.state.load();
+
+        let mut signer = SimpleSigner::default();
+
+        let mut rng = StdRng::seed_from_u64(567);
+
+        let (master_key, master_private_key) =
+            IdentityPublicKey::random_ecdsa_master_authentication_key(
+                0,
+                Some(58),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_identity_public_key(master_key.clone(), master_private_key);
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(999),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        signer.add_identity_public_key(key.clone(), private_key);
+
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(&mut rng, platform_version)
+            .unwrap();
+
+        let asset_lock_proof = instant_asset_lock_proof_fixture(
+            Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
+            None,
+        );
+
+        let AssetLockProof::Instant(instant_proof) = &asset_lock_proof else {
+            panic!("expected an instant asset lock proof");
+        };
+        let proof_transaction = serialize(instant_proof.transaction());
+        // The asset-lock payload ends the transaction, right after its 1-byte length.
+        let payload_size = instant_proof
+            .transaction()
+            .special_transaction_payload
+            .as_ref()
+            .expect("expected an asset lock payload")
+            .size();
+        let prefix_at = proof_transaction.len() - payload_size - 1;
+        assert_eq!(usize::from(proof_transaction[prefix_at]), payload_size);
+
+        let identifier = asset_lock_proof
+            .create_identifier()
+            .expect("expected an identifier");
+
+        let identity: Identity = IdentityV0 {
+            id: identifier,
+            public_keys: BTreeMap::from([(0, master_key.clone()), (1, key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+        .into();
+
+        let identity_create_transition: StateTransition =
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
+                &identity,
+                asset_lock_proof,
+                pk.as_slice(),
+                &signer,
+                &NativeBlsModule,
+                0,
+                platform_version,
+            )
+            .await
+            .expect("expected an identity create transition");
+
+        let mut identity_create_serialized_transition = identity_create_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+
+        let transaction_at = identity_create_serialized_transition
+            .windows(proof_transaction.len())
+            .position(|bytes| bytes == proof_transaction.as_slice())
+            .expect("expected the proof transaction in the serialized transition");
+        let prefix = &mut identity_create_serialized_transition[transaction_at + prefix_at];
+        *prefix = u8::try_from(i16::from(*prefix) + shift).expect("1-byte prefix");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![identity_create_serialized_transition],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+
+        assert_eq!(
+            processing_result.valid_count(),
+            1,
+            "prefix shifted by {shift}"
+        );
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
+        let identity_balance = platform
+            .drive
+            .fetch_identity_balance(identity.id().into_buffer(), None, platform_version)
+            .expect("expected to get identity balance")
+            .expect("expected there to be an identity balance for this identity");
+
+        (
+            processing_result.aggregated_fees().processing_fee,
+            identity_balance,
+        )
+    }
+
     #[tokio::test]
     async fn should_create_identity_with_bound_authentication_key() {
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;

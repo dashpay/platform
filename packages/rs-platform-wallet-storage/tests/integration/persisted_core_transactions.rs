@@ -96,7 +96,7 @@ fn describe(tx: &Transaction) -> String {
         Some(TransactionPayload::ClassicalWithNonStandardVersionTypeBytesPayloadType(raw)) => {
             format!("classical type bytes {raw}")
         }
-        Some(TransactionPayload::UnknownPayloadType(tx_type, _)) => {
+        Some(TransactionPayload::RawPayloadType(tx_type, _)) => {
             format!("unknown type {tx_type}")
         }
         Some(TransactionPayload::CoinbasePayloadType(p)) => format!("CbTx v{}", p.version),
