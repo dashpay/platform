@@ -131,8 +131,9 @@ extension PlatformWalletManager {
     /// chain of unconfirmed sends — the first unsettled transaction the chain
     /// depends on, which may be an incoming payment the wallet spent — right
     /// after SPV reports a broadcast uncertain (each report: the send itself
-    /// when it is a root, and at most 8 of the roots its chain reaches, the
-    /// rest in their turn), then, while the
+    /// when it is a root, and of the roots its chain reaches at most 8 per
+    /// pass, shared by the reports handled together, the rest in their
+    /// turn), then, while the
     /// wallet follows the chain tip, every block for 24 blocks from when it
     /// first did so for that root, and every 10 blocks after — a return from
     /// the background does not restart the 24 — 55 times at most (about a

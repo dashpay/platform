@@ -996,7 +996,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // Bounded: a host handler that never returns must not hold a removal
         // for ever. Past the budget the removal still succeeds and a verdict
         // of this wallet's may follow it; so may the first verdicts of a
-        // wallet registered under the same id while this waits.
+        // wallet registered under the same id while this waits. The removal
+        // is complete before this point: a caller that drops this future
+        // here has removed the wallet without getting it back.
         if !self
             .broadcast_resolver
             .caught_up(RESOLVER_REMOVAL_BUDGET)

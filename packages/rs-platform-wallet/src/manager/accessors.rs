@@ -526,8 +526,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// When on, the roots of a registered wallet's unconfirmed chains are
     /// resubmitted to evonodes over DAPI — right after dash-spv reports a send
-    /// `Uncertain` (each report: the send itself when it is a root, and at
-    /// most 8 of the roots its chain reaches, the rest in their turn), then,
+    /// `Uncertain` (each report: the send itself when it is a root, and of
+    /// the roots its chain reaches at most 8 per pass, shared by the reports
+    /// handled together, the rest in their turn), then,
     /// while the wallet follows the chain tip,
     /// every block for 24 blocks from when it first did so for that root, and
     /// every 10 blocks after, a return from the background included, 55

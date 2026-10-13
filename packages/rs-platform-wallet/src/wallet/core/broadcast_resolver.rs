@@ -143,7 +143,8 @@ pub(crate) const SLOW_INTERVAL: u32 = 10;
 /// answered, not in blocks, so the blocks an app slept through do not use it
 /// up; a forced probe (an `Uncertain` report, a retry) after the window
 /// counts like a scheduled one. A new `Uncertain` report still probes a
-/// retired root, and so does a probe of it that no node answered. Counted
+/// retired root (within [`MAX_FORCED_ROOTS_PER_PASS`] when the report only
+/// reaches it), and so does a probe of it that no node answered. Counted
 /// within one session: the schedule lives in memory, so a relaunch, a
 /// rewind, switching probing off and on, or registering the wallet again
 /// starts a root's count anew.
@@ -834,8 +835,11 @@ pub(crate) fn begin_pass(
     let mut scheduled_queue: Vec<(Turn, bool, &OutgoingView)> = Vec::new();
     for view in &roots {
         let schedule = state.schedules.entry((wallet_id, view.txid)).or_default();
-        if let Some(anchor) = anchor {
-            schedule.seen_at.get_or_insert(anchor);
+        // A forced pass sees the roots its chains reach too, so the ones it
+        // leaves beyond the allowance go ahead of the ones it probed.
+        let reached = forced_roots.contains(&view.txid);
+        if let Some(seen) = anchor.or(reached.then_some(height)) {
+            schedule.seen_at.get_or_insert(seen);
         }
         // At the same height, one still waiting for its first probe goes
         // before one probed there.
@@ -846,7 +850,7 @@ pub(crate) fn begin_pass(
         );
         if forced.contains(&view.txid) {
             named.push((turn, view));
-        } else if forced_roots.contains(&view.txid) {
+        } else if reached {
             forced_queue.push(((!graph.is_own(&view.txid), turn), view));
         }
         // Without an anchor the pass is confined to forced roots.
@@ -856,11 +860,11 @@ pub(crate) fn begin_pass(
         }
     }
     named.sort_unstable_by_key(|(turn, _)| *turn);
-    let reached = take_in_turn(forced_queue, MAX_FORCED_ROOTS_PER_PASS);
+    let reached_due = take_in_turn(forced_queue, MAX_FORCED_ROOTS_PER_PASS);
     let forced_due: Vec<&OutgoingView> = named
         .into_iter()
         .map(|(_, view)| view)
-        .chain(reached.into_iter().map(|(_, view)| view))
+        .chain(reached_due.into_iter().map(|(_, view)| view))
         .collect();
     let taken: HashSet<Txid> = forced_due.iter().map(|view| view.txid).collect();
     let mut due: VecDeque<DueRoot> = forced_due
@@ -1463,17 +1467,6 @@ struct WalletEntry {
 }
 
 impl WalletEntry {
-    /// Whether a pass that follows the tip ran at `height` or above, or one
-    /// anchored at exactly `height` runs or is queued.
-    fn followed_at(&self, height: u32) -> bool {
-        self.followed_pass_at.is_some_and(|at| at >= height)
-            || [
-                self.run.as_ref().and_then(|run| run.anchor_at),
-                self.pending.as_ref().and_then(|pending| pending.anchor_at),
-            ]
-            .contains(&Some(height))
-    }
-
     /// Whether a pass that follows the tip ran, runs or is queued for the
     /// wallet at `height` or above.
     fn anchored_at_or_above(&self, height: u32) -> bool {
@@ -1746,16 +1739,16 @@ impl Actor {
                 }
                 // The completion that came first may have run this height's
                 // pass already (a wallet with no step since launch reads its
-                // own height): no second walk over the records then.
-                // Only one anchored at this very height: a completion
-                // anchors a wallet it has no height for at its own tip, and
-                // that pass's read drops the anchor when the wallet turns out
-                // to be a block or two below.
+                // own height): no second walk over the records then. A pass
+                // still running is not taken for that: its read may have
+                // found the wallet lower and dropped its anchor, so the
+                // height is queued behind it, and dropped at its end if no
+                // root is due.
                 if arrived
                     && self
                         .wallets
                         .get(&wallet_id)
-                        .is_some_and(|entry| entry.followed_at(height))
+                        .is_some_and(|entry| entry.followed_pass_at.is_some_and(|at| at >= height))
                 {
                     return;
                 }
@@ -5400,12 +5393,10 @@ mod tests {
         rig.send(Command::Uncertain(txid(201))).await;
         assert_eq!(probe.probed()[oversized.len()..], [txid(201)]);
 
-        // The roots the forced pass reached were probed longer ago than the
-        // others were first seen, so they take the first followed pass; the
-        // twelve left over fill the next two.
+        // The twelve the forced pass left go first: eight in the first
+        // followed pass, the rest in the next.
         rig.follow(wallet(), 100).await;
         rig.height(wallet(), 102).await;
-        rig.height(wallet(), 103).await;
         let probed: HashSet<Txid> = probe.probed().into_iter().collect();
         let missed: Vec<u8> = (10..30)
             .filter(|parent| !probed.contains(&txid(*parent)))
