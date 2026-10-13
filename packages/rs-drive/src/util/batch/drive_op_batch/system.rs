@@ -1,5 +1,5 @@
 use crate::drive::Drive;
-use crate::error::Error;
+use crate::error::{drive::DriveError, Error};
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use dpp::block::block_info::BlockInfo;
@@ -23,6 +23,12 @@ use std::collections::HashMap;
 /// does not merge them. A batch that needs two must sum them into one.
 #[derive(Clone, Debug)]
 pub enum SystemOperationType {
+    /// Returns allocated credits to the applying block's processing pool after ordinary
+    /// writes and debt repayment, without creating new system credits.
+    AddToCurrentEpochProcessingPool {
+        /// The amount returned to the pool.
+        amount: Credits,
+    },
     /// We want to add credits to the system.
     AddToSystemCredits {
         /// The amount of credits we are seeking to add
@@ -55,6 +61,11 @@ impl DriveLowLevelOperationConverter for SystemOperationType {
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
+            SystemOperationType::AddToCurrentEpochProcessingPool { .. } => {
+                Err(Error::Drive(DriveError::NotSupported(
+                    "processing pool credits require apply_drive_operations generation 1",
+                )))
+            }
             SystemOperationType::AddToSystemCredits { amount } => drive
                 .add_to_system_credits_operations(
                     amount,
