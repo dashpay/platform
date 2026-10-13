@@ -1316,6 +1316,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     payouts to the block's `apply_drive_operations` instead of converting
 ///     them to a plain grove batch, skips a share whose `payToId` has no
 ///     balance and caps each share at what is left of its masternode's payout.
+///     After paying valid shares, a proposer without a balance returns its
+///     remaining allocation, including any last-proposer rounding remainder, to
+///     the applying block's current epoch processing pool. An existing zero
+///     balance remains a valid recipient; other balance read errors propagate.
+///     `SystemOperationType::AddToCurrentEpochProcessingPool` defers the return
+///     until after ordinary writes and repaid debt, unbilled and in the same
+///     transaction before commit. Estimates and zero returns do not access or
+///     mutate that pool. Generic lowering and older apply generations refuse
+///     this operation instead of silently dropping it.
 ///     An apply that meets one it does not route fails (`CorruptedCodeExecution`)
 ///     instead of dropping it. `apply_drive_operations` 1 also merges every
 ///     credit and debit one batch makes to an identity's balance into one net

@@ -1,6 +1,7 @@
 use crate::rpc::prefetch::CorePrefetcher;
 use dpp::dashcore::consensus::encode::deserialize_partial;
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
+use dpp::dashcore::transaction::special_transaction::coinbase::CoinbasePayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dpp::dashcore::{Header, InstantLock};
@@ -25,18 +26,27 @@ const COINBASE_TRANSACTION_TYPE: u16 = 5;
 /// coinbase transaction; `0` when it carries no payload or its payload predates version 3,
 /// before the credit pool existed, which is how Core's own unlock limit reads such a block.
 ///
-/// Decoded with `deserialize_partial`, so bytes after the fields the payload decoder knows are
+/// The transaction decoder types a payload only when the payload decoder reads exactly the
+/// bytes its length prefix frames, and keeps any other payload raw. A raw coinbase payload is
+/// read with `deserialize_partial`, so bytes after the fields the payload decoder knows are
 /// left unread rather than refused: a field a later Core version appends to the payload, as
 /// version 4 appended `merkleRootAssetUnlocks` after the balance, does not stop the balance
-/// from being read. Core has only ever appended fields to the payload, and its consensus rules
-/// (`CheckCbTx`) refuse versions it does not know, so the balance stays where version 3 put it
-/// unless a Core release moves it, which Platform would have to follow anyway.
+/// from being read. The payload is the coinbase's last field and Core frames it exactly, so
+/// reading it raw reads the same bytes as reading it in place. Core has only ever appended
+/// fields to the payload, and its consensus rules (`CheckCbTx`) refuse versions it does not
+/// know, so the balance stays where version 3 put it unless a Core release moves it, which
+/// Platform would have to follow anyway.
 pub(crate) fn credit_pool_balance_from_coinbase(coinbase: &[u8]) -> Result<u64, String> {
     let (transaction, _) = deserialize_partial::<Transaction>(coinbase)
         .map_err(|e| format!("coinbase cannot be decoded: {e}"))?;
     match transaction.special_transaction_payload {
         None => Ok(0),
         Some(TransactionPayload::CoinbasePayloadType(payload)) => {
+            Ok(payload.asset_locked_amount.unwrap_or_default())
+        }
+        Some(TransactionPayload::RawPayloadType(COINBASE_TRANSACTION_TYPE, bytes)) => {
+            let (payload, _) = deserialize_partial::<CoinbasePayload>(&bytes)
+                .map_err(|e| format!("coinbase payload cannot be decoded: {e}"))?;
             Ok(payload.asset_locked_amount.unwrap_or_default())
         }
         Some(payload) => Err(format!(
@@ -498,16 +508,16 @@ mod tests {
         );
     }
 
-    /// The coinbase of `version_3_payload` raised to version 4, with
+    /// The coinbase of `version_3_payload` raised to `version`, with
     /// `after_balance` after its version 3 fields.
-    fn version_4_coinbase(after_balance: &[u8]) -> Vec<u8> {
+    fn raised_coinbase(version: u16, after_balance: &[u8]) -> Vec<u8> {
         let version_3 = coinbase(Some(version_3_payload()));
         // The payload is last: its 1-byte length (175), then the payload itself.
         let payload_start = version_3.len() - 175;
         assert_eq!(version_3[payload_start - 1], 175);
         let mut grown = version_3[..payload_start - 1].to_vec();
         grown.push(u8::try_from(175 + after_balance.len()).expect("1-byte length"));
-        grown.extend_from_slice(&4u16.to_le_bytes());
+        grown.extend_from_slice(&version.to_le_bytes());
         grown.extend_from_slice(&version_3[payload_start + 2..]);
         grown.extend_from_slice(after_balance);
         grown
@@ -518,7 +528,7 @@ mod tests {
     #[test]
     fn should_read_the_balance_of_a_version_4_coinbase() {
         assert_eq!(
-            credit_pool_balance_from_coinbase(&version_4_coinbase(&[0xaa; 32])),
+            credit_pool_balance_from_coinbase(&raised_coinbase(4, &[0xaa; 32])),
             Ok(BALANCE_DUFFS)
         );
     }
@@ -530,7 +540,20 @@ mod tests {
         let mut after_balance = vec![0xaa; 32];
         after_balance.extend_from_slice(&[0xbb; 16]);
         assert_eq!(
-            credit_pool_balance_from_coinbase(&version_4_coinbase(&after_balance)),
+            credit_pool_balance_from_coinbase(&raised_coinbase(4, &after_balance)),
+            Ok(BALANCE_DUFFS)
+        );
+    }
+
+    /// A payload version after 4, with a field after `merkleRootAssetUnlocks`:
+    /// the payload decoder reads a version it does not know with the version 4
+    /// layout, so the balance is still read from where version 3 put it.
+    #[test]
+    fn should_read_the_balance_of_a_coinbase_of_a_later_version() {
+        let mut after_balance = vec![0xaa; 32];
+        after_balance.extend_from_slice(&[0xbb; 16]);
+        assert_eq!(
+            credit_pool_balance_from_coinbase(&raised_coinbase(5, &after_balance)),
             Ok(BALANCE_DUFFS)
         );
     }
