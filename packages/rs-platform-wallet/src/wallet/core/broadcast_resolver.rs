@@ -51,6 +51,10 @@
 //! unless one already read the wallet at that height — so the pass a
 //! catch-up skipped runs at the tip without waiting for the next block (a
 //! completion while probing is off is ignored: the next one covers it). A
+//! completion can be handled before the wallet's own step to that tip (the
+//! two come from separate tasks): that step, when it follows within
+//! [`COMPLETED_AHEAD_TTL`], is the wallet's arrival at the tip and runs the
+//! pass, however large it is. A
 //! root is probed every block for [`EVERY_BLOCK_WINDOW`] blocks, counted
 //! from its first probe by a height-driven pass while the wallet follows the
 //! tip (a forced pass does not start it), and every [`SLOW_INTERVAL`] blocks
@@ -63,9 +67,10 @@
 //! first, then after twice and four times that again (at most
 //! [`MAX_NO_ANSWER_RETRIES`] per height). Probes never ban a DAPI address
 //! themselves. Each Uncertain report forces a probe of its chain's current
-//! roots in the next pass (reports queued together share it), at most
-//! [`MAX_FORCED_ROOTS_PER_PASS`] of them, the wallet's own sends first; the
-//! others take their turn among the scheduled roots. A pass under
+//! roots in the next pass (reports queued together share it): the send
+//! itself when it is a root, and at most [`MAX_FORCED_ROOTS_PER_PASS`] of
+//! the roots its chain reaches, the wallet's own sends first; the others
+//! take their turn among the scheduled roots. A pass under
 //! way in a wallet whose own send it is gives way to it after its probe in
 //! flight — once per height; a later request waits behind it. A pass probes at most
 //! [`MAX_ROOTS_PER_PASS`] scheduled roots, those probed longest ago first —
@@ -145,8 +150,8 @@ pub(crate) const SLOW_INTERVAL: u32 = 10;
 pub(crate) const MAX_SLOW_PROBES: u32 = 55;
 
 /// Scheduled roots a pass probes at most; forced ones (an `Uncertain`
-/// report's, a no-answer retry's) come on top, at most
-/// [`MAX_FORCED_ROOTS_PER_PASS`] of them. A wallet's records are not
+/// report's, a no-answer retry's) come on top: those forced by name, and at
+/// most [`MAX_FORCED_ROOTS_PER_PASS`] their chains reach. A wallet's records are not
 /// all its own doing — a peer can feed it transactions that make many roots —
 /// so the work of one pass is bounded, and within it the roots probed
 /// longest ago (or never) go first: the rest stay due and come round at the
@@ -154,15 +159,21 @@ pub(crate) const MAX_SLOW_PROBES: u32 = 55;
 /// go first, but take at most half of the slots while other roots wait.
 pub(crate) const MAX_ROOTS_PER_PASS: usize = 8;
 
-/// Forced roots a pass probes at most. One report can force many: a send's
-/// chain reaches every unsettled ancestor, and a peer can feed the wallet
-/// incoming parents for it to spend, so the roots of a single reported send
-/// are not bounded by what the wallet did. The wallet's own sends go first,
-/// then those probed longest ago (or never). A forced root beyond the
-/// allowance is not forced any more: it takes its turn among the scheduled
-/// roots, where a reported send's roots go first, in this pass if it follows
-/// the tip and at the next heights. As many as a scheduled pass probes, so a
-/// retry can repeat every root of the pass no node answered.
+/// Roots a pass probes at most because a forced send's chain reaches them.
+/// One report can reach many: a send's chain goes back to every unsettled
+/// ancestor, and a peer can feed the wallet incoming parents for it to
+/// spend, so the roots of a single reported send are not bounded by what the
+/// wallet did. The wallet's own sends go first, then those probed longest
+/// ago (or never). A root beyond the allowance is not forced: it takes its
+/// turn among the scheduled roots, where a reported send's roots go first,
+/// in the passes that follow the tip. A pass confined to forced roots (a
+/// report's own, or any pass of a wallet behind the tip) leaves it for the
+/// first of those.
+///
+/// A root that is itself the forced transaction is outside the allowance: a
+/// reported send that is its own root (one per report the wallet's own
+/// broadcast produced), and each root a no-answer retry repeats (no more
+/// than the passes at that height probed).
 pub(crate) const MAX_FORCED_ROOTS_PER_PASS: usize = MAX_ROOTS_PER_PASS;
 
 /// How long after a probe that no node answered (all of DAPI unreachable —
@@ -649,6 +660,14 @@ pub(crate) fn is_catch_up_step(previous: Option<u32>, height: u32) -> bool {
     previous.is_none_or(|previous| height < previous || height - previous > CATCH_UP_STEP)
 }
 
+/// How long a completion that overtook a wallet's height step stands (see
+/// `WalletEntry::completed_ahead`). The step it waits for was already on its
+/// way, behind another task's queue, so it comes within moments. Without a
+/// limit, a completion whose step was lost would turn a step of some later
+/// scan that happens to land at that old tip into an arrival, and start
+/// windows there.
+const COMPLETED_AHEAD_TTL: Duration = Duration::from_secs(30);
+
 /// A wallet at `height` is at a sync's completed `tip`, as far as following
 /// goes.
 fn near_tip(height: u32, tip: u32) -> bool {
@@ -745,7 +764,9 @@ pub(crate) struct PassStart {
 /// roots of every `forced` transaction's chain (dash-spv has just reported
 /// it `Uncertain`) are due regardless of their schedule — even if one went
 /// out at this height already: a repeat probe is cheaper than bookkeeping
-/// that tells the two apart — up to [`MAX_FORCED_ROOTS_PER_PASS`] of them.
+/// that tells the two apart. A root named in `forced` always goes; of the
+/// roots a forced send's chain only reaches, up to
+/// [`MAX_FORCED_ROOTS_PER_PASS`].
 /// `anchor`: the tip height
 /// a height-driven pass knows the wallet follows — a root it takes starts
 /// its every-block window when its probe goes out (see [`mark_sent`]).
@@ -785,10 +806,12 @@ pub(crate) fn begin_pass(
     let roots = graph.roots();
     let forced_roots = graph.roots_of(forced.iter().copied());
 
-    // Forced roots first, at most `MAX_FORCED_ROOTS_PER_PASS`: own sends
-    // before the rest (a reported send that is its own root is what the
-    // report is about; its unsettled ancestors can be a peer's doing), then
-    // in turn. Then at most `MAX_ROOTS_PER_PASS` scheduled ones
+    // Forced roots first. A root named in `forced` itself always goes: a
+    // reported send that is its own root is what the report is about, and a
+    // retry names the roots it repeats. The roots a forced send's chain
+    // only reaches (its unsettled ancestors, which can be a peer's doing)
+    // are at most `MAX_FORCED_ROOTS_PER_PASS`: own sends before the rest,
+    // then in turn. Then at most `MAX_ROOTS_PER_PASS` scheduled ones
     // in turn: those probed longest ago first, a never-probed one by the
     // height it was first seen at — a queue, so fresh roots (a peer can feed
     // them at will) wait behind older ones and cannot starve them. Reported
@@ -804,6 +827,7 @@ pub(crate) fn begin_pass(
         retry: false,
     };
     type Turn = (u32, bool, Txid);
+    let mut named: Vec<(Turn, &OutgoingView)> = Vec::new();
     let mut forced_queue: Vec<((bool, Turn), &OutgoingView)> = Vec::new();
     let mut scheduled_queue: Vec<(Turn, bool, &OutgoingView)> = Vec::new();
     for view in &roots {
@@ -818,7 +842,9 @@ pub(crate) fn begin_pass(
             schedule.last_probe.is_some(),
             view.txid,
         );
-        if forced_roots.contains(&view.txid) {
+        if forced.contains(&view.txid) {
+            named.push((turn, view));
+        } else if forced_roots.contains(&view.txid) {
             forced_queue.push(((!graph.is_own(&view.txid), turn), view));
         }
         // Without an anchor the pass is confined to forced roots.
@@ -827,11 +853,17 @@ pub(crate) fn begin_pass(
             scheduled_queue.push((turn, first, view));
         }
     }
-    let forced_due = take_in_turn(forced_queue, MAX_FORCED_ROOTS_PER_PASS);
-    let taken: HashSet<Txid> = forced_due.iter().map(|(_, view)| view.txid).collect();
+    let named = take_in_turn(named, usize::MAX);
+    let reached = take_in_turn(forced_queue, MAX_FORCED_ROOTS_PER_PASS);
+    let forced_due: Vec<&OutgoingView> = named
+        .into_iter()
+        .map(|(_, view)| view)
+        .chain(reached.into_iter().map(|(_, view)| view))
+        .collect();
+    let taken: HashSet<Txid> = forced_due.iter().map(|view| view.txid).collect();
     let mut due: VecDeque<DueRoot> = forced_due
         .into_iter()
-        .map(|(_, view)| due_root(view, true))
+        .map(|view| due_root(view, true))
         .collect();
     let mut first: Vec<(Turn, &OutgoingView)> = Vec::new();
     let mut rest: Vec<(Turn, &OutgoingView)> = Vec::new();
@@ -1292,8 +1324,9 @@ enum JobDone {
         own: Vec<WalletId>,
     },
     /// The wallets holding a send that was echoed after its `Uncertain`.
-    /// `token` names the echo this lookup answers: a send that settled, or a
-    /// wallet that left or re-registered, since then has withdrawn it.
+    /// `token` names the echo this lookup answers: a send that settled since
+    /// then has withdrawn it, and a wallet that left or registered had it
+    /// made again under a new token.
     EchoListed {
         txid: Txid,
         wallets: Vec<WalletId>,
@@ -1422,8 +1455,23 @@ struct WalletEntry {
     /// tip is its arrival there, and runs the pass the completion could not.
     /// Replaced by every later completion, so a wallet that really is
     /// rescanning gets its pass when it reaches the latest tip, not a stale
-    /// one.
-    completed_ahead: Option<u32>,
+    /// one. Kept with the time it was handled: it stands for
+    /// [`COMPLETED_AHEAD_TTL`] only (see there).
+    completed_ahead: Option<(u32, Instant)>,
+}
+
+impl WalletEntry {
+    /// Whether a pass that follows the tip ran, runs or is queued for the
+    /// wallet at `height` or above.
+    fn anchored_at_or_above(&self, height: u32) -> bool {
+        [
+            self.followed_pass_at,
+            self.run.as_ref().and_then(|run| run.anchor_at),
+            self.pending.as_ref().and_then(|pending| pending.anchor_at),
+        ]
+        .iter()
+        .any(|at| at.is_some_and(|at| at >= height))
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1484,10 +1532,13 @@ struct Actor {
     /// Names each retry series (see [`NoAnswerRetries`]), so a stale timer
     /// matches no later series.
     next_retry_series: u64,
-    /// Echoes whose holder lookup is out, by the token their result carries.
-    /// A send that settles, or a wallet that leaves or re-registers, withdraws
-    /// them: an acceptance landing after that must not reach the host.
-    echo_lookups: HashMap<Txid, u64>,
+    /// Echoes whose holder lookup is out, by the token their result carries
+    /// and the handle that stops a superseded one. A send that settles
+    /// withdraws its lookup: an acceptance landing after that must not reach
+    /// the host. A wallet that leaves or registers has every lookup made
+    /// again (see `drop_wallet`), so the acceptance goes to the wallets that
+    /// hold the send then.
+    echo_lookups: HashMap<Txid, (u64, AbortHandle)>,
     next_echo_token: u64,
 }
 
@@ -1653,14 +1704,16 @@ impl Actor {
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
                 };
-                let arrived = !rewound
-                    && entry
-                        .completed_ahead
-                        .is_some_and(|tip| near_tip(height, tip));
-                if rewound || entry.completed_ahead.is_some_and(|tip| height >= tip) || arrived {
+                let completed = entry
+                    .completed_ahead
+                    .filter(|(_, at)| at.elapsed() <= COMPLETED_AHEAD_TTL)
+                    .map(|(tip, _)| tip);
+                let arrived = !rewound && completed.is_some_and(|tip| near_tip(height, tip));
+                if rewound || arrived || completed.is_none_or(|tip| height >= tip) {
                     entry.completed_ahead = None;
                 }
-                let catch_up = is_catch_up_step(previous, height) && !arrived;
+                let gap = is_catch_up_step(previous, height);
+                let catch_up = gap && !arrived;
                 if catch_up {
                     // The tip moved on, unfollowed: no lower wallet's steps
                     // may run the echo windows now.
@@ -1668,39 +1721,21 @@ impl Actor {
                 } else {
                     self.expire_uncertain(height);
                 }
-                let Some(entry) = self.wallets.get_mut(&wallet_id) else {
-                    return;
-                };
+                if gap {
+                    self.confine_to_forced(wallet_id, height, arrived);
+                }
                 if catch_up {
-                    // Behind the tip: passes queued or running from before are
-                    // confined to what an `Uncertain` result forced — the scan
-                    // settles most roots, and its events clear their verdicts
-                    // (see `Command::Settled`) — and start no windows. The
-                    // sync's completion runs the pass at the tip.
-                    if let Some(pending) = entry.pending.as_mut() {
-                        pending.anchor_at = None;
-                        // A rewind replays lower heights: never run above them.
-                        pending.height = height;
-                        if pending.forced.is_empty() {
-                            entry.pending = None;
-                        }
-                    }
-                    let Some(run) = entry.run.as_mut() else {
-                        // A rewind stopped the run: start what it carried.
-                        self.start(wallet_id);
-                        return;
-                    };
-                    run.anchor_at = None;
-                    run.walk.store(false, Ordering::SeqCst);
-                    if let Some(probing) = run.probing.as_mut() {
-                        probing.drop_scheduled();
-                    }
-                    // Still reading, with nothing forced: nothing it could
-                    // probe — stop its walk over the records now.
-                    if run.probing.is_none() && run.forced.is_empty() {
-                        run.abort.abort();
-                        self.end_run(wallet_id);
-                    }
+                    return;
+                }
+                // The completion that came first may have run this height's
+                // pass already (a wallet with no step since launch reads its
+                // own height): no second walk over the records then.
+                if arrived
+                    && self
+                        .wallets
+                        .get(&wallet_id)
+                        .is_some_and(|entry| entry.anchored_at_or_above(height))
+                {
                     return;
                 }
                 self.queue_followed_pass(wallet_id, height);
@@ -1737,7 +1772,9 @@ impl Actor {
                 // lookup for one already out, must not publish after this.
                 for txid in &txids {
                     self.uncertain.remove(txid);
-                    self.echo_lookups.remove(txid);
+                    if let Some((_, lookup)) = self.echo_lookups.remove(txid) {
+                        lookup.abort();
+                    }
                 }
                 forget_reported(&mut self.reported, &wallet_id, |txid| txids.contains(txid));
                 let events = self.state.settle(wallet_id, &txids);
@@ -1802,7 +1839,9 @@ impl Actor {
                         lookup.abort();
                     }
                     self.reported.clear();
-                    self.echo_lookups.clear();
+                    for (_, (_, lookup)) in self.echo_lookups.drain() {
+                        lookup.abort();
+                    }
                     let events = self.state.forget_all();
                     deliver(&self.sink, events);
                 }
@@ -1818,27 +1857,22 @@ impl Actor {
                 //
                 // A wallet below the tip may also be one whose height step
                 // has not been handled yet: remember the tip for it (see
-                // `WalletEntry::completed_ahead`).
+                // `WalletEntry::completed_ahead`). So may one without a step
+                // since launch: its first step, when it lands at this tip, is
+                // then its arrival and keeps the pass started here.
+                let now = Instant::now();
                 for entry in self.wallets.values_mut() {
                     let below = entry
                         .height
-                        .is_some_and(|height| height < tip && !near_tip(height, tip));
-                    entry.completed_ahead = below.then_some(tip);
+                        .is_none_or(|height| height < tip && !near_tip(height, tip));
+                    entry.completed_ahead = below.then_some((tip, now));
                 }
                 let at_tip: Vec<(WalletId, u32)> = self
                     .wallets
                     .iter()
                     .map(|(wallet_id, entry)| (wallet_id, entry, entry.height.unwrap_or(tip)))
                     .filter(|(_, entry, height)| {
-                        let anchored_at = [
-                            entry.followed_pass_at,
-                            entry.run.as_ref().and_then(|run| run.anchor_at),
-                            entry.pending.as_ref().and_then(|pending| pending.anchor_at),
-                        ];
-                        near_tip(*height, tip)
-                            && !anchored_at
-                                .iter()
-                                .any(|at| at.is_some_and(|at| at >= *height))
+                        near_tip(*height, tip) && !entry.anchored_at_or_above(*height)
                     })
                     .map(|(wallet_id, _, height)| (*wallet_id, height))
                     .collect();
@@ -1902,15 +1936,17 @@ impl Actor {
     fn look_up_echo(&mut self, txid: Txid) {
         let token = self.next_echo_token;
         self.next_echo_token += 1;
-        self.echo_lookups.insert(txid, token);
         let source = Arc::clone(&self.source);
-        self.jobs.spawn(async move {
+        let job = self.jobs.spawn(async move {
             JobDone::EchoListed {
                 txid,
                 wallets: source.holders(txid).await.own,
                 token,
             }
         });
+        if let Some((_, superseded)) = self.echo_lookups.insert(txid, (token, job)) {
+            superseded.abort();
+        }
     }
 
     /// The registration a pass read, or was to read, is not in the wallet
@@ -2073,7 +2109,9 @@ impl Actor {
                 wallets,
                 token,
             } => {
-                if !self.enabled || self.echo_lookups.get(&txid) != Some(&token) {
+                if !self.enabled
+                    || self.echo_lookups.get(&txid).map(|(current, _)| *current) != Some(token)
+                {
                     return;
                 }
                 self.echo_lookups.remove(&txid);
@@ -2255,10 +2293,8 @@ impl Actor {
                     return;
                 }
                 // A pass of exactly those roots, ahead of the per-pass cap and
-                // of nothing else, within the forced allowance
-                // (`MAX_FORCED_ROOTS_PER_PASS`): it takes no scheduled roots
-                // (they would fail too while no node answers) and starts no
-                // window.
+                // of nothing else: it takes no scheduled roots (they would
+                // fail too while no node answers) and starts no window.
                 let pending = entry.pending.get_or_insert_with(PendingPass::default);
                 pending.height = pending.height.max(height);
                 pending.retried.extend(roots);
@@ -2341,6 +2377,53 @@ impl Actor {
         }
     }
 
+    /// The wallet stepped to `height` over a gap: passes queued or running
+    /// from before are confined to what an `Uncertain` result forced, and
+    /// start no windows. The scan settles most roots, and its events clear
+    /// their verdicts (see `Command::Settled`); a pass at the tip follows —
+    /// the sync's completion runs it, or this step does when the wallet
+    /// `arrived` at a tip whose completion came first. On such an arrival a
+    /// pass already anchored at this tip stays as it is: only one anchored
+    /// before the gap would start its roots' windows at a stale height.
+    fn confine_to_forced(&mut self, wallet_id: WalletId, height: u32, arrived: bool) {
+        let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+            return;
+        };
+        let stays = |anchor: Option<u32>| arrived && anchor.is_some_and(|at| near_tip(at, height));
+        if let Some(pending) = entry.pending.as_mut() {
+            if !stays(pending.anchor_at) {
+                pending.anchor_at = None;
+                // A rewind replays lower heights: never run above them.
+                pending.height = height;
+                if pending.forced.is_empty() {
+                    entry.pending = None;
+                }
+            }
+        }
+        let Some(run) = entry.run.as_mut() else {
+            // A rewind stopped the run: start what it carried. An arrival
+            // queues its own pass next.
+            if !arrived {
+                self.start(wallet_id);
+            }
+            return;
+        };
+        if stays(run.anchor_at) {
+            return;
+        }
+        run.anchor_at = None;
+        run.walk.store(false, Ordering::SeqCst);
+        if let Some(probing) = run.probing.as_mut() {
+            probing.drop_scheduled();
+        }
+        // Still reading, with nothing forced: nothing it could probe — stop
+        // its walk over the records now.
+        if run.probing.is_none() && run.forced.is_empty() {
+            run.abort.abort();
+            self.end_run(wallet_id);
+        }
+    }
+
     /// A height-driven pass of a wallet that follows the tip at `height`:
     /// queued unless a pass already runs (its end decides) or no root can be
     /// due yet.
@@ -2368,9 +2451,8 @@ impl Actor {
     /// then twice and four times that again (about 1, 3 and 7 minutes after
     /// the first probe), at most [`MAX_NO_ANSWER_RETRIES`] per height, while
     /// no block has come. A retry is a pass of exactly those roots (still
-    /// roots), ahead of the per-pass cap and within
-    /// [`MAX_FORCED_ROOTS_PER_PASS`] (the rest wait for the next block): it
-    /// takes no scheduled roots and starts no window. While DAPI
+    /// roots), ahead of the per-pass cap: it takes no scheduled roots and
+    /// starts no window. While DAPI
     /// stays down, an unanswered root is due once at every block (in its turn
     /// under [`MAX_ROOTS_PER_PASS`] when a backlog is larger) plus the
     /// retries, which go ahead of the cap, until the next block comes. One info line per such root and
@@ -5124,8 +5206,120 @@ mod tests {
 
         let start = begin_pass(&mut state, wallet(), 100, &views, &forced, &forced, None);
 
-        assert_eq!(start.due.len(), MAX_FORCED_ROOTS_PER_PASS);
+        // The reported root itself, then the allowance of the other's parents.
+        assert_eq!(start.due.len(), 1 + MAX_FORCED_ROOTS_PER_PASS);
         assert_eq!(start.due.front().map(|root| root.txid), Some(txid(201)));
+    }
+
+    /// The allowance is for the roots a forced send's chain reaches, not for
+    /// a root forced by name: every reported send that is its own root is
+    /// probed, and a retry repeats every root it names, however many.
+    #[test]
+    fn should_probe_every_root_forced_by_name() {
+        let named = 1..=(MAX_FORCED_ROOTS_PER_PASS as u8 + 4);
+        let views: Vec<OutgoingView> = named
+            .clone()
+            .map(|n| send(n, &[outpoint(n.wrapping_add(100), 0)]))
+            .collect();
+        let forced: HashSet<Txid> = named.clone().map(txid).collect();
+        let mut state = ResolverState::default();
+
+        let start = begin_pass(&mut state, wallet(), 100, &views, &forced, &forced, None);
+
+        let due: HashSet<Txid> = start.due.iter().map(|root| root.txid).collect();
+        assert_eq!(due, forced);
+        assert!(start.due.iter().all(|root| root.forced));
+    }
+
+    /// A completion can also overtake a wallet's first step since launch.
+    /// The completion reads the wallet at the tip and starts its pass; the
+    /// step that follows is the wallet's arrival there, not a catch-up step
+    /// that would stop that pass.
+    #[tokio::test]
+    async fn should_keep_the_pass_of_a_completion_that_overtook_the_first_step() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.source
+            .synced
+            .lock()
+            .expect("synced")
+            .insert(wallet(), 150);
+
+        // Both are queued before the pass's read comes back.
+        rig.handle(sync_complete(150));
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 150,
+        });
+        rig.settle().await;
+
+        assert_eq!(probe.probed(), [txid(1)], "one pass, not stopped");
+        assert_eq!(
+            rig.actor.state.schedules[&(wallet(), txid(1))].window_start,
+            Some(150)
+        );
+    }
+
+    /// An arrival at a completed tip still confines a pass anchored before
+    /// the gap: a root that pass had not sent yet is left to the arrival's
+    /// own pass, so its window starts at the tip, not at the height the
+    /// wallet left.
+    #[tokio::test]
+    async fn should_not_start_windows_before_the_gap_on_an_arrival() {
+        let probe = Arc::new(ScriptedProbe::new(&[
+            (txid(1), unresolved()),
+            (txid(2), unresolved()),
+        ]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(
+            wallet(),
+            vec![send(1, &[outpoint(90, 0)]), send(2, &[outpoint(91, 0)])],
+        );
+        rig.height(wallet(), 100).await;
+
+        // A followed step starts a pass. Its read comes back and its first
+        // probe goes out; then the wallet is suspended, catches up, and the
+        // completion comes before the step.
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 101,
+        });
+        let read = rig.actor.jobs.join_next_with_id().await.expect("the read");
+        rig.actor.joined(read);
+        rig.handle(sync_complete(150));
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 150,
+        });
+        rig.settle().await;
+
+        let mut windows: Vec<Option<u32>> = [1, 2]
+            .into_iter()
+            .map(|n| rig.actor.state.schedules[&(wallet(), txid(n))].window_start)
+            .collect();
+        windows.sort();
+        assert_eq!(
+            windows,
+            [Some(101), Some(150)],
+            "the probe already out counts from 101, the other from the tip"
+        );
+    }
+
+    /// A completion whose height step never came is forgotten after a
+    /// while: a step of a later scan that lands at that old tip is catch-up.
+    #[tokio::test(start_paused = true)]
+    async fn should_forget_a_completion_its_step_did_not_follow() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.height(wallet(), 100).await;
+        rig.send(sync_complete(150)).await;
+
+        tokio::time::advance(COMPLETED_AHEAD_TTL + Duration::from_secs(1)).await;
+        rig.height(wallet(), 150).await;
+
+        assert_eq!(probe.probed().len(), 0, "a scan's step, not an arrival");
     }
 
     /// A report whose send has more ancestor roots than a pass may force

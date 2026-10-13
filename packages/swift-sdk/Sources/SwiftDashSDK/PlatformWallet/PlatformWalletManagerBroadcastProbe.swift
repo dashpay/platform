@@ -129,7 +129,9 @@ extension PlatformWalletManager {
     /// While on, the SDK resubmits to evonodes over DAPI the root of every
     /// chain of unconfirmed sends — the first unsettled transaction the chain
     /// depends on, which may be an incoming payment the wallet spent — right
-    /// after SPV reports a broadcast uncertain (each report), then, while the
+    /// after SPV reports a broadcast uncertain (each report; when the
+    /// reported send is built on other unsettled transactions, at most 8 of
+    /// those chains' roots at once, the rest in their turn), then, while the
     /// wallet follows the chain tip, every block for 24 blocks from when it
     /// first did so for that root, and every 10 blocks after — a return from
     /// the background does not restart the 24 — 55 times at most (about a
