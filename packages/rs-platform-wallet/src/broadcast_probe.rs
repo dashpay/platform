@@ -46,6 +46,7 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use dash_sdk::core::transaction_from_reply;
@@ -60,6 +61,7 @@ use dash_sdk::dapi_grpc::core::v0::{
 use dash_sdk::dapi_grpc::tonic::Code;
 use dashcore::consensus;
 use dashcore::{Transaction, Txid};
+use tokio::time::timeout;
 
 /// Core reject reasons about the transaction's inputs.
 ///
@@ -189,6 +191,13 @@ const MAX_SUBMISSIONS_PER_PROBE: usize = 4;
 /// How many txid lookups one probe may spend after refusals.
 const MAX_LOOKUPS_PER_PROBE: usize = 4;
 
+/// How long a probe waits for one node's answer to a submission or a lookup,
+/// whatever timeout the SDK it goes through is configured with (an SDK may
+/// run with none). A probe is at most [`MAX_SUBMISSIONS_PER_PROBE`] plus
+/// [`MAX_LOOKUPS_PER_PROBE`] requests, so this bounds how long one holds its
+/// wallet's pass. A request that runs out is no answer.
+const REQUEST_DEADLINE: Duration = Duration::from_secs(15);
+
 /// How many *distinct* nodes must refuse a transaction for its inputs before
 /// the probe looks the txid up. One refusal may be a node lagging behind the
 /// tip; two make it worth asking whether it is a mined transaction whose
@@ -247,7 +256,12 @@ pub(crate) async fn probe_with(
     let mut answered = false;
 
     for _ in 0..MAX_SUBMISSIONS_PER_PROBE {
-        let (node, verdict) = submitter.submit(transaction).await;
+        let (node, verdict) = timeout(REQUEST_DEADLINE, submitter.submit(transaction))
+            .await
+            .unwrap_or_else(|_| {
+                let reason = format!("no answer within {}s", REQUEST_DEADLINE.as_secs());
+                (None, NodeVerdict::Unreachable { reason })
+            });
         answered |= !matches!(verdict, NodeVerdict::Unreachable { .. });
         tracing::debug!(
             txid = %transaction.txid(),
@@ -308,7 +322,12 @@ async fn look_up_refused(
     let mut not_found: HashSet<String> = HashSet::new();
     let mut last_unknown = String::from("no lookup was answered");
     for _ in 0..MAX_LOOKUPS_PER_PROBE {
-        let (node, answer) = submitter.lookup(txid).await;
+        let (node, answer) = timeout(REQUEST_DEADLINE, submitter.lookup(txid))
+            .await
+            .unwrap_or_else(|_| {
+                let reason = format!("no answer within {}s", REQUEST_DEADLINE.as_secs());
+                (None, LookupAnswer::Unknown { reason })
+            });
         tracing::debug!(
             txid = %txid,
             node = node.as_deref().unwrap_or("unidentified"),
@@ -1115,5 +1134,63 @@ mod tests {
         probe_with(&nodes, &transaction()).await;
 
         assert_eq!(nodes.lookups_made(), 0);
+    }
+
+    /// Nodes that never answer, as behind an SDK configured with no request
+    /// timeout.
+    struct SilentNodes;
+
+    #[async_trait]
+    impl NodeSubmitter for SilentNodes {
+        async fn submit(&self, _transaction: &Transaction) -> (Option<String>, NodeVerdict) {
+            std::future::pending().await
+        }
+
+        async fn lookup(&self, _txid: &Txid) -> (Option<String>, LookupAnswer) {
+            std::future::pending().await
+        }
+    }
+
+    /// A probe ends by its own deadline when no node ever answers: it does
+    /// not hold its wallet's pass for as long as the transport waits.
+    #[tokio::test(start_paused = true)]
+    async fn should_end_a_probe_whose_requests_are_never_answered() {
+        let started = tokio::time::Instant::now();
+
+        let outcome = probe_with(&SilentNodes, &transaction()).await;
+
+        assert!(!outcome.answered);
+        assert!(is_unresolved(&outcome.verdict));
+        assert_eq!(
+            started.elapsed(),
+            REQUEST_DEADLINE * MAX_SUBMISSIONS_PER_PROBE as u32
+        );
+    }
+
+    /// A lookup that is never answered does not take back the refusals the
+    /// probe already heard: it ends unresolved, as an answered probe.
+    #[tokio::test(start_paused = true)]
+    async fn should_end_a_lookup_that_is_never_answered() {
+        struct RefusingThenSilent(ScriptedNodes);
+
+        #[async_trait]
+        impl NodeSubmitter for RefusingThenSilent {
+            async fn submit(&self, transaction: &Transaction) -> (Option<String>, NodeVerdict) {
+                self.0.submit(transaction).await
+            }
+
+            async fn lookup(&self, _txid: &Txid) -> (Option<String>, LookupAnswer) {
+                std::future::pending().await
+            }
+        }
+        let nodes = RefusingThenSilent(ScriptedNodes::new(vec![
+            (Some("a"), refused()),
+            (Some("b"), refused()),
+        ]));
+
+        let outcome = probe_with(&nodes, &transaction()).await;
+
+        assert!(outcome.answered);
+        assert!(is_unresolved(&outcome.verdict));
     }
 }
