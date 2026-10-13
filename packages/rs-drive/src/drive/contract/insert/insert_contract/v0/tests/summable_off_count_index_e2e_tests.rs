@@ -48,7 +48,9 @@ use crate::query::having::{
     HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
 };
 use crate::query::projection::SelectProjection;
-use crate::query::{DriveDocumentCountQuery, OrderClause, WhereClause, WhereOperator};
+use crate::query::{
+    key_array_element_clauses, DriveDocumentCountQuery, OrderClause, WhereClause, WhereOperator,
+};
 use crate::util::batch::{DocumentOperationType, DriveOperation};
 use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::util::object_size_info::{
@@ -279,9 +281,11 @@ const PAGE: RankedPaginationInputs = RankedPaginationInputs {
 };
 
 /// A ranked read over likes, its proof verified as the SDK verifies it
-/// (through the shared resolver, against the live root): the unproven page,
-/// which the verified proof reproduces.
-fn proved_ranked_page(
+/// (through the shared resolver, against the live root, with the clauses
+/// keyed as the server keys them, so a typed array's `contains` is an
+/// equality on one element's key): the unproven page, which the verified
+/// proof reproduces.
+pub(super) fn proved_ranked_page(
     drive: &Drive,
     contract: &DataContract,
     select: &SelectProjection,
@@ -321,7 +325,9 @@ fn proved_ranked_page(
         DocumentRankedResponse::Proof(proof) => proof,
         DocumentRankedResponse::Entries(_) => panic!("expected a proof"),
     };
-    let mode = detect_ranked_mode(select, group_by, &[], order_by, where_clauses, PAGE, pv)
+    let keyed = key_array_element_clauses(where_clauses.to_vec(), document_type, false, pv)
+        .expect("the clauses key");
+    let mode = detect_ranked_mode(select, group_by, &[], order_by, &keyed, PAGE, pv)
         .expect("the ranked request is well formed");
     let (root_hash, verified) = resolve_ranked_query_for_mode(
         contract.id_ref().to_buffer(),
@@ -481,7 +487,7 @@ fn like_count_query<'a>(
 }
 
 /// A `sum(byPost)` request over likes, executed.
-fn sum_likes(
+pub(super) fn sum_likes(
     drive: &Drive,
     contract: &DataContract,
     where_clauses: Vec<WhereClause>,
@@ -513,7 +519,7 @@ fn sum_likes(
 /// The sum query a verifier rebuilds for a `sum(byPost)` over
 /// `where_clauses`: through the range picker for a range, the point picker
 /// otherwise.
-fn like_sum_query<'a>(
+pub(super) fn like_sum_query<'a>(
     contract: &'a DataContract,
     where_clauses: &[WhereClause],
 ) -> DriveDocumentSumQuery<'a> {

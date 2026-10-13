@@ -307,13 +307,13 @@ impl Drive {
             // bucket and every member entry, and nothing continues below it
             // (registration refuses an index that would).
             if sub_level.summable_off_count_index_info().is_some() {
-                // A summableOffCountIndex index names no typed array (registration refuses
-                // one): the counter's group is one value.
-                let document_index_field =
-                    document_index_fields.into_iter().next().unwrap_or_default();
+                // The group's value, or, when the counter's property is a typed
+                // array a `where` equality fixes (protocol version 14), each of
+                // its distinct elements: a group per element, each holding the
+                // whole source group
                 self.add_summable_off_count_counter_operations(
                     sub_level_index_path_info,
-                    document_index_field,
+                    document_index_fields,
                     property_name_tree_type,
                     CounterChange::Increment {
                         parent_created: property_name_tree_created,

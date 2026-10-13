@@ -722,8 +722,10 @@ fn should_refuse_a_second_or_nested_array_on_an_index_only_type_on_every_parse()
 }
 
 /// `preallocated` and `summableOffCountIndex` stay refused on an index of a
-/// typed array: a preallocated path is fixed by one referenced document, and a
-/// counter's group is one value.
+/// typed array no `where` equality binds to a referenced typed array (here the
+/// like refers to nothing): a preallocated path is fixed by one referenced
+/// document, and a counter's group is one element of one list. The bound shape
+/// is admitted (`typed_array_counter_index_tests`).
 #[test]
 fn should_refuse_a_preallocated_or_counting_index_only_array_index() {
     let mut preallocated = by_tag_post();
@@ -735,7 +737,7 @@ fn should_refuse_a_preallocated_or_counting_index_only_array_index() {
             like_tags(true),
             platform_value!([by_post(), preallocated]),
         )),
-        "and declares `preallocated`",
+        "declares `preallocated`, but its path is not determined by a reference",
     );
 
     let counter = platform_value!({
@@ -750,7 +752,7 @@ fn should_refuse_a_preallocated_or_counting_index_only_array_index() {
             like_tags(true),
             platform_value!([by_post(), counter]),
         )),
-        "and is a summableOffCountIndex index",
+        "has \"tags\", which is neither a property of its source \"byPost\" nor fixed by it",
     );
 }
 
