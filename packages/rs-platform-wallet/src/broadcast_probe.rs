@@ -191,12 +191,22 @@ const MAX_SUBMISSIONS_PER_PROBE: usize = 4;
 /// How many txid lookups one probe may spend after refusals.
 const MAX_LOOKUPS_PER_PROBE: usize = 4;
 
-/// How long a probe waits for one node's answer to a submission or a lookup,
-/// whatever timeout the SDK it goes through is configured with (an SDK may
-/// run with none). A probe is at most [`MAX_SUBMISSIONS_PER_PROBE`] plus
+/// How long a probe's request to one node may take, whatever timeout the SDK
+/// it goes through is configured with (an SDK may run with none): set on the
+/// request itself (see [`single_node`]), so a node that ran out is still
+/// named. A probe is at most [`MAX_SUBMISSIONS_PER_PROBE`] plus
 /// [`MAX_LOOKUPS_PER_PROBE`] requests, so this bounds how long one holds its
 /// wallet's pass. A request that runs out is no answer.
 const REQUEST_DEADLINE: Duration = Duration::from_secs(15);
+
+/// The probe's own limit on one request, a little past [`REQUEST_DEADLINE`]:
+/// it holds whatever the transport underneath does with its deadline.
+const REQUEST_BACKSTOP: Duration = Duration::from_secs(20);
+
+/// The reason of a request the backstop ended.
+fn out_of_time() -> String {
+    format!("no answer within {}s", REQUEST_BACKSTOP.as_secs())
+}
 
 /// How many *distinct* nodes must refuse a transaction for its inputs before
 /// the probe looks the txid up. One refusal may be a node lagging behind the
@@ -256,10 +266,10 @@ pub(crate) async fn probe_with(
     let mut answered = false;
 
     for _ in 0..MAX_SUBMISSIONS_PER_PROBE {
-        let (node, verdict) = timeout(REQUEST_DEADLINE, submitter.submit(transaction))
+        let (node, verdict) = timeout(REQUEST_BACKSTOP, submitter.submit(transaction))
             .await
             .unwrap_or_else(|_| {
-                let reason = format!("no answer within {}s", REQUEST_DEADLINE.as_secs());
+                let reason = out_of_time();
                 (None, NodeVerdict::Unreachable { reason })
             });
         answered |= !matches!(verdict, NodeVerdict::Unreachable { .. });
@@ -322,10 +332,10 @@ async fn look_up_refused(
     let mut not_found: HashSet<String> = HashSet::new();
     let mut last_unknown = String::from("no lookup was answered");
     for _ in 0..MAX_LOOKUPS_PER_PROBE {
-        let (node, answer) = timeout(REQUEST_DEADLINE, submitter.lookup(txid))
+        let (node, answer) = timeout(REQUEST_BACKSTOP, submitter.lookup(txid))
             .await
             .unwrap_or_else(|_| {
-                let reason = format!("no answer within {}s", REQUEST_DEADLINE.as_secs());
+                let reason = out_of_time();
                 (None, LookupAnswer::Unknown { reason })
             });
         tracing::debug!(
@@ -452,6 +462,7 @@ fn single_node() -> RequestSettings {
     RequestSettings {
         retries: Some(0),
         ban_failed_address: Some(false),
+        timeout: Some(REQUEST_DEADLINE),
         ..RequestSettings::default()
     }
 }
@@ -1163,7 +1174,7 @@ mod tests {
         assert!(is_unresolved(&outcome.verdict));
         assert_eq!(
             started.elapsed(),
-            REQUEST_DEADLINE * MAX_SUBMISSIONS_PER_PROBE as u32
+            REQUEST_BACKSTOP * MAX_SUBMISSIONS_PER_PROBE as u32
         );
     }
 

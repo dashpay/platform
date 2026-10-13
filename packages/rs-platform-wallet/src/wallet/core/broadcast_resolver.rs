@@ -55,10 +55,8 @@
 //! completion can be handled before the wallet's own step to that tip (the
 //! two come from separate tasks): that step, when it follows within
 //! [`COMPLETED_AHEAD_TTL`], is the wallet's arrival at the tip and runs the
-//! pass, however large it is. The step may also never come (the fan-out
-//! can drop one), so a completion reads a wallet it has a lower height for,
-//! when that wallet has no pass of its own: the read runs the pass if the
-//! wallet is at the tip and confines it to forced roots if not. A
+//! pass, however large it is. A step that never comes (the fan-out can
+//! drop one) is not made up for: the pass then runs at the next block. A
 //! root is probed every block for [`EVERY_BLOCK_WINDOW`] blocks, counted
 //! from its first probe by a height-driven pass while the wallet follows the
 //! tip (a forced pass does not start it), and every [`SLOW_INTERVAL`] blocks
@@ -1366,11 +1364,6 @@ struct PendingPass {
     /// results asked for it, or a catch-up overtook it — probes only the
     /// roots those results forced and starts no windows.
     anchor_at: Option<u32>,
-    /// A completed tip the wallet is asked about (see
-    /// `Command::SyncComplete`): the read anchors the pass there when it
-    /// finds the wallet at that tip and `anchor_at` does not hold. Such a
-    /// pass is not dropped for being below the wallet's wait.
-    asked_tip: Option<u32>,
     /// Roots a retry forces (see [`NO_ANSWER_RETRY`]): probed only if they
     /// are still roots — one whose parent has since shown up unsettled is
     /// not resolved to that parent.
@@ -1394,8 +1387,6 @@ struct Run {
     /// Where this pass starts windows; `None` confines it to forced roots
     /// (see [`PendingPass::anchor_at`]).
     anchor_at: Option<u32>,
-    /// See [`PendingPass::asked_tip`].
-    asked_tip: Option<u32>,
     /// What `Uncertain` results forced it to probe: carried over to the next
     /// pass when a rewind stops it.
     forced: HashSet<Txid>,
@@ -1465,16 +1456,6 @@ struct WalletEntry {
     /// one. Kept with the time it was handled: it stands for
     /// [`COMPLETED_AHEAD_TTL`] only (see there).
     completed_ahead: Option<(u32, Instant)>,
-    /// The completed tip the wallet was last asked its own height for (see
-    /// `Command::SyncComplete`): one read per tip, however often it
-    /// completes.
-    asked_at: Option<u32>,
-    /// The height a pass that follows the tip found the wallet at when that
-    /// was above the last height step handled: the wallet's height for
-    /// retries and for judging the next step, until the steps catch up. Kept
-    /// apart from `height`, which is the cursor of the steps delivered: one
-    /// still on its way below this is late, not a rewind.
-    found_at: Option<u32>,
 }
 
 impl WalletEntry {
@@ -1705,8 +1686,6 @@ impl Actor {
                     entry.retry_series = None;
                     entry.followed_pass_at = None;
                     entry.yielded_at = None;
-                    entry.asked_at = None;
-                    entry.found_at = None;
                     if let Some(run) = entry.run.take() {
                         run.abort.abort();
                         if !run.forced.is_empty() {
@@ -1727,12 +1706,6 @@ impl Actor {
                 let Some(entry) = self.wallets.get_mut(&wallet_id) else {
                     return;
                 };
-                // A pass has already found the wallet above this step: the
-                // step is late, and what follows from it is done.
-                if entry.found_at.is_some_and(|found| height < found) {
-                    return;
-                }
-                let previous = previous.max(entry.found_at.take());
                 let completed = entry
                     .completed_ahead
                     .filter(|(_, at)| at.elapsed() <= COMPLETED_AHEAD_TTL)
@@ -1859,8 +1832,6 @@ impl Actor {
                     entry.retry_series = None;
                     entry.followed_pass_at = None;
                     entry.yielded_at = None;
-                    entry.asked_at = None;
-                    entry.found_at = None;
                     if !enabled {
                         entry.pending = None;
                         if let Some(run) = entry.run.take() {
@@ -1884,9 +1855,8 @@ impl Actor {
             Command::SyncComplete { tip } => {
                 // Every wallet at the tip follows it now: a launch's or a
                 // reconnect's catch-up skipped its pass, and the next block
-                // can be minutes away. A wallet the actor has far below is
-                // asked where it is (below): its windows must not start at a
-                // stale height. One
+                // can be minutes away. A wallet still far below (rescanning)
+                // waits: its windows must not start at a stale height. One
                 // without a step since launch reads its own height. While
                 // probing is off this does nothing (queue_followed_pass): the
                 // next completion, after the next block, covers it.
@@ -1897,23 +1867,11 @@ impl Actor {
                 // since launch: its first step, when it lands at this tip, is
                 // then its arrival and keeps the pass started here.
                 let now = Instant::now();
-                let enabled = self.enabled;
-                let mut below_tip: Vec<WalletId> = Vec::new();
-                for (wallet_id, entry) in self.wallets.iter_mut() {
+                for entry in self.wallets.values_mut() {
                     let below = entry
                         .height
                         .is_none_or(|height| height < tip && !near_tip(height, tip));
                     entry.completed_ahead = below.then_some((tip, now));
-                    // Asked once per tip, and not while idle.
-                    if below
-                        && enabled
-                        && entry.height.is_some()
-                        && entry.asked_at != Some(tip)
-                        && !entry.wait_until.is_some_and(|until| tip < until)
-                    {
-                        entry.asked_at = Some(tip);
-                        below_tip.push(*wallet_id);
-                    }
                 }
                 let at_tip: Vec<(WalletId, u32)> = self
                     .wallets
@@ -1926,24 +1884,6 @@ impl Actor {
                     .collect();
                 for (wallet_id, height) in at_tip {
                     self.queue_followed_pass(wallet_id, height);
-                }
-                // The height the actor has for a wallet below the tip may be
-                // old because its step was lost, not late (the fan-out can
-                // drop one). Ask the wallet itself: a pass anchored at the
-                // tip, which its read confines to forced roots when the
-                // wallet really is below, and whose height the actor takes
-                // when it is not (see `JobDone::Read`). Behind a pass under
-                // way; a pass already queued as following keeps its anchor,
-                // and the tip is asked beside it (`PendingPass::asked_tip`).
-                for wallet_id in below_tip {
-                    let Some(entry) = self.wallets.get_mut(&wallet_id) else {
-                        continue;
-                    };
-                    let known = entry.height.unwrap_or(tip);
-                    let pending = entry.pending.get_or_insert_with(PendingPass::default);
-                    pending.height = pending.height.max(known);
-                    pending.asked_tip = Some(tip);
-                    self.start(wallet_id);
                 }
             }
             Command::WalletAdded(wallet_id) => {
@@ -2097,13 +2037,12 @@ impl Actor {
             return;
         };
         let anchor_at = pending.anchor_at;
-        let asked_tip = pending.asked_tip;
         let forced = pending.forced.clone();
         let retried = pending.retried.clone();
         let to_read: HashSet<Txid> = pending.forced.union(&pending.retried).copied().collect();
         // Walk the records if the pass may probe by schedule; one confined to
         // forced roots with none of them held has nothing to read for.
-        let walk = Arc::new(AtomicBool::new(anchor_at.is_some() || asked_tip.is_some()));
+        let walk = Arc::new(AtomicBool::new(anchor_at.is_some()));
         self.next_run += 1;
         let run = self.next_run;
         let source = Arc::clone(&self.source);
@@ -2123,7 +2062,6 @@ impl Actor {
             settled: HashSet::new(),
             woken: false,
             anchor_at,
-            asked_tip,
             forced,
             retried,
             walk,
@@ -2240,32 +2178,19 @@ impl Actor {
                         // A request queued before any height was reported
                         // carries 0; the wallet's own synced height is better.
                         let height = height.max(read.synced_height);
-                        // A pass that follows the tip found the wallet there:
-                        // that is the wallet's height, also when the step to
-                        // it never reached the actor. Retries and the next
-                        // step are judged against it.
-                        let synced = read.synced_height;
-                        let fits =
-                            |at: u32| synced >= at && synced <= at.saturating_add(CATCH_UP_STEP);
                         let Some(current) = entry.run.as_mut() else {
                             return; // matched by id above
                         };
                         // The wallet is not where this pass was queued: far
                         // ahead (a catch-up whose height step has not arrived
                         // yet) or behind (a rewind for a rescan). Either way a
-                        // catch-up — confine the pass to forced roots. Unless
-                        // a completion asked about a tip and the wallet is
-                        // there: then that tip is the pass's anchor.
-                        if !current.anchor_at.is_some_and(fits) {
-                            current.anchor_at = current.asked_tip.filter(|at| fits(*at));
+                        // catch-up — confine the pass to forced roots.
+                        if current.anchor_at.is_some_and(|at| {
+                            read.synced_height < at
+                                || read.synced_height > at.saturating_add(CATCH_UP_STEP)
+                        }) {
+                            current.anchor_at = None;
                         }
-                        let follows = current.anchor_at.is_some();
-                        if follows && entry.height.is_none_or(|known| known < synced) {
-                            entry.found_at = Some(synced);
-                        }
-                        let Some(current) = entry.run.as_mut() else {
-                            return;
-                        };
                         // What an event settled since the read began is not
                         // the pass's any more.
                         let views: Vec<OutgoingView> = read
@@ -2366,11 +2291,7 @@ impl Actor {
                 }
                 // Still at that height: a new block's pass probes the
                 // unanswered roots anyway (due at the next height).
-                if entry
-                    .height
-                    .max(entry.found_at)
-                    .is_some_and(|now| now != height)
-                {
+                if entry.height.is_some_and(|now| now != height) {
                     return;
                 }
                 tracing::info!(
@@ -2493,7 +2414,6 @@ impl Actor {
         if let Some(pending) = entry.pending.as_mut() {
             if !stays(pending.anchor_at) {
                 pending.anchor_at = None;
-                pending.asked_tip = None;
                 // A rewind replays lower heights: never run above them.
                 pending.height = height;
                 if pending.forced.is_empty() {
@@ -2513,7 +2433,6 @@ impl Actor {
             return;
         }
         run.anchor_at = None;
-        run.asked_tip = None;
         run.walk.store(false, Ordering::SeqCst);
         if let Some(probing) = run.probing.as_mut() {
             probing.drop_scheduled();
@@ -2679,7 +2598,7 @@ impl Actor {
         };
         entry.run = None;
         if let (Some(pending), Some(until)) = (&entry.pending, entry.wait_until) {
-            if pending.forced.is_empty() && pending.asked_tip.is_none() && pending.height < until {
+            if pending.forced.is_empty() && pending.height < until {
                 entry.pending = None;
             }
         }
@@ -4402,9 +4321,8 @@ mod tests {
         assert_eq!(probe.probed(), vec![txid(1)]);
     }
 
-    /// A wallet still rescanning far below the tip gets no probe from a
-    /// completion: it is read once for that tip, found below, and its
-    /// windows do not start at a stale height.
+    /// A wallet still rescanning far below the tip gets no pass from a
+    /// completion: its windows must not start at a stale height.
     #[tokio::test]
     async fn should_not_probe_a_wallet_far_below_a_completed_tip() {
         let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
@@ -4811,9 +4729,9 @@ mod tests {
     }
 
     /// Sync events and wallet events come from separate tasks: a completion
-    /// can be handled before the height step it follows, and that step can
-    /// be lost. The completion asks the wallet where it is and runs the pass
-    /// at the tip; the step, when it comes, adds nothing.
+    /// can be handled before the height step it follows. The step that then
+    /// brings the wallet to that tip runs the pass the completion could not,
+    /// instead of waiting for the next block as a catch-up step does.
     #[tokio::test]
     async fn should_probe_at_the_tip_when_the_completion_overtook_the_height_step() {
         let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
@@ -4828,14 +4746,16 @@ mod tests {
             .lock()
             .expect("synced")
             .insert(wallet(), 150);
-        // The completion asks the wallet itself, whatever height the actor
-        // has for it: the pass runs even if that step never comes.
         rig.send(sync_complete(150)).await;
-        assert_eq!(probe.probed().len(), 1);
+        assert_eq!(
+            probe.probed().len(),
+            0,
+            "the actor still has the wallet at 100"
+        );
 
         rig.height(wallet(), 150).await;
 
-        assert_eq!(probe.probed().len(), 1, "the step adds no second probe");
+        assert_eq!(probe.probed().len(), 1);
         assert_eq!(
             rig.actor.state.schedules[&(wallet(), txid(1))].window_start,
             Some(150)
@@ -5330,130 +5250,6 @@ mod tests {
         let due: HashSet<Txid> = start.due.iter().map(|root| root.txid).collect();
         assert_eq!(due, forced);
         assert!(start.due.iter().all(|root| root.forced));
-    }
-
-    /// The pass a completion ran for a wallet whose step was lost leaves the
-    /// actor with the wallet's real height: a probe no node answered there
-    /// is retried, not dropped as belonging to another height.
-    #[tokio::test(start_paused = true)]
-    async fn should_retry_at_the_height_a_completion_found_the_wallet_at() {
-        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unreachable_verdict())]));
-        let mut rig = enabled(probe.clone()).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.height(wallet(), 100).await;
-        rig.source
-            .synced
-            .lock()
-            .expect("synced")
-            .insert(wallet(), 150);
-
-        rig.send(sync_complete(150)).await;
-
-        assert_eq!(rig.actor.wallets[&wallet()].found_at, Some(150));
-        assert_eq!(probe.probed().len(), 1 + MAX_NO_ANSWER_RETRIES as usize);
-    }
-
-    /// The height a completion's pass found the wallet at is not the cursor
-    /// of its height steps: a step still on its way below it is late, not a
-    /// rewind, and must not clear what that pass published.
-    #[tokio::test]
-    async fn should_not_take_a_late_step_below_a_found_height_for_a_rewind() {
-        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), ProbeVerdict::Accepted)]));
-        let mut rig = enabled(probe.clone()).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.height(wallet(), 100).await;
-        rig.source
-            .synced
-            .lock()
-            .expect("synced")
-            .insert(wallet(), 150);
-        rig.send(sync_complete(150)).await;
-        assert_eq!(
-            rig.sent(),
-            vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
-        );
-
-        rig.height(wallet(), 120).await; // late
-        rig.height(wallet(), 150).await; // the step the completion overtook
-
-        assert!(rig.sent().is_empty(), "nothing cleared, nothing repeated");
-        assert_eq!(probe.probed().len(), 1);
-        assert_eq!(
-            rig.actor.state.schedules[&(wallet(), txid(1))].window_start,
-            Some(150)
-        );
-        assert_eq!(rig.actor.wallets[&wallet()].found_at, None);
-    }
-
-    /// Turning probing off and on starts the completion's question over: a
-    /// tip asked in the earlier period is asked again.
-    #[tokio::test]
-    async fn should_ask_a_completed_tip_again_after_probing_was_switched_off_and_on() {
-        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
-        let mut rig = enabled(probe.clone()).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.height(wallet(), 100).await;
-        rig.send(sync_complete(150)).await; // asked: the wallet is at 100
-        assert_eq!(probe.probed().len(), 0);
-
-        rig.send(Command::SetEnabled(false)).await;
-        rig.source
-            .synced
-            .lock()
-            .expect("synced")
-            .insert(wallet(), 150);
-        rig.send(Command::SetEnabled(true)).await;
-        rig.send(sync_complete(150)).await;
-
-        assert_eq!(probe.probed().len(), 1);
-    }
-
-    /// A completion's question queued behind a pass under way survives that
-    /// pass's end: the wallet is read again and the pass at the tip runs.
-    #[tokio::test]
-    async fn should_ask_the_wallet_after_the_pass_a_completion_found_under_way() {
-        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
-        let mut rig = enabled(probe.clone()).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.height(wallet(), 100).await;
-
-        // A followed pass at 101: its read is back, its probe is out.
-        rig.handle(Command::Height {
-            wallet_id: wallet(),
-            height: 101,
-        });
-        let read = rig.actor.jobs.join_next_with_id().await.expect("the read");
-        rig.actor.joined(read);
-        // The wallet reaches 150 with no step delivered; the sync completes.
-        rig.source
-            .synced
-            .lock()
-            .expect("synced")
-            .insert(wallet(), 150);
-        rig.handle(sync_complete(150));
-        rig.settle().await;
-
-        assert_eq!(rig.actor.wallets[&wallet()].found_at, Some(150));
-        assert_eq!(rig.actor.wallets[&wallet()].followed_pass_at, Some(150));
-    }
-
-    /// A wallet the actor has below a completed tip is read once for that
-    /// tip, however often the sync completes there.
-    #[tokio::test]
-    async fn should_ask_a_wallet_below_the_tip_once_per_completed_tip() {
-        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
-        let mut rig = enabled(probe.clone()).await;
-        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
-        rig.height(wallet(), 100).await;
-
-        rig.send(sync_complete(150)).await;
-        let asked = rig.walks();
-        rig.send(sync_complete(150)).await;
-        assert_eq!(rig.walks(), asked, "a second read for the same tip");
-
-        rig.send(sync_complete(151)).await;
-        assert_eq!(rig.walks(), asked + 1);
-        assert_eq!(probe.probed().len(), 0, "the wallet is still below");
     }
 
     /// A completion can also overtake a wallet's first step since launch.
@@ -5971,7 +5767,6 @@ mod tests {
                 settled: HashSet::new(),
                 woken: false,
                 anchor_at: Some(101),
-                asked_tip: None,
                 forced: HashSet::new(),
                 retried: HashSet::new(),
                 walk: Arc::new(AtomicBool::new(false)),
