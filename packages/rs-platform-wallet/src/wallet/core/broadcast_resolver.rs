@@ -1467,6 +1467,10 @@ struct WalletEntry {
     /// one. Kept with the time it was handled: it stands for
     /// [`COMPLETED_AHEAD_TTL`] only (see there).
     completed_ahead: Option<(u32, Instant)>,
+    /// The completed tip the wallet was last asked its own height for (see
+    /// `Command::SyncComplete`): one read per tip, however often it
+    /// completes.
+    asked_at: Option<u32>,
 }
 
 impl WalletEntry {
@@ -1866,8 +1870,9 @@ impl Actor {
             Command::SyncComplete { tip } => {
                 // Every wallet at the tip follows it now: a launch's or a
                 // reconnect's catch-up skipped its pass, and the next block
-                // can be minutes away. A wallet still far below (rescanning)
-                // waits: its windows must not start at a stale height. One
+                // can be minutes away. A wallet the actor has far below is
+                // asked where it is (below): its windows must not start at a
+                // stale height. One
                 // without a step since launch reads its own height. While
                 // probing is off this does nothing (queue_followed_pass): the
                 // next completion, after the next block, covers it.
@@ -1878,11 +1883,23 @@ impl Actor {
                 // since launch: its first step, when it lands at this tip, is
                 // then its arrival and keeps the pass started here.
                 let now = Instant::now();
-                for entry in self.wallets.values_mut() {
+                let enabled = self.enabled;
+                let mut below_tip: Vec<WalletId> = Vec::new();
+                for (wallet_id, entry) in self.wallets.iter_mut() {
                     let below = entry
                         .height
                         .is_none_or(|height| height < tip && !near_tip(height, tip));
                     entry.completed_ahead = below.then_some((tip, now));
+                    // Asked once per tip, and not while idle.
+                    if below
+                        && enabled
+                        && entry.height.is_some()
+                        && entry.asked_at != Some(tip)
+                        && !entry.wait_until.is_some_and(|until| tip < until)
+                    {
+                        entry.asked_at = Some(tip);
+                        below_tip.push(*wallet_id);
+                    }
                 }
                 let at_tip: Vec<(WalletId, u32)> = self
                     .wallets
@@ -1900,30 +1917,17 @@ impl Actor {
                 // old because its step was lost, not late (the fan-out can
                 // drop one). Ask the wallet itself: a pass anchored at the
                 // tip, which its read confines to forced roots when the
-                // wallet really is below (see `JobDone::Read`). Only for a
-                // wallet with no pass of its own, and not an idle one.
-                let enabled = self.enabled;
-                let below: Vec<WalletId> = self
-                    .wallets
-                    .iter()
-                    .filter(|(_, entry)| {
-                        enabled
-                            && entry.completed_ahead.is_some()
-                            && entry.height.is_some()
-                            && entry.run.is_none()
-                            && entry.pending.is_none()
-                            && !entry.wait_until.is_some_and(|until| tip < until)
-                    })
-                    .map(|(wallet_id, _)| *wallet_id)
-                    .collect();
-                for wallet_id in below {
-                    if let Some(entry) = self.wallets.get_mut(&wallet_id) {
-                        entry.pending = Some(PendingPass {
-                            height: entry.height.unwrap_or(0),
-                            anchor_at: Some(tip),
-                            ..PendingPass::default()
-                        });
-                    }
+                // wallet really is below, and whose height the actor takes
+                // when it is not (see `JobDone::Read`). Behind a pass under
+                // way; a pass already queued as following keeps its anchor.
+                for wallet_id in below_tip {
+                    let Some(entry) = self.wallets.get_mut(&wallet_id) else {
+                        continue;
+                    };
+                    let known = entry.height.unwrap_or(tip);
+                    let pending = entry.pending.get_or_insert_with(PendingPass::default);
+                    pending.height = pending.height.max(known);
+                    pending.anchor_at.get_or_insert(tip);
                     self.start(wallet_id);
                 }
             }
@@ -2011,7 +2015,23 @@ impl Actor {
         entry.wait_until = Some(u32::MAX);
         let events = self.forget_wallet(&wallet_id, "gone");
         deliver(&self.sink, events);
+        // An echo lookup from before may still name this registration.
+        self.relook_echoes(|_| true);
         self.end_run(wallet_id);
+    }
+
+    /// Make again the echo lookups still out whose txid `affected` names:
+    /// what they found may no longer hold.
+    fn relook_echoes(&mut self, affected: impl Fn(&Txid) -> bool) {
+        let echoes: Vec<Txid> = self
+            .echo_lookups
+            .keys()
+            .filter(|txid| affected(txid))
+            .copied()
+            .collect();
+        for txid in echoes {
+            self.look_up_echo(txid);
+        }
     }
 
     /// Drop the wallet's entry, stop its pass and forget its state, the host
@@ -2025,10 +2045,7 @@ impl Actor {
         // one replaces: look again, so the acceptance reaches the wallets
         // that hold the send now. The echo was already taken out of
         // `uncertain`, so dropping its lookup would lose it for the others.
-        let echoes: Vec<Txid> = self.echo_lookups.keys().copied().collect();
-        for txid in echoes {
-            self.look_up_echo(txid);
-        }
+        self.relook_echoes(|_| true);
         // A report's lookup may name the wallet gone: look again, so the
         // other holders still get their forced probe and priority.
         let reports: Vec<Txid> = self.report_lookups.keys().copied().collect();
@@ -2215,6 +2232,21 @@ impl Actor {
                         // A request queued before any height was reported
                         // carries 0; the wallet's own synced height is better.
                         let height = height.max(read.synced_height);
+                        // A pass that follows the tip found the wallet there:
+                        // that is the wallet's height, also when the step to
+                        // it never reached the actor. Retries and the next
+                        // step are judged against it.
+                        let synced = read.synced_height;
+                        let follows = entry
+                            .run
+                            .as_ref()
+                            .and_then(|run| run.anchor_at)
+                            .is_some_and(|at| {
+                                synced >= at && synced <= at.saturating_add(CATCH_UP_STEP)
+                            });
+                        if follows && entry.height.is_none_or(|known| known < synced) {
+                            entry.height = Some(synced);
+                        }
                         let Some(current) = entry.run.as_mut() else {
                             return; // matched by id above
                         };
@@ -2261,6 +2293,11 @@ impl Actor {
                         forget_reported(&mut self.reported, &wallet_id, |txid| {
                             !present.contains(txid)
                         });
+                        let own_present: HashSet<Txid> = views
+                            .iter()
+                            .filter(|view| view.spends_own_coins)
+                            .map(|view| view.txid)
+                            .collect();
                         let priority: HashSet<Txid> = self
                             .reported
                             .iter()
@@ -2302,12 +2339,9 @@ impl Actor {
                         // This read may have found a send settled or gone
                         // that no `Settled` named (the lossless channel only
                         // says a wallet's records changed). An echo lookup
-                        // from before would still name this wallet: look
-                        // again, as after a wallet change.
-                        let echoes: Vec<Txid> = self.echo_lookups.keys().copied().collect();
-                        for txid in echoes {
-                            self.look_up_echo(txid);
-                        }
+                        // from before could still name this wallet for such
+                        // a send: look those up again.
+                        self.relook_echoes(|txid| !own_present.contains(txid));
                     }
                 }
             }
@@ -4365,8 +4399,9 @@ mod tests {
         assert_eq!(probe.probed(), vec![txid(1)]);
     }
 
-    /// A wallet still rescanning far below the tip gets no pass from a
-    /// completion: its windows must not start at a stale height.
+    /// A wallet still rescanning far below the tip gets no probe from a
+    /// completion: it is read once for that tip, found below, and its
+    /// windows do not start at a stale height.
     #[tokio::test]
     async fn should_not_probe_a_wallet_far_below_a_completed_tip() {
         let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
@@ -4773,9 +4808,9 @@ mod tests {
     }
 
     /// Sync events and wallet events come from separate tasks: a completion
-    /// can be handled before the height step it follows. The step that then
-    /// brings the wallet to that tip runs the pass the completion could not,
-    /// instead of waiting for the next block as a catch-up step does.
+    /// can be handled before the height step it follows, and that step can
+    /// be lost. The completion asks the wallet where it is and runs the pass
+    /// at the tip; the step, when it comes, adds nothing.
     #[tokio::test]
     async fn should_probe_at_the_tip_when_the_completion_overtook_the_height_step() {
         let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
@@ -5292,6 +5327,46 @@ mod tests {
         let due: HashSet<Txid> = start.due.iter().map(|root| root.txid).collect();
         assert_eq!(due, forced);
         assert!(start.due.iter().all(|root| root.forced));
+    }
+
+    /// The pass a completion ran for a wallet whose step was lost leaves the
+    /// actor with the wallet's real height: a probe no node answered there
+    /// is retried, not dropped as belonging to another height.
+    #[tokio::test(start_paused = true)]
+    async fn should_retry_at_the_height_a_completion_found_the_wallet_at() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unreachable_verdict())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.height(wallet(), 100).await;
+        rig.source
+            .synced
+            .lock()
+            .expect("synced")
+            .insert(wallet(), 150);
+
+        rig.send(sync_complete(150)).await;
+
+        assert_eq!(rig.actor.wallets[&wallet()].height, Some(150));
+        assert_eq!(probe.probed().len(), 1 + MAX_NO_ANSWER_RETRIES as usize);
+    }
+
+    /// A wallet the actor has below a completed tip is read once for that
+    /// tip, however often the sync completes there.
+    #[tokio::test]
+    async fn should_ask_a_wallet_below_the_tip_once_per_completed_tip() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.height(wallet(), 100).await;
+
+        rig.send(sync_complete(150)).await;
+        let asked = rig.walks();
+        rig.send(sync_complete(150)).await;
+        assert_eq!(rig.walks(), asked, "a second read for the same tip");
+
+        rig.send(sync_complete(151)).await;
+        assert_eq!(rig.walks(), asked + 1);
+        assert_eq!(probe.probed().len(), 0, "the wallet is still below");
     }
 
     /// A completion can also overtake a wallet's first step since launch.

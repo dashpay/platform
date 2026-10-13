@@ -811,6 +811,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // Another removal of this id may be in its last step,
                 // waiting for the resolver: a caller told "not found" takes
                 // the wallet for gone, so this return keeps the same promise.
+                // An id that was never registered waits too, only while a
+                // host handler holds the resolver's task.
                 self.wait_for_resolver(wallet_id).await;
                 return Err(PlatformWalletError::WalletNotFound(hex::encode(wallet_id)));
             };
@@ -1013,8 +1015,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
-                "remove_wallet: the broadcast resolver did not get to the removal in time; \
-                 a verdict for this wallet may still reach the host"
+                "remove_wallet: the broadcast resolver's task was still busy after the wait; \
+                 if this wallet was registered, a verdict for it may still reach the host"
             );
         }
     }
