@@ -25,7 +25,7 @@ use platform_wallet::changeset::changeset::SweepBatch;
 use platform_wallet::changeset::provider_key_account::{
     rebuild_provider_key_account, ProviderAccountRebuildError,
 };
-use platform_wallet::changeset::{AccountRegistrationEntry, CoreChangeSet};
+use platform_wallet::changeset::{is_owned, AccountRegistrationEntry, CoreChangeSet};
 
 use crate::sqlite::provider_accounts::{insert_platform_node_pool_entry, PlatformNodePoolError};
 
@@ -463,17 +463,20 @@ pub(crate) fn restore_recorded_transactions(
     // outpoint keeps its reservation across load and rescan; only a conflicting
     // IS-locked or confirmed spend releases it. Sibling of
     // TODO(release-repair-spends-after-reorg) in `core_history`.
-    let mut replay = replay_order(records);
     if !unreplayable.is_empty() {
-        // Count only: the skipped txids are peer-supplied.
+        // Count only: the txids are peer-supplied.
         tracing::warn!(
             wallet_id = %hex::encode(wallet_info.wallet_id),
-            skipped = unreplayable.len(),
-            "unconfirmed transaction records with unsafe amounts left out of load replay; their stored spend claims still apply"
+            set_aside = unreplayable.len(),
+            "unconfirmed transaction records with unsafe amounts restored without replay; conflict settlement still sees them"
         );
-        replay.retain(|record| !unreplayable.contains(&record.txid));
     }
-    for record in &mut replay {
+    let mut records = records;
+    for record in &mut records {
+        // A set-aside record stays unconfirmed: it may lose a conflict, never settle one.
+        if unreplayable.contains_key(&record.txid) {
+            continue;
+        }
         record.context = match &record.context {
             TransactionContext::InBlock(block)
                 if wallet_info
@@ -492,6 +495,9 @@ pub(crate) fn restore_recorded_transactions(
             context => context.clone(),
         };
     }
+    // Ordered once the locks are applied: a locked record must not replay after
+    // unrelated mempool records.
+    let mut replay = replay_order(records);
 
     // Kept only to undo a replay the checker suspended part-way through.
     let (info_before, wallet_before) = (wallet_info.clone(), wallet.clone());
@@ -501,11 +507,16 @@ pub(crate) fn restore_recorded_transactions(
         .flat_map(|sweep| sweep.txids.iter().copied())
         .collect();
     replay.retain(|record| !removed.contains(&record.txid));
+    // Built from what planning left: a conflict it settled is not asked about again.
+    let spends = unconfirmed_spends(&replay);
     for account in wallet_info.accounts.all_funding_accounts_mut() {
         account
             .utxos
             .retain(|outpoint, _| !removed.contains(&outpoint.txid));
     }
+    let (unreplayed, replay): (Vec<_>, Vec<_>) = replay
+        .into_iter()
+        .partition(|record| unreplayable.contains_key(&record.txid));
     stage_recorded_spent_inputs(wallet_info, &replay, &placed);
     let completed = poll_ready(async {
         for record in &replay {
@@ -539,9 +550,15 @@ pub(crate) fn restore_recorded_transactions(
         *wallet = wallet_before;
         return Ok(Vec::new());
     }
+    // After the replay, so each replayed final record does not scan their inputs:
+    // planning has settled them, and the pass below sees them again.
+    restore_unreplayed_records(wallet_info, unreplayed.into_iter(), &unreplayable);
     // A settled spend's first sweep cannot reach competitors replayed later.
     // The upstream sweep preserves ChainLock/InstantSend precedence.
     for record in &replay {
+        if !shares_unconfirmed_input(record, &spends) {
+            continue;
+        }
         let result = wallet_info.sweep_conflicts(&record.transaction, &record.context);
         if !result.txids.is_empty() {
             sweeps.push(replay_sweep(
@@ -595,13 +612,14 @@ pub(crate) fn restore_recorded_transactions(
 /// A fitting net does not make an overflowing operand safe. Include every source
 /// of replay inputs: durable coins, parent outputs, and staged input details.
 ///
-/// Returns the unconfirmed records that must be left out of the replay. Nothing
+/// Returns the unconfirmed records that must be left out of the replay, each
+/// with whether its input amounts are safe to keep in account history. Nothing
 /// authenticates a mempool transaction, so its amounts are peer-supplied data,
 /// not corruption; only a network-final record fails the load.
 fn validate_replay_amounts(
     wallet_info: &ManagedWalletInfo,
     records: &[TransactionRecord],
-) -> Result<HashSet<Txid>, WalletStorageError> {
+) -> Result<HashMap<Txid, bool>, WalletStorageError> {
     fn total(
         field: &'static str,
         values: impl IntoIterator<Item = u64>,
@@ -647,19 +665,20 @@ fn validate_replay_amounts(
     fn replayable(
         record: &TransactionRecord,
         checked: Result<(), WalletStorageError>,
-        unreplayable: &mut HashSet<Txid>,
+        safe_inputs: bool,
+        unreplayable: &mut HashMap<Txid, bool>,
     ) -> Result<bool, WalletStorageError> {
         match checked {
             Ok(()) => Ok(true),
             Err(_) if matches!(record.context, TransactionContext::Mempool) => {
-                unreplayable.insert(record.txid);
+                unreplayable.insert(record.txid, safe_inputs);
                 Ok(false)
             }
             Err(error) => Err(error),
         }
     }
 
-    let mut unreplayable = HashSet::new();
+    let mut unreplayable = HashMap::new();
     let mut amounts: HashMap<OutPoint, u64> = HashMap::new();
     let mut remember = |outpoint, value| {
         amounts
@@ -675,7 +694,8 @@ fn validate_replay_amounts(
     }
     for record in records {
         // A record left out credits nothing, so its outputs are no child's input amount.
-        if !replayable(record, own_amounts(record), &mut unreplayable)? {
+        let safe_inputs = fits_i64(record.input_details.iter().map(|d| d.value));
+        if !replayable(record, own_amounts(record), safe_inputs, &mut unreplayable)? {
             continue;
         }
         let txid = record.transaction.txid();
@@ -697,7 +717,8 @@ fn validate_replay_amounts(
                 .iter()
                 .filter_map(|input| amounts.get(&input.previous_output).copied()),
         );
-        replayable(record, inputs, &mut unreplayable)?;
+        // A funding redelivery would attribute these to the stored record.
+        replayable(record, inputs, false, &mut unreplayable)?;
     }
     Ok(unreplayable)
 }
@@ -715,24 +736,96 @@ fn replay_sweep(
     }
 }
 
+/// How many unconfirmed records spend each outpoint.
+fn unconfirmed_spends(records: &[TransactionRecord]) -> HashMap<OutPoint, u32> {
+    let mut spends = HashMap::new();
+    for record in records.iter().filter(|record| !record.is_confirmed()) {
+        for input in &record.transaction.input {
+            *spends.entry(input.previous_output).or_default() += 1;
+        }
+    }
+    spends
+}
+
+/// Whether another unconfirmed record spends one of `record`'s inputs.
+///
+/// Only then can the upstream sweep find a loser; asked anyway, it scans every
+/// unconfirmed record's inputs to say no, once per final record. Records only
+/// ever leave the history `spends` was built from, so it never under-counts.
+fn shares_unconfirmed_input(record: &TransactionRecord, spends: &HashMap<OutPoint, u32>) -> bool {
+    let own = u32::from(!record.is_confirmed());
+    record.transaction.input.iter().any(|input| {
+        spends
+            .get(&input.previous_output)
+            .is_some_and(|count| *count > own)
+    })
+}
+
+fn spent_by(record: &TransactionRecord) -> impl Iterator<Item = OutPoint> + '_ {
+    let inputs = record.transaction.input.iter();
+    inputs.map(|input| input.previous_output)
+}
+
+/// The unconfirmed records of a history, with who spends each outpoint and who
+/// spends an output of each transaction.
+#[derive(Default)]
+struct Pending<'a> {
+    records: HashMap<Txid, &'a TransactionRecord>,
+    spenders: HashMap<OutPoint, Vec<Txid>>,
+    children: HashMap<Txid, Vec<Txid>>,
+}
+
+impl<'a> Pending<'a> {
+    fn of(records: &'a [TransactionRecord]) -> Self {
+        let mut pending = Self::default();
+        for record in records.iter().filter(|record| !record.is_confirmed()) {
+            pending.records.insert(record.txid, record);
+            for spent in spent_by(record) {
+                pending.spenders.entry(spent).or_default().push(record.txid);
+                let children = pending.children.entry(spent.txid).or_default();
+                children.push(record.txid);
+            }
+        }
+        pending
+    }
+
+    /// What a conflict sweep for `winner` could remove: the records still
+    /// spending one of its inputs, and their unconfirmed descendants.
+    fn candidates(
+        &self,
+        winner: &TransactionRecord,
+        removed: &HashSet<Txid>,
+    ) -> BTreeMap<Txid, TransactionRecord> {
+        let mut candidates = BTreeMap::new();
+        let spenders = spent_by(winner).filter_map(|spent| self.spenders.get(&spent));
+        let mut queue: Vec<Txid> = spenders.flatten().copied().collect();
+        while let Some(txid) = queue.pop() {
+            if txid == winner.txid || removed.contains(&txid) || candidates.contains_key(&txid) {
+                continue;
+            }
+            if let Some(record) = self.records.get(&txid) {
+                candidates.insert(txid, (*record).clone());
+                queue.extend(self.children.get(&txid).into_iter().flatten());
+            }
+        }
+        candidates
+    }
+}
+
 /// Resolve the full history before a defeated lock can sweep another spender.
+///
+/// The upstream sweep decides every conflict, but scans the account it runs in
+/// whole: each final record's sweep is handed only [`Pending::candidates`].
 fn plan_replay_sweeps(
     wallet_info: &ManagedWalletInfo,
     records: &[TransactionRecord],
 ) -> Vec<SweepBatch> {
     let mut conflicts = wallet_info.clone();
-    // A scratch account lets the upstream sweep see descendants across account boundaries.
-    let Some(account) = conflicts
-        .accounts
-        .all_funding_accounts_mut()
-        .into_iter()
-        .next()
-    else {
-        return Vec::new();
-    };
-    account
-        .transactions_mut()
-        .extend(records.iter().map(|record| (record.txid, record.clone())));
+    // The sweep decides from records alone, and scans every coin once per loser.
+    for account in conflicts.accounts.all_funding_accounts_mut() {
+        account.utxos.clear();
+    }
+    let pending = Pending::of(records);
     let mut winners: Vec<_> = records
         .iter()
         .filter(|record| !matches!(record.context, TransactionContext::Mempool))
@@ -751,6 +844,13 @@ fn plan_replay_sweeps(
         if removed.contains(&record.txid) {
             continue;
         }
+        let candidates = pending.candidates(record, &removed);
+        // One scratch account lets the upstream sweep follow descendants across accounts.
+        let mut accounts = conflicts.accounts.all_funding_accounts_mut();
+        let Some(account) = accounts.first_mut().filter(|_| !candidates.is_empty()) else {
+            continue;
+        };
+        *account.transactions_mut() = candidates;
         let result = conflicts.sweep_conflicts(&record.transaction, &record.context);
         if !result.txids.is_empty() {
             removed.extend(result.txids.iter().copied());
@@ -761,24 +861,73 @@ fn plan_replay_sweeps(
             ));
         }
     }
-    // An input released by an earlier sweep can be claimed by a later surviving winner.
-    let claimed: HashSet<_> = records
-        .iter()
-        .filter(|record| !removed.contains(&record.txid))
-        .flat_map(|record| {
-            record
-                .transaction
-                .input
-                .iter()
-                .map(|input| input.previous_output)
-        })
-        .collect();
-    for sweep in &mut sweeps {
+    // A released input stays claimed while a record not yet removed spends it:
+    // one that survives, or one a later sweep removes.
+    let survivors = records.iter().filter(|r| !removed.contains(&r.txid));
+    let mut claimed: HashSet<_> = survivors.flat_map(spent_by).collect();
+    for sweep in sweeps.iter_mut().rev() {
         sweep
             .released_outpoints
             .retain(|outpoint| !removed.contains(&outpoint.txid) && !claimed.contains(outpoint));
+        for txid in &sweep.txids {
+            let swept = pending.records.get(txid).copied();
+            claimed.extend(swept.into_iter().flat_map(spent_by));
+        }
     }
     sweeps
+}
+
+/// Restore set-aside records without the checker, so the conflict sweep still
+/// finds what they spend: it reads inputs and contexts, never amounts. Every
+/// account a record touches holds a copy, with the wallet-level amounts.
+///
+/// The only arithmetic upstream runs over a stored record is the signed net of
+/// its owned outputs and attributed inputs, when a late funding is attributed
+/// to it. A record whose owned outputs alone exceed `i64` goes back without its
+/// output details, and one whose input amounts `safe_inputs` rules out without
+/// its input details; the store keeps both. What a later funding attributes
+/// upstream sums unchecked, as it does for a record it recorded itself.
+fn restore_unreplayed_records(
+    wallet_info: &mut ManagedWalletInfo,
+    records: impl Iterator<Item = TransactionRecord>,
+    safe_inputs: &HashMap<Txid, bool>,
+) {
+    let mut accounts = wallet_info.accounts.all_funding_accounts_mut();
+    for mut record in records {
+        let outputs = record.output_details.iter().map(|d| d.address.clone());
+        let inputs = record.input_details.iter().map(|d| Some(d.address.clone()));
+        let addresses: Vec<_> = outputs.chain(inputs).flatten().collect();
+        let owned = record.output_details.iter().filter(|d| is_owned(d.role));
+        if !fits_i64(owned.map(|d| d.value)) {
+            record.output_details.clear();
+        }
+        if safe_inputs.get(&record.txid) != Some(&true) {
+            record.input_details.clear();
+        }
+        // The upstream sweep drops a loser's coins and descendants only in an
+        // account that records it, so the record goes wherever the checker
+        // would have put it: each account owning one of its addresses.
+        let touches = |account: &ManagedCoreFundsAccount| {
+            funds_account_type(account) == record.account_type
+                || addresses.iter().any(|a| account.contains_address(a))
+        };
+        // Any funding account will do as a fallback: the sweep searches them all.
+        let fallback = !accounts.iter().any(|account| touches(account));
+        for (index, account) in accounts.iter_mut().enumerate() {
+            if touches(account) || (fallback && index == 0) {
+                let copy = record.clone();
+                account.transactions_mut().insert(copy.txid, copy);
+            }
+        }
+    }
+}
+
+/// Whether `values` sum within `i64`, the type upstream nets a stored record in.
+fn fits_i64(values: impl Iterator<Item = u64>) -> bool {
+    values
+        .map(i64::try_from)
+        .try_fold(0_i64, |sum, value| sum.checked_add(value.ok()?))
+        .is_some()
 }
 
 /// Park every owned input a record spends whose funding no replayed record credits.
@@ -860,7 +1009,10 @@ fn poll_ready<F: std::future::Future>(future: F) -> Option<F::Output> {
 }
 
 /// Order records as the chain would deliver them: every in-set parent ahead of
-/// its children, otherwise confirmed by block position, then unconfirmed.
+/// its children, otherwise confirmed by block position, then InstantSend-locked,
+/// then plain mempool. Replaying a final record makes upstream scan every
+/// unconfirmed record already in history, so only its own ancestors go ahead
+/// of it: the other unlocked records go last.
 ///
 /// Dependencies span both partitions: a parent's stored record can still say
 /// mempool after it confirmed (a height-only confirmation never rewrites an
@@ -871,6 +1023,7 @@ fn replay_order(records: Vec<TransactionRecord>) -> Vec<TransactionRecord> {
         let block = record.block_info();
         (
             block.is_none(),
+            matches!(record.context, TransactionContext::Mempool),
             block.map(|block| (block.height(), block.position())),
             record.txid,
         )
@@ -895,25 +1048,39 @@ fn replay_order(records: Vec<TransactionRecord>) -> Vec<TransactionRecord> {
             children[parent].push(child);
         }
     }
-    // Sorted positions, so the smallest ready one is always next in chain order.
-    let mut ready: BTreeSet<usize> = (0..records.len())
-        .filter(|position| waiting_on[*position] == 0)
-        .collect();
-    let mut emitted = vec![false; records.len()];
-    let mut order = Vec::with_capacity(records.len());
-    while let Some(position) = ready.pop_first() {
-        emitted[position] = true;
-        order.push(position);
-        for &child in &children[position] {
-            waiting_on[child] -= 1;
-            if waiting_on[child] == 0 {
-                ready.insert(child);
+    // Ranks are sorted positions, so the smallest ready one is next in chain order.
+    let chain = |rank: &[usize]| {
+        let mut waiting_on = waiting_on.clone();
+        let mut ready: BTreeSet<(usize, usize)> = (0..records.len())
+            .filter(|position| waiting_on[*position] == 0)
+            .map(|position| (rank[position], position))
+            .collect();
+        let mut order = Vec::with_capacity(records.len());
+        while let Some((_, position)) = ready.pop_first() {
+            order.push(position);
+            for &child in &children[position] {
+                waiting_on[child] -= 1;
+                if waiting_on[child] == 0 {
+                    ready.insert((rank[child], child));
+                }
             }
         }
+        order
+    };
+    // A record ranks with its earliest descendant. Ranked on its own, a mempool
+    // ancestor of final records lets unrelated mempool records into history
+    // first, and each of those final records then scans them.
+    let mut rank: Vec<usize> = (0..records.len()).collect();
+    for &position in chain(&rank).iter().rev() {
+        for &child in &children[position] {
+            rank[position] = rank[position].min(rank[child]);
+        }
     }
+    let mut order = chain(&rank);
     // Unreachable for real transactions (txids cannot form a cycle); keep the
     // rest in chain order rather than drop a reservation.
-    order.extend((0..records.len()).filter(|position| !emitted[*position]));
+    let emitted: HashSet<usize> = order.iter().copied().collect();
+    order.extend((0..records.len()).filter(|position| !emitted.contains(position)));
     let mut slots: Vec<Option<TransactionRecord>> = records.into_iter().map(Some).collect();
     order
         .into_iter()
@@ -4476,8 +4643,372 @@ mod tests {
         TransactionContext::InBlock(position.map_or(block, |p| block.with_position(p)))
     }
 
+    /// A history from `shape`: per record, which coins it spends (a small shared
+    /// pool, or output 0 of an earlier record), and its context.
+    fn generated_history(shape: &[(Vec<u8>, u8, u32)]) -> Vec<TransactionRecord> {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dashcore::hashes::Hash;
+        use key_wallet::transaction_checking::BlockInfo;
+
+        let mut records: Vec<TransactionRecord> = Vec::new();
+        for (position, (coins, kind, height)) in shape.iter().enumerate() {
+            let parents: Vec<Txid> = coins
+                .iter()
+                .map(|coin| match (records.is_empty(), *coin < 6) {
+                    (false, false) => records[*coin as usize % records.len()].txid,
+                    _ => Txid::from_byte_array([*coin + 1; 32]),
+                })
+                .collect();
+            let mut record =
+                replay_record(&parents, position as u64 + 1, TransactionContext::Mempool);
+            let block = BlockInfo::new(100 + height, dashcore::BlockHash::all_zeros(), 0);
+            record.context = match kind {
+                0 | 1 => TransactionContext::Mempool,
+                2 => TransactionContext::InstantSend(InstantLock {
+                    txid: record.txid,
+                    ..Default::default()
+                }),
+                3 => TransactionContext::InBlock(block),
+                _ => TransactionContext::InChainLockedBlock(block),
+            };
+            records.push(record);
+        }
+        records
+    }
+
+    /// The planner as it was while every sweep scanned the whole history: the
+    /// reference for what handing each sweep only its candidates must not change.
+    fn plan_scanning_whole_history(
+        wallet_info: &ManagedWalletInfo,
+        records: &[TransactionRecord],
+    ) -> Vec<SweepBatch> {
+        let mut conflicts = wallet_info.clone();
+        let mut accounts = conflicts.accounts.all_funding_accounts_mut();
+        accounts[0]
+            .transactions_mut()
+            .extend(records.iter().map(|record| (record.txid, record.clone())));
+        let mut winners: Vec<_> = records
+            .iter()
+            .filter(|record| !matches!(record.context, TransactionContext::Mempool))
+            .collect();
+        winners.sort_by_key(|record| {
+            let priority = match record.context {
+                TransactionContext::InChainLockedBlock(_) => 0,
+                TransactionContext::InstantSend(_) => 1,
+                _ => 2,
+            };
+            (priority, record.txid)
+        });
+        let mut removed = HashSet::new();
+        let mut sweeps = Vec::new();
+        for record in winners {
+            if removed.contains(&record.txid) {
+                continue;
+            }
+            let result = conflicts.sweep_conflicts(&record.transaction, &record.context);
+            if !result.txids.is_empty() {
+                removed.extend(result.txids.iter().copied());
+                sweeps.push(replay_sweep(
+                    record,
+                    result.txids,
+                    result.released_outpoints,
+                ));
+            }
+        }
+        let claimed: HashSet<_> = records
+            .iter()
+            .filter(|record| !removed.contains(&record.txid))
+            .flat_map(|record| &record.transaction.input)
+            .map(|input| input.previous_output)
+            .collect();
+        for sweep in &mut sweeps {
+            sweep.released_outpoints.retain(|outpoint| {
+                !removed.contains(&outpoint.txid) && !claimed.contains(outpoint)
+            });
+        }
+        sweeps
+    }
+
+    proptest::proptest! {
+        /// Batch for batch: which records each final record removes, and which
+        /// inputs each removal releases. Load reads nothing else from the plan.
+        #[test]
+        fn should_plan_the_same_sweeps_as_a_planner_scanning_the_whole_history(
+            shape in proptest::collection::vec(
+                (proptest::collection::vec(0u8..16, 1..4), 0u8..5, 0u32..4),
+                1..18,
+            )
+        ) {
+            static WALLET: std::sync::OnceLock<(ManagedWalletInfo, dashcore::Address)> =
+                std::sync::OnceLock::new();
+            let (info, address) = WALLET.get_or_init(|| {
+                let (_, info, address) = wallet_with_receive_address();
+                (info, address)
+            });
+            let records = generated_history(&shape);
+            // A coin per record: the reference planner sweeps with them in place.
+            let mut info = info.clone();
+            let account = info.accounts.standard_bip44_accounts.get_mut(&0).unwrap();
+            for record in &records {
+                let outpoint = OutPoint::new(record.txid, 0);
+                let txout = record.transaction.output[0].clone();
+                let coin = key_wallet::Utxo::new(outpoint, txout, address.clone(), 0, false);
+                account.utxos.insert(outpoint, coin);
+            }
+
+            let planned = plan_replay_sweeps(&info, &records);
+
+            proptest::prop_assert_eq!(planned, plan_scanning_whole_history(&info, &records));
+        }
+    }
+
+    /// The upstream sweep scans every input of every record in the account it
+    /// runs in, so what it is handed is what a conflict costs.
+    #[test]
+    fn should_hand_a_sweep_only_the_competitors_of_its_winner_and_their_descendants() {
+        use dashcore::hashes::Hash;
+
+        let coin = |n: u32| {
+            let mut bytes = [0xC0; 32];
+            bytes[..4].copy_from_slice(&n.to_le_bytes());
+            Txid::from_byte_array(bytes)
+        };
+        let pending =
+            |parents: &[Txid], value| replay_record(parents, value, TransactionContext::Mempool);
+        let winner = replay_record(&[coin(0)], 1, in_block(100, Some(0)));
+        let competitor = pending(&[coin(0), coin(1)], 2);
+        let child = pending(&[competitor.txid], 3);
+        let grandchild = pending(&[child.txid, coin(2)], 4);
+        let mut history = vec![
+            winner.clone(),
+            competitor.clone(),
+            child.clone(),
+            grandchild.clone(),
+        ];
+        // Unrelated pending history: many records, and one with many inputs.
+        history.extend((10..510).map(|n| pending(&[coin(n)], u64::from(n))));
+        let crowded: Vec<Txid> = (1_000..3_000).map(coin).collect();
+        history.push(pending(&crowded, 5));
+
+        let candidates = Pending::of(&history).candidates(&winner, &HashSet::new());
+
+        let mut expected = vec![competitor.txid, child.txid, grandchild.txid];
+        expected.sort();
+        assert_eq!(candidates.keys().copied().collect::<Vec<_>>(), expected);
+        let (_, info, _) = wallet_with_receive_address();
+        let sweeps = plan_replay_sweeps(&info, &history);
+        assert_eq!(sweeps.len(), 1);
+        assert_eq!(sweeps[0].txids, expected);
+        assert_eq!(
+            sweeps[0].released_outpoints,
+            vec![OutPoint::new(coin(1), 0), OutPoint::new(coin(2), 0)]
+        );
+    }
+
+    /// Counts the records the pass after the replay asks the upstream sweep
+    /// about: none for a history without shared inputs.
+    #[test]
+    fn should_ask_for_a_sweep_only_where_an_unconfirmed_record_shares_an_input() {
+        use dashcore::hashes::Hash;
+
+        let coin = |byte| Txid::from_byte_array([byte; 32]);
+        let candidates = |records: &[TransactionRecord]| {
+            let spends = unconfirmed_spends(records);
+            records
+                .iter()
+                .filter(|record| shares_unconfirmed_input(record, &spends))
+                .map(|record| record.txid)
+                .collect::<Vec<_>>()
+        };
+        let mut history: Vec<_> = (0..50u8)
+            .map(|n| replay_record(&[coin(n)], 1, in_block(100 + u32::from(n), Some(0))))
+            .collect();
+        history
+            .extend((50..60u8).map(|n| replay_record(&[coin(n)], 1, TransactionContext::Mempool)));
+        assert_eq!(
+            candidates(&history),
+            Vec::new(),
+            "no final record shares an input with an unconfirmed one"
+        );
+
+        let loser = replay_record(&[coin(7), coin(200)], 2, TransactionContext::Mempool);
+        history.push(loser.clone());
+
+        assert_eq!(
+            candidates(&history),
+            vec![history[7].txid],
+            "only the final record spending the loser's coin is swept for"
+        );
+        let (_, info, _) = wallet_with_receive_address();
+        let sweeps = plan_replay_sweeps(&info, &history);
+        assert_eq!(sweeps.len(), 1);
+        assert_eq!(sweeps[0].txids, vec![loser.txid]);
+    }
+
     fn replayed_txids(records: Vec<TransactionRecord>) -> Vec<Txid> {
         replay_order(records).into_iter().map(|r| r.txid).collect()
+    }
+
+    #[test]
+    fn should_restore_set_aside_record_without_the_amounts_unsafe_to_sum() {
+        use dashcore::hashes::Hash;
+        use key_wallet::managed_account::transaction_record::{
+            InputDetail, OutputDetail, OutputRole,
+        };
+
+        let detail = |index, role, value| OutputDetail {
+            index,
+            role,
+            address: None,
+            value,
+        };
+        let (_, mut info, address) = wallet_with_receive_address();
+        let mut foreign_overflow = replay_record(&[], 1, TransactionContext::Mempool);
+        foreign_overflow.output_details = vec![
+            detail(0, OutputRole::Sent, i64::MAX as u64),
+            detail(1, OutputRole::Change, 1_000),
+        ];
+        let mut owned_overflow = replay_record(&[], 2, TransactionContext::Mempool);
+        owned_overflow.output_details = vec![
+            detail(0, OutputRole::Received, (1 << 62) + 1),
+            detail(1, OutputRole::Received, (1 << 62) + 1),
+        ];
+        let parents = [1, 2].map(|byte| Txid::from_byte_array([byte; 32]));
+        let mut input_overflow = replay_record(&parents, 3, TransactionContext::Mempool);
+        input_overflow.input_details = (0..2)
+            .map(|index| InputDetail {
+                index,
+                value: (1 << 62) + 1,
+                address: address.clone(),
+            })
+            .collect();
+        let records = [foreign_overflow, owned_overflow, input_overflow];
+
+        let verdicts = validate_replay_amounts(&info, &records).unwrap();
+
+        let [foreign_overflow, owned_overflow, input_overflow] = &records;
+        assert_eq!(
+            [foreign_overflow, owned_overflow, input_overflow]
+                .map(|record| verdicts.get(&record.txid).copied()),
+            [Some(true), Some(true), Some(false)],
+            "only the third has input amounts unsafe to keep"
+        );
+        let (kept, withheld) = (foreign_overflow.txid, owned_overflow.txid);
+        let (unsafe_inputs, records) = (input_overflow.txid, records.into_iter());
+        restore_unreplayed_records(&mut info, records, &verdicts);
+        let history = info.accounts.standard_bip44_accounts[&0].transactions();
+        assert!(
+            history[&unsafe_inputs].input_details.is_empty(),
+            "input amounts past i64 are withheld from the upstream net"
+        );
+        assert_eq!(
+            history[&kept].output_details.len(),
+            2,
+            "a record whose owned outputs fit keeps its details"
+        );
+        assert!(
+            history[&withheld].output_details.is_empty(),
+            "owned outputs past i64 are withheld from the upstream net"
+        );
+    }
+
+    /// An InstantSend-locked record settles conflicts when replayed, which makes
+    /// upstream scan every unconfirmed record already in history: plain mempool
+    /// records therefore wait until the locked ones are in.
+    #[test]
+    fn should_replay_instant_send_records_before_unrelated_mempool_records() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dashcore::hashes::Hash;
+
+        let locked = |record: TransactionRecord| TransactionRecord {
+            context: TransactionContext::InstantSend(InstantLock {
+                txid: record.txid,
+                ..Default::default()
+            }),
+            ..record
+        };
+        let coin = |byte| Txid::from_byte_array([byte; 32]);
+        let pending: Vec<_> = (1..=8u8)
+            .map(|n| replay_record(&[coin(n)], u64::from(n), TransactionContext::Mempool))
+            .collect();
+        let parent = pending[0].clone();
+        let settled: Vec<_> = (20..24u8)
+            .map(|n| {
+                locked(replay_record(
+                    &[coin(n)],
+                    u64::from(n),
+                    TransactionContext::Mempool,
+                ))
+            })
+            .collect();
+        let child = locked(replay_record(
+            &[parent.txid],
+            30,
+            TransactionContext::Mempool,
+        ));
+        let mut records = pending.clone();
+        records.push(child.clone());
+        records.extend(settled.iter().cloned());
+
+        let order = replayed_txids(records);
+
+        let position = |txid| order.iter().position(|seen| *seen == txid).unwrap();
+        let last_locked = settled
+            .iter()
+            .chain([&child])
+            .map(|record| position(record.txid))
+            .max();
+        for unrelated in &pending[1..] {
+            assert!(
+                Some(position(unrelated.txid)) > last_locked,
+                "no unrelated mempool record enters history ahead of a locked one"
+            );
+        }
+        // A locked child takes its unconfirmed parent along, ahead of the rest.
+        assert!(position(parent.txid) < position(child.txid));
+    }
+
+    /// A final record waits for its in-set ancestors, and a parent's stored
+    /// record can still say mempool: those ancestors replay as early as the
+    /// final record would, not behind unrelated mempool records it then scans.
+    #[test]
+    fn should_keep_unrelated_mempool_records_behind_a_mempool_ancestor_of_final_records() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dashcore::hashes::Hash;
+
+        let coin = |byte| Txid::from_byte_array([byte; 32]);
+        let pending =
+            |parents: &[Txid], value| replay_record(parents, value, TransactionContext::Mempool);
+        let grandparent = pending(&[coin(1)], 1);
+        let parent = pending(&[grandparent.txid], 2);
+        let confirmed = replay_record(&[parent.txid], 3, in_block(50, Some(0)));
+        let mut locked = pending(&[parent.txid, coin(2)], 4);
+        locked.context = TransactionContext::InstantSend(InstantLock {
+            txid: locked.txid,
+            ..Default::default()
+        });
+        // Unrelated records sorting ahead of both ancestors by txid.
+        let first = grandparent.txid.min(parent.txid);
+        let unrelated: Vec<_> = (100..)
+            .map(|value| pending(&[coin(3)], value))
+            .filter(|record| record.txid < first)
+            .take(4)
+            .collect();
+        let mut records = unrelated.clone();
+        records.extend([
+            locked.clone(),
+            confirmed.clone(),
+            parent.clone(),
+            grandparent.clone(),
+        ]);
+
+        let order = replayed_txids(records);
+
+        let mut last: Vec<_> = unrelated.iter().map(|record| record.txid).collect();
+        last.sort();
+        let mut expected = vec![grandparent.txid, parent.txid, confirmed.txid, locked.txid];
+        expected.extend(last);
+        assert_eq!(order, expected);
     }
 
     /// An unconfirmed child whose txid sorts ahead of its parent's still

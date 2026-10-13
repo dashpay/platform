@@ -50,7 +50,7 @@ impl Drive {
     /// executor signature; refactoring it into a struct would just
     /// move the same fields one indirection away.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_count_range_aggregate_carrier_proof(
+    pub(crate) fn execute_document_count_range_aggregate_carrier_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,

@@ -1178,6 +1178,14 @@ impl DocumentTypeV2Getters for DocumentType {
         }
     }
 
+    fn delete_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentType::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentType::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentType::V2(v2) => v2.delete_constraints(),
+        }
+    }
+
     fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
         match self {
             DocumentType::V0(_) => &NO_DERIVED_INDEX_PROPERTIES,
@@ -1438,6 +1446,14 @@ impl DocumentTypeV2Getters for DocumentTypeRef<'_> {
         }
     }
 
+    fn delete_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeRef::V2(v2) => v2.delete_constraints(),
+        }
+    }
+
     fn derived_index_properties(&self) -> &BTreeMap<String, DerivedIndexProperty> {
         match self {
             DocumentTypeRef::V0(_) => &NO_DERIVED_INDEX_PROPERTIES,
@@ -1663,6 +1679,14 @@ impl DocumentTypeV2Getters for DocumentTypeMutRef<'_> {
             DocumentTypeMutRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
             DocumentTypeMutRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
             DocumentTypeMutRef::V2(v2) => v2.property_constraints(),
+        }
+    }
+
+    fn delete_constraints(&self) -> &BTreeMap<String, PropertyConstraint> {
+        match self {
+            DocumentTypeMutRef::V0(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeMutRef::V1(_) => &NO_PROPERTY_CONSTRAINTS,
+            DocumentTypeMutRef::V2(v2) => v2.delete_constraints(),
         }
     }
 

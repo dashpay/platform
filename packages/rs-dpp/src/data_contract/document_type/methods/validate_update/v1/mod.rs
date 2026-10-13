@@ -28,7 +28,9 @@ use crate::data_contract::config::moderation::SettledDeletionRule;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV1Getters, DocumentTypeV2Getters,
 };
-use crate::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
+use crate::data_contract::document_type::{
+    typed_array_property, DocumentPropertyType, DocumentTypeRef,
+};
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -124,6 +126,15 @@ impl DocumentTypeRef<'_> {
 
         // Validate that no typed array changes how its elements are encoded
         let result = self.validate_typed_array_element_encoding_stability(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        // Validate that a type whose documents prepaid their cleanup keeps the bound of each
+        // indexed typed array (indexed arrays arrive with protocol version 14, the only
+        // version selecting this generation)
+        let result = self.validate_indexed_array_bounds_on_expiring_type(new_document_type);
 
         if !result.is_valid() {
             return Ok(result);
@@ -266,6 +277,52 @@ impl DocumentTypeRef<'_> {
             }
         }
 
+        SimpleConsensusValidationResult::new()
+    }
+
+    /// A document of a type with a time to live prepays its cleanup when it is created, priced
+    /// by the index levels its deletion removes, which count an indexed typed array's
+    /// `maxItems` times (`document_type_weighted_index_levels` in Drive). A replace pays only
+    /// for its body's growth, and one long element can make way for many short ones of the
+    /// same size, so a raised `maxItems` would let a stored document grow a cleanup it never
+    /// paid for. On such a type an indexed array's bound is held; on a type without a time to
+    /// live it may be raised within the index limits. Index definitions are held before this
+    /// runs, so the old type's indexes are the new type's.
+    fn validate_indexed_array_bounds_on_expiring_type(
+        &self,
+        new_document_type: DocumentTypeRef,
+    ) -> SimpleConsensusValidationResult {
+        if self.documents_ttl_seconds().is_none() {
+            return SimpleConsensusValidationResult::new();
+        }
+        let new_properties = new_document_type.flattened_properties();
+        let indexed_arrays = self
+            .indexes()
+            .values()
+            .filter_map(|index| index.indexed_array.as_deref());
+        for array in indexed_arrays {
+            let (Some(old_array), Some(new_array)) = (
+                typed_array_property(self.flattened_properties(), array),
+                typed_array_property(new_properties, array),
+            ) else {
+                continue;
+            };
+            if new_array.max_items > old_array.max_items {
+                return SimpleConsensusValidationResult::new_with_error(
+                    DocumentTypeUpdateError::new(
+                        self.data_contract_id(),
+                        self.name(),
+                        format!(
+                            "document type can not raise the maxItems of indexed typed array \
+                             '{}' from {} to {}: its documents have a time to live and \
+                             prepaid their cleanup by the old bound",
+                            array, old_array.max_items, new_array.max_items,
+                        ),
+                    )
+                    .into(),
+                );
+            }
+        }
         SimpleConsensusValidationResult::new()
     }
 

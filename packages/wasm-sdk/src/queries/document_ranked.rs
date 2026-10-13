@@ -28,6 +28,7 @@ use crate::queries::document::{
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
+use dash_sdk::dash_platform_queries::documents::array_element_clauses::key_element_clauses;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
@@ -766,12 +767,21 @@ fn assert_ranked_shape(
     query: &DocumentQuery,
     platform_version: &PlatformVersion,
 ) -> Result<(), WasmSdkError> {
+    // The server keys a typed array's `contains` pin as an equality first.
+    let where_clauses = key_element_clauses(
+        &query.data_contract,
+        &query.document_type_name,
+        query.where_clauses.clone(),
+        false,
+        platform_version,
+    )
+    .map_err(|e| WasmSdkError::invalid_argument(format!("not a well-formed ranked query: {e}")))?;
     detect_ranked_mode(
         &query.select,
         &query.group_by,
         &query.having,
         &query.order_by_clauses,
-        &query.where_clauses,
+        &where_clauses,
         pagination_inputs(query),
         platform_version,
     )
@@ -791,12 +801,23 @@ fn assert_having_shape(
     query: &DocumentQuery,
     platform_version: &PlatformVersion,
 ) -> Result<(), WasmSdkError> {
+    // The server keys a typed array's `contains` pin as an equality first.
+    let where_clauses = key_element_clauses(
+        &query.data_contract,
+        &query.document_type_name,
+        query.where_clauses.clone(),
+        false,
+        platform_version,
+    )
+    .map_err(|e| {
+        WasmSdkError::invalid_argument(format!("not a well-formed having-range query: {e}"))
+    })?;
     detect_having_mode(
         &query.select,
         &query.group_by,
         &query.having,
         &query.order_by_clauses,
-        &query.where_clauses,
+        &where_clauses,
         pagination_inputs(query),
         platform_version,
     )

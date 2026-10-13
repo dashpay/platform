@@ -25,14 +25,7 @@ Whether the owner of a document may replace it. Set it to `false` for records th
   "documentsMutable": false,
   "canBeDeleted": false,
   "properties": {
-    "proposalId": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 32,
-      "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
-      "position": 0
-    },
+    "proposalId": { "type": "identifier", "position": 0 },
     "choice": { "type": "string", "enum": ["yes", "no", "abstain"], "position": 1 }
   },
   "required": ["proposalId", "choice", "$createdAt"],
@@ -105,8 +98,8 @@ The top-level properties a replace may not change, on a type whose documents can
 ### How it works
 
 - On every replace, each property that differs from the stored document is checked against the list. A property listed by name is refused with `DocumentImmutablePropertyChangedError` (40128). A property listed with a condition is refused with the same error when its condition holds for this replace. "Differs" covers a changed value, a value the stored document did not have, and a value the replace leaves out.
-- A condition takes the grammar of a [`propertyConstraints`](property-constraints.md) rule: comparisons, arithmetic, `in`, `present`, `absent`, `anyOf`, `allOf`, `not`, `ifThen`, `ifThenElse`, the system times and heights the type records, and `$ownerId`. It is judged, as a rule judges a replace, on the document the replace writes: its properties as the replace sets them, the stored `$createdAt` and `$transferredAt`, and the replace's block as `$updatedAt`.
-- A path starting with `$old.` reads the stored document instead: `$old.status` is the status before the replace. Only a condition of `immutable`, or a type's [`retractedWhen`](deletion.md#retractedwhen), may read it, and only a schema property through it.
+- A condition takes the grammar of a [`propertyConstraints`](property-constraints.md) rule: comparisons, arithmetic, `in`, `present`, `absent`, `anyOf`, `allOf`, `not`, `ifThen`, `ifThenElse`, the system times and heights the type records, `$revision`, and `$ownerId`. It is judged, as a rule judges a replace, on the document the replace writes: its properties as the replace sets them, the stored `$createdAt` and `$transferredAt`, the replace's block as `$updatedAt`, and the replace's revision.
+- A path starting with `$old.` reads the stored document instead: `$old.status` is the status before the replace, `$old.$updatedAt` the time of the previous update, `$old.$revision` the previous revision. A [`propertyConstraints`](property-constraints.md#the-stored-version-old) rule and a type's [`retractedWhen`](deletion.md#retractedwhen) read it the same way; a [`deleteConstraints`](deletion.md#deleteconstraints) rule, judged on the stored document itself, does not.
 - A property is frozen while its condition holds. If what the condition reads can change back, the property can become editable again: with `body` frozen by `$old.status`, a replace setting `status` back to `draft` still reads the stored `published`, so `body` stays frozen in that replace, and the next replace, reading the stored `draft`, may change it. For a freeze that lasts, list what the condition reads as well, or use a condition that cannot turn back, as a document's age or a filled-in value cannot.
 - A condition is evaluated only when its property changes. A condition that faults, dividing by zero or overflowing, counts as holding: a fault never frees a property.
 - Values are compared by their data, not their bytes: the order of an object's members and the width an integer is stored in do not count as changes. Freezing an object freezes everything inside it.
@@ -122,7 +115,7 @@ All refusals below are `InvalidContractStructure` (10231). The shape of the list
 - Every entry is a string or an object with exactly `property` and `when`, and no property is listed twice.
 - Every listed property is a declared top-level property. System properties (`$ownerId`, `$createdAt` and the rest) are refused, since the platform manages them. Nested paths such as `meta.author` are refused: list the object that contains them.
 - No listed property may be `transient`: it is never stored, so every replace that supplies it while it is frozen would count as a change.
-- A condition reads what a `propertyConstraints` rule may read of the type: declared properties of the right kind, neither transient nor inside a transient object, and system times and heights the type lists in `required`. It stays within the node limit of a rule, and lists no condition twice.
+- A condition reads what a `propertyConstraints` rule may read of the type: declared properties of the right kind, neither transient nor inside a transient object, system times and heights the type lists in `required`, `$revision`, and any of them under `$old.`. It stays within the node limit of a rule, and lists no condition twice.
 - A condition may not read a `countOf` or `sumOf` total: it reads the document alone, so a replace judges it without reading state.
 - `immutableAllowSetting`, which earlier builds used to let a frozen property be filled in once, is refused and names the replacement: `{ "property": "p", "when": { "present": "$old.p" } }`.
 - An immutable property may not hold a `deletableDocument` reference that a replace could not clear: a typed array of them, one inside an object, or one found by `findBy` whose key no function computes. A single reference by id held directly by the property is allowed, but only without a condition: once cleared, a replace the condition leaves free could set it to another document.

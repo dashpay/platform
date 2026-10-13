@@ -7,11 +7,13 @@ use crate::drive::document::{
 };
 use crate::drive::document::{
     encode_index_only_entry_payload, index_only_item_estimated_value_size,
+    index_only_row_commitment_max_preimage_size, index_only_row_commitment_with_preimage_size,
 };
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::LowLevelDriveOperation::FunctionOperation;
+use crate::fees::op::{FunctionOp, HashFunction, LowLevelDriveOperation};
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::util::object_size_info::DocumentInfo::{
@@ -534,7 +536,19 @@ impl Drive {
         // size, which keeps the estimate above the applied fee across the
         // indexed-tree layers' documented under-count (see
         // `estimated_sum_trees_for_value_tree_type`).
+        //
+        // Each entry's commitment is a double-SHA256 over the document's
+        // values, a typed array's whole list included (protocol version 14),
+        // billed here by its preimage; the dry run bills the widest preimage
+        // the type allows, which upper-bounds it.
         let item_value = if estimated_costs_only_with_layer_info.is_some() {
+            batch_operations.push(FunctionOperation(FunctionOp::new_with_byte_count(
+                HashFunction::Sha256_2,
+                index_only_row_commitment_max_preimage_size(
+                    document_and_contract_info.document_type,
+                    platform_version,
+                ),
+            )));
             vec![0u8; estimated_item_value_size as usize]
         } else {
             let (document, _) = document_and_contract_info
@@ -546,12 +560,16 @@ impl Drive {
                 )))?;
             // The commitment first, then the type's entry payload (empty
             // without an `entryPayload` declaration).
-            let mut item_value = crate::drive::document::index_only_row_commitment(
+            let (commitment, preimage_size) = index_only_row_commitment_with_preimage_size(
                 document,
                 document_and_contract_info.document_type,
                 platform_version,
-            )?
-            .to_vec();
+            )?;
+            batch_operations.push(FunctionOperation(FunctionOp::new_with_byte_count(
+                HashFunction::Sha256_2,
+                preimage_size,
+            )));
+            let mut item_value = commitment.to_vec();
             item_value.extend(encode_index_only_entry_payload(
                 document,
                 document_and_contract_info.document_type,

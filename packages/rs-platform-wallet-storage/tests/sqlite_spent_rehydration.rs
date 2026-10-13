@@ -1773,6 +1773,718 @@ async fn should_keep_reservation_of_forged_mempool_spend_with_overflowing_foreig
     assert_eq!(loaded.wallet_info.balance.total(), 1_000);
 }
 
+/// Two confirmed wallet coins named as inputs by a forged, unminable mempool
+/// spend: its foreign output overflows the replay arithmetic, its change is small.
+struct ForgedSpend {
+    wallet: Wallet,
+    funding: Transaction,
+    /// The coin a final competitor also spends.
+    shared: Utxo,
+    /// The coin only the forged spend claims.
+    extra: Utxo,
+    forged: Transaction,
+    change: Utxo,
+    /// Funding and forged-spend records, as the live checker produced them.
+    records: Vec<key_wallet::managed_account::transaction_record::TransactionRecord>,
+    /// A confirmed transaction spending only `shared`, and its record.
+    winner: Transaction,
+    winner_records: Vec<key_wallet::managed_account::transaction_record::TransactionRecord>,
+}
+
+impl ForgedSpend {
+    async fn build() -> Self {
+        let (mut wallet, mut info, address) = wallet_with_receive_address();
+        let funding = spend_of(
+            OutPoint::new(Txid::from_byte_array([85; 32]), 0),
+            [100_000, 20_000]
+                .into_iter()
+                .map(|value| TxOut {
+                    value,
+                    script_pubkey: address.script_pubkey(),
+                })
+                .collect(),
+        );
+        let mut records = info
+            .check_core_transaction(&funding, block(100), &mut wallet, true, true)
+            .await
+            .new_records;
+        let coins = &info.accounts.standard_bip44_accounts[&0].utxos;
+        let shared = coins[&OutPoint::new(funding.txid(), 0)].clone();
+        let extra = coins[&OutPoint::new(funding.txid(), 1)].clone();
+        let winner = spend_of(
+            shared.outpoint,
+            vec![TxOut {
+                value: 99_000,
+                script_pubkey: foreign_address(86).script_pubkey(),
+            }],
+        );
+        let winner_records = info
+            .clone()
+            .check_core_transaction(&winner, block(101), &mut wallet.clone(), true, true)
+            .await
+            .new_records;
+        let mut forged = spend_of(
+            shared.outpoint,
+            vec![
+                TxOut {
+                    value: i64::MAX as u64,
+                    script_pubkey: foreign_address(87).script_pubkey(),
+                },
+                TxOut {
+                    value: 1_000,
+                    script_pubkey: address.script_pubkey(),
+                },
+            ],
+        );
+        forged.input.push(TxIn {
+            previous_output: extra.outpoint,
+            ..Default::default()
+        });
+        records.extend(
+            info.check_core_transaction(
+                &forged,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await
+            .new_records,
+        );
+        assert_eq!(
+            records.len(),
+            2,
+            "the live checker records the forged spend"
+        );
+        assert_eq!(winner_records.len(), 1);
+        let change = info.accounts.standard_bip44_accounts[&0].utxos
+            [&OutPoint::new(forged.txid(), 1)]
+            .clone();
+        Self {
+            wallet,
+            funding,
+            shared,
+            extra,
+            forged,
+            change,
+            records,
+            winner,
+            winner_records,
+        }
+    }
+
+    /// Persist the round a sync would write, optionally with the final competitor, and reopen.
+    fn store(&self, with_winner: bool) -> (SqlitePersister, tempfile::TempDir) {
+        let mut records = self.records.clone();
+        if with_winner {
+            records.extend(self.winner_records.clone());
+        }
+        store_then_reopen(
+            &self.wallet,
+            CoreChangeSet {
+                records,
+                new_utxos: vec![self.shared.clone(), self.extra.clone(), self.change.clone()],
+                spent_utxos: vec![self.shared.clone(), self.extra.clone()],
+                ..Default::default()
+            },
+        )
+    }
+}
+
+fn coin_set(info: &ManagedWalletInfo) -> Vec<OutPoint> {
+    info.accounts.standard_bip44_accounts[&0]
+        .utxos
+        .keys()
+        .copied()
+        .collect()
+}
+
+#[tokio::test]
+async fn should_settle_unsafe_mempool_loser_against_persisted_final_winner_on_restart() {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let scenario = ForgedSpend::build().await;
+    let (persister, _dir) = scenario.store(true);
+
+    let mut state = persister.load().unwrap();
+
+    let info = state
+        .wallets
+        .remove(&scenario.wallet.wallet_id)
+        .unwrap()
+        .wallet_info;
+    assert!(
+        !info.accounts.standard_bip44_accounts[&0]
+            .transactions()
+            .contains_key(&scenario.forged.txid()),
+        "the forged spend lost to the confirmed competitor"
+    );
+    assert!(persister
+        .get_core_tx_record(scenario.wallet.wallet_id, &scenario.forged.txid())
+        .unwrap()
+        .is_none());
+    assert_eq!(
+        coin_set(&info),
+        vec![scenario.extra.outpoint],
+        "the extra input is released and the loser's change is gone"
+    );
+    assert_eq!(info.balance.total(), 20_000);
+}
+
+#[tokio::test]
+async fn should_settle_unsafe_mempool_loser_against_final_winner_after_restart() {
+    let scenario = ForgedSpend::build().await;
+    let (persister, _dir) = scenario.store(false);
+    let mut state = persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&scenario.wallet.wallet_id).unwrap();
+
+    let result = loaded
+        .wallet_info
+        .check_core_transaction(&scenario.winner, block(101), &mut loaded.wallet, true, true)
+        .await;
+
+    assert_eq!(
+        result.swept_transactions,
+        vec![scenario.forged.txid()],
+        "a final competitor arriving after restart still removes the forged spend"
+    );
+    assert_eq!(result.released_outpoints, vec![scenario.extra.outpoint]);
+    loaded
+        .wallet_info
+        .check_core_transaction(
+            &scenario.funding,
+            block(100),
+            &mut loaded.wallet,
+            true,
+            true,
+        )
+        .await;
+    assert_eq!(
+        coin_set(&loaded.wallet_info),
+        vec![scenario.extra.outpoint],
+        "funding redelivery returns only the released coin"
+    );
+    assert_eq!(loaded.wallet_info.balance.total(), 20_000);
+}
+
+#[tokio::test]
+async fn should_report_balances_while_holding_unsafe_mempool_record_after_restart() {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let scenario = ForgedSpend::build().await;
+    let (persister, _dir) = scenario.store(false);
+
+    let mut state = persister.load().unwrap();
+
+    let loaded = state.wallets.get_mut(&scenario.wallet.wallet_id).unwrap();
+    assert!(
+        loaded.wallet_info.accounts.standard_bip44_accounts[&0]
+            .transactions()
+            .contains_key(&scenario.forged.txid()),
+        "the unsettled forged spend stays in history"
+    );
+    // Recompute from scratch, then through the late-funding path that revisits stored records.
+    loaded.wallet_info.update_balance();
+    assert_eq!(
+        coin_set(&loaded.wallet_info),
+        vec![scenario.change.outpoint]
+    );
+    assert_eq!(loaded.wallet_info.balance.total(), 1_000);
+    loaded
+        .wallet_info
+        .check_core_transaction(
+            &scenario.funding,
+            block(100),
+            &mut loaded.wallet,
+            true,
+            true,
+        )
+        .await;
+    loaded.wallet_info.update_balance();
+    assert_eq!(
+        coin_set(&loaded.wallet_info),
+        vec![scenario.change.outpoint],
+        "both claimed coins stay reserved while no competitor is final"
+    );
+    assert_eq!(loaded.wallet_info.balance.total(), 1_000);
+    assert_eq!(loaded.wallet_info.balance.confirmed(), 0);
+}
+
+#[tokio::test]
+async fn should_recompute_unsafe_mempool_record_when_its_funding_arrives_after_restart() {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let (mut wallet, mut info, address) = wallet_with_receive_address();
+    let owned = |value| TxOut {
+        value,
+        script_pubkey: address.script_pubkey(),
+    };
+    let funding = spend_of(
+        OutPoint::new(Txid::from_byte_array([88; 32]), 0),
+        vec![owned(100_000)],
+    );
+    let coin = OutPoint::new(funding.txid(), 0);
+    // Seen before its funding, so stored without the input's amount.
+    let forged = spend_of(
+        coin,
+        vec![
+            TxOut {
+                value: i64::MAX as u64,
+                script_pubkey: foreign_address(89).script_pubkey(),
+            },
+            owned(1_000),
+        ],
+    );
+    let rival = spend_of(coin, vec![owned(500)]);
+    let mut records = info
+        .clone()
+        .check_core_transaction(
+            &forged,
+            TransactionContext::Mempool,
+            &mut wallet.clone(),
+            true,
+            true,
+        )
+        .await
+        .new_records;
+    records.extend(
+        info.check_core_transaction(&rival, TransactionContext::Mempool, &mut wallet, true, true)
+            .await
+            .new_records,
+    );
+    assert_eq!(records.len(), 2);
+    let (persister, _dir) = store_then_reopen(
+        &wallet,
+        CoreChangeSet {
+            records,
+            new_utxos: vec![
+                stored_utxo(&forged, 1, address.clone()),
+                stored_utxo(&rival, 0, address.clone()),
+            ],
+            ..Default::default()
+        },
+    );
+    let mut state = persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&wallet.wallet_id).unwrap();
+
+    loaded
+        .wallet_info
+        .check_core_transaction(&funding, block(100), &mut loaded.wallet, true, true)
+        .await;
+    loaded.wallet_info.update_balance();
+
+    let record =
+        &loaded.wallet_info.accounts.standard_bip44_accounts[&0].transactions()[&forged.txid()];
+    assert_eq!(
+        record.input_details.len(),
+        1,
+        "the late funding is attributed to the record restored as stored"
+    );
+    assert_eq!(record.net_amount, 1_000 - 100_000);
+    assert_eq!(loaded.wallet_info.balance.total(), 1_500);
+}
+
+#[tokio::test]
+async fn should_release_extra_input_when_its_surviving_spender_is_removed_after_a_live_sweep() {
+    assert_extra_input_follows_its_surviving_spender(true).await;
+}
+
+#[tokio::test]
+async fn should_release_extra_input_when_its_surviving_spender_is_removed_after_startup_repair() {
+    assert_extra_input_follows_its_surviving_spender(false).await;
+}
+
+/// The loser spends a shared and an extra coin, a second unconfirmed spend
+/// takes the extra coin and a third one, and the confirmed winner spends only
+/// the shared coin. `live_sweep` persists the sweep the running wallet reported;
+/// otherwise the conflict is stored unsettled and repaired at load.
+async fn assert_extra_input_follows_its_surviving_spender(live_sweep: bool) {
+    use platform_wallet::changeset::changeset::SweepBatch;
+
+    let (mut wallet, mut info, address) = wallet_with_receive_address();
+    let owned = |value| TxOut {
+        value,
+        script_pubkey: address.script_pubkey(),
+    };
+    let foreign = |marker, value| TxOut {
+        value,
+        script_pubkey: foreign_address(marker).script_pubkey(),
+    };
+    let funding = spend_of(
+        OutPoint::new(Txid::from_byte_array([90; 32]), 0),
+        vec![owned(100_000), owned(20_000), owned(5_000)],
+    );
+    let coin = |vout| OutPoint::new(funding.txid(), vout);
+    let also_spending = |mut transaction: Transaction, previous_output| {
+        transaction.input.push(TxIn {
+            previous_output,
+            ..Default::default()
+        });
+        transaction
+    };
+    let loser = also_spending(spend_of(coin(0), vec![foreign(91, 119_000)]), coin(1));
+    let survivor = also_spending(spend_of(coin(1), vec![foreign(92, 24_000)]), coin(2));
+    let winner = spend_of(coin(0), vec![owned(99_000)]);
+    let final_spend = spend_of(coin(2), vec![foreign(93, 4_000)]);
+
+    let mut records = Vec::new();
+    for (transaction, context) in [
+        (&funding, block(100)),
+        (&loser, TransactionContext::Mempool),
+        (&survivor, TransactionContext::Mempool),
+    ] {
+        records.extend(
+            info.check_core_transaction(transaction, context, &mut wallet, true, true)
+                .await
+                .new_records,
+        );
+    }
+    assert_eq!(
+        records.len(),
+        3,
+        "one wallet records both unconfirmed spenders of the extra coin"
+    );
+    let settled = info
+        .check_core_transaction(&winner, block(101), &mut wallet, true, true)
+        .await;
+    assert_eq!(settled.swept_transactions, vec![loser.txid()]);
+    assert!(
+        settled.released_outpoints.is_empty(),
+        "the survivor still spends the extra coin"
+    );
+    let running = info
+        .clone()
+        .check_core_transaction(&final_spend, block(102), &mut wallet.clone(), true, true)
+        .await;
+    assert_eq!(
+        running.released_outpoints,
+        vec![coin(1)],
+        "the running wallet frees the extra coin with its surviving spender"
+    );
+    let coins: Vec<_> = (0..3)
+        .map(|vout| stored_utxo(&funding, vout, address.clone()))
+        .collect();
+    let seen = CoreChangeSet {
+        records,
+        new_utxos: coins.clone(),
+        spent_utxos: coins,
+        ..Default::default()
+    };
+    let settlement = CoreChangeSet {
+        records: settled.new_records,
+        new_utxos: vec![stored_utxo(&winner, 0, address.clone())],
+        sweeps: vec![SweepBatch {
+            txids: settled.swept_transactions,
+            superseded_by: winner.txid(),
+            winner_mined_height: Some(101),
+            released_outpoints: settled.released_outpoints,
+        }],
+        ..Default::default()
+    };
+    assert_eq!(settlement.records.len(), 1);
+    let (persister, _dir) = if live_sweep {
+        let (persister, dir) = store_then_reopen(&wallet, seen);
+        persister
+            .store(
+                wallet.wallet_id,
+                PlatformWalletChangeSet {
+                    core: Some(settlement),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        (persister, dir)
+    } else {
+        let mut unsettled = seen;
+        unsettled.records.extend(settlement.records);
+        unsettled.new_utxos.extend(settlement.new_utxos);
+        store_then_reopen(&wallet, unsettled)
+    };
+
+    let mut state = persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&wallet.wallet_id).unwrap();
+    let result = loaded
+        .wallet_info
+        .check_core_transaction(&final_spend, block(102), &mut loaded.wallet, true, true)
+        .await;
+
+    assert_eq!(result.swept_transactions, vec![survivor.txid()]);
+    assert_eq!(
+        result.released_outpoints,
+        vec![coin(1)],
+        "the extra coin is free once its surviving spender is gone"
+    );
+    loaded
+        .wallet_info
+        .check_core_transaction(&funding, block(100), &mut loaded.wallet, true, true)
+        .await;
+    assert!(
+        loaded.wallet_info.accounts.standard_bip44_accounts[&0]
+            .utxos
+            .contains_key(&coin(1)),
+        "funding redelivery returns the released coin"
+    );
+}
+
+/// A forged, unminable mempool transaction paying the wallet twice for a total
+/// past `i64`, spending a foreign coin and one of the wallet's own, as stored.
+struct UnrepresentableReceipt {
+    wallet: Wallet,
+    funding: Transaction,
+    /// The wallet's own coin only the forged transaction claims.
+    extra: OutPoint,
+    forged: Transaction,
+    /// A confirmed transaction spending only the foreign coin.
+    winner: Transaction,
+    persister: SqlitePersister,
+    _dir: tempfile::TempDir,
+}
+
+impl UnrepresentableReceipt {
+    /// `with_winner` stores the confirmed competitor in the same round.
+    async fn stored(with_winner: bool) -> Self {
+        let (mut wallet, mut info, address) = wallet_with_receive_address();
+        let owned = |value| TxOut {
+            value,
+            script_pubkey: address.script_pubkey(),
+        };
+        let value = (1_u64 << 62) + 1;
+        let funding = spend_of(
+            OutPoint::new(Txid::from_byte_array([96; 32]), 0),
+            vec![owned(20_000)],
+        );
+        let extra = OutPoint::new(funding.txid(), 0);
+        let shared = OutPoint::new(Txid::from_byte_array([95; 32]), 0);
+        let mut forged = spend_of(shared, vec![owned(value), owned(value)]);
+        forged.input.push(TxIn {
+            previous_output: extra,
+            ..Default::default()
+        });
+        let winner = spend_of(shared, vec![owned(1_000)]);
+        let mut records = info
+            .clone()
+            .check_core_transaction(&funding, block(100), &mut wallet.clone(), true, true)
+            .await
+            .new_records;
+        // Seen before its own input is funded: a debug checker cannot net this
+        // record against a known input, a release one wraps and stores it too.
+        records.extend(
+            info.check_core_transaction(
+                &forged,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await
+            .new_records,
+        );
+        assert_eq!(
+            records.len(),
+            2,
+            "the live checker records the forged receipt"
+        );
+        let running = info
+            .clone()
+            .check_core_transaction(&winner, block(101), &mut wallet.clone(), true, true)
+            .await;
+        assert_eq!(
+            running.swept_transactions,
+            vec![forged.txid()],
+            "the running wallet removes the forged receipt"
+        );
+        let coin = stored_utxo(&funding, 0, address.clone());
+        let mut new_utxos = vec![
+            coin.clone(),
+            stored_utxo(&forged, 0, address.clone()),
+            stored_utxo(&forged, 1, address.clone()),
+        ];
+        if with_winner {
+            records.extend(running.new_records);
+            new_utxos.push(stored_utxo(&winner, 0, address.clone()));
+        }
+        let (persister, _dir) = store_then_reopen(
+            &wallet,
+            CoreChangeSet {
+                records,
+                new_utxos,
+                spent_utxos: vec![coin],
+                ..Default::default()
+            },
+        );
+        Self {
+            wallet,
+            funding,
+            extra,
+            forged,
+            winner,
+            persister,
+            _dir,
+        }
+    }
+}
+
+#[tokio::test]
+async fn should_settle_unrepresentable_mempool_receipt_against_final_winner_after_restart() {
+    let stored = UnrepresentableReceipt::stored(false).await;
+    let mut state = stored.persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&stored.wallet.wallet_id).unwrap();
+
+    let result = loaded
+        .wallet_info
+        .check_core_transaction(&stored.winner, block(101), &mut loaded.wallet, true, true)
+        .await;
+
+    assert_eq!(
+        result.swept_transactions,
+        vec![stored.forged.txid()],
+        "a final competitor arriving after restart still removes the forged receipt"
+    );
+    assert_eq!(
+        result.released_outpoints,
+        vec![stored.extra],
+        "the wallet coin only the forged receipt claimed is released"
+    );
+    loaded
+        .wallet_info
+        .check_core_transaction(&stored.funding, block(100), &mut loaded.wallet, true, true)
+        .await;
+    let mut expected = vec![stored.extra, OutPoint::new(stored.winner.txid(), 0)];
+    expected.sort();
+    assert_eq!(
+        coin_set(&loaded.wallet_info),
+        expected,
+        "the forged outputs are gone and the released coin is back"
+    );
+    assert_eq!(loaded.wallet_info.balance.total(), 21_000);
+}
+
+#[tokio::test]
+async fn should_settle_unrepresentable_mempool_receipt_against_persisted_final_winner_on_restart() {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let stored = UnrepresentableReceipt::stored(true).await;
+
+    let mut state = stored.persister.load().unwrap();
+
+    let info = state
+        .wallets
+        .remove(&stored.wallet.wallet_id)
+        .unwrap()
+        .wallet_info;
+    assert!(
+        !info.accounts.standard_bip44_accounts[&0]
+            .transactions()
+            .contains_key(&stored.forged.txid()),
+        "the forged receipt lost to the stored competitor at load"
+    );
+    assert!(stored
+        .persister
+        .get_core_tx_record(stored.wallet.wallet_id, &stored.forged.txid())
+        .unwrap()
+        .is_none());
+    let mut expected = vec![stored.extra, OutPoint::new(stored.winner.txid(), 0)];
+    expected.sort();
+    assert_eq!(
+        coin_set(&info),
+        expected,
+        "the forged outputs are gone and the coin only it claimed is released"
+    );
+    assert_eq!(info.balance.total(), 21_000);
+}
+
+#[tokio::test]
+async fn should_keep_stored_owned_outputs_when_a_record_restored_without_them_is_stored_again() {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let stored = UnrepresentableReceipt::stored(false).await;
+    let txid = stored.forged.txid();
+    let mut state = stored.persister.load().unwrap();
+    let info = &state
+        .wallets
+        .get_mut(&stored.wallet.wallet_id)
+        .unwrap()
+        .wallet_info;
+    let restored = info.accounts.standard_bip44_accounts[&0].transactions()[&txid].clone();
+    assert!(
+        restored.output_details.is_empty(),
+        "history holds the record without the amounts that are unsafe to sum"
+    );
+
+    stored
+        .persister
+        .store(
+            stored.wallet.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records: vec![restored],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let persisted = stored
+        .persister
+        .get_core_tx_record(stored.wallet.wallet_id, &txid)
+        .unwrap()
+        .unwrap();
+    let owned: Vec<_> = persisted.output_details.iter().map(|d| d.value).collect();
+    assert_eq!(
+        owned,
+        vec![(1 << 62) + 1, (1 << 62) + 1],
+        "the store keeps the owned outputs it already knew"
+    );
+}
+
+/// A record whose input amounts are unsafe to sum goes back into history
+/// without them; the store keeps them, also when the record is stored again.
+#[tokio::test]
+async fn should_restore_mempool_record_with_unsafe_input_amounts_without_its_input_details() {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let fixture = stage_replay_amounts(TransactionContext::Mempool, &[i64::MAX as u64, 1], 1).await;
+    let stored: Vec<u8> = fixture
+        .persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT txid FROM core_transactions WHERE record_blob IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let txid = Txid::from_slice(&stored).unwrap();
+
+    let (_, info) = fixture.load();
+
+    let restored = info.accounts.standard_bip44_accounts[&0].transactions()[&txid].clone();
+    assert!(
+        restored.input_details.is_empty(),
+        "history holds the record without the amounts that are unsafe to sum"
+    );
+    assert_eq!(info.balance.total(), 20_000);
+
+    fixture
+        .persister
+        .store(
+            fixture.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records: vec![restored],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let persisted = fixture
+        .persister
+        .get_core_tx_record(fixture.wallet_id, &txid)
+        .unwrap()
+        .unwrap();
+    let inputs: Vec<_> = persisted.input_details.iter().map(|d| d.value).collect();
+    assert_eq!(
+        inputs,
+        vec![i64::MAX as u64, 1],
+        "the store keeps the input amounts it already knew"
+    );
+}
+
 #[tokio::test]
 async fn should_report_wallet_scoped_unconverged_replay() {
     assert_conflict_restart(ConflictCase::Unconverged).await;
@@ -1787,4 +2499,823 @@ fn typed_error(
     *source
         .downcast::<platform_wallet_storage::WalletStorageError>()
         .unwrap()
+}
+
+/// How a mempool receipt paying two funding accounts reaches the store.
+#[derive(Clone, Copy, Default)]
+struct TwoAccountShape {
+    /// Value of each of the two owned outputs.
+    value: u64,
+    /// Adds a foreign output no chain could hold.
+    foreign_output: bool,
+    /// The wallet-level record names the first account, not the second.
+    recorded_under_first: bool,
+    /// Persists no address pool rows, so load parks both coins in the first account.
+    unrouted: bool,
+    /// Adds a mempool child spending the first account's coin, with its change there.
+    child: bool,
+    /// The receipt also spends a coin of the first account funded only after
+    /// the restart, and so does a plain mempool rival that marks it spent.
+    unfunded_input: bool,
+}
+
+/// One past half of `i64::MAX`: two owned outputs of it cannot be summed as `i64`.
+const UNREPRESENTABLE_HALF: u64 = (1 << 62) + 1;
+
+struct TwoAccountReceipt {
+    wallet: Wallet,
+    /// An address of the first (BIP44) account.
+    first: Address,
+    funding: Transaction,
+    receipt: Transaction,
+    child: Option<Transaction>,
+    /// A confirmed transaction spending the receipt's foreign input.
+    winner: Transaction,
+    persister: SqlitePersister,
+    _dir: tempfile::TempDir,
+}
+
+impl TwoAccountReceipt {
+    async fn stored(shape: TwoAccountShape) -> Self {
+        let mut wallet =
+            Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+        let first = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .next_receive_address(Some(&xpub), true)
+            .unwrap();
+        let xpub = wallet.accounts.standard_bip32_accounts[&0].account_xpub;
+        let second = info
+            .accounts
+            .standard_bip32_accounts
+            .get_mut(&0)
+            .unwrap()
+            .next_receive_address(Some(&xpub), true)
+            .unwrap();
+        let pay = |value, address: &Address| TxOut {
+            value,
+            script_pubkey: address.script_pubkey(),
+        };
+        let funding = spend_of(
+            OutPoint::new(Txid::from_byte_array([96; 32]), 0),
+            vec![pay(20_000, &first)],
+        );
+        let shared = OutPoint::new(Txid::from_byte_array([97; 32]), 0);
+        let mut receipt = spend_of(
+            shared,
+            vec![pay(shape.value, &first), pay(shape.value, &second)],
+        );
+        if shape.foreign_output {
+            receipt
+                .output
+                .push(pay(i64::MAX as u64, &foreign_address(98)));
+        }
+        if shape.unfunded_input {
+            // Seen before this input is funded, as a debug checker requires.
+            receipt.input.push(TxIn {
+                previous_output: OutPoint::new(funding.txid(), 0),
+                ..Default::default()
+            });
+        }
+        let winner = spend_of(shared, vec![pay(1_000, &first)]);
+        let mut records = info
+            .check_core_transaction(
+                &receipt,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await
+            .new_records;
+        assert_eq!(records.len(), 2, "the checker records it in both accounts");
+        // One wallet-level record per transaction, as a sync folds the
+        // per-account slices: it names one account and details both.
+        if !shape.recorded_under_first {
+            records.reverse();
+        }
+        let other = records.pop().unwrap();
+        records[0].output_details.extend(other.output_details);
+        records[0].output_details.sort_by_key(|detail| detail.index);
+        let mut new_utxos = vec![
+            stored_utxo(&receipt, 0, first.clone()),
+            stored_utxo(&receipt, 1, second.clone()),
+        ];
+        let mut spent_utxos = Vec::new();
+        let child = shape
+            .child
+            .then(|| spend_of(OutPoint::new(receipt.txid(), 0), vec![pay(1_500, &first)]));
+        if let Some(child) = &child {
+            records.extend(
+                info.check_core_transaction(
+                    child,
+                    TransactionContext::Mempool,
+                    &mut wallet,
+                    true,
+                    true,
+                )
+                .await
+                .new_records,
+            );
+            spent_utxos.push(new_utxos[0].clone());
+            new_utxos.push(stored_utxo(child, 0, first.clone()));
+        }
+        if shape.unfunded_input {
+            let rival = spend_of(OutPoint::new(funding.txid(), 0), vec![pay(500, &first)]);
+            records.extend(
+                info.check_core_transaction(
+                    &rival,
+                    TransactionContext::Mempool,
+                    &mut wallet,
+                    true,
+                    true,
+                )
+                .await
+                .new_records,
+            );
+            new_utxos.push(stored_utxo(&rival, 0, first.clone()));
+        }
+        let mut running = info.clone();
+        running
+            .check_core_transaction(&winner, block(101), &mut wallet.clone(), true, true)
+            .await;
+        assert_eq!(
+            traces(&running, &[&receipt, child.as_ref().unwrap_or(&receipt)]),
+            Vec::<String>::new(),
+            "the running wallet settles every account"
+        );
+        let (persister, _dir) = store_then_reopen(
+            &wallet,
+            CoreChangeSet {
+                records,
+                new_utxos,
+                spent_utxos,
+                ..Default::default()
+            },
+        );
+        if !shape.unrouted {
+            // The pool rows a live sync persists, so load routes each coin to its owner.
+            let conn = persister.lock_conn_for_test();
+            for (label, address) in [("standard_bip44", &first), ("standard_bip32", &second)] {
+                conn.execute(
+                    "INSERT INTO core_address_pool \
+                     (wallet_id, account_type, account_index, pool_type, address_index, script) \
+                     VALUES (?1, ?2, 0, 0, 0, ?3)",
+                    rusqlite::params![
+                        &wallet.wallet_id[..],
+                        label,
+                        address.script_pubkey().as_bytes()
+                    ],
+                )
+                .unwrap();
+            }
+        }
+        Self {
+            wallet,
+            first,
+            funding,
+            receipt,
+            child,
+            winner,
+            persister,
+            _dir,
+        }
+    }
+}
+
+/// Every funding account still holding a coin or a record of `transactions`.
+fn traces(info: &ManagedWalletInfo, transactions: &[&Transaction]) -> Vec<String> {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let txids: Vec<Txid> = transactions.iter().map(|tx| tx.txid()).collect();
+    info.accounts
+        .all_funding_accounts()
+        .into_iter()
+        .filter_map(|account| {
+            let coins = account
+                .utxos
+                .keys()
+                .filter(|outpoint| txids.contains(&outpoint.txid))
+                .count();
+            let records = txids
+                .iter()
+                .filter(|txid| account.transactions().contains_key(*txid))
+                .count();
+            let account_type = account.managed_account_type().to_account_type();
+            (coins + records > 0)
+                .then(|| format!("{account_type:?}: {coins} coins, {records} records"))
+        })
+        .collect()
+}
+
+/// A final competitor arriving after the restart must leave no coin of the
+/// receipt in any account, in the running wallet and after the next load.
+async fn assert_two_account_receipt_settles_after_restart(shape: TwoAccountShape) {
+    use platform_wallet::changeset::changeset::SweepBatch;
+
+    let stored = TwoAccountReceipt::stored(shape).await;
+    let losers = [
+        &stored.receipt,
+        stored.child.as_ref().unwrap_or(&stored.receipt),
+    ];
+    let mut state = stored.persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&stored.wallet.wallet_id).unwrap();
+
+    let result = loaded
+        .wallet_info
+        .check_core_transaction(&stored.winner, block(101), &mut loaded.wallet, true, true)
+        .await;
+
+    assert!(result.swept_transactions.contains(&stored.receipt.txid()));
+    assert_eq!(
+        traces(&loaded.wallet_info, &losers),
+        Vec::<String>::new(),
+        "no account of the running wallet keeps a coin of the removed receipt"
+    );
+    assert_eq!(loaded.wallet_info.balance.total(), 1_000);
+
+    stored
+        .persister
+        .store(
+            stored.wallet.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records: result.new_records,
+                    new_utxos: vec![stored_utxo(&stored.winner, 0, stored.first.clone())],
+                    sweeps: vec![SweepBatch {
+                        txids: result.swept_transactions,
+                        superseded_by: stored.winner.txid(),
+                        winner_mined_height: Some(101),
+                        released_outpoints: result.released_outpoints,
+                    }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let mut state = stored.persister.load().unwrap();
+    let reloaded = &state
+        .wallets
+        .get_mut(&stored.wallet.wallet_id)
+        .unwrap()
+        .wallet_info;
+    assert_eq!(
+        traces(reloaded, &losers),
+        Vec::<String>::new(),
+        "the next load holds no coin of the removed receipt either"
+    );
+    assert_eq!(reloaded.balance.total(), 1_000);
+}
+
+#[tokio::test]
+async fn should_settle_two_account_mempool_receipt_against_final_winner_after_restart() {
+    assert_two_account_receipt_settles_after_restart(TwoAccountShape {
+        value: 5_000,
+        ..Default::default()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn should_settle_unrepresentable_two_account_receipt_against_final_winner_after_restart() {
+    assert_two_account_receipt_settles_after_restart(TwoAccountShape {
+        value: UNREPRESENTABLE_HALF,
+        ..Default::default()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn should_settle_unrepresentable_two_account_receipt_stored_under_its_other_account() {
+    assert_two_account_receipt_settles_after_restart(TwoAccountShape {
+        value: UNREPRESENTABLE_HALF,
+        recorded_under_first: true,
+        ..Default::default()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn should_settle_two_account_receipt_with_unrepresentable_foreign_output_after_restart() {
+    assert_two_account_receipt_settles_after_restart(TwoAccountShape {
+        value: 7_000,
+        foreign_output: true,
+        ..Default::default()
+    })
+    .await;
+}
+
+/// The child is recorded only in the account whose coin it spends, which is
+/// not the one the stored receipt names.
+#[tokio::test]
+async fn should_settle_child_of_unrepresentable_two_account_receipt_after_restart() {
+    assert_two_account_receipt_settles_after_restart(TwoAccountShape {
+        value: UNREPRESENTABLE_HALF,
+        child: true,
+        ..Default::default()
+    })
+    .await;
+}
+
+/// Without pool rows load parks both coins in the first account, while the
+/// stored receipt names the second.
+#[tokio::test]
+async fn should_settle_unrepresentable_two_account_receipt_with_unrouted_coins_after_restart() {
+    assert_two_account_receipt_settles_after_restart(TwoAccountShape {
+        value: UNREPRESENTABLE_HALF,
+        unrouted: true,
+        ..Default::default()
+    })
+    .await;
+}
+
+/// Each account holds the receipt without the amounts that are unsafe to
+/// sum, so reading balances and attributing a late funding stay in range.
+#[tokio::test]
+async fn should_recompute_unrepresentable_two_account_receipt_when_its_funding_arrives_after_restart(
+) {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let stored = TwoAccountReceipt::stored(TwoAccountShape {
+        value: UNREPRESENTABLE_HALF,
+        unfunded_input: true,
+        ..Default::default()
+    })
+    .await;
+    let txid = stored.receipt.txid();
+    let mut state = stored.persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&stored.wallet.wallet_id).unwrap();
+    let copies = |info: &ManagedWalletInfo| {
+        let accounts = &info.accounts;
+        (
+            accounts.standard_bip44_accounts[&0].transactions()[&txid].clone(),
+            accounts.standard_bip32_accounts[&0].transactions()[&txid].clone(),
+        )
+    };
+    let (first, second) = copies(&loaded.wallet_info);
+    assert!(
+        first.output_details.is_empty() && second.output_details.is_empty(),
+        "each account holds the receipt without the amounts unsafe to sum"
+    );
+    assert_eq!(
+        loaded.wallet_info.balance.total(),
+        2 * UNREPRESENTABLE_HALF + 500,
+        "both coins are credited"
+    );
+
+    loaded
+        .wallet_info
+        .check_core_transaction(&stored.funding, block(100), &mut loaded.wallet, true, true)
+        .await;
+    loaded.wallet_info.update_balance();
+
+    let (first, second) = copies(&loaded.wallet_info);
+    assert_eq!(
+        (first.input_details.len(), first.net_amount),
+        (1, -20_000),
+        "the late funding is attributed in the account that owns it"
+    );
+    assert!(second.input_details.is_empty());
+    assert_eq!(
+        loaded.wallet_info.balance.total(),
+        2 * UNREPRESENTABLE_HALF + 500
+    );
+}
+
+/// A stored mempool record spending `values`, beaten after the restart by a
+/// final transaction the wallet has no other interest in: no owned output,
+/// and no input the wallet can attribute. Whatever the checker reports is
+/// persisted as a sync would, and the store is loaded again.
+async fn assert_recordless_final_competitor_settles_after_restart(values: &[u64]) {
+    use platform_wallet::changeset::changeset::SweepBatch;
+
+    let fixture = stage_replay_amounts(TransactionContext::Mempool, values, 1).await;
+    let stored: Vec<u8> = fixture
+        .persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT txid FROM core_transactions WHERE record_blob IS NOT NULL",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let txid = Txid::from_slice(&stored).unwrap();
+    let loser = fixture
+        .persister
+        .get_core_tx_record(fixture.wallet_id, &txid)
+        .unwrap()
+        .unwrap();
+    let address = loser.output_details[0].address.clone().unwrap();
+    // The loser's own output, as the round that stored the record wrote it.
+    fixture
+        .persister
+        .store(
+            fixture.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    new_utxos: vec![stored_utxo(&loser.transaction, 0, address)],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let (mut wallet, mut info) = fixture.load();
+    assert_eq!(traces(&info, &[&loser.transaction]).len(), 1);
+
+    let winner = spend_of(
+        loser.transaction.input[0].previous_output,
+        vec![TxOut {
+            value: 900,
+            script_pubkey: foreign_address(77).script_pubkey(),
+        }],
+    );
+    let result = info
+        .check_core_transaction(&winner, block(101), &mut wallet, true, true)
+        .await;
+
+    assert!(
+        !result.is_relevant && result.new_records.is_empty(),
+        "the competitor leaves no record of its own"
+    );
+    assert_eq!(result.swept_transactions, vec![txid]);
+    assert_eq!(
+        result.released_outpoints,
+        vec![loser.transaction.input[1].previous_output],
+        "the input only the loser claimed is released"
+    );
+    assert_eq!(traces(&info, &[&loser.transaction]), Vec::<String>::new());
+    fixture
+        .persister
+        .store(
+            fixture.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    sweeps: vec![SweepBatch {
+                        txids: result.swept_transactions,
+                        superseded_by: winner.txid(),
+                        winner_mined_height: Some(101),
+                        released_outpoints: result.released_outpoints,
+                    }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let (_, reloaded) = fixture.load();
+    assert_eq!(
+        traces(&reloaded, &[&loser.transaction]),
+        Vec::<String>::new(),
+        "the next load holds neither the record nor its coin"
+    );
+    let rows: i64 = fixture
+        .persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT count(*) FROM core_transactions WHERE txid = ?1",
+            [txid.as_byte_array().as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(rows, 0, "and the store holds its record no longer");
+}
+
+#[tokio::test]
+async fn should_settle_safe_mempool_record_against_recordless_final_competitor_after_restart() {
+    assert_recordless_final_competitor_settles_after_restart(&[5_000, 1]).await;
+}
+
+#[tokio::test]
+async fn should_settle_unsafe_input_mempool_record_against_recordless_final_competitor_after_restart(
+) {
+    assert_recordless_final_competitor_settles_after_restart(&[i64::MAX as u64, 1]).await;
+}
+
+/// How a mempool spend of two forged receipts and two real coins reaches the store.
+#[derive(Clone, Copy, Default)]
+struct ForgedInputShape {
+    /// Value of each forged receipt: two of `UNREPRESENTABLE_HALF` cannot be
+    /// summed as `i64`, so the spend's input amounts are unsafe.
+    forged: u64,
+    /// The spend also pays the second funding account.
+    two_accounts: bool,
+    /// The real coins are funded only after the restart, and a plain mempool
+    /// rival spends one of them too, which marks it spent.
+    late_funding: bool,
+}
+
+struct ForgedInputSpend {
+    wallet: Wallet,
+    /// Pays the wallet 20_000 (`shared`) and 30_000 (`extra`), confirmed.
+    funding: Transaction,
+    receipts: [Transaction; 2],
+    /// Spends `shared`, `extra` and both receipts.
+    spend: Transaction,
+    /// A confirmed transaction spending `shared` and paying outside the wallet.
+    winner: Transaction,
+    persister: SqlitePersister,
+    _dir: tempfile::TempDir,
+}
+
+impl ForgedInputSpend {
+    async fn stored(shape: ForgedInputShape) -> Self {
+        let mut wallet =
+            Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+        let first = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .next_receive_address(Some(&xpub), true)
+            .unwrap();
+        let xpub = wallet.accounts.standard_bip32_accounts[&0].account_xpub;
+        let second = info
+            .accounts
+            .standard_bip32_accounts
+            .get_mut(&0)
+            .unwrap()
+            .next_receive_address(Some(&xpub), true)
+            .unwrap();
+        let pay = |value, address: &Address| TxOut {
+            value,
+            script_pubkey: address.script_pubkey(),
+        };
+        let outside = |byte| OutPoint::new(Txid::from_byte_array([byte; 32]), 0);
+        let funding = spend_of(outside(73), vec![pay(20_000, &first), pay(30_000, &first)]);
+        let (shared, extra) = (
+            OutPoint::new(funding.txid(), 0),
+            OutPoint::new(funding.txid(), 1),
+        );
+        let receipts =
+            [71, 72].map(|byte| spend_of(outside(byte), vec![pay(shape.forged, &first)]));
+        let mut outputs = vec![pay(1_000, &first)];
+        if shape.two_accounts {
+            outputs.push(pay(1_500, &second));
+        }
+        let mut spend = spend_of(shared, outputs);
+        let more = [
+            extra,
+            OutPoint::new(receipts[0].txid(), 0),
+            OutPoint::new(receipts[1].txid(), 0),
+        ];
+        spend.input.extend(more.map(|previous_output| TxIn {
+            previous_output,
+            ..Default::default()
+        }));
+        let winner = spend_of(shared, vec![pay(49_000, &foreign_address(74))]);
+
+        let mempool = TransactionContext::Mempool;
+        let mut records = Vec::new();
+        let mut new_utxos = Vec::new();
+        let mut spent_utxos = Vec::new();
+        if !shape.late_funding {
+            records.extend(
+                info.check_core_transaction(&funding, block(100), &mut wallet, true, true)
+                    .await
+                    .new_records,
+            );
+            new_utxos.extend([0, 1].map(|vout| stored_utxo(&funding, vout, first.clone())));
+            spent_utxos.extend(new_utxos.clone());
+        }
+        // Each receipt is seen by a wallet that does not hold the spend: a
+        // debug checker cannot attribute both to one record.
+        for receipt in &receipts {
+            records.extend(
+                info.clone()
+                    .check_core_transaction(
+                        receipt,
+                        mempool.clone(),
+                        &mut wallet.clone(),
+                        true,
+                        true,
+                    )
+                    .await
+                    .new_records,
+            );
+            let coin = stored_utxo(receipt, 0, first.clone());
+            new_utxos.push(coin.clone());
+            spent_utxos.push(coin);
+        }
+        let mut slices = info
+            .check_core_transaction(&spend, mempool.clone(), &mut wallet, true, true)
+            .await
+            .new_records;
+        assert_eq!(slices.len(), 1 + usize::from(shape.two_accounts));
+        // One wallet-level record, as a sync folds the per-account slices.
+        let mut folded = slices.remove(0);
+        for slice in slices {
+            folded.output_details.extend(slice.output_details);
+        }
+        records.push(folded);
+        new_utxos.push(stored_utxo(&spend, 0, first.clone()));
+        if shape.two_accounts {
+            new_utxos.push(stored_utxo(&spend, 1, second.clone()));
+        }
+        if shape.late_funding {
+            let rival = spend_of(shared, vec![pay(500, &first)]);
+            records.extend(
+                info.check_core_transaction(&rival, mempool, &mut wallet, true, true)
+                    .await
+                    .new_records,
+            );
+            new_utxos.push(stored_utxo(&rival, 0, first.clone()));
+        }
+        let (persister, _dir) = store_then_reopen(
+            &wallet,
+            CoreChangeSet {
+                records,
+                new_utxos,
+                spent_utxos,
+                ..Default::default()
+            },
+        );
+        if shape.two_accounts {
+            // The pool rows a live sync persists, so load routes each coin to its owner.
+            let conn = persister.lock_conn_for_test();
+            for (label, address) in [("standard_bip44", &first), ("standard_bip32", &second)] {
+                conn.execute(
+                    "INSERT INTO core_address_pool \
+                     (wallet_id, account_type, account_index, pool_type, address_index, script) \
+                     VALUES (?1, ?2, 0, 0, 0, ?3)",
+                    rusqlite::params![
+                        &wallet.wallet_id[..],
+                        label,
+                        address.script_pubkey().as_bytes()
+                    ],
+                )
+                .unwrap();
+            }
+        }
+        Self {
+            wallet,
+            funding,
+            receipts,
+            spend,
+            winner,
+            persister,
+            _dir,
+        }
+    }
+}
+
+/// A final competitor that spends one of the wallet's own coins and pays
+/// outside it. Beside an ordinary spend it leaves no record, since that spend
+/// already took the coin; beside a restored one the wallet still attributes
+/// the coin and records it. Either way it must remove the stored spend, in the
+/// running wallet and for the next load, and release what only that spend claimed.
+async fn assert_forged_input_spend_settles_after_restart(shape: ForgedInputShape) {
+    use platform_wallet::changeset::changeset::SweepBatch;
+
+    let stored = ForgedInputSpend::stored(shape).await;
+    let outputs = 1_000 + if shape.two_accounts { 1_500 } else { 0 };
+    let mut state = stored.persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&stored.wallet.wallet_id).unwrap();
+    assert_eq!(
+        loaded.wallet_info.balance.total(),
+        outputs,
+        "only the spend's own outputs are spendable after the restart"
+    );
+
+    let result = loaded
+        .wallet_info
+        .check_core_transaction(&stored.winner, block(101), &mut loaded.wallet, true, true)
+        .await;
+
+    assert_eq!(result.swept_transactions, vec![stored.spend.txid()]);
+    assert_eq!(
+        traces(&loaded.wallet_info, &[&stored.spend]),
+        Vec::<String>::new(),
+        "no account of the running wallet keeps a coin of the removed spend"
+    );
+    stored
+        .persister
+        .store(
+            stored.wallet.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records: result.new_records,
+                    sweeps: vec![SweepBatch {
+                        txids: result.swept_transactions,
+                        superseded_by: stored.winner.txid(),
+                        winner_mined_height: Some(101),
+                        released_outpoints: result.released_outpoints,
+                    }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let mut state = stored.persister.load().unwrap();
+    let reloaded = &state
+        .wallets
+        .get_mut(&stored.wallet.wallet_id)
+        .unwrap()
+        .wallet_info;
+    assert_eq!(traces(reloaded, &[&stored.spend]), Vec::<String>::new());
+    let coins: Vec<OutPoint> = reloaded
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .flat_map(|account| account.utxos.keys().copied())
+        .collect();
+    let mut released = vec![
+        OutPoint::new(stored.funding.txid(), 1),
+        OutPoint::new(stored.receipts[0].txid(), 0),
+        OutPoint::new(stored.receipts[1].txid(), 0),
+    ];
+    released.sort();
+    assert_eq!(
+        coins, released,
+        "the next load returns what only the spend claimed, not the coin the competitor spent"
+    );
+    assert_eq!(reloaded.balance.total(), 30_000 + 2 * shape.forged);
+}
+
+/// Control: with receipts that are safe to sum the spend is an ordinary record.
+#[tokio::test]
+async fn should_settle_mempool_spend_against_final_outside_spend_of_its_coin_after_restart() {
+    assert_forged_input_spend_settles_after_restart(ForgedInputShape {
+        forged: 7_000,
+        ..Default::default()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn should_settle_unsafe_input_spend_against_final_outside_spend_of_its_coin_after_restart() {
+    assert_forged_input_spend_settles_after_restart(ForgedInputShape {
+        forged: UNREPRESENTABLE_HALF,
+        ..Default::default()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn should_settle_two_account_unsafe_input_spend_against_final_outside_spend_after_restart() {
+    assert_forged_input_spend_settles_after_restart(ForgedInputShape {
+        forged: UNREPRESENTABLE_HALF,
+        two_accounts: true,
+        ..Default::default()
+    })
+    .await;
+}
+
+/// The real coins are funded only after the restart. Returns the spend's
+/// attributed inputs, its net, and the wallet total once the funding is in.
+async fn late_funding_of_forged_input_spend(forged: u64) -> (usize, i64, u64) {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let stored = ForgedInputSpend::stored(ForgedInputShape {
+        forged,
+        late_funding: true,
+        ..Default::default()
+    })
+    .await;
+    let mut state = stored.persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&stored.wallet.wallet_id).unwrap();
+    assert_eq!(loaded.wallet_info.balance.total(), 1_500);
+
+    loaded
+        .wallet_info
+        .check_core_transaction(&stored.funding, block(100), &mut loaded.wallet, true, true)
+        .await;
+    loaded.wallet_info.update_balance();
+
+    let account = &loaded.wallet_info.accounts.standard_bip44_accounts[&0];
+    let record = &account.transactions()[&stored.spend.txid()];
+    (
+        record.input_details.len(),
+        record.net_amount,
+        loaded.wallet_info.balance.total(),
+    )
+}
+
+/// A restored record holds no input amounts and marks nothing spent by
+/// itself. The coin the rival also spends is attributed to it, and that one
+/// amount is all its net sums; the coin only it spends is credited when its
+/// funding arrives, where a replayed record would keep it reserved.
+#[tokio::test]
+async fn should_attribute_late_funding_to_restored_unsafe_input_spend_without_overflow() {
+    assert_eq!(
+        late_funding_of_forged_input_spend(UNREPRESENTABLE_HALF).await,
+        (1, 1_000 - 20_000, 1_500 + 30_000)
+    );
+}
+
+/// Control: replayed as an ordinary record, the same spend also knows its
+/// receipts and keeps both real coins reserved.
+#[tokio::test]
+async fn should_attribute_late_funding_to_replayed_mempool_spend() {
+    assert_eq!(
+        late_funding_of_forged_input_spend(7_000).await,
+        (4, 1_000 - 50_000 - 14_000, 1_500)
+    );
 }

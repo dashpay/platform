@@ -182,13 +182,13 @@ pub(crate) fn contact_only_script(
     wallet_id: &WalletId,
     script: &[u8],
 ) -> Result<bool, WalletStorageError> {
-    Ok(conn.query_row(
+    let mut probe = conn.prepare_cached(
         "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) \
          AND NOT EXISTS(SELECT 1 FROM core_address_pool \
              WHERE wallet_id = ?1 AND script = ?2 AND account_type != ?3)",
-        params![wallet_id.as_slice(), script, DASHPAY_EXTERNAL_LABEL],
-        |r| r.get(0),
-    )?)
+    )?;
+    let key = params![wallet_id.as_slice(), script, DASHPAY_EXTERNAL_LABEL];
+    Ok(probe.query_row(key, |r| r.get(0))?)
 }
 
 fn repair_record(
@@ -288,11 +288,19 @@ fn repair_record(
     // The live projection computes the same accounting, so repair never
     // flips a row it just wrote; only the overflow policy differs.
     let (net, direction) = wallet_accounting(&record);
-    record.net_amount = i64::try_from(net).map_err(|_| WalletStorageError::NetAmountOverflow {
-        wallet_id: *wallet_id,
-        txid: *txid,
-        value: net,
-    })?;
+    record.net_amount = match i64::try_from(net) {
+        Ok(net) => net,
+        // Nothing authenticates a mempool transaction: this is peer-supplied data,
+        // not corruption. The row stays as written and load sets it aside.
+        Err(_) if matches!(record.context, TransactionContext::Mempool) => return Ok(()),
+        Err(_) => {
+            return Err(WalletStorageError::NetAmountOverflow {
+                wallet_id: *wallet_id,
+                txid: *txid,
+                value: net,
+            })
+        }
+    };
     record.direction = direction;
     let repaired = blob::encode(&record)?;
     if repaired != original {
@@ -322,7 +330,7 @@ mod tests {
     use dashcore::{PubkeyHash, Transaction as CoreTransaction, TxOut};
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::managed_account::transaction_record::TransactionDirection;
-    use key_wallet::transaction_checking::TransactionType;
+    use key_wallet::transaction_checking::{BlockInfo, TransactionType};
     use platform_wallet::changeset::wallet_direction;
     use platform_wallet::test_support::fold_wallet_records;
 
@@ -496,10 +504,43 @@ mod tests {
     }
 
     #[test]
-    fn should_report_a_net_amount_that_does_not_fit_i64() {
+    fn should_store_mempool_record_with_unrepresentable_net_without_failing_the_round() {
         let mut conn = wallet_db("testnet");
-        let stored = record(&[u64::MAX, u64::MAX], &[u64::MAX, u64::MAX]);
+        let value = (1 << 62) + 1;
+        let mut live = record(&[value, value], &[value, value]);
+        // The live projection saturates a net it cannot represent.
+        live.net_amount = i64::MAX;
+        let tx = conn.transaction().unwrap();
+
+        core_state::apply(
+            &tx,
+            &WALLET_ID,
+            &CoreChangeSet {
+                records: vec![live.clone()],
+                ..Default::default()
+            },
+        )
+        .expect("a peer-supplied mempool amount must not fail the round");
+
+        let stored: Vec<u8> = tx
+            .query_row(
+                "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                params![&WALLET_ID[..], live.txid.as_byte_array().as_slice()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, blob::encode(&live).unwrap());
+    }
+
+    #[test]
+    fn should_report_a_confirmed_net_amount_that_does_not_fit_i64() {
+        let mut conn = wallet_db("testnet");
+        let mut stored = record(&[u64::MAX, u64::MAX], &[u64::MAX, u64::MAX]);
+        stored.context =
+            TransactionContext::InBlock(BlockInfo::new(101, dashcore::BlockHash::all_zeros(), 7));
         store(&conn, &stored);
+        conn.execute("UPDATE core_transactions SET height = 101", [])
+            .unwrap();
         let tx = conn.transaction().unwrap();
 
         let err =

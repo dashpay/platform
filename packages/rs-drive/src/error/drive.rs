@@ -218,4 +218,8 @@ pub enum DriveError {
     /// Checkpoint not found for specified block height
     #[error("checkpoint not found for block height: {0}")]
     CheckpointNotFound(u64),
+
+    /// Concurrent commits invalidated every bounded proof attempt; retrying may succeed.
+    #[error("non-unique identity proof generation raced a block commit on every attempt; retry the request")]
+    ProofGenerationRetriesExhausted,
 }

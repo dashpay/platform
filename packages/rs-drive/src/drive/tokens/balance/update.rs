@@ -304,11 +304,12 @@ mod tests {
             // `AllReferencesWithSumItem` variants + the four new
             // `provable_*_weight` fields on `SomeSumTrees`. See the
             // matching note on `should_add_to_balance_latest_version_estimated`
-            // in `drive/identity/balance/update.rs`.
+            // in `drive/identity/balance/update.rs`, which also explains
+            // grove version 4's 4_378_100 -> 4_381_700.
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 4378100,
+                    processing_fee: 4381700,
                     ..Default::default()
                 }
             );
@@ -511,10 +512,13 @@ mod tests {
 
             assert_eq!(app_hash_after, app_hash_before);
 
+            // 3_600 credits above the first version: see
+            // `should_remove_from_balance_latest_version_estimated` in
+            // `drive/identity/balance/update.rs`.
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    processing_fee: 2476860,
+                    processing_fee: 2480460,
                     ..Default::default()
                 }
             );

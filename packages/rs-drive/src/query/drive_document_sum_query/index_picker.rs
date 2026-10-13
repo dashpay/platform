@@ -15,6 +15,11 @@
 //! Reject-on-miss is the load-bearing contract: callers landing in
 //! "no covering index" return `WhereClauseOnNonIndexedProperty` so the
 //! prover and verifier reject the same set of inputs (same as count).
+//!
+//! As for count, the clauses must already be keyed by
+//! [`key_array_element_clauses`](crate::query::key_array_element_clauses):
+//! a raw `==` or `in` on a typed array would select the array's index and
+//! read its per-element entries as values of the array.
 
 use crate::query::drive_document_sum_query::{is_indexable_for_sum, is_range_operator};
 use crate::query::ResolvedTimeRange;

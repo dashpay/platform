@@ -55,6 +55,11 @@ impl PublicKey {
             .map_err(|_| BlsError::InvalidInputs("Invalid byte sequence".into()))
     }
 
+    /// Whether this is the identity point, which parses but never verifies a signature.
+    pub fn is_identity(&self) -> bool {
+        matches!(self.0, PublicKeyPoint::Infinity)
+    }
+
     fn validated(&self) -> Result<&BlsPublicKey<BlsScIetf>, BlsError> {
         match &self.0 {
             PublicKeyPoint::Infinity => Err(BlsError::InvalidSignature),

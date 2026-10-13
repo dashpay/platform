@@ -131,6 +131,7 @@ impl DocumentTypeV1 {
                 // MODERATION STAMPS: generation-3 system properties; not in this grammar.
                 admit_moderation_stamp_indexes: false,
                 admit_derived_index_properties: false,
+                admit_indexed_arrays: false,
             },
             platform_version,
         )

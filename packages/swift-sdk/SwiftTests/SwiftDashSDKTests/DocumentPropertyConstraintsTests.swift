@@ -100,6 +100,37 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
         ]
         """
 
+    /// Rules reading the bytes of byte arrays, as the FFI reports them
+    /// (rs-sdk-ffi's `should_read_and_check_the_bytes_of_byte_arrays`): a
+    /// `byteAt` operand reads an address's type byte, and a `startsWith` of
+    /// byte arrays tests a payload's tag.
+    private let byteRulesJSON = """
+        [
+          {
+            "name": "addressType",
+            "readsOwner": false,
+            "readsSystem": [],
+            "reads": [{ "kind": "bytes", "path": "corePaymentAddress" }],
+            "rule": { "in": [{ "byteAt": ["corePaymentAddress", 0] }, [0, 1]] }
+          },
+          {
+            "name": "taggedPayload",
+            "readsOwner": false,
+            "readsSystem": [],
+            "reads": [
+              { "kind": "presence", "path": "payload" },
+              { "kind": "bytes", "path": "payload" }
+            ],
+            "rule": {
+              "anyOf": [
+                { "absent": "payload" },
+                { "startsWith": ["payload", { "const": "cafe" }] }
+              ]
+            }
+          }
+        ]
+        """
+
     /// Rules reading system times and heights, as the FFI reports them: the
     /// `listing` type of rs-sdk-ffi's
     /// `should_read_the_clock_for_system_times_and_skip_block_heights`, and a
@@ -199,6 +230,70 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
             "readsOwner": false,
             "readsSystem": [],
             "readsTotals": []
+          }
+        ]
+        """
+
+    /// Rules reading values of the document a reference points at, as the FFI
+    /// reports them: a `vote` type whose `pollId` refers to a `poll`, reading
+    /// which options the poll has, its owner and its status, and a rule,
+    /// `smallChoice`, reading only the vote's choice.
+    private let referencedRulesJSON = """
+        [
+          {
+            "name": "choiceIsAnOption",
+            "rule": {
+              "lessThan": [
+                "choice",
+                {
+                  "countPresent": [
+                    { "referenced": ["pollId", "option0"] },
+                    { "referenced": ["pollId", "option1"] },
+                    { "referenced": ["pollId", "option2"] }
+                  ]
+                }
+              ]
+            },
+            "reads": [{ "path": "choice", "kind": "value" }],
+            "readsOwner": false,
+            "readsSystem": [],
+            "readsTotals": [],
+            "readsReferenced": [
+              { "reference": "pollId", "path": "option0", "kind": "presence" },
+              { "reference": "pollId", "path": "option1", "kind": "presence" },
+              { "reference": "pollId", "path": "option2", "kind": "presence" }
+            ]
+          },
+          {
+            "name": "ownerIsTheDenormalizedOne",
+            "rule": { "equal": [{ "referenced": ["pollId", "$ownerId"] }, "pollOwnerId"] },
+            "reads": [{ "path": "pollOwnerId", "kind": "identifier" }],
+            "readsOwner": false,
+            "readsSystem": [],
+            "readsTotals": [],
+            "readsReferenced": [
+              { "reference": "pollId", "path": "$ownerId", "kind": "identifier" }
+            ]
+          },
+          {
+            "name": "pollIsOpen",
+            "rule": { "notEqual": [{ "referenced": ["pollId", "status"] }, { "const": "closed" }] },
+            "reads": [],
+            "readsOwner": false,
+            "readsSystem": [],
+            "readsTotals": [],
+            "readsReferenced": [
+              { "reference": "pollId", "path": "status", "kind": "text" }
+            ]
+          },
+          {
+            "name": "smallChoice",
+            "rule": { "lessThan": ["choice", 10] },
+            "reads": [{ "path": "choice", "kind": "value" }],
+            "readsOwner": false,
+            "readsSystem": [],
+            "readsTotals": [],
+            "readsReferenced": []
           }
         ]
         """
@@ -368,10 +463,26 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
         )
     }
 
+    func testByteArrayReadsDecodeAsBytes() throws {
+        let rules = try DocumentPropertyConstraint.list(fromJSON: byteRulesJSON)
+
+        XCTAssertEqual(rules.map(\.name), ["addressType", "taggedPayload"])
+        XCTAssertEqual(rules[0].reads, [PropertyConstraintRead(path: "corePaymentAddress", kind: .bytes)])
+        // The `absent` reads the payload's presence, the `startsWith` its bytes
+        XCTAssertEqual(
+            rules[1].reads,
+            [
+                PropertyConstraintRead(path: "payload", kind: .presence),
+                PropertyConstraintRead(path: "payload", kind: .bytes)
+            ]
+        )
+        XCTAssertEqual(rules[0].ruleJSON, #"{"in":[{"byteAt":["corePaymentAddress",0]},[0,1]]}"#)
+    }
+
     func testEveryReadKindNameRoundTrips() {
-        let names = ["value", "presence", "text", "identifier", "length", "count", "elements"]
+        let names = ["value", "presence", "text", "identifier", "length", "count", "elements", "bytes"]
         let kinds: [PropertyConstraintRead.Kind] = [
-            .value, .presence, .text, .identifier, .length, .count, .elements
+            .value, .presence, .text, .identifier, .length, .count, .elements, .bytes
         ]
         XCTAssertEqual(names.map(PropertyConstraintRead.Kind.init(name:)), kinds)
         XCTAssertEqual(kinds.map(\.name), names)
@@ -653,6 +764,151 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
         )
     }
 
+    // MARK: - Referenced reads
+
+    func testReferencedReadsDecodeWithTheirReferencePathAndKind() throws {
+        let rules = try DocumentPropertyConstraint.list(fromJSON: referencedRulesJSON)
+
+        XCTAssertEqual(
+            rules.map(\.name),
+            ["choiceIsAnOption", "ownerIsTheDenormalizedOne", "pollIsOpen", "smallChoice"]
+        )
+        XCTAssertEqual(
+            rules.map(\.readsReferenced),
+            [
+                [
+                    PropertyConstraintReferencedRead(reference: "pollId", path: "option0", kind: .presence),
+                    PropertyConstraintReferencedRead(reference: "pollId", path: "option1", kind: .presence),
+                    PropertyConstraintReferencedRead(reference: "pollId", path: "option2", kind: .presence)
+                ],
+                [PropertyConstraintReferencedRead(reference: "pollId", path: "$ownerId", kind: .identifier)],
+                [PropertyConstraintReferencedRead(reference: "pollId", path: "status", kind: .text)],
+                []
+            ]
+        )
+        // A value of the referenced document is no property of this one; the
+        // properties the rule compares it with are
+        XCTAssertEqual(rules[0].reads, [PropertyConstraintRead(path: "choice", kind: .value)])
+        XCTAssertEqual(rules[1].reads, [PropertyConstraintRead(path: "pollOwnerId", kind: .identifier)])
+        XCTAssertEqual(rules[2].reads, [])
+        XCTAssertEqual(rules[3].reads, [PropertyConstraintRead(path: "choice", kind: .value)])
+        // The poll's owner is not the vote's
+        XCTAssertEqual(rules.map(\.readsOwner), [false, false, false, false])
+        XCTAssertEqual(rules.map(\.readsSystem), [[], [], [], []])
+        XCTAssertEqual(rules.map(\.readsTotals), [[], [], [], []])
+        XCTAssertEqual(
+            rules[1].ruleJSON,
+            #"{"equal":[{"referenced":["pollId","$ownerId"]},"pollOwnerId"]}"#
+        )
+    }
+
+    /// Referenced reads are kept in declared order, one read twice listed
+    /// twice, and a kind added by a later protocol version is kept by name
+    /// rather than failing the whole list.
+    func testReferencedReadsKeepRepeatsAndUnknownKinds() throws {
+        let rules = try DocumentPropertyConstraint.list(fromJSON: """
+            [{ "name": "r", "readsOwner": false, "reads": [], "readsSystem": [], "readsTotals": [],
+               "readsReferenced": [
+                 { "reference": "pollId", "path": "endsAt", "kind": "value" },
+                 { "reference": "postId", "path": "meta.tags", "kind": "somethingNew" },
+                 { "reference": "pollId", "path": "endsAt", "kind": "value" }
+               ],
+               "rule": { "lessThan": [{ "referenced": ["pollId", "endsAt"] }, 10] } }]
+            """)
+
+        let endsAt = PropertyConstraintReferencedRead(reference: "pollId", path: "endsAt", kind: .value)
+        XCTAssertEqual(
+            rules.first?.readsReferenced,
+            [
+                endsAt,
+                PropertyConstraintReferencedRead(
+                    reference: "postId",
+                    path: "meta.tags",
+                    kind: .other("somethingNew")
+                ),
+                endsAt
+            ]
+        )
+        XCTAssertEqual(rules.first?.readsReferenced[1].kind.name, "somethingNew")
+    }
+
+    /// A library built before `readsReferenced` leaves the key out.
+    func testMissingReferencedReadsDecodeAsEmpty() throws {
+        let rules = try DocumentPropertyConstraint.list(fromJSON: """
+            [{ "name": "r", "rule": { "present": "a" }, "readsOwner": false,
+               "readsSystem": [], "readsTotals": [], "reads": [{ "path": "a", "kind": "presence" }] }]
+            """)
+
+        XCTAssertEqual(rules.first?.readsReferenced, [])
+    }
+
+    func testMalformedReferencedReadsAreRefused() {
+        let rule = #""name": "r", "rule": {"present": "a"}, "reads": [], "readsOwner": false"#
+        let status = #""reference": "pollId", "path": "status""#
+        let malformed = [
+            // Not an array
+            #"[{\#(rule), "readsReferenced": "pollId"}]"#,
+            #"[{\#(rule), "readsReferenced": {\#(status), "kind": "text"}}]"#,
+            // A null is no missing key
+            #"[{\#(rule), "readsReferenced": null}]"#,
+            // An element that is not an object
+            #"[{\#(rule), "readsReferenced": ["pollId"]}]"#,
+            #"[{\#(rule), "readsReferenced": [[{\#(status), "kind": "text"}]]}]"#,
+            // A missing or mistyped reference
+            #"[{\#(rule), "readsReferenced": [{"path": "status", "kind": "text"}]}]"#,
+            #"[{\#(rule), "readsReferenced": [{"reference": 1, "path": "status", "kind": "text"}]}]"#,
+            #"[{\#(rule), "readsReferenced": [{"reference": null, "path": "status", "kind": "text"}]}]"#,
+            // A missing or mistyped path
+            #"[{\#(rule), "readsReferenced": [{"reference": "pollId", "kind": "text"}]}]"#,
+            #"[{\#(rule), "readsReferenced": [{"reference": "pollId", "path": ["status"], "kind": "text"}]}]"#,
+            // A missing or mistyped kind
+            #"[{\#(rule), "readsReferenced": [{\#(status)}]}]"#,
+            #"[{\#(rule), "readsReferenced": [{\#(status), "kind": 1}]}]"#,
+            #"[{\#(rule), "readsReferenced": [{\#(status), "kind": null}]}]"#
+        ]
+        // The same rule with well-formed referenced reads decodes
+        XCTAssertNoThrow(try DocumentPropertyConstraint.list(fromJSON: """
+            [{\(rule), "readsReferenced": [{\(status), "kind": "text"},
+              {"reference": "pollId", "path": "$ownerId", "kind": "identifier"}]}]
+            """))
+        for json in malformed {
+            // Each is JSON, so what is refused is its readsReferenced
+            XCTAssertNoThrow(try JSONSerialization.jsonObject(with: Data(json.utf8)), json)
+            XCTAssertThrowsError(try DocumentPropertyConstraint.list(fromJSON: json), json) { error in
+                guard case SDKError.serializationError = error else {
+                    return XCTFail("\(json): expected a serialization error, got \(error)")
+                }
+            }
+        }
+    }
+
+    /// The initializer still builds a rule without naming `readsReferenced`,
+    /// as it did before the field existed.
+    func testInitializerDefaultsToNoReferencedReads() {
+        let rule = DocumentPropertyConstraint(
+            name: "r",
+            ruleJSON: #"{"lessThan":["choice",10]}"#,
+            reads: [PropertyConstraintRead(path: "choice", kind: .value)],
+            readsOwner: false,
+            readsSystem: [],
+            readsTotals: []
+        )
+
+        XCTAssertEqual(rule.readsReferenced, [])
+        XCTAssertNotEqual(
+            rule,
+            DocumentPropertyConstraint(
+                name: "r",
+                ruleJSON: #"{"lessThan":["choice",10]}"#,
+                reads: [PropertyConstraintRead(path: "choice", kind: .value)],
+                readsOwner: false,
+                readsSystem: [],
+                readsTotals: [],
+                readsReferenced: [PropertyConstraintReferencedRead(reference: "pollId", path: "status", kind: .text)]
+            )
+        )
+    }
+
     // MARK: - Violations
 
     func testViolationDecodes() throws {
@@ -881,5 +1137,151 @@ final class DocumentPropertyConstraintsTests: XCTestCase {
         XCTAssertThrowsError(try expression(), file: file, line: line) { error in
             XCTAssertTrue(matches(error), "unexpected error: \(error)", file: file, line: line)
         }
+    }
+
+    /// Rules reading the stored version of the document through `$old.`, as
+    /// the FFI reports them: a stored property, the stored update time beside
+    /// `$revision`, and the stored owner, in name order beside a rule reading
+    /// none of it.
+    private let storedRulesJSON = """
+        [
+          {
+            "name": "closedOnlyFromOpen",
+            "readsOwner": false,
+            "readsSystem": [],
+            "readsStored": true,
+            "readsTotals": [],
+            "reads": [
+              { "kind": "text", "path": "status" },
+              { "kind": "text", "path": "$old.status" }
+            ],
+            "rule": {
+              "ifThen": [
+                { "equal": ["status", { "const": "closed" }] },
+                { "equal": ["$old.status", { "const": "open" }] }
+              ]
+            }
+          },
+          {
+            "name": "priceCap",
+            "readsOwner": false,
+            "readsSystem": [],
+            "readsStored": false,
+            "readsTotals": [],
+            "reads": [{ "kind": "value", "path": "price" }],
+            "rule": { "lessThanOrEqual": ["price", 1000] }
+          },
+          {
+            "name": "revisedAfterUpdate",
+            "readsOwner": false,
+            "readsSystem": ["$revision", "$updatedAt", "$old.$updatedAt"],
+            "readsStored": true,
+            "readsTotals": [],
+            "reads": [],
+            "rule": {
+              "allOf": [
+                { "lessThanOrEqual": ["$revision", 100] },
+                { "greaterThanOrEqual": ["$updatedAt", "$old.$updatedAt"] }
+              ]
+            }
+          },
+          {
+            "name": "sellerUnchanged",
+            "readsOwner": true,
+            "readsSystem": [],
+            "readsStored": true,
+            "readsTotals": [],
+            "reads": [{ "kind": "identifier", "path": "sellerId" }],
+            "rule": { "equal": ["sellerId", "$old.$ownerId"] }
+          }
+        ]
+        """
+
+    // MARK: - Stored version reads
+
+    /// A stored property is listed under its `$old.` path, a stored system
+    /// value under its `$old.` name beside `$revision`, and the stored owner
+    /// only as an owner read, never as a property.
+    func testStoredVersionReadsDecode() throws {
+        let rules = try DocumentPropertyConstraint.list(fromJSON: storedRulesJSON)
+
+        XCTAssertEqual(
+            rules.map(\.name),
+            ["closedOnlyFromOpen", "priceCap", "revisedAfterUpdate", "sellerUnchanged"]
+        )
+        XCTAssertEqual(rules.map(\.readsStored), [true, false, true, true])
+        XCTAssertEqual(
+            rules[0].reads,
+            [
+                PropertyConstraintRead(path: "status", kind: .text),
+                PropertyConstraintRead(path: "$old.status", kind: .text)
+            ]
+        )
+        XCTAssertEqual(rules[2].readsSystem, ["$revision", "$updatedAt", "$old.$updatedAt"])
+        XCTAssertEqual(rules[2].reads, [])
+        // `$old.$ownerId` is an owner read, not a property
+        XCTAssertEqual(rules[3].reads, [PropertyConstraintRead(path: "sellerId", kind: .identifier)])
+        XCTAssertEqual(rules.map(\.readsOwner), [false, false, false, true])
+        XCTAssertEqual(rules[3].ruleJSON, #"{"equal":["sellerId","$old.$ownerId"]}"#)
+    }
+
+    /// A library built before `readsStored` leaves the key out.
+    func testMissingStoredReadDecodesAsFalse() throws {
+        let rules = try DocumentPropertyConstraint.list(fromJSON: """
+            [{ "name": "r", "rule": { "present": "a" }, "readsOwner": false,
+               "readsSystem": [], "readsTotals": [],
+               "reads": [{ "path": "a", "kind": "presence" }] }]
+            """)
+
+        XCTAssertEqual(rules.first?.readsStored, false)
+    }
+
+    func testMalformedStoredReadsAreRefused() {
+        let rule = #""name": "r", "rule": {"present": "a"}, "reads": [], "readsOwner": false"#
+        let malformed = [
+            // A number is not a boolean, although NSNumber would cast it
+            #"[{\#(rule), "readsStored": 1}]"#,
+            #"[{\#(rule), "readsStored": 0}]"#,
+            // Nor is a string
+            #"[{\#(rule), "readsStored": "true"}]"#,
+            // A null is no missing key
+            #"[{\#(rule), "readsStored": null}]"#,
+            #"[{\#(rule), "readsStored": []}]"#,
+            #"[{\#(rule), "readsStored": {}}]"#
+        ]
+        // The same rule with a boolean decodes
+        XCTAssertNoThrow(try DocumentPropertyConstraint.list(fromJSON: #"[{\#(rule), "readsStored": true}]"#))
+        for json in malformed {
+            XCTAssertThrowsError(try DocumentPropertyConstraint.list(fromJSON: json), json) { error in
+                guard case SDKError.serializationError = error else {
+                    return XCTFail("\(json): expected a serialization error, got \(error)")
+                }
+            }
+        }
+    }
+
+    /// The initializer still builds a rule without naming `readsStored`, as it
+    /// did before the field existed.
+    func testInitializerDefaultsToNotReadingTheStoredVersion() {
+        let rule = DocumentPropertyConstraint(
+            name: "r",
+            ruleJSON: #"{"present":"a"}"#,
+            reads: [PropertyConstraintRead(path: "a", kind: .presence)],
+            readsOwner: false,
+            readsSystem: []
+        )
+
+        XCTAssertFalse(rule.readsStored)
+        XCTAssertNotEqual(
+            rule,
+            DocumentPropertyConstraint(
+                name: "r",
+                ruleJSON: #"{"present":"a"}"#,
+                reads: [PropertyConstraintRead(path: "a", kind: .presence)],
+                readsOwner: false,
+                readsSystem: [],
+                readsStored: true
+            )
+        )
     }
 }

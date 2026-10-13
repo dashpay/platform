@@ -7,6 +7,10 @@ use std::os::raw::c_char;
 
 /// Get schema for a specific document type
 ///
+/// Returns the schema as sent, property type shorthands (protocol version 14)
+/// included; `dash_sdk_data_contract_json_expand_property_type_shorthands`
+/// gives a contract JSON's long-form view.
+///
 /// # Safety
 /// - `contract_handle` and `document_type` must be valid, non-null pointers.
 /// - `document_type` must point to a NUL-terminated C string valid for the duration of the call.

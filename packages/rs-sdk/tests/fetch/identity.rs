@@ -224,9 +224,9 @@ async fn test_identity_public_keys_specific_read() {
 /// Given some non-unique public key, when I fetch identity that uses this key, I get associated identities containing this key
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_fetch_identity_by_non_unique_public_keys() {
-    /// Unique key hash, generated when creating test data
-    const UNIQUE_KEY_HASH: [u8; 20] = [
-        26, 42, 184, 155, 158, 2, 137, 145, 219, 176, 130, 54, 208, 131, 144, 167, 61, 81, 214, 110,
+    // Deterministic signed single-proof vectors generated from a local Drive fixture.
+    const KEY_HASH: [u8; 20] = [
+        116, 46, 250, 188, 249, 146, 183, 8, 195, 216, 201, 57, 86, 50, 151, 56, 213, 75, 221, 131,
     ];
 
     setup_logs();
@@ -236,7 +236,7 @@ async fn test_fetch_identity_by_non_unique_public_keys() {
         .await;
 
     let mut query = NonUniquePublicKeyHashQuery {
-        key_hash: UNIQUE_KEY_HASH,
+        key_hash: KEY_HASH,
         after: None,
     };
 
@@ -247,15 +247,23 @@ async fn test_fetch_identity_by_non_unique_public_keys() {
         .expect("fetch identities by non-unique key hash")
     {
         count += 1;
+        assert_eq!(found.id().to_buffer(), [count as u8 * 0x10; 32]);
+        assert_eq!(found.balance(), 700_000 + count as u64 * 0x10);
+        assert_eq!(found.revision(), 2);
+        assert_eq!(found.public_keys().len(), 4);
+        assert!(found
+            .public_keys()
+            .values()
+            .any(|key| key.public_key_hash().expect("key hash") == KEY_HASH));
         tracing::debug!(
             ?found,
-            ?UNIQUE_KEY_HASH,
+            ?KEY_HASH,
             ?count,
             "fetched identities by non-unique public key hash"
         );
 
         query = NonUniquePublicKeyHashQuery {
-            key_hash: UNIQUE_KEY_HASH,
+            key_hash: KEY_HASH,
             after: Some(*found.id().as_bytes()),
         };
     }
@@ -264,6 +272,47 @@ async fn test_fetch_identity_by_non_unique_public_keys() {
         count,
         3,
         "expected exactly 3 identities with this unique public key {}",
-        hex::encode(UNIQUE_KEY_HASH)
+        hex::encode(KEY_HASH)
     );
+}
+
+#[test]
+fn should_reject_retired_recorded_nonunique_responses() {
+    use dash_sdk::platform::types::identity::{IdentityRequest, IdentityResponse};
+    use drive_proof_verifier::{FromProof, MockContextProvider};
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/vectors/test_fetch_identity_by_non_unique_public_keys_legacy");
+    let mut count = 0;
+    for entry in directory.read_dir().expect("retired response fixtures") {
+        let path = entry.expect("fixture entry").path();
+        if !path
+            .file_name()
+            .expect("filename")
+            .to_string_lossy()
+            .starts_with("msg_")
+        {
+            continue;
+        }
+        let bytes = std::fs::read(&path).expect("recorded bytes");
+        let parts: Vec<_> = bytes.split(|byte| *byte == 0).collect();
+        let request: IdentityRequest =
+            serde_json::from_slice(parts[0]).expect("unchanged request shape");
+        let result: serde_json::Value =
+            serde_json::from_slice(parts[1]).expect("recorded mock result");
+        let response_bytes: Vec<u8> =
+            serde_json::from_value(result["Ok"].clone()).expect("recorded response bytes");
+        // Retired JSON must fail decoding or proof verification; no conversion to a supported proof.
+        if let Ok(response) = serde_json::from_slice::<IdentityResponse>(&response_bytes) {
+            assert!(<Identity as FromProof<IdentityRequest>>::maybe_from_proof(
+                request,
+                response,
+                dpp::dashcore::Network::Testnet,
+                dpp::version::PlatformVersion::latest(),
+                &MockContextProvider::new(),
+            )
+            .is_err());
+        }
+        count += 1;
+    }
+    assert_eq!(count, 4);
 }
