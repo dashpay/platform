@@ -3886,6 +3886,52 @@ mod contact_watch_only_projection_tests {
         (ctx, spend)
     }
 
+    /// A wallet whose BIP44 account holds one chain-locked coin of
+    /// [`FUNDING`], and the transaction that paid it.
+    async fn single_coin_wallet() -> (TestWalletContext, Transaction) {
+        let mut ctx = TestWalletContext::new_random();
+        let funding = Transaction::dummy(&ctx.receive_address.clone(), 0..1, &[FUNDING]);
+        let funded = ctx
+            .check_transaction(
+                &funding,
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    1,
+                    BlockHash::from_slice(&[4u8; 32]).expect("valid block hash"),
+                    1_700_000_000,
+                )),
+            )
+            .await;
+        assert!(funded.is_relevant, "funding tx should be relevant");
+        (ctx, funding)
+    }
+
+    /// A transaction spending `funding`'s coin into `output`.
+    fn spend_of(funding: &Transaction, output: Vec<TxOut>) -> Transaction {
+        Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: funding.txid(),
+                    vout: 0,
+                },
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output,
+            special_transaction_payload: None,
+        }
+    }
+
+    /// One output of `value` to an address that is not the wallet's.
+    fn paid_away(value: u64) -> TxOut {
+        TxOut {
+            value,
+            script_pubkey: DashAddress::dummy(Network::Testnet, 7).script_pubkey(),
+        }
+    }
+
     /// The wallet's `PlatformWalletInfo`, as a manager holds it.
     fn platform_info(core_wallet: ManagedWalletInfo) -> PlatformWalletInfo {
         PlatformWalletInfo {
@@ -4015,40 +4061,10 @@ mod contact_watch_only_projection_tests {
     /// block — a send the network had locked kept reading "Sending".
     #[tokio::test]
     async fn should_re_emit_the_locked_record_on_an_instant_lock() {
-        let mut ctx = TestWalletContext::new_random();
-        let funding = Transaction::dummy(&ctx.receive_address.clone(), 0..1, &[100_000_000]);
-        let funded = ctx
-            .check_transaction(
-                &funding,
-                TransactionContext::InChainLockedBlock(BlockInfo::new(
-                    1,
-                    BlockHash::from_slice(&[4u8; 32]).expect("valid block hash"),
-                    1_700_000_000,
-                )),
-            )
-            .await;
-        assert!(funded.is_relevant, "funding tx should be relevant");
-
+        let (mut ctx, funding) = single_coin_wallet().await;
         // A send of the whole coin to a foreign address: no change, so
         // no output of ours for the lock to mark — only the context moves.
-        let spend = Transaction {
-            version: 2,
-            lock_time: 0,
-            input: vec![TxIn {
-                previous_output: OutPoint {
-                    txid: funding.txid(),
-                    vout: 0,
-                },
-                script_sig: ScriptBuf::new(),
-                sequence: 0xffffffff,
-                witness: Witness::new(),
-            }],
-            output: vec![TxOut {
-                value: 99_999_000,
-                script_pubkey: DashAddress::dummy(Network::Testnet, 7).script_pubkey(),
-            }],
-            special_transaction_payload: None,
-        };
+        let spend = spend_of(&funding, vec![paid_away(99_999_000)]);
         let sent = ctx
             .check_transaction(&spend, TransactionContext::Mempool)
             .await;
@@ -4091,28 +4107,8 @@ mod contact_watch_only_projection_tests {
                 1_700_000_000,
             )
         };
-        let mut ctx = TestWalletContext::new_random();
-        let funding = Transaction::dummy(&ctx.receive_address.clone(), 0..1, &[100_000_000]);
-        ctx.check_transaction(&funding, TransactionContext::InChainLockedBlock(block(1)))
-            .await;
-        let spend = Transaction {
-            version: 2,
-            lock_time: 0,
-            input: vec![TxIn {
-                previous_output: OutPoint {
-                    txid: funding.txid(),
-                    vout: 0,
-                },
-                script_sig: ScriptBuf::new(),
-                sequence: 0xffffffff,
-                witness: Witness::new(),
-            }],
-            output: vec![TxOut {
-                value: 99_999_000,
-                script_pubkey: DashAddress::dummy(Network::Testnet, 7).script_pubkey(),
-            }],
-            special_transaction_payload: None,
-        };
+        let (mut ctx, funding) = single_coin_wallet().await;
+        let spend = spend_of(&funding, vec![paid_away(99_999_000)]);
         ctx.check_transaction(&spend, TransactionContext::Mempool)
             .await;
         ctx.check_transaction(&spend, TransactionContext::InBlock(block(2)))
@@ -4405,6 +4401,67 @@ mod contact_watch_only_projection_tests {
         assert!(cs.instant_locks_for_non_final_records.is_empty());
         assert!(cs.records.is_empty());
         assert!(cs.account_records.is_empty());
+    }
+
+    /// A lock on a send that is in no block yet re-emits the send with its
+    /// change output and the lock: a persister takes the change coin's lock
+    /// from that record (the lock changeset adds no coins), so after a
+    /// restart before the block the coin is still locked.
+    #[tokio::test]
+    async fn should_re_emit_the_change_of_an_unmined_send_with_its_lock() {
+        let (mut ctx, funding) = single_coin_wallet().await;
+        let xpub = ctx.xpub;
+        let change_address = ctx
+            .managed_wallet
+            .first_bip44_managed_account_mut()
+            .expect("bip44 managed account")
+            .next_change_address(Some(&xpub), true)
+            .expect("a change address");
+        let spend = spend_of(
+            &funding,
+            vec![
+                paid_away(99_999_000 - CHANGE),
+                TxOut {
+                    value: CHANGE,
+                    script_pubkey: change_address.script_pubkey(),
+                },
+            ],
+        );
+        let sent = ctx
+            .check_transaction(&spend, TransactionContext::Mempool)
+            .await;
+        assert!(sent.is_relevant, "the spend should match");
+        let mut info = platform_info(ctx.managed_wallet);
+        let lock = InstantLock::default();
+        assert!(
+            info.mark_instant_send_utxos(&spend.txid(), &lock),
+            "the lock rewrites the unmined send"
+        );
+
+        let cs = lock_changeset(ctx.wallet, info, spend.txid(), lock).await;
+
+        assert_eq!(cs.account_records.len(), 1, "one account holds the send");
+        let slice = &cs.account_records[0];
+        assert_eq!(slice.account_type, bip44_account_0());
+        assert_eq!(slice.direction, TransactionDirection::Outgoing);
+        assert_eq!(slice.input_details.len(), 1, "the wallet's own coin");
+        assert!(
+            matches!(slice.context, TransactionContext::InstantSend(_)),
+            "the slice carries the lock, got {:?}",
+            slice.context
+        );
+        let change: Vec<&OutputDetail> = slice
+            .output_details
+            .iter()
+            .filter(|output| output.role == OutputRole::Change)
+            .collect();
+        assert_eq!(change.len(), 1, "the change output rides with the slice");
+        assert_eq!((change[0].index, change[0].value), (1, CHANGE));
+        assert!(
+            cs.utxo_credit_verdicts.is_empty(),
+            "nothing tells a persister to withhold the change coin"
+        );
+        assert!(cs.new_utxos.is_empty(), "a lock adds no coins by itself");
     }
 
     /// An InstantSend lock for a txid a known wallet never held keeps the
