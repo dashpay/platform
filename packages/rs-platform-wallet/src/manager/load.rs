@@ -9,8 +9,9 @@ use crate::changeset::{
 use crate::error::PlatformWalletError;
 use crate::manager::history_replay::replay_recorded_history;
 use crate::wallet::asset_lock::sync::recovery::{
-    add_tracked_instant_locks, final_lock_input_claims, recorded_input_conflicts,
-    seed_observed_input_conflicts, withhold_chain_final_fundings,
+    add_tracked_instant_locks, detach_unconfirmed_records, final_lock_input_claims,
+    reattach_records, recorded_input_conflicts, seed_observed_input_conflicts,
+    withhold_chain_final_fundings,
 };
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
@@ -176,10 +177,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 &history_txids,
                 unused_asset_locks.values().flat_map(BTreeMap::values),
             );
-            withhold_chain_final_fundings(
+            let withheld = withhold_chain_final_fundings(
                 &mut recorded_history,
                 unused_asset_locks.values().flat_map(BTreeMap::values),
             );
+            // A record a host attached for a withheld funding sits the
+            // replay out as well, or the replay would plan it as unconfirmed.
+            let withheld_records = detach_unconfirmed_records(&mut wallet_info, &withheld);
             let mut defeated = HashSet::new();
             if !recorded_history.is_empty() {
                 let offered = recorded_history.transactions.len();
@@ -196,6 +200,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 unconfirmed_outgoing_txs = outcome.resendable(unconfirmed_outgoing_txs);
                 defeated = outcome.defeated;
             }
+            reattach_records(&mut wallet_info, withheld_records);
 
             // Replay the sends the host still holds as unconfirmed, before
             // anything reads the restored balance.
@@ -1595,6 +1600,10 @@ mod idempotent_load_tests {
     ///   replays like any locked funding, while a lock filed under the
     ///   funding that names another transaction settles nothing and leaves
     ///   it out of the replay;
+    /// - a chain-final lock keeps its funding out of the replay in every
+    ///   form: a sibling credit output still at `Broadcast` has the host
+    ///   attach the funding's record to the wallet, and that record sits the
+    ///   replay out too and is back afterwards;
     /// - a lock that names another transaction settles nothing, and the
     ///   record replays as stored.
     #[tokio::test]
@@ -1606,8 +1615,13 @@ mod idempotent_load_tests {
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
         use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
         use dpp::prelude::AssetLockProof;
+        use key_wallet::account::{AccountType, StandardAccountType};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
         use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
-        use key_wallet::transaction_checking::BlockInfo;
+        use key_wallet::transaction_checking::{BlockInfo, TransactionType};
         use key_wallet::Utxo;
 
         #[derive(Debug, Clone, Copy)]
@@ -1616,6 +1630,7 @@ mod idempotent_load_tests {
             ChainFinal,
             ChainFinalWithInstant,
             ChainFinalWithForeignHistoryLock,
+            ChainFinalWithPendingSibling,
             InstantOfAnotherTransaction,
         }
         #[derive(Debug, Clone, Copy)]
@@ -1676,6 +1691,11 @@ mod idempotent_load_tests {
                 (true, true, true),
             ),
             (
+                Evidence::ChainFinalWithPendingSibling,
+                Competitor::PlainBlock,
+                (true, true, true),
+            ),
+            (
                 Evidence::InstantOfAnotherTransaction,
                 Competitor::PlainBlock,
                 (false, true, false),
@@ -1720,6 +1740,17 @@ mod idempotent_load_tests {
                 ..asset_lock.input[0].clone()
             });
             asset_lock.output[0].script_pubkey = dashcore::ScriptBuf::new_op_return(&[]);
+            let pending_sibling = matches!(evidence, Evidence::ChainFinalWithPendingSibling);
+            if pending_sibling {
+                // One funding transaction, two credit outputs.
+                if let Some(TransactionPayload::AssetLockPayloadType(payload)) =
+                    &mut asset_lock.special_transaction_payload
+                {
+                    payload.credit_outputs[0].value = 60_000;
+                    let second = payload.credit_outputs[0].clone();
+                    payload.credit_outputs.push(second);
+                }
+            }
             asset_lock.output.push(to_wallet(20_000));
             let mut competitor = spend_to(contested, 60_000);
             competitor.output.push(to_wallet(30_000));
@@ -1752,6 +1783,28 @@ mod idempotent_load_tests {
                             false,
                         ),
                     );
+            }
+            if pending_sibling {
+                // What the host attaches for a lock still at `Broadcast`:
+                // the funding's record, raw, in its stored context.
+                let record = TransactionRecord::new(
+                    asset_lock.clone(),
+                    AccountType::Standard {
+                        index: 0,
+                        standard_account_type: StandardAccountType::BIP44Account,
+                    },
+                    TransactionContext::Mempool,
+                    TransactionType::Standard,
+                    TransactionDirection::Outgoing,
+                    Vec::new(),
+                    Vec::new(),
+                    0,
+                );
+                projection
+                    .first_bip44_managed_account_mut()
+                    .expect("bip44 account")
+                    .transactions_mut()
+                    .insert(asset_lock.txid(), record);
             }
             let stored = |transaction: &dashcore::Transaction, context| StoredTransaction {
                 txid: transaction.txid(),
@@ -1789,7 +1842,9 @@ mod idempotent_load_tests {
                     AssetLockStatus::InstantSendLocked,
                     instant(asset_lock.txid()),
                 ),
-                Evidence::ChainFinal | Evidence::ChainFinalWithForeignHistoryLock => (
+                Evidence::ChainFinal
+                | Evidence::ChainFinalWithForeignHistoryLock
+                | Evidence::ChainFinalWithPendingSibling => (
                     AssetLockStatus::ChainLocked,
                     AssetLockProof::Chain(ChainAssetLockProof {
                         core_chain_locked_height: 105,
@@ -1820,9 +1875,8 @@ mod idempotent_load_tests {
                     ],
                     instant_locks: history_locks,
                 },
-                asset_locks: [(
-                    out_point,
-                    TrackedAssetLock {
+                asset_locks: {
+                    let lock = TrackedAssetLock {
                         out_point,
                         transaction: asset_lock.clone(),
                         account_index: 0,
@@ -1831,10 +1885,23 @@ mod idempotent_load_tests {
                         amount: 120_000,
                         status,
                         proof: Some(proof),
-                    },
-                )]
-                .into_iter()
-                .collect(),
+                    };
+                    // The sibling credit output, still waiting for its proof.
+                    let sibling = TrackedAssetLock {
+                        out_point: dashcore::OutPoint {
+                            txid: out_point.txid,
+                            vout: 1,
+                        },
+                        status: AssetLockStatus::Broadcast,
+                        proof: None,
+                        ..lock.clone()
+                    };
+                    [lock]
+                        .into_iter()
+                        .chain(pending_sibling.then_some(sibling))
+                        .map(|lock| (lock.out_point, lock))
+                        .collect()
+                },
             });
             manager
                 .load_from_persistor()
@@ -1859,6 +1926,16 @@ mod idempotent_load_tests {
             core.check_core_transaction(&other_funding, in_block(91), &mut wallet, true, true)
                 .await;
             let outcome = (changes.0, changes.1, !holds(&core, other));
+            let record_kept = core
+                .first_bip44_managed_account()
+                .expect("bip44 account")
+                .transactions()
+                .contains_key(&asset_lock.txid());
+            if pending_sibling && !record_kept {
+                failures.push(format!(
+                    "{evidence:?} against {competing:?}: the funding's attached record is gone"
+                ));
+            }
             if outcome != expected {
                 failures.push(format!(
                     "{evidence:?} against {competing:?}: {outcome:?}, expected {expected:?}"

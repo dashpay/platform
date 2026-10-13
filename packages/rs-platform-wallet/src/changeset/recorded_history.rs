@@ -24,11 +24,10 @@ use key_wallet::transaction_checking::TransactionContext;
 ///
 /// Empty means "no history supplied": load keeps the projection as restored.
 ///
-/// A persister that returns history must not also attach to the restored
-/// wallet a raw unconfirmed record for the funding of a tracked asset lock at
-/// `ChainLocked`, `Consumed` or `RecoveredFromChain`. The replay takes every
-/// attached unconfirmed record as unconfirmed, so a stored spend of one of
-/// that funding's inputs retires it and its coins.
+/// The load keeps the funding of a tracked asset lock at `ChainLocked`,
+/// `Consumed` or `RecoveredFromChain` out of the replay when nothing here
+/// places it in a block or locks it: its row here, and any unconfirmed record
+/// already attached to the restored wallet, which it puts back afterwards.
 #[derive(Debug, Clone, Default)]
 pub struct RecordedHistory {
     /// Stored transactions, in any order; the replay orders them.

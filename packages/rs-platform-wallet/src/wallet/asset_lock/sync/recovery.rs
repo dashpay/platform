@@ -13,11 +13,14 @@ use std::time::Duration;
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, Txid};
 use dpp::prelude::{AssetLockProof, CoreBlockHeight};
+use key_wallet::account::AccountType;
 use key_wallet::bip32::DerivationPath;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use key_wallet::wallet::ManagedWalletInfo;
 
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::changeset::RecordedHistory;
@@ -561,7 +564,8 @@ pub(crate) fn add_tracked_instant_locks<'a>(
 
 /// Take out of `history` the unconfirmed record of every funding a tracked
 /// asset lock holds as chain-final and no lock in `history` settles; a lock
-/// settles it only if the replay accepts it for that record.
+/// settles it only if the replay accepts it for that record. Returns the
+/// fundings kept out, whether `history` held a record of them or not.
 ///
 /// What a tracked asset lock proves about its funding outranks the funding's
 /// stored context, and the replay's verdict outranks the lock's status. A lock
@@ -570,14 +574,11 @@ pub(crate) fn add_tracked_instant_locks<'a>(
 /// the replay, with its coins as stored and its inputs under
 /// [`final_lock_input_claims`]. A funding the replay still defeats gets no
 /// claim.
-///
-/// Only the history is covered: a raw unconfirmed record a persister attached
-/// for such a funding still enters the replay, see [`RecordedHistory`].
 pub(crate) fn withhold_chain_final_fundings<'a>(
     history: &mut RecordedHistory,
     locks: impl IntoIterator<Item = &'a TrackedAssetLock>,
-) {
-    let chain_final: HashSet<Txid> = locks
+) -> HashSet<Txid> {
+    let mut withheld: HashSet<Txid> = locks
         .into_iter()
         .filter(|lock| match lock.status {
             AssetLockStatus::Built
@@ -589,14 +590,64 @@ pub(crate) fn withhold_chain_final_fundings<'a>(
         })
         .map(|lock| lock.transaction.txid())
         .collect();
+    // A funding the history places in a block, or settles with a lock the
+    // replay accepts, replays like any other record.
     let locked = &history.instant_locks;
-    history.transactions.retain(|stored| {
-        !matches!(stored.context, TransactionContext::Mempool)
-            || !chain_final.contains(&stored.txid)
-            || locked
-                .get(&stored.txid)
-                .is_some_and(|lock| lock_matches_record(lock, stored))
-    });
+    for stored in &history.transactions {
+        if withheld.contains(&stored.txid)
+            && (!matches!(stored.context, TransactionContext::Mempool)
+                || locked
+                    .get(&stored.txid)
+                    .is_some_and(|lock| lock_matches_record(lock, stored)))
+        {
+            withheld.remove(&stored.txid);
+        }
+    }
+    history
+        .transactions
+        .retain(|stored| !withheld.contains(&stored.txid));
+    withheld
+}
+
+/// Detach from `wallet_info` the unconfirmed records of `fundings`, for
+/// [`reattach_records`] to put back once the replay is over.
+///
+/// Left attached, the record of a withheld funding would enter the replay's
+/// conflict plan as unconfirmed and fall like the history row. A confirmed
+/// record stays: no stored competitor can take it.
+pub(crate) fn detach_unconfirmed_records(
+    wallet_info: &mut ManagedWalletInfo,
+    fundings: &HashSet<Txid>,
+) -> Vec<(AccountType, TransactionRecord)> {
+    let mut detached = Vec::new();
+    for mut account in wallet_info.accounts.all_accounts_mut() {
+        let owner = account.managed_account_type().to_account_type();
+        account.transactions_mut().retain(|txid, record| {
+            let detach = fundings.contains(txid) && !record.is_confirmed();
+            if detach {
+                detached.push((owner, record.clone()));
+            }
+            !detach
+        });
+    }
+    detached
+}
+
+/// Put back what [`detach_unconfirmed_records`] took, each record in its
+/// account.
+pub(crate) fn reattach_records(
+    wallet_info: &mut ManagedWalletInfo,
+    records: Vec<(AccountType, TransactionRecord)>,
+) {
+    for mut account in wallet_info.accounts.all_accounts_mut() {
+        let owner = account.managed_account_type().to_account_type();
+        for (_, record) in records.iter().filter(|(held, _)| *held == owner) {
+            account
+                .transactions_mut()
+                .entry(record.txid)
+                .or_insert_with(|| record.clone());
+        }
+    }
 }
 
 /// Confirmed spends of pending asset-lock inputs, read from the stored history.
@@ -4073,6 +4124,9 @@ mod tests {
     /// settles it; a lock filed under it that names another transaction
     /// settles nothing. A pending or InstantSend-locked lock, a record already
     /// in a block and a record no lock tracks all stay.
+    ///
+    /// The fundings kept out are returned, one the history does not hold
+    /// included: a record attached to the wallet for it is kept out as well.
     #[test]
     fn should_withhold_only_unsettled_chain_final_fundings() {
         use dashcore::ephemerealdata::instant_lock::InstantLock;
@@ -4096,8 +4150,8 @@ mod tests {
             stored_direction: None,
             owned_inputs: Vec::new(),
         };
-        let [chain_locked, consumed, recovered, built, broadcast, instant, in_block, settled, untracked, foreign] =
-            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(|byte| transaction_spending(outpoint(byte)));
+        let [chain_locked, consumed, recovered, built, broadcast, instant, in_block, settled, untracked, foreign, unrecorded] =
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(|byte| transaction_spending(outpoint(byte)));
         let locks = [
             tracked(&chain_locked, AssetLockStatus::ChainLocked),
             tracked(&consumed, AssetLockStatus::Consumed),
@@ -4108,6 +4162,7 @@ mod tests {
             tracked(&in_block, AssetLockStatus::ChainLocked),
             tracked(&settled, AssetLockStatus::Consumed),
             tracked(&foreign, AssetLockStatus::ChainLocked),
+            tracked(&unrecorded, AssetLockStatus::Consumed),
         ];
         let unconfirmed = [
             &chain_locked,
@@ -4137,8 +4192,14 @@ mod tests {
                 .into(),
         };
 
-        super::withhold_chain_final_fundings(&mut history, &locks);
+        let withheld = super::withhold_chain_final_fundings(&mut history, &locks);
 
+        assert_eq!(
+            withheld,
+            [&chain_locked, &consumed, &recovered, &foreign, &unrecorded]
+                .map(|transaction| transaction.txid())
+                .into()
+        );
         let kept: Vec<Txid> = history
             .transactions
             .iter()
@@ -4149,6 +4210,54 @@ mod tests {
             [&built, &broadcast, &instant, &settled, &untracked, &in_block]
                 .map(|transaction| transaction.txid())
         );
+    }
+
+    /// Only the unconfirmed records of the named fundings leave the wallet,
+    /// and they come back as they were. A confirmed record of a named funding
+    /// stays: no stored competitor can take it.
+    #[tokio::test]
+    async fn should_detach_unconfirmed_records_of_withheld_fundings_and_put_them_back() {
+        let (ctx, _) = key_wallet::test_utils::TestWalletContext::new_random()
+            .with_mempool_funding(100_000)
+            .await;
+        let mut info = ManagedWalletInfo::from_wallet(&ctx.wallet, 0);
+        let outpoint = |byte| OutPoint::new(Txid::from_byte_array([byte; 32]), 0);
+        let [withheld, confirmed, other] =
+            [1, 2, 3].map(|byte| transaction_spending(outpoint(byte)));
+        let records = |info: &ManagedWalletInfo| -> Vec<(Txid, bool)> {
+            info.accounts.standard_bip44_accounts[&0]
+                .transactions()
+                .values()
+                .map(|record| (record.txid, record.is_confirmed()))
+                .collect()
+        };
+        for record in [
+            record_for(withheld.clone(), TransactionContext::Mempool),
+            record_for(confirmed.clone(), confirmed_at(101)),
+            record_for(other.clone(), TransactionContext::Mempool),
+        ] {
+            info.accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .expect("bip44 account")
+                .transactions_mut()
+                .insert(record.txid, record);
+        }
+        let before = records(&info);
+
+        let detached = super::detach_unconfirmed_records(
+            &mut info,
+            &[withheld.txid(), confirmed.txid()].into(),
+        );
+
+        let attached: Vec<Txid> = records(&info).into_iter().map(|(txid, _)| txid).collect();
+        assert!(!attached.contains(&withheld.txid()));
+        assert!(attached.contains(&confirmed.txid()) && attached.contains(&other.txid()));
+        assert_eq!(detached.len(), 1);
+
+        super::reattach_records(&mut info, detached);
+
+        assert_eq!(records(&info), before);
     }
 
     /// Promotion is eviction: once a chainlock buries the spender's block,

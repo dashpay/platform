@@ -1507,8 +1507,8 @@ mod tests {
 
     /// The replay takes an unconfirmed record already attached to the wallet
     /// as unconfirmed, whether the history holds it or not: a stored spend in
-    /// a block retires it. A persister must therefore not attach one for a
-    /// transaction it knows to be final.
+    /// a block retires it. The load therefore detaches the attached record of
+    /// a funding it keeps out of the replay.
     #[tokio::test]
     async fn should_settle_an_attached_unconfirmed_record_the_history_does_not_hold() {
         let (mut wallet, mut restored, _, records, _) = confirmed_spend_fixture().await;
