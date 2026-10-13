@@ -83,7 +83,7 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
         core_fee_per_byte, public_key_id, "dash_sdk_identity_withdraw: parameters"
     );
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
 
     // SAFETY: Null check was performed above. Caller must guarantee the pointer is valid
     // and points to a live Identity. We cannot detect dangling pointers without a handle

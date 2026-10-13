@@ -38,7 +38,7 @@ impl FromProof<DocumentQuery> for DocumentSplitSums {
         assert_select_is_sum(&request)?;
         let response: Self::Response = response.into();
         let (entries, mtd, proof) =
-            verify_sum_query(request, response, platform_version, provider)?;
+            verify_sum_query(request, response, false, platform_version, provider)?;
         let split = entries.map(|es| {
             DocumentSplitSums(
                 es.into_iter()

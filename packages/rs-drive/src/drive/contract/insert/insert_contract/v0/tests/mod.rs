@@ -29,6 +29,7 @@
 mod chained_query_e2e_tests;
 mod composite_query_e2e_tests;
 mod countable_e2e_tests;
+mod index_only_array_index_e2e_tests;
 mod index_only_e2e_tests;
 mod index_only_scalar_terminal_e2e_tests;
 mod noncounted_sibling_e2e_tests;
@@ -43,3 +44,4 @@ mod shared_prefix_aggregation_e2e_tests;
 mod sibling_null_flags_e2e_tests;
 mod skip_if_absent_e2e_tests;
 mod summable_off_count_index_e2e_tests;
+mod typed_array_counter_index_e2e_tests;

@@ -207,6 +207,7 @@ fn should_parse_an_identity_or_a_permanent_document_lookup_owner_reference() {
         ]),
         minimum_age_blocks: None,
         consume: false,
+        choose_first: None,
     };
     let agreement = BTreeMap::from([("$ownerId".to_string(), "memberId".to_string())]);
 
@@ -220,6 +221,7 @@ fn should_parse_an_identity_or_a_permanent_document_lookup_owner_reference() {
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "addedModerator".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: BTreeMap::new(),
                 lookup: lookup.clone(),
             },
@@ -236,6 +238,7 @@ fn should_parse_an_identity_or_a_permanent_document_lookup_owner_reference() {
             DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                 contract_id: None,
                 document_type_name: "addedModerator".to_string(),
+                where_conditions: Default::default(),
                 property_agreement: agreement,
                 lookup,
             },
@@ -584,6 +587,7 @@ fn should_parse_a_creator_reference_on_a_type_that_records_creator_ids() {
         ]),
         minimum_age_blocks: None,
         consume: false,
+        choose_first: None,
     };
     for keyword in [("transferable", 1), ("tradeMode", 1)] {
         for (creator_refers_to, expected) in [
@@ -596,6 +600,7 @@ fn should_parse_a_creator_reference_on_a_type_that_records_creator_ids() {
                 DocumentPropertyReferenceTarget::PermanentDocumentLookup {
                     contract_id: None,
                     document_type_name: "addedModerator".to_string(),
+                    where_conditions: Default::default(),
                     property_agreement: BTreeMap::new(),
                     lookup: lookup.clone(),
                 },

@@ -18,7 +18,7 @@
 use super::super::conditions::WhereClause;
 use super::super::ordering::OrderClause;
 use super::execute_range_count::RangeCountOptions;
-use super::{DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry};
+use super::{CountMode, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -26,7 +26,8 @@ use crate::query::ResolvedTimeRange;
 // Shared with the sum / average / joint dispatchers and the SDK proof
 // verifiers — see `crate::query::canonicalize` for the shape contract.
 use crate::query::{
-    validate_and_canonicalize_where_clauses, validate_resolved_time_range_clause_shapes,
+    key_array_element_clauses, validate_and_canonicalize_where_clauses,
+    validate_resolved_time_range_clause_shapes,
 };
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -283,8 +284,16 @@ impl Drive {
         // shaped legacy path or the v1 typed-proto path. See
         // [`validate_and_canonicalize_where_clauses`]'s docstring
         // for the catalog of rejections / canonicalization rules.
+        // A typed array's elements are keyed first: several only when the
+        // request answers per element (see [`key_array_element_clauses`]).
+        let where_clauses = key_array_element_clauses(
+            request.where_clauses,
+            request.document_type,
+            matches!(request.mode, CountMode::GroupByIn),
+            platform_version,
+        )?;
         let where_clauses =
-            validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
+            validate_and_canonicalize_where_clauses(where_clauses, platform_version)?;
         let resolved_time_ranges = request.resolved_time_ranges;
         validate_resolved_time_range_clause_shapes(&where_clauses, &resolved_time_ranges)?;
         let order_clauses = request.order_clauses;

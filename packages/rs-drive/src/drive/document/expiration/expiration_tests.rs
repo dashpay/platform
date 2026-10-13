@@ -4,7 +4,9 @@
 use crate::drive::document::expiration::paths::{
     documents_expirations_at_time_path_vec, documents_expirations_path_vec, encode_expiration_time,
 };
-use crate::drive::document::expiration::pricing::document_expiration_cleanup_fee;
+use crate::drive::document::expiration::pricing::{
+    document_expiration_cleanup_fee, document_type_weighted_index_levels,
+};
 use crate::drive::document::expiration::{DocumentExpirationEntry, RemovedExpiredDocuments};
 use crate::drive::document::paths::{
     contract_document_type_path_vec, contract_documents_primary_key_path,
@@ -17,6 +19,8 @@ use crate::util::storage_flags::StorageFlags;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::config::v1::DataContractConfigSettersV1;
+use dpp::data_contract::config::DataContractConfig;
 use dpp::data_contract::DataContractFactory;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
@@ -24,7 +28,7 @@ use dpp::fee::fee_result::{FeeResult, LifetimeStorageFees};
 use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DataContract;
 use dpp::version::PlatformVersion;
-use grovedb::Element;
+use grovedb::{Element, Error as GroveError};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
@@ -70,9 +74,13 @@ fn contract_with_ttl(ttl_seconds: u32) -> DataContract {
 }
 
 fn setup(ttl_seconds: u32) -> (Drive, DataContract) {
+    setup_contract(contract_with_ttl(ttl_seconds))
+}
+
+/// A drive holding `contract`.
+fn setup_contract(contract: DataContract) -> (Drive, DataContract) {
     let platform_version = PlatformVersion::latest();
     let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-    let contract = contract_with_ttl(ttl_seconds);
     drive
         .apply_contract(
             &contract,
@@ -690,6 +698,88 @@ fn should_remove_an_orphaned_entry_and_a_document_of_one_expiry_time_with_their_
     assert!(!expiry_tree_exists(&drive, expires_at));
 }
 
+/// A contract whose `tally` type expires after `TWO_WEEKS_S` and sums `amount`
+/// (`documentsSummable`), an `i64` (the contract does not size its integers) kept at 0 or
+/// above by its `minimum`.
+fn never_negative_summed_contract() -> DataContract {
+    let platform_version = PlatformVersion::latest();
+    let mut config =
+        DataContractConfig::default_for_version(platform_version).expect("default config");
+    config.set_sized_integer_types_enabled(false);
+    DataContractFactory::new(platform_version.protocol_version)
+        .expect("factory")
+        .create(
+            Identifier::from([9; 32]),
+            0,
+            platform_value!({
+                "tally": {
+                    "type": "object",
+                    "ttl": TWO_WEEKS_S,
+                    "documentsSummable": "amount",
+                    "properties": {
+                        "amount": { "type": "integer", "minimum": 0, "position": 0 },
+                    },
+                    "required": ["$createdAt", "amount"],
+                    "additionalProperties": false,
+                },
+            }),
+            Some(config),
+            None,
+        )
+        .expect("an expiring type summing values that are never negative registers")
+        .data_contract_owned()
+}
+
+fn tally(marker: u8, created_at: u64, amount: i64) -> Document {
+    let mut id = [marker; 32];
+    id[1..9].copy_from_slice(&created_at.to_be_bytes());
+    Document::V0(DocumentV0 {
+        id: Identifier::from(id),
+        owner_id: Identifier::from(OWNER),
+        properties: BTreeMap::from([("amount".to_string(), Value::I64(amount))]),
+        revision: Some(1),
+        created_at: Some(created_at),
+        ..Default::default()
+    })
+}
+
+#[test]
+fn should_expire_values_that_are_never_negative_from_the_largest_sum() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = never_negative_summed_contract();
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("contract applies");
+    let ttl_ms = u64::from(TWO_WEEKS_S) * 1000;
+    let first = tally(1, START_MS, 1);
+    let second = tally(2, START_MS + 1_000, i64::MAX - 1);
+    insert(&drive, &contract, "tally", &first, true);
+    insert(&drive, &contract, "tally", &second, true);
+
+    // From a sum of `i64::MAX`, each removal only lowers it
+    for (expires_at, document) in [
+        (START_MS + ttl_ms, &first),
+        (START_MS + 1_000 + ttl_ms, &second),
+    ] {
+        assert_eq!(
+            remove_expired(&drive, expires_at, 128),
+            RemovedExpiredDocuments {
+                deleted_documents: 1,
+                orphaned_entries: 0,
+            }
+        );
+        assert!(stored_document(&drive, &contract, "tally", document.id()).is_none());
+    }
+}
+
 #[test]
 fn should_stop_the_cleanup_at_the_block_weight_budget() {
     // A note weighs 3: itself and its type's two single-property indexes.
@@ -951,6 +1041,251 @@ fn should_estimate_at_least_what_replacing_a_document_with_a_time_to_live_costs(
             "ttl {ttl}: estimated {} below actual {}",
             estimated.total_base_fee(),
             actual.total_base_fee()
+        );
+    }
+}
+
+/// A contract with a `tagged` type expiring after `ttl_seconds`, whose two indexes name its
+/// `tags` (at most 4 strings): first (`byTagTime`) and after the owner (`byOwnerTag`).
+fn tagged_contract_with_ttl(ttl_seconds: u32) -> DataContract {
+    DataContractFactory::new(PlatformVersion::latest().protocol_version)
+        .expect("factory")
+        .create_with_value_config(
+            Identifier::from([9; 32]),
+            0,
+            platform_value!({ "tagged": {
+                "type": "object",
+                "documentsMutable": true,
+                "ttl": ttl_seconds,
+                "properties": {
+                    "tags": {
+                        "type": "array",
+                        "maxItems": 4,
+                        "items": { "type": "string", "minLength": 1, "maxLength": 10 },
+                        "position": 0,
+                    },
+                },
+                "indices": [
+                    { "name": "byTagTime", "properties": [{ "tags": "asc" }, { "$createdAt": "asc" }] },
+                    { "name": "byOwnerTag", "properties": [{ "$ownerId": "asc" }, { "tags": "asc" }] },
+                ],
+                "required": ["$createdAt"],
+                "additionalProperties": false,
+            }}),
+            None,
+            None,
+        )
+        .expect("contract")
+        .data_contract_owned()
+}
+
+fn tagged(marker: u8, created_at: u64, tags: &[&str]) -> Document {
+    let mut id = [marker; 32];
+    id[1..9].copy_from_slice(&created_at.to_be_bytes());
+    Document::V0(DocumentV0 {
+        id: Identifier::from(id),
+        owner_id: Identifier::from(OWNER),
+        properties: BTreeMap::from([(
+            "tags".to_string(),
+            Value::Array(
+                tags.iter()
+                    .map(|tag| Value::Text(tag.to_string()))
+                    .collect(),
+            ),
+        )]),
+        revision: Some(1),
+        created_at: Some(created_at),
+        ..Default::default()
+    })
+}
+
+/// Whether the `tagged` type holds the index tree at `segments` below it. A missing
+/// ancestor holds nothing, since a delete prunes the trees it empties.
+fn tagged_index_tree_exists(drive: &Drive, contract: &DataContract, segments: &[&[u8]]) -> bool {
+    let (key, parents) = segments.split_last().expect("a tree");
+    let mut path = contract_document_type_path_vec(contract.id_ref().as_bytes(), "tagged");
+    path.extend(parents.iter().map(|segment| segment.to_vec()));
+    match drive
+        .grove
+        .has_raw(
+            path.as_slice(),
+            key,
+            None,
+            &PlatformVersion::latest().drive.grove_version,
+        )
+        .unwrap()
+    {
+        Ok(holds) => holds,
+        Err(
+            GroveError::PathNotFound(_)
+            | GroveError::PathParentLayerNotFound(_)
+            | GroveError::PathKeyNotFound(_),
+        ) => false,
+        Err(error) => panic!("reading {key:?} under {path:?}: {error}"),
+    }
+}
+
+#[test]
+fn should_prepay_the_cleanup_of_an_indexed_array_by_the_levels_its_elements_fan_out() {
+    let platform_version = PlatformVersion::latest();
+    let (drive, contract) = setup_contract(tagged_contract_with_ttl(TWO_WEEKS_S));
+    let tagged_type = contract.document_type_for_name("tagged").expect("type");
+    // `byTagTime` walks both its levels once per element (2 x 4), `byOwnerTag` the owner's
+    // level once and the array's once per element (1 + 4).
+    assert_eq!(document_type_weighted_index_levels(tagged_type), 13);
+
+    let document = tagged(1, START_MS, &["a", "b"]);
+    let fee = insert(&drive, &contract, "tagged", &document, true);
+    let document_bytes = document
+        .serialize(tagged_type, &contract, platform_version)
+        .expect("serializes")
+        .len() as u64;
+    let schedule = &platform_version.fee_version.document_ttl;
+    let cleanup_fee =
+        document_expiration_cleanup_fee(tagged_type, document_bytes, &platform_version.fee_version)
+            .expect("fee");
+    assert_eq!(
+        cleanup_fee,
+        schedule.cleanup_base_processing_cost
+            + 13 * schedule.cleanup_processing_cost_per_index_level
+            + document_bytes * schedule.cleanup_processing_cost_per_document_byte
+    );
+    let mut free_deletion = platform_version.clone();
+    free_deletion
+        .fee_version
+        .document_ttl
+        .cleanup_base_processing_cost = 0;
+    free_deletion
+        .fee_version
+        .document_ttl
+        .cleanup_processing_cost_per_index_level = 0;
+    free_deletion
+        .fee_version
+        .document_ttl
+        .cleanup_processing_cost_per_document_byte = 0;
+    let (other_drive, other_contract) = setup_contract(tagged_contract_with_ttl(TWO_WEEKS_S));
+    let without_prepay = insert_at_version(
+        &other_drive,
+        &other_contract,
+        "tagged",
+        &document,
+        true,
+        &free_deletion,
+    );
+    assert_eq!(
+        fee.processing_fee - without_prepay.processing_fee,
+        cleanup_fee,
+        "the processing fee carries the prepaid deletion of every element's levels"
+    );
+}
+
+#[test]
+fn should_weigh_an_expiring_indexed_array_by_its_element_fan_out() {
+    // A tagged document weighs 14: itself and its type's 13 weighted index levels.
+    let (drive, contract) = setup_contract(tagged_contract_with_ttl(TWO_WEEKS_S));
+    let expires_at = START_MS + u64::from(TWO_WEEKS_S) * 1000;
+    for i in 0..4u8 {
+        insert(
+            &drive,
+            &contract,
+            "tagged",
+            &tagged(10 + i, START_MS, &["a", "b", "c", "d"]),
+            true,
+        );
+    }
+
+    // 14 + 14 passes 27: only the block's first removal runs.
+    assert_eq!(
+        remove_expired_within(&drive, expires_at, 128, 27).deleted_documents,
+        1
+    );
+    // 14 + 14 fits in 28, a third document would not.
+    assert_eq!(
+        remove_expired_within(&drive, expires_at, 128, 28).deleted_documents,
+        2
+    );
+    assert_eq!(remove_expired(&drive, expires_at, 128).deleted_documents, 1);
+    assert!(!expiry_tree_exists(&drive, expires_at));
+}
+
+#[test]
+fn should_delete_every_element_entry_of_an_expired_document() {
+    let (drive, contract) = setup_contract(tagged_contract_with_ttl(TWO_WEEKS_S));
+    let expires_at = START_MS + u64::from(TWO_WEEKS_S) * 1000;
+    let document = tagged(1, START_MS, &["a", "b", "c"]);
+    insert(&drive, &contract, "tagged", &document, true);
+    let element_trees = |tag: &str| {
+        [
+            tagged_index_tree_exists(&drive, &contract, &[b"tags", tag.as_bytes()]),
+            tagged_index_tree_exists(
+                &drive,
+                &contract,
+                &[b"$ownerId", &OWNER, b"tags", tag.as_bytes()],
+            ),
+        ]
+    };
+    for tag in ["a", "b", "c"] {
+        assert_eq!(element_trees(tag), [true, true], "element {tag} is entered");
+    }
+
+    assert_eq!(remove_expired(&drive, expires_at, 128).deleted_documents, 1);
+    assert!(stored_document(&drive, &contract, "tagged", document.id()).is_none());
+    for tag in ["a", "b", "c"] {
+        assert_eq!(
+            element_trees(tag),
+            [false, false],
+            "element {tag} is removed"
+        );
+    }
+}
+
+#[test]
+fn should_estimate_at_least_what_shrinking_an_expiring_array_costs() {
+    // A replace that drops elements removes their entries from both indexes, more than
+    // it writes: its estimate still covers it.
+    let platform_version = PlatformVersion::latest();
+    let (drive, contract) = setup_contract(tagged_contract_with_ttl(TWO_WEEKS_S));
+    let mut document = tagged(1, START_MS, &["a", "b", "c", "d"]);
+    insert(&drive, &contract, "tagged", &document, true);
+    for (revision, tags) in [(2, vec!["a"]), (3, vec![])] {
+        document.set(
+            "tags",
+            Value::Array(
+                tags.iter()
+                    .map(|tag| Value::Text(tag.to_string()))
+                    .collect(),
+            ),
+        );
+        document.set_revision(Some(revision));
+        let replace = |apply: bool| {
+            drive
+                .update_document_for_contract(
+                    &document,
+                    &contract,
+                    contract.document_type_for_name("tagged").expect("type"),
+                    Some(OWNER),
+                    block_at(START_MS + 60_000),
+                    apply,
+                    owner_flags(),
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("the replace runs")
+        };
+        let estimated = replace(false);
+        let actual = replace(true);
+        assert!(
+            estimated.total_base_fee() >= actual.total_base_fee(),
+            "to {tags:?}: estimated {} below actual {}",
+            estimated.total_base_fee(),
+            actual.total_base_fee()
+        );
+        assert!(
+            estimated.processing_fee >= actual.processing_fee,
+            "to {tags:?}: estimated processing {} below actual {}",
+            estimated.processing_fee,
+            actual.processing_fee
         );
     }
 }

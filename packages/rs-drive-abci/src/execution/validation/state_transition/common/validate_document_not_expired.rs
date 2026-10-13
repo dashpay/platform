@@ -35,15 +35,9 @@ pub(crate) fn validate_document_not_expired(
     created_at: Option<TimestampMillis>,
     block_info: &BlockInfo,
 ) -> Result<SimpleConsensusValidationResult, Error> {
-    let Some(ttl_seconds) = document_type.documents_ttl_seconds() else {
+    let Some(expired_at) = document_expiry(document_type, created_at)? else {
         return Ok(SimpleConsensusValidationResult::new());
     };
-    // The parser requires `$createdAt` on such a type and every write keeps it; a document
-    // without one has no expiry to judge.
-    let Some(created_at) = created_at else {
-        return Ok(SimpleConsensusValidationResult::new());
-    };
-    let expired_at = document_expires_at(created_at, ttl_seconds)?;
     if block_info.time_ms < expired_at {
         return Ok(SimpleConsensusValidationResult::new());
     }
@@ -57,6 +51,32 @@ pub(crate) fn validate_document_not_expired(
         )
         .into(),
     ))
+}
+
+/// When a document of `document_type` created at `created_at` expires: `$createdAt` plus the
+/// type's time to live (drive's `document_expires_at`). `None` when the type declares no `ttl`,
+/// or the document records no `$createdAt`, which the parser requires on such a type and every
+/// write keeps, so it has no expiry to judge. The one rule every expiry check reads.
+pub(crate) fn document_expiry(
+    document_type: DocumentTypeRef,
+    created_at: Option<TimestampMillis>,
+) -> Result<Option<TimestampMillis>, Error> {
+    let (Some(ttl_seconds), Some(created_at)) = (document_type.documents_ttl_seconds(), created_at)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(document_expires_at(created_at, ttl_seconds)?))
+}
+
+/// Whether a document of `document_type` created at `created_at` is past its expiry at the
+/// block time of `block_info` ([`document_expiry`]), whether or not the cleanup has reached it.
+pub(crate) fn document_is_expired(
+    document_type: DocumentTypeRef,
+    created_at: Option<TimestampMillis>,
+    block_info: &BlockInfo,
+) -> Result<bool, Error> {
+    Ok(document_expiry(document_type, created_at)?
+        .is_some_and(|expired_at| block_info.time_ms >= expired_at))
 }
 
 /// [`validate_document_not_expired`] for one document action of a batch: replacing,

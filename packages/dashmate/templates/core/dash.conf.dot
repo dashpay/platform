@@ -61,8 +61,9 @@ externalip={{=it.externalIp}}
 # Tor. The sidecar shares this container's network namespace, so its SOCKS and
 # control ports are on loopback. Only onion destinations use the proxy: clearnet
 # peers (including quorum traffic) stay direct, so `proxy=` is deliberately not
-# set. Core registers an onion service through the control port and binds the
-# default onion target (127.0.0.1:<network onion port>) for its inbound side.
+# set. An explicit bind disables Core's automatic onion target, and listenonion=1
+# requires a dedicated non-wildcard onion bind. Since bind is network-only, the
+# onion bind is rendered beside the network bind in the # network block below.
 {{? it.core.tor.enabled }}
 onion=127.0.0.1:9050
 listenonion=1
@@ -148,5 +149,8 @@ addnode={{=seed.host}}:{{=seed.port}}{{~}}
 # network
 port={{=it.core.p2p.port}}
 bind=0.0.0.0
+{{? it.core.tor.enabled }}
+bind=127.0.0.1=onion
+{{?}}
 rpcbind=0.0.0.0
 rpcport={{=it.core.rpc.port}}

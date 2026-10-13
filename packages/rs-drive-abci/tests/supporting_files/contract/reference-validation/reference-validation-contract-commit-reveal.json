@@ -82,7 +82,7 @@
             "where": {
               "$ownerId": "$ownerId"
             },
-            "minimumAgeBlocks": 1,
+            "constraints": { "minimumAgeBlocks": 1 },
             "consume": true
           }
         }
