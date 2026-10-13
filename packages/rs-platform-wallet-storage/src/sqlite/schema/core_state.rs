@@ -158,8 +158,10 @@ pub fn apply(
                 Some(UtxoCreditVerdict::ObservedSpent { .. } | UtxoCreditVerdict::Doomed) => true,
                 Some(UtxoCreditVerdict::Uncredited) => {
                     let prior_spent: Option<bool> = tx
-                        .query_row(
+                        .prepare_cached(
                             "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                        )?
+                        .query_row(
                             params![wallet_id.as_slice(), blob::encode_outpoint(&utxo.outpoint)?],
                             |row| row.get(0),
                         )
@@ -1133,11 +1135,17 @@ pub(crate) fn load_spent_claims(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<Vec<(OutPoint, Option<Txid>)>, WalletStorageError> {
+    // SQLite evaluates every result column when the row is stepped, but a
+    // CASE lazily: a payload past its gate is never loaded, and the length
+    // beside it reports the typed error below.
     let mut stmt = conn.prepare_cached(
-        "SELECT length(outpoint), outpoint, length(spent_in_txid), spent_in_txid \
+        "SELECT length(outpoint), CASE WHEN length(outpoint) <= ?2 THEN outpoint END, \
+                length(spent_in_txid), \
+                CASE WHEN length(spent_in_txid) = 32 THEN spent_in_txid END \
          FROM core_utxos WHERE wallet_id = ?1 AND spent = 1",
     )?;
-    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    let limit = i64::try_from(blob::BLOB_SIZE_LIMIT_BYTES).unwrap_or(i64::MAX);
+    let mut rows = stmt.query(params![wallet_id.as_slice(), limit])?;
     let mut outpoints = Vec::new();
     while let Some(row) = rows.next()? {
         blob::check_size(row.get(0)?)?;
@@ -3222,6 +3230,41 @@ mod tests {
         )
         .unwrap();
         conn
+    }
+
+    #[test]
+    fn should_reject_oversize_spent_claim_before_reading_it() {
+        use rusqlite::limits::Limit;
+
+        use crate::sqlite::conn::SQLITE_MAX_BLOB_BYTES;
+
+        const WALLET: [u8; 32] = [0x5F; 32];
+        // Over the connection's length cap, so reading the column itself
+        // fails: only a length-only pre-read reports it as oversize.
+        let oversize = vec![0u8; SQLITE_MAX_BLOB_BYTES as usize + 1];
+        let outpoint =
+            blob::encode_outpoint(&OutPoint::new(Txid::from_byte_array([0x42; 32]), 0)).unwrap();
+        for (stored_outpoint, claimant) in [
+            (&oversize[..], &[0x43u8; 32][..]),
+            (&outpoint[..], &oversize[..]),
+        ] {
+            let conn = wallet_db(&WALLET);
+            conn.execute(
+                "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent, spent_in_txid) \
+                 VALUES (?1, ?2, 0, X'00', 1, ?3)",
+                params![&WALLET[..], stored_outpoint, claimant],
+            )
+            .unwrap();
+            conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, SQLITE_MAX_BLOB_BYTES)
+                .unwrap();
+
+            let err = load_spent_claims(&conn, &WALLET).unwrap_err();
+
+            assert!(
+                matches!(err, WalletStorageError::BlobTooLarge { .. }),
+                "got {err:?}"
+            );
+        }
     }
 
     /// A mempool record spending `coins`, as the bridge stores it beside `spent_utxos`.

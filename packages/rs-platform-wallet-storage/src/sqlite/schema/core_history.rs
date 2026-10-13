@@ -182,13 +182,13 @@ pub(crate) fn contact_only_script(
     wallet_id: &WalletId,
     script: &[u8],
 ) -> Result<bool, WalletStorageError> {
-    Ok(conn.query_row(
+    let mut probe = conn.prepare_cached(
         "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) \
          AND NOT EXISTS(SELECT 1 FROM core_address_pool \
              WHERE wallet_id = ?1 AND script = ?2 AND account_type != ?3)",
-        params![wallet_id.as_slice(), script, DASHPAY_EXTERNAL_LABEL],
-        |r| r.get(0),
-    )?)
+    )?;
+    let key = params![wallet_id.as_slice(), script, DASHPAY_EXTERNAL_LABEL];
+    Ok(probe.query_row(key, |r| r.get(0))?)
 }
 
 fn repair_record(

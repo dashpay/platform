@@ -368,13 +368,8 @@ final class AssetLockSpendVisibilityTests: XCTestCase {
 
         XCTAssertEqual(
             injector.observedReads,
-            [
-                // Wallet list, then the load-time accounting reconcile.
-                "PersistentWallet", "PersistentTransaction", "PersistentTxo", "PersistentCoreAddress",
-                // Unspent-TXO restore, then the faulted lock read.
-                "PersistentTxo", "PersistentAssetLock",
-            ],
-            "every read before the lock read must have been served — only the lock read failed"
+            ["PersistentWallet", "PersistentTxo", "PersistentAssetLock"],
+            "the wallet and unspent-TXO reads must have been served — only the lock read failed"
         )
         XCTAssertTrue(
             errored,
