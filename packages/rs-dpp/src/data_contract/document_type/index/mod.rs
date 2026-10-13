@@ -124,7 +124,10 @@ pub const TERMINAL: &str = "terminal";
 /// property must be either the referring property itself (it equals the
 /// referenced document's `$id`) or a referring value of that property's
 /// `refersTo` `where` (consensus-enforced equal to a referenced-document
-/// property, its `$ownerId` and `$creatorId` included). Only allowed on
+/// property, its `$ownerId` and `$creatorId` included). A typed array the
+/// `where` makes equal to a referenced typed array holds exactly the
+/// referenced document's list, so its level takes one key per element of that
+/// list. Only allowed on
 /// indexOnly document types with a same-contract `permanentDocument`
 /// reference, or a `moderatedDocument` one whose removal record keeps every
 /// key of the path; the doc-type-level and whole-contract validation reject
@@ -184,7 +187,10 @@ pub const SKIP_IF_ABSENT: &str = "skipIfAbsent";
 /// (a `where` referring value of a reference a source property holds, to a
 /// value that can never change). A group here therefore holds exactly the
 /// documents of one source group, and its counter always equals that group's
-/// entry count. Needs `rangeSummable: true` (the level holding the counters
+/// entry count. A typed array fixed so (a `where` equality with a referenced
+/// typed array) puts every document of a source group under each element of
+/// one list: each element's group holds the whole source group, and its
+/// counter moves with every document of it. Needs `rangeSummable: true` (the level holding the counters
 /// must be a sum tree); takes no `terminal`, `summable` or `averageable`. The
 /// parser checks the index-local rules, `apply_index_only` the ones that need
 /// the document type, and the contract-level validation the ones that need
@@ -1462,14 +1468,20 @@ impl Index {
     /// Whether the index keeps exactly one entry for every live document,
     /// keyed by values the document carries: it keeps entries (it is no
     /// `summableOffCountIndex` index), skips no document (no `skipIfAbsent`),
-    /// drops a deleted document's entry (no `outlivesDelete`) and keys none
-    /// by `$createdAt`, a timestamp the block assigns. An indexOnly type's
-    /// proof index and a counter's source index both need it.
+    /// drops a deleted document's entry (no `outlivesDelete`), keys none
+    /// by `$createdAt`, a timestamp the block assigns, and names no typed
+    /// array, whose index enters a document once per element and not at all
+    /// for an empty list. An indexOnly type's proof index, a counter's source
+    /// index and the index an indexOnly array index's key must hold all need
+    /// it. Only indexOnly rules read it, and an indexOnly type names no typed
+    /// array before this check admitted one, so the array term changes the
+    /// answer for no earlier contract.
     pub fn keys_each_live_document_by_its_values(&self) -> bool {
         !self.is_summable_off_count_index()
             && !self.skip_if_absent
             && !self.outlives_delete
             && !self.involves(property_names::CREATED_AT)
+            && self.indexed_array.is_none()
     }
 
     /// The terminal's single component; `None` on a composite terminal or a

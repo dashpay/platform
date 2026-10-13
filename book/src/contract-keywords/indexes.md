@@ -223,7 +223,7 @@ Rules at registration:
 - Its elements are held to the key limits of their type, on the `items` schema: a string `maxLength` of at most 63 (61, or 59, on a ranked level), a byte array `maxItems` of at most 255 (247 or 239 ranked), and a byte array element declares `minItems` of at least 1, since an empty byte array is keyed like a missing value (`InvalidIndexedPropertyConstraintError`, 10205).
 - The array's `maxItems` is at most 16, or 4 when the index also has a [`timeRange`](time-range.md) or [`integerRange`](integer-range.md) window, which enters the document once per window and element (10205).
 - One document of a type with an indexed array writes at most 256 index entries across its indexes: each index counts 1, times its windows, times its array's `maxItems` (10231).
-- The index is not `unique` or contested, keeps `nullSearchable` at `true`, ranks no level above the array (a document would count there once per element), and is not on an [index-only type](index-only.md) (10231).
+- The index is not `unique` or contested, keeps `nullSearchable` at `true` and ranks no level above the array (a document would count there once per element) (10231). On an [index-only type](index-only.md#typed-arrays) another index must keep its entries apart, and the array must declare `uniqueItems`.
 - `skipIfAbsent` whose only skip property would be the array is refused, since the index skips a document without elements already (10231). Beside another optional property of the index it skips on that property as usual.
 - A [value of a referenced document](derived-index-properties.md) may sit beside the array in an index, but not read through it: an element is not one referenced document.
 

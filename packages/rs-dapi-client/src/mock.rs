@@ -23,6 +23,7 @@ use std::{
     any::type_name,
     collections::HashMap,
     fmt::{Debug, Display},
+    sync::Mutex,
 };
 
 /// Mock DAPI client.
@@ -33,7 +34,7 @@ use std::{
 #[derive(Default, Debug)]
 pub struct MockDapiClient {
     expectations: Expectations,
-    request_counts: std::sync::Mutex<HashMap<Key, usize>>,
+    request_counts: Mutex<HashMap<Key, usize>>,
 }
 /// Result of executing a mock request
 pub type MockResult<T> = ExecutionResult<<T as TransportRequest>::Response, DapiClientError>;
