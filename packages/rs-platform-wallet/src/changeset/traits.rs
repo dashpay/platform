@@ -495,11 +495,10 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///
     /// `PlatformWalletInfo::dpns_name_states` — the map the sync pass
     /// diffs against — is **session-scoped**: the load path initializes
-    /// it EMPTY on every process start and nothing rehydrates it (the
-    /// SQLite backend deliberately does not attest
-    /// [`PersistenceCapabilities::WALLET_RESTORE`](crate::changeset::PersistenceCapabilities),
-    /// and `ClientStartState::wallets` is still unimplemented). The
-    /// durable copy is the host mirror this trait feeds — Swift
+    /// it EMPTY on every process start and nothing rehydrates it
+    /// ([`PersistenceCapabilities::WALLET_RESTORE`](crate::changeset::PersistenceCapabilities)
+    /// attests the Core wallet snapshot, which does not include this
+    /// map). The durable copy is the host mirror this trait feeds — Swift
     /// `PersistentDPNSName`, the Android Room `dpns_names` table.
     ///
     /// Marketplace rows are keyed by `document_id`, but a departure is
