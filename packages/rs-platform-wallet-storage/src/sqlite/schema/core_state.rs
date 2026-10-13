@@ -153,8 +153,10 @@ pub fn apply(
                 Some(UtxoCreditVerdict::ObservedSpent { .. } | UtxoCreditVerdict::Doomed) => true,
                 Some(UtxoCreditVerdict::Uncredited) => {
                     let prior_spent: Option<bool> = tx
-                        .query_row(
+                        .prepare_cached(
                             "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                        )?
+                        .query_row(
                             params![wallet_id.as_slice(), blob::encode_outpoint(&utxo.outpoint)?],
                             |row| row.get(0),
                         )
