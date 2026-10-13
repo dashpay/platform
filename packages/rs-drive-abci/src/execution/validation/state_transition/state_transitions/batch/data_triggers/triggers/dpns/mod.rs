@@ -32,7 +32,7 @@ pub fn create_domain_data_trigger(
         // PROTOCOL_VERSION_12+: trigger bills via add_operation on the
         // outer execution_context (threaded through the mutable context).
         1 => create_domain_data_trigger_v1(document_transition, context, platform_version),
-        // PROTOCOL_VERSION_14+: only the parent domain checks; DPNS v3's schema
+        // PROTOCOL_VERSION_15+: only the parent domain checks; DPNS v3's schema
         // keywords check the normalized names, the preorder and the records.
         2 => create_domain_data_trigger_v2(document_transition, context, platform_version),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

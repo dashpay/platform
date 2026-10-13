@@ -16,6 +16,7 @@ use crate::util::test_helpers::setup_contract;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::DataContractFactory;
+use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{platform_value, Identifier};
@@ -963,6 +964,267 @@ fn should_count_trees_keyed_by_the_document_id_as_new_and_unrefunded() {
 }
 
 #[test]
+fn should_key_preallocated_trees_as_the_referring_type_does() {
+    // The post's u8 `tier` ends a range-summable index of an i8 `weight`, so the
+    // post keys it the earlier way (5 as `0x85`); the like's own `tier`,
+    // which its preallocated index binds to the post's, is keyed big-endian
+    // (`0x05`). The trees the post preallocates are the ones its likes use.
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = contract_with(platform_value!({
+        "post": {
+            "type": "object",
+            "documentsMutable": false,
+            "canBeDeleted": false,
+            "properties": {
+                "tier": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 },
+                "weight": { "type": "integer", "minimum": -100, "maximum": 100, "position": 1 },
+            },
+            "indices": [{
+                "name": "byTier",
+                "properties": [{ "tier": "asc" }],
+                "summable": "weight",
+                "rangeSummable": true,
+            }],
+            "required": ["tier", "weight"],
+            "additionalProperties": false,
+        },
+        "like": {
+            "type": "object",
+            "indexOnly": true,
+            "documentsMutable": false,
+            "canBeDeleted": true,
+            "properties": {
+                "tier": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 },
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "documentType": "post",
+                        "where": { "tier": "tier" },
+                    },
+                    "position": 1,
+                },
+            },
+            "indices": [{
+                "name": "byTierPost",
+                "properties": [{ "tier": "asc" }, { "postId": "asc" }],
+                "countable": "countable",
+                "preallocated": true,
+            }],
+            "required": ["tier", "postId"],
+            "additionalProperties": false,
+        },
+    }));
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("expected to apply the contract");
+    let post_type = contract.document_type_for_name("post").expect("post");
+    let like_type = contract.document_type_for_name("like").expect("like");
+    let tier = Value::U8(5);
+    assert_eq!(
+        post_type
+            .serialize_value_for_key("tier", &tier, platform_version)
+            .expect("expected the post's key"),
+        vec![0x85]
+    );
+
+    let mut post = post_type
+        .random_document(Some(1), platform_version)
+        .expect("expected a post");
+    post.set_properties(BTreeMap::from([
+        ("tier".to_string(), tier.clone()),
+        ("weight".to_string(), Value::I8(-3)),
+    ]));
+    let post_id = post.id().to_vec();
+    let writes = writes_of(&contract, post_type, &post);
+    let preallocated_tiers: Vec<&[u8]> = writes
+        .iter()
+        .filter(|write| write.referring_type.is_some() && write.path == [b"tier".to_vec()])
+        .map(|write| write.key.as_slice())
+        .collect();
+    assert_eq!(preallocated_tiers, [[0x05]], "the like's key for tier 5");
+    let cost = document_create_cost(
+        &contract,
+        post_type,
+        &post,
+        &CostAssumptions::new(platform_version),
+        platform_version,
+    )
+    .expect("expected a cost");
+    let fee = insert(&drive, &contract, post_type, &post).expect("expected to insert the post");
+    assert_eq!(fee.storage_fee, cost.storage_credits.new_values);
+    for write in &writes {
+        assert!(
+            exists(&drive, &contract, "post", write),
+            "expected the insert to write {write:?}"
+        );
+    }
+    assert!(element(&drive, &contract, "like", &[b"tier".to_vec()], &[0x85]).is_none());
+
+    let mut like = like_type
+        .random_document(Some(2), platform_version)
+        .expect("expected a like");
+    like.set_properties(BTreeMap::from([
+        ("tier".to_string(), tier),
+        (
+            "postId".to_string(),
+            Value::Identifier(post.id().to_buffer()),
+        ),
+    ]));
+    insert(&drive, &contract, like_type, &like).expect("expected to insert the like");
+    assert!(
+        element(&drive, &contract, "like", &[b"tier".to_vec()], &[0x85]).is_none(),
+        "the like's entry is under the preallocated trees, not beside them"
+    );
+    assert!(element(
+        &drive,
+        &contract,
+        "like",
+        &[b"tier".to_vec(), vec![0x05], b"postId".to_vec(), post_id],
+        &[0],
+    )
+    .is_some());
+}
+
+/// A post whose list no like can hold preallocates nothing for the index the
+/// like keys by the list, and the model prices it as Drive charges it. The
+/// post's byte arrays may be empty and its list longer than the like's: the
+/// like's elements hold at least a byte (an indexed byte array element must),
+/// and its list at most 2 distinct elements. So a list with an empty element,
+/// one of 3 elements and one repeating an element preallocate no tag tree,
+/// while a list of 2 distinct non-empty elements preallocates one per element.
+#[test]
+fn should_preallocate_nothing_for_a_list_no_referring_document_can_hold() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = contract_with(platform_value!({
+        "post": {
+            "type": "object",
+            "documentsMutable": false,
+            "canBeDeleted": false,
+            "properties": {
+                "tags": {
+                    "type": "array",
+                    "items": { "type": "array", "byteArray": true, "maxItems": 8 },
+                    "maxItems": 8,
+                    "position": 0,
+                },
+            },
+            "additionalProperties": false,
+        },
+        "like": {
+            "type": "object",
+            "indexOnly": true,
+            "documentsMutable": false,
+            "canBeDeleted": true,
+            "properties": {
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "documentType": "post",
+                        "where": { "tags": "tags" },
+                    },
+                    "position": 0,
+                },
+                "tags": {
+                    "type": "array",
+                    "items": { "type": "array", "byteArray": true, "minItems": 1, "maxItems": 8 },
+                    "maxItems": 2,
+                    "uniqueItems": true,
+                    "position": 1,
+                },
+            },
+            "indices": [
+                { "name": "byPost", "properties": [{ "postId": "asc" }], "terminal": "$ownerId" },
+                {
+                    "name": "byTagPost",
+                    "properties": [{ "tags": "asc" }, { "postId": "asc" }],
+                    "terminal": "$ownerId",
+                    "preallocated": true,
+                },
+            ],
+            "required": ["postId"],
+            "additionalProperties": false,
+        },
+    }));
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("expected to apply the contract");
+    let post_type = contract.document_type_for_name("post").expect("post");
+    let bytes = |elements: &[&[u8]]| {
+        Value::Array(
+            elements
+                .iter()
+                .map(|element| Value::Bytes(element.to_vec()))
+                .collect(),
+        )
+    };
+    for (seed, tags, preallocated) in [
+        (1, bytes(&[b"", b"\x01"]), vec![]),
+        (2, bytes(&[b"\x01", b"\x02", b"\x03"]), vec![]),
+        (3, bytes(&[b"\x04", b"\x04"]), vec![]),
+        (4, bytes(&[b"\x05", b"\x06"]), vec![vec![0x05], vec![0x06]]),
+    ] {
+        let mut post = post_type
+            .random_document(Some(seed), platform_version)
+            .expect("expected a post");
+        post.set_properties(BTreeMap::from([("tags".to_string(), tags)]));
+        let writes = writes_of(&contract, post_type, &post);
+        let modeled: Vec<Vec<u8>> = writes
+            .iter()
+            .filter(|write| write.referring_type.is_some() && write.path == [b"tags".to_vec()])
+            .map(|write| write.key.clone())
+            .collect();
+        assert_eq!(modeled, preallocated, "post {seed}");
+        let cost = document_create_cost(
+            &contract,
+            post_type,
+            &post,
+            &CostAssumptions::new(platform_version),
+            platform_version,
+        )
+        .expect("expected a cost");
+        let fee = insert(&drive, &contract, post_type, &post).expect("expected to insert the post");
+        assert_eq!(
+            fee.storage_fee, cost.storage_credits.new_values,
+            "post {seed}"
+        );
+        for key in [&[][..], &[0x01], &[0x04], &[0x05], &[0x06]] {
+            let written = element(&drive, &contract, "like", &[b"tags".to_vec()], key).is_some();
+            assert_eq!(
+                written,
+                preallocated.iter().any(|tag| tag.as_slice() == key),
+                "post {seed}, tag {key:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn should_refuse_an_earlier_protocol_version() {
     let platform_version = PlatformVersion::latest();
     let contract = contract_with(platform_value!({ "note": note_schema() }));
@@ -1053,4 +1315,64 @@ fn should_price_a_document_with_a_ttl_by_its_lifetime() {
     )
     .expect("expected to insert the document");
     assert_eq!(fee.storage_fee, cost.storage_credits.new_values);
+}
+
+/// The worst-case document holds `maxItems` distinct elements of an indexed
+/// typed array, even of one-character strings, whatever their `minLength`
+/// (a middle length of 0 would leave every element empty, one key), so the
+/// estimate prices one entry per element.
+#[test]
+fn should_size_an_indexed_typed_array_with_distinct_elements() {
+    let platform_version = PlatformVersion::latest();
+    for items in [
+        platform_value!({"type": "string", "minLength": 1, "maxLength": 1}),
+        platform_value!({"type": "string", "minLength": 0, "maxLength": 1}),
+        platform_value!({"type": "string", "maxLength": 1}),
+    ] {
+        let contract = DataContractFactory::new(platform_version.protocol_version)
+            .expect("factory")
+            .create_with_value_config(
+                Identifier::from([9; 32]),
+                0,
+                platform_value!({"note": {
+                    "type": "object",
+                    "properties": {
+                        "letters": {
+                            "type": "array",
+                            "maxItems": 16,
+                            "items": items.clone(),
+                            "position": 0
+                        }
+                    },
+                    "indices": [{"name": "byLetter", "properties": [{"letters": "asc"}]}],
+                    "additionalProperties": false
+                }}),
+                None,
+                None,
+            )
+            .expect("contract")
+            .data_contract_owned();
+        let document_type = contract.document_type_for_name("note").expect("note");
+        let choices = BTreeMap::from([(
+            "letters".to_string(),
+            FieldChoice {
+                present: Some(true),
+                length: Some(16),
+            },
+        )]);
+        let (document, _) = sized_document(&contract, document_type, &choices, platform_version)
+            .expect("a sized document");
+        assert_eq!(
+            document
+                .get_raw_array_elements_for_document_type(
+                    "letters",
+                    document_type,
+                    platform_version
+                )
+                .expect("element keys")
+                .len(),
+            16,
+            "{items:?}"
+        );
+    }
 }

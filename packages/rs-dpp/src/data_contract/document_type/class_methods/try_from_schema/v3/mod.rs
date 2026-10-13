@@ -59,6 +59,8 @@ use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintErro
 #[cfg(feature = "validation")]
 use crate::consensus::ConsensusError;
 #[cfg(feature = "validation")]
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+#[cfg(feature = "validation")]
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use super::common;
@@ -67,7 +69,7 @@ use super::schema_at_path;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
     validate_generated_from_declarations, validate_list_element_sources,
-    validate_reference_lookup_sources,
+    validate_reference_lookup_sources, validate_referencing_rules, validate_stored_version_reads,
 };
 
 mod ranked_prefix_overlap;
@@ -156,6 +158,7 @@ fn validate_ranked_index_property_key_length(
     document_type_name: &str,
     index: &Index,
     index_property_name: &str,
+    reported_property_name: &str,
     property_type: &DocumentPropertyType,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
@@ -170,9 +173,12 @@ fn validate_ranked_index_property_key_length(
         return Ok(());
     };
 
-    // A typed array is no index key at all, and its byte bound measures the
-    // whole list: the property-type check right after this one rejects it
-    // with the error that explains the problem.
+    // A typed array an index names is keyed by its elements, and the
+    // index-property check judges it here through the element type, so a
+    // typed array reaching this check whole is the field a derived index
+    // property reads: its byte bound measures the whole list, and the
+    // property-type check right after this one rejects it with the error
+    // that explains the problem.
     if matches!(property_type, DocumentPropertyType::TypedArray(_)) {
         return Ok(());
     }
@@ -239,7 +245,7 @@ fn validate_ranked_index_property_key_length(
         InvalidIndexedPropertyConstraintError::new(
             document_type_name.to_owned(),
             index.name.to_owned(),
-            index_property_name.to_owned(),
+            reported_property_name.to_owned(),
             constraint_name.to_string(),
             reason,
         )
@@ -394,9 +400,9 @@ fn parse_generation_3(
     // and the `$ref` walks included, reads the expanded schema and `$defs`,
     // so a shorthand parses to exactly what its long form parses to. The
     // document type keeps the schema as sent (restored before returning),
-    // since that is what the contract stores, serializes and proves. The parse
-    // of a whole contract hands down `$defs` it already expanded, which the
-    // scan here finds nothing to rewrite in.
+    // since that is what the contract stores, serializes and proves. Only a
+    // document type's parse expands the contract's `$defs`, so the `$defs` of
+    // a contract without document types stay as sent, unchecked, as before 14.
     let expanded_schema_defs = schema_defs
         .map(|schema_defs| {
             DocumentType::expand_schema_defs_property_type_shorthands(
@@ -511,6 +517,9 @@ fn parse_generation_3(
             // DERIVED INDEX PROPERTIES: a value read through a same-contract permanent or
             // moderated reference (`apply_derived_index_properties`).
             admit_derived_index_properties: true,
+            // INDEXED ARRAYS: an index keyed by the elements of a typed array
+            // (`validate_indexed_array_index`).
+            admit_indexed_arrays: true,
         },
         platform_version,
     )?;
@@ -525,6 +534,7 @@ fn parse_generation_3(
         &v2.schema,
         property_names::OWNER_REFERS_TO,
         "the writer",
+        v2.documents_mutable,
         platform_version,
     )
     .map_err(consensus_or_protocol_data_contract_error)?;
@@ -532,6 +542,7 @@ fn parse_generation_3(
         &v2.schema,
         property_names::CREATOR_REFERS_TO,
         "the creator",
+        v2.documents_mutable,
         platform_version,
     )
     .map_err(consensus_or_protocol_data_contract_error)?;
@@ -641,6 +652,10 @@ fn parse_generation_3(
         full_validation,
         platform_version,
     )?;
+    // After `apply_property_constraints` and `apply_moderator_abilities`: whether the type
+    // keeps the revision `$revision` reads, and has a write replacing the stored version a rule
+    // reads through `$old.`, depends on the fields it keeps for its moderators too.
+    validate_stored_version_reads(&v2, name).map_err(consensus_or_protocol_data_contract_error)?;
     // After `apply_index_only`: `ttl` is refused on an indexOnly type.
     common::apply_documents_ttl(
         &mut v2,
@@ -681,6 +696,7 @@ fn parse_generation_3(
         validate_no_immutable_contract_owner_requirements(&v2, name)?;
         validate_transient_fields(&v2, name)?;
         validate_no_transient_index_properties(&v2, name)?;
+        validate_integer_range_sources_keyed_in_value_order(&v2, name)?;
     }
     // The property an `inList` reference reads the list's document through; the
     // list itself is checked where the referenced type is in hand. In every
@@ -688,6 +704,12 @@ fn parse_generation_3(
     // would silently skip a declaration whose property finds no document
     if full_validation {
         validate_list_element_sources(DocumentTypeRef::V2(&v2), name)
+            .map_err(consensus_or_protocol_data_contract_error)?;
+        // The declaring side of a rule reading a document a reference points at, once
+        // the references, `indexOnly`, the trade flags and the moderator fields are
+        // known; what it reads of the referenced type is checked where that type is in
+        // hand
+        validate_referencing_rules(DocumentTypeRef::V2(&v2), name)
             .map_err(consensus_or_protocol_data_contract_error)?;
     }
 
@@ -965,6 +987,7 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                             validate_ranked_index_property_key_length(
                                 name,
                                 index,
+                                &index_property.name,
                                 &index_property.name,
                                 &property.property_type,
                                 platform_version,
@@ -1314,6 +1337,49 @@ fn validate_no_transient_index_properties(
                 )),
             ));
         }
+    }
+    Ok(())
+}
+
+/// No `integerRange` buckets an unsigned property keyed the earlier way.
+/// A grid reads and writes its source's keys as generation 1 of
+/// `serialize_value_for_key` keys unsigned values (`IntegerRangeKeyType`),
+/// while an unsigned property that ends a `rangeSummable` index keeps
+/// generation 0's keys at every protocol version
+/// ([`Index::ends_range_summable_with`]), so the two can't share a property.
+/// A signed source keeps its signed keys either way.
+///
+/// Full validation only, like the other index checks: only this generation
+/// (protocol version 14) admits `integerRange`.
+#[cfg(feature = "validation")]
+fn validate_integer_range_sources_keyed_in_value_order(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    for index in document_type.indices.values() {
+        let Some(transform) = &index.integer_range else {
+            continue;
+        };
+        if transform.key_type.min_value() < 0
+            || DocumentTypeRef::V2(document_type)
+                .tree_keys_differ_between_generations(&transform.source)
+        {
+            continue;
+        }
+        let summing = document_type
+            .indices
+            .values()
+            .find(|other| other.ends_range_summable_with(&transform.source))
+            .map_or("", |other| other.name.as_str());
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "integerRange.on (\"{}\") of index \"{}\" of document type \"{name}\" names \
+                 a property that the rangeSummable index \"{summing}\" ends with: such a \
+                 property keeps its earlier key encoding, which an integerRange grid does not \
+                 read; bucket another property",
+                transform.source, index.name
+            )),
+        ));
     }
     Ok(())
 }
@@ -1761,7 +1827,8 @@ fn validate_no_immutable_contract_owner_requirements(
 /// replace state validation could not clear: a typed array of them, at the
 /// top level or inside an immutable object, a single one inside an immutable
 /// object, or one found by `findBy`, alone or as an operand of an
-/// expression, anywhere, unless a `findBy` function computes its key: that
+/// expression, anywhere (on a string or byte array property too), unless a
+/// `findBy` function computes its key: that
 /// reference is judged when the document is created only. Every
 /// replace re-validates such a reference, so once a target is deleted the
 /// property would have to change, which an immutable
@@ -1789,7 +1856,14 @@ fn validate_no_immutable_deletable_element_references(
     name: &str,
 ) -> Result<(), ProtocolError> {
     for (path, property) in document_type.flattened_properties() {
-        let Some(reference) = property.property_type.reference() else {
+        // On an identifier, or on a string or byte array property whose value
+        // its `findBy` reads
+        let Some(reference) = property.property_type.reference().or_else(|| {
+            property
+                .revealed_reference
+                .as_ref()
+                .map(PropertyReference::Revealed)
+        }) else {
             continue;
         };
         let Some(target) = reference.target() else {
@@ -1805,7 +1879,7 @@ fn validate_no_immutable_deletable_element_references(
             matches!(
                 leaf,
                 DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. }
-                    if !lookup.is_checked_on_create_only()
+                    if !lookup.is_checked_on_create_only(document_type.documents_mutable)
             )
         });
         if !deletable_lookup
@@ -1893,6 +1967,8 @@ impl DocumentType {
 #[cfg(all(test, feature = "validation"))]
 mod byte_array_reads_tests;
 #[cfg(all(test, feature = "validation"))]
+mod choose_first_tests;
+#[cfg(all(test, feature = "validation"))]
 mod commit_reveal_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod contested_summed_value_bounds_tests;
@@ -1910,6 +1986,8 @@ mod expiring_summed_value_bounds_tests;
 mod immutable_tests;
 #[cfg(test)]
 mod index_only_tests;
+#[cfg(all(test, feature = "validation"))]
+mod indexed_array_tests;
 #[cfg(all(test, feature = "validation"))]
 mod moderated_preallocation_tests;
 #[cfg(all(test, feature = "validation"))]
@@ -1952,17 +2030,27 @@ mod reference_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_test_helpers;
 #[cfg(all(test, feature = "validation"))]
+mod referenced_rule_tests;
+#[cfg(all(test, feature = "validation"))]
 mod retracted_when_tests;
 #[cfg(all(test, feature = "validation"))]
 mod shared_stage_error_tests;
 #[cfg(all(test, feature = "validation"))]
+mod stored_version_reads_tests;
+#[cfg(all(test, feature = "validation"))]
+mod string_find_by_key_tests;
+#[cfg(all(test, feature = "validation"))]
 mod transient_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_counter_index_tests;
 #[cfg(all(test, feature = "validation"))]
 mod typed_array_reference_tests;
 #[cfg(all(test, feature = "validation"))]
 mod typed_array_test_helpers;
 #[cfg(all(test, feature = "validation", feature = "random-documents"))]
 mod typed_array_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_where_tests;
 
 #[cfg(test)]
 mod tests {

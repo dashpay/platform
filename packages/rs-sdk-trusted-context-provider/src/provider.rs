@@ -1,9 +1,14 @@
 use crate::error::TrustedContextProviderError;
 use crate::get_quorum_base_url;
+use crate::quorum_refresh::{
+    contained, sleep, FetchedQuorums, QuorumRefreshes, QUORUM_LIST_REQUEST_TIMEOUT,
+};
 use crate::types::{PreviousQuorumsResponse, QuorumData, QuorumsResponse};
 
 use arc_swap::ArcSwap;
-use dash_context_provider::{ContextProvider, ContextProviderError};
+use dash_context_provider::{ContextProvider, ContextProviderError, QuorumKeyFuture};
+use dpp::bls_signatures::inner_types::Group;
+use dpp::bls_signatures::{Bls12381G2Impl, PublicKey};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 // QuorumHash is just [u8; 32]
@@ -32,9 +37,12 @@ use dpp::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIA
 use dpp::version::feature_initial_protocol_versions::MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 
+use futures::future::{BoxFuture, FutureExt};
 use lru::LruCache;
 use reqwest::Client;
 use serde::Deserialize;
+#[cfg(test)]
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error as StdError;
 #[cfg(all(
@@ -43,6 +51,8 @@ use std::error::Error as StdError;
 ))]
 use std::net::ToSocketAddrs;
 use std::num::NonZeroUsize;
+#[cfg(test)]
+use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, info};
@@ -50,6 +60,14 @@ use url::Url;
 
 #[cfg(target_arch = "wasm32")]
 const WASM_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[cfg(test)]
+type QuorumInsertGate = (SyncSender<()>, Receiver<()>);
+
+#[cfg(test)]
+thread_local! {
+    static QUORUM_INSERT_GATE: RefCell<Option<QuorumInsertGate>> = const { RefCell::new(None) };
+}
 
 /// A trusted HTTP-based context provider that fetches quorum information
 /// from trusted HTTP endpoints instead of requiring Core RPC access.
@@ -82,6 +100,22 @@ pub struct TrustedHttpContextProvider {
 
     /// Whether to refetch quorums if not found in cache
     refetch_if_not_found: bool,
+
+    /// The latest refresh of the quorum lists, shared by clones so that misses
+    /// on any of them share it.
+    quorum_refreshes: Arc<QuorumRefreshes>,
+}
+
+/// An error with every cause it carries, which `Display` alone leaves out.
+fn with_causes(error: &dyn StdError) -> String {
+    let mut message = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    message
 }
 
 #[derive(Debug, Deserialize)]
@@ -117,6 +151,14 @@ impl TrustedHttpContextProvider {
             .fetch_cache_no_store();
 
         request
+    }
+
+    /// Build a GET request for one of the quorum lists. Proof verification
+    /// waits on these when it meets a quorum newer than the caches, so they
+    /// get a short timeout on every target, where the native client's other
+    /// requests wait 30 s.
+    fn quorum_list_request(&self, url: &str) -> reqwest::RequestBuilder {
+        self.http_request(url).timeout(QUORUM_LIST_REQUEST_TIMEOUT)
     }
 
     /// Verify that a URL's domain resolves
@@ -243,6 +285,7 @@ impl TrustedHttpContextProvider {
             known_contracts: Arc::new(Mutex::new(HashMap::new())),
             known_token_configurations: Arc::new(Mutex::new(HashMap::new())),
             refetch_if_not_found: true,
+            quorum_refreshes: Arc::default(),
         })
     }
 
@@ -337,12 +380,12 @@ impl TrustedHttpContextProvider {
     ///
     /// Both endpoints are requested concurrently and both are awaited, so a
     /// failure from one does not prevent usable data from the other from
-    /// reaching the caches.
+    /// reaching the caches. A refresh always starts, and quorum key fetches
+    /// that come in while it runs wait for it instead of starting their own.
     pub async fn refresh_quorum_caches(&self) -> Result<(), TrustedContextProviderError> {
-        let (current, previous) =
-            futures::join!(self.fetch_current_quorums(), self.fetch_previous_quorums());
-        let current_error = current.err();
-        let previous_error = previous.err();
+        let fetched = self.quorum_refreshes.start(self.start_refresh()).await;
+        let current_error = fetched.current.as_ref().err();
+        let previous_error = fetched.previous.as_ref().err();
 
         match (current_error, previous_error) {
             (None, None) => Ok(()),
@@ -360,6 +403,174 @@ impl TrustedHttpContextProvider {
                     current_error, previous_error
                 )))
             }
+        }
+    }
+
+    /// A copy of this provider that shares its caches and HTTP client but not
+    /// its latest refresh. A published refresh runs on one of these: a refresh
+    /// holding the provider itself would be held by the provider, so an
+    /// abandoned refresh would keep the provider alive.
+    fn detached(&self) -> Self {
+        Self {
+            quorum_refreshes: Arc::default(),
+            ..self.clone()
+        }
+    }
+
+    /// A refresh of both quorum lists that does nothing until it is polled.
+    fn start_refresh(&self) -> BoxFuture<'static, FetchedQuorums> {
+        let source = self.detached();
+        contained(move || async move { source.fetch_quorum_lists().await }).boxed()
+    }
+
+    /// Fetch both quorum lists concurrently. The fetches fill the caches.
+    async fn fetch_quorum_lists(&self) -> FetchedQuorums {
+        let (current, previous) =
+            futures::join!(self.fetch_current_quorums(), self.fetch_previous_quorums());
+        let fetched = FetchedQuorums {
+            current: current
+                .map(|response| response.data)
+                .map_err(|error| with_causes(&error)),
+            previous: previous
+                .map(|response| response.data.quorums)
+                .map_err(|error| with_causes(&error)),
+        };
+        if let Some(reason) = fetched.incomplete() {
+            tracing::warn!(%reason, "quorum list refresh is incomplete");
+        }
+        fetched
+    }
+
+    /// The cached quorum with this hash, from either cache.
+    fn cached_quorum(&self, quorum_hash: &QuorumHash) -> Option<QuorumData> {
+        [&self.current_quorums_cache, &self.previous_quorums_cache]
+            .into_iter()
+            .find_map(|cache| {
+                cache
+                    .lock()
+                    .ok()
+                    .and_then(|mut cache| cache.get(quorum_hash).cloned())
+            })
+    }
+
+    /// The key of the quorum with this hash if `fetched` lists it. The quorum
+    /// is put back into its cache, so the verification that follows finds it
+    /// even if a long list pushed it out.
+    fn listed_key(
+        &self,
+        fetched: &FetchedQuorums,
+        quorum_hash: &QuorumHash,
+    ) -> Result<Option<[u8; 48]>, ContextProviderError> {
+        let mut first_error = None;
+        let usable = fetched.matching(quorum_hash).find_map(|(quorum, current)| {
+            match Self::parse_quorum_public_key(&quorum.key) {
+                Ok(key) => Some((quorum, current, key)),
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                    None
+                }
+            }
+        });
+        let Some((quorum, current, key)) = usable else {
+            return match first_error {
+                Some(error) => Err(error),
+                None => Ok(None),
+            };
+        };
+        let cache = if current {
+            &self.current_quorums_cache
+        } else {
+            &self.previous_quorums_cache
+        };
+        if let Ok(mut cache) = cache.lock() {
+            cache.put(*quorum_hash, quorum.clone());
+        }
+        #[cfg(test)]
+        QUORUM_INSERT_GATE.with(|gate| {
+            if let Some((inserted, release)) = gate.borrow().as_ref() {
+                inserted.send(()).expect("report destination insertion");
+                release
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("release cache cleanup after both insertions");
+            }
+        });
+        // Remove unusable entries that could shadow the repaired key, but
+        // keep usable duplicates so overlapping repairs cannot erase both.
+        let other_cache = if current {
+            &self.previous_quorums_cache
+        } else {
+            &self.current_quorums_cache
+        };
+        if let Ok(mut cache) = other_cache.lock() {
+            if cache
+                .peek(quorum_hash)
+                .is_some_and(|quorum| Self::parse_quorum_public_key(&quorum.key).is_err())
+            {
+                cache.pop(quorum_hash);
+            }
+        }
+        info!(
+            quorum_hash = %hex::encode(quorum_hash),
+            "fetched the key of a quorum newer than the cache"
+        );
+        Ok(Some(key))
+    }
+
+    /// See [`ContextProvider::fetch_quorum_public_key`]. `seen` is the latest
+    /// refresh generation when the SDK asked, which was after the response
+    /// naming the quorum arrived.
+    async fn fetch_missing_quorum_key(
+        &self,
+        quorum_hash: QuorumHash,
+        seen: u64,
+    ) -> Result<Option<[u8; 48]>, ContextProviderError> {
+        if let Some(quorum) = self.cached_quorum(&quorum_hash) {
+            match Self::parse_quorum_public_key(&quorum.key) {
+                Ok(key) => return Ok(Some(key)),
+                Err(error) => debug!(
+                    quorum_hash = %hex::encode(quorum_hash),
+                    %error,
+                    "cached quorum key is unusable; checking the trusted source"
+                ),
+            }
+        }
+
+        let (refresh, generation) = self
+            .quorum_refreshes
+            .latest_or_start(|| self.start_refresh());
+        let mut fetched = refresh.await;
+        if let Some(key) = self.listed_key(&fetched, &quorum_hash)? {
+            return Ok(Some(key));
+        }
+
+        if generation <= seen {
+            // The joined refresh started before the response arrived, so its
+            // lists may predate the quorum the response was signed with. Only
+            // a newer refresh can show the quorum is absent; if one may not
+            // start yet, wait until it may.
+            fetched = loop {
+                match self
+                    .quorum_refreshes
+                    .newer_than(seen, || self.start_refresh())
+                {
+                    Ok(refresh) => break refresh.await,
+                    Err(wait) => sleep(wait).await,
+                }
+            };
+            if let Some(key) = self.listed_key(&fetched, &quorum_hash)? {
+                return Ok(Some(key));
+            }
+        }
+
+        match fetched.incomplete() {
+            None => {
+                debug!(
+                    quorum_hash = %hex::encode(quorum_hash),
+                    "quorum is in neither freshly fetched list"
+                );
+                Ok(None)
+            }
+            Some(reason) => Err(ContextProviderError::QuorumSourceUnavailable(reason)),
         }
     }
 
@@ -453,7 +664,7 @@ impl TrustedHttpContextProvider {
         let url = format!("{}/quorums", self.base_url);
         debug!("Fetching current quorums from: {}", url);
 
-        let response = match self.http_request(&url).send().await {
+        let response = match self.quorum_list_request(&url).send().await {
             Ok(resp) => resp,
             Err(e) => {
                 tracing::error!(error = ?e, url = %url, "HTTP request failed");
@@ -531,7 +742,7 @@ impl TrustedHttpContextProvider {
         let url = format!("{}/previous", self.base_url);
         debug!("Fetching previous quorums from: {}", url);
 
-        let response = self.http_request(&url).send().await?;
+        let response = self.quorum_list_request(&url).send().await?;
         debug!("Received response with status: {}", response.status());
 
         if !response.status().is_success() {
@@ -659,26 +870,42 @@ impl TrustedHttpContextProvider {
 
     /// Parse a BLS quorum public key from its hex representation.
     ///
-    /// Accepts an optional `0x` prefix. Returns `ContextProviderError::Generic`
-    /// on invalid hex, wrong length (must be 48 bytes), or conversion failure.
+    /// Accepts an optional `0x` prefix. An unusable key is a trusted-source
+    /// failure, so the responding node is not blamed for it.
     fn parse_quorum_public_key(key: &str) -> Result<[u8; 48], ContextProviderError> {
         let pubkey_hex = key
             .strip_prefix("0x")
             .or_else(|| key.strip_prefix("0X"))
             .unwrap_or(key);
         let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-            ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
+            ContextProviderError::QuorumSourceUnavailable(format!(
+                "Invalid hex in public key: {}",
+                e
+            ))
         })?;
 
         if pubkey_bytes.len() != 48 {
-            return Err(ContextProviderError::Generic(format!(
+            return Err(ContextProviderError::QuorumSourceUnavailable(format!(
                 "Invalid public key length: {} bytes, expected 48",
                 pubkey_bytes.len()
             )));
         }
 
+        let public_key =
+            PublicKey::<Bls12381G2Impl>::try_from(pubkey_bytes.as_slice()).map_err(|error| {
+                ContextProviderError::QuorumSourceUnavailable(format!(
+                    "Invalid BLS public key: {error}"
+                ))
+            })?;
+        if bool::from(public_key.0.is_identity()) {
+            return Err(ContextProviderError::QuorumSourceUnavailable(
+                "BLS public key is the identity point".to_string(),
+            ));
+        }
         pubkey_bytes.try_into().map_err(|_| {
-            ContextProviderError::Generic("Failed to convert public key to array".to_string())
+            ContextProviderError::QuorumSourceUnavailable(
+                "Failed to convert public key to array".to_string(),
+            )
         })
     }
 }
@@ -767,6 +994,24 @@ impl ContextProvider for TrustedHttpContextProvider {
         );
 
         Self::parse_quorum_public_key(&quorum.key)
+    }
+
+    fn fetch_quorum_public_key(
+        &self,
+        _quorum_type: u32,
+        quorum_hash: QuorumHash,
+        _core_chain_locked_height: CoreBlockHeight,
+    ) -> Option<QuorumKeyFuture> {
+        // With refetching on, `get_quorum_public_key` has already fetched on
+        // this miss. It cannot on wasm32, where blocking is impossible.
+        if self.refetch_if_not_found && !cfg!(target_arch = "wasm32") {
+            return None;
+        }
+        let provider = self.clone();
+        let seen = self.quorum_refreshes.generation();
+        Some(Box::pin(async move {
+            provider.fetch_missing_quorum_key(quorum_hash, seen).await
+        }))
     }
 
     fn get_data_contract(
@@ -986,15 +1231,32 @@ impl ContextProvider for TrustedHttpContextProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::quorum_refresh::MIN_GAP;
+    use dpp::bls_signatures::SecretKey;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
+    use std::sync::mpsc;
     use std::thread;
     use std::time::{Duration, Instant};
+
+    fn quorum_key(seed: u8) -> [u8; 48] {
+        let key = SecretKey::<Bls12381G2Impl>::from_hash(&[seed]).public_key();
+        let bytes: Vec<u8> = (&key).into();
+        bytes.try_into().expect("BLS public key is 48 bytes")
+    }
 
     fn accept_before(listener: &TcpListener, deadline: Instant) -> TcpStream {
         loop {
             match listener.accept() {
-                Ok((stream, _)) => return stream,
+                Ok((stream, _)) => {
+                    // On BSD-derived systems an accepted socket inherits the
+                    // listener's non-blocking mode, so reading the request
+                    // could otherwise fail before the client has written it.
+                    stream
+                        .set_nonblocking(false)
+                        .expect("make accepted quorum request blocking");
+                    return stream;
+                }
                 Err(error)
                     if error.kind() == std::io::ErrorKind::WouldBlock
                         && Instant::now() < deadline =>
@@ -1011,7 +1273,7 @@ mod tests {
             "success": true,
             "data": [{
                 "quorum_hash": hex::encode([hash; 32]),
-                "key": hex::encode([key; 48]),
+                "key": hex::encode(quorum_key(key)),
                 "height": 1,
                 "valid_members_count": 3
             }]
@@ -1034,7 +1296,7 @@ mod tests {
                 "height": 1,
                 "quorums": [{
                     "quorum_hash": hex::encode([hash; 32]),
-                    "key": hex::encode([key; 48]),
+                    "key": hex::encode(quorum_key(key)),
                     "height": 1,
                     "valid_members_count": 3
                 }]
@@ -1191,13 +1453,13 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x11; 32], 1)
                 .expect("current quorum must be cached"),
-            [0x41; 48]
+            quorum_key(0x41)
         );
         assert_eq!(
             provider
                 .get_quorum_public_key(1, [0x12; 32], 1)
                 .expect("previous quorum must be cached"),
-            [0x42; 48]
+            quorum_key(0x42)
         );
         server.join().expect("mock quorum server must finish");
     }
@@ -1219,13 +1481,13 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x51; 32], 1)
                 .expect("current quorum must be cached"),
-            [0x61; 48]
+            quorum_key(0x61)
         );
         assert_eq!(
             provider
                 .get_quorum_public_key(1, [0x52; 32], 1)
                 .expect("previous quorum must be cached"),
-            [0x62; 48]
+            quorum_key(0x62)
         );
         server.join().expect("mock quorum server must finish");
     }
@@ -1260,7 +1522,7 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x22; 32], 1)
                 .expect("previous quorum must be cached"),
-            [0x42; 48]
+            quorum_key(0x42)
         );
         server.join().expect("mock quorum server must finish");
 
@@ -1275,7 +1537,7 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x33; 32], 1)
                 .expect("current quorum must be cached"),
-            [0x43; 48]
+            quorum_key(0x43)
         );
         server.join().expect("mock quorum server must finish");
     }
@@ -1291,7 +1553,7 @@ mod tests {
             [0x44; 32],
             QuorumData {
                 quorum_hash: hex::encode([0x44; 32]),
-                key: hex::encode([0x54; 48]),
+                key: hex::encode(quorum_key(0x54)),
                 height: 1,
                 valid_members_count: 3,
             },
@@ -1302,7 +1564,7 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x44; 32], 1)
                 .expect("known cached quorum must remain usable"),
-            [0x54; 48]
+            quorum_key(0x54)
         );
         assert!(matches!(
             provider
@@ -1319,7 +1581,7 @@ mod tests {
             "success": false,
             "data": [{
                 "quorum_hash": hex::encode([0x55; 32]),
-                "key": hex::encode([0x65; 48]),
+                "key": hex::encode(quorum_key(0x65)),
                 "height": 1,
                 "valid_members_count": 3
             }]
@@ -1346,7 +1608,7 @@ mod tests {
                 "height": 1,
                 "quorums": [{
                     "quorum_hash": hex::encode([0x56; 32]),
-                    "key": hex::encode([0x76; 48]),
+                    "key": hex::encode(quorum_key(0x76)),
                     "height": 1,
                     "valid_members_count": 3
                 }]
@@ -1362,7 +1624,7 @@ mod tests {
             [0x56; 32],
             QuorumData {
                 quorum_hash: hex::encode([0x56; 32]),
-                key: hex::encode([0x66; 48]),
+                key: hex::encode(quorum_key(0x66)),
                 height: 1,
                 valid_members_count: 3,
             },
@@ -1373,7 +1635,7 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x56; 32], 1)
                 .expect("unsuccessful response must not overwrite cached quorum"),
-            [0x66; 48]
+            quorum_key(0x66)
         );
         server.join().expect("mock quorum server must finish");
     }
@@ -1389,7 +1651,7 @@ mod tests {
             [0x57; 32],
             QuorumData {
                 quorum_hash: hex::encode([0x57; 32]),
-                key: hex::encode([0x67; 48]),
+                key: hex::encode(quorum_key(0x67)),
                 height: 1,
                 valid_members_count: 3,
             },
@@ -1403,9 +1665,553 @@ mod tests {
             provider
                 .get_quorum_public_key(1, [0x57; 32], 1)
                 .expect("empty refresh must not clear cached quorum"),
-            [0x67; 48]
+            quorum_key(0x67)
         );
         server.join().expect("mock quorum server must finish");
+    }
+
+    /// Ask the provider for a quorum key it is missing, as the SDK does after
+    /// proof verification failed on it.
+    async fn fetch_missing(
+        provider: &TrustedHttpContextProvider,
+        quorum_hash: u8,
+    ) -> Result<Option<[u8; 48]>, ContextProviderError> {
+        provider
+            .fetch_quorum_public_key(6, [quorum_hash; 32], 1)
+            .expect("a provider that cannot refetch synchronously must fetch asynchronously")
+            .await
+    }
+
+    async fn assert_uninterpretable_hash_is_source_unavailable(invalid_hash: &str) {
+        for current in [true, false] {
+            let malformed = if current {
+                current_response(0x11, 0x41)
+            } else {
+                previous_response(0x11, 0x41)
+            }
+            .replace(&hex::encode([0x11; 32]), invalid_hash);
+            let (current_list, previous_list) = if current {
+                (malformed, empty_previous_response())
+            } else {
+                (empty_current_response(), malformed)
+            };
+            let (base_url, server) = spawn_http_responses(vec![
+                ("/quorums", 200, current_list),
+                ("/previous", 200, previous_list),
+            ]);
+            let provider = provider_for(base_url);
+
+            let fetched = fetch_missing(&provider, 0x11).await;
+            assert!(
+                matches!(
+                    &fetched,
+                    Err(ContextProviderError::QuorumSourceUnavailable(reason))
+                        if reason.contains(invalid_hash) && reason.contains("invalid quorum hash")
+                ),
+                "an uninterpretable trusted hash cannot establish absence: {fetched:?}"
+            );
+            server.join().expect("mock quorum server must finish");
+        }
+    }
+
+    /// HTTP success cannot establish absence when a record's hash is not hex.
+    #[tokio::test]
+    async fn should_treat_invalid_hex_quorum_hashes_as_an_incomplete_source() {
+        assert_uninterpretable_hash_is_source_unavailable("zz").await;
+    }
+
+    /// A wrong-length trusted hash leaves the quorum source unavailable,
+    /// rather than establishing that the requested quorum is absent.
+    #[tokio::test]
+    async fn should_treat_wrong_length_quorum_hashes_as_an_incomplete_source() {
+        assert_uninterpretable_hash_is_source_unavailable("11").await;
+    }
+
+    /// Semantic incompleteness prevents absence, but a usable positive match
+    /// still supplies the requested key from either list.
+    #[tokio::test]
+    async fn should_use_a_valid_match_beside_an_uninterpretable_quorum_hash() {
+        for invalid_hash in ["zz", "11"] {
+            for malformed_current in [true, false] {
+                for usable_current in [true, false] {
+                    let mut current: serde_json::Value =
+                        serde_json::from_str(&empty_current_response()).unwrap();
+                    let mut previous: serde_json::Value =
+                        serde_json::from_str(&empty_previous_response()).unwrap();
+                    let malformed: serde_json::Value = serde_json::from_str(
+                        &current_response(0x22, 0x42)
+                            .replace(&hex::encode([0x22; 32]), invalid_hash),
+                    )
+                    .unwrap();
+                    let usable: serde_json::Value =
+                        serde_json::from_str(&current_response(0x11, 0x41)).unwrap();
+                    for (entry, is_current) in [
+                        (malformed["data"][0].clone(), malformed_current),
+                        (usable["data"][0].clone(), usable_current),
+                    ] {
+                        let list = if is_current {
+                            &mut current["data"]
+                        } else {
+                            &mut previous["data"]["quorums"]
+                        };
+                        list.as_array_mut().unwrap().push(entry);
+                    }
+                    let (base_url, server) = spawn_http_responses(vec![
+                        ("/quorums", 200, current.to_string()),
+                        ("/previous", 200, previous.to_string()),
+                    ]);
+                    let provider = provider_for(base_url);
+
+                    assert_eq!(
+                        fetch_missing(&provider, 0x11)
+                            .await
+                            .expect("a usable positive match survives an incomplete list"),
+                        Some(quorum_key(0x41))
+                    );
+                    assert_eq!(
+                        provider.get_quorum_public_key(6, [0x11; 32], 1).unwrap(),
+                        quorum_key(0x41)
+                    );
+                    server.join().expect("mock quorum server must finish");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn should_reject_an_invalid_bls_key_from_the_trusted_source() {
+        let (base_url, server) = spawn_http_responses(vec![
+            (
+                "/quorums",
+                200,
+                current_response(0x11, 0).replace(&hex::encode(quorum_key(0)), &"00".repeat(48)),
+            ),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+
+        let fetched = fetch_missing(&provider, 0x11).await;
+        assert!(
+            matches!(
+                fetched,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "an unusable source key must not be reported as fetched: {fetched:?}"
+        );
+        let cached = provider.get_quorum_public_key(6, [0x11; 32], 1);
+        assert!(
+            matches!(
+                cached,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "a cached unusable key is still a source failure: {cached:?}"
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    #[tokio::test]
+    async fn should_recover_a_malformed_cached_key_after_the_source_is_repaired() {
+        let malformed = current_response(0x11, 0x41).replace(&hex::encode(quorum_key(0x41)), "zz");
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, malformed),
+            ("/previous", 200, empty_previous_response()),
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+
+        assert!(matches!(
+            fetch_missing(&provider, 0x11).await,
+            Err(ContextProviderError::QuorumSourceUnavailable(_))
+        ));
+        let generation = provider.quorum_refreshes.generation();
+        assert!(matches!(
+            fetch_missing(&provider, 0x11).await,
+            Err(ContextProviderError::QuorumSourceUnavailable(_))
+        ));
+        assert_eq!(provider.quorum_refreshes.generation(), generation);
+
+        provider.quorum_refreshes.age_latest(MIN_GAP);
+        assert_eq!(
+            fetch_missing(&provider, 0x11)
+                .await
+                .expect("a repaired source restores reads on the same provider"),
+            Some(quorum_key(0x41))
+        );
+        assert_eq!(
+            provider.get_quorum_public_key(6, [0x11; 32], 1).unwrap(),
+            quorum_key(0x41)
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    #[tokio::test]
+    async fn should_recover_when_the_previous_list_repairs_a_malformed_current_key() {
+        let malformed = current_response(0x11, 0x41).replace(&hex::encode(quorum_key(0x41)), "zz");
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, malformed),
+            ("/previous", 200, empty_previous_response()),
+            ("/quorums", 200, empty_current_response()),
+            ("/previous", 200, previous_response(0x11, 0x41)),
+        ]);
+        let provider = provider_for(base_url);
+        assert!(matches!(
+            fetch_missing(&provider, 0x11).await,
+            Err(ContextProviderError::QuorumSourceUnavailable(_))
+        ));
+        provider.quorum_refreshes.age_latest(MIN_GAP);
+
+        assert_eq!(
+            fetch_missing(&provider, 0x11)
+                .await
+                .expect("the previous list repaired the key"),
+            Some(quorum_key(0x41))
+        );
+        assert_eq!(
+            provider
+                .get_quorum_public_key(6, [0x11; 32], 1)
+                .expect("the repaired key must not be shadowed"),
+            quorum_key(0x41)
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// An unusable current-list match must not hide a usable previous-list
+    /// key, and the repaired cache must serve synchronous verification.
+    #[tokio::test]
+    async fn should_use_a_valid_previous_key_when_the_current_list_overlaps_with_a_malformed_key() {
+        let malformed = current_response(0x11, 0x41).replace(&hex::encode(quorum_key(0x41)), "zz");
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, malformed),
+            ("/previous", 200, previous_response(0x11, 0x41)),
+        ]);
+        let provider = provider_for(base_url);
+
+        assert_eq!(
+            fetch_missing(&provider, 0x11)
+                .await
+                .expect("the overlapping previous list supplies a usable key"),
+            Some(quorum_key(0x41))
+        );
+        assert_eq!(
+            provider
+                .get_quorum_public_key(6, [0x11; 32], 1)
+                .expect("the malformed current entry must not shadow the usable key"),
+            quorum_key(0x41)
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// Concurrent opposite-list repairs must retain a usable cached key
+    /// after both callers report successful acquisition.
+    #[test]
+    fn should_keep_a_fetched_key_during_opposite_list_cache_repairs() {
+        let provider = provider_for("http://127.0.0.1:1".to_string());
+        let (inserted, insertions) = mpsc::sync_channel(2);
+        let quorum = QuorumData {
+            quorum_hash: hex::encode([0x11; 32]),
+            key: hex::encode(quorum_key(0x41)),
+            height: 1,
+            valid_members_count: 3,
+        };
+        let workers: Vec<_> = [true, false]
+            .into_iter()
+            .map(|current| {
+                let provider = provider.clone();
+                let inserted = inserted.clone();
+                let (release, cleanup) = mpsc::sync_channel(1);
+                let quorum = quorum.clone();
+                let worker = thread::spawn(move || {
+                    QUORUM_INSERT_GATE.with(|slot| {
+                        *slot.borrow_mut() = Some((inserted, cleanup));
+                    });
+                    let fetched = FetchedQuorums {
+                        current: Ok(if current {
+                            vec![quorum.clone()]
+                        } else {
+                            vec![]
+                        }),
+                        previous: Ok(if current { vec![] } else { vec![quorum] }),
+                    };
+                    provider
+                        .listed_key(&fetched, &[0x11; 32])
+                        .expect("the opposite-list snapshot supplies a usable key")
+                });
+                (release, worker)
+            })
+            .collect();
+        drop(inserted);
+        for _ in 0..2 {
+            insertions
+                .recv_timeout(Duration::from_secs(5))
+                .expect("both workers must insert before either cleans up");
+        }
+        for (release, _) in &workers {
+            release.send(()).expect("release cache repair cleanup");
+        }
+        for (_, worker) in workers {
+            assert_eq!(
+                worker.join().expect("cache repair worker finishes"),
+                Some(quorum_key(0x41))
+            );
+        }
+        assert_eq!(
+            provider
+                .get_quorum_public_key(6, [0x11; 32], 1)
+                .expect("opposite-list repairs must not erase both usable entries"),
+            quorum_key(0x41)
+        );
+    }
+
+    /// A provider built without synchronous refetching, as wasm builds it,
+    /// must still recover a key newer than its prefetch: otherwise every proof
+    /// signed by a quorum formed after the prefetch fails until the page
+    /// reloads.
+    #[tokio::test]
+    async fn should_fetch_a_quorum_key_newer_than_the_cache() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+
+        assert_eq!(
+            fetch_missing(&provider, 0x11)
+                .await
+                .expect("the quorum service lists the key"),
+            Some(quorum_key(0x41))
+        );
+        assert_eq!(
+            provider
+                .get_quorum_public_key(6, [0x11; 32], 1)
+                .expect("the fetched key must serve the second verification"),
+            quorum_key(0x41)
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// Every request meets a new quorum at about the same time, and clones of
+    /// the provider serve them all. They must share one round trip to the
+    /// quorum service. The server answers exactly one pair of requests, so a
+    /// miss that started its own refresh would fail.
+    #[tokio::test]
+    async fn should_share_one_refresh_between_concurrent_misses() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+        let clone = provider.clone();
+
+        let misses = (0..8).map(|i| {
+            let provider = if i % 2 == 0 { &provider } else { &clone };
+            fetch_missing(provider, 0x11)
+        });
+        for result in futures::future::join_all(misses).await {
+            assert_eq!(
+                result.expect("every miss must get the key"),
+                Some(quorum_key(0x41))
+            );
+        }
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// "Absent" is what gets a node banned, so the provider says it only when
+    /// both lists arrived and neither names the quorum.
+    #[tokio::test]
+    async fn should_report_a_quorum_absent_only_when_both_lists_lack_it() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, previous_response(0x12, 0x42)),
+        ]);
+        let provider = provider_for(base_url);
+
+        assert_eq!(
+            fetch_missing(&provider, 0x99)
+                .await
+                .expect("both lists arrived"),
+            None
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// When a list fails, the provider cannot tell whether the quorum exists,
+    /// so it must not say "absent" and get an honest node banned for the
+    /// quorum service's outage. A key the arrived list does hold is still
+    /// returned.
+    #[tokio::test]
+    async fn should_not_report_a_quorum_absent_when_a_list_failed() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 500, "{}".to_string()),
+            ("/previous", 200, previous_response(0x22, 0x42)),
+        ]);
+        let provider = provider_for(base_url);
+
+        let (missing, listed) = futures::join!(
+            fetch_missing(&provider, 0x99),
+            fetch_missing(&provider, 0x22)
+        );
+        assert!(
+            matches!(
+                missing,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "got {missing:?}"
+        );
+        assert_eq!(
+            listed.expect("the arrived list holds the key"),
+            Some(quorum_key(0x42))
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// The start-up prefetch and misses that arrive while it runs share one
+    /// round trip.
+    #[tokio::test]
+    async fn should_let_misses_join_an_explicit_refresh() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+
+        let (refreshed, fetched) = futures::join!(
+            provider.refresh_quorum_caches(),
+            fetch_missing(&provider, 0x11)
+        );
+        refreshed.expect("explicit refresh must succeed");
+        assert_eq!(
+            fetched.expect("the miss must get the key"),
+            Some(quorum_key(0x41))
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// "Absent" gets a node banned, so it may only come from lists fetched
+    /// after the response arrived. A refresh that started before the miss may
+    /// predate the quorum: the miss waits until a new refresh may start and
+    /// looks again, so a quorum listed meanwhile is found.
+    #[tokio::test]
+    async fn should_look_again_with_a_newer_refresh_when_an_older_one_lacks_the_quorum() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, empty_previous_response()),
+            ("/quorums", 200, current_response(0x99, 0x49)),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+        provider
+            .refresh_quorum_caches()
+            .await
+            .expect("the first lists arrive");
+
+        assert_eq!(
+            fetch_missing(&provider, 0x99)
+                .await
+                .expect("a newer refresh answers"),
+            Some(quorum_key(0x49))
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// A quorum that does not exist is absent from a refresh newer than the
+    /// response, so the node that named it is held to account, after exactly
+    /// one new refresh.
+    #[tokio::test]
+    async fn should_judge_a_quorum_absent_from_a_refresh_newer_than_the_response() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, empty_previous_response()),
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+        provider
+            .refresh_quorum_caches()
+            .await
+            .expect("the first lists arrive");
+        provider.quorum_refreshes.age_latest(MIN_GAP);
+
+        assert_eq!(
+            fetch_missing(&provider, 0x99)
+                .await
+                .expect("both lists arrived"),
+            None
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// While the quorum service fails, misses do not hammer it: a miss within
+    /// the gap reuses the failed refresh, and only a refresh newer than the
+    /// response, once the gap has passed, may answer it.
+    #[tokio::test]
+    async fn should_not_refresh_again_within_the_gap_after_a_failed_refresh() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 500, "{}".to_string()),
+            ("/previous", 500, "{}".to_string()),
+            ("/quorums", 200, current_response(0x11, 0x41)),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+
+        let failed = fetch_missing(&provider, 0x11).await;
+        assert!(
+            matches!(failed, Err(ContextProviderError::QuorumSourceUnavailable(ref reason)) if reason.contains("500")),
+            "got {failed:?}"
+        );
+        assert_eq!(
+            fetch_missing(&provider, 0x11)
+                .await
+                .expect("the service recovered"),
+            Some(quorum_key(0x41))
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// A refresh that every waiter abandoned must not keep the provider alive.
+    #[tokio::test]
+    async fn should_not_let_an_abandoned_refresh_hold_the_provider() {
+        let provider = provider_for("http://127.0.0.1:1".to_string());
+        let mut fetch = Box::pin(fetch_missing(&provider, 0x11));
+        assert!(futures::poll!(&mut fetch).is_pending());
+        drop(fetch);
+
+        assert_eq!(Arc::strong_count(&provider.quorum_refreshes), 1);
+    }
+
+    /// An explicit refresh is asked for because the caller wants lists as of
+    /// now, so it never reuses an earlier one.
+    #[tokio::test]
+    async fn should_always_start_an_explicit_refresh() {
+        let (base_url, server) = spawn_http_responses(vec![
+            ("/quorums", 200, empty_current_response()),
+            ("/previous", 200, empty_previous_response()),
+            ("/quorums", 200, empty_current_response()),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+
+        for _ in 0..2 {
+            provider
+                .refresh_quorum_caches()
+                .await
+                .expect("each refresh fetches both lists");
+        }
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// With synchronous refetching on, `get_quorum_public_key` has already
+    /// fetched on the miss, so an asynchronous fetch would only repeat it.
+    #[test]
+    fn should_not_fetch_asynchronously_when_the_lookup_refetches() {
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Regtest,
+            "http://127.0.0.1:1".to_string(),
+            NonZeroUsize::new(100).unwrap(),
+        )
+        .expect("construct trusted context provider");
+
+        assert!(provider.fetch_quorum_public_key(6, [0x11; 32], 1).is_none());
     }
 
     #[test]

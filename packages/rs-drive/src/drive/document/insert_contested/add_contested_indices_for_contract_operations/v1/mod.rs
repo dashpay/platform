@@ -10,6 +10,7 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 use crate::drive::votes::paths::{
     vote_contested_resource_contract_documents_indexes_path_vec,
@@ -163,6 +164,10 @@ impl Drive {
 
             // with the example of the dashpay contract's first index
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
+            // The vote poll keys a value as generation 0 does
+            // (`serialize_value_for_vote_poll_key`), while this version keys the
+            // document's values with generation 1: an unsigned integer key gets
+            // its top bit flipped back
             let document_top_field = document_and_contract_info
                 .owned_document_info
                 .document_info
@@ -173,6 +178,17 @@ impl Drive {
                     None, //we should never need this in contested documents
                     platform_version,
                 )?
+                .map(|key| match key {
+                    DriveKeyInfo::Key(key) => document_type
+                        .tree_key_into_generation_0(name, key, platform_version)
+                        .map(DriveKeyInfo::Key),
+                    DriveKeyInfo::KeyRef(key) => document_type
+                        .tree_key_in_generation_0(name, key, platform_version)
+                        .map(DriveKeyInfo::Key),
+                    // An estimate sizes the key, the same in every generation
+                    estimated @ DriveKeyInfo::KeySize(_) => Ok(estimated),
+                })
+                .transpose()?
                 .unwrap_or_default();
 
             // here we are inserting an empty tree that will have a subtree of all other index properties
@@ -336,14 +352,16 @@ mod tests {
 
     /// A drive holding the DPNS contract
     fn drive_with_dpns() -> (Drive, DataContract) {
+        drive_with_dpns_of(PlatformVersion::latest().protocol_version)
+    }
+
+    /// A drive holding the DPNS contract of `protocol_version`
+    fn drive_with_dpns_of(protocol_version: u32) -> (Drive, DataContract) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let dpns_contract = get_dpns_data_contract_fixture(
-            Some(Identifier::from([7; 32])),
-            0,
-            platform_version.protocol_version,
-        )
-        .data_contract_owned();
+        let dpns_contract =
+            get_dpns_data_contract_fixture(Some(Identifier::from([7; 32])), 0, protocol_version)
+                .data_contract_owned();
         drive
             .apply_contract(
                 &dpns_contract,
@@ -414,7 +432,9 @@ mod tests {
     #[test]
     fn should_keep_the_plain_tree_of_a_poll_started_before_protocol_version_14() {
         let platform_version = PlatformVersion::latest();
-        let (drive, dpns_contract) = drive_with_dpns();
+        // A chain running a contest at protocol version 13 stores DPNS v2, which every later
+        // version reads too; v3 is written with type shorthands protocol version 13 does not parse
+        let (drive, dpns_contract) = drive_with_dpns_of(13);
         add_dpns_name_contenders(
             &drive,
             &dpns_contract,

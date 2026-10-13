@@ -64,6 +64,10 @@ impl Drive {
 }
 
 #[cfg(test)]
+mod aggregating_index_fee_estimate_tests;
+#[cfg(test)]
+mod array_index_e2e_tests;
+#[cfg(test)]
 mod integer_range_index_e2e_tests;
 #[cfg(test)]
 mod time_range_index_e2e_tests;

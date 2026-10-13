@@ -6,11 +6,12 @@ use crate::data_contract::document_type::accessors::{
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::class_methods::try_from_schema::{
     resolve_derived_index_properties, validate_preallocated_indexes_kept_on_removal,
-    validate_property_constraint_aggregates, validate_summable_off_count_indexes_lossless,
+    validate_property_constraint_aggregates, validate_property_constraint_referenced_reads,
+    validate_summable_off_count_indexes_lossless,
 };
 use crate::data_contract::document_type::{
     DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
-    DocumentType,
+    DocumentType, ReferenceHolder,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{DocumentName, TokenConfiguration, TokenContractPosition};
@@ -43,25 +44,6 @@ impl DocumentType {
                 DocumentTypesAreMissingError::new(data_contract_id).into(),
             ));
         }
-
-        // Protocol version 14 and later: a property type shorthand in the contract's `$defs` is
-        // read as the long form it stands for, expanded once here for every document type's
-        // parse (which then finds nothing left to rewrite) and the checks below. A contract
-        // without document types reads no definition, so its `$defs` stay as sent, unchecked,
-        // as before 14. Inert before 14: `expand_property_type_shorthands` is `None` there,
-        // rewrites nothing, and the definitions are passed on as given.
-        let expanded_schema_defs = schema_defs
-            .filter(|_| !document_schemas.is_empty())
-            .map(|schema_defs| {
-                DocumentType::expand_schema_defs_property_type_shorthands(
-                    schema_defs,
-                    full_validation,
-                    platform_version,
-                )
-            })
-            .transpose()?
-            .flatten();
-        let schema_defs = expanded_schema_defs.as_ref().or(schema_defs);
 
         for (name, schema) in document_schemas.into_iter() {
             let document_type = match platform_version
@@ -261,7 +243,13 @@ impl DocumentType {
                     if kind != referenced.document_reference_kind() {
                         continue;
                     }
-                    if let Some(reason) = lookup.referenced_side_error(declaring, referenced) {
+                    let reference_property = match holder {
+                        ReferenceHolder::Property(path) => Some(path),
+                        ReferenceHolder::Owner | ReferenceHolder::Creator => None,
+                    };
+                    if let Some(reason) =
+                        lookup.referenced_side_error(declaring, reference_property, referenced)
+                    {
                         let at = if leaf_path.is_empty() {
                             String::new()
                         } else {
@@ -339,6 +327,19 @@ impl DocumentType {
         // the tables carrying `parse_property_constraints: Some(_)` parse a rule at all.
         validate_property_constraint_aggregates(&contract_document_types, schema_defs)
             .map_err(consensus_or_protocol_data_contract_error)?;
+
+        // What a rule reads of a document a reference points at, when that document's type
+        // is another of this contract; the referenced types of other contracts are read at
+        // registration. Inert before protocol version 14 for the same reason: no rule parses
+        // there.
+        validate_property_constraint_referenced_reads(
+            &contract_document_types,
+            data_contract_id,
+            data_contract_system_version,
+            contract_config_version,
+            schema_defs,
+            platform_version,
+        )?;
 
         Ok(contract_document_types)
     }

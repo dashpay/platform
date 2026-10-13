@@ -6,6 +6,8 @@ use crate::version::system_limits::SystemLimits;
 /// from 190,000 credits (190 duffs) to 1,000,000 credits (1000 duffs): the previous floor was
 /// the bare asset-unlock transaction fee and too low a minimum for a Core `TxOut`.
 pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
+    credit_pool_nullifier_backfill_page_size: 0,
+    credit_pool_nullifier_backfill_batch_size: 0,
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
     // v12 is already active on live networks; the depth limit activates in v13 (see v3).
@@ -70,4 +72,9 @@ pub const SYSTEM_LIMITS_V2: SystemLimits = SystemLimits {
     max_document_expiration_weight_per_block: 0,
     max_contested_summed_value_magnitude: None, // read only by parser generation 3 (v14)
     max_expiring_signed_summed_value_magnitude: None, // read only by parser generation 3 (v14)
+    max_indexed_array_items: None,
+    max_windowed_indexed_array_items: None,
+    max_index_entries_per_document: None,
+    max_choose_first_candidates: 1_000, // read only by document reference validation 0 at v14
+    max_rekey_batch_moves: None,        // read only by the protocol version 14 upgrade
 };

@@ -21,6 +21,7 @@ use crate::drive::document::{
     bound_value_fits_referring_property, encode_index_only_entry_payload, index_only_member_key,
     index_only_row_commitment, make_document_reference, make_document_reference_with_sum_item,
     preallocation_bindings_targeting, read_document_sum_contribution,
+    referenced_list_tree_keys_for_referring_property, referenced_tree_key_for_referring_property,
 };
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -201,9 +202,9 @@ fn empty_tree(tree_type: TreeType, wrapped: bool, flags: Option<&StorageFlags>) 
 fn carries(document_type: DocumentTypeRef, document: &Document, property: &str) -> bool {
     match document_type.derived_index_properties().get(property) {
         Some(derived) if !document.properties().contains_key(property) => {
-            document_carries(document, &derived.reference_property)
+            document_carries(document, document_type, &derived.reference_property)
         }
-        _ => document_carries(document, property),
+        _ => document_carries(document, document_type, property),
     }
 }
 
@@ -360,6 +361,37 @@ impl Context<'_> {
             None,
             self.platform_version,
         )?)
+    }
+
+    /// The keys `level`, a level of `property`, enters the document under: the
+    /// distinct elements of an indexed typed array, the containing windows of a
+    /// bucketed level, else the single value (empty for a missing one).
+    /// `None` when an indexOnly type's level skips the absent value.
+    fn level_keys(
+        &self,
+        property: &str,
+        level: &IndexLevel,
+    ) -> Result<Option<Vec<Vec<u8>>>, Error> {
+        if level.indexes_array_elements() {
+            return Ok(Some(
+                self.document.get_raw_array_elements_for_document_type(
+                    property,
+                    self.document_type,
+                    self.platform_version,
+                )?,
+            ));
+        }
+        let raw = match self.raw(property)? {
+            Some(raw) => raw,
+            None if index_only_level_skips_when_absent(self.document_type, property) => {
+                return Ok(None)
+            }
+            None => Vec::new(),
+        };
+        Ok(Some(match level.bucketing() {
+            Some(bucketing) => bucketing.entry_keys_for_raw(&raw),
+            None => vec![raw],
+        }))
     }
 
     /// Whether the document takes part in an index whose skip set is
@@ -541,18 +573,12 @@ impl Context<'_> {
             .bucketing()
             .map(|bucketing| bucketing.source().to_string())
             .unwrap_or_else(|| level_key.to_string());
-        let raw = match self.raw(&property)? {
-            Some(raw) => raw,
-            None if index_only_level_skips_when_absent(self.document_type, &property) => {
-                return Ok(())
-            }
-            None => Vec::new(),
+        let Some(keys) = self.level_keys(&property, level)? else {
+            return Ok(());
         };
-        let null = raw.is_empty();
-        let keys = match level.bucketing() {
-            Some(bucketing) => bucketing.entry_keys_for_raw(&raw),
-            None => vec![raw],
-        };
+        // A missing value keeps its single empty key; an element or a window
+        // start is never empty.
+        let null = keys.iter().all(|key| key.is_empty());
         // A time window with a ttl is ephemeral: no flags, priced as
         // processing.
         let ephemeral = level
@@ -688,59 +714,73 @@ impl Context<'_> {
                 expiration: false,
                 flagged: flags.is_some(),
             });
-            let raw = self.raw(sub_key)?.unwrap_or_default();
-            let null = raw.is_empty();
+            // An indexed typed array enters the document once per distinct
+            // element (`add_indices_for_index_level_for_contract_operations`
+            // v2); every other property keys it by its single value, an absent
+            // one by the null layout's empty key, as that walker does (a level
+            // below the first is never bucketed).
+            let keys = self
+                .level_keys(sub_key, sub_level)?
+                .unwrap_or_else(|| vec![Vec::new()]);
             let mut property_path = path.to_vec();
             property_path.push(sub_key.as_bytes().to_vec());
             if sub_level.summable_off_count_index_info().is_some() {
+                // The group's value, or each distinct element of a typed array
+                // a `where` equality fixes: a counter per element
                 let indexes = self.writing_indexes(&sub_names);
-                self.counter_write(
+                for raw in keys {
+                    self.counter_write(
+                        &property_path,
+                        raw,
+                        sub_tree_types.property_name_tree_type,
+                        &sub_tree_types.ranked_axes,
+                        indexes.clone(),
+                        1,
+                        flags,
+                        ephemeral,
+                    )?;
+                }
+                continue;
+            }
+            for raw in keys {
+                let null = raw.is_empty();
+                self.push(Write {
+                    path: property_path.clone(),
+                    key: raw.clone(),
+                    element: empty_tree(sub_tree_types.value_tree_type, false, flags),
+                    parent: sub_tree_types.property_name_tree_type,
+                    role: LayoutRole::IndexValue,
+                    indexes: indexes.clone(),
+                    if_absent: true,
+                    ephemeral,
+                    ranking: None,
+                    referring_type: None,
+                    expiration: false,
+                    flagged: flags.is_some(),
+                });
+                let sum = self.sum_contribution(sub_level)?;
+                self.ranking_rows(
                     &property_path,
-                    raw,
-                    sub_tree_types.property_name_tree_type,
+                    &raw,
                     &sub_tree_types.ranked_axes,
-                    indexes,
                     1,
+                    sum,
+                    &indexes,
+                    ephemeral,
+                )?;
+                let mut value_path = property_path.clone();
+                value_path.push(raw);
+                self.level(
+                    &value_path,
+                    &sub_names,
+                    sub_level,
+                    sub_tree_types.value_tree_type,
+                    any_null || null,
+                    all_null && null,
                     flags,
                     ephemeral,
                 )?;
-                continue;
             }
-            self.push(Write {
-                path: property_path.clone(),
-                key: raw.clone(),
-                element: empty_tree(sub_tree_types.value_tree_type, false, flags),
-                parent: sub_tree_types.property_name_tree_type,
-                role: LayoutRole::IndexValue,
-                indexes: indexes.clone(),
-                if_absent: true,
-                ephemeral,
-                ranking: None,
-                referring_type: None,
-                expiration: false,
-                flagged: flags.is_some(),
-            });
-            let sum = self.sum_contribution(sub_level)?;
-            self.ranking_rows(
-                &property_path,
-                &raw,
-                &sub_tree_types.ranked_axes,
-                1,
-                sum,
-                &indexes,
-                ephemeral,
-            )?;
-            property_path.push(raw);
-            self.level(
-                &property_path,
-                &sub_names,
-                sub_level,
-                sub_tree_types.value_tree_type,
-                any_null || null,
-                all_null && null,
-                flags,
-                ephemeral,
-            )?;
         }
         Ok(())
     }
@@ -851,9 +891,10 @@ impl Context<'_> {
     }
 
     /// The trees of one preallocated index for entries referencing the
-    /// document: each level's key resolved from the document, then the
+    /// document: each level's keys resolved from the document (one, or one per
+    /// element of a list the `where` makes the referring one equal), then the
     /// property-name trees below the first, the value trees and the empty
-    /// member tree.
+    /// member tree, under each path.
     fn preallocation(
         &mut self,
         referring: DocumentTypeRef,
@@ -870,8 +911,10 @@ impl Context<'_> {
                     "a preallocated index's property must exist in the index structure",
                 )));
             };
-            let raw = match *source {
-                PreallocatedKeySource::ReferencedDocumentId => self.raw("$id")?,
+            let raws = match *source {
+                PreallocatedKeySource::ReferencedDocumentId => {
+                    self.raw("$id")?.map(|raw| vec![raw])
+                }
                 PreallocatedKeySource::ReferencedDocumentProperty(referenced) => {
                     let Some(referring_property) = referring.flattened_properties().get(name)
                     else {
@@ -889,12 +932,37 @@ impl Context<'_> {
                         return Ok(());
                     }
                     self.raw(referenced)?
+                        .map(|raw| {
+                            referenced_tree_key_for_referring_property(
+                                raw,
+                                self.document_type,
+                                referenced,
+                                referring,
+                                name,
+                                self.platform_version,
+                            )
+                        })
+                        .transpose()?
+                        .map(|raw| vec![raw])
+                }
+                PreallocatedKeySource::ReferencedDocumentListElements(referenced) => {
+                    referenced_list_tree_keys_for_referring_property(
+                        self.document,
+                        referenced,
+                        referring,
+                        name,
+                        self.platform_version,
+                    )?
                 }
             };
-            // A value the document does not carry, or a null one: no entry
-            // can agree with it, so nothing is preallocated.
-            match raw {
-                Some(raw) if !raw.is_empty() => levels.push((name, sub_level, raw)),
+            // A value the document does not carry, a null one, or an empty
+            // list: no entry can agree with it, so nothing is preallocated (a
+            // list holding an element keyed as empty has no keys at all, as
+            // Drive judges it).
+            match raws {
+                Some(raws) if !raws.is_empty() && raws.iter().all(|raw| !raw.is_empty()) => {
+                    levels.push((name, sub_level, raws))
+                }
                 _ => return Ok(()),
             }
             current = sub_level;
@@ -906,17 +974,20 @@ impl Context<'_> {
         };
 
         let indexes = vec![index.name.clone()];
-        let mut path: Vec<Vec<u8>> = Vec::new();
+        // The paths reached so far: one, or one per element below a list's
+        // level
+        let mut paths: Vec<Vec<Vec<u8>>> = vec![Vec::new()];
         let mut parent_value_tree_type = TreeType::NormalTree;
         let mut parent_counts_continuations = false;
-        for (position, (name, sub_level, raw)) in levels.into_iter().enumerate() {
+        for (position, (name, sub_level, raws)) in levels.into_iter().enumerate() {
             let tree_types = index_level_tree_types_with_continuation_demotion(sub_level)?;
-            if position > 0 {
-                let wrapped = continuation_contributes_zero(
+            let wrapped = position > 0
+                && continuation_contributes_zero(
                     parent_value_tree_type,
                     parent_counts_continuations,
                     sub_level,
-                ) && zero_contribution_wrapper(
+                )
+                && zero_contribution_wrapper(
                     parent_value_tree_type,
                     tree_types.property_name_tree_type,
                 )
@@ -926,44 +997,96 @@ impl Context<'_> {
                     )))
                 })?
                 .is_some();
-                self.push(Write {
-                    path: path.clone(),
-                    key: name.as_bytes().to_vec(),
-                    element: empty_tree(tree_types.property_name_tree_type, wrapped, flags),
-                    parent: parent_value_tree_type,
-                    role: LayoutRole::NextIndexProperty,
-                    indexes: indexes.clone(),
-                    if_absent: true,
-                    ephemeral: false,
-                    ranking: None,
-                    referring_type: None,
-                    expiration: false,
-                    flagged: flags.is_some(),
-                });
-            }
-            path.push(name.as_bytes().to_vec());
             // A `summableOffCountIndex` index's counter, created at zero in
             // place of the value tree and its empty terminal: it counts one
-            // group and nothing towards the sum.
-            if info.is_summable_off_count_index() && position + 1 == index.properties.len() {
-                // A preallocated index is never under a time window.
-                return self.counter_write(
-                    &path,
-                    raw,
-                    tree_types.property_name_tree_type,
-                    &tree_types.ranked_axes,
-                    indexes.clone(),
-                    0,
-                    flags,
-                    false,
-                );
+            // group and nothing towards the sum. Nothing continues below it.
+            let counter_level =
+                info.is_summable_off_count_index() && position + 1 == index.properties.len();
+            let mut next_paths = Vec::with_capacity(if counter_level {
+                0
+            } else {
+                paths.len() * raws.len()
+            });
+            for mut path in paths {
+                if position > 0 {
+                    self.push(Write {
+                        path: path.clone(),
+                        key: name.as_bytes().to_vec(),
+                        element: empty_tree(tree_types.property_name_tree_type, wrapped, flags),
+                        parent: parent_value_tree_type,
+                        role: LayoutRole::NextIndexProperty,
+                        indexes: indexes.clone(),
+                        if_absent: true,
+                        ephemeral: false,
+                        ranking: None,
+                        referring_type: None,
+                        expiration: false,
+                        flagged: flags.is_some(),
+                    });
+                }
+                path.push(name.as_bytes().to_vec());
+                if counter_level {
+                    for raw in &raws {
+                        // A preallocated index is never under a time window.
+                        self.counter_write(
+                            &path,
+                            raw.clone(),
+                            tree_types.property_name_tree_type,
+                            &tree_types.ranked_axes,
+                            indexes.clone(),
+                            0,
+                            flags,
+                            false,
+                        )?;
+                    }
+                    continue;
+                }
+                for raw in &raws {
+                    self.push(Write {
+                        path: path.clone(),
+                        key: raw.clone(),
+                        element: empty_tree(tree_types.value_tree_type, false, flags),
+                        parent: tree_types.property_name_tree_type,
+                        role: LayoutRole::IndexValue,
+                        indexes: indexes.clone(),
+                        if_absent: true,
+                        ephemeral: false,
+                        ranking: None,
+                        referring_type: None,
+                        expiration: false,
+                        flagged: flags.is_some(),
+                    });
+                    // An empty value tree ranks with its empty aggregate.
+                    let (count, sum) = empty_tree_aggregate(tree_types.value_tree_type);
+                    // A preallocated index is never under a time window.
+                    self.ranking_rows(
+                        &path,
+                        raw,
+                        &tree_types.ranked_axes,
+                        count,
+                        sum,
+                        &indexes,
+                        false,
+                    )?;
+                    let mut value_path = path.clone();
+                    value_path.push(raw.clone());
+                    next_paths.push(value_path);
+                }
             }
+            if counter_level {
+                return Ok(());
+            }
+            paths = next_paths;
+            parent_value_tree_type = tree_types.value_tree_type;
+            parent_counts_continuations = sub_level.is_ranked_chain_level();
+        }
+        for path in paths {
             self.push(Write {
-                path: path.clone(),
-                key: raw.clone(),
-                element: empty_tree(tree_types.value_tree_type, false, flags),
-                parent: tree_types.property_name_tree_type,
-                role: LayoutRole::IndexValue,
+                path,
+                key: vec![0],
+                element: empty_tree(terminal_member_tree_type(info), false, flags),
+                parent: parent_value_tree_type,
+                role: LayoutRole::Terminal,
                 indexes: indexes.clone(),
                 if_absent: true,
                 ephemeral: false,
@@ -972,36 +1095,7 @@ impl Context<'_> {
                 expiration: false,
                 flagged: flags.is_some(),
             });
-            // An empty value tree ranks with its empty aggregate.
-            let (count, sum) = empty_tree_aggregate(tree_types.value_tree_type);
-            // A preallocated index is never under a time window.
-            self.ranking_rows(
-                &path,
-                &raw,
-                &tree_types.ranked_axes,
-                count,
-                sum,
-                &indexes,
-                false,
-            )?;
-            path.push(raw);
-            parent_value_tree_type = tree_types.value_tree_type;
-            parent_counts_continuations = sub_level.is_ranked_chain_level();
         }
-        self.push(Write {
-            path,
-            key: vec![0],
-            element: empty_tree(terminal_member_tree_type(info), false, flags),
-            parent: parent_value_tree_type,
-            role: LayoutRole::Terminal,
-            indexes,
-            if_absent: true,
-            ephemeral: false,
-            ranking: None,
-            referring_type: None,
-            expiration: false,
-            flagged: flags.is_some(),
-        });
         Ok(())
     }
 

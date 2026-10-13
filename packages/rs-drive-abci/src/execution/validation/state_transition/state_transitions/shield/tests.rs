@@ -1414,13 +1414,26 @@ mod tests {
             process_transition_and_commit, setup_platform_at_protocol_version,
             shielded_transfer_errors_revealing, OutputsOnlyBundle,
         };
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            insert_anchor_into_state, serialize_authorized_bundle_u64,
+        };
         use crate::platform_types::platform::PlatformRef;
+        use crate::platform_types::platform_state::PlatformStateV0Methods;
         use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TempPlatform;
         use dpp::block::block_info::BlockInfo;
+        use dpp::state_transition::shielded_transfer_transition::{
+            v0::ShieldedTransferTransitionV0, ShieldedTransferTransition,
+        };
         use dpp::validation::ConsensusValidationResult;
         use dpp::version::DefaultForPlatformVersion;
+        use drive::drive::shielded::paths::{shielded_credit_pool_path, SHIELDED_NOTES_KEY};
+        use drive::grovedb::Transaction;
         use drive::state_transition_action::StateTransitionAction;
+        use grovedb_commitment_tree::{
+            ClientMemoryCommitmentTree, Note, Position, Retention, SpendAuthorizingKey,
+        };
+        use rand::{rngs::StdRng, SeedableRng};
         use std::sync::OnceLock;
 
         /// One proven, unbound bundle, shared by the protocol-version-13 test: 13 binds nothing,
@@ -1452,6 +1465,301 @@ mod tests {
             let extra_sighash_data = shield_extra_sighash_data(&inputs, platform_version)
                 .expect("the binding of the funding inputs");
             build_outputs_only_bundle_bound(SHIELDED, &extra_sighash_data)
+        }
+
+        /// Rebuilds the same Orchard actions while signing their binding in the requested
+        /// protocol context. The randomness deliberately does not depend on that context.
+        fn historical_bundle(extra_sighash_data: &[u8], seed: u64) -> OutputsOnlyBundle {
+            historical_bundle_with_notes(5_000, extra_sighash_data, seed).0
+        }
+
+        fn historical_bundle_with_notes(
+            value: u64,
+            extra_sighash_data: &[u8],
+            seed: u64,
+        ) -> (OutputsOnlyBundle, Vec<(usize, Note)>) {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let sk = SpendingKey::from_bytes([0u8; 32]).expect("spending key");
+            let recipient = FullViewingKey::from(&sk).address_at(0u32, Scope::External);
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                Anchor::empty_tree(),
+            );
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(value), [0u8; 36])
+                .expect("output");
+            let (unauthorized, _) = builder
+                .build::<i64>(&mut rng)
+                .expect("bundle")
+                .expect("nonempty bundle");
+            let commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&commitment, extra_sighash_data);
+            let bundle = unauthorized
+                .create_proof(get_proving_key(), &mut rng)
+                .expect("proof")
+                .apply_signatures(rng, sighash, &[])
+                .expect("binding signature");
+            let (actions, _, value_balance, anchor, proof, binding_signature) =
+                serialize_authorized_bundle_with_flags(&bundle);
+            let notes = bundle
+                .decrypt_outputs_with_keys(&[FullViewingKey::from(&sk).to_ivk(Scope::External)])
+                .into_iter()
+                .map(|(index, _, note, _, _)| (index, note))
+                .collect();
+            (
+                OutputsOnlyBundle {
+                    actions,
+                    amount: value_balance.unsigned_abs(),
+                    anchor,
+                    proof,
+                    binding_signature,
+                },
+                notes,
+            )
+        }
+
+        fn spend_historical_note(
+            note: Note,
+            position: u64,
+            tree: &ClientMemoryCommitmentTree,
+            seed: u64,
+            pv: &PlatformVersion,
+        ) -> (StateTransition, Vec<SerializedAction>, Vec<(usize, Note)>) {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let sk = SpendingKey::from_bytes([0; 32]).expect("key");
+            let fvk = FullViewingKey::from(&sk);
+            let anchor = tree.anchor().expect("anchor");
+            let witness = tree
+                .witness(Position::from(position), 0)
+                .expect("witness")
+                .expect("marked note");
+            let amount = note.value().inner()
+                - dpp::shielded::compute_minimum_shielded_fee(2, pv).expect("fee");
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+            builder
+                .add_spend(fvk.clone(), note, witness)
+                .expect("spend");
+            builder
+                .add_output(
+                    None,
+                    fvk.address_at(0u32, Scope::External),
+                    NoteValue::from_raw(amount),
+                    [0; 36],
+                )
+                .expect("output");
+            let (unsigned, _) = builder
+                .build::<i64>(&mut rng)
+                .expect("bundle")
+                .expect("nonempty");
+            let commitment: [u8; 32] = unsigned.commitment().into();
+            let sighash = compute_platform_sighash(&commitment, &[]);
+            let bundle = unsigned
+                .create_proof(get_proving_key(), &mut rng)
+                .expect("proof")
+                .apply_signatures(rng, sighash, &[SpendAuthorizingKey::from(&sk)])
+                .expect("spend signatures");
+            let notes = bundle
+                .decrypt_outputs_with_keys(&[fvk.to_ivk(Scope::External)])
+                .into_iter()
+                .map(|(index, _, note, _, _)| (index, note))
+                .collect();
+            let (actions, value_balance, anchor, proof, binding_signature) =
+                serialize_authorized_bundle_u64(&bundle);
+            let transition = StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
+                ShieldedTransferTransitionV0 {
+                    actions: actions.clone(),
+                    value_balance,
+                    anchor,
+                    proof,
+                    binding_signature,
+                },
+            ));
+            (transition, actions, notes)
+        }
+
+        #[tokio::test]
+        async fn should_backfill_real_mixed_history_and_allow_a_legitimate_spend_of_a_historical_output(
+        ) {
+            let old = PlatformVersion::get(13).expect("PV13");
+            let latest = PlatformVersion::latest();
+            let mut platform = setup_platform_at_protocol_version(13);
+            let (signer, address) = funded_address(&mut platform);
+            let (historical, mut notes) = historical_bundle_with_notes(1_000_000_000, &[], 13014);
+            let shield = signed_shield(&signer, address, 1, &historical).await;
+            assert_matches!(
+                process_transition_and_commit(&platform, shield, old)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            for action in &historical.actions {
+                tree.append(action.cmx, Retention::Marked)
+                    .expect("historical commitment");
+            }
+            tree.checkpoint(0).expect("checkpoint");
+            insert_anchor_into_state(&platform, &tree.anchor().expect("anchor").to_bytes());
+            let (position, note) = notes.pop().expect("decrypted historical output");
+            let (spend, actions, mut outputs) =
+                spend_historical_note(note, position as u64, &tree, 13015, old);
+            assert_matches!(
+                process_transition_and_commit(&platform, spend, old)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            for action in &actions {
+                tree.append(action.cmx, Retention::Marked)
+                    .expect("spend-created commitment");
+            }
+            tree.checkpoint(1).expect("checkpoint");
+            insert_anchor_into_state(&platform, &tree.anchor().expect("anchor").to_bytes());
+            let tx = platform.drive.grove.start_transaction();
+            let mut state = platform.state.load().as_ref().clone();
+            state.set_current_protocol_version_in_consensus(latest.protocol_version);
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &state,
+                    &BlockInfo::default(),
+                    &tx,
+                    13,
+                    latest,
+                )
+                .expect("migration over output-only and spend-created notes");
+            for action in historical.actions.iter().chain(&actions) {
+                assert!(platform
+                    .drive
+                    .has_nullifier(&action.nullifier, Some(&tx), &mut vec![], latest)
+                    .expect("historical rho union"));
+            }
+            let (output_index, note) = outputs.pop().expect("decrypted spend-created output");
+            let (legitimate, _, _) = spend_historical_note(
+                note,
+                historical.actions.len() as u64 + output_index as u64,
+                &tree,
+                13016,
+                latest,
+            );
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[legitimate
+                        .serialize_to_bytes()
+                        .expect("legitimate spend bytes")],
+                    &state,
+                    &BlockInfo::default(),
+                    &tx,
+                    latest,
+                    false,
+                    None,
+                )
+                .expect("legitimate spend processing");
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "backfilled public rho must not prevent spending a note with its derived nullifier"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_refuse_historical_credit_rho_reuse_on_first_pv14_candidate() {
+            let old_version = PlatformVersion::get(13).expect("protocol 13");
+            let new_version = PlatformVersion::latest();
+            let mut platform = setup_platform_at_protocol_version(13);
+            let (signer, address) = funded_address(&mut platform);
+            let historical = historical_bundle(&[], 14013);
+            let first = signed_shield(&signer, address, 1, &historical).await;
+            assert_matches!(
+                process_transition_and_commit(&platform, first, old_version)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            let page = platform
+                .drive
+                .grove
+                .commitment_tree_get_range(
+                    shielded_credit_pool_path().as_slice(),
+                    &[SHIELDED_NOTES_KEY],
+                    0,
+                    10,
+                    None,
+                    &old_version.drive.grove_version,
+                )
+                .unwrap()
+                .expect("stored historical notes");
+            assert_eq!(page.entries.len(), historical.actions.len());
+            for ((_, row), action) in page.entries.iter().zip(&historical.actions) {
+                assert_eq!(&row[..32], &action.cmx);
+                assert_eq!(&row[32..64], &action.nullifier);
+                assert!(!has_recorded_nullifier(&platform, &action.nullifier));
+            }
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(address, (2, historical.amount + dash_to_credits!(0.01)));
+            let binding = shield_extra_sighash_data(&inputs, new_version).expect("PV14 binding");
+            let rebound = historical_bundle(&binding, 14013);
+            for (old, new) in historical.actions.iter().zip(&rebound.actions) {
+                assert_eq!(old.nullifier, new.nullifier);
+                assert_eq!(old.cmx, new.cmx);
+            }
+            assert_ne!(historical.binding_signature, rebound.binding_signature);
+            let reuse = signed_shield(&signer, address, 2, &rebound).await;
+            let mut candidate_state = platform.state.load().as_ref().clone();
+            candidate_state.set_current_protocol_version_in_consensus(new_version.protocol_version);
+            let process = |transition: &StateTransition, transaction: &Transaction| {
+                platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[transition.serialize_to_bytes().expect("transition bytes")],
+                        &candidate_state,
+                        &BlockInfo::default(),
+                        transaction,
+                        new_version,
+                        false,
+                        None,
+                    )
+                    .expect("transition processing")
+            };
+            let control = platform.drive.grove.start_transaction();
+            assert_matches!(
+                process(&reuse, &control).execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "the freshly signed PV14 reuse is otherwise valid without the migration"
+            );
+            drop(control);
+            platform.drive.cache.data_contracts.clear_block_cache();
+
+            let candidate = platform.drive.grove.start_transaction();
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &candidate_state,
+                    &BlockInfo::default(),
+                    &candidate,
+                    13,
+                    new_version,
+                )
+                .expect("first PV14 events");
+            let result = process(&reuse, &candidate);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))
+                )] if e.nullifier() == rebound.nullifiers()[0],
+                "activation must reject historical rho reuse specifically as nullifier reuse"
+            );
+            let fresh = historical_bundle(&binding, 14014);
+            let fresh_transition = signed_shield(&signer, address, 2, &fresh).await;
+            assert_matches!(
+                process(&fresh_transition, &candidate)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "activation must still allow a fresh rho"
+            );
         }
 
         /// A shield of `bundle` from `address` at `nonce`, signed by `signer`.

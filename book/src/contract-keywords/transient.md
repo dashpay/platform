@@ -13,7 +13,7 @@
 
 ## Example
 
-The DPNS `domain` type, trimmed to two properties:
+The DPNS `domain` type of contracts v1 and v2, trimmed to two properties:
 
 ```json
 "domain": {
@@ -36,11 +36,11 @@ The DPNS `domain` type, trimmed to two properties:
 }
 ```
 
-Registering a name takes two steps. A `preorder` document first commits to a hash of the salt and the name, and the `domain` document then reveals both. Every domain create must carry its 32-byte `preorderSalt`, and DPNS checks it against the preorder: from protocol version 14 through a `refersTo` on the salt that finds the writer's preorder and deletes it ([Commit and reveal](refers-to-lookup.md#commit-and-reveal)), before it in the type's create data trigger. Once the domain is created the salt has done its job, and the stored domain does not hold it.
+Registering a name took two steps. A `preorder` document first committed to a hash of the salt and the name, and the `domain` document then revealed both. Every domain create carried its 32-byte `preorderSalt`, which the type's create data trigger checked against the preorder. Once the domain was created the salt had done its job, and the stored domain does not hold it. DPNS v3 (protocol version 15) finds the preorder by its creator and the hash of the name instead, choosing the first valid preorder of the name ([Choosing the first commitment](refers-to-lookup.md#choosing-the-first-commitment-choosefirst)), and keeps `preorderSalt` declared, transient and unused, so domains stored under v1 and v2 decode.
 
 ## How it works
 
-- **Checked like any other value.** A transient value is on the transition when the document is validated, so the schema holds it to its rules: a required transient property must be present, and its bounds apply. `maxBytes` and `distinctFrom` apply to it too, and so do checks such as the DPNS one above.
+- **Checked like any other value.** A transient value is on the transition when the document is validated, so the schema holds it to its rules: a required transient property must be present, and its bounds apply. `maxBytes` and `distinctFrom` apply to it too, and so do checks such as the DPNS v1 and v2 one above.
 - **Dropped before storing.** After validation, a create drops the transient values before the document is written. From protocol version 14 a replace drops them the same way. Before 14 a replace stored the values it carried, so a replaced document could hold values its create had dropped.
 - **Dropped by top-level name.** Only top-level properties can be transient. When a transient property is an object, the whole object is dropped with everything in it.
 - **Never stored, never found.** No stored document holds a transient value, so a query cannot find one and a later reader cannot see it.

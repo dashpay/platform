@@ -9,7 +9,7 @@
 | **Default** | Absent: no action costs tokens |
 | **Since** | protocol version 9. `gasFeesPaidBy` is accepted from 9 and acted on from 14; `optional` is 14 |
 | **On update** | Fixed: a cost may not be added, changed or removed on an existing document type (`DocumentTypeUpdateError`, 40212) |
-| **Errors** | On a document transition: `RequiredTokenPaymentInfoNotSetError` (40115), `IdentityHasNotAgreedToPayRequiredTokenAmountError` (40116), `IdentityTryingToPayWithWrongTokenError` (40117), `IdentityTokenAccountFrozenError` (40702), `IdentityDoesNotHaveEnoughTokenBalanceError` (40700), `GasFeesPaidByNotAllowedError` (40129), `InconsistentGasFeesPaidByInBatchError` (40130), `GasSponsorInsufficientBalanceError` (40222). At registration: `InvalidTokenPositionError` (10451), `RedundantDocumentPaidForByTokenWithContractId` (10275), `TokenPaymentByBurningOnlyAllowedOnInternalTokenError` (10261), `NonTransferableTokenPaymentMustBurnError` (10280), `DataContractNotFoundError` (40008), `InvalidTokenPositionStateError` (40009), `TokenNotTransferableError` (40726) |
+| **Errors** | On a document transition: `RequiredTokenPaymentInfoNotSetError` (40115), `IdentityHasNotAgreedToPayRequiredTokenAmountError` (40116), `IdentityTryingToPayWithWrongTokenError` (40117), `IdentityTokenAccountFrozenError` (40702), `IdentityDoesNotHaveEnoughTokenBalanceError` (40700), `GasFeesPaidByNotAllowedError` (40129), `InconsistentGasFeesPaidByInBatchError` (40130), `GasSponsorInsufficientBalanceError` (40222), `IdentityInsufficientBalanceError` (40210). At registration: `InvalidTokenPositionError` (10451), `RedundantDocumentPaidForByTokenWithContractId` (10275), `TokenPaymentByBurningOnlyAllowedOnInternalTokenError` (10261), `NonTransferableTokenPaymentMustBurnError` (10280), `DataContractNotFoundError` (40008), `InvalidTokenPositionStateError` (40009), `TokenNotTransferableError` (40726) |
 
 The keys of each cost object:
 
@@ -108,6 +108,7 @@ From protocol version 14 the contract owner can pay the gas (the storage and pro
 - A transition that fails validation is never sponsored: its signer pays for the work that ran.
 - Storage refunds still go to the document's owner, whoever paid for the storage. Each token the contract owner hands out is therefore worth up to the storage fee of the largest document the type allows, so a type that offers to pay should bound its documents' size (`maxLength`, `maxItems`, [maxBytes](max-bytes.md)) and price the action to match.
 - A sponsor also pays any [action fee](action-fees.md) the action charges.
+- A sponsor never pays the transition's `userFeeIncrease`: the signer chose it and pays the processing fee it adds, and a batch whose signer cannot is refused and charged nothing (`IdentityInsufficientBalanceError`, 40210).
 
 Before protocol version 14 the key was accepted and stored but not acted on: the signer always paid.
 

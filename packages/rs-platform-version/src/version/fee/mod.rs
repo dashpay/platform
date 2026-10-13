@@ -2,6 +2,8 @@ use crate::error::PlatformVersionError;
 use crate::version::fee::data_contract_registration::v1::FEE_DATA_CONTRACT_REGISTRATION_VERSION1;
 use crate::version::fee::data_contract_registration::FeeDataContractRegistrationVersion;
 use crate::version::fee::data_contract_validation::FeeDataContractValidationVersion;
+use crate::version::fee::document_reference::v1::FEE_DOCUMENT_REFERENCE_VERSION1;
+use crate::version::fee::document_reference::FeeDocumentReferenceVersion;
 use crate::version::fee::document_ttl::v1::FEE_DOCUMENT_TTL_VERSION1;
 use crate::version::fee::document_ttl::FeeDocumentTtlVersion;
 use crate::version::fee::hashing::v1::FEE_HASHING_VERSION1;
@@ -22,6 +24,7 @@ use bincode::{Decode, Encode};
 
 pub mod data_contract_registration;
 mod data_contract_validation;
+pub mod document_reference;
 pub mod document_ttl;
 mod hashing;
 mod processing;
@@ -54,6 +57,10 @@ pub struct FeeVersion {
     /// version 14). Platform states store only `fee_version_number`, so this field does
     /// not touch any stored format; `FeeVersionFieldsBeforeVersion4` must not gain it.
     pub document_ttl: FeeDocumentTtlVersion,
+    /// Fees of the reads a document reference makes when a document is written (read from
+    /// protocol version 14). Like `document_ttl`, this field touches no stored format;
+    /// `FeeVersionFieldsBeforeVersion4` must not gain it.
+    pub document_reference: FeeDocumentReferenceVersion,
 }
 
 impl FeeVersion {
@@ -155,6 +162,8 @@ impl From<FeeVersionFieldsBeforeVersion4> for FeeVersion {
             vote_resolution_fund_fees: value.vote_resolution_fund_fees.into(),
             // Pre-4.2 tables predate the document `ttl` keyword; the group is unread there.
             document_ttl: FEE_DOCUMENT_TTL_VERSION1,
+            // Nor do they parse `chooseFirst`; the group is unread there too.
+            document_reference: FEE_DOCUMENT_REFERENCE_VERSION1,
         }
     }
 }

@@ -166,6 +166,25 @@
             "inList": "members"
           }
         },
+        "alphaMemberId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 13,
+          "refersTo": {
+            "type": "permanentDocument",
+            "documentType": "electedCharter",
+            "findBy": {
+              "$id": "electedCharterId"
+            },
+            "where": {
+              "title": { "const": "alpha" }
+            },
+            "inList": "members"
+          }
+        },
         "meta": {
           "type": "object",
           "properties": {

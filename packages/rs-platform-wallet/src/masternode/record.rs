@@ -7,6 +7,12 @@
 //! injected [`ListMembership`] lookup. Everything here is pure and
 //! host-agnostic; the FFI crates only marshal the results.
 
+use std::net::IpAddr;
+
+use dashcore::blockdata::transaction::special_transaction::provider_registration::MasternodePayoutShare;
+use dashcore::sml::masternode_list_entry::net_info::{Bip155Network, NetInfoEntry, NetInfoPurpose};
+use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
+
 /// Fixed-size hash copies. `Txid` / `PubkeyHash` are exactly 32 / 20
 /// bytes, so `copy_from_slice` on `as_ref()` is length-exact and cannot
 /// panic — the same pattern `tx_record_to_ffi`'s txid copy relies on.
@@ -22,16 +28,69 @@ pub(crate) fn provider_hash_to_20(bytes: &[u8]) -> [u8; 20] {
     out
 }
 
-/// Rebuild an `"ip:port"` string from a ProUpServTx-style little-endian
-/// IPv6-mapped `u128` address + `port`, collapsing IPv4-mapped addresses
-/// to V4 so a normal masternode renders as `"1.2.3.4:port"`.
-pub fn provider_ip_port(ip_address: u128, port: u16) -> String {
-    let v6 = std::net::Ipv6Addr::from(ip_address.to_le_bytes());
-    let ip = v6
-        .to_ipv4_mapped()
-        .map(std::net::IpAddr::V4)
-        .unwrap_or(std::net::IpAddr::V6(v6));
-    format!("{}:{}", ip, port)
+/// Render a ProUpServTx service address as `"ip:port"`, collapsing an
+/// IPv4-mapped IPv6 address to V4 so a normal masternode renders as
+/// `"1.2.3.4:port"`. A native IPv6 address is bracketed,
+/// `"[2001:db8::1]:port"`, as a ProRegTx's address renders.
+pub fn provider_ip_port(address: std::net::SocketAddr) -> String {
+    std::net::SocketAddr::new(address.ip().to_canonical(), address.port()).to_string()
+}
+
+/// The script a ProRegTx / ProUpRegTx pays the owner reward to. Before
+/// version 3 it is `script_payout`. From version 3 `script_payout` is empty
+/// and a payout list replaces it: a list with one entry names the script,
+/// while a list that splits the reward names no single one, as for the
+/// TRANSFER key of Platform's masternode owner identity. `None` when the
+/// payload names no single, non-empty script.
+pub(crate) fn owner_payout_script<'a>(
+    script_payout: &'a dashcore::ScriptBuf,
+    payouts: Option<&'a [MasternodePayoutShare]>,
+) -> Option<&'a dashcore::ScriptBuf> {
+    if !script_payout.is_empty() {
+        return Some(script_payout);
+    }
+    match payouts {
+        Some([share]) if !share.script_payout.is_empty() => Some(&share.script_payout),
+        _ => None,
+    }
+}
+
+/// The platform HTTP port of a ProRegTx / ProUpServTx: the payload's own
+/// field before version 3, and from version 3 the port of a `PlatformHttps`
+/// entry of its extended address map. Hosts reach the node's DAPI at the
+/// service address's IP with this port, so only an entry at that IP counts:
+/// one at another IP or a domain gives `None` rather than a wrong endpoint.
+/// An IPv4-mapped IPv6 address is the same IP as the IPv4 address it maps.
+pub(crate) fn platform_http_port(
+    service_address: &MasternodeNetInfo,
+    platform_http_port: Option<u16>,
+) -> Option<u16> {
+    let MasternodeNetInfo::Extended(net_info) = service_address else {
+        return platform_http_port;
+    };
+    let service_ip = service_address
+        .primary_service_address()?
+        .ip()
+        .to_canonical();
+    let (_, https) = net_info
+        .purposes
+        .iter()
+        .find(|(purpose, _)| *purpose == NetInfoPurpose::PlatformHttps)?;
+    https.iter().find_map(|entry| match entry {
+        NetInfoEntry::Service {
+            network,
+            addr,
+            port,
+        } => {
+            let ip = match network {
+                Bip155Network::Ipv4 => IpAddr::from(<[u8; 4]>::try_from(addr.as_slice()).ok()?),
+                Bip155Network::Ipv6 => IpAddr::from(<[u8; 16]>::try_from(addr.as_slice()).ok()?),
+                _ => return None,
+            };
+            (ip.to_canonical() == service_ip).then_some(*port)
+        }
+        _ => None,
+    })
 }
 
 /// Provider (masternode) special-transaction payload fields lifted for
@@ -40,7 +99,8 @@ pub fn provider_ip_port(ip_address: u128, port: u16) -> String {
 /// the FFI layers only marshal the flat results.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct ProviderPayloadFields {
-    /// Service endpoint as `"ip:port"`.
+    /// Service endpoint as `"ip:port"`; `None` for a version-3 payload
+    /// that advertises no IPv4/IPv6 address.
     pub service_address: Option<String>,
     /// ProUpServTx registration linkage. `None` for ProRegTx (its own
     /// txid is the proTxHash).
@@ -55,13 +115,18 @@ pub struct ProviderPayloadFields {
 /// Extract provider-registration (ProRegTx) / provider-update-service
 /// (ProUpServTx) payload fields from a transaction for display. Returns
 /// all-`None` for any other transaction. Pure; the only allocation is
-/// the returned service-address `String`.
+/// the returned service-address `String`. A version-3 payload's service
+/// address is the primary routable IPv4/IPv6 entry of its extended address
+/// map, `None` when it advertises none.
 pub fn provider_payload_fields(tx: &dashcore::Transaction) -> ProviderPayloadFields {
     use dashcore::transaction::TransactionPayload;
 
     match &tx.special_transaction_payload {
         Some(TransactionPayload::ProviderRegistrationPayloadType(p)) => ProviderPayloadFields {
-            service_address: Some(p.service_address.to_string()),
+            service_address: p
+                .service_address
+                .primary_service_address()
+                .map(|address| address.to_string()),
             pro_tx_hash: None,
             collateral: Some((
                 provider_hash_to_32(p.collateral_outpoint.txid.as_ref()),
@@ -71,7 +136,10 @@ pub fn provider_payload_fields(tx: &dashcore::Transaction) -> ProviderPayloadFie
             voting_key_hash: Some(provider_hash_to_20(p.voting_key_hash.as_ref())),
         },
         Some(TransactionPayload::ProviderUpdateServicePayloadType(p)) => ProviderPayloadFields {
-            service_address: Some(provider_ip_port(p.ip_address, p.port)),
+            service_address: p
+                .service_address
+                .primary_service_address()
+                .map(provider_ip_port),
             pro_tx_hash: Some(provider_hash_to_32(p.pro_tx_hash.as_ref())),
             ..Default::default()
         },
@@ -172,8 +240,9 @@ pub struct MasternodeRecord {
     pub platform_node_id: Option<[u8; 20]>,
     pub(crate) platform_node_height: u32,
     /// Payout script (raw bytes) — follows the latest ProRegTx / ProUpReg
-    /// (owner payout). Encoded to a base58 address by `masternode_entry_ffi`
-    /// where the network is available.
+    /// (owner payout); `None` while the latest one names no single payout
+    /// script (see `owner_payout_script`). Encoded to a base58 address by
+    /// `masternode_entry_ffi` where the network is available.
     pub payout_script: Option<Vec<u8>>,
     pub(crate) payout_height: u32,
     /// Collateral outpoint (`txid` wire bytes, `vout`) from the ProRegTx.
@@ -333,8 +402,12 @@ where
                 // Registration seeds the service address and voting key;
                 // treat both as updates observed at this height.
                 if agg.service_address.is_none() || height >= agg.service_height {
-                    agg.service_address = Some(p.service_address.to_string());
-                    agg.platform_http_port = p.platform_http_port;
+                    agg.service_address = p
+                        .service_address
+                        .primary_service_address()
+                        .map(|address| address.to_string());
+                    agg.platform_http_port =
+                        platform_http_port(&p.service_address, p.platform_http_port);
                     agg.service_height = height;
                 }
                 if agg.voting_key_hash.is_none() || height >= agg.voting_height {
@@ -362,14 +435,19 @@ where
                     }
                 }
                 if agg.payout_script.is_none() || height >= agg.payout_height {
-                    agg.payout_script = Some(p.script_payout.as_bytes().to_vec());
+                    agg.payout_script = owner_payout_script(&p.script_payout, p.payouts.as_deref())
+                        .map(|script| script.as_bytes().to_vec());
                     agg.payout_height = height;
                 }
             }
             Some(TransactionPayload::ProviderUpdateServicePayloadType(p)) => {
                 if agg.service_address.is_none() || height >= agg.service_height {
-                    agg.service_address = Some(provider_ip_port(p.ip_address, p.port));
-                    agg.platform_http_port = p.platform_http_port;
+                    agg.service_address = p
+                        .service_address
+                        .primary_service_address()
+                        .map(provider_ip_port);
+                    agg.platform_http_port =
+                        platform_http_port(&p.service_address, p.platform_http_port);
                     agg.service_height = height;
                 }
                 // ProUpServ's `platform_node_id` is now `Option<PlatformNodeId>`
@@ -393,7 +471,8 @@ where
                     agg.operator_height = height;
                 }
                 if agg.payout_script.is_none() || height >= agg.payout_height {
-                    agg.payout_script = Some(p.script_payout.as_bytes().to_vec());
+                    agg.payout_script = owner_payout_script(&p.script_payout, p.payouts.as_deref())
+                        .map(|script| script.as_bytes().to_vec());
                     agg.payout_height = height;
                 }
             }
@@ -444,6 +523,76 @@ where
     result
 }
 
+/// Provider transactions mined by Dash Core v24 (see the README next to the
+/// files), shared by the masternode tests.
+#[cfg(test)]
+pub(crate) mod core_v24_vectors {
+    use std::str::FromStr;
+
+    pub(crate) const PRO_REG_TX_ONE_PAYOUT: (&str, &str) = (
+        include_str!("../../tests/vectors/core_v24_devnet/pro_reg_tx_v3_one_payout.hex"),
+        "20814c480e94dce7f3fe3f3370ec6bacd1fdc4f446f17aa7de7886be0b5d07c2",
+    );
+    pub(crate) const PRO_REG_TX_TWO_PAYOUTS: (&str, &str) = (
+        include_str!("../../tests/vectors/core_v24_devnet/pro_reg_tx_v3_two_payouts.hex"),
+        "f7e6fad0084ae34e410a8b710e5d74c0af1b95a29c1f3ae5507bed8e08b38adb",
+    );
+    pub(crate) const PRO_REG_TX_P2SH_PAYOUT: (&str, &str) = (
+        include_str!("../../tests/vectors/core_v24_devnet/pro_reg_tx_v3_p2sh_payout.hex"),
+        "1bff9d395c2647e370202e87c80fa3942930567d217238392363cd2542fb496f",
+    );
+    pub(crate) const EVO_PRO_UP_SERV_TX: (&str, &str) = (
+        include_str!("../../tests/vectors/core_v24_devnet/evo_pro_up_serv_tx_v3.hex"),
+        "7c58d9776ef31869b8cae3f94366e9fedb914e41a5b4c26d048c12f30f5e51ac",
+    );
+    /// Moves the owner payout of the one-payout registration to another
+    /// address.
+    pub(crate) const PRO_UP_REG_TX: (&str, &str) = (
+        include_str!("../../tests/vectors/core_v24_devnet/pro_up_reg_tx_v3.hex"),
+        "16b69f49a4aba21954e199efe7209478763133f7c473fab6668d5d2b79e55775",
+    );
+
+    /// Decode a vector, checking it hashes to the txid Core reported.
+    pub(crate) fn decode((hex, txid): (&str, &str)) -> dashcore::Transaction {
+        let bytes = hex::decode(hex.trim()).expect("vector is hex");
+        let tx: dashcore::Transaction =
+            dashcore::consensus::encode::deserialize(&bytes).expect("Core v24 transaction decodes");
+        assert_eq!(tx.txid(), dashcore::Txid::from_str(txid).expect("txid"));
+        tx
+    }
+
+    /// The one-payout registration as an evonode whose extended addresses
+    /// carry the platform ports, as the version-3 ProUpServTx's do.
+    pub(crate) fn evonode_registration() -> dashcore::Transaction {
+        use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderMasternodeType;
+        use dashcore::transaction::TransactionPayload;
+
+        let Some(TransactionPayload::ProviderUpdateServicePayloadType(update)) =
+            decode(EVO_PRO_UP_SERV_TX).special_transaction_payload
+        else {
+            panic!("ProUpServTx");
+        };
+        let mut registration = decode(PRO_REG_TX_ONE_PAYOUT);
+        if let Some(TransactionPayload::ProviderRegistrationPayloadType(p)) =
+            &mut registration.special_transaction_payload
+        {
+            p.masternode_type = ProviderMasternodeType::HighPerformance;
+            p.service_address = update.service_address;
+        }
+        registration
+    }
+
+    /// The Devnet address `script` pays.
+    pub(crate) fn devnet_address(script: &[u8]) -> String {
+        dashcore::Address::from_script(
+            &dashcore::ScriptBuf::from_bytes(script.to_vec()),
+            dashcore::Network::Devnet,
+        )
+        .expect("standard script")
+        .to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -490,9 +639,8 @@ mod tests {
     }
 
     /// ProUpServTx (provider-update-service) also carries a service
-    /// address — reconstructed here from its little-endian IPv6-mapped
-    /// `ip_address` + `port` — plus an explicit `pro_tx_hash` linking it
-    /// to the registration. Fixture is rust-dashcore's own
+    /// address — on the wire an IPv4-mapped IPv6 address and a port —
+    /// plus an explicit `pro_tx_hash` linking it to the registration. Fixture is rust-dashcore's own
     /// `test_provider_update_service_transaction` vector, whose endpoint
     /// is `52.36.64.148:19999`. The `pro_tx_hash` is asserted in raw
     /// wire order (what `to_32(txid.as_ref())` stores) — the reverse of
@@ -509,7 +657,7 @@ mod tests {
         assert_eq!(
             fields.service_address.as_deref(),
             Some("52.36.64.148:19999"),
-            "ProUpServTx endpoint must be rebuilt from ip_address + port"
+            "ProUpServTx endpoint must be rendered as IPv4 ip:port"
         );
         assert_eq!(
             fields.pro_tx_hash.map(hex::encode).as_deref(),
@@ -768,8 +916,10 @@ mod tests {
                 version: 1,
                 mn_type: None,
                 pro_tx_hash,
-                ip_address: 42,
-                port,
+                service_address: MasternodeNetInfo::Legacy(std::net::SocketAddr::new(
+                    std::net::Ipv6Addr::from(42u128.to_le_bytes()).into(),
+                    port,
+                )),
                 script_payout: dashcore::ScriptBuf::new(),
                 inputs_hash: [inputs; 32].into(),
                 platform_node_id: None,
@@ -842,8 +992,10 @@ mod tests {
                         version: 2,
                         mn_type: Some(1), // HighPerformance (evonode)
                         pro_tx_hash,
-                        ip_address: 42,
-                        port: 19999,
+                        service_address: MasternodeNetInfo::Legacy(std::net::SocketAddr::new(
+                            std::net::Ipv6Addr::from(42u128.to_le_bytes()).into(),
+                            19999,
+                        )),
                         script_payout: dashcore::ScriptBuf::new(),
                         inputs_hash: [7u8; 32].into(),
                         platform_node_id: None,
@@ -875,5 +1027,376 @@ mod tests {
                 .ends_with(":19999"),
             "service address and platform port move together"
         );
+    }
+
+    /// Version-3 ProRegTxs as Core v24 mines them decode, and their provider
+    /// fields are lifted. These masternodes announce no address, so there is
+    /// no service address to show.
+    #[test]
+    fn should_lift_the_provider_fields_of_core_v24_registrations() {
+        use super::core_v24_vectors::*;
+
+        for vector in [
+            PRO_REG_TX_ONE_PAYOUT,
+            PRO_REG_TX_TWO_PAYOUTS,
+            PRO_REG_TX_P2SH_PAYOUT,
+        ] {
+            let fields = provider_payload_fields(&decode(vector));
+            assert_eq!(fields.service_address, None);
+            assert!(fields.collateral.is_some());
+            assert!(fields.owner_key_hash.is_some());
+            assert!(fields.voting_key_hash.is_some());
+            assert_eq!(fields.pro_tx_hash, None);
+        }
+    }
+
+    /// A version-3 ProUpServTx carries its address in the extended address
+    /// map; the wallet shows its primary IPv4 entry.
+    #[test]
+    fn should_lift_the_service_address_of_a_core_v24_service_update() {
+        use super::core_v24_vectors::*;
+
+        let fields = provider_payload_fields(&decode(EVO_PRO_UP_SERV_TX));
+        assert_eq!(
+            fields.service_address.as_deref(),
+            Some("68.67.122.237:20001")
+        );
+        assert!(fields.pro_tx_hash.is_some());
+    }
+
+    /// From version 3 the owner payout is a payout list and `script_payout`
+    /// is empty. A list with one entry is the payout, whatever its script
+    /// type; a list that splits the reward names no single payout, so none
+    /// is recorded, as Platform gives such a masternode's owner identity no
+    /// TRANSFER key. An empty script is never recorded as the payout.
+    #[test]
+    fn should_take_a_v3_registration_payout_from_its_payout_list() {
+        use super::core_v24_vectors::*;
+
+        let payout_of = |vector| {
+            let tx = decode(vector);
+            aggregate_masternodes([(15_146u32, 1u32, &tx)].into_iter(), unavailable_dml)[0]
+                .payout_script
+                .clone()
+        };
+
+        let one = payout_of(PRO_REG_TX_ONE_PAYOUT).expect("one payout");
+        assert_eq!(devnet_address(&one), "yQohnoFhM5avKnzVzAX79xT8uCKviaPxj4");
+        let p2sh = payout_of(PRO_REG_TX_P2SH_PAYOUT).expect("one payout");
+        assert_eq!(devnet_address(&p2sh), "8yyRcXHGCXypDWTCNZMHUYZJJEC87GqLfK");
+        assert_eq!(payout_of(PRO_REG_TX_TWO_PAYOUTS), None);
+    }
+
+    /// A version-3 ProUpRegTx moves the payout through its payout list. It
+    /// replaces the payout of a version-3 registration and of a pre-v3 one,
+    /// whose payout is a script; it must not clear either with its empty
+    /// `script_payout`.
+    #[test]
+    fn should_follow_a_v3_payout_update() {
+        use super::core_v24_vectors::*;
+        use dashcore::transaction::TransactionPayload;
+
+        let update = decode(PRO_UP_REG_TX);
+        let updated_payout = "yT7ShTqEqPBskpTAiHzWaAggFmD4j1MCT3";
+
+        // The registration it updates, mined before it.
+        let registration = decode(PRO_REG_TX_ONE_PAYOUT);
+        let mns = aggregate_masternodes(
+            [(15_146u32, 1u32, &registration), (15_190u32, 1u32, &update)].into_iter(),
+            unavailable_dml,
+        );
+        assert_eq!(mns.len(), 1, "the update links to the registration");
+        let payout = mns[0].payout_script.as_deref().expect("payout");
+        assert_eq!(devnet_address(payout), updated_payout);
+
+        // A pre-v3 registration, which pays to `script_payout`.
+        let legacy = decode_tx(PROREG_HEX);
+        let mut legacy_update = update.clone();
+        if let Some(TransactionPayload::ProviderUpdateRegistrarPayloadType(p)) =
+            &mut legacy_update.special_transaction_payload
+        {
+            p.pro_tx_hash = legacy.txid();
+        }
+        let mns = aggregate_masternodes(
+            [(100u32, 0u32, &legacy), (200u32, 0u32, &legacy_update)].into_iter(),
+            unavailable_dml,
+        );
+        assert_eq!(mns.len(), 1);
+        let payout = mns[0].payout_script.as_deref().expect("payout");
+        assert_eq!(devnet_address(payout), updated_payout);
+
+        // An update that splits the reward with a second payee leaves no
+        // single payout.
+        let Some(TransactionPayload::ProviderRegistrationPayloadType(p2sh)) =
+            decode(PRO_REG_TX_P2SH_PAYOUT).special_transaction_payload
+        else {
+            panic!("ProRegTx");
+        };
+        let mut second = p2sh.payouts.expect("version 3 has payouts")[0].clone();
+        second.reward = 4_000;
+        let mut split = update.clone();
+        if let Some(TransactionPayload::ProviderUpdateRegistrarPayloadType(p)) =
+            &mut split.special_transaction_payload
+        {
+            let mut shares = p.payouts.clone().expect("version 3 has payouts");
+            shares[0].reward = 6_000;
+            shares.push(second);
+            p.payouts = Some(shares);
+        }
+        let mns = aggregate_masternodes(
+            [(15_146u32, 1u32, &registration), (15_190u32, 1u32, &split)].into_iter(),
+            unavailable_dml,
+        );
+        assert_eq!(mns[0].payout_script, None);
+    }
+
+    /// From version 3 the platform HTTP port is the `PlatformHttps` entry of
+    /// the extended address map, not a payload field, and travels with the
+    /// service address.
+    #[test]
+    fn should_take_a_v3_service_update_platform_port_from_its_addresses() {
+        use super::core_v24_vectors::*;
+
+        let update = decode(EVO_PRO_UP_SERV_TX);
+        let mns = aggregate_masternodes([(15_182u32, 1u32, &update)].into_iter(), unavailable_dml);
+        assert_eq!(
+            mns[0].service_address.as_deref(),
+            Some("68.67.122.237:20001")
+        );
+        assert_eq!(mns[0].platform_http_port, Some(1443));
+    }
+
+    /// A version-3 evonode registration carries its platform HTTP port in
+    /// its extended address map too.
+    #[test]
+    fn should_take_a_v3_registration_platform_port_from_its_addresses() {
+        use super::core_v24_vectors::*;
+
+        let registration = evonode_registration();
+        let mns = aggregate_masternodes(
+            [(15_146u32, 1u32, &registration)].into_iter(),
+            unavailable_dml,
+        );
+        assert!(mns[0].is_evonode);
+        assert_eq!(
+            mns[0].service_address.as_deref(),
+            Some("68.67.122.237:20001")
+        );
+        assert_eq!(mns[0].platform_http_port, Some(1443));
+    }
+
+    /// Hosts reach the node's DAPI at the service address's IP, so a
+    /// `PlatformHttps` entry at another IP, or a domain, gives no port
+    /// rather than a wrong endpoint.
+    #[test]
+    fn should_take_no_platform_port_from_an_https_entry_elsewhere() {
+        use super::core_v24_vectors::*;
+        use dashcore::transaction::TransactionPayload;
+
+        let Some(TransactionPayload::ProviderUpdateServicePayloadType(update)) =
+            decode(EVO_PRO_UP_SERV_TX).special_transaction_payload
+        else {
+            panic!("ProUpServTx");
+        };
+        let with_https = |entry: NetInfoEntry| {
+            let mut service_address = update.service_address.clone();
+            let MasternodeNetInfo::Extended(net_info) = &mut service_address else {
+                panic!("version 3 carries extended addresses");
+            };
+            for (purpose, entries) in &mut net_info.purposes {
+                if *purpose == NetInfoPurpose::PlatformHttps {
+                    *entries = vec![entry.clone()];
+                }
+            }
+            service_address
+        };
+
+        let same_ip = with_https(NetInfoEntry::Service {
+            network: Bip155Network::Ipv4,
+            addr: vec![68, 67, 122, 237],
+            port: 443,
+        });
+        assert_eq!(platform_http_port(&same_ip, None), Some(443));
+        let other_ip = with_https(NetInfoEntry::Service {
+            network: Bip155Network::Ipv4,
+            addr: vec![10, 0, 0, 1],
+            port: 443,
+        });
+        assert_eq!(platform_http_port(&other_ip, None), None);
+        let domain = with_https(NetInfoEntry::Domain {
+            host: "dapi.example.org".to_string(),
+            port: 443,
+        });
+        assert_eq!(platform_http_port(&domain, None), None);
+    }
+
+    /// The version-3 ProUpServTx's extended addresses with `core_p2p` as its
+    /// `CoreP2P` entries and `https` as its `PlatformHttps` entries.
+    fn v3_service_address(
+        core_p2p: Vec<NetInfoEntry>,
+        https: Vec<NetInfoEntry>,
+    ) -> MasternodeNetInfo {
+        use super::core_v24_vectors::*;
+        use dashcore::transaction::TransactionPayload;
+
+        let Some(TransactionPayload::ProviderUpdateServicePayloadType(update)) =
+            decode(EVO_PRO_UP_SERV_TX).special_transaction_payload
+        else {
+            panic!("ProUpServTx");
+        };
+        let mut service_address = update.service_address;
+        let MasternodeNetInfo::Extended(net_info) = &mut service_address else {
+            panic!("version 3 carries extended addresses");
+        };
+        let mut replaced = 0;
+        for (purpose, entries) in &mut net_info.purposes {
+            match purpose {
+                NetInfoPurpose::CoreP2P => *entries = core_p2p.clone(),
+                NetInfoPurpose::PlatformHttps => *entries = https.clone(),
+                NetInfoPurpose::PlatformP2P => continue,
+            }
+            replaced += 1;
+        }
+        assert_eq!(replaced, 2, "the vector has CoreP2P and PlatformHttps");
+        service_address
+    }
+
+    /// An IPv4 service entry at `octets` with `port`.
+    fn ipv4_entry(octets: [u8; 4], port: u16) -> NetInfoEntry {
+        NetInfoEntry::Service {
+            network: Bip155Network::Ipv4,
+            addr: octets.to_vec(),
+            port,
+        }
+    }
+
+    /// An IPv6 service entry holding the IPv4-mapped form of `octets`.
+    fn ipv4_mapped_entry(octets: [u8; 4], port: u16) -> NetInfoEntry {
+        NetInfoEntry::Service {
+            network: Bip155Network::Ipv6,
+            addr: std::net::Ipv4Addr::from(octets)
+                .to_ipv6_mapped()
+                .octets()
+                .to_vec(),
+            port,
+        }
+    }
+
+    /// An IPv4-mapped IPv6 address is the IPv4 address it maps, on either
+    /// side of the comparison: an HTTPS entry written one way serves a
+    /// service address written the other way.
+    #[test]
+    fn should_match_an_ipv4_mapped_https_entry_to_the_service_ip() {
+        let ip = [68, 67, 122, 237];
+
+        let mapped_https = v3_service_address(
+            vec![ipv4_entry(ip, 20001)],
+            vec![ipv4_mapped_entry(ip, 443)],
+        );
+        assert_eq!(platform_http_port(&mapped_https, None), Some(443));
+
+        let mapped_service = v3_service_address(
+            vec![ipv4_mapped_entry(ip, 20001)],
+            vec![ipv4_entry(ip, 443)],
+        );
+        assert_eq!(platform_http_port(&mapped_service, None), Some(443));
+    }
+
+    /// Each `PlatformHttps` entry that cannot give the port is skipped on its
+    /// own, so a matching entry after it still gives the port: one at another
+    /// IP, a domain, one on a network without an IP address, IPv4 and IPv6
+    /// entries of the wrong length, and an invalid entry. Every skipped
+    /// entry has its own port, so taking any of them shows in the result.
+    #[test]
+    fn should_skip_each_unusable_https_entry_before_a_matching_one() {
+        let ip = [68, 67, 122, 237];
+        let https = vec![
+            ipv4_entry([10, 0, 0, 1], 441),
+            NetInfoEntry::Domain {
+                host: "dapi.example.org".to_string(),
+                port: 442,
+            },
+            NetInfoEntry::Service {
+                network: Bip155Network::TorV3,
+                addr: vec![7; 32],
+                port: 443,
+            },
+            NetInfoEntry::Service {
+                network: Bip155Network::Ipv4,
+                addr: ip[..3].to_vec(),
+                port: 444,
+            },
+            NetInfoEntry::Service {
+                network: Bip155Network::Ipv6,
+                addr: ip.to_vec(),
+                port: 445,
+            },
+            NetInfoEntry::Invalid,
+            ipv4_entry(ip, 8443),
+        ];
+
+        let service_address = v3_service_address(vec![ipv4_entry(ip, 20001)], https);
+        assert_eq!(platform_http_port(&service_address, None), Some(8443));
+    }
+
+    /// A native IPv6 service address renders bracketed, `[ip]:port`, so a
+    /// host can split it into IP and port, and a ProRegTx and a ProUpServTx
+    /// render the same address alike. An IPv4-mapped address renders as
+    /// IPv4.
+    #[test]
+    fn should_bracket_a_native_ipv6_service_address() {
+        use dashcore::transaction::TransactionPayload;
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        let native: SocketAddr = "[2001:db8::1]:20001".parse().expect("socket address");
+        let mut registration = decode_tx(PROREG_HEX);
+        if let Some(TransactionPayload::ProviderRegistrationPayloadType(p)) =
+            &mut registration.special_transaction_payload
+        {
+            p.service_address = MasternodeNetInfo::Legacy(native);
+        }
+        let mut update = decode_tx(PROUPSERV_HEX);
+        if let Some(TransactionPayload::ProviderUpdateServicePayloadType(p)) =
+            &mut update.special_transaction_payload
+        {
+            p.service_address = MasternodeNetInfo::Legacy(native);
+        }
+        for tx in [&registration, &update] {
+            assert_eq!(
+                provider_payload_fields(tx).service_address.as_deref(),
+                Some("[2001:db8::1]:20001")
+            );
+        }
+
+        let mapped = SocketAddr::new(
+            Ipv4Addr::new(52, 36, 64, 148).to_ipv6_mapped().into(),
+            19999,
+        );
+        assert_eq!(provider_ip_port(mapped), "52.36.64.148:19999");
+    }
+
+    /// An empty script is never the owner payout: not an empty
+    /// `script_payout` without a list, nor an empty list, nor a single share
+    /// that pays an empty script.
+    #[test]
+    fn should_never_take_an_empty_script_as_the_owner_payout() {
+        use dashcore::hashes::Hash;
+        use dashcore::{PubkeyHash, ScriptBuf};
+
+        let empty = ScriptBuf::new();
+        let paying = ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([1; 20]));
+        let share = |script_payout: &ScriptBuf| MasternodePayoutShare {
+            script_payout: script_payout.clone(),
+            reward: 10_000,
+        };
+
+        assert_eq!(owner_payout_script(&empty, None), None);
+        assert_eq!(owner_payout_script(&empty, Some(&[])), None);
+        assert_eq!(owner_payout_script(&empty, Some(&[share(&empty)])), None);
+        assert_eq!(
+            owner_payout_script(&empty, Some(&[share(&paying)])),
+            Some(&paying)
+        );
+        assert_eq!(owner_payout_script(&paying, None), Some(&paying));
     }
 }

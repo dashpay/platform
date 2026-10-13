@@ -320,6 +320,7 @@ fn with_owner_balance(
 
 #[cfg(test)]
 mod tests {
+    use dash_sdk::dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
     use super::*;
     use crate::context_provider::WasmTrustedContext;
     use crate::sdk::WasmSdkBuilder;
@@ -359,6 +360,12 @@ mod tests {
         }
     }
 
+    fn rotated_quorum_key() -> [u8; 48] {
+        let key = SecretKey::<Bls12381G2Impl>::from_hash(b"rotated-quorum-fixture").public_key();
+        let bytes: Vec<u8> = (&key).into();
+        bytes.try_into().expect("BLS public key is 48 bytes")
+    }
+
     fn spawn_rotated_quorum_endpoint() -> (String, thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock quorum endpoint");
         listener
@@ -371,7 +378,7 @@ mod tests {
                 "success": true,
                 "data": [{
                     "quorum_hash": hex::encode([0x88; 32]),
-                    "key": hex::encode([0x98; 48]),
+                    "key": hex::encode(rotated_quorum_key()),
                     "height": 1,
                     "valid_members_count": 3
                 }]
@@ -596,7 +603,7 @@ mod tests {
             context
                 .get_quorum_public_key(1, [0x88; 32], 1)
                 .expect("rotated quorum must be available after preparation"),
-            [0x98; 48]
+            rotated_quorum_key()
         );
         server.join().expect("mock quorum server must finish");
     }

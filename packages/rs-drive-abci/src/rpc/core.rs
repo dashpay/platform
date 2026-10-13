@@ -25,13 +25,12 @@ const COINBASE_TRANSACTION_TYPE: u16 = 5;
 /// coinbase transaction; `0` when it carries no payload or its payload predates version 3,
 /// before the credit pool existed, which is how Core's own unlock limit reads such a block.
 ///
-/// Decoded with `deserialize_partial`: the pinned payload decoder reads the fields of version 3
-/// for every later version and stops after the balance, while the version 4 payload Core v24
-/// requires appends `merkleRootAssetUnlocks` after it. A strict `deserialize`, and so a whole
-/// `Block` decode, refuses those unread bytes. Core has only ever appended fields to the
-/// payload, and its consensus rules (`CheckCbTx`) refuse versions it does not know, so the
-/// balance stays where version 3 put it unless a Core release moves it, which Platform would
-/// have to follow anyway.
+/// Decoded with `deserialize_partial`, so bytes after the fields the payload decoder knows are
+/// left unread rather than refused: a field a later Core version appends to the payload, as
+/// version 4 appended `merkleRootAssetUnlocks` after the balance, does not stop the balance
+/// from being read. Core has only ever appended fields to the payload, and its consensus rules
+/// (`CheckCbTx`) refuse versions it does not know, so the balance stays where version 3 put it
+/// unless a Core release moves it, which Platform would have to follow anyway.
 pub(crate) fn credit_pool_balance_from_coinbase(coinbase: &[u8]) -> Result<u64, String> {
     let (transaction, _) = deserialize_partial::<Transaction>(coinbase)
         .map_err(|e| format!("coinbase cannot be decoded: {e}"))?;
@@ -487,6 +486,7 @@ mod tests {
             best_cl_height: Some(30),
             best_cl_signature: Some(BLSSignature::from([3; 96])),
             asset_locked_amount: Some(BALANCE_DUFFS),
+            merkle_root_asset_unlocks: None,
         })
     }
 
@@ -498,22 +498,39 @@ mod tests {
         );
     }
 
-    /// Core v24 blocks carry a version 4 payload, which appends `merkleRootAssetUnlocks`
-    /// after the balance; the pinned transaction decoder cannot read it.
-    #[test]
-    fn should_read_the_balance_of_a_version_4_coinbase() {
+    /// The coinbase of `version_3_payload` raised to version 4, with
+    /// `after_balance` after its version 3 fields.
+    fn version_4_coinbase(after_balance: &[u8]) -> Vec<u8> {
         let version_3 = coinbase(Some(version_3_payload()));
         // The payload is last: its 1-byte length (175), then the payload itself.
         let payload_start = version_3.len() - 175;
         assert_eq!(version_3[payload_start - 1], 175);
-        let mut version_4 = version_3[..payload_start - 1].to_vec();
-        version_4.push(175 + 32);
-        version_4.extend_from_slice(&4u16.to_le_bytes());
-        version_4.extend_from_slice(&version_3[payload_start + 2..]);
-        version_4.extend_from_slice(&[0xaa; 32]);
+        let mut grown = version_3[..payload_start - 1].to_vec();
+        grown.push(u8::try_from(175 + after_balance.len()).expect("1-byte length"));
+        grown.extend_from_slice(&4u16.to_le_bytes());
+        grown.extend_from_slice(&version_3[payload_start + 2..]);
+        grown.extend_from_slice(after_balance);
+        grown
+    }
 
+    /// Core v24 blocks carry a version 4 payload, which appends `merkleRootAssetUnlocks`
+    /// after the balance.
+    #[test]
+    fn should_read_the_balance_of_a_version_4_coinbase() {
         assert_eq!(
-            credit_pool_balance_from_coinbase(&version_4),
+            credit_pool_balance_from_coinbase(&version_4_coinbase(&[0xaa; 32])),
+            Ok(BALANCE_DUFFS)
+        );
+    }
+
+    /// Fields a later Core version appends after `merkleRootAssetUnlocks` are
+    /// left unread, so the balance is still read.
+    #[test]
+    fn should_read_the_balance_of_a_coinbase_with_fields_after_version_4() {
+        let mut after_balance = vec![0xaa; 32];
+        after_balance.extend_from_slice(&[0xbb; 16]);
+        assert_eq!(
+            credit_pool_balance_from_coinbase(&version_4_coinbase(&after_balance)),
             Ok(BALANCE_DUFFS)
         );
     }
@@ -528,6 +545,7 @@ mod tests {
             best_cl_height: None,
             best_cl_signature: None,
             asset_locked_amount: None,
+            merkle_root_asset_unlocks: None,
         });
         assert_eq!(
             credit_pool_balance_from_coinbase(&coinbase(Some(version_2))),

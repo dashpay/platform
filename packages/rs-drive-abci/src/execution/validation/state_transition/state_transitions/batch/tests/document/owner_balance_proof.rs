@@ -7,7 +7,7 @@
 use super::*;
 use crate::platform_types::platform_state::PlatformState;
 use crate::rpc::core::MockCoreRPCLike;
-use crate::test::helpers::dpns::dpns_salted_domain_hash;
+use crate::test::helpers::dpns::set_dpns_preorder_hashes;
 use crate::test::helpers::setup::TempPlatform;
 use dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dpp::document::Document;
@@ -523,13 +523,6 @@ async fn should_prove_the_owner_balance_next_to_a_contested_document() {
     // DPNS registers a name in two steps: the salted preorder, then the domain.
     let name = "quantum";
     let salt: [u8; 32] = rng.gen();
-    let salted_domain_hash = dpns_salted_domain_hash(
-        identity.id(),
-        &salt,
-        &convert_to_homograph_safe_chars(name),
-        "dash",
-        platform_version,
-    );
     let preorder_entropy = Bytes32::random_with_rng(&mut rng);
     let mut preorder_document = preorder
         .random_document_with_identifier_and_entropy(
@@ -541,7 +534,15 @@ async fn should_prove_the_owner_balance_next_to_a_contested_document() {
             platform_version,
         )
         .expect("expected a random preorder document");
-    preorder_document.set("saltedDomainHash", salted_domain_hash.into());
+    let preorder_owner = identity.id();
+    set_dpns_preorder_hashes(
+        &mut preorder_document,
+        preorder_owner,
+        &salt,
+        &convert_to_homograph_safe_chars(name),
+        "dash",
+        platform_version,
+    );
     preorder_document
         .set_id_for_creation(preorder, &preorder_entropy.0, 2, platform_version)
         .expect("expected to set the preorder id");
@@ -626,7 +627,7 @@ async fn should_prove_the_owner_balance_next_to_a_contested_document() {
         .await
         .expect("expected to sign the contested create");
 
-    // The block after the preorder's: from protocol version 14 a domain reveals a preorder
+    // The block after the preorder's: from protocol version 15 a domain reveals a preorder
     // made in an earlier block
     process_and_commit_at(
         &platform,

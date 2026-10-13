@@ -86,9 +86,9 @@ const MAX_GROVEDB_KEY_BYTES: usize = 255;
 const MAX_PATH_QUERY_BYTES: usize = 64 * 1024;
 /// Longest part of a status message the service keeps; a longer message is cut there and gets
 /// a short note with the number of bytes dropped. Tonic sends the message in the
-/// `grpc-message` header, and an HTTP/2 peer refuses an oversized header list, which its client
-/// then reports as an internal error. A message can echo a request field of any length, such
-/// as a document type name.
+/// `grpc-message` header, and an HTTP/2 peer refuses an oversized header list. The client then
+/// sees a transport error instead of the original status and may retry it on other nodes.
+/// A message can echo a request field of any length, such as a document type name.
 const MAX_STATUS_MESSAGE_BYTES: usize = 1024;
 
 /// Service to handle platform queries

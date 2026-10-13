@@ -27,8 +27,7 @@ A reply to a post only the moderators take down:
   ],
   "properties": {
     "postId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "refersTo": { "type": "moderatedDocument", "documentType": "post" },
       "position": 0
     },
@@ -90,6 +89,7 @@ A derived value must stay what it was when an entry was written, or Drive could 
 - The index is not `unique` or contested: a uniqueness check reads the values the create carries, and a derived value is not among them.
 - The derived property is not the source of a `timeRange` or an `integerRange`.
 - The type is not `indexOnly`: its entries hold every value of its documents, and its delete carries them.
+- The reference is a single identifier, not a [typed array](typed-arrays.md) of them: an element is not one referenced document. A derived property may sit beside an indexed typed array in an index.
 
 ## Skipping a document without the value
 

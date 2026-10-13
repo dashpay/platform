@@ -53,7 +53,8 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// every transition of the batch is a token-paid document action whose document type
         /// offers that. Fee validation v1 judges the fee against the sponsor's balance and
         /// execution v1 charges the sponsor instead of the identity when it covers the fee, both
-        /// from protocol version 14; the identity always funds `removed_balance` itself.
+        /// from protocol version 14; the identity always funds `removed_balance` itself, and
+        /// pays the processing fee its `user_fee_increase` adds.
         gas_sponsor: Option<ResolvedGasSponsor>,
         /// The action fees the batch's document transitions owe (the `actionFees` keyword,
         /// protocol version 14), priced by the batch transformer. Whoever pays the gas pays

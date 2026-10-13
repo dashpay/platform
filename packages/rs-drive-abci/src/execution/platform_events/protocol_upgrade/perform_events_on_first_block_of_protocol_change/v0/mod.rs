@@ -11,6 +11,7 @@ use dpp::platform_value::Identifier;
 use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::system_data_contracts::dpns_contract::v1::document_types::preorder;
 use dpp::system_data_contracts::load_system_data_contract;
+use dpp::version::v14::PROTOCOL_VERSION_14;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use dpp::voting::vote_polls::VotePoll;
@@ -41,6 +42,8 @@ use drive::drive::{Drive, RootTree};
 use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction, TreeType};
 use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
+use drive::util::storage_flags::StorageFlags;
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::ops::RangeFull;
 
@@ -117,6 +120,10 @@ impl<C> Platform<C> {
 
         if previous_protocol_version < 14 && platform_version.protocol_version >= 14 {
             self.transition_to_version_14(block_info, transaction, platform_version)?;
+        }
+
+        if previous_protocol_version < 15 && platform_version.protocol_version >= 15 {
+            self.transition_to_version_15(block_info, transaction, platform_version)?;
         }
 
         Ok(())
@@ -686,7 +693,19 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
+        // A ladder reaching past protocol version 14 in one block (12 straight to 15) gives
+        // this rung a table holding DPNS v3, which only `transition_to_version_15` installs,
+        // through its rebuild of the preorders: a plain update here would leave them under
+        // v3, and the rebuild would then skip a type already stored as declared. This rung
+        // installs v2 then, loaded as protocol version 14, the newest holding it, would. A
+        // target of 13 or 14 loads v2 by its own table, as before.
+        let dpns_platform_version = if platform_version.system_data_contracts.dpns > 2 {
+            PlatformVersion::get(PROTOCOL_VERSION_14)?
+        } else {
+            platform_version
+        };
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, dpns_platform_version)?;
 
         self.drive.apply_contract(
             &dpns_contract,
@@ -703,18 +722,24 @@ impl<C> Platform<C> {
     /// When transitioning to version 14 we re-store the DashPay contract whose
     /// v2 schema adds the optional public payment address fields to the
     /// `profile` document type (DIP-33), the withdrawals contract whose v2
-    /// schema admits the terminal FAILED value of the `status` property, the
-    /// DPNS contract whose v3 schema checks a domain create with keywords
-    /// instead of most of its data trigger, and register the app-connect
-    /// contract that carries the wallet-to-app login handshake and the
-    /// moderation charters contract that elected moderation teams apply
-    /// through.
+    /// schema admits the terminal FAILED value of the `status` property, and
+    /// register the app-connect contract that carries the wallet-to-app login
+    /// handshake and the moderation charters contract that elected moderation
+    /// teams apply through.
     fn transition_to_version_14(
         &self,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // Unsigned index value keys: from this version a property of an unsigned integer
+        // type is keyed by its big-endian bytes (`serialize_value_for_key` 1), which sort as
+        // the values do. Every key written before is rewritten first, under the contracts
+        // that wrote it. The rewrite flips keys, so it must run once, as this transition does:
+        // in the one block where a chain's protocol version reaches 14.
+        self.drive
+            .rekey_unsigned_integer_index_values(transaction, platform_version)?;
+
         let dashpay_contract =
             load_system_data_contract(SystemDataContract::Dashpay, platform_version)?;
 
@@ -739,19 +764,6 @@ impl<C> Platform<C> {
             true,
             None,
             Some(transaction),
-            platform_version,
-        )?;
-
-        // DPNS contract v3 (v14 note 90): its preorders are unique per owner, which no
-        // contract update can turn a unique index into, so the `preorder` type is rebuilt
-        // and every preorder made before this block is deleted, unrefunded.
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
-
-        self.drive.apply_contract_rebuilding_document_types(
-            &dpns_contract,
-            &[preorder::NAME],
-            block_info,
-            transaction,
             platform_version,
         )?;
 
@@ -809,11 +821,33 @@ impl<C> Platform<C> {
         let token_history_contract =
             load_system_data_contract(SystemDataContract::TokenHistory, platform_version)?;
 
+        // This update is reached only when crossing into protocol version 14.
+        // Preserve existing storage ownership and let the flags merger account
+        // growth at the current epoch; contracts without flags stay unflagged.
+        let token_history_storage_flags = self
+            .drive
+            .fetch_contract(
+                SystemDataContract::TokenHistory.id().to_buffer(),
+                None,
+                None,
+                Some(transaction),
+                platform_version,
+            )
+            .value?
+            .and_then(|stored| {
+                stored.storage_flags.as_ref().map(|flags| {
+                    StorageFlags::new_single_epoch(
+                        block_info.epoch.index,
+                        flags.owner_id().copied(),
+                    )
+                })
+            });
+
         self.drive.apply_contract(
             &token_history_contract,
             *block_info,
             true,
-            None,
+            token_history_storage_flags.map(Cow::Owned),
             Some(transaction),
             platform_version,
         )?;
@@ -865,6 +899,36 @@ impl<C> Platform<C> {
         // inserts.
         self.drive
             .insert_withdrawal_limit_trees(Some(transaction), platform_version)?;
+
+        // This helper is reachable only when the upgrade ladder crosses into protocol 14;
+        // earlier versions selecting this generation cannot execute the backfill.
+        self.drive
+            .backfill_historical_credit_pool_nullifiers(transaction, platform_version)?;
+
+        Ok(())
+    }
+
+    /// When transitioning to version 15 we re-store the DPNS contract whose v3
+    /// schema checks a domain create with keywords instead of most of its data
+    /// trigger.
+    fn transition_to_version_15(
+        &self,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        // DPNS contract v3 (v15 note 1): its preorders are unsalted, one per owner and name,
+        // which no contract update can turn a unique index into, so the `preorder` type is
+        // rebuilt and every preorder made before this block is deleted, unrefunded.
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
+
+        self.drive.apply_contract_rebuilding_document_types(
+            &dpns_contract,
+            &[preorder::NAME],
+            block_info,
+            transaction,
+            platform_version,
+        )?;
 
         Ok(())
     }
@@ -1430,6 +1494,148 @@ mod tests {
             "profile must carry platformPaymentAddress after transition_to_version_14"
         );
         assert!(profile.iter().any(|p| p == "shieldedAddress"));
+    }
+
+    #[test]
+    fn should_rekey_unsigned_index_values_on_transition_to_version_14() {
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::DataContractFactory;
+        use dpp::document::{Document, DocumentV0};
+        use dpp::platform_value::{platform_value, Value};
+        use drive::config::DriveConfig;
+        use drive::query::{
+            CountMode, DocumentCountRequest, DocumentCountResponse, WhereClause, WhereOperator,
+        };
+        use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+        use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+        use drive::util::storage_flags::StorageFlags;
+        use std::borrow::Cow;
+        use std::collections::BTreeMap;
+
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(13)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let platform_version_13 = PlatformVersion::get(13).expect("expected platform version 13");
+        let platform_version = PlatformVersion::latest();
+        let transaction = platform.drive.grove.start_transaction();
+
+        // A u8 grade (its bounds pick u8) under a range-countable index, written at 13
+        let contract = DataContractFactory::new(13)
+            .expect("expected a contract factory")
+            .create_with_value_config(
+                Identifier::new([7; 32]),
+                0,
+                platform_value!({ "grade": {
+                    "type": "object",
+                    "properties": {
+                        "grade": {"type": "integer", "minimum": 0, "maximum": 255, "position": 0},
+                    },
+                    "required": ["grade"],
+                    "indices": [{
+                        "name": "byGrade",
+                        "properties": [{"grade": "asc"}],
+                        "countable": "countable",
+                        "rangeCountable": true,
+                    }],
+                    "additionalProperties": false,
+                }}),
+                None,
+                None,
+            )
+            .expect("expected the grade contract")
+            .data_contract_owned();
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                Some(&transaction),
+                platform_version_13,
+            )
+            .expect("expected to apply the grade contract");
+        let document_type = contract
+            .document_type_for_name("grade")
+            .expect("expected the grade type");
+        for (id, grade) in [5u8, 100, 127, 128, 150, 200, 255].into_iter().enumerate() {
+            let document: Document = DocumentV0 {
+                id: Identifier::new([id as u8 + 1; 32]),
+                owner_id: Identifier::new([1; 32]),
+                properties: BTreeMap::from([("grade".to_string(), Value::U8(grade))]),
+                ..Default::default()
+            }
+            .into();
+            platform
+                .drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((
+                                &document,
+                                Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
+                            )),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    Some(&transaction),
+                    platform_version_13,
+                    None,
+                )
+                .expect("expected to insert the grade document");
+        }
+
+        let block_info = BlockInfo {
+            time_ms: 1_000_000,
+            height: 100,
+            core_height: 100,
+            epoch: Epoch::new(1).expect("expected epoch"),
+        };
+        platform
+            .transition_to_version_14(&block_info, &transaction, platform_version)
+            .expect("expected the transition to succeed");
+
+        let drive_config = DriveConfig::default();
+        let count = |operator, value| match platform
+            .drive
+            .execute_document_count_request(
+                DocumentCountRequest {
+                    contract: &contract,
+                    document_type,
+                    where_clauses: vec![WhereClause {
+                        field: "grade".to_string(),
+                        operator,
+                        value,
+                    }],
+                    order_clauses: Vec::new(),
+                    mode: CountMode::Aggregate,
+                    limit: None,
+                    prove: false,
+                    drive_config: &drive_config,
+                    resolved_time_ranges: vec![],
+                },
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected the count")
+        {
+            DocumentCountResponse::Aggregate(count) => count,
+            other => panic!("expected an aggregate count, got {other:?}"),
+        };
+        assert_eq!(count(WhereOperator::GreaterThan, Value::U8(100)), 5);
+        assert_eq!(
+            count(
+                WhereOperator::Between,
+                Value::Array(vec![Value::U8(100), Value::U8(200)])
+            ),
+            5
+        );
     }
 
     #[test]

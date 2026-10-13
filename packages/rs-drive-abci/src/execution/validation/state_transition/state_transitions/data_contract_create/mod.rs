@@ -5842,12 +5842,34 @@ mod tests {
     mod permanent_document_reference_declarations {
         use super::*;
         use dpp::consensus::state::state_error::StateError;
+        use dpp::data_contract::config::moderation::{
+            ContractModerationConfig, ContractModerators,
+        };
+        use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
         use dpp::data_contract::errors::DataContractError;
         use dpp::platform_value::string_encoding::Encoding;
+        use dpp::tests::json_document::json_document_to_json_value;
         use drive::util::test_helpers::setup_contract;
+        use serde_json::json;
 
         const FOREIGN_CONTRACT_PATH: &str =
             "tests/supporting_files/contract/reference-validation/reference-validation-contract-permanent-doc-foreign.json";
+
+        /// Yappr's post and like, the like counting likes per tag of a post.
+        const TAG_COUNTERS_CONTRACT_PATH: &str =
+            "../rs-drive/tests/supporting_files/contract/yappr-likes/yappr-likes-tags-counters-contract.json";
+
+        /// The default config, moderated by the contract owner.
+        fn owner_moderated_config() -> DataContractConfig {
+            DataContractConfig::default_for_version(PlatformVersion::latest())
+                .unwrap()
+                .with_moderation(Some(ContractModerationConfig {
+                    banlist: false,
+                    suspensions: false,
+                    moderators: ContractModerators::ContractOwner,
+                    warnings: false,
+                }))
+        }
 
         /// Processes a data contract create transition built from the given
         /// fixture, with the foreign permanent-document fixture contract
@@ -5861,6 +5883,33 @@ mod tests {
         async fn run_contract_create_with_foreign(
             fixture_path: &str,
             foreign_contract_path: &str,
+        ) -> StateTransitionExecutionResult {
+            run_contract_create_with_foreign_and_config(
+                fixture_path,
+                foreign_contract_path,
+                DataContractConfig::default_for_version(PlatformVersion::latest()).unwrap(),
+            )
+            .await
+        }
+
+        /// [`run_contract_create_with_foreign`] with the contract created under
+        /// `config`.
+        async fn run_contract_create_with_foreign_and_config(
+            fixture_path: &str,
+            foreign_contract_path: &str,
+            config: DataContractConfig,
+        ) -> StateTransitionExecutionResult {
+            let contract_json = json_document_to_json_value(fixture_path)
+                .expect("expected to read the fixture contract");
+            run_contract_json_create(contract_json, foreign_contract_path, config).await
+        }
+
+        /// [`run_contract_create_with_foreign_and_config`] for the contract
+        /// `contract_json`, such as a fixture changed by the test.
+        async fn run_contract_json_create(
+            mut contract_json: serde_json::Value,
+            foreign_contract_path: &str,
+            config: DataContractConfig,
         ) -> StateTransitionExecutionResult {
             let platform_version = PlatformVersion::latest();
             let mut platform = TestPlatformBuilder::new()
@@ -5881,17 +5930,16 @@ mod tests {
                 None,
             );
 
-            let mut data_contract = json_document_to_contract_with_ids(
-                fixture_path,
-                None,
-                None,
+            // The config goes in before the parse, since a type may use what it
+            // declares (moderation)
+            contract_json["config"] =
+                serde_json::to_value(&config).expect("expected the config to serialize");
+            let data_contract = DataContract::from_json(
+                contract_json,
                 false, //no need to validate the data contracts in tests for drive
                 platform_version,
             )
             .expect("expected to get json based contract");
-
-            data_contract
-                .set_config(DataContractConfig::default_for_version(platform_version).unwrap());
 
             let data_contract_create_transition =
                 DataContractCreateTransition::new_from_data_contract(
@@ -6301,12 +6349,10 @@ mod tests {
             );
         }
 
-        /// An agreement is checked at write time by comparing single values,
-        /// which a typed array is not, so one between two typed arrays of the
-        /// same element type is refused at registration rather than refusing
-        /// every write that carries them.
+        /// Two typed arrays of one element kind are equal as lists, element by
+        /// element, so an agreement between them registers.
         #[tokio::test]
-        async fn should_reject_agreement_on_typed_array_properties() {
+        async fn should_register_an_agreement_between_typed_arrays_of_one_element_kind() {
             let result = run_contract_create(
                 "tests/supporting_files/contract/reference-validation/reference-validation-contract-agreement-typed-array.json",
             )
@@ -6314,12 +6360,230 @@ mod tests {
 
             assert_matches!(
                 result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        const WHERE_TYPED_ARRAYS_CONTRACT_PATH: &str = "tests/supporting_files/contract/reference-validation/reference-validation-contract-where-typed-arrays.json";
+
+        /// Creates the typed array `where` fixture after `change`, under the
+        /// default config, or `config`.
+        async fn run_where_typed_arrays_create(
+            change: impl FnOnce(&mut serde_json::Value),
+            config: Option<DataContractConfig>,
+        ) -> StateTransitionExecutionResult {
+            let mut contract_json = json_document_to_json_value(WHERE_TYPED_ARRAYS_CONTRACT_PATH)
+                .expect("expected to read the fixture contract");
+            change(&mut contract_json);
+            let config = config.unwrap_or_else(|| {
+                DataContractConfig::default_for_version(PlatformVersion::latest())
+                    .expect("default config available")
+            });
+            run_contract_json_create(contract_json, FOREIGN_CONTRACT_PATH, config).await
+        }
+
+        fn assert_where_entry_refused(result: &StateTransitionExecutionResult, reason: &str) {
+            assert_matches!(
+                result,
                 StateTransitionExecutionResult::PaidConsensusError {
                     error: ConsensusError::StateError(
                         StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
                     ),
                     ..
-                } if error.reason().contains("not typed arrays")
+                } if error.reason().contains(reason),
+                "expected the where entry refused for {reason:?}, got {result:?}"
+            );
+        }
+
+        /// The `where` of a document type's `postId` reference.
+        fn post_reference_where<'a>(
+            contract_json: &'a mut serde_json::Value,
+            document_type: &str,
+        ) -> &'a mut serde_json::Value {
+            &mut contract_json["documentSchemas"][document_type]["properties"]["postId"]["refersTo"]
+                ["where"]
+        }
+
+        /// An equality between two typed arrays, a `contains` of a property
+        /// and of the writer, and a `containsAll` register.
+        #[tokio::test]
+        async fn should_register_where_entries_over_typed_arrays() {
+            let result = run_where_typed_arrays_create(|_| {}, None).await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        /// Lists compare element by element, so the elements must be of one
+        /// value kind a `where` entry compares, and a typed array is equal to
+        /// nothing else.
+        #[tokio::test]
+        async fn should_reject_lists_a_where_equality_can_not_compare() {
+            let result = run_where_typed_arrays_create(
+                |contract| {
+                    contract["documentSchemas"]["like"]["properties"]["tags"]["items"] =
+                        json!({ "type": "integer", "minimum": 0, "maximum": 10 });
+                },
+                None,
+            )
+            .await;
+            assert_where_entry_refused(&result, "share one value kind");
+
+            let result = run_where_typed_arrays_create(
+                |contract| {
+                    *post_reference_where(contract, "like") = json!({ "tags": "note" });
+                },
+                None,
+            )
+            .await;
+            assert_where_entry_refused(&result, "equal only to a typed array");
+
+            let result = run_where_typed_arrays_create(
+                |contract| {
+                    let ratings = |position: u32| {
+                        json!({
+                            "type": "array",
+                            "items": { "type": "number" },
+                            "maxItems": 4,
+                            "position": position
+                        })
+                    };
+                    contract["documentSchemas"]["post"]["properties"]["ratings"] = ratings(4);
+                    contract["documentSchemas"]["like"]["properties"]["ratings"] = ratings(3);
+                    *post_reference_where(contract, "like") = json!({ "ratings": "ratings" });
+                },
+                None,
+            )
+            .await;
+            assert_where_entry_refused(&result, "floats");
+
+            // The list compared is one the referring document stores
+            let result = run_where_typed_arrays_create(
+                |contract| {
+                    contract["documentSchemas"]["like"]["transient"] = json!(["tags"]);
+                },
+                None,
+            )
+            .await;
+            assert_where_entry_refused(&result, "transient");
+        }
+
+        /// A `contains` reads a list and is bounded by one value of its
+        /// element kind (the writer for identifiers), never by the reference
+        /// itself; a `containsAll` is bounded by a list of the same kind; and
+        /// the conditions comparing one value read no list.
+        #[tokio::test]
+        async fn should_reject_list_conditions_that_can_not_hold() {
+            for (document_type, where_value, reason) in [
+                (
+                    "tagged",
+                    json!({ "tags": { "contains": "count" } }),
+                    "contains reads one value",
+                ),
+                (
+                    "tagged",
+                    json!({ "label": { "contains": "tag" } }),
+                    "the referenced property is none",
+                ),
+                (
+                    "tagged",
+                    json!({ "members": { "contains": "postId" } }),
+                    "the reference property itself",
+                ),
+                (
+                    "tagged",
+                    json!({ "tags": { "contains": "missing" } }),
+                    "does not define the referring property",
+                ),
+                (
+                    "memberNote",
+                    json!({ "tags": { "contains": "$ownerId" } }),
+                    "must hold identifiers",
+                ),
+                (
+                    "subset",
+                    json!({ "tags": { "containsAll": "postId" } }),
+                    "the reference property itself",
+                ),
+                (
+                    "tagged",
+                    json!({ "tags": { "containsAll": "tag" } }),
+                    "containsAll reads a typed array",
+                ),
+                (
+                    "copy",
+                    json!({ "tags": { "containsAll": "members" } }),
+                    "share one value kind",
+                ),
+                (
+                    "tagged",
+                    json!({ "tags": { "const": "news" } }),
+                    "holds no single value",
+                ),
+                (
+                    "tagged",
+                    json!({ "tags": { "notEqual": "tag" } }),
+                    "holds no single value",
+                ),
+            ] {
+                let result = run_where_typed_arrays_create(
+                    |contract| {
+                        *post_reference_where(contract, document_type) = where_value.clone();
+                    },
+                    None,
+                )
+                .await;
+                assert_where_entry_refused(&result, reason);
+            }
+        }
+
+        /// Through a `moderatedDocument` reference, a `contains` of the writer
+        /// is asked about on every replace, so once a moderator removes the
+        /// post it reads the removal record, which must keep the list.
+        #[tokio::test]
+        async fn should_reject_a_moderated_contains_of_the_writer_the_record_does_not_keep() {
+            let moderated = |kept: serde_json::Value| {
+                move |contract: &mut serde_json::Value| {
+                    let post = &mut contract["documentSchemas"]["post"];
+                    post["moderatorAbilities"] =
+                        json!({ "delete": true, "deleteKeepsFields": kept });
+                    contract["documentSchemas"]["memberNote"]["properties"]["postId"]["refersTo"]
+                        ["type"] = json!("moderatedDocument");
+                    // The other references stay permanent, into another post type
+                    let mut permanent_post = contract["documentSchemas"]["post"].clone();
+                    if let Some(schema) = permanent_post.as_object_mut() {
+                        schema.remove("moderatorAbilities");
+                    }
+                    contract["documentSchemas"]["permanentPost"] = permanent_post;
+                    for document_type in ["like", "copy", "tagged", "subset", "scoreSubset"] {
+                        contract["documentSchemas"][document_type]["properties"]["postId"]
+                            ["refersTo"]["documentType"] = json!("permanentPost");
+                    }
+                }
+            };
+            let config = || {
+                Some(
+                    DataContractConfig::default_for_version(PlatformVersion::latest())
+                        .expect("default config available")
+                        .with_moderation(Some(ContractModerationConfig {
+                            banlist: false,
+                            suspensions: false,
+                            moderators: ContractModerators::ContractOwner,
+                            warnings: false,
+                        })),
+                )
+            };
+
+            let result = run_where_typed_arrays_create(moderated(json!(["tags"])), config()).await;
+            assert_where_entry_refused(&result, "checked on every replace");
+
+            let result =
+                run_where_typed_arrays_create(moderated(json!(["members"])), config()).await;
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
             );
         }
 
@@ -6400,6 +6664,61 @@ mod tests {
                     ..
                 } if error.referring_property() == "hashtag"
                     && error.reason().contains("preallocated index byHashtagPost")
+                    && error.reason().contains("up to 1120 bytes")
+            );
+        }
+
+        /// The Yappr shape: a like whose `tags` the `where` makes equal to its
+        /// post's keeps a preallocated counter per tag of the post
+        /// (`byTagPost`, a `summableOffCountIndex` index of `byPost`), the
+        /// post's tags immutable and kept by a moderator's removal. It
+        /// registers.
+        #[tokio::test]
+        async fn should_register_a_counter_per_tag_keyed_through_a_list_equality() {
+            let result = run_contract_create_with_foreign_and_config(
+                TAG_COUNTERS_CONTRACT_PATH,
+                FOREIGN_CONTRACT_PATH,
+                owner_moderated_config(),
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        /// Creating a post preallocates a tree keyed by each of its tags, so
+        /// every element the post's `tags` can hold must fit a tree key: tags
+        /// of up to 280 characters can take 1,120 bytes, and the contract is
+        /// refused.
+        #[tokio::test]
+        async fn should_reject_a_list_keying_a_preallocated_index_by_elements_wider_than_a_tree_key(
+        ) {
+            let mut contract_json = json_document_to_json_value(TAG_COUNTERS_CONTRACT_PATH)
+                .expect("expected to read the fixture contract");
+            let post = &mut contract_json["documentSchemas"]["post"];
+            post["properties"]["tags"]["items"] = json!({ "type": "string", "maxLength": 280 });
+            post.as_object_mut()
+                .expect("the post schema")
+                .remove("indices");
+            let result = run_contract_json_create(
+                contract_json,
+                FOREIGN_CONTRACT_PATH,
+                owner_moderated_config(),
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(error)
+                    ),
+                    ..
+                } if error.referring_property() == "tags"
+                    && error.reason().contains("preallocated index byTagPost")
+                    && error.reason().contains("an element of the referenced typed array")
                     && error.reason().contains("up to 1120 bytes")
             );
         }
@@ -6897,6 +7216,281 @@ mod tests {
             );
         }
 
+        /// The contract whose `auction` type the referenced-rules registration
+        /// fixtures read from another contract.
+        const REFERENCED_RULES_CONTRACT_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules.json";
+
+        #[tokio::test]
+        async fn should_register_a_rule_reading_another_contracts_document() {
+            // `foreignBid` reads the reserve price of an auction of another
+            // contract, and its `where` lists the auction's statuses and orders
+            // the reserve by the bid's amount
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-foreign-valid.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_rule_reading_another_contracts_property_as_another_kind() {
+            // Only registration sees another contract's type: the auction's
+            // status is a string, which a rule can not read as a number
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-foreign-wrong-kind.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentRuleReadInvalidError(e)
+                    ),
+                    ..
+                } if e.document_type_name() == "foreignBid"
+                    && e.rule() == "statusAsNumber"
+                    && e.reference() == "auctionId"
+                    && e.reason().contains("has type string, not integer")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_rule_comparing_another_contracts_enum_with_a_value_it_lacks() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-foreign-enum.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentRuleReadInvalidError(e)
+                    ),
+                    ..
+                } if e.reason().contains("not one of its enum values")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_rule_reading_a_referenced_document_beside_a_total_moderators_move()
+        {
+            // Moderators approve an entry, which moves the count of a poll's
+            // approved entries the rule bounds by the poll's capacity; their
+            // change judges no rule reading a referenced document, so the
+            // contract is refused
+            let config = DataContractConfig::default_for_version(PlatformVersion::latest())
+                .unwrap()
+                .with_moderation(Some(ContractModerationConfig {
+                    banlist: false,
+                    suspensions: false,
+                    moderators: ContractModerators::ContractOwner,
+                    warnings: false,
+                }));
+            let result = run_contract_create_with_foreign_and_config(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-moderated-total.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+                config,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )),
+                    ..
+                } if message.contains("rule \"cap\"")
+                    && message.contains("depends on \"status\"")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_rule_reading_a_referenced_document_beside_a_total_a_restore_moves()
+        {
+            // A moderator's restore is judged against every rule reading a total,
+            // which may have moved while the entry was gone (here the count of its
+            // room's entries, bounded by the room's capacity), and judges no rule
+            // reading a referenced document, so the contract is refused before any
+            // restore could pass the capacity
+            let config = DataContractConfig::default_for_version(PlatformVersion::latest())
+                .unwrap()
+                .with_moderation(Some(ContractModerationConfig {
+                    banlist: false,
+                    suspensions: false,
+                    moderators: ContractModerators::ContractOwner,
+                    warnings: false,
+                }));
+            let result = run_contract_create_with_foreign_and_config(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-restored-total.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+                config,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::BasicError(BasicError::ContractError(
+                        DataContractError::InvalidContractStructure(message)
+                    )),
+                    ..
+                } if message.contains("rule \"cap\"")
+                    && message.contains("and a total, which a moderator's restore is judged against")
+            );
+        }
+
+        /// A where entry that can never hold refuses at registration, as one
+        /// of another kind does: a notEqual bounded by the reference's own
+        /// value, which found the document; a literal no value of the
+        /// referenced property equals; an ordering no value of it meets.
+        #[tokio::test]
+        async fn should_reject_a_where_entry_that_can_never_hold() {
+            for (fixture, referenced_property, reason) in [
+                (
+                    "where-not-equal-reference",
+                    "$id",
+                    "the referring property cannot be the reference property itself",
+                ),
+                (
+                    "where-literal-enum",
+                    "status",
+                    "is not one of the referenced property's enum values",
+                ),
+                (
+                    "where-ordering-range",
+                    "reservePrice",
+                    "no value the referenced property holds",
+                ),
+            ] {
+                let result = run_contract_create_with_foreign(
+                    &format!(
+                        "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-{fixture}.json"
+                    ),
+                    REFERENCED_RULES_CONTRACT_PATH,
+                )
+                .await;
+
+                assert_matches!(
+                    result,
+                    StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::StateError(
+                            StateError::ReferencedDocumentPropertyAgreementInvalidError(e)
+                        ),
+                        ..
+                    } if e.referenced_property() == referenced_property
+                        && e.reason().contains(reason),
+                    "{fixture}"
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_rule_comparing_fields_of_another_contracts_documents_of_two_kinds()
+        {
+            // An auction's status, a string, never equals an event's
+            // capacity, an integer, and only registration sees both types
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-peer-kinds.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentRuleReadInvalidError(e)
+                    ),
+                    ..
+                } if e.rule() == "statusIsCapacity"
+                    && e.reason().contains("which hold different kinds of value")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_where_entry_a_removal_record_lacks_on_a_reference_a_rule_reads() {
+            // The reply's rule reads the post through its moderatedDocument
+            // reference, so every replace checks the reference's where, which a
+            // removal record answers only for what it keeps: not the status
+            let config = DataContractConfig::default_for_version(PlatformVersion::latest())
+                .unwrap()
+                .with_moderation(Some(ContractModerationConfig {
+                    banlist: false,
+                    suspensions: false,
+                    moderators: ContractModerators::ContractOwner,
+                    warnings: false,
+                }));
+            let result = run_contract_create_with_foreign_and_config(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-moderated-where-unkept.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+                config,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(e)
+                    ),
+                    ..
+                } if e.referenced_property() == "status"
+                    && e.reason().contains("a rule reads the document through this \
+                       moderatedDocument reference")
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_where_literal_of_another_kind_than_the_referenced_property() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-where-literal-kind.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(e)
+                    ),
+                    ..
+                } if e.referenced_property() == "reservePrice"
+                    && e.referring_property() == "{ \"const\": \"high\" }"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_where_ordering_of_a_string() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-referenced-rules-registration-where-ordering-kind.json",
+                REFERENCED_RULES_CONTRACT_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentPropertyAgreementInvalidError(e)
+                    ),
+                    ..
+                } if e.referenced_property() == "status"
+                    && e.reason().contains("an ordering compares integers")
+            );
+        }
+
         #[tokio::test]
         async fn should_reject_find_by_naming_no_unique_index_another_contract_has() {
             // Only registration sees the other contract's indexes: the contract
@@ -6917,6 +7511,81 @@ mod tests {
                 } if e.path() == "vote.voterId"
                     && e.find_by() == "message"
                     && e.reason().contains("has no unique index over exactly (message)")
+            );
+        }
+
+        /// The contract whose `namePreorder` type holds two hashes, `ownerNameHash` unique per
+        /// owner and `nameHash` under a non-unique index with `$createdAtBlockHeight`, and whose
+        /// `unindexedPreorder` lacks that second index.
+        const CHOOSE_FIRST_PREORDERS_PATH: &str =
+            "tests/supporting_files/contract/reference-validation/reference-validation-contract-choose-first-preorders.json";
+
+        #[tokio::test]
+        async fn should_register_choose_first_into_a_preorder_type_of_another_contract() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-choose-first-registration-foreign-valid.json",
+                CHOOSE_FIRST_PREORDERS_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+        }
+
+        /// What `chooseFirst` names on a type of another contract only registration sees, with
+        /// the rest of the `findBy` it sits beside: a type without the index over the property
+        /// and `$createdAtBlockHeight` can not list a commitment's competitors.
+        #[tokio::test]
+        async fn should_reject_choose_first_into_a_type_of_another_contract_without_its_index() {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-choose-first-registration-foreign-missing-index.json",
+                CHOOSE_FIRST_PREORDERS_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentLookupInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "name.$creatorId"
+                    && e.reason().contains(
+                        "chooseFirst among \"nameHash\" reads the commitments holding the same \
+                         value"
+                    )
+                    && e.reason().contains("which it does not have")
+            );
+        }
+
+        /// A type of another contract whose owner-bound hash, the one the `findBy` function
+        /// fills, is unique without `$ownerId`: a copy of a pending commitment's hash landing
+        /// first under another identity would keep the commitment out, without its copier
+        /// knowing the values.
+        #[tokio::test]
+        async fn should_reject_choose_first_into_a_type_of_another_contract_unique_over_the_owner_hash(
+        ) {
+            let result = run_contract_create_with_foreign(
+                "tests/supporting_files/contract/reference-validation/reference-validation-contract-choose-first-registration-foreign-copyable-owner-hash.json",
+                CHOOSE_FIRST_PREORDERS_PATH,
+            )
+            .await;
+
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(
+                        StateError::ReferencedDocumentLookupInvalidError(e)
+                    ),
+                    ..
+                } if e.path() == "name.$creatorId"
+                    && e.reason().contains(
+                        "index \"ownerNameHashAlone\" of \"copyablePreorder\" is unique over \
+                         \"ownerNameHash\" without $ownerId"
+                    )
             );
         }
 

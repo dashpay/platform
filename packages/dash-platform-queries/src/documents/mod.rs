@@ -1,3 +1,4 @@
+pub mod array_element_clauses;
 pub(crate) mod average_proof_helpers;
 pub mod chained_document_query;
 pub mod composite_document_query;

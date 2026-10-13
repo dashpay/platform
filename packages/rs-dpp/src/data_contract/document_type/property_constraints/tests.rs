@@ -2208,8 +2208,8 @@ fn should_refuse_a_malformed_size_operand() {
         (
             platform_value!({ "size": "title" }),
             "names \"size\", which is not one of add, subtract, multiply, divide, modulo, \
-             power, min, max, abs, ifAbsent, length, byteLength, count, countPresent, byteAt, countOf \
-             or sumOf",
+             power, min, max, abs, ifAbsent, length, byteLength, count, countPresent, byteAt, countOf, \
+             sumOf or referenced",
         ),
     ] {
         expect_refusal(
@@ -2531,7 +2531,7 @@ fn should_parse_the_system_times_and_heights_as_operands() {
             rule,
             PropertyConstraint::Compare {
                 comparison: ConstraintComparison::LessThan,
-                left: ConstraintExpression::System(system),
+                left: ConstraintExpression::System(system.into()),
                 right: property("deadline"),
             },
             "{}",
@@ -2539,7 +2539,7 @@ fn should_parse_the_system_times_and_heights_as_operands() {
         );
         assert_eq!(rule.node_count(), 3);
         assert_eq!(rule.property_reads(), [("deadline", PropertyRead::Value)]);
-        assert_eq!(rule.system_reads(), [system]);
+        assert_eq!(rule.system_reads(), [SystemRead::from(system)]);
         assert!(!rule.reads_owner());
     }
     for name in ["$ownerId", "$id", "$revision", "$createdat", "createdAt"] {
@@ -2551,7 +2551,10 @@ fn should_parse_the_system_times_and_heights_as_operands() {
     let rule = parse_rule_value(platform_value!({
         "greaterThan": ["$createdAtBlockHeight", 1000]
     }));
-    assert_eq!(rule.system_reads(), [SystemProperty::CreatedAtBlockHeight]);
+    assert_eq!(
+        rule.system_reads(),
+        [SystemRead::from(SystemProperty::CreatedAtBlockHeight)]
+    );
 }
 
 #[test]
@@ -2599,7 +2602,12 @@ fn should_read_the_system_values_the_rule_is_judged_with() {
         created_at_core_block_height: Some(7),
         updated_at_core_block_height: Some(8),
         transferred_at_core_block_height: Some(9),
+        revision: None,
         aggregates: None,
+        consensus: false,
+        stored: None,
+        changed_fields: None,
+        referenced_documents: false,
     };
     for (index, property) in SystemProperty::ALL.into_iter().enumerate() {
         let expected = i128::try_from(index + 1).expect("small");
@@ -2903,7 +2911,10 @@ fn should_parse_contains_by_the_kind_of_the_array() {
     assert_eq!(defaulted.text_defaults(), [("status", "sale")]);
     // A system value looked for among integers is read like any operand
     let created = parse_rule_value(platform_value!({ "contains": ["scores", "$createdAt"] }));
-    assert_eq!(created.system_reads(), [SystemProperty::CreatedAt]);
+    assert_eq!(
+        created.system_reads(),
+        [SystemRead::from(SystemProperty::CreatedAt)]
+    );
 }
 
 #[test]
@@ -4273,6 +4284,7 @@ fn should_read_an_aggregate_from_the_system_values_and_skip_a_rule_not_given_one
     let cheap = data(&[("price", Value::U64(5))]);
     let with_total = |total: i128| DocumentSystemValues {
         aggregates: Some(BTreeMap::from([(read.clone(), total)])),
+        referenced_documents: false,
         ..DocumentSystemValues::default()
     };
 
@@ -4292,6 +4304,7 @@ fn should_read_an_aggregate_from_the_system_values_and_skip_a_rule_not_given_one
     // missing total is reported, which `validate_property_constraints` turns
     // into an error; a client's, which reads none, only skips the rule
     let other = DocumentSystemValues {
+        consensus: true,
         aggregates: Some(BTreeMap::from([(
             AggregateRead {
                 document_type: "listing".to_string(),
@@ -4307,5 +4320,484 @@ fn should_read_an_aggregate_from_the_system_values_and_skip_a_rule_not_given_one
     assert_eq!(
         rule.unread_aggregate(&DocumentSystemValues::default()),
         None
+    );
+    // Consensus giving no totals at all lacks this one too
+    let none_read = DocumentSystemValues {
+        consensus: true,
+        ..DocumentSystemValues::default()
+    };
+    assert_eq!(rule.unread_aggregate(&none_read), Some(&read));
+}
+
+// ── the stored version ($old.) and $revision ────────────────────────────
+
+/// The system values of a stored version holding `properties`, owned by
+/// `owner`, last updated at `updated_at` and at revision `revision`.
+fn stored_version(
+    properties: &[(&str, Value)],
+    owner: Identifier,
+    updated_at: u64,
+    revision: u64,
+) -> StoredVersion {
+    StoredVersion::Present(Box::new(StoredDocument {
+        properties: Some(
+            properties
+                .iter()
+                .map(|(key, value)| (key.to_string(), value.clone()))
+                .collect(),
+        ),
+        system: StoredSystemValues {
+            owner_id: owner,
+            updated_at: Some(updated_at),
+            revision: Some(revision),
+            ..Default::default()
+        },
+    }))
+}
+
+/// Why `rule` breaks for a document whose properties are `data` and whose
+/// system values are `system`, judged as the document type judges it: with
+/// the stored version's properties under `$old`.
+fn judge(
+    rule: &PropertyConstraint,
+    data: &Value,
+    system: &DocumentSystemValues,
+) -> Option<PropertyConstraintViolation> {
+    rule.violation(&system.judged_data(data), system)
+}
+
+/// A path, `$ownerId`, a time, a height or `$revision` under `$old.` names the
+/// stored version's; every such read marks the rule as reading it.
+#[test]
+fn should_parse_reads_of_the_stored_version() {
+    let rule = parse_rule_value(platform_value!({
+        "greaterThanOrEqual": ["price", { "ifAbsent": ["$old.price", 0] }]
+    }));
+    assert_eq!(
+        rule.property_reads(),
+        [
+            ("price", PropertyRead::Value),
+            ("$old.price", PropertyRead::Value)
+        ]
+    );
+    assert!(rule.reads_stored());
+    assert!(!parse_rule_value(platform_value!({ "greaterThan": ["price", 0] })).reads_stored());
+
+    let updated = parse_rule_value(platform_value!({
+        "greaterThanOrEqual": [{ "subtract": ["$updatedAt", "$old.$updatedAt"] }, 3600000]
+    }));
+    let stored_update = SystemRead {
+        value: SystemValue::Property(SystemProperty::UpdatedAt),
+        stored: true,
+    };
+    assert_eq!(
+        updated.system_reads(),
+        [SystemRead::from(SystemProperty::UpdatedAt), stored_update]
+    );
+    assert_eq!(stored_update.name(), "$old.$updatedAt");
+    assert_eq!(
+        SystemRead::from_name("$old.$updatedAt"),
+        Some(stored_update)
+    );
+    assert!(updated.reads_stored());
+
+    let revisions = parse_rule_value(platform_value!({
+        "equal": ["$revision", { "add": ["$old.$revision", 1] }]
+    }));
+    assert_eq!(
+        revisions
+            .system_reads()
+            .into_iter()
+            .map(SystemRead::name)
+            .collect::<Vec<_>>(),
+        ["$revision", "$old.$revision"]
+    );
+    assert!(revisions.reads_stored());
+
+    // `$old.$ownerId` compares as an identifier, reads the owner, and is no property
+    let resold = parse_rule_value(platform_value!({ "notEqual": ["$ownerId", "$old.$ownerId"] }));
+    assert_eq!(
+        resold,
+        PropertyConstraint::IdentifierCompareProperties {
+            comparison: ConstraintComparison::NotEqual,
+            left: OWNER_ID.to_string(),
+            right: STORED_OWNER_ID.to_string(),
+        }
+    );
+    assert!(resold.property_reads().is_empty());
+    assert!(resold.reads_owner());
+    assert!(resold.reads_stored());
+
+    // A string, an identifier or an array of the stored version compares as the
+    // property after `$old.` does
+    let reopened = parse_rule_value(platform_value!({
+        "ifThen": [
+            { "equal": ["$old.status", { "const": "closed" }] },
+            { "equal": ["status", { "const": "closed" }] }
+        ]
+    }));
+    assert_eq!(
+        reopened.property_reads(),
+        [
+            ("$old.status", PropertyRead::Text),
+            ("status", PropertyRead::Text)
+        ]
+    );
+    let kept_label = parse_rule_value(platform_value!({
+        "ifThen": [
+            { "contains": ["$old.labels", { "const": "verified" }] },
+            { "contains": ["labels", { "const": "verified" }] }
+        ]
+    }));
+    assert_eq!(
+        kept_label.property_reads(),
+        [
+            ("$old.labels", PropertyRead::Elements(ElementKind::Text)),
+            ("labels", PropertyRead::Elements(ElementKind::Text))
+        ]
+    );
+    let same_buyer = parse_rule_value(platform_value!({ "equal": ["buyerId", "$old.buyerId"] }));
+    assert!(matches!(
+        same_buyer,
+        PropertyConstraint::IdentifierCompareProperties { .. }
+    ));
+}
+
+#[test]
+fn should_refuse_what_the_stored_version_cannot_take() {
+    expect_refusal(
+        platform_value!({
+            "rule": { "lessThan": [{ "ifAbsent": ["$old.$updatedAt", 0] }, "deadline"] }
+        }),
+        "at lessThan[0].ifAbsent gives $old.$updatedAt a default, but a system value of the \
+         stored version is always set, and reads 0 on a create, which has none: name it on its \
+         own",
+    );
+    expect_refusal(
+        platform_value!({ "rule": { "equal": [{ "byteAt": ["$old.$ownerId", 0] }, 1] } }),
+        "names $old.$ownerId, but byteAt reads a byte array property",
+    );
+    expect_refusal(
+        platform_value!({
+            "rule": { "lessThan": [{ "countOf": ["listing", { "status": "$old.status" }] }, 10] }
+        }),
+        "takes $old.status, but a total matches its documents by the document being written, \
+         never the stored version it replaces",
+    );
+}
+
+/// On a create there is no stored version: a property under `$old.` is absent
+/// and a stored system value reads 0. On a later write it is the version
+/// replaced. A rule reading it is not judged when the stored version is not
+/// given, as a client not handed one judges.
+#[test]
+fn should_judge_a_stored_read_on_a_create_on_a_replace_and_not_without_it() {
+    let rule = parse_rule_value(platform_value!({
+        "greaterThanOrEqual": ["price", { "ifAbsent": ["$old.price", 0] }]
+    }));
+    let price = |value: i64| data(&[("price", Value::I64(value))]);
+    let owner = Identifier::new([1; 32]);
+    let create = DocumentSystemValues {
+        stored: Some(StoredVersion::Absent),
+        ..Default::default()
+    };
+    let replacing = |stored_price: i64| DocumentSystemValues {
+        stored: Some(stored_version(
+            &[("price", Value::I64(stored_price))],
+            owner,
+            0,
+            1,
+        )),
+        ..Default::default()
+    };
+
+    assert_eq!(judge(&rule, &price(5), &create), None);
+    assert_eq!(
+        judge(&rule, &price(-1), &create),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    assert_eq!(judge(&rule, &price(3), &replacing(3)), None);
+    assert_eq!(
+        judge(&rule, &price(2), &replacing(3)),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    // Not given: not judged, whatever it would say
+    assert_eq!(
+        judge(&rule, &price(-1), &DocumentSystemValues::default()),
+        None
+    );
+
+    // A `$old` the written data carries itself is never read as the stored version
+    let forged = data(&[
+        ("price", Value::I64(-1)),
+        ("$old", data(&[("price", Value::I64(-5))])),
+    ]);
+    assert_eq!(
+        judge(&rule, &forged, &create),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    // Stored at 0, the price may not fall to -1, though the forged -5 would allow it
+    assert_eq!(
+        judge(&rule, &forged, &replacing(0)),
+        Some(PropertyConstraintViolation::NotMet),
+        "the stored version replaces it"
+    );
+}
+
+#[test]
+fn should_read_the_stored_owner_times_and_revision() {
+    let seller = Identifier::new([1; 32]);
+    let buyer = Identifier::new([2; 32]);
+    let empty = data(&[]);
+
+    // A transfer: the owner differs from the stored one
+    let changed_hands =
+        parse_rule_value(platform_value!({ "notEqual": ["$ownerId", "$old.$ownerId"] }));
+    let owned_by = |owner: Identifier, stored: StoredVersion| DocumentSystemValues {
+        owner_id: Some(owner),
+        stored: Some(stored),
+        ..Default::default()
+    };
+    assert_eq!(
+        judge(
+            &changed_hands,
+            &empty,
+            &owned_by(buyer, stored_version(&[], seller, 0, 1))
+        ),
+        None
+    );
+    assert_eq!(
+        judge(
+            &changed_hands,
+            &empty,
+            &owned_by(seller, stored_version(&[], seller, 0, 1))
+        ),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    // A create has no stored owner, which equals no identifier
+    assert_eq!(
+        judge(
+            &changed_hands,
+            &empty,
+            &owned_by(buyer, StoredVersion::Absent)
+        ),
+        None
+    );
+
+    // Edits an hour apart: the stored update time reads 0 on a create
+    let hour_apart = parse_rule_value(platform_value!({
+        "greaterThanOrEqual": [{ "subtract": ["$updatedAt", "$old.$updatedAt"] }, 3600000]
+    }));
+    let updated = |at: u64, stored: StoredVersion| DocumentSystemValues {
+        updated_at: Some(at),
+        stored: Some(stored),
+        ..Default::default()
+    };
+    let day = 86_400_000;
+    assert_eq!(
+        judge(
+            &hour_apart,
+            &empty,
+            &updated(day + 3_600_000, stored_version(&[], seller, day, 1))
+        ),
+        None
+    );
+    assert_eq!(
+        judge(
+            &hour_apart,
+            &empty,
+            &updated(day + 3_599_999, stored_version(&[], seller, day, 1))
+        ),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    assert_eq!(
+        judge(&hour_apart, &empty, &updated(day, StoredVersion::Absent)),
+        None
+    );
+
+    // At most five writes after the create, and the revision moves by one
+    let five_edits = parse_rule_value(platform_value!({ "lessThanOrEqual": ["$revision", 6] }));
+    let at_revision = |revision: Option<u64>| DocumentSystemValues {
+        revision,
+        ..Default::default()
+    };
+    assert_eq!(judge(&five_edits, &empty, &at_revision(Some(6))), None);
+    assert_eq!(
+        judge(&five_edits, &empty, &at_revision(Some(7))),
+        Some(PropertyConstraintViolation::NotMet)
+    );
+    // Not given: not judged
+    assert_eq!(judge(&five_edits, &empty, &at_revision(None)), None);
+    let next_revision = parse_rule_value(platform_value!({
+        "equal": ["$revision", { "add": ["$old.$revision", 1] }]
+    }));
+    let written_at = |revision: u64, stored: StoredVersion| DocumentSystemValues {
+        revision: Some(revision),
+        stored: Some(stored),
+        ..Default::default()
+    };
+    assert_eq!(
+        judge(
+            &next_revision,
+            &empty,
+            &written_at(3, stored_version(&[], seller, 0, 2))
+        ),
+        None
+    );
+    assert_eq!(
+        judge(
+            &next_revision,
+            &empty,
+            &written_at(1, StoredVersion::Absent)
+        ),
+        None,
+        "a create's first revision follows the 0 an absent stored version reads"
+    );
+}
+
+/// A transfer, a purchase or a price update changes no property, so it is
+/// judged only against the rules reading what it changes, of either version;
+/// a restore only against the rules reading a total, and a moderator's change
+/// of fields against those reading one of them, `$revision` or a total.
+#[test]
+fn should_tell_which_writes_a_stored_read_answers_to() {
+    let rule = |value: Value| parse_rule_value(value);
+    let stricter = rule(platform_value!({ "greaterThan": ["price", "$old.price"] }));
+    let resold = rule(platform_value!({ "notEqual": ["$ownerId", "$old.$ownerId"] }));
+    let held_a_day = rule(platform_value!({
+        "greaterThanOrEqual": [{ "subtract": ["$transferredAt", "$old.$transferredAt"] }, 86400000]
+    }));
+    let priced_apart = rule(platform_value!({
+        "greaterThan": ["$old.$updatedAtBlockHeight", 10]
+    }));
+    let revised = rule(platform_value!({ "lessThanOrEqual": ["$revision", 6] }));
+    let capped = rule(platform_value!({
+        "ifThen": [
+            { "notEqual": ["status", "$old.status"] },
+            { "lessThan": [{ "countOf": ["dispute", { "orderId": "$id" }] }, 3] }
+        ]
+    }));
+
+    for (name, parsed, transfer, price_update, restore) in [
+        ("stricter", &stricter, false, false, false),
+        ("resold", &resold, true, false, false),
+        ("held_a_day", &held_a_day, true, false, false),
+        ("priced_apart", &priced_apart, false, true, false),
+        ("revised", &revised, true, true, false),
+        ("capped", &capped, false, false, true),
+    ] {
+        assert_eq!(
+            parsed.reads_change(SystemChange::Transfer),
+            transfer,
+            "{name}: transfer"
+        );
+        assert_eq!(
+            parsed.reads_change(SystemChange::PriceUpdate),
+            price_update,
+            "{name}: price update"
+        );
+        assert_eq!(
+            parsed.reads_change(SystemChange::Restore),
+            restore,
+            "{name}: restore"
+        );
+    }
+
+    let fields = |names: &[&str]| -> BTreeSet<String> {
+        names.iter().map(|name| name.to_string()).collect()
+    };
+    assert!(stricter.reads_changed_fields(&fields(&["price"])));
+    assert!(!stricter.reads_changed_fields(&fields(&["note"])));
+    assert!(!resold.reads_changed_fields(&fields(&["price"])));
+    assert!(revised.reads_changed_fields(&fields(&["note"])));
+    assert!(capped.reads_changed_fields(&fields(&["note"])));
+    let nested = rule(platform_value!({ "equal": ["$old.meta.state", "meta.state"] }));
+    assert!(nested.reads_changed_fields(&fields(&["meta"])));
+}
+
+/// Consensus gives the stored version to every rule reading it: one missing
+/// while consensus's totals are there is a fault in the code building the
+/// write, not a rule to skip.
+#[test]
+fn should_report_a_stored_version_consensus_did_not_give() {
+    let rule = parse_rule_value(platform_value!({ "greaterThan": ["price", "$old.price"] }));
+    let consensus = |stored: Option<StoredVersion>| DocumentSystemValues {
+        consensus: true,
+        stored,
+        ..Default::default()
+    };
+    assert!(rule.unread_stored_version(&consensus(None)));
+    assert!(!rule.unread_stored_version(&consensus(Some(StoredVersion::Absent))));
+    assert!(!rule.unread_stored_version(&DocumentSystemValues::default()));
+    let unread = parse_rule_value(platform_value!({ "greaterThan": ["price", 0] }));
+    assert!(!unread.unread_stored_version(&consensus(None)));
+
+    // Given without its properties, the stored version is given: whether a
+    // rule reading one of them may be judged is the judging's to tell
+    let without_properties = consensus(Some(StoredVersion::without_properties(
+        StoredSystemValues::default(),
+    )));
+    assert!(!rule.unread_stored_version(&without_properties));
+    assert!(!without_properties.stored_properties_given());
+    assert!(consensus(None).stored_properties_given());
+    let revised =
+        parse_rule_value(platform_value!({ "greaterThan": ["$revision", "$old.$revision"] }));
+    assert!(revised.unread_stored_version(&consensus(None)));
+}
+
+/// A create records the first revision and no stored version; a document's
+/// values carry its revision and no stored version either, and as the version
+/// a write replaces, its properties, owner and revision are what `$old.` reads.
+#[test]
+fn should_take_the_revision_and_stored_version_of_a_create_and_of_a_document() {
+    let owner = Identifier::new([3; 32]);
+    let created = DocumentSystemValues::created_in_block(owner, &BlockInfo::default());
+    assert_eq!(created.revision, Some(INITIAL_REVISION));
+    assert_eq!(created.stored, Some(StoredVersion::Absent));
+    assert_eq!(created.stored_owner_id(), None);
+    assert_eq!(
+        created.read(SystemRead {
+            value: SystemValue::Revision,
+            stored: true
+        }),
+        Some(0)
+    );
+
+    let document: Document = crate::document::DocumentV0 {
+        owner_id: owner,
+        properties: BTreeMap::from([("price".to_string(), Value::U64(7))]),
+        revision: Some(3),
+        updated_at: Some(20),
+        ..Default::default()
+    }
+    .into();
+    let values = DocumentSystemValues::of_document(&document);
+    assert_eq!(values.revision, Some(3));
+    assert_eq!(values.stored, None);
+
+    let replacing = DocumentSystemValues {
+        stored: Some(StoredVersion::of_document(&document)),
+        ..DocumentSystemValues::default()
+    };
+    assert_eq!(replacing.stored_owner_id(), Some(owner));
+    for (value, expected) in [
+        (SystemValue::Revision, 3),
+        (SystemValue::Property(SystemProperty::UpdatedAt), 20),
+    ] {
+        assert_eq!(
+            replacing.read(SystemRead {
+                value,
+                stored: true
+            }),
+            Some(expected)
+        );
+    }
+    assert_eq!(
+        replacing
+            .judged_data(&data(&[]))
+            .get_optional_value_at_path("$old.price")
+            .ok()
+            .flatten(),
+        Some(&Value::U64(7))
     );
 }

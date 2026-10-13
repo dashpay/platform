@@ -2,6 +2,7 @@ pub mod transformer;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::property_constraints::AggregateRead;
+use crate::state_transition_action::batch::batched_transition::document_transition::property_constraint_reads::PropertyConstraintReads;
 use dpp::document::{Document, DocumentV0};
 use dpp::platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
@@ -46,11 +47,10 @@ pub struct DocumentCreateTransitionActionV0 {
     /// contest. Boxed, since only such a create holds one and the action is the largest variant
     /// of a large enum.
     pub should_store_contest_info: Option<Box<ContestedDocumentVotePollStoredInfo>>,
-    /// The `countOf` and `sumOf` totals the document type's `propertyConstraints` rules
-    /// read, each as it will be once this write is done, read from state when the action is
-    /// built; `None` when the rules judging the write read none, and boxed, since only
-    /// such a write holds any and the action is one variant of a large enum.
-    pub property_constraint_aggregates: Option<Box<BTreeMap<AggregateRead, i128>>>,
+    /// What the document type's `propertyConstraints` rules read beyond the document,
+    /// attached once the action is built ([`PropertyConstraintReads`]): the `countOf` and
+    /// `sumOf` totals, each as it will be once this write is done.
+    pub property_constraint_reads: Option<Box<PropertyConstraintReads>>,
     /// Whether the batch transformer judged the create a moderator's write of fields the
     /// document type keeps for its moderators: its owner moderates the contract and sets one.
     /// The document is then stamped `$moderatedAt` the block's time and `$moderatedBy` the

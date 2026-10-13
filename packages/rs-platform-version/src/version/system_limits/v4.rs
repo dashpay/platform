@@ -59,6 +59,13 @@ use crate::version::system_limits::SystemLimits;
 /// * Typed array document properties (protocol version 14): a typed array property declares
 ///   `maxItems`, at most 1024 elements (`max_typed_array_items`, backfilled into the
 ///   earlier tables, whose parsers never read it).
+/// * Typed array element indexes (protocol version 14): an index keying documents by the
+///   elements of a typed array holds the array to at most 16 elements
+///   (`max_indexed_array_items`), or 4 when the index also has a `timeRange` or `integerRange`
+///   window (`max_windowed_indexed_array_items`), and one document of such a type writes at
+///   most 256 index entries across its indexes (`max_index_entries_per_document`). They joined
+///   this table in place while protocol version 14 was unreleased. `None` in the earlier
+///   tables, whose parsers refuse an index on a typed array.
 /// * References (protocol version 14): one document of a document type carries at most 256
 ///   references, counted at registration as one per property with `refersTo`, one for the
 ///   type's `ownerRefersTo` and `maxItems` per typed array whose elements declare one
@@ -111,7 +118,18 @@ use crate::version::system_limits::SystemLimits;
 ///   `minimumPoolNotesForOutgoing` is at most 250 (`max_token_pool_notes_for_outgoing`), the
 ///   credit pool's own threshold, backfilled into the earlier tables, which admit no token
 ///   configuration able to carry it.
+/// * Choosing the first commitment (protocol version 14): a create whose `refersTo` declares
+///   `chooseFirst` reads at most 1,000 competitors of the commitment it found
+///   (`max_choose_first_candidates`, backfilled into the earlier tables, whose validation never
+///   reads it).
+/// * Unsigned index value keys (protocol version 14): the first block of the version rewrites
+///   the keys of unsigned integer index values, applying its moves in batches of 10,000 moves
+///   (`max_rekey_batch_moves`). `None` in the earlier tables, which never run the rewrite.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
+    // The page matches one notes-tree chunk (2^11). A batch holds at most that
+    // page's missing rhos; GroveDB accepts a Vec of operations with no smaller API cap.
+    credit_pool_nullifier_backfill_page_size: 2048,
+    credit_pool_nullifier_backfill_batch_size: 2048,
     estimated_contract_max_serialized_size: 16384,
     max_field_value_size: 5120, //5 KiB
     // Use the protocol's existing data-contract schema-depth ceiling as the conservative
@@ -177,4 +195,9 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_expiration_weight_per_block: 1_024, // document ttl (new in v14): deleted documents plus their index levels per block
     max_contested_summed_value_magnitude: Some(1 << 27), // contested summed types (new in v14): values within ±2^27
     max_expiring_signed_summed_value_magnitude: Some(1 << 27), // expiring summed types (new in v14): values within ±2^27 unless never negative
+    max_indexed_array_items: Some(16), // typed array element indexes (new in v14): an indexed typed array holds at most 16 elements
+    max_windowed_indexed_array_items: Some(4), // typed array element indexes (new in v14): at most 4 when the index also has a timeRange or integerRange window
+    max_index_entries_per_document: Some(256), // typed array element indexes (new in v14): one document of a type with an indexed array writes at most 256 index entries
+    max_choose_first_candidates: 1_000, // refersTo chooseFirst (new in v14): competitors a create reads, oldest first
+    max_rekey_batch_moves: Some(10_000), // the protocol version 14 rewrite of unsigned index value keys applies its moves in batches of this many moves
 };

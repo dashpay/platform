@@ -22,7 +22,7 @@ mod creation_tests {
     use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
     use dpp::document::Document;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-    use crate::test::helpers::dpns::dpns_salted_domain_hash;
+    use crate::test::helpers::dpns::set_dpns_preorder_hashes;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
     use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
     use dpp::voting::vote_polls::contested_document_resource_vote_poll::required_vote_resolution_fund;
@@ -65,7 +65,7 @@ mod creation_tests {
     use crate::execution::validation::state_transition::tests::{create_card_game_external_token_contract_with_owner_identity, create_card_game_internal_token_contract_with_owner_identity_transfer_tokens, create_token_contract_with_owner_identity};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult::SuccessfulExecution;
 
-    /// The block after the one holding the preorders: from protocol version 14 a domain
+    /// The block after the one holding the preorders: from protocol version 15 a domain
     /// reveals a preorder made in an earlier block.
     fn block_after_the_preorders() -> BlockInfo {
         BlockInfo::default_with_height(1)
@@ -835,24 +835,24 @@ mod creation_tests {
         let salt_1: [u8; 32] = rng.gen();
         let salt_2: [u8; 32] = rng.gen();
 
-        let salted_domain_hash_1 = dpns_salted_domain_hash(
-            preorder_document_1.owner_id(),
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
             &salt_1,
             "quantum",
             "dash",
             platform_version,
         );
-
-        let salted_domain_hash_2 = dpns_salted_domain_hash(
-            preorder_document_2.owner_id(),
+        let preorder_owner = preorder_document_2.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_2,
+            preorder_owner,
             &salt_2,
             "quantum",
             "dash",
             platform_version,
         );
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
-        preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
 
         document_1.set("preorderSalt", salt_1.into());
         document_2.set("preorderSalt", salt_2.into());
@@ -1274,15 +1274,15 @@ mod creation_tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let salted_domain_hash_1 = dpns_salted_domain_hash(
-            preorder_document_1.owner_id(),
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
             &salt_1,
             "quantum",
             "dash",
             platform_version,
         );
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
 
         document_1.set("preorderSalt", salt_1.into());
 
@@ -1558,15 +1558,15 @@ mod creation_tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let salted_domain_hash_1 = dpns_salted_domain_hash(
-            preorder_document_1.owner_id(),
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
             &salt_1,
             "quantum",
             "dash",
             platform_version,
         );
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
 
         document_1.set("preorderSalt", salt_1.into());
 
@@ -1852,16 +1852,14 @@ mod creation_tests {
 
         let salt_3: [u8; 32] = rng.gen();
 
-        preorder_document_3.set(
-            "saltedDomainHash",
-            dpns_salted_domain_hash(
-                preorder_document_3.owner_id(),
-                &salt_3,
-                "quantum",
-                "dash",
-                platform_version,
-            )
-            .into(),
+        let preorder_owner = preorder_document_3.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_3,
+            preorder_owner,
+            &salt_3,
+            "quantum",
+            "dash",
+            platform_version,
         );
 
         document_3.set("preorderSalt", salt_3.into());
@@ -2133,15 +2131,15 @@ mod creation_tests {
 
         let salt_1: [u8; 32] = rng.gen();
 
-        let salted_domain_hash_1 = dpns_salted_domain_hash(
-            preorder_document_1.owner_id(),
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
             &salt_1,
             "quantum",
             "dash",
             platform_version,
         );
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
 
         document_1.set("preorderSalt", salt_1.into());
 
@@ -2554,42 +2552,42 @@ mod creation_tests {
         let salt_3: [u8; 32] = rng.gen();
         let salt_4: [u8; 32] = rng.gen();
 
-        let salted_domain_hash_1 = dpns_salted_domain_hash(
-            preorder_document_1.owner_id(),
+        let preorder_owner = preorder_document_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_1,
+            preorder_owner,
             &salt_1,
             "quantum",
             "dash",
             platform_version,
         );
-
-        let salted_domain_hash_2 = dpns_salted_domain_hash(
-            preorder_document_2.owner_id(),
+        let preorder_owner = preorder_document_2.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_2,
+            preorder_owner,
             &salt_2,
             "quantum",
             "dash",
             platform_version,
         );
-
-        let salted_domain_hash_3 = dpns_salted_domain_hash(
-            preorder_document_3_on_identity_1.owner_id(),
+        let preorder_owner = preorder_document_3_on_identity_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_3_on_identity_1,
+            preorder_owner,
             &salt_3,
             "cry",
             "dash",
             platform_version,
         );
-
-        let salted_domain_hash_4 = dpns_salted_domain_hash(
-            preorder_document_4_on_identity_1.owner_id(),
+        let preorder_owner = preorder_document_4_on_identity_1.owner_id();
+        set_dpns_preorder_hashes(
+            &mut preorder_document_4_on_identity_1,
+            preorder_owner,
             &salt_4,
             &non_contested_normalized_label,
             "dash",
             platform_version,
         );
-
-        preorder_document_1.set("saltedDomainHash", salted_domain_hash_1.into());
-        preorder_document_2.set("saltedDomainHash", salted_domain_hash_2.into());
-        preorder_document_3_on_identity_1.set("saltedDomainHash", salted_domain_hash_3.into());
-        preorder_document_4_on_identity_1.set("saltedDomainHash", salted_domain_hash_4.into());
 
         document_1.set("preorderSalt", salt_1.into());
         document_2.set("preorderSalt", salt_2.into());
@@ -3200,27 +3198,23 @@ mod creation_tests {
         let contested_salt: [u8; 32] = rng.gen();
         let non_contested_salt: [u8; 32] = rng.gen();
 
-        contested_preorder_document.set(
-            "saltedDomainHash",
-            dpns_salted_domain_hash(
-                contested_preorder_document.owner_id(),
-                &contested_salt,
-                contested_label,
-                "dash",
-                platform_version,
-            )
-            .into(),
+        let preorder_owner = contested_preorder_document.owner_id();
+        set_dpns_preorder_hashes(
+            &mut contested_preorder_document,
+            preorder_owner,
+            &contested_salt,
+            contested_label,
+            "dash",
+            platform_version,
         );
-        non_contested_preorder_document.set(
-            "saltedDomainHash",
-            dpns_salted_domain_hash(
-                non_contested_preorder_document.owner_id(),
-                &non_contested_salt,
-                non_contested_normalized_label,
-                "dash",
-                platform_version,
-            )
-            .into(),
+        let preorder_owner = non_contested_preorder_document.owner_id();
+        set_dpns_preorder_hashes(
+            &mut non_contested_preorder_document,
+            preorder_owner,
+            &non_contested_salt,
+            non_contested_normalized_label,
+            "dash",
+            platform_version,
         );
         contested_document.set("preorderSalt", contested_salt.into());
         non_contested_document.set("preorderSalt", non_contested_salt.into());
@@ -3654,8 +3648,8 @@ mod creation_tests {
         let SuccessfulExecution { fee_result, .. } = result else {
             panic!("expected the contender to join, got {result:?}");
         };
-        // From protocol version 14 the join consumes the contender's preorder, whose storage
-        // is refunded to it
+        // From protocol version 15 the join consumes the contender's preorder, which refunds
+        // nothing (it expires), though the check reads the refund to hold either way
         let preorder_refund = fee_result
             .fee_refunds
             .calculate_refunds_amount_for_identity(contender.id())

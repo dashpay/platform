@@ -60,7 +60,8 @@ mod contacts;
 mod dashpay_view;
 mod invitation;
 pub use invitation::{
-    Invitation, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
+    Invitation, InvitationClaimStatus, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS,
+    MIN_INVITATION_DUFFS,
 };
 mod payment_handler;
 pub(crate) use payment_handler::DashPayPaymentHandler;
@@ -73,6 +74,7 @@ pub(crate) use payments::{record_incoming_dashpay_payments, sent_payment_status_
 mod profile;
 pub(crate) mod sdk_writer;
 mod seed_binding;
+mod signing_key;
 pub use seed_binding::SeedBindingVerification;
 
 // Token state-transition operations (same `IdentityWallet` impl blocks).

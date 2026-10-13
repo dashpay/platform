@@ -148,7 +148,26 @@ internal fun propertyConstraintSystemReadsText(rule: DocumentPropertyConstraint)
  */
 internal const val PROPERTY_CONSTRAINT_SYSTEM_READS_NOTE =
     "A price update is judged against the rules reading \$updatedAt or its block heights, " +
-        "and a transfer or purchase against those reading \$transferredAt or its block heights."
+        "a transfer or purchase against those reading \$transferredAt or its block heights, " +
+        "and each of them against those reading \$revision."
+
+/**
+ * The line shown under a rule reading the stored version of the document
+ * through `$old.` ([DocumentPropertyConstraint.readsStored]), `null` for a
+ * rule reading none of it. The SwiftExampleApp shows the same text.
+ */
+internal fun propertyConstraintStoredReadsText(rule: DocumentPropertyConstraint): String? =
+    if (rule.readsStored) "Reads the stored version (\$old.), the one a write replaces" else null
+
+/**
+ * The note under a rule reading the stored version
+ * ([propertyConstraintStoredReadsText] not `null`): a create has none, so
+ * consensus and the check before sending both read every `$old.` value as
+ * absent. The same text as the SwiftExampleApp's, for cross-platform UAT.
+ */
+internal const val PROPERTY_CONSTRAINT_STORED_READS_NOTE =
+    "A create has no stored version: there, and in the check before sending, every \$old. " +
+        "read is absent."
 
 /**
  * The line naming the `countOf` and `sumOf` totals [rule] reads, each once:
@@ -181,6 +200,29 @@ private fun totalText(total: PropertyConstraintTotalRead): String = buildString 
 internal const val PROPERTY_CONSTRAINT_TOTALS_NOTE =
     "The platform reads these totals when the document is sent; the check before sending " +
         "does not, so it cannot catch this rule."
+
+/**
+ * The line naming the values [rule] reads of referenced documents, each once,
+ * as `reference.path (kind)`:
+ * `Reads referenced documents: pollId.status (text), pollId.$ownerId (identifier)`.
+ * `null` for a rule reading none. The SwiftExampleApp builds the same text.
+ */
+internal fun propertyConstraintReferencedReadsText(rule: DocumentPropertyConstraint): String? =
+    rule.readsReferenced
+        .map { "${it.reference}.${it.path} (${it.kind.name})" }
+        .distinct()
+        .takeIf { it.isNotEmpty() }
+        ?.joinToString(", ", prefix = "Reads referenced documents: ")
+
+/**
+ * The note under a rule reading a referenced document
+ * ([propertyConstraintReferencedReadsText] not `null`): the check before
+ * sending has no referenced document, so it cannot catch the rule. The same
+ * text as the SwiftExampleApp's, for cross-platform UAT.
+ */
+internal const val PROPERTY_CONSTRAINT_REFERENCED_NOTE =
+    "The platform reads the referenced documents when it checks the references; the check " +
+        "before sending does not, so it cannot catch this rule."
 
 /** Title of the alert a broken rule raises instead of a broadcast. */
 internal const val PROPERTY_CONSTRAINT_BROKEN_TITLE = "Not sent: a property constraint is broken"

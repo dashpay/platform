@@ -1,5 +1,6 @@
 //! DashPay contact request lifecycle: send, sync, accept, reject.
 
+use super::signing_key::AvailableSigningKey;
 use dpp::document::DocumentV0Getters;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -610,12 +611,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             // Contact-request send writes a document state transition,
             // which DPP requires to be signed by a HIGH-or-stricter
             // authentication key. MASTER is rejected on document writes.
-            .get_first_public_key_matching(
+            .available_signing_key(
+                signer,
                 Purpose::AUTHENTICATION,
-                [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                [KeyType::ECDSA_SECP256K1].into(),
+                &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+                &[KeyType::ECDSA_SECP256K1],
                 false,
-            )
+            )?
             .cloned()
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
