@@ -397,6 +397,13 @@ mod dpns_v3_tests {
         /// Runs the protocol version 15 activation at block `height` on a
         /// chain at protocol version 14, as the first block of version 15 does.
         fn activate_protocol_version_15(&mut self, height: u64) {
+            self.activate_protocol_version_15_from(14, height);
+        }
+
+        /// Runs the protocol version 15 activation at block `height` on a chain
+        /// at `previous`, as the first block of version 15 does: every rung of
+        /// the upgrade ladder above `previous`, each with version 15's tables.
+        fn activate_protocol_version_15_from(&mut self, previous: u32, height: u64) {
             let platform_version_15 =
                 PlatformVersion::get(15).expect("expected platform version 15");
             let platform_state = self.platform.state.load();
@@ -406,7 +413,7 @@ mod dpns_v3_tests {
                     &platform_state,
                     &block(height),
                     &transaction,
-                    14,
+                    previous,
                     platform_version_15,
                 )
                 .expect("expected the transition to protocol version 15 to succeed");
@@ -1156,6 +1163,39 @@ mod dpns_v3_tests {
             StateTransitionExecutionResult::SuccessfulExecution { .. }
         );
         assert!(fixture.stored_preorder(&preorder).is_none());
+    }
+
+    /// A chain at protocol version 12 voting straight for 15: the ladder runs the rungs for
+    /// 13, 14 and 15 in one block, each with version 15's tables. The rung for 13 re-stores
+    /// DPNS as protocol version 14 still declares it, v2, so the rung for 15 finds the
+    /// `preorder` type stored as v1 and v2 declare it and rebuilds it: the preorders made
+    /// before are gone and the layout is a chain born at 15's.
+    #[tokio::test]
+    async fn should_rebuild_the_preorders_on_a_ladder_from_protocol_version_12_to_15() {
+        let mut fixture = DpnsFixture::new(12);
+        let salt: [u8; 32] = fixture.rng.gen();
+        let pending = fixture
+            .preorder(Who::Alice, salt, "quantum8", "dash", PREORDER_HEIGHT)
+            .await;
+        assert!(fixture.stored_preorder(&pending).is_some());
+
+        fixture.activate_protocol_version_15_from(12, 20);
+
+        assert!(fixture
+            .dpns()
+            .document_type_for_name("preorder")
+            .expect("expected the preorder document type")
+            .required_fields()
+            .contains("$createdAtBlockHeight"));
+        assert!(fixture.stored_preorder(&pending).is_none());
+        let born_at_15 = TestPlatformBuilder::new()
+            .with_initial_protocol_version(15)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        assert_eq!(
+            preorder_type_layout(&fixture.platform, fixture.platform_version),
+            preorder_type_layout(&born_at_15, fixture.platform_version)
+        );
     }
 
     /// A chain born at protocol version 15 stores DPNS v3 and still inserts
