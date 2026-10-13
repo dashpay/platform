@@ -185,8 +185,8 @@ impl CoreClient {
                 let this = this.clone();
                 let hash = hash;
                 async move {
-                    // We use get_block_hex to workaround dashcore serialize/deserialize issues
-                    // (eg. UnsupportedSegwitFlag(0), UnknownSpecialTransactionType(58385))
+                    // Fetch the hex rather than a decoded block, so clients get the bytes
+                    // exactly as Core serialized them, even in a format dashcore cannot decode.
                     let block_hex = this
                         .guarded_blocking_call(move |client| client.get_block_hex(&hash))
                         .await??;
