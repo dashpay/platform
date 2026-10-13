@@ -213,10 +213,10 @@ Spending only final coins brings these Rust source and behaviour changes:
   for the same condition, where they returned `AssetLockInsufficientFunds`
   (FFI code 29): a caller that matched 29 to offer "add funds" should treat 59
   as "wait". A drain reports it when the build itself fails (no final coin
-  it can select, or too little to leave more than dust after the fee) and the lock its waiting coins
-  would complete, every coin less the fee, reaches the minimum lock floor;
-  one that builds from a few final coins and lands under the floor is still
-  refused as before.
+  it can select, or too little to leave more than dust after the fee) and the
+  lock its waiting coins would complete, every coin less the fee, reaches the
+  minimum lock floor; one that builds from a few final coins and lands under
+  the floor is still refused as before.
 - Behaviour: every payment build that funds from the wallet, and
   `pooled_spendable_balance` / `pooled_max_sendable`, use only confirmed or
   InstantSend-locked coins. A coin in `FinalizeOptions::inputs` that a

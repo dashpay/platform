@@ -613,9 +613,12 @@ pub enum PlatformWalletError {
     /// caller's drain floor instead: an empty account surfaces as
     /// `available: 0, required: <minimum_lock_duffs>` (the shielded flow
     /// installs the positive Type 18 pool-fee floor before building), and only
-    /// a floor-less drain reports `required: 0`. The floor is additionally
-    /// enforced downstream against the built payload once the lock value is
-    /// known.
+    /// a floor-less drain reports `required: 0`. A drain over a few final
+    /// duffs, too little to build from, reports the larger of the floor and
+    /// key-wallet's own fee-and-dust figure. The floor is a lock value, net of
+    /// the fee, so `required − available` is short of what to add by the fee.
+    /// The floor is additionally enforced downstream against the built
+    /// payload once the lock value is known.
     ///
     /// [`CoreInsufficientFunds`]: Self::CoreInsufficientFunds
     /// [`CorePooledInsufficientFunds`]: Self::CorePooledInsufficientFunds

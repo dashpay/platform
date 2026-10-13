@@ -317,31 +317,39 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     trial_output,
                     drain.then_some(required),
                 );
-                let floor = required;
                 let too_many_inputs = matches!(
                     error,
                     AssetLockError::Builder(BuilderError::TooManyInputs { .. })
                 );
+                let floor = required;
                 return Err(match (map_builder_error(error, required), waiting) {
                     (
                         PlatformWalletError::AssetLockInsufficientFunds {
                             available,
                             required,
                         },
-                        Some(waiting),
-                    ) => PlatformWalletError::CoreFundsAwaitingNetwork {
-                        available: Some(available),
                         waiting,
-                        // A drain needs its floor, not the fee-and-dust figure
-                        // key-wallet names for a few final duffs; without a
-                        // floor it names no amount.
-                        required: if drain {
-                            Some(floor).filter(|floor| *floor > 0)
-                        } else {
-                            Some(required)
-                        },
-                        outpoint: None,
-                    },
+                    ) => {
+                        // For a few final duffs key-wallet names the fee and
+                        // dust the build fell short of. A drain needs its
+                        // floor when that is the larger. The floor is a lock
+                        // value, net of the fee, so the gap to `available`
+                        // is short of what to add by the fee.
+                        let required = if drain { required.max(floor) } else { required };
+                        match waiting {
+                            Some(waiting) => PlatformWalletError::CoreFundsAwaitingNetwork {
+                                available: Some(available),
+                                waiting,
+                                // A drain without a floor asks for no amount.
+                                required: (!drain || floor > 0).then_some(required),
+                                outpoint: None,
+                            },
+                            None => PlatformWalletError::AssetLockInsufficientFunds {
+                                available,
+                                required,
+                            },
+                        }
+                    }
                     // Too many inputs: fewer, larger coins are on their way.
                     (_, Some(waiting)) if too_many_inputs => {
                         PlatformWalletError::CoreFundsAwaitingNetwork {
@@ -351,19 +359,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             outpoint: None,
                         }
                     }
-                    // A drain short of its floor names the floor here too,
-                    // not key-wallet's fee-and-dust figure for a few final
-                    // duffs.
-                    (
-                        PlatformWalletError::AssetLockInsufficientFunds {
-                            available,
-                            required,
-                        },
-                        None,
-                    ) if drain => PlatformWalletError::AssetLockInsufficientFunds {
-                        available,
-                        required: required.max(floor),
-                    },
                     (error, _) => error,
                 });
             }
@@ -1383,9 +1378,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 /// `minimum_lock_duffs.unwrap_or(0)` — as `required`: an empty account reports
 /// `available: 0` against the configured floor (positive for the shielded
 /// flow, which installs the Type 18 pool-fee floor before building), and 0
-/// only when no floor was supplied. The floor is additionally enforced
-/// downstream by `broadcast_funded_asset_lock_with_funding` against the built
-/// payload.
+/// only when no floor was supplied. A shortfall that carries key-wallet's own
+/// figures keeps them here; the caller raises a drain's to its floor. The
+/// floor is additionally enforced downstream by
+/// `broadcast_funded_asset_lock_with_funding` against the built payload.
 ///
 /// Every other builder error keeps the pre-existing generic
 /// `AssetLockTransaction` string form.
@@ -2209,6 +2205,72 @@ mod tests {
                 }) if required == lock + 1
             ),
             "got {short:?}"
+        );
+    }
+
+    /// What a drain over a few final duffs names as required is never under
+    /// its floor, and never under what key-wallet says the build itself
+    /// lacked: the floor when that is the larger, key-wallet's fee-and-dust
+    /// figure when the floor is small. The same with a waiting coin that
+    /// makes it wait.
+    #[tokio::test]
+    async fn should_name_the_larger_of_the_floor_and_the_build_shortfall_for_a_drain() {
+        let drain = |manager: Arc<AssetLockManager<CountingOkBroadcaster>>,
+                     signer: WalletSigner,
+                     floor| async move {
+            manager
+                .build_asset_lock_transaction_with_funding(
+                    super::AssetLockBuildAmount::DrainAll {
+                        minimum_lock_duffs: Some(floor),
+                    },
+                    &[AccountTypePreference::BIP44],
+                    0,
+                    AssetLockFundingType::AssetLockAddressTopUp,
+                    0,
+                    &signer,
+                )
+                .await
+        };
+
+        let (manager, signer) = asset_lock_manager_with_outputs(&[600]).await;
+        let above = drain(Arc::clone(&manager), signer.clone(), 20_000).await;
+        assert!(
+            matches!(
+                above,
+                Err(PlatformWalletError::AssetLockInsufficientFunds {
+                    available: 600,
+                    required: 20_000,
+                })
+            ),
+            "got {above:?}"
+        );
+        let below = drain(manager, signer, 500).await;
+        let Err(PlatformWalletError::AssetLockInsufficientFunds {
+            available: 600,
+            required: build_shortfall,
+        }) = below
+        else {
+            panic!("got {below:?}");
+        };
+        assert!(
+            build_shortfall > 600,
+            "key-wallet's figure, not the 500 floor: {build_shortfall}"
+        );
+
+        let (manager, signer) = asset_lock_manager_with_outputs(&[600, 1_000_000]).await;
+        make_coins_wait_if(&manager, |utxo| utxo.value() == 1_000_000).await;
+        let waiting = drain(manager, signer, 500).await;
+        assert!(
+            matches!(
+                waiting,
+                Err(PlatformWalletError::CoreFundsAwaitingNetwork {
+                    available: Some(600),
+                    waiting: 1_000_000,
+                    required: Some(required),
+                    outpoint: None,
+                }) if required == build_shortfall
+            ),
+            "got {waiting:?}"
         );
     }
 
