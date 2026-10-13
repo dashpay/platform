@@ -3313,10 +3313,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             self.inChangeset = true
             self.roundUtxoCreditVerdicts = [:]
             self.roundUtxoCreditTally = UtxoCreditVerdictTally()
-            // Out-of-round writers (heal paths, deferred backfills) stage
-            // entries too; they are not this round's to reconcile and may
-            // point at rows a failed save rolled back. Load-time accounting
-            // repairs whatever they touched.
+            // Out-of-round writers stage entries too (deferred backfills, a
+            // heal step that stopped before reconciling its own); they are
+            // not this round's to reconcile and may point at rows a failed
+            // save rolled back. Load-time accounting repairs whatever is left.
             self.accountingDirty.removeAll()
             SDKLogger.event(
                 "persistence_changeset_started",
@@ -11523,6 +11523,9 @@ extension PlatformWalletPersistenceHandler {
     ) -> CoreTxoReconcileStep<CoreTxoHealCounts> {
         onQueue {
             guard !inChangeset else { return .retryLater }
+            // This step reconciles only what it stages: entries left by an
+            // earlier out-of-round writer may point at rolled-back rows.
+            accountingDirty.removeAll()
             var counts = CoreTxoHealCounts()
             for row in rows {
                 guard row.txid.count == 32, !row.scriptPubKey.isEmpty, !row.address.isEmpty else {
@@ -11622,6 +11625,21 @@ extension PlatformWalletPersistenceHandler {
                     ]
                 )
             }
+            // A healed prevout can complete a spend, so the accounting it
+            // resolves commits in the same save. Display-only: a failure is
+            // reported under its own event and the heal still lands.
+            // TODO(test-heal-accounting-failure): cover this catch with a
+            // FetchFaultInjector test; pinning which read faults needs a Swift run.
+            do {
+                try reconcileTransactionAccounting(Array(accountingDirty.values))
+            } catch {
+                SDKLogger.event(
+                    "persistence_transaction_accounting_failed", category: .persistence, severity: .error,
+                    fields: ["phase": .publicText("txo_reconcile_heal"), "wallet_reference": .reference(walletId)],
+                    error: error
+                )
+            }
+            accountingDirty.removeAll()
             guard counts.inserted + counts.healedSpent == 0
                 || reconcileSave(operation: "txo_reconcile_heal", walletId: walletId)
             else {
