@@ -1770,7 +1770,10 @@ mod tests {
     }
 
     /// A block Core v24 mined (its coinbase is a version 4 CbTx) is sent as
-    /// a merkle block of its transactions, not as the raw block.
+    /// a merkle block of its transactions, not as the raw block. Its partial
+    /// tree proves both transactions against the header's merkle root: the
+    /// coinbase and the version 3 ProRegTx, whose txids are the double
+    /// SHA-256 of their bytes in the block.
     #[tokio::test]
     async fn should_build_a_merkle_block_from_a_core_v24_block() {
         let raw_block = hex::decode(
@@ -1794,5 +1797,20 @@ mod tests {
         assert_ne!(bytes, raw_block, "the raw block was sent");
         let merkle_block: MerkleBlock = deserialize(&bytes).expect("a merkle block");
         assert_eq!(merkle_block.header, header);
+
+        let mut matches = Vec::new();
+        let mut indexes = Vec::new();
+        merkle_block
+            .extract_matches(&mut matches, &mut indexes)
+            .expect("the proof matches the header's merkle root");
+        let txid = |hex: &str| hex.parse::<Txid>().expect("txid");
+        assert_eq!(
+            matches,
+            vec![
+                txid("60143bd9bfdd2c6217fcf85fe467e889c9efa43f94102db355e9621c35ddb154"),
+                txid("20814c480e94dce7f3fe3f3370ec6bacd1fdc4f446f17aa7de7886be0b5d07c2"),
+            ]
+        );
+        assert_eq!(indexes, vec![0, 1]);
     }
 }
