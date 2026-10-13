@@ -157,11 +157,12 @@ Rules at registration:
 
 - Only on an `indexOnly` type.
 - Every index property is either a property with a `permanentDocument` or `moderatedDocument` reference to a type of the same contract, or a referring value of that reference's `where`. A `deletableDocument` reference does not qualify, since the trees would outlive a deleted target with nothing left to say what they were keyed by. `$ownerId` may only be the terminal.
+- A [typed array](#typed-arrays) qualifies when the `where` makes it equal to a typed array of the referenced document (`"tags": "tags"`): every entry referencing the document then holds exactly its list, so the trees are created under each distinct element of that list. A document whose list no entry can hold preallocates nothing for the index: an empty or absent list, one longer or shorter than the referring array's `maxItems` and `minItems` allow, or one repeating an element when the referring array declares `uniqueItems`. A `contains` or `containsAll` entry fixes no element and does not qualify (see [Counting per element](#counting-per-element)).
 - Through a `moderatedDocument` reference, every key of the path must be kept by the referenced document's [removal record](deletion.md#moderatorabilitiesdeletekeepsfields): each `where` entry the index uses compares the referenced `$id`, `$ownerId` or a property the referenced type lists under `moderatorAbilities.deleteKeepsFields` (or one inside an object listed there), never `$creatorId` (`InvalidContractStructure`, 10231). The trees then outlive a removed document the way its record does, and a moderator's restore finds them in place. As through a `permanentDocument` reference, they are keyed by the values the document was created with: a value changed afterwards leaves them empty, and the first entry under the new value builds its own.
-- The referenced property of each such `where` entry holds at most 255 bytes, since creating a referenced document makes its value an index key (40126 when the contract is created or updated).
+- The referenced property of each such `where` entry holds at most 255 bytes, each element of it for a typed array, since creating a referenced document makes its value, or each element, an index key (40126 when the contract is created or updated).
 - Not with `timeRange` or `integerRange`.
 
-A referenced document whose agreed value takes more bytes than the referring property can hold preallocates nothing for that index, since no entry could agree with it.
+A referenced document whose agreed value takes more bytes than the referring property can hold preallocates nothing for that index, since no entry could agree with it, and neither does one whose list holds such an element.
 
 ## `summableOffCountIndex`
 
@@ -226,6 +227,7 @@ Rules at registration:
 - One summed value per type: no index of the type declares `summable`, every `summableOffCountIndex` index names the same source, and no property shares the source's name.
 - Every property of the source is a property of the index, so a group never counts two source groups.
 - Every other property is a referring value of a `where` on a `permanentDocument` or `moderatedDocument` reference by id (no `findBy` or `inList`, whose key could move to another document) to a type of the same contract, held by a property of the source, and the referenced value never changes once written: `$id`, `$creatorId`, an `$ownerId` no transfer or trade changes, or a property the referenced type never lets change (a `where` names only the referenced type's properties, `$id`, `$creatorId` and `$ownerId`). An immutable `deletableDocument` reference counts only when it is required: a replace may clear an optional one once its document is deleted. Through a `moderatedDocument` reference, the value must also stay on the removal record ([`deleteKeepsFields`](deletion.md#moderatorabilitiesdeletekeepsfields)). Every like of one post then lands in one group.
+- A [typed array](#typed-arrays) is fixed this way when the `where` makes it equal to a typed array of the referenced document: every like of a post holds the post's list, so it counts in the group of each element, and each element's group holds every like of the post. A `contains` or `containsAll` entry fixes no element and does not qualify (see [Counting per element](#counting-per-element)).
 - No other index continues below the index's last property, where the counter stands.
 - `rankedSummable` and `rankedAverageable` take the `{ "at": ... }` form only on such an index.
 
@@ -351,12 +353,91 @@ Every other index of an index-only type is a uniqueness rule, and an index on a 
 
 - Another index of the type keeps one entry for every document (it involves no `$createdAt`, sets neither `skipIfAbsent` nor `outlivesDelete`, keeps entries and names no typed array), and its whole key, its properties and its terminal, is part of this index's key without the array. Here `byPost`'s key (`postId`, `$ownerId`) is part of both tag indexes' keys. Two documents could only share an entry of the array index by sharing that index's entry, which the second create is refused for, so the array index adds no uniqueness rule of its own.
 - The array declares `uniqueItems: true`, so each element of a list has an entry of its own. An update can not remove it while such an index names the array.
-- The index is neither `preallocated` nor a `summableOffCountIndex` index, and no `summableOffCountIndex` index counts it as its source.
+- The index is `preallocated` or a `summableOffCountIndex` index only when a `where` equality makes the array equal to a typed array of the referenced document (see [Counting per element](#counting-per-element)). A `summableOffCountIndex` index keeps a counter per group and no entries, so the first rule has nothing to keep apart there. No `summableOffCountIndex` index counts an index on a typed array as its source.
 - An index on a typed array is never the proof index, nor the only index keeping another required property: it has no entry for a document without elements.
+- The array is in the skip set of every index naming it, so such an index needs no `skipIfAbsent`, and one whose only skip property would be the array is refused (10231): remove the flag.
 
 A create does not read the array index's entries, since the other index already refuses any collision on them. A delete checks every element entry against the row commitment, which holds the list in its order: a delete carrying the tags reordered, shortened or changed is refused with `DocumentNotFoundError` (40101). An empty, `null` and absent list are one value to the commitment, since they write the same entries, so a delete may carry any of them for a document created with any of them.
 
 A query reads the elements with `contains` and `containsAny`, as on any type. Each entry is rebuilt as a document listing the one element it sits under: `tags contains "dash"` returns the likes tagged `dash`, each with `tags: ["dash"]`, and `containsAny` returns a like once for each listed tag it holds. Counts work as on any type: `byTagPost` counts a tag's likes and a post's likes under a tag, and `byTrendTagPost` a window's likes under a tag.
+
+### Counting per element
+
+When the like's `tags` are bound to its post's by a `where` equality, every like of a post holds exactly the post's tags, in their order (40127 otherwise). So the likes of one post are the same set under each of its tags, and the per-tag index can keep a counter per post and tag instead of an entry per like, created with the post:
+
+```json
+"post": {
+  "type": "object",
+  "immutable": ["tags"],
+  "moderatorAbilities": { "delete": true, "deleteKeepsFields": ["tags"] },
+  "properties": {
+    "content": { "type": "string", "maxLength": 500, "position": 0 },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z0-9_]{1,61}$", "maxLength": 61 },
+      "maxItems": 4,
+      "uniqueItems": true,
+      "position": 1
+    }
+  },
+  "required": ["$createdAt", "$updatedAt"],
+  "additionalProperties": false
+},
+"like": {
+  "type": "object",
+  "indexOnly": true,
+  "documentsMutable": false,
+  "properties": {
+    "postId": {
+      "type": "identifier",
+      "refersTo": {
+        "type": "moderatedDocument",
+        "documentType": "post",
+        "where": { "tags": "tags", "$ownerId": "postAuthor" }
+      },
+      "position": 0
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z0-9_]{1,61}$", "maxLength": 61 },
+      "maxItems": 4,
+      "uniqueItems": true,
+      "position": 1
+    },
+    "postAuthor": { "type": "identifier", "position": 2 }
+  },
+  "required": ["$createdAt", "postId", "postAuthor"],
+  "indices": [
+    {
+      "name": "byPost", "properties": [{ "postId": "asc" }], "terminal": "$ownerId",
+      "rangeCountable": true, "rankedCountable": true, "preallocated": true
+    },
+    {
+      "name": "byTagPost", "properties": [{ "tags": "asc" }, { "postId": "asc" }],
+      "summableOffCountIndex": "byPost", "rangeCountable": true, "rangeSummable": true,
+      "rankedCountable": { "at": ["tags", "postId"] }, "preallocated": true
+    },
+    {
+      "name": "byAuthorPost", "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }],
+      "summableOffCountIndex": "byPost", "rangeCountable": true, "rangeSummable": true,
+      "rankedCountable": { "at": ["postAuthor", "postId"] }, "preallocated": true
+    },
+    {
+      "name": "byTrendTagPost",
+      "properties": [{ "$createdAt": "asc" }, { "tags": "asc" }, { "postId": "asc" }],
+      "terminal": "$ownerId", "rangeCountable": true,
+      "rankedCountable": { "at": ["tags", "postId"] },
+      "timeRange": { "on": "$createdAt", "range": 86400, "step": 21600, "ttl": 604800 },
+      "outlivesDelete": true
+    }
+  ],
+  "additionalProperties": false
+}
+```
+
+A post tagged `dash` and `news` creates two counters at zero, `tags → dash → postId → <post>` and `tags → news → postId → <post>`, and an untagged post none. Every like of the post adds one to both, and an unlike takes one from both. `count(*)` with `tags contains "dash"` is the likes of every post tagged `dash`, with `postId == P` the likes of one, and grouped by `tags` (`containsAny`) one total per tag; `byTagPost` ranks the tags by likes and a tag's posts by likes, all with proofs. Under a moderator's removal the counters stay, as the post's record keeps its tags, and an unlike still moves them; the restore finds them in place.
+
+Only an equality qualifies, because only it puts every like of a post under the same elements. A like whose `tags` merely `containsAll` of its own in the post's would count under some of the post's tags and not others, and a counter would no longer hold all of one post's likes. The rules that fix a single value apply to the list as a whole: the post's `tags` never change (`immutable`), a moderated post's removal record keeps them, and every element fits an index key (40126). The array may sit anywhere in the index: `[postId, tags]` keeps the counters of one post side by side under it.
 
 ## See also
 

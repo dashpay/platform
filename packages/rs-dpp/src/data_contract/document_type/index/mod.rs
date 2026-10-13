@@ -124,7 +124,10 @@ pub const TERMINAL: &str = "terminal";
 /// property must be either the referring property itself (it equals the
 /// referenced document's `$id`) or a referring value of that property's
 /// `refersTo` `where` (consensus-enforced equal to a referenced-document
-/// property, its `$ownerId` and `$creatorId` included). Only allowed on
+/// property, its `$ownerId` and `$creatorId` included). A typed array the
+/// `where` makes equal to a referenced typed array holds exactly the
+/// referenced document's list, so its level takes one key per element of that
+/// list. Only allowed on
 /// indexOnly document types with a same-contract `permanentDocument`
 /// reference, or a `moderatedDocument` one whose removal record keeps every
 /// key of the path; the doc-type-level and whole-contract validation reject
@@ -184,7 +187,10 @@ pub const SKIP_IF_ABSENT: &str = "skipIfAbsent";
 /// (a `where` referring value of a reference a source property holds, to a
 /// value that can never change). A group here therefore holds exactly the
 /// documents of one source group, and its counter always equals that group's
-/// entry count. Needs `rangeSummable: true` (the level holding the counters
+/// entry count. A typed array fixed so (a `where` equality with a referenced
+/// typed array) puts every document of a source group under each element of
+/// one list: each element's group holds the whole source group, and its
+/// counter moves with every document of it. Needs `rangeSummable: true` (the level holding the counters
 /// must be a sum tree); takes no `terminal`, `summable` or `averageable`. The
 /// parser checks the index-local rules, `apply_index_only` the ones that need
 /// the document type, and the contract-level validation the ones that need

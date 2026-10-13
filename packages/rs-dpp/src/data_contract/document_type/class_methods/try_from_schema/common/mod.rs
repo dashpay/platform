@@ -3808,12 +3808,21 @@ fn summable_off_count_index_error(
         &document_type.flattened_properties,
         document_type.data_contract_id,
     ) {
+        let hint = if index.indexed_array.as_deref() == Some(property) {
+            list_binding_hint(
+                index,
+                "a counter's group is one element, and only an equality enters every \
+                 document of a source group under the same elements",
+            )
+        } else {
+            String::new()
+        };
         return Some(format!(
             "{prefix} has \"{property}\", which is neither a property of its source \
              \"{source_name}\" nor fixed by it: it must be a referring value of a `where` on a \
              same-contract permanentDocument or moderatedDocument reference by id (no findBy or \
              inList) held by a property of \"{source_name}\", or one source group would spread \
-             over several groups"
+             over several groups{hint}"
         ));
     }
     let depth = index.properties.len();
@@ -3851,6 +3860,21 @@ fn keyed_by_a_document_index(indices: &BTreeMap<String, Index>, key: &BTreeSet<&
     })
 }
 
+/// For an index naming a typed array, the sentence a `preallocated` or
+/// `summableOffCountIndex` refusal adds: the array is fixed only by a `where` making it
+/// equal to a typed array of the referenced document, because `why`. Empty for every
+/// other index.
+fn list_binding_hint(index: &Index, why: &str) -> String {
+    match index.indexed_array.as_deref() {
+        Some(array_name) => format!(
+            ". The typed array \"{array_name}\" is fixed only by a `where` making it equal to \
+             a typed array of the referenced document (as `\"{array_name}\": \"{array_name}\"`), \
+             not by `contains` or `containsAll`: {why}"
+        ),
+        None => String::new(),
+    }
+}
+
 /// The rules an indexOnly document type checks for one index naming a typed array
 /// (protocol version 14), beyond those every indexed array follows
 /// (`validate_indexed_array_index`): the reason it is refused, or `None`.
@@ -3866,11 +3890,16 @@ fn keyed_by_a_document_index(indices: &BTreeMap<String, Index>, key: &BTreeSet<&
 ///   refuses: the array index is no uniqueness rule of its own, and no entry of it ever
 ///   stands for two documents.
 /// - The array declares `uniqueItems`, so every element of a list has an entry of its own.
-/// - It is neither `preallocated` nor a `summableOffCountIndex` index: a preallocated
-///   path is fixed by one referenced document, and a counter's group holds one value.
 /// - It names one array, a top-level property: the rules every indexed array follows
 ///   run under full validation only, and these are what the entry probes and the row
 ///   commitment rely on, so an indexOnly type checks them on every parse too.
+///
+/// A `summableOffCountIndex` index keeps one counter per group and no entries, so the
+/// first rule has nothing to keep apart there. Whether the index may be `preallocated` or
+/// a `summableOffCountIndex` index is those keywords' own rules to judge
+/// (`Index::preallocation_bindings`, `summable_off_count_index_error`): they bind the
+/// array only through a `where` equality with a typed array of the referenced document,
+/// and their refusals say so for an index naming one.
 fn index_only_array_index_error(
     index_name: &str,
     index: &Index,
@@ -3896,19 +3925,6 @@ fn index_only_array_index_error(
              property of the document type"
         ));
     }
-    if index.preallocated {
-        return Some(format!(
-            "{prefix} and declares `preallocated`: a preallocated index's path is fixed by one \
-             referenced document, and an index of a typed array enters a document under each \
-             of its elements"
-        ));
-    }
-    if index.is_summable_off_count_index() {
-        return Some(format!(
-            "{prefix} and is a summableOffCountIndex index: a counter's group is one value, and \
-             a typed array holds many"
-        ));
-    }
     let unique_items = index
         .typed_arrays(&document_type.flattened_properties)
         .next()
@@ -3919,6 +3935,9 @@ fn index_only_array_index_error(
              every element of a list, and a list repeating an element would hold fewer \
              entries than elements"
         ));
+    }
+    if index.is_summable_off_count_index() {
+        return None;
     }
     let key: BTreeSet<&str> = index_key_names(index)
         .filter(|name| *name != array_name)
@@ -4641,8 +4660,10 @@ pub(super) fn apply_index_only(
             )));
         }
         // An index of a typed array (protocol version 14) enters a document once
-        // per element: another index must keep each document's entries apart,
-        // and the keywords whose path or group is one value refuse it.
+        // per element: see `index_only_array_index_error` for when another index
+        // must keep each document's entries apart (not for a counter index,
+        // which keeps none). Whether it may be `preallocated` or a
+        // `summableOffCountIndex` index is judged by those keywords' rules below.
         if let Some(message) = index_only_array_index_error(index_name, index, document_type, name)
         {
             return Err(structure_error(message));
@@ -5018,8 +5039,15 @@ pub(super) fn apply_index_only(
                  referenced document's $ownerId or $creatorId). The referring document's \
                  OWN system properties like $ownerId cannot be determined by the \
                  referenced document, so a preallocated index may carry $ownerId only as \
-                 its terminal",
-                index_name, name,
+                 its terminal{}",
+                index_name,
+                name,
+                list_binding_hint(
+                    index,
+                    "the preallocated path is fixed by one referenced \
+                    document, and only an equality fixes the elements every list referencing \
+                    it holds"
+                ),
             )));
         }
         // `summableOffCountIndex`: a summableOffCountIndex index keeps, per group, the number of its
