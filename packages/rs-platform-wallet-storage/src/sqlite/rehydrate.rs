@@ -881,7 +881,8 @@ fn plan_replay_sweeps(
 }
 
 /// Restore set-aside records without the checker, so the conflict sweep still
-/// finds what they spend: it reads inputs and contexts, never amounts.
+/// finds what they spend: it reads inputs and contexts, never amounts. Every
+/// account a record touches holds a copy, with the wallet-level amounts.
 ///
 /// The only arithmetic upstream runs over a stored record is the signed net of
 /// its owned outputs and attributed inputs, when a late funding is attributed
@@ -896,17 +897,27 @@ fn restore_unreplayed_records(
 ) {
     let mut accounts = wallet_info.accounts.all_funding_accounts_mut();
     for mut record in records {
+        let outputs = record.output_details.iter().map(|d| d.address.clone());
+        let inputs = record.input_details.iter().map(|d| Some(d.address.clone()));
+        let addresses: Vec<_> = outputs.chain(inputs).flatten().collect();
         let owned = record.output_details.iter().filter(|d| is_owned(d.role));
         if !fits_i64(owned.map(|d| d.value)) {
             record.output_details.clear();
         }
+        // The upstream sweep drops a loser's coins and descendants only in an
+        // account that records it, so the record goes wherever the checker
+        // would have put it: each account owning one of its addresses.
+        let touches = |account: &ManagedCoreFundsAccount| {
+            funds_account_type(account) == record.account_type
+                || addresses.iter().any(|a| account.contains_address(a))
+        };
         // Any funding account will do as a fallback: the sweep searches them all.
-        let owner = accounts
-            .iter()
-            .position(|account| funds_account_type(account) == record.account_type)
-            .unwrap_or(0);
-        if let Some(account) = accounts.get_mut(owner) {
-            account.transactions_mut().insert(record.txid, record);
+        let fallback = !accounts.iter().any(|account| touches(account));
+        for (index, account) in accounts.iter_mut().enumerate() {
+            if touches(account) || (fallback && index == 0) {
+                let copy = record.clone();
+                account.transactions_mut().insert(copy.txid, copy);
+            }
         }
     }
 }

@@ -2476,3 +2476,387 @@ fn typed_error(
         .downcast::<platform_wallet_storage::WalletStorageError>()
         .unwrap()
 }
+
+/// How a mempool receipt paying two funding accounts reaches the store.
+#[derive(Clone, Copy, Default)]
+struct TwoAccountShape {
+    /// Value of each of the two owned outputs.
+    value: u64,
+    /// Adds a foreign output no chain could hold.
+    foreign_output: bool,
+    /// The wallet-level record names the first account, not the second.
+    recorded_under_first: bool,
+    /// Persists no address pool rows, so load parks both coins in the first account.
+    unrouted: bool,
+    /// Adds a mempool child spending the first account's coin, with its change there.
+    child: bool,
+    /// The receipt also spends a coin of the first account funded only after
+    /// the restart, and so does a plain mempool rival that marks it spent.
+    unfunded_input: bool,
+}
+
+/// One past half of `i64::MAX`: two owned outputs of it cannot be summed as `i64`.
+const UNREPRESENTABLE_HALF: u64 = (1 << 62) + 1;
+
+struct TwoAccountReceipt {
+    wallet: Wallet,
+    /// An address of the first (BIP44) account.
+    first: Address,
+    funding: Transaction,
+    receipt: Transaction,
+    child: Option<Transaction>,
+    /// A confirmed transaction spending the receipt's foreign input.
+    winner: Transaction,
+    persister: SqlitePersister,
+    _dir: tempfile::TempDir,
+}
+
+impl TwoAccountReceipt {
+    async fn stored(shape: TwoAccountShape) -> Self {
+        let mut wallet =
+            Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+        let first = info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap()
+            .next_receive_address(Some(&xpub), true)
+            .unwrap();
+        let xpub = wallet.accounts.standard_bip32_accounts[&0].account_xpub;
+        let second = info
+            .accounts
+            .standard_bip32_accounts
+            .get_mut(&0)
+            .unwrap()
+            .next_receive_address(Some(&xpub), true)
+            .unwrap();
+        let pay = |value, address: &Address| TxOut {
+            value,
+            script_pubkey: address.script_pubkey(),
+        };
+        let funding = spend_of(
+            OutPoint::new(Txid::from_byte_array([96; 32]), 0),
+            vec![pay(20_000, &first)],
+        );
+        let shared = OutPoint::new(Txid::from_byte_array([97; 32]), 0);
+        let mut receipt = spend_of(
+            shared,
+            vec![pay(shape.value, &first), pay(shape.value, &second)],
+        );
+        if shape.foreign_output {
+            receipt
+                .output
+                .push(pay(i64::MAX as u64, &foreign_address(98)));
+        }
+        if shape.unfunded_input {
+            // Seen before this input is funded, as a debug checker requires.
+            receipt.input.push(TxIn {
+                previous_output: OutPoint::new(funding.txid(), 0),
+                ..Default::default()
+            });
+        }
+        let winner = spend_of(shared, vec![pay(1_000, &first)]);
+        let mut records = info
+            .check_core_transaction(
+                &receipt,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await
+            .new_records;
+        assert_eq!(records.len(), 2, "the checker records it in both accounts");
+        // One wallet-level record per transaction, as a sync folds the
+        // per-account slices: it names one account and details both.
+        if !shape.recorded_under_first {
+            records.reverse();
+        }
+        let other = records.pop().unwrap();
+        records[0].output_details.extend(other.output_details);
+        records[0].output_details.sort_by_key(|detail| detail.index);
+        let mut new_utxos = vec![
+            stored_utxo(&receipt, 0, first.clone()),
+            stored_utxo(&receipt, 1, second.clone()),
+        ];
+        let mut spent_utxos = Vec::new();
+        let child = shape
+            .child
+            .then(|| spend_of(OutPoint::new(receipt.txid(), 0), vec![pay(1_500, &first)]));
+        if let Some(child) = &child {
+            records.extend(
+                info.check_core_transaction(
+                    child,
+                    TransactionContext::Mempool,
+                    &mut wallet,
+                    true,
+                    true,
+                )
+                .await
+                .new_records,
+            );
+            spent_utxos.push(new_utxos[0].clone());
+            new_utxos.push(stored_utxo(child, 0, first.clone()));
+        }
+        if shape.unfunded_input {
+            let rival = spend_of(OutPoint::new(funding.txid(), 0), vec![pay(500, &first)]);
+            records.extend(
+                info.check_core_transaction(
+                    &rival,
+                    TransactionContext::Mempool,
+                    &mut wallet,
+                    true,
+                    true,
+                )
+                .await
+                .new_records,
+            );
+            new_utxos.push(stored_utxo(&rival, 0, first.clone()));
+        }
+        let mut running = info.clone();
+        running
+            .check_core_transaction(&winner, block(101), &mut wallet.clone(), true, true)
+            .await;
+        assert_eq!(
+            traces(&running, &[&receipt, child.as_ref().unwrap_or(&receipt)]),
+            Vec::<String>::new(),
+            "the running wallet settles every account"
+        );
+        let (persister, _dir) = store_then_reopen(
+            &wallet,
+            CoreChangeSet {
+                records,
+                new_utxos,
+                spent_utxos,
+                ..Default::default()
+            },
+        );
+        if !shape.unrouted {
+            // The pool rows a live sync persists, so load routes each coin to its owner.
+            let conn = persister.lock_conn_for_test();
+            for (label, address) in [("standard_bip44", &first), ("standard_bip32", &second)] {
+                conn.execute(
+                    "INSERT INTO core_address_pool \
+                     (wallet_id, account_type, account_index, pool_type, address_index, script) \
+                     VALUES (?1, ?2, 0, 0, 0, ?3)",
+                    rusqlite::params![
+                        &wallet.wallet_id[..],
+                        label,
+                        address.script_pubkey().as_bytes()
+                    ],
+                )
+                .unwrap();
+            }
+        }
+        Self {
+            wallet,
+            first,
+            funding,
+            receipt,
+            child,
+            winner,
+            persister,
+            _dir,
+        }
+    }
+}
+
+/// Every funding account still holding a coin or a record of `transactions`.
+fn traces(info: &ManagedWalletInfo, transactions: &[&Transaction]) -> Vec<String> {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let txids: Vec<Txid> = transactions.iter().map(|tx| tx.txid()).collect();
+    info.accounts
+        .all_funding_accounts()
+        .into_iter()
+        .filter_map(|account| {
+            let coins = account
+                .utxos
+                .keys()
+                .filter(|outpoint| txids.contains(&outpoint.txid))
+                .count();
+            let records = txids
+                .iter()
+                .filter(|txid| account.transactions().contains_key(*txid))
+                .count();
+            let account_type = account.managed_account_type().to_account_type();
+            (coins + records > 0)
+                .then(|| format!("{account_type:?}: {coins} coins, {records} records"))
+        })
+        .collect()
+}
+
+/// A final competitor arriving after the restart must leave no coin of the
+/// receipt in any account, in the running wallet and after the next load.
+async fn assert_two_account_receipt_settles_after_restart(shape: TwoAccountShape) {
+    use platform_wallet::changeset::changeset::SweepBatch;
+
+    let stored = TwoAccountReceipt::stored(shape).await;
+    let losers = [
+        &stored.receipt,
+        stored.child.as_ref().unwrap_or(&stored.receipt),
+    ];
+    let mut state = stored.persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&stored.wallet.wallet_id).unwrap();
+
+    let result = loaded
+        .wallet_info
+        .check_core_transaction(&stored.winner, block(101), &mut loaded.wallet, true, true)
+        .await;
+
+    assert!(result.swept_transactions.contains(&stored.receipt.txid()));
+    assert_eq!(
+        traces(&loaded.wallet_info, &losers),
+        Vec::<String>::new(),
+        "no account of the running wallet keeps a coin of the removed receipt"
+    );
+    assert_eq!(loaded.wallet_info.balance.total(), 1_000);
+
+    stored
+        .persister
+        .store(
+            stored.wallet.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records: result.new_records,
+                    new_utxos: vec![stored_utxo(&stored.winner, 0, stored.first.clone())],
+                    sweeps: vec![SweepBatch {
+                        txids: result.swept_transactions,
+                        superseded_by: stored.winner.txid(),
+                        winner_mined_height: Some(101),
+                        released_outpoints: result.released_outpoints,
+                    }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let mut state = stored.persister.load().unwrap();
+    let reloaded = &state
+        .wallets
+        .get_mut(&stored.wallet.wallet_id)
+        .unwrap()
+        .wallet_info;
+    assert_eq!(
+        traces(reloaded, &losers),
+        Vec::<String>::new(),
+        "the next load holds no coin of the removed receipt either"
+    );
+    assert_eq!(reloaded.balance.total(), 1_000);
+}
+
+#[tokio::test]
+async fn should_settle_two_account_mempool_receipt_against_final_winner_after_restart() {
+    assert_two_account_receipt_settles_after_restart(TwoAccountShape {
+        value: 5_000,
+        ..Default::default()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn should_settle_unrepresentable_two_account_receipt_against_final_winner_after_restart() {
+    assert_two_account_receipt_settles_after_restart(TwoAccountShape {
+        value: UNREPRESENTABLE_HALF,
+        ..Default::default()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn should_settle_unrepresentable_two_account_receipt_stored_under_its_other_account() {
+    assert_two_account_receipt_settles_after_restart(TwoAccountShape {
+        value: UNREPRESENTABLE_HALF,
+        recorded_under_first: true,
+        ..Default::default()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn should_settle_two_account_receipt_with_unrepresentable_foreign_output_after_restart() {
+    assert_two_account_receipt_settles_after_restart(TwoAccountShape {
+        value: 7_000,
+        foreign_output: true,
+        ..Default::default()
+    })
+    .await;
+}
+
+/// The child is recorded only in the account whose coin it spends, which is
+/// not the one the stored receipt names.
+#[tokio::test]
+async fn should_settle_child_of_unrepresentable_two_account_receipt_after_restart() {
+    assert_two_account_receipt_settles_after_restart(TwoAccountShape {
+        value: UNREPRESENTABLE_HALF,
+        child: true,
+        ..Default::default()
+    })
+    .await;
+}
+
+/// Without pool rows load parks both coins in the first account, while the
+/// stored receipt names the second.
+#[tokio::test]
+async fn should_settle_unrepresentable_two_account_receipt_with_unrouted_coins_after_restart() {
+    assert_two_account_receipt_settles_after_restart(TwoAccountShape {
+        value: UNREPRESENTABLE_HALF,
+        unrouted: true,
+        ..Default::default()
+    })
+    .await;
+}
+
+/// Each account holds the receipt without the amounts that are unsafe to
+/// sum, so reading balances and attributing a late funding stay in range.
+#[tokio::test]
+async fn should_recompute_unrepresentable_two_account_receipt_when_its_funding_arrives_after_restart(
+) {
+    use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+    let stored = TwoAccountReceipt::stored(TwoAccountShape {
+        value: UNREPRESENTABLE_HALF,
+        unfunded_input: true,
+        ..Default::default()
+    })
+    .await;
+    let txid = stored.receipt.txid();
+    let mut state = stored.persister.load().unwrap();
+    let loaded = state.wallets.get_mut(&stored.wallet.wallet_id).unwrap();
+    let copies = |info: &ManagedWalletInfo| {
+        let accounts = &info.accounts;
+        (
+            accounts.standard_bip44_accounts[&0].transactions()[&txid].clone(),
+            accounts.standard_bip32_accounts[&0].transactions()[&txid].clone(),
+        )
+    };
+    let (first, second) = copies(&loaded.wallet_info);
+    assert!(
+        first.output_details.is_empty() && second.output_details.is_empty(),
+        "each account holds the receipt without the amounts unsafe to sum"
+    );
+    assert_eq!(
+        loaded.wallet_info.balance.total(),
+        2 * UNREPRESENTABLE_HALF + 500,
+        "both coins are credited"
+    );
+
+    loaded
+        .wallet_info
+        .check_core_transaction(&stored.funding, block(100), &mut loaded.wallet, true, true)
+        .await;
+    loaded.wallet_info.update_balance();
+
+    let (first, second) = copies(&loaded.wallet_info);
+    assert_eq!(
+        (first.input_details.len(), first.net_amount),
+        (1, -20_000),
+        "the late funding is attributed in the account that owns it"
+    );
+    assert!(second.input_details.is_empty());
+    assert_eq!(
+        loaded.wallet_info.balance.total(),
+        2 * UNREPRESENTABLE_HALF + 500
+    );
+}
