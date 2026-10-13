@@ -995,8 +995,9 @@ fn poll_ready<F: std::future::Future>(future: F) -> Option<F::Output> {
 
 /// Order records as the chain would deliver them: every in-set parent ahead of
 /// its children, otherwise confirmed by block position, then InstantSend-locked,
-/// then plain mempool. Replaying a locked record makes upstream scan every
-/// unconfirmed record already in history, so the unlocked ones go last.
+/// then plain mempool. Replaying a final record makes upstream scan every
+/// unconfirmed record already in history, so only its own ancestors go ahead
+/// of it: the other unlocked records go last.
 ///
 /// Dependencies span both partitions: a parent's stored record can still say
 /// mempool after it confirmed (a height-only confirmation never rewrites an
@@ -1032,25 +1033,39 @@ fn replay_order(records: Vec<TransactionRecord>) -> Vec<TransactionRecord> {
             children[parent].push(child);
         }
     }
-    // Sorted positions, so the smallest ready one is always next in chain order.
-    let mut ready: BTreeSet<usize> = (0..records.len())
-        .filter(|position| waiting_on[*position] == 0)
-        .collect();
-    let mut emitted = vec![false; records.len()];
-    let mut order = Vec::with_capacity(records.len());
-    while let Some(position) = ready.pop_first() {
-        emitted[position] = true;
-        order.push(position);
-        for &child in &children[position] {
-            waiting_on[child] -= 1;
-            if waiting_on[child] == 0 {
-                ready.insert(child);
+    // Ranks are sorted positions, so the smallest ready one is next in chain order.
+    let chain = |rank: &[usize]| {
+        let mut waiting_on = waiting_on.clone();
+        let mut ready: BTreeSet<(usize, usize)> = (0..records.len())
+            .filter(|position| waiting_on[*position] == 0)
+            .map(|position| (rank[position], position))
+            .collect();
+        let mut order = Vec::with_capacity(records.len());
+        while let Some((_, position)) = ready.pop_first() {
+            order.push(position);
+            for &child in &children[position] {
+                waiting_on[child] -= 1;
+                if waiting_on[child] == 0 {
+                    ready.insert((rank[child], child));
+                }
             }
         }
+        order
+    };
+    // A record ranks with its earliest descendant. Ranked on its own, a mempool
+    // ancestor of final records lets unrelated mempool records into history
+    // first, and each of those final records then scans them.
+    let mut rank: Vec<usize> = (0..records.len()).collect();
+    for &position in chain(&rank).iter().rev() {
+        for &child in &children[position] {
+            rank[position] = rank[position].min(rank[child]);
+        }
     }
+    let mut order = chain(&rank);
     // Unreachable for real transactions (txids cannot form a cycle); keep the
     // rest in chain order rather than drop a reservation.
-    order.extend((0..records.len()).filter(|position| !emitted[*position]));
+    let emitted: HashSet<usize> = order.iter().copied().collect();
+    order.extend((0..records.len()).filter(|position| !emitted.contains(position)));
     let mut slots: Vec<Option<TransactionRecord>> = records.into_iter().map(Some).collect();
     order
         .into_iter()
@@ -4904,16 +4919,63 @@ mod tests {
 
         let order = replayed_txids(records);
 
-        let mut first: Vec<_> = settled.iter().map(|record| record.txid).collect();
-        first.sort();
-        assert_eq!(
-            order[..first.len()],
-            first,
-            "locked records enter history ahead of every mempool record"
-        );
         let position = |txid| order.iter().position(|seen| *seen == txid).unwrap();
-        // The one exception: a locked child cannot go ahead of its own parent.
+        let last_locked = settled
+            .iter()
+            .chain([&child])
+            .map(|record| position(record.txid))
+            .max();
+        for unrelated in &pending[1..] {
+            assert!(
+                Some(position(unrelated.txid)) > last_locked,
+                "no unrelated mempool record enters history ahead of a locked one"
+            );
+        }
+        // A locked child takes its unconfirmed parent along, ahead of the rest.
         assert!(position(parent.txid) < position(child.txid));
+    }
+
+    /// A final record waits for its in-set ancestors, and a parent's stored
+    /// record can still say mempool: those ancestors replay as early as the
+    /// final record would, not behind unrelated mempool records it then scans.
+    #[test]
+    fn should_keep_unrelated_mempool_records_behind_a_mempool_ancestor_of_final_records() {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dashcore::hashes::Hash;
+
+        let coin = |byte| Txid::from_byte_array([byte; 32]);
+        let pending =
+            |parents: &[Txid], value| replay_record(parents, value, TransactionContext::Mempool);
+        let grandparent = pending(&[coin(1)], 1);
+        let parent = pending(&[grandparent.txid], 2);
+        let confirmed = replay_record(&[parent.txid], 3, in_block(50, Some(0)));
+        let mut locked = pending(&[parent.txid, coin(2)], 4);
+        locked.context = TransactionContext::InstantSend(InstantLock {
+            txid: locked.txid,
+            ..Default::default()
+        });
+        // Unrelated records sorting ahead of both ancestors by txid.
+        let first = grandparent.txid.min(parent.txid);
+        let unrelated: Vec<_> = (100..)
+            .map(|value| pending(&[coin(3)], value))
+            .filter(|record| record.txid < first)
+            .take(4)
+            .collect();
+        let mut records = unrelated.clone();
+        records.extend([
+            locked.clone(),
+            confirmed.clone(),
+            parent.clone(),
+            grandparent.clone(),
+        ]);
+
+        let order = replayed_txids(records);
+
+        let mut last: Vec<_> = unrelated.iter().map(|record| record.txid).collect();
+        last.sort();
+        let mut expected = vec![grandparent.txid, parent.txid, confirmed.txid, locked.txid];
+        expected.extend(last);
+        assert_eq!(order, expected);
     }
 
     /// An unconfirmed child whose txid sorts ahead of its parent's still
