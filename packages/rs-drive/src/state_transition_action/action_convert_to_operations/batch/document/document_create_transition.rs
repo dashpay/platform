@@ -134,14 +134,11 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                     // deleted without their owner's `canBeDeleted` guard: the consume rules
                     // admitted them, and a type whose documents only a consume deletes
                     // (`canBeDeleted: "onlyWhenConsumed"`) refuses its owner's delete
-                    for consumed in consumed_documents {
+                    for consumed_document in consumed_documents {
                         ops.push(DocumentOperation(
-                            DocumentOperationType::ForceDeleteDocument {
-                                document_id: consumed.document_id,
+                            DocumentOperationType::ForceDeleteReadDocument {
+                                consumed_document,
                                 contract_info: DataContractFetchInfo(contract_fetch_info.clone()),
-                                document_type_info: DocumentTypeInfo::DocumentTypeName(
-                                    consumed.document_type_name,
-                                ),
                             },
                         ));
                     }
@@ -177,10 +174,7 @@ impl DriveHighLevelBatchOperationConverter for DocumentCreateTransitionAction {
                             document_type_info: DocumentTypeInfo::DocumentTypeName(
                                 document_type_name,
                             ),
-                            consumed_documents: consumed_documents
-                                .into_iter()
-                                .map(|consumed| (consumed.document_id, consumed.document_type_name))
-                                .collect(),
+                            consumed_documents,
                         },
                     ));
                 }

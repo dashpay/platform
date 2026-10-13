@@ -21,7 +21,7 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v11::DRIVE_ABCI_VALIDATION_VERSIONS_V11;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
+use crate::version::drive_versions::v10::DRIVE_VERSION_V10;
 use crate::version::fee::v3::FEE_VERSION3;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v4::SYSTEM_DATA_CONTRACT_VERSIONS_V4;
@@ -77,9 +77,19 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    the parent's subdomain rule. The data trigger bindings stay at 2: their
 ///    `domain` Replace and Delete rejects are never reached, as
 ///    `documentsMutable` and `canBeDeleted` false refuse both first (10404).
+///
+/// 2. **A consume deletes what its lookup read**: `DRIVE_VERSION_V10` selects
+///    `DRIVE_DOCUMENT_METHOD_VERSIONS_V5`, whose `delete_consumed_document_operations` 1
+///    has a `refersTo` lookup keep the stored element's storage flags beside the document it
+///    finds (`query_documents_with_flags`, in `fetch_document_through_lookup`), and a create
+///    that consumes the document deletes it from them
+///    (`Drive::force_delete_read_document_for_contract_operations`, the force delete's
+///    operations less its read), where 0 reads it again by id and bills that read. A consume
+///    costs one document read less: a DPNS v3 name create's processing fee drops by 10,660
+///    credits. Storage fees and refunds are unchanged.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
-    drive: DRIVE_VERSION_V9,
+    drive: DRIVE_VERSION_V10, // changed: delete_consumed_document_operations 1 (note 2)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10,

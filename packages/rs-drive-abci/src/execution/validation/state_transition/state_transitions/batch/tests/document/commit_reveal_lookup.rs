@@ -106,6 +106,8 @@ mod commit_reveal_lookup_tests {
 
     struct CommitRevealFixture {
         platform: TempPlatform<MockCoreRPCLike>,
+        /// The protocol version the chain runs and every write is processed at.
+        platform_version: &'static PlatformVersion,
         contract: DataContract,
         rng: StdRng,
         alice: Writer,
@@ -120,9 +122,17 @@ mod commit_reveal_lookup_tests {
 
         /// The fixture with `change` applied to the contract's JSON before it is parsed.
         fn new_with(change: impl FnOnce(&mut serde_json::Value)) -> Self {
-            let platform_version = PlatformVersion::latest();
+            Self::new_at(PlatformVersion::latest(), change)
+        }
+
+        /// The fixture on a chain at `platform_version`, with `change` applied to the
+        /// contract's JSON before it is parsed.
+        fn new_at(
+            platform_version: &'static PlatformVersion,
+            change: impl FnOnce(&mut serde_json::Value),
+        ) -> Self {
             let mut platform = TestPlatformBuilder::new()
-                .with_latest_protocol_version()
+                .with_initial_protocol_version(platform_version.protocol_version)
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
@@ -161,6 +171,7 @@ mod commit_reveal_lookup_tests {
 
             Self {
                 platform,
+                platform_version,
                 contract,
                 rng: StdRng::seed_from_u64(9061),
                 alice,
@@ -191,7 +202,7 @@ mod commit_reveal_lookup_tests {
             transition: &StateTransition,
             height: u64,
         ) -> StateTransitionExecutionResult {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let platform_state = self.platform.state.load();
             let serialized = transition
                 .serialize_to_bytes()
@@ -263,7 +274,7 @@ mod commit_reveal_lookup_tests {
             absent: &[&str],
             token_payment_info: Option<TokenPaymentInfo>,
         ) -> (Document, StateTransition) {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let owner_id = self.id(who);
             let document_type = contract
                 .document_type_for_name(type_name)
@@ -321,7 +332,7 @@ mod commit_reveal_lookup_tests {
             transition: &StateTransition,
             level: CheckTxLevel,
         ) -> (Vec<u32>, Option<FeeResult>) {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let state = self.platform.state.load();
             let platform_ref = PlatformRef {
                 drive: &self.platform.drive,
@@ -342,7 +353,7 @@ mod commit_reveal_lookup_tests {
 
         /// Sets `who`'s balance to `credits`.
         fn set_balance(&self, who: Who, credits: Credits) {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let id = self.id(who).to_buffer();
             let balance = self
                 .platform
@@ -418,7 +429,7 @@ mod commit_reveal_lookup_tests {
             change: impl FnOnce(&mut Document),
             height: u64,
         ) -> StateTransitionExecutionResult {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let mut replacement = document.clone();
             replacement
                 .increment_revision()
@@ -456,7 +467,7 @@ mod commit_reveal_lookup_tests {
             document: &Document,
             height: u64,
         ) -> StateTransitionExecutionResult {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let contract = self.contract.clone();
             let document_type = contract
                 .document_type_for_name(type_name)
@@ -487,7 +498,7 @@ mod commit_reveal_lookup_tests {
 
         /// Whether the `type_name` document with `id` is in state.
         fn document_exists(&self, type_name: &str, id: Identifier) -> bool {
-            let platform_version = PlatformVersion::latest();
+            let platform_version = self.platform_version;
             let mut execution_context =
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
                     .expect("expected an execution context");
@@ -1224,7 +1235,7 @@ mod commit_reveal_lookup_tests {
         );
         assert_matches!(
             consumed.as_slice(),
-            [consumed] if consumed.document.document_id == preorder.id()
+            [consumed] if consumed.document.document.id() == preorder.id()
                 && consumed.document.document_type_name == "preorder"
                 && consumed.path == "preorderSalt"
         );
@@ -2801,32 +2812,40 @@ mod commit_reveal_lookup_tests {
     /// The fees of a reveal choosing the first of the preorders of its name, refused and
     /// accepted: the found preorder's `validWhen` hash, the competitors query and each
     /// competitor's `validWhen` hash are processing, on top of what a reveal without
-    /// `chooseFirst` costs.
+    /// `chooseFirst` costs. From protocol version 15 the accepted reveal deletes the preorder
+    /// it consumes from what its lookup read, without reading it again.
     #[tokio::test]
     async fn should_pin_the_fees_of_a_reveal_choosing_the_first_of_its_preorders() {
-        let mut fixture = choose_first_fixture(true);
-        commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
-        commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
+        for (protocol_version, accepted_processing_fee) in [(14, 3_574_720), (15, 3_562_700)] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = CommitRevealFixture::new_at(platform_version, |contract| {
+                add_name_registration(contract, true)
+            });
+            commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+            commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
 
-        let result = reveal_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 2).await;
-        let PaidConsensusError { actual_fees, .. } = result else {
-            panic!("expected a paid refusal, got {result:?}");
-        };
-        assert_eq!(
-            (actual_fees.processing_fee, actual_fees.storage_fee),
-            (639_160, 0),
-            "the refused reveal pays the reads and hashes it made"
-        );
+            let result = reveal_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 2).await;
+            let PaidConsensusError { actual_fees, .. } = result else {
+                panic!("expected a paid refusal, got {result:?}");
+            };
+            assert_eq!(
+                (actual_fees.processing_fee, actual_fees.storage_fee),
+                (639_160, 0),
+                "the refused reveal pays the reads and hashes it made, at {protocol_version}"
+            );
 
-        let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 2).await;
-        let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result else {
-            panic!("expected the first committer's reveal to be accepted, got {result:?}");
-        };
-        assert_eq!(
-            (fee_result.processing_fee, fee_result.storage_fee),
-            (3_574_720, 25_299_000),
-            "the accepted reveal"
-        );
+            let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 2).await;
+            let StateTransitionExecutionResult::SuccessfulExecution { fee_result, .. } = result
+            else {
+                panic!("expected the first committer's reveal to be accepted, got {result:?}");
+            };
+            assert_eq!(
+                (fee_result.processing_fee, fee_result.storage_fee),
+                (accepted_processing_fee, 25_299_000),
+                "the accepted reveal, at {protocol_version}"
+            );
+        }
     }
 
     /// A signer who cannot pay the fee floor gets past the minimum balance pre-check only by

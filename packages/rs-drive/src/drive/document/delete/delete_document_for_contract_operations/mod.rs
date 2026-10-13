@@ -4,9 +4,11 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::storage_flags::StorageFlags;
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
+use dpp::document::{Document, DocumentV0Getters};
 
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
@@ -157,5 +159,175 @@ impl Drive {
                 received: version,
             })),
         }
+    }
+
+    /// Deletes `document`, a document a create consumes, which the create's `refersTo` lookup
+    /// read with its element's `storage_flags`, without its type's `canBeDeleted` guard. From
+    /// `delete_consumed_document_operations` 1 (protocol version 15) without reading it
+    /// again: the operations [`Self::force_delete_document_for_contract_operations`] gives,
+    /// less its read. Before, that force delete by the document's id, which reads it again.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn force_delete_read_document_for_contract_operations(
+        &self,
+        document: Document,
+        storage_flags: Option<StorageFlags>,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_time_ms: u64,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        match platform_version
+            .drive
+            .methods
+            .document
+            .delete
+            .delete_consumed_document_operations
+        {
+            0 => self.force_delete_document_for_contract_operations(
+                document.id(),
+                contract,
+                document_type,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                block_time_ms,
+                transaction,
+                platform_version,
+            ),
+            1 => self.force_delete_read_document_for_contract_operations_v0(
+                document,
+                storage_flags,
+                contract,
+                document_type,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                block_time_ms,
+                transaction,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "force_delete_read_document_for_contract_operations".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            })),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::fees::op::LowLevelDriveOperation;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::setup_contract;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::DataContract;
+    use dpp::document::DocumentV0Getters;
+    use dpp::tests::json_document::json_document_to_document;
+    use dpp::version::PlatformVersion;
+    use std::borrow::Cow;
+
+    /// The operations deleting a stored `person` under `platform_version`: by its id, as the
+    /// force delete does, and from the document and storage flags already read.
+    fn force_delete_operations_by_id_and_from_read(
+        platform_version: &PlatformVersion,
+    ) -> (Vec<LowLevelDriveOperation>, Vec<LowLevelDriveOperation>) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let contract = setup_contract(
+            &drive,
+            "tests/supporting_files/contract/family/family-contract-reduced.json",
+            None,
+            None,
+            None::<fn(&mut DataContract)>,
+            None,
+            None,
+        );
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected the person document type");
+        let owner_id = [3u8; 32];
+        let document = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(owner_id.into()),
+            document_type,
+            platform_version,
+        )
+        .expect("expected the person document");
+        let storage_flags = StorageFlags::new_single_epoch(0, Some(owner_id));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &document,
+                            Some(Cow::Borrowed(&storage_flags)),
+                        )),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to store the document");
+
+        let by_id = drive
+            .force_delete_document_for_contract_operations(
+                document.id(),
+                &contract,
+                document_type,
+                None,
+                &mut None,
+                0,
+                None,
+                platform_version,
+            )
+            .expect("expected the force delete operations");
+        let from_read = drive
+            .force_delete_read_document_for_contract_operations(
+                document.clone(),
+                Some(storage_flags),
+                &contract,
+                document_type,
+                None,
+                &mut None,
+                0,
+                None,
+                platform_version,
+            )
+            .expect("expected the read-document delete operations");
+        (by_id, from_read)
+    }
+
+    /// From protocol version 15 a consumed document is deleted from what its lookup read
+    #[test]
+    fn should_delete_a_read_document_as_a_force_delete_does_less_its_read() {
+        let (by_id, from_read) =
+            force_delete_operations_by_id_and_from_read(PlatformVersion::latest());
+        // The force delete reads the document first; every operation after that read is
+        // the same, the storage removed and refunded included
+        assert_eq!(by_id.len(), from_read.len() + 1);
+        assert_eq!(&by_id[1..], from_read.as_slice());
+    }
+
+    /// At protocol version 14 a consumed document is deleted by its id, read again
+    #[test]
+    fn should_delete_a_consumed_document_by_its_id_at_protocol_version_14() {
+        let (by_id, from_read) = force_delete_operations_by_id_and_from_read(
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+        );
+        assert_eq!(by_id, from_read);
     }
 }

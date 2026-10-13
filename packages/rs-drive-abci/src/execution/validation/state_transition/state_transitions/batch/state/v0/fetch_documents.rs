@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
@@ -19,13 +20,16 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::document::query::query_contested_documents_storage::QueryContestedDocumentsOutcomeV0Methods;
-use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+use drive::drive::document::query::{
+    QueryDocumentsOutcomeV0Methods, QueryDocumentsWithFlagsOutcomeV0Methods,
+};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::query::drive_contested_document_query::{
     DriveContestedDocumentQuery, PrimaryContestedInternalClauses,
 };
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
+use drive::util::storage_flags::StorageFlags;
 use std::collections::BTreeMap;
 
 // ============================================================================
@@ -456,8 +460,9 @@ pub(crate) fn hash_lookup_key(
     Some(BilledLookupKey(digest))
 }
 
-/// The document a `refersTo` lookup resolves to for one value: the one the
-/// declared unique index of `document_type` finds for the key assembled from
+/// The document a `refersTo` lookup resolves to for one value, with the storage flags of
+/// its stored element from protocol version 15 (a create that consumes it deletes it from
+/// these, without reading it again; `None` before): the one the declared unique index of `document_type` finds for the key assembled from
 /// `reference_value` (the identifier property's value, one array element, the
 /// writer or the creator, or the value of a string or byte array property
 /// carrying the reference), the writer `owner_id` and the sources in
@@ -496,7 +501,7 @@ pub(crate) fn fetch_document_through_lookup(
     execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
-) -> Result<Option<Document>, Error> {
+) -> Result<Option<(Document, Option<StorageFlags>)>, Error> {
     // Registration resolved the index its `findBy` names, and a type's indexes
     // never change, so this only guards a declaration no registration admits:
     // one naming no unique index finds no document
@@ -578,30 +583,64 @@ pub(crate) fn fetch_document_through_lookup(
         sub_queries: vec![],
     };
 
-    let documents_outcome = drive.query_documents(
-        drive_query,
-        Some(epoch),
-        false,
-        transaction,
-        Some(platform_version.protocol_version),
-    )?;
+    // From `delete_consumed_document_operations` 1 (protocol version 15) the read keeps the
+    // stored element's storage flags, so a create consuming the document deletes it from
+    // them; before, the consume reads it again by id, and this is the plain document query
+    let (documents, cost) = match platform_version
+        .drive
+        .methods
+        .document
+        .delete
+        .delete_consumed_document_operations
+    {
+        0 => {
+            let outcome = drive.query_documents(
+                drive_query,
+                Some(epoch),
+                false,
+                transaction,
+                Some(platform_version.protocol_version),
+            )?;
+            let cost = outcome.cost();
+            let documents = outcome
+                .documents_owned()
+                .into_iter()
+                .map(|document| (document, None))
+                .collect::<Vec<_>>();
+            (documents, cost)
+        }
+        1 => {
+            let outcome = drive.query_documents_with_flags(
+                drive_query,
+                Some(epoch),
+                false,
+                transaction,
+                Some(platform_version.protocol_version),
+            )?;
+            let cost = outcome.cost();
+            (outcome.documents_owned(), cost)
+        }
+        version => {
+            return Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "fetch_document_through_lookup".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }))
+        }
+    };
     execution_context.add_operation(ValidationOperation::PrecalculatedOperation(FeeResult {
         storage_fee: 0,
-        processing_fee: documents_outcome.cost(),
+        processing_fee: cost,
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
         lifetime_storage_fees: Default::default(),
     }));
 
-    Ok(documents_outcome
-        .documents_owned()
-        .into_iter()
-        .next()
-        .filter(|document| {
-            key_values.iter().all(|(index_property, value)| {
-                holds_key_part(document_type, document, index_property, value)
-            })
-        }))
+    Ok(documents.into_iter().next().filter(|(document, _)| {
+        key_values.iter().all(|(index_property, value)| {
+            holds_key_part(document_type, document, index_property, value)
+        })
+    }))
 }
 
 /// Whether `document`, found through an index of `document_type` under a key
