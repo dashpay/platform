@@ -824,6 +824,10 @@ fn plan_replay_sweeps(
     records: &[TransactionRecord],
 ) -> Vec<SweepBatch> {
     let mut conflicts = wallet_info.clone();
+    // The sweep decides from records alone, and scans every coin once per loser.
+    for account in conflicts.accounts.all_funding_accounts_mut() {
+        account.utxos.clear();
+    }
     let pending = Pending::of(records);
     let mut winners: Vec<_> = records
         .iter()
@@ -4724,13 +4728,26 @@ mod tests {
                 1..18,
             )
         ) {
-            static INFO: std::sync::OnceLock<ManagedWalletInfo> = std::sync::OnceLock::new();
-            let info = INFO.get_or_init(|| wallet_with_receive_address().1);
+            static WALLET: std::sync::OnceLock<(ManagedWalletInfo, dashcore::Address)> =
+                std::sync::OnceLock::new();
+            let (info, address) = WALLET.get_or_init(|| {
+                let (_, info, address) = wallet_with_receive_address();
+                (info, address)
+            });
             let records = generated_history(&shape);
+            // A coin per record: the reference planner sweeps with them in place.
+            let mut info = info.clone();
+            let account = info.accounts.standard_bip44_accounts.get_mut(&0).unwrap();
+            for record in &records {
+                let outpoint = OutPoint::new(record.txid, 0);
+                let txout = record.transaction.output[0].clone();
+                let coin = key_wallet::Utxo::new(outpoint, txout, address.clone(), 0, false);
+                account.utxos.insert(outpoint, coin);
+            }
 
-            let planned = plan_replay_sweeps(info, &records);
+            let planned = plan_replay_sweeps(&info, &records);
 
-            proptest::prop_assert_eq!(planned, plan_scanning_whole_history(info, &records));
+            proptest::prop_assert_eq!(planned, plan_scanning_whole_history(&info, &records));
         }
     }
 
