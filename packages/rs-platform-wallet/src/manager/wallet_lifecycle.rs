@@ -806,14 +806,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // call returns and tears down, and the identity every mutation below is
         // matched against.
         let (removed, teardown) = loop {
-            let candidate = {
-                let wallets = self.wallets.load();
-                match wallets.get(wallet_id) {
-                    None => {
-                        return Err(PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))
-                    }
-                    Some(wallet) => Arc::clone(wallet),
-                }
+            let registered = self.wallets.load().get(wallet_id).cloned();
+            let Some(candidate) = registered else {
+                // Another removal of this id may be in its last step,
+                // waiting for the resolver: a caller told "not found" takes
+                // the wallet for gone, so this return keeps the same promise.
+                self.wait_for_resolver(wallet_id).await;
+                return Err(PlatformWalletError::WalletNotFound(hex::encode(wallet_id)));
             };
             let guard = candidate.generation().teardown_guard().await;
             let still_current = {
@@ -999,6 +998,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // wallet registered under the same id while this waits. The removal
         // is complete before this point: a caller that drops this future
         // here has removed the wallet without getting it back.
+        self.wait_for_resolver(wallet_id).await;
+
+        Ok(removed)
+    }
+
+    /// Wait, for at most [`RESOLVER_REMOVAL_BUDGET`], until the broadcast
+    /// resolver's task is past everything sent to it so far.
+    async fn wait_for_resolver(&self, wallet_id: &WalletId) {
         if !self
             .broadcast_resolver
             .caught_up(RESOLVER_REMOVAL_BUDGET)
@@ -1010,8 +1017,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                  a verdict for this wallet may still reach the host"
             );
         }
-
-        Ok(removed)
     }
 }
 

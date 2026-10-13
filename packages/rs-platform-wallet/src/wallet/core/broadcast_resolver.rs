@@ -54,7 +54,10 @@
 //! completion can be handled before the wallet's own step to that tip (the
 //! two come from separate tasks): that step, when it follows within
 //! [`COMPLETED_AHEAD_TTL`], is the wallet's arrival at the tip and runs the
-//! pass, however large it is. A
+//! pass, however large it is. The step may also never come (the fan-out
+//! can drop one), so a completion reads a wallet it has a lower height for,
+//! when that wallet has no pass of its own: the read runs the pass if the
+//! wallet is at the tip and confines it to forced roots if not. A
 //! root is probed every block for [`EVERY_BLOCK_WINDOW`] blocks, counted
 //! from its first probe by a height-driven pass while the wallet follows the
 //! tip (a forced pass does not start it), and every [`SLOW_INTERVAL`] blocks
@@ -1893,6 +1896,36 @@ impl Actor {
                 for (wallet_id, height) in at_tip {
                     self.queue_followed_pass(wallet_id, height);
                 }
+                // The height the actor has for a wallet below the tip may be
+                // old because its step was lost, not late (the fan-out can
+                // drop one). Ask the wallet itself: a pass anchored at the
+                // tip, which its read confines to forced roots when the
+                // wallet really is below (see `JobDone::Read`). Only for a
+                // wallet with no pass of its own, and not an idle one.
+                let enabled = self.enabled;
+                let below: Vec<WalletId> = self
+                    .wallets
+                    .iter()
+                    .filter(|(_, entry)| {
+                        enabled
+                            && entry.completed_ahead.is_some()
+                            && entry.height.is_some()
+                            && entry.run.is_none()
+                            && entry.pending.is_none()
+                            && !entry.wait_until.is_some_and(|until| tip < until)
+                    })
+                    .map(|(wallet_id, _)| *wallet_id)
+                    .collect();
+                for wallet_id in below {
+                    if let Some(entry) = self.wallets.get_mut(&wallet_id) {
+                        entry.pending = Some(PendingPass {
+                            height: entry.height.unwrap_or(0),
+                            anchor_at: Some(tip),
+                            ..PendingPass::default()
+                        });
+                    }
+                    self.start(wallet_id);
+                }
             }
             Command::WalletAdded(wallet_id) => {
                 // A fresh start: whatever was kept under this id (a same-id
@@ -2266,6 +2299,15 @@ impl Actor {
                         // the network.
                         deliver(&self.sink, start.events);
                         self.probe_next(wallet_id);
+                        // This read may have found a send settled or gone
+                        // that no `Settled` named (the lossless channel only
+                        // says a wallet's records changed). An echo lookup
+                        // from before would still name this wallet: look
+                        // again, as after a wallet change.
+                        let echoes: Vec<Txid> = self.echo_lookups.keys().copied().collect();
+                        for txid in echoes {
+                            self.look_up_echo(txid);
+                        }
                     }
                 }
             }
@@ -4748,16 +4790,14 @@ mod tests {
             .lock()
             .expect("synced")
             .insert(wallet(), 150);
+        // The completion asks the wallet itself, whatever height the actor
+        // has for it: the pass runs even if that step never comes.
         rig.send(sync_complete(150)).await;
-        assert_eq!(
-            probe.probed().len(),
-            0,
-            "the actor still has the wallet at 100"
-        );
+        assert_eq!(probe.probed().len(), 1);
 
         rig.height(wallet(), 150).await;
 
-        assert_eq!(probe.probed().len(), 1);
+        assert_eq!(probe.probed().len(), 1, "the step adds no second probe");
         assert_eq!(
             rig.actor.state.schedules[&(wallet(), txid(1))].window_start,
             Some(150)
@@ -5924,15 +5964,50 @@ mod tests {
         rig.send(Command::Uncertain(txid(1))).await;
         rig.sent();
 
-        // The echo's lookup is out, then the send settles before it lands.
+        // The echo's lookup finds the wallet holding the send; the send
+        // settles before that result is handled.
         rig.handle(Command::Echoed(txid(1)));
+        let landed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+        assert!(matches!(
+            &landed,
+            Ok((_, JobDone::EchoListed { wallets, .. })) if wallets == &[wallet()]
+        ));
         rig.handle(Command::Settled {
             wallet_id: wallet(),
             txids: HashSet::from([txid(1)]),
         });
+        rig.actor.joined(landed);
         rig.settle().await;
 
         assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
+    }
+
+    /// The same when no event named the settlement and a pass's read found
+    /// it: the lookup from before that read must not accept the send.
+    #[tokio::test]
+    async fn should_drop_an_acceptance_that_lands_after_a_read_found_the_send_settled() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.follow(wallet(), 100).await;
+        rig.send(Command::Uncertain(txid(1))).await;
+        rig.sent();
+
+        rig.handle(Command::Echoed(txid(1)));
+        let landed = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+        assert!(matches!(
+            &landed,
+            Ok((_, JobDone::EchoListed { wallets, .. })) if wallets == &[wallet()]
+        ));
+        // The send settles; only the next pass's read learns it.
+        rig.views(wallet(), Vec::new());
+        rig.height(wallet(), 102).await;
+        assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
+
+        rig.actor.joined(landed);
+        rig.settle().await;
+
+        assert!(rig.sent().is_empty(), "accepted after it was cleared");
     }
 
     /// An echo's acceptance survives another wallet's registration or removal

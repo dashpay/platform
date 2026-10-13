@@ -1633,13 +1633,21 @@ mod tests {
             .await
             .expect("the send's verdict is published");
 
-        let removal = tokio::spawn({
+        let mut removal = tokio::spawn({
             let manager = Arc::clone(&manager);
             async move { manager.remove_wallet(&wallet_id).await }
         });
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // The removal has done all it changes (the wallet is out of the
+        // public map, its last mutation) and still does not return: what is
+        // left of it is the wait for the resolver's task.
+        eventually("the wallet leaves the manager", || async {
+            manager.get_wallet(&wallet_id).await.is_none()
+        })
+        .await;
         assert!(
-            !removal.is_finished(),
+            tokio::time::timeout(Duration::from_millis(200), &mut removal)
+                .await
+                .is_err(),
             "the removal returned while a verdict of the wallet was still being delivered"
         );
 
