@@ -280,8 +280,10 @@ The alloc profile keeps the `Value` type, its derived `Encode` and the
 iterative `Decode` impl, the serde `to_value` and `from_value` conversions and
 the `platform_value!` macro. What it does not have is ambient state: there is
 no thread-local depth limit to read. The plain `Decode` impl therefore always
-applies `DEFAULT_MAX_VALUE_DECODE_DEPTH`, and anything that needs other limits
-uses the bounded pair instead:
+applies `DEFAULT_MAX_VALUE_DECODE_DEPTH`. It is still the trusted path, as it
+is natively: it sizes containers and leaves from the declared lengths. Guest
+code that decodes bytes it did not produce, or needs other limits, uses the
+bounded pair instead:
 
 ```rust
 use platform_serialization::bounded::CodecBounds;
@@ -304,7 +306,10 @@ together with `CodecBudget` (the running counters), `BoundsError` (fixed-width
 fields only, so it can become wire-visible later without depending on the word
 size), `BoundedSliceReader` (a slice reader that reports its unread remainder),
 `canonical_config()` (the same big-endian varint configuration as the native
-path) and `bounded_decode_from_slice`, which rejects trailing bytes.
+path) and `bounded_decode_from_slice`, which rejects trailing bytes. Its
+closure gets an ordinary bincode decoder, so the bounds cover only what the
+closure reads through the bounded helpers: decoding a `Vec` or `String` with
+bincode's own `Decode` inside it allocates from the declared length.
 
 The bounded decoder runs the same state machine as the native `Decode` impl,
 so accepted inputs produce identical values, but it treats every declared

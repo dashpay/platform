@@ -262,6 +262,11 @@ impl Value {
     /// Accepted inputs decode to the same value as the plain [`bincode::Decode`]
     /// impl with the native big-endian configuration.
     ///
+    /// This is the entry point for bytes the caller did not produce. The plain
+    /// [`bincode::Decode`] impl is the trusted path in every profile: it sizes
+    /// containers and leaves from the declared lengths, so under a `NoLimit`
+    /// configuration a hostile length prefix becomes one large allocation.
+    ///
     /// Decoding itself never recurses, but the returned tree is as deep as
     /// `max_depth` allows and `Value`'s `Drop`, `Clone`, `PartialEq` and
     /// derived `Encode` walk it recursively, as they do for every value in
