@@ -75,7 +75,8 @@ pub struct DocumentCreateTransitionActionV0 {
 /// `consume`. Its
 /// owner is the writer (registration demands the `$ownerId` agreement pair), so the delete is
 /// the one that owner could have made, and its storage is refunded the same way. It carries
-/// the document and storage flags the lookup read, so the delete does not read them again.
+/// the document and storage flags the lookup read, so from protocol version 15 the delete does
+/// not read them again (the flags are `None` before, when the delete reads it by id).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConsumedDocument {
     /// The consumed document, as the lookup read it.

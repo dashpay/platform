@@ -135,9 +135,10 @@ pub enum DocumentOperationType<'a> {
         /// Document type
         document_type_info: DocumentTypeInfo<'a>,
     },
-    /// Deletes a document a contested create consumes, as `ForceDeleteDocument` does, from the
-    /// document and storage flags the create's lookup read, without reading it again
-    /// (protocol version 14).
+    /// Deletes a document a contested create consumes, as `ForceDeleteDocument` does: from
+    /// protocol version 15 from the document and storage flags the create's lookup read,
+    /// without reading it again, and before by its id
+    /// (`Drive::force_delete_read_document_for_contract_operations`).
     ForceDeleteReadDocument {
         /// The consumed document, as the lookup read it
         consumed_document: ConsumedDocument,

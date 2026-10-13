@@ -4,6 +4,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentMethodVersions {
@@ -183,6 +184,11 @@ pub struct DriveDocumentDeleteMethodVersions {
     /// The fee-applying indexOnly deletion wrapper (dormant slot, 0 in
     /// every table; only reachable for indexOnly document types).
     pub delete_index_only_document_for_contract: FeatureVersion,
+    /// How a create deletes a document its `refersTo` lookup consumes: 0 reads it again by
+    /// id (`force_delete_document_for_contract_operations`), 1 deletes it from the document
+    /// and storage flags the lookup read, which keeps them (`query_documents_with_flags`).
+    /// Only reachable from protocol version 14, where `consume` exists.
+    pub delete_consumed_document_operations: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

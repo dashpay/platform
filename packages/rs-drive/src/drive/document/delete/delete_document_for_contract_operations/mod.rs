@@ -8,7 +8,7 @@ use crate::util::storage_flags::StorageFlags;
 
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
@@ -161,10 +161,11 @@ impl Drive {
         }
     }
 
-    /// Deletes `document`, already read with its element's `storage_flags`, without its
-    /// type's `canBeDeleted` guard and without reading it again: the operations
-    /// [`Self::force_delete_document_for_contract_operations`] gives, less its read. For a
-    /// document a create consumes, which the create's `refersTo` lookup read.
+    /// Deletes `document`, a document a create consumes, which the create's `refersTo` lookup
+    /// read with its element's `storage_flags`, without its type's `canBeDeleted` guard. From
+    /// `delete_consumed_document_operations` 1 (protocol version 15) without reading it
+    /// again: the operations [`Self::force_delete_document_for_contract_operations`] gives,
+    /// less its read. Before, that force delete by the document's id, which reads it again.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn force_delete_read_document_for_contract_operations(
         &self,
@@ -185,9 +186,19 @@ impl Drive {
             .methods
             .document
             .delete
-            .delete_document_for_contract_operations
+            .delete_consumed_document_operations
         {
-            0 => self.force_delete_read_document_for_contract_operations_v0(
+            0 => self.force_delete_document_for_contract_operations(
+                document.id(),
+                contract,
+                document_type,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                block_time_ms,
+                transaction,
+                platform_version,
+            ),
+            1 => self.force_delete_read_document_for_contract_operations_v0(
                 document,
                 storage_flags,
                 contract,
@@ -200,7 +211,7 @@ impl Drive {
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "force_delete_read_document_for_contract_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -209,6 +220,7 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use crate::fees::op::LowLevelDriveOperation;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
@@ -222,9 +234,11 @@ mod tests {
     use dpp::version::PlatformVersion;
     use std::borrow::Cow;
 
-    #[test]
-    fn should_delete_a_read_document_as_a_force_delete_does_less_its_read() {
-        let platform_version = PlatformVersion::latest();
+    /// The operations deleting a stored `person` under `platform_version`: by its id, as the
+    /// force delete does, and from the document and storage flags already read.
+    fn force_delete_operations_by_id_and_from_read(
+        platform_version: &PlatformVersion,
+    ) -> (Vec<LowLevelDriveOperation>, Vec<LowLevelDriveOperation>) {
         let drive = setup_drive_with_initial_state_structure(None);
         let contract = setup_contract(
             &drive,
@@ -294,10 +308,26 @@ mod tests {
                 platform_version,
             )
             .expect("expected the read-document delete operations");
+        (by_id, from_read)
+    }
 
+    /// From protocol version 15 a consumed document is deleted from what its lookup read
+    #[test]
+    fn should_delete_a_read_document_as_a_force_delete_does_less_its_read() {
+        let (by_id, from_read) =
+            force_delete_operations_by_id_and_from_read(PlatformVersion::latest());
         // The force delete reads the document first; every operation after that read is
         // the same, the storage removed and refunded included
         assert_eq!(by_id.len(), from_read.len() + 1);
         assert_eq!(&by_id[1..], from_read.as_slice());
+    }
+
+    /// At protocol version 14 a consumed document is deleted by its id, read again
+    #[test]
+    fn should_delete_a_consumed_document_by_its_id_at_protocol_version_14() {
+        let (by_id, from_read) = force_delete_operations_by_id_and_from_read(
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+        );
+        assert_eq!(by_id, from_read);
     }
 }
