@@ -45,11 +45,9 @@ pub struct MasternodeListSummary {
     pub is_evonode: bool,
     /// The entry advertises v3 extended network info (an `ExtNetInfo`
     /// endpoint map) rather than a single legacy address —
-    /// `service_address` is then only its primary endpoint. The
-    /// update-service (unban) path refuses such entries, since a version-2
-    /// ProUpServTx would replace the whole endpoint map with one address.
-    /// Snapshots persisted before this field existed default to `false`;
-    /// that guard reads only live list summaries.
+    /// `service_address` is then only its primary endpoint, and the map
+    /// itself is only on the raw list entry. Snapshots persisted before
+    /// this field existed default to `false`.
     pub has_extended_net_info: bool,
 }
 
