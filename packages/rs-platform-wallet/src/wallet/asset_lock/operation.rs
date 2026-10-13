@@ -17,6 +17,15 @@ use crate::error::PlatformWalletError;
 use super::manager::AssetLockManager;
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
 
+// Local recovery resource budgets, not protocol validity limits. Keep every
+// admitted attempt as evidence; exhaustion stops new dispatches, never recovery
+// or replay of an already recorded attempt. 64 attempts allow repeated freshness
+// retries, while 4 MiB bounds the archive even if individual transitions grow.
+#[cfg(feature = "shielded")]
+pub(super) const MAX_DRAIN_ATTEMPTS: usize = 64;
+#[cfg(feature = "shielded")]
+pub(super) const MAX_DRAIN_ATTEMPT_BYTES: usize = 4 * 1024 * 1024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetLockOperationState {
     NotSent,
@@ -140,6 +149,20 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
             }
             if !lock.shielded_funding_attempts.contains(&signed_attempt) {
+                let total_bytes = lock
+                    .shielded_funding_attempts
+                    .iter()
+                    .try_fold(signed_attempt.len(), |total, attempt| {
+                        total.checked_add(attempt.len())
+                    });
+                if lock.shielded_funding_attempts.len() >= MAX_DRAIN_ATTEMPTS
+                    || total_bytes.is_none_or(|total| total > MAX_DRAIN_ATTEMPT_BYTES)
+                {
+                    return Err(PlatformWalletError::Persistence(
+                        "drain signed-attempt recovery budget exhausted; operation remains pending"
+                            .into(),
+                    ));
+                }
                 lock.shielded_funding_attempts.push(signed_attempt);
             }
             lock.clone()

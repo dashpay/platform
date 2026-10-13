@@ -1248,14 +1248,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // re-spendable.
                 let removed_built_row = cs_untrack.removed.contains(&out_point);
                 if operation.is_some() && removed_built_row {
-                    if let Err(error) = self
-                        .persister
-                        .store(PlatformWalletChangeSet {
-                            asset_locks: Some(cs_untrack),
-                            ..Default::default()
-                        })
-                        .and_then(|()| self.persister.flush())
-                    {
+                    if let Err(error) = self.persister.store(PlatformWalletChangeSet {
+                        asset_locks: Some(cs_untrack),
+                        ..Default::default()
+                    }) {
                         // The durable removal is unknown. Keep the context
                         // and input fence pending, but do NOT re-expose the row:
                         // the removal may have committed, and a generic resume
@@ -1263,6 +1259,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         return Err(PlatformWalletError::Persistence(format!(
                             "could not durably remove rejected drain asset lock: {error}"
                         )));
+                    }
+                    if let Err(error) = self.persister.flush() {
+                        if !self.persister.store_commits_inline() {
+                            return Err(PlatformWalletError::Persistence(format!(
+                                "could not durably remove rejected drain asset lock: {error}"
+                            )));
+                        }
+                        // The removal is already committed. A failed host
+                        // notification must not strand its context or inputs.
+                        tracing::warn!(%out_point, %error, "rejected drain removed inline; flush notification failed");
                     }
                 } else {
                     self.queue_asset_lock_changeset(cs_untrack);
@@ -1584,6 +1590,9 @@ mod tests {
         restored_wallet: Option<(Wallet, ManagedWalletInfo)>,
         before_remove: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
         restore_stored_locks: std::sync::atomic::AtomicBool,
+        commits_inline: bool,
+        fail_remove_store: bool,
+        committed_stores: std::sync::atomic::AtomicUsize,
     }
 
     impl CapturingPersistence {
@@ -1613,6 +1622,10 @@ mod tests {
     }
 
     impl PlatformWalletPersistence for CapturingPersistence {
+        fn store_commits_inline(&self) -> bool {
+            self.commits_inline
+        }
+
         fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
             crate::changeset::PersistenceCapabilities::WALLET_DRAIN
         }
@@ -1634,14 +1647,19 @@ mod tests {
                 .as_ref()
                 .is_some_and(|locks| !locks.removed.is_empty())
             {
+                if self.fail_remove_store {
+                    return Err(PersistenceError::backend("simulated removal store failure"));
+                }
                 if let Some(hook) = self.before_remove.lock().unwrap().as_ref() {
                     hook();
                 }
             }
-            self.stored
-                .lock()
-                .expect("capturing persistence mutex")
-                .push(changeset);
+            let mut stored = self.stored.lock().expect("capturing persistence mutex");
+            stored.push(changeset);
+            if self.commits_inline {
+                self.committed_stores
+                    .store(stored.len(), std::sync::atomic::Ordering::SeqCst);
+            }
             Ok(())
         }
 
@@ -1653,6 +1671,10 @@ mod tests {
             if self.fail_flush || self.fail_on_flush == Some(count) {
                 return Err(PersistenceError::backend("simulated flush failure"));
             }
+            self.committed_stores.store(
+                self.stored.lock().unwrap().len(),
+                std::sync::atomic::Ordering::SeqCst,
+            );
             Ok(())
         }
 
@@ -1683,6 +1705,10 @@ mod tests {
                     .lock()
                     .unwrap()
                     .iter()
+                    .take(
+                        self.committed_stores
+                            .load(std::sync::atomic::Ordering::SeqCst),
+                    )
                     .filter_map(|cs| cs.asset_locks.as_ref())
                 {
                     for entry in cs.asset_locks.values() {
@@ -4590,6 +4616,198 @@ mod tests {
         let second = Arc::new(super::AssetLockOperationContext::new([52; 16]));
         let _second_registration = manager.register_wallet_drain_operation(second.clone());
         assert_eq!(manager.begin_wallet_drain(&second).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn should_release_rejected_drain_only_when_removal_committed() {
+        for commits_inline in [false, true] {
+            for fail_remove_store in [false, true] {
+                let (wallet_manager, wallet_id, _, signer) =
+                    funded_wallet_manager(StandardAccountType::BIP44Account).await;
+                let persistence = Arc::new(CapturingPersistence {
+                    commits_inline,
+                    fail_remove_store,
+                    fail_on_flush: Some(3),
+                    restore_stored_locks: std::sync::atomic::AtomicBool::new(true),
+                    ..CapturingPersistence::for_wallet(&wallet_manager, wallet_id)
+                });
+                let manager = AssetLockManager::new(
+                    Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap()),
+                    wallet_manager,
+                    wallet_id,
+                    Arc::new(Notify::new()),
+                    Arc::new(AlwaysRejectedBroadcaster),
+                    WalletPersister::new(wallet_id, persistence.clone()),
+                );
+                let operation = Arc::new(super::AssetLockOperationContext::new([53; 16]));
+                let registration = manager.register_wallet_drain_operation(operation.clone());
+                manager.begin_wallet_drain(&operation).await.unwrap();
+                let result = manager
+                    .broadcast_funded_asset_lock_with_operation(
+                        super::AssetLockBuildAmount::DrainAll {
+                            minimum_lock_duffs: Some(1),
+                        },
+                        &crate::ASSET_LOCK_FUNDING_SOURCES,
+                        0,
+                        AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                        0,
+                        &signer,
+                        Some(&operation),
+                    )
+                    .await;
+                let released = commits_inline && !fail_remove_store;
+                assert_eq!(
+                    matches!(result, Err(PlatformWalletError::TransactionBroadcast(_))),
+                    released,
+                    "inline={commits_inline}, store failure={fail_remove_store}: {result:?}"
+                );
+                if !released {
+                    assert!(matches!(result, Err(PlatformWalletError::Persistence(_))));
+                }
+                assert!(manager.list_tracked_locks().await.is_empty());
+                let restored = persistence.load().unwrap();
+                let persisted_count: usize = restored.wallets[&wallet_id]
+                    .unused_asset_locks
+                    .values()
+                    .map(|locks| locks.len())
+                    .sum();
+                assert_eq!(persisted_count, usize::from(!released));
+                assert_eq!(operation.snapshot().out_point.is_none(), released);
+                drop(registration);
+                assert_eq!(
+                    manager
+                        .wallet_drain_operation_status([53; 16])
+                        .await
+                        .unwrap()
+                        .state,
+                    if released {
+                        super::AssetLockOperationState::NotSent
+                    } else {
+                        super::AssetLockOperationState::Pending
+                    }
+                );
+                if released {
+                    for id in [[53; 16], [54; 16]] {
+                        let retry = Arc::new(super::AssetLockOperationContext::new(id));
+                        let _registration = manager.register_wallet_drain_operation(retry.clone());
+                        assert_eq!(manager.begin_wallet_drain(&retry).await.unwrap(), None);
+                    }
+                } else {
+                    let other = Arc::new(super::AssetLockOperationContext::new([54; 16]));
+                    assert!(manager.begin_wallet_drain(&other).await.is_err());
+                }
+                // Test actual input selection too: clearing only the operation
+                // snapshot would still leave the non-expiring spend fence.
+                let rebuild = manager
+                    .build_asset_lock_transaction(
+                        1_000_000,
+                        0,
+                        AssetLockFundingType::IdentityRegistration,
+                        0,
+                        &signer,
+                    )
+                    .await;
+                assert_eq!(rebuild.is_ok(), released, "{rebuild:?}");
+            }
+        }
+    }
+
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_bound_drain_attempt_archive_without_discarding_evidence() {
+        use super::super::operation::{MAX_DRAIN_ATTEMPTS, MAX_DRAIN_ATTEMPT_BYTES};
+
+        // Count boundary, cumulative byte boundary, and one oversized attempt.
+        for mode in 0..3 {
+            let (wallet_manager, wallet_id, _, signer) =
+                funded_wallet_manager(StandardAccountType::BIP44Account).await;
+            let (manager, persistence) = asset_lock_manager_over(
+                wallet_manager,
+                wallet_id,
+                Arc::new(CountingOkBroadcaster::default()),
+            );
+            persistence
+                .restore_stored_locks
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            let operation = Arc::new(super::AssetLockOperationContext::new([55; 16]));
+            let _registration = manager.register_wallet_drain_operation(operation.clone());
+            manager.begin_wallet_drain(&operation).await.unwrap();
+            manager
+                .broadcast_funded_asset_lock_with_operation(
+                    super::AssetLockBuildAmount::DrainAll {
+                        minimum_lock_duffs: Some(1),
+                    },
+                    &crate::ASSET_LOCK_FUNDING_SOURCES,
+                    0,
+                    AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                    0,
+                    &signer,
+                    Some(&operation),
+                )
+                .await
+                .unwrap();
+            let point = operation.snapshot().out_point.unwrap();
+            let attempts: Vec<Vec<u8>> = match mode {
+                0 => (0..MAX_DRAIN_ATTEMPTS)
+                    .map(|i| i.to_le_bytes().to_vec())
+                    .collect(),
+                1 => vec![
+                    vec![1; MAX_DRAIN_ATTEMPT_BYTES / 2],
+                    vec![2; MAX_DRAIN_ATTEMPT_BYTES / 2],
+                ],
+                _ => vec![],
+            };
+            for attempt in &attempts {
+                manager
+                    .persist_wallet_drain_attempt(point, attempt.clone())
+                    .await
+                    .unwrap();
+            }
+            let rejected = if mode == 2 {
+                vec![3; MAX_DRAIN_ATTEMPT_BYTES + 1]
+            } else {
+                vec![3]
+            };
+            let stores_before = persistence.stored.lock().unwrap().len();
+            let error = manager
+                .persist_wallet_drain_attempt(point, rejected)
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("recovery budget exhausted"));
+            assert_eq!(persistence.stored.lock().unwrap().len(), stores_before);
+            assert_eq!(
+                manager.list_tracked_locks().await[0].shielded_funding_attempts,
+                attempts
+            );
+            let restored = persistence.load().unwrap();
+            let durable = restored.wallets[&wallet_id]
+                .unused_asset_locks
+                .values()
+                .find_map(|locks| locks.get(&point))
+                .unwrap();
+            assert_eq!(durable.shielded_funding_attempts, attempts);
+            assert_eq!(
+                manager
+                    .wallet_drain_operation_status([55; 16])
+                    .await
+                    .unwrap()
+                    .state,
+                super::AssetLockOperationState::Pending
+            );
+            // Byte-identical replay/persistence retries remain possible at the
+            // limit, without appending or throwing away older recovery evidence.
+            if let Some(first) = attempts.first() {
+                manager
+                    .persist_wallet_drain_attempt(point, first.clone())
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    manager.list_tracked_locks().await[0].shielded_funding_attempts,
+                    attempts
+                );
+            }
+            assert_eq!(manager.broadcaster.calls(), 1);
+        }
     }
 
     #[tokio::test]
