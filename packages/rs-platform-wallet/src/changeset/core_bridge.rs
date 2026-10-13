@@ -1116,14 +1116,8 @@ async fn reconstruct_asset_locks_for_event(
 }
 
 /// The changeset of an InstantSend lock: the lock, and the locked record as
-/// the manager holds it now.
-///
-/// Two exceptions, both judged on the wallet's own accounts (a contact's
-/// watch-only slice never reaches the stored row, so its finality says
-/// nothing about that row):
-/// - a chain-locked slice is held: nothing, the chain lock supersedes the
-///   lock;
-/// - the transaction is finalized with its record pruned: the lock alone.
+/// the manager holds it now. Nothing for a transaction the wallet already
+/// holds as chain-locked: the chain lock supersedes the lock.
 async fn instant_lock_changeset(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
@@ -1131,7 +1125,7 @@ async fn instant_lock_changeset(
     instant_lock: &InstantLock,
 ) -> CoreChangeSet {
     let mut cs = CoreChangeSet::default();
-    // One guard for the finality checks and the re-emitted slices, so all
+    // One guard for the finality check and the re-emitted slices, so both
     // come from the same snapshot.
     let guard = wallet_manager.read().await;
     let Some(info) = guard.get_wallet_info(wallet_id) else {
@@ -1140,44 +1134,34 @@ async fn instant_lock_changeset(
             .insert(*txid, instant_lock.clone());
         return cs;
     };
-    let own_accounts = || {
-        info.core_wallet
-            .accounts
-            .all_accounts()
-            .into_iter()
-            .filter(|account| {
-                !account
-                    .managed_account_type()
-                    .to_account_type()
-                    .is_contact_owned()
-            })
-    };
-    // IS-lock is informative only for non-final records. If the wallet
-    // holds a chain-locked slice of this txid, drop the lock — chain-lock
-    // supersedes IS finality. Any slice counts: a chain lock promotes only
-    // the slices already in the block, so a sibling can still read
-    // unconfirmed.
-    let chain_locked = own_accounts().any(|account| {
-        account.transactions().get(txid).is_some_and(|record| {
-            matches!(record.context, TransactionContext::InChainLockedBlock(_))
-        })
-    });
+    // IS-lock is informative only for non-final records: drop it once any
+    // of the wallet's own accounts holds the transaction as chain-locked.
+    // - Any account counts, not the first: a chain lock promotes only the
+    //   slices already in the block, so a sibling can still read
+    //   unconfirmed. Re-emitted alone, that sibling would replace the
+    //   stored chain-locked row with one account's unconfirmed share.
+    // - `transaction_is_finalized` also sees a chain-locked slice pruned
+    //   from the records (`keep-finalized-transactions` off, the default).
+    // - A contact's watch-only slice never reaches the stored row, so its
+    //   finality says nothing about that row.
+    let chain_locked = info
+        .core_wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .filter(|account| !account.managed_account_type().is_contact_owned())
+        .any(|account| {
+            account.transaction_is_finalized(txid)
+                || account.transactions().get(txid).is_some_and(|record| {
+                    matches!(record.context, TransactionContext::InChainLockedBlock(_))
+                })
+        });
     if chain_locked {
         return cs;
     }
     cs.instant_locks_for_non_final_records
         .insert(*txid, instant_lock.clone());
-    // With `keep-finalized-transactions` off (the default) a chain-locked
-    // slice is pruned, and the lock is kept: chain-lock delivery is
-    // event-driven in that mode. A slice still held then is an unconfirmed
-    // sibling of the pruned one. Re-emitted alone it would replace the
-    // stored chain-locked row with one account's unconfirmed share, so the
-    // lock goes out without records.
-    if own_accounts().any(|account| account.transaction_is_finalized(txid)) {
-        return cs;
-    }
-    // No slices (record pruned everywhere, or never held) leave just the
-    // lock as well.
+    // No slices (the wallet never held the transaction) leave just the lock.
     let (slices, verdicts) = slices_and_verdicts_for_txid(info, txid);
     // The persister learns a record's context only from a re-emitted
     // record; the lock map above does not carry it there. The wallet rewrote
@@ -3818,6 +3802,15 @@ mod contact_watch_only_projection_tests {
     /// separate because the spend must be checked before the managed wallet
     /// moves into a manager.
     async fn dual_account_mempool_spend() -> (TestWalletContext, Transaction) {
+        dual_account_mempool_spend_with_change(0).await
+    }
+
+    /// [`dual_account_mempool_spend`] with `change` duffs back to the BIP44
+    /// account when not zero. That account then matches the transaction by
+    /// its output too, which the spend-only BIP32 account does not.
+    async fn dual_account_mempool_spend_with_change(
+        change: u64,
+    ) -> (TestWalletContext, Transaction) {
         let mut ctx = TestWalletContext::new_random();
         let bip44_address = ctx.receive_address.clone();
         let bip32_address = {
@@ -3867,10 +3860,20 @@ mod contact_watch_only_projection_tests {
                     witness: Witness::new(),
                 })
                 .collect(),
-            output: vec![TxOut {
-                value: 149_999_000,
-                script_pubkey: DashAddress::dummy(Network::Testnet, 7).script_pubkey(),
-            }],
+            output: [
+                (
+                    149_999_000 - change,
+                    DashAddress::dummy(Network::Testnet, 7),
+                ),
+                (change, bip44_address),
+            ]
+            .into_iter()
+            .filter(|(value, _)| *value > 0)
+            .map(|(value, address)| TxOut {
+                value,
+                script_pubkey: address.script_pubkey(),
+            })
+            .collect(),
             special_transaction_payload: None,
         };
         let result = ctx
@@ -4181,6 +4184,76 @@ mod contact_watch_only_projection_tests {
         );
     }
 
+    /// The order a pooled send with change takes when its lock is late: the
+    /// block confirms the slice that holds the change, the spend-only
+    /// sibling stays unconfirmed, and then the lock arrives. The stored row
+    /// keeps the block, and both slices go out, the mined one with the coin
+    /// that came back.
+    #[tokio::test]
+    async fn should_re_emit_a_partly_mined_send_with_its_block_and_its_change() {
+        let (mut ctx, spend) = dual_account_mempool_spend_with_change(1_000_000).await;
+        let txid = spend.txid();
+        ctx.check_transaction(&spend, in_block(2)).await;
+        let mut info = platform_info(ctx.managed_wallet);
+        let mined = slice_contexts(&info, &txid);
+        assert!(
+            matches!(mined[&bip44_account_0()], TransactionContext::InBlock(_))
+                && matches!(mined[&bip32_account_0()], TransactionContext::Mempool),
+            "the block reaches only the slice with an output: {mined:?}"
+        );
+        let lock = InstantLock::default();
+        info.mark_instant_send_utxos(&txid, &lock);
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
+        let event = WalletEvent::TransactionInstantLocked {
+            wallet_id,
+            txid,
+            instant_lock: lock,
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+
+        let cs = build_core_changeset(&Arc::new(RwLock::new(wm)), &event).await;
+
+        assert!(cs.instant_locks_for_non_final_records.contains_key(&txid));
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(
+            cs.records[0].block_info().map(|block| block.height()),
+            Some(2),
+            "the wallet-level row keeps the block, got {:?}",
+            cs.records[0].context
+        );
+        let slices: BTreeMap<_, _> = cs
+            .account_records
+            .iter()
+            .map(|record| (record.account_type, &record.context))
+            .collect();
+        assert!(matches!(
+            slices[&bip44_account_0()],
+            TransactionContext::InBlock(_)
+        ));
+        assert!(matches!(
+            slices[&bip32_account_0()],
+            TransactionContext::InstantSend(_)
+        ));
+        let mined = cs
+            .account_records
+            .iter()
+            .find(|record| record.account_type == bip44_account_0())
+            .expect("bip44 slice");
+        assert!(
+            mined.output_details.iter().any(|detail| detail.index == 1
+                && matches!(detail.role, OutputRole::Received | OutputRole::Change)),
+            "the mined slice carries the coin back to the wallet: {:?}",
+            mined.output_details
+        );
+        assert!(
+            cs.utxo_credit_verdicts.is_empty(),
+            "a credited coin needs no verdict: {:?}",
+            cs.utxo_credit_verdicts
+        );
+    }
+
     /// A lock for a transaction with a chain-locked slice is dropped whole,
     /// whichever slice comes first: a chain lock promotes only the slices
     /// already in the block, so a sibling can still read unconfirmed.
@@ -4213,9 +4286,10 @@ mod contact_watch_only_projection_tests {
     }
 
     /// A lock that arrives after the chain lock, for a transaction with a
-    /// slice the chain lock did not reach, re-emits nothing: that slice alone
+    /// slice the chain lock did not reach, changes nothing: that slice alone
     /// would replace the stored chain-locked row with one account's
-    /// unconfirmed share.
+    /// unconfirmed share. Holds whether or not the chain-locked slice is
+    /// pruned from the records.
     #[tokio::test]
     async fn should_not_re_emit_the_unconfirmed_sibling_of_a_chain_locked_slice() {
         let (ctx, spend) = dual_account_mempool_spend().await;
@@ -4253,12 +4327,9 @@ mod contact_watch_only_projection_tests {
         assert!(cs.records.is_empty(), "the sibling slice is not re-emitted");
         assert!(cs.account_records.is_empty());
         assert!(cs.utxo_credit_verdicts.is_empty());
-        // With finalized records kept, the chain-locked slice is still held
-        // and the lock is dropped with the records (the test above).
-        #[cfg(not(feature = "keep-finalized-transactions"))]
         assert!(
-            cs.instant_locks_for_non_final_records.contains_key(&txid),
-            "the lock itself is kept"
+            cs.instant_locks_for_non_final_records.is_empty(),
+            "the chain lock supersedes the lock"
         );
     }
 
@@ -4315,6 +4386,15 @@ mod contact_watch_only_projection_tests {
             block_hash: BlockHash::all_zeros(),
             signature: BLSSignature::from([0u8; 96]),
         });
+        assert!(
+            info.core_wallet
+                .accounts
+                .all_accounts()
+                .into_iter()
+                .any(|account| account.managed_account_type().is_contact_owned()
+                    && account.transaction_is_finalized(&txid)),
+            "the contact account holds the transaction as finalized"
+        );
         let lock = InstantLock::default();
         info.mark_instant_send_utxos(&txid, &lock);
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);

@@ -191,6 +191,9 @@ impl WalletInfoInterface for PlatformWalletInfo {
             .map(|record| (record.account_type, record.context.clone()))
             .collect();
         let changed = self.core_wallet.mark_instant_send_utxos(txid, lock);
+        if confirmed.is_empty() {
+            return changed;
+        }
         for mut account in self.core_wallet.accounts.all_accounts_mut() {
             let Some(record) = account.transactions_mut().get_mut(txid) else {
                 continue;
