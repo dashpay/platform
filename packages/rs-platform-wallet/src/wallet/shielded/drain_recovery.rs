@@ -685,6 +685,7 @@ mod tests {
         staged: Mutex<BTreeMap<OutPoint, AssetLockEntry>>,
         fail_store: AtomicBool,
         fail_flush: AtomicBool,
+        commits_inline: AtomicBool,
         fail_load: AtomicBool,
         before_store: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
         activity: Mutex<BTreeMap<SubwalletId, crate::changeset::ShieldedSubwalletStartState>>,
@@ -693,6 +694,9 @@ mod tests {
         omit_activity_capability: AtomicBool,
     }
     impl PlatformWalletPersistence for RecoveryPersistence {
+        fn store_commits_inline(&self) -> bool {
+            self.commits_inline.load(Ordering::SeqCst)
+        }
         fn persistence_capabilities(&self) -> PersistenceCapabilities {
             let bits = PersistenceCapabilities::WALLET_DRAIN.bits();
             PersistenceCapabilities::from_bits_retain(
@@ -726,33 +730,16 @@ mod tests {
             if let Some(cs) = cs.asset_locks {
                 self.staged.lock().unwrap().extend(cs.asset_locks);
             }
+            if self.store_commits_inline() {
+                self.commit_staged();
+            }
             Ok(())
         }
         fn flush(&self, _wallet_id: [u8; 32]) -> Result<(), PersistenceError> {
             if self.fail_flush.load(Ordering::SeqCst) {
                 return Err(PersistenceError::backend("flush failed"));
             }
-            if let Some(cs) = self.staged_activity.lock().unwrap().take() {
-                let mut activity = self.activity.lock().unwrap();
-                for (id, ids) in cs.activity_removed {
-                    activity
-                        .entry(id)
-                        .or_default()
-                        .activity
-                        .retain(|entry| !ids.contains(&entry.id));
-                }
-                for (id, entries) in cs.activity_entries {
-                    let rows = &mut activity.entry(id).or_default().activity;
-                    for entry in entries {
-                        rows.retain(|old| old.id != entry.id);
-                        rows.push(entry);
-                    }
-                }
-            }
-            self.committed
-                .lock()
-                .unwrap()
-                .extend(self.staged.lock().unwrap().clone());
+            self.commit_staged();
             Ok(())
         }
         fn load(&self) -> Result<ClientStartState, PersistenceError> {
@@ -802,6 +789,32 @@ mod tests {
         }
     }
 
+    impl RecoveryPersistence {
+        fn commit_staged(&self) {
+            if let Some(cs) = self.staged_activity.lock().unwrap().take() {
+                let mut activity = self.activity.lock().unwrap();
+                for (id, ids) in cs.activity_removed {
+                    activity
+                        .entry(id)
+                        .or_default()
+                        .activity
+                        .retain(|entry| !ids.contains(&entry.id));
+                }
+                for (id, entries) in cs.activity_entries {
+                    let rows = &mut activity.entry(id).or_default().activity;
+                    for entry in entries {
+                        rows.retain(|old| old.id != entry.id);
+                        rows.push(entry);
+                    }
+                }
+            }
+            self.committed
+                .lock()
+                .unwrap()
+                .extend(self.staged.lock().unwrap().clone());
+        }
+    }
+
     struct TestDirectory(std::path::PathBuf);
     impl Drop for TestDirectory {
         fn drop(&mut self) {
@@ -832,6 +845,7 @@ mod tests {
             staged: Mutex::new(BTreeMap::new()),
             fail_store: AtomicBool::new(false),
             fail_flush: AtomicBool::new(false),
+            commits_inline: AtomicBool::new(false),
             fail_load: AtomicBool::new(false),
             before_store: Mutex::new(None),
             activity: Mutex::new(BTreeMap::new()),
@@ -1490,6 +1504,57 @@ mod tests {
             if snapshot.state == AssetLockOperationState::Pending && snapshot.out_point == Some(lock.out_point)));
         assert!(wallet.shield_guard.try_lock().is_ok());
         drop(scan);
+    }
+
+    #[tokio::test]
+    async fn should_publish_inline_committed_history_when_flush_notification_fails() {
+        let (lock, keys, st) = evidence_fixture();
+        let outputs = attempt_outputs(&lock, &st.serialize_to_bytes().unwrap(), &keys).unwrap();
+        let views = keys[&0].clone();
+        let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+        wallet
+            .persist_drain_shielded_attempt(lock.out_point, &st)
+            .await
+            .unwrap();
+        for (index, (account, cmx)) in outputs.iter().enumerate() {
+            observe(
+                &coordinator,
+                wallet.wallet_id(),
+                *account,
+                *cmx,
+                index as u64,
+            )
+            .await;
+        }
+        persistence.commits_inline.store(true, Ordering::SeqCst);
+        persistence.fail_flush.store(true, Ordering::SeqCst);
+        assert!(
+            reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            persistence.committed.lock().unwrap()[&lock.out_point].status,
+            AssetLockStatus::Consumed
+        );
+        assert_eq!(
+            wallet.asset_locks.list_tracked_locks().await[0].status,
+            AssetLockStatus::Consumed
+        );
+        assert_exact_drain_history(&wallet, &coordinator, &outputs).await;
+        let id = SubwalletId::new(wallet.wallet_id(), 0);
+        assert_eq!(persistence.activity.lock().unwrap()[&id].activity.len(), 1);
+        let mut scan = crate::changeset::ShieldedChangeSet::default();
+        coordinator
+            .derive_activity_into_changeset(&[(id, views)], &mut scan)
+            .await
+            .unwrap();
+        assert!(scan.activity_entries.is_empty());
+        assert!(
+            reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]

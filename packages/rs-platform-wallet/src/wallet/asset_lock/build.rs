@@ -1501,6 +1501,7 @@ mod tests {
     };
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
+    use crate::wallet::asset_lock::tracked::TrackedAssetLock;
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::PlatformWalletInfo;
     use crate::wallet::platform_wallet::WalletId;
@@ -1582,6 +1583,7 @@ mod tests {
         fail_on_flush: Option<usize>,
         restored_wallet: Option<(Wallet, ManagedWalletInfo)>,
         before_remove: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+        restore_stored_locks: std::sync::atomic::AtomicBool,
     }
 
     impl CapturingPersistence {
@@ -1670,6 +1672,48 @@ mod tests {
                         unconfirmed_outgoing_txs: Vec::new(),
                     },
                 );
+            }
+            if self
+                .restore_stored_locks
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                let wallet = state.wallets.values_mut().next().unwrap();
+                for cs in self
+                    .stored
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|cs| cs.asset_locks.as_ref())
+                {
+                    for entry in cs.asset_locks.values() {
+                        wallet
+                            .unused_asset_locks
+                            .entry(entry.account_index)
+                            .or_default()
+                            .insert(
+                                entry.out_point,
+                                TrackedAssetLock {
+                                    operation_id: entry.operation_id,
+                                    shielded_funding_attempts: entry
+                                        .shielded_funding_attempts
+                                        .clone(),
+                                    out_point: entry.out_point,
+                                    transaction: entry.transaction.clone(),
+                                    account_index: entry.account_index,
+                                    funding_type: entry.funding_type,
+                                    identity_index: entry.identity_index,
+                                    amount: entry.amount_duffs,
+                                    status: entry.status.clone(),
+                                    proof: entry.proof.clone(),
+                                },
+                            );
+                    }
+                    for removed in &cs.removed {
+                        for locks in wallet.unused_asset_locks.values_mut() {
+                            locks.remove(removed);
+                        }
+                    }
+                }
             }
             Ok(state)
         }
@@ -4248,29 +4292,30 @@ mod tests {
             .snapshot()
             .out_point
             .expect("checkpointed outpoint");
-        let stored = persistence.stored.lock().unwrap();
-        assert!(
-            stored
-                .iter()
-                .any(|cs| cs.asset_locks.as_ref().is_some_and(|locks| locks
-                    .asset_locks
-                    .get(&outpoint)
-                    .is_some_and(|lock| lock.operation_id == Some([42; 16])))),
-            "the first post-build suspension must have a durable recovery row"
-        );
-        assert!(
-            stored
-                .iter()
-                .any(|cs| cs
-                    .account_address_pools
+        {
+            let stored = persistence.stored.lock().unwrap();
+            assert!(
+                stored
                     .iter()
-                    .any(|pool| pool.addresses.iter().any(|address| matches!(
-                        address.state,
-                        key_wallet::managed_account::address_pool::AddressState::Used
-                    )))),
-            "the burned funding key must be persisted too"
-        );
-        drop(stored);
+                    .any(|cs| cs.asset_locks.as_ref().is_some_and(|locks| locks
+                        .asset_locks
+                        .get(&outpoint)
+                        .is_some_and(|lock| lock.operation_id == Some([42; 16])))),
+                "the first post-build suspension must have a durable recovery row"
+            );
+            assert!(
+                stored
+                    .iter()
+                    .any(|cs| cs.account_address_pools.iter().any(|pool| pool
+                        .addresses
+                        .iter()
+                        .any(|address| matches!(
+                            address.state,
+                            key_wallet::managed_account::address_pool::AddressState::Used
+                        )))),
+                "the burned funding key must be persisted too"
+            );
+        }
         assert_eq!(
             persistence
                 .flushes
@@ -4286,6 +4331,45 @@ mod tests {
             super::AssetLockOperationState::Pending
         );
         assert_eq!(operation.snapshot().out_point, Some(outpoint));
+        assert!(manager.list_tracked_locks().await.is_empty());
+        persistence
+            .restore_stored_locks
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let retry = Arc::new(super::AssetLockOperationContext::new([42; 16]));
+        let _registration = manager.register_wallet_drain_operation(retry.clone());
+        assert_eq!(
+            manager.begin_wallet_drain(&retry).await.unwrap(),
+            Some(outpoint)
+        );
+        assert_eq!(
+            manager.tracked_resume_metadata(&outpoint).await.unwrap().0,
+            AssetLockFundingType::AssetLockShieldedAddressTopUp
+        );
+        let result = manager
+            .resume_asset_lock(&outpoint, Some(Duration::ZERO))
+            .await;
+        assert!(
+            !matches!(result, Err(PlatformWalletError::AssetLockNotTracked(_))),
+            "{result:?}"
+        );
+        assert_eq!(
+            manager.broadcaster.calls(),
+            1,
+            "resume dispatches the original checkpointed transaction"
+        );
+        let locks = manager.list_tracked_locks().await;
+        assert_eq!(locks.len(), 1);
+        assert_eq!(locks[0].out_point, outpoint);
+        assert_eq!(locks[0].status, AssetLockStatus::Broadcast);
+        // Retrying hydration must not roll the live Broadcast row back to Built.
+        assert_eq!(
+            manager.begin_wallet_drain(&retry).await.unwrap(),
+            Some(outpoint)
+        );
+        assert_eq!(
+            manager.list_tracked_locks().await[0].status,
+            AssetLockStatus::Broadcast
+        );
     }
 
     #[tokio::test]

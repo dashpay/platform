@@ -181,9 +181,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 ..Default::default()
             })
             .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
-        self.persister
-            .flush()
-            .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+        if let Err(error) = self.persister.flush() {
+            if !self.persister.store_commits_inline() {
+                return Err(PlatformWalletError::Persistence(error.to_string()));
+            }
+            // store already committed history and the tombstone. A failed
+            // notification must not suppress their live publication.
+            tracing::warn!(%out_point, %error, "wallet drain committed inline; flush notification failed");
+        }
         lock.status = AssetLockStatus::Consumed;
         lock.proof = None;
         self.resume_dispatch_claims
@@ -314,6 +319,55 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
     }
 
+    /// Repair the gap between a durable checkpoint and live tracking when a
+    /// cancelled call is retried without restarting. Status remains read-only;
+    /// only an explicit retry hydrates the exact operation's missing row.
+    #[cfg(any(feature = "shielded", test))]
+    async fn hydrate_wallet_drain(
+        &self,
+        operation_id: [u8; 16],
+        out_point: OutPoint,
+    ) -> Result<(), PlatformWalletError> {
+        {
+            let manager = self.wallet_manager.read().await;
+            if manager
+                .get_wallet_info(&self.wallet_id)
+                .and_then(|info| info.tracked_asset_locks.get(&out_point))
+                .is_some_and(|lock| lock.operation_id == Some(operation_id))
+            {
+                return Ok(());
+            }
+        }
+        let persisted = self.persister.load().map_err(|error| {
+            PlatformWalletError::Persistence(format!("cannot restore checkpointed drain: {error}"))
+        })?;
+        let candidate = persisted
+            .wallets
+            .get(&self.wallet_id)
+            .into_iter()
+            .flat_map(|wallet| wallet.unused_asset_locks.values())
+            .filter_map(|locks| locks.get(&out_point))
+            .find(|lock| lock.operation_id == Some(operation_id))
+            .cloned()
+            .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
+        let mut manager = self.wallet_manager.write().await;
+        let info = manager
+            .get_wallet_info_mut(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        // A live advance wins over the loaded snapshot. In particular, never
+        // replace a newer proof, consumption state or signed recovery attempt.
+        let current = info
+            .tracked_asset_locks
+            .entry(out_point)
+            .or_insert(candidate);
+        if current.operation_id != Some(operation_id) {
+            return Err(PlatformWalletError::Persistence(
+                "checkpointed drain conflicts with the live operation UUID".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Called under the wallet's shield single-flight guard. Reusing a UUID
     /// can resume its own lock, but can never create a second one.
     #[cfg(any(feature = "shielded", test))]
@@ -341,11 +395,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
             AssetLockOperationState::Pending => {
                 operation.set(previous.state, previous.out_point);
-                return previous.out_point.map(Some).ok_or_else(|| {
+                let out_point = previous.out_point.ok_or_else(|| {
                     PlatformWalletError::TransactionBroadcastUnconfirmed(
                         "drain operation remains unresolved; no new asset lock was built".into(),
                     )
-                });
+                })?;
+                self.hydrate_wallet_drain(operation.operation_id, out_point)
+                    .await?;
+                return Ok(Some(out_point));
             }
             AssetLockOperationState::NotSent => {}
         }
