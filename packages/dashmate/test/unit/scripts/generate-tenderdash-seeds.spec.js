@@ -101,7 +101,7 @@ describe('generate-tenderdash-seeds CLI', () => {
   });
 
   it('should refuse to reuse a snapshot the publishing check would reject', () => {
-    // The committed Core-derived snapshot has no quorum-server provenance.
+    // A snapshot without quorum-server provenance is not releasable.
     let result = run(['--reuse-snapshot'], { SEED_TEST_FETCH_MODE: 'forbid' });
     expect(result.status).not.to.equal(0);
     expect(result.stderr).to.include('cannot be reused');

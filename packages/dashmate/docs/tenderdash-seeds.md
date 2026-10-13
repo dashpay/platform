@@ -54,8 +54,7 @@ guesses ports and requires at least five eligible peers per network.
 Commit the generated snapshot with the release. The NPM publishing workflow validates
 its source URL, package version, peers, and timestamp offline, rejecting data over
 30 days old. Publishing never regenerates tagged data; ordinary builds and
-tests need no live server. The old committed Core-derived snapshots must be
-regenerated after server deployment before this PR can be released.
+tests need no live server.
 
 ## Existing installations
 
