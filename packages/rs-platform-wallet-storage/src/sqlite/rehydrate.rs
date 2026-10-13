@@ -552,10 +552,7 @@ pub(crate) fn restore_recorded_transactions(
     }
     // After the replay, so each replayed final record does not scan their inputs:
     // planning has settled them, and the pass below sees them again.
-    let restorable = unreplayed
-        .into_iter()
-        .filter(|record| unreplayable.get(&record.txid) == Some(&true));
-    restore_unreplayed_records(wallet_info, restorable);
+    restore_unreplayed_records(wallet_info, unreplayed.into_iter(), &unreplayable);
     // A settled spend's first sweep cannot reach competitors replayed later.
     // The upstream sweep preserves ChainLock/InstantSend precedence.
     for record in &replay {
@@ -616,9 +613,9 @@ pub(crate) fn restore_recorded_transactions(
 /// of replay inputs: durable coins, parent outputs, and staged input details.
 ///
 /// Returns the unconfirmed records that must be left out of the replay, each
-/// with whether it can go back into account history. Nothing authenticates a mempool
-/// transaction, so its amounts are peer-supplied data, not corruption; only a
-/// network-final record fails the load.
+/// with whether its input amounts are safe to keep in account history. Nothing
+/// authenticates a mempool transaction, so its amounts are peer-supplied data,
+/// not corruption; only a network-final record fails the load.
 fn validate_replay_amounts(
     wallet_info: &ManagedWalletInfo,
     records: &[TransactionRecord],
@@ -668,13 +665,13 @@ fn validate_replay_amounts(
     fn replayable(
         record: &TransactionRecord,
         checked: Result<(), WalletStorageError>,
-        restorable: bool,
+        safe_inputs: bool,
         unreplayable: &mut HashMap<Txid, bool>,
     ) -> Result<bool, WalletStorageError> {
         match checked {
             Ok(()) => Ok(true),
             Err(_) if matches!(record.context, TransactionContext::Mempool) => {
-                unreplayable.insert(record.txid, restorable);
+                unreplayable.insert(record.txid, safe_inputs);
                 Ok(false)
             }
             Err(error) => Err(error),
@@ -697,8 +694,8 @@ fn validate_replay_amounts(
     }
     for record in records {
         // A record left out credits nothing, so its outputs are no child's input amount.
-        let restorable = fits_i64(record.input_details.iter().map(|d| d.value));
-        if !replayable(record, own_amounts(record), restorable, &mut unreplayable)? {
+        let safe_inputs = fits_i64(record.input_details.iter().map(|d| d.value));
+        if !replayable(record, own_amounts(record), safe_inputs, &mut unreplayable)? {
             continue;
         }
         let txid = record.transaction.txid();
@@ -720,7 +717,7 @@ fn validate_replay_amounts(
                 .iter()
                 .filter_map(|input| amounts.get(&input.previous_output).copied()),
         );
-        // Funding redelivery attributes these to the stored record, so it stays out.
+        // A funding redelivery would attribute these to the stored record.
         replayable(record, inputs, false, &mut unreplayable)?;
     }
     Ok(unreplayable)
@@ -887,13 +884,13 @@ fn plan_replay_sweeps(
 /// The only arithmetic upstream runs over a stored record is the signed net of
 /// its owned outputs and attributed inputs, when a late funding is attributed
 /// to it. A record whose owned outputs alone exceed `i64` goes back without its
-/// output details; the store keeps them. One whose input amounts exceed `i64`
-/// cannot be projected at this pin, because any late attribution sums every
-/// input detail and only invented details would prevent that: it stays out, and
-/// a winner stored by the next load sweeps it there.
+/// output details, and one whose input amounts `safe_inputs` rules out without
+/// its input details; the store keeps both. What a later funding attributes
+/// upstream sums unchecked, as it does for a record it recorded itself.
 fn restore_unreplayed_records(
     wallet_info: &mut ManagedWalletInfo,
     records: impl Iterator<Item = TransactionRecord>,
+    safe_inputs: &HashMap<Txid, bool>,
 ) {
     let mut accounts = wallet_info.accounts.all_funding_accounts_mut();
     for mut record in records {
@@ -903,6 +900,9 @@ fn restore_unreplayed_records(
         let owned = record.output_details.iter().filter(|d| is_owned(d.role));
         if !fits_i64(owned.map(|d| d.value)) {
             record.output_details.clear();
+        }
+        if safe_inputs.get(&record.txid) != Some(&true) {
+            record.input_details.clear();
         }
         // The upstream sweep drops a loser's coins and descendants only in an
         // account that records it, so the record goes wherever the checker
@@ -4850,7 +4850,7 @@ mod tests {
     }
 
     #[test]
-    fn should_restore_set_aside_record_unless_its_input_amounts_are_unsafe() {
+    fn should_restore_set_aside_record_without_the_amounts_unsafe_to_sum() {
         use dashcore::hashes::Hash;
         use key_wallet::managed_account::transaction_record::{
             InputDetail, OutputDetail, OutputRole,
@@ -4886,16 +4886,21 @@ mod tests {
 
         let verdicts = validate_replay_amounts(&info, &records).unwrap();
 
-        let [foreign_overflow, owned_overflow, input_overflow] = records;
+        let [foreign_overflow, owned_overflow, input_overflow] = &records;
         assert_eq!(
-            [&foreign_overflow, &owned_overflow, &input_overflow]
+            [foreign_overflow, owned_overflow, input_overflow]
                 .map(|record| verdicts.get(&record.txid).copied()),
             [Some(true), Some(true), Some(false)],
-            "only unsafe input amounts keep a set-aside record out of history"
+            "only the third has input amounts unsafe to keep"
         );
         let (kept, withheld) = (foreign_overflow.txid, owned_overflow.txid);
-        restore_unreplayed_records(&mut info, [foreign_overflow, owned_overflow].into_iter());
+        let (unsafe_inputs, records) = (input_overflow.txid, records.into_iter());
+        restore_unreplayed_records(&mut info, records, &verdicts);
         let history = info.accounts.standard_bip44_accounts[&0].transactions();
+        assert!(
+            history[&unsafe_inputs].input_details.is_empty(),
+            "input amounts past i64 are withheld from the upstream net"
+        );
         assert_eq!(
             history[&kept].output_details.len(),
             2,
