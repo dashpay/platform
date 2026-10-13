@@ -18,8 +18,8 @@ use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable, Signable};
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
+use dpp::state_transition::{StateTransition, StateTransitionSingleSigned};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use crate::error::{
@@ -52,10 +52,10 @@ fn attempt_outputs(
         return Err(invalid("wrong operation, funding role or transaction"));
     }
     let st = StateTransition::deserialize_from_bytes_untrusted(bytes).map_err(invalid)?;
-    let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(v0)) = &st else {
+    let StateTransition::ShieldFromAssetLock(transition) = &st else {
         return Err(invalid("expected a signed Type18 transition"));
     };
-    if v0.asset_lock_proof.out_point() != Some(lock.out_point) {
+    if transition.asset_lock_proof().out_point() != Some(lock.out_point) {
         return Err(invalid(
             "attempt belongs to a different asset-lock outpoint",
         ));
@@ -70,11 +70,11 @@ fn attempt_outputs(
         .get(lock.out_point.vout as usize)
         .ok_or_else(|| invalid("asset-lock credit output is missing"))?;
     if credit_output.value != lock.amount
-        || v0.value_balance == 0
+        || transition.value_balance() == 0
         || lock
             .amount
             .checked_mul(CREDITS_PER_DUFF)
-            .is_none_or(|amount| v0.value_balance > amount)
+            .is_none_or(|amount| transition.value_balance() > amount)
     {
         return Err(invalid("attempt value does not match the tracked lock"));
     }
@@ -85,14 +85,14 @@ fn attempt_outputs(
     let digest = sha256d::Hash::hash(&st.signable_bytes().map_err(invalid)?);
     dashcore::signer::verify_hash_signature(
         digest.as_byte_array(),
-        v0.signature.as_slice(),
+        transition.signature().as_slice(),
         public_key_hash,
     )
     .map_err(invalid)?;
 
     let mut outputs = BTreeSet::new();
     let mut recovered_value = 0u64;
-    for action in &v0.actions {
+    for action in transition.actions() {
         let wire = ShieldedEncryptedNote {
             cmx: action.cmx.to_vec(),
             nullifier: action.nullifier.to_vec(),
@@ -119,12 +119,121 @@ fn attempt_outputs(
             }
         }
     }
-    if outputs.is_empty() || recovered_value != v0.value_balance {
+    if outputs.is_empty() || recovered_value != transition.value_balance() {
         return Err(invalid(
             "viewing keys cannot recover the complete funded output set",
         ));
     }
     Ok(outputs)
+}
+
+/// Replace only scan-derived aggregates that contain this exact attempt's
+/// outputs. Reclassify the remaining scan data so unrelated same-anchor
+/// receipts retain their own history row instead of being lost or counted twice.
+fn drain_history_changeset(
+    store: &impl ShieldedStore,
+    wallet_id: [u8; 32],
+    keys: &BTreeMap<u32, AccountViewingKeys>,
+    actions: &[dpp::shielded::SerializedAction],
+    outputs: &BTreeSet<(u32, [u8; 32])>,
+) -> Result<crate::changeset::ShieldedChangeSet, PlatformWalletError> {
+    use super::activity::{
+        compute_activity_id, derive_unowned_activity_from_scan_data, ScanDeriveInput,
+        ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
+    };
+    let mut history = crate::changeset::ShieldedChangeSet::default();
+    for (account, views) in keys {
+        let cmxs: BTreeSet<_> = outputs
+            .iter()
+            .filter_map(|(owner, cmx)| (owner == account).then_some(*cmx))
+            .collect();
+        if cmxs.is_empty() {
+            continue;
+        }
+        let id = SubwalletId::new(wallet_id, *account);
+        let entry_id = compute_activity_id(&cmxs.iter().copied().collect::<Vec<_>>());
+        let mut amount = 0u64;
+        for action in actions.iter().filter(|action| cmxs.contains(&action.cmx)) {
+            let wire = ShieldedEncryptedNote {
+                cmx: action.cmx.to_vec(),
+                nullifier: action.nullifier.to_vec(),
+                cv_net: action.cv_net.to_vec(),
+                encrypted_note: action.encrypted_note.clone(),
+            };
+            let note = try_decrypt_note(&views.prepared_ivk, &wire)
+                .map(|(note, _)| note)
+                .or_else(|| {
+                    try_recover_outgoing_note(&views.outgoing_viewing_key, &wire)
+                        .map(|(note, _, _)| note)
+                })
+                .ok_or_else(|| invalid("history output no longer recoverable"))?;
+            amount = amount
+                .checked_add(note.value().inner())
+                .ok_or_else(|| invalid("history amount overflow"))?;
+        }
+        let existing = store.get_activity(id, 0, usize::MAX).map_err(invalid)?;
+        let notes = store.get_all_notes(id).map_err(invalid)?;
+        let outgoing = store.get_outgoing_notes(id).map_err(invalid)?;
+        let mut retained = BTreeMap::new();
+        for entry in &existing {
+            if entry.id != entry_id && entry.note_cmxs.iter().any(|cmx| cmxs.contains(cmx)) {
+                if entry.created_at_ms != 0
+                    || entry.block_height.is_some()
+                    || !matches!(
+                        entry.kind,
+                        ShieldedActivityKind::Received
+                            | ShieldedActivityKind::Sent
+                            | ShieldedActivityKind::ShieldedSpend
+                    )
+                {
+                    return Err(invalid("exact drain overlaps another authored activity"));
+                }
+                history.remove_activity_entry(id, entry.id);
+            } else {
+                retained.extend(entry.note_cmxs.iter().map(|cmx| (*cmx, entry.id)));
+            }
+        }
+        let canonical = ShieldedActivityEntry {
+            id: entry_id,
+            kind: ShieldedActivityKind::ShieldFromAssetLock,
+            direction: ShieldedDirection::In,
+            amount,
+            fee: None,
+            counterparty: None,
+            memo: None,
+            block_height: None,
+            status: ShieldedActivityStatus::Confirmed,
+            // Recovery does not know the original transaction's wall-clock time.
+            created_at_ms: existing
+                .iter()
+                .find(|entry| entry.id == entry_id)
+                .map_or(0, |entry| entry.created_at_ms),
+            min_note_position: notes
+                .iter()
+                .filter(|note| cmxs.contains(&note.cmx))
+                .map(|note| note.position)
+                .min(),
+            note_cmxs: cmxs.iter().copied().collect(),
+            spent_nullifiers: vec![],
+        };
+        retained.extend(cmxs.iter().map(|cmx| (*cmx, entry_id)));
+        let own_addresses = outgoing
+            .iter()
+            .filter(|note| super::coordinator::is_own_orchard_recipient(views, &note.recipient))
+            .map(|note| note.recipient.clone())
+            .collect();
+        let input = ScanDeriveInput {
+            notes,
+            outgoing,
+            own_addresses,
+        };
+        let derived = derive_unowned_activity_from_scan_data(&input, &retained);
+        for entry in derived.new_entries {
+            history.record_activity_entry(id, entry);
+        }
+        history.record_activity_entry(id, canonical);
+    }
+    Ok(history)
 }
 
 impl PlatformWallet {
@@ -161,6 +270,18 @@ impl PlatformWallet {
             .persist_wallet_drain_attempt(out_point, bytes.clone())
             .await?;
         let st = StateTransition::deserialize_from_bytes_untrusted(bytes).map_err(invalid)?;
+        let StateTransition::ShieldFromAssetLock(transition) = &st else {
+            return Err(invalid("expected a signed Type18 transition"));
+        };
+        // Preserve historical evidence, but do not keep replaying a format the
+        // active protocol no longer accepts. The caller already resolved this
+        // operation to FromExistingAssetLock, so rebuilding uses the same lock.
+        if !transition
+            .verify_protocol_version(self.sdk.version().protocol_version)
+            .map_err(invalid)?
+        {
+            return Ok(false);
+        }
         if let Err(error) = st.broadcast(&self.sdk, settings).await {
             if is_instant_lock_proof_invalid(&error)
                 || as_asset_lock_proof_cl_height_too_low(&error).is_some()
@@ -294,7 +415,7 @@ impl PlatformWallet {
             }
             observed
         };
-        let Some((_, bytes)) = attempts
+        let Some((matched_outputs, bytes)) = attempts
             .iter()
             .zip(&lock.shielded_funding_attempts)
             .find(|(outputs, _)| outputs.is_subset(&observed))
@@ -306,16 +427,13 @@ impl PlatformWallet {
         // Orchard commitments alone do not bind an asset-lock outpoint.
         let transition =
             StateTransition::deserialize_from_bytes_untrusted(bytes).map_err(invalid)?;
-        let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(attempt)) =
-            &transition
-        else {
+        let StateTransition::ShieldFromAssetLock(attempt) = &transition else {
             return Err(invalid("expected the matched Type18 attempt"));
         };
         // Every retry randomizes its Orchard bundle. History must describe the
         // persisted attempt whose exact outputs were observed, not the latest
         // submitted attempt, which may never have executed.
-        let actions = attempt.actions.clone();
-        let shield_amount = attempt.value_balance;
+        let actions = attempt.actions().to_vec();
         match check_consumption(transition).await {
             Ok(
                 StateTransitionProofResult::VerifiedAssetLockConsumed(
@@ -335,14 +453,28 @@ impl PlatformWallet {
         let operation_id = lock
             .operation_id
             .ok_or_else(|| invalid("operation UUID missing"))?;
-        // Queue authenticated history before publishing the terminal row. If
-        // interrupted here, recovery repeats the same natural-key upsert;
-        // it cannot skip history because a tombstone was already committed.
-        self.record_shield_from_asset_lock_activity(coordinator, &actions, shield_amount)
-            .await;
+        // Serialize with scan derivation through its host persistence round.
+        // Build a replacement without mutating the memory cache: if the atomic
+        // history+tombstone write fails, a retry still sees the original rows.
+        let _checkpoint = coordinator.activity_checkpoint.lock().await;
+        let history = {
+            let store = coordinator.store().read().await;
+            drain_history_changeset(&*store, self.wallet_id(), &keys, &actions, matched_outputs)?
+        };
         self.asset_locks
-            .complete_wallet_drain(out_point, operation_id)
+            .complete_wallet_drain(out_point, operation_id, history.clone())
             .await?;
+        let mut store = coordinator.store().write().await;
+        for (id, removed) in history.activity_removed {
+            for entry_id in removed {
+                store.remove_activity(id, &entry_id).map_err(invalid)?;
+            }
+        }
+        for (id, entries) in history.activity_entries {
+            for entry in entries {
+                store.save_activity(id, &entry).map_err(invalid)?;
+            }
+        }
         tracing::info!(%out_point, "wallet drain completed from authenticated exact outputs and full original-outpoint consumption");
         Ok(true)
     }
@@ -383,7 +515,8 @@ mod tests {
     use dpp::prelude::AssetLockProof;
     use dpp::shielded::SerializedAction;
     use dpp::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
-    use dpp::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
+    use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+    use dpp::version::PlatformVersion;
     use grovedb_commitment_tree::{
         DashMemo, Domain, ExtractedNoteCommitment, Note, NoteValue, Nullifier, OrchardDomain,
         RandomSeed, Rho, ValueCommitTrapdoor, ValueCommitment,
@@ -462,6 +595,16 @@ mod tests {
         BTreeMap<u32, AccountViewingKeys>,
         StateTransition,
     ) {
+        evidence_fixture_at(PlatformVersion::latest())
+    }
+
+    fn evidence_fixture_at(
+        platform_version: &PlatformVersion,
+    ) -> (
+        TrackedAssetLock,
+        BTreeMap<u32, AccountViewingKeys>,
+        StateTransition,
+    ) {
         let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0)
             .unwrap()
             .viewing_keys();
@@ -493,7 +636,7 @@ mod tests {
         let actions = vec![encrypted_action(&keys), encrypted_action(&keys)];
         // Actual encrypted outputs and ECDSA signature, with no expensive Halo2
         // proof: admission is outside this test; sightings model verified sync.
-        let st = ShieldFromAssetLockTransitionV0::try_from_asset_lock_with_bundle(
+        let st = ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle(
             proof.clone(),
             &secret.secret_bytes(),
             actions,
@@ -502,7 +645,7 @@ mod tests {
             vec![],
             [0; 64],
             None,
-            dpp::version::PlatformVersion::latest(),
+            platform_version,
         )
         .unwrap();
         (
@@ -532,10 +675,21 @@ mod tests {
         fail_flush: AtomicBool,
         fail_load: AtomicBool,
         before_store: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+        activity: Mutex<BTreeMap<SubwalletId, crate::changeset::ShieldedSubwalletStartState>>,
+        staged_activity: Mutex<Option<crate::changeset::ShieldedChangeSet>>,
+        fail_activity: AtomicBool,
+        omit_activity_capability: AtomicBool,
     }
     impl PlatformWalletPersistence for RecoveryPersistence {
         fn persistence_capabilities(&self) -> PersistenceCapabilities {
-            PersistenceCapabilities::WALLET_DRAIN
+            let bits = PersistenceCapabilities::WALLET_DRAIN.bits();
+            PersistenceCapabilities::from_bits_retain(
+                if self.omit_activity_capability.load(Ordering::SeqCst) {
+                    bits & !PersistenceCapabilities::SHIELDED_ACTIVITY_RECONCILIATION.bits()
+                } else {
+                    bits
+                },
+            )
         }
         fn store(
             &self,
@@ -548,6 +702,15 @@ mod tests {
             if self.fail_store.load(Ordering::SeqCst) {
                 return Err(PersistenceError::backend("store failed"));
             }
+            if cs
+                .shielded
+                .as_ref()
+                .is_some_and(|cs| !cs.activity_entries.is_empty())
+                && self.fail_activity.load(Ordering::SeqCst)
+            {
+                return Err(PersistenceError::backend("activity write failed"));
+            }
+            *self.staged_activity.lock().unwrap() = cs.shielded;
             if let Some(cs) = cs.asset_locks {
                 self.staged.lock().unwrap().extend(cs.asset_locks);
             }
@@ -556,6 +719,23 @@ mod tests {
         fn flush(&self, _wallet_id: [u8; 32]) -> Result<(), PersistenceError> {
             if self.fail_flush.load(Ordering::SeqCst) {
                 return Err(PersistenceError::backend("flush failed"));
+            }
+            if let Some(cs) = self.staged_activity.lock().unwrap().take() {
+                let mut activity = self.activity.lock().unwrap();
+                for (id, ids) in cs.activity_removed {
+                    activity
+                        .entry(id)
+                        .or_default()
+                        .activity
+                        .retain(|entry| !ids.contains(&entry.id));
+                }
+                for (id, entries) in cs.activity_entries {
+                    let rows = &mut activity.entry(id).or_default().activity;
+                    for entry in entries {
+                        rows.retain(|old| old.id != entry.id);
+                        rows.push(entry);
+                    }
+                }
             }
             self.committed
                 .lock()
@@ -591,6 +771,10 @@ mod tests {
                 })
                 .collect();
             Ok(ClientStartState {
+                shielded: crate::changeset::ShieldedSyncStartState {
+                    per_subwallet: self.activity.lock().unwrap().clone(),
+                    ..Default::default()
+                },
                 wallets: BTreeMap::from([(
                     self.wallet.compute_wallet_id(),
                     ClientWalletStartState {
@@ -638,8 +822,17 @@ mod tests {
             fail_flush: AtomicBool::new(false),
             fail_load: AtomicBool::new(false),
             before_store: Mutex::new(None),
+            activity: Mutex::new(BTreeMap::new()),
+            staged_activity: Mutex::new(None),
+            fail_activity: AtomicBool::new(false),
+            omit_activity_capability: AtomicBool::new(false),
         });
-        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap());
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_version(PlatformVersion::latest())
+                .build()
+                .unwrap(),
+        );
         let spv = Arc::new(SpvRuntime::new(
             manager.clone(),
             Arc::new(PlatformEventManager::new(vec![])),
@@ -1065,8 +1258,8 @@ mod tests {
             )
             .await;
         }
-        // History must be queued before the terminal tombstone, with no
-        // viewing-key guard held across either persistence callback.
+        // History and terminal tombstone commit together, before the memory
+        // cache is updated and with no key/store guard held by callbacks.
         let activity_store = coordinator.store().clone();
         let key_slot = wallet.shielded_keys.clone();
         let subwallet = SubwalletId::new(wallet.wallet_id(), 0);
@@ -1079,7 +1272,7 @@ mod tests {
                     .get_activity(subwallet, 0, 10)
                     .unwrap()
                     .len(),
-                1
+                0
             );
         }));
         assert!(
@@ -1171,7 +1364,13 @@ mod tests {
             persistence.committed.lock().unwrap()[&lock.out_point].status,
             AssetLockStatus::Consumed
         );
-        assert_exact_drain_history(&wallet, &coordinator, &outputs).await;
+        assert!(coordinator
+            .store()
+            .read()
+            .await
+            .get_activity(SubwalletId::new(wallet.wallet_id(), 0), 0, 10)
+            .unwrap()
+            .is_empty());
         persistence.fail_flush.store(false, Ordering::SeqCst);
         assert!(
             reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
@@ -1179,6 +1378,332 @@ mod tests {
                 .unwrap()
         );
         assert_exact_drain_history(&wallet, &coordinator, &outputs).await;
+    }
+
+    struct FixedDrainSigner;
+    #[async_trait::async_trait]
+    impl key_wallet::signer::Signer for FixedDrainSigner {
+        type Error = String;
+        fn supported_methods(&self) -> &[key_wallet::signer::SignerMethod] {
+            &[key_wallet::signer::SignerMethod::Digest]
+        }
+        async fn public_key(
+            &self,
+            _: &key_wallet::bip32::DerivationPath,
+        ) -> Result<dashcore::secp256k1::PublicKey, String> {
+            Ok(dashcore::secp256k1::PublicKey::from_secret_key(
+                &dashcore::secp256k1::Secp256k1::new(),
+                &dashcore::secp256k1::SecretKey::from_slice(&[0x11; 32]).unwrap(),
+            ))
+        }
+        async fn sign_ecdsa(
+            &self,
+            path: &key_wallet::bip32::DerivationPath,
+            digest: [u8; 32],
+        ) -> Result<
+            (
+                dashcore::secp256k1::ecdsa::Signature,
+                dashcore::secp256k1::PublicKey,
+            ),
+            String,
+        > {
+            let signature = dashcore::secp256k1::Secp256k1::new().sign_ecdsa(
+                &dashcore::secp256k1::Message::from_digest(digest),
+                &dashcore::secp256k1::SecretKey::from_slice(&[0x11; 32]).unwrap(),
+            );
+            Ok((signature, self.public_key(path).await?))
+        }
+    }
+    #[async_trait::async_trait]
+    impl key_wallet::signer::ExtendedPubKeySigner for FixedDrainSigner {
+        async fn extended_public_key(
+            &self,
+            _: &key_wallet::bip32::DerivationPath,
+        ) -> Result<key_wallet::bip32::ExtendedPubKey, String> {
+            Err("not used by asset-lock signing".into())
+        }
+    }
+
+    #[tokio::test]
+    async fn should_validate_actual_outer_external_signer_for_each_protocol_generation() {
+        for version in [PlatformVersion::get(13).unwrap(), PlatformVersion::latest()] {
+            let (lock, keys, template) = evidence_fixture_at(version);
+            let StateTransition::ShieldFromAssetLock(attempt) = template else {
+                panic!("Type18 expected");
+            };
+            let signed = ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle_and_signer(
+                attempt.asset_lock_proof().clone(),
+                &key_wallet::bip32::DerivationPath::default(),
+                &FixedDrainSigner,
+                attempt.actions().to_vec(),
+                attempt.value_balance(),
+                [0; 32],
+                vec![],
+                [0; 64],
+                None,
+                version,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                attempt_outputs(&lock, &signed.serialize_to_bytes().unwrap(), &keys)
+                    .unwrap()
+                    .len(),
+                2
+            );
+            assert!(matches!(
+                (&signed, version.protocol_version),
+                (
+                    StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(_)),
+                    13
+                ) | (
+                    StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(_)),
+                    14
+                )
+            ));
+            let mut altered = signed;
+            if let StateTransition::ShieldFromAssetLock(attempt) = &mut altered {
+                attempt.set_value_balance(attempt.value_balance() + 1);
+            }
+            assert!(attempt_outputs(&lock, &altered.serialize_to_bytes().unwrap(), &keys).is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn should_recover_outer_v0_and_v1_and_retire_only_replay_format() {
+        let v13 = PlatformVersion::get(13).unwrap();
+        let (mut lock, keys, old) = evidence_fixture_at(v13);
+        assert!(matches!(
+            &old,
+            StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(_))
+        ));
+        let old_bytes = old.serialize_to_bytes().unwrap();
+        let outputs = attempt_outputs(&lock, &old_bytes, &keys).unwrap();
+        lock.shielded_funding_attempts.push(old_bytes.clone());
+        let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+        let wallet = restart_wallet(wallet, persistence.clone()).await;
+        // No SDK network expectation: retired V0 is not dispatched to PV14.
+        assert!(!wallet
+            .replay_wallet_drain_attempt(lock.out_point, None)
+            .await
+            .unwrap());
+        let (new_lock, new_keys, current) = evidence_fixture();
+        assert_eq!(new_lock.out_point, lock.out_point);
+        assert!(matches!(
+            &current,
+            StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(_))
+        ));
+        assert!(attempt_outputs(&lock, &current.serialize_to_bytes().unwrap(), &new_keys).is_ok());
+        wallet
+            .persist_drain_shielded_attempt(lock.out_point, &current)
+            .await
+            .unwrap();
+        let operation = Arc::new(AssetLockOperationContext::new(lock.operation_id.unwrap()));
+        let _registration = wallet.register_wallet_drain_operation(operation.clone());
+        assert_eq!(
+            wallet
+                .asset_locks
+                .begin_wallet_drain(&operation)
+                .await
+                .unwrap(),
+            Some(lock.out_point)
+        );
+        let committed = persistence.committed.lock().unwrap().clone();
+        assert_eq!(
+            committed.len(),
+            1,
+            "protocol upgrade must never create a second Core lock"
+        );
+        assert_eq!(
+            committed[&lock.out_point].shielded_funding_attempts,
+            vec![old_bytes, current.serialize_to_bytes().unwrap()]
+        );
+        // Historical V0 is still usable completion evidence after V1 is appended.
+        for (index, (account, cmx)) in outputs.iter().enumerate() {
+            observe(
+                &coordinator,
+                wallet.wallet_id(),
+                *account,
+                *cmx,
+                index as u64,
+            )
+            .await;
+        }
+        assert!(
+            reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
+                .await
+                .unwrap()
+        );
+        assert_exact_drain_history(&wallet, &coordinator, &outputs).await;
+    }
+
+    #[tokio::test]
+    async fn should_refuse_drain_without_atomic_activity_capability_before_build() {
+        let (lock, keys, _) = evidence_fixture();
+        let (wallet, persistence, _, _dir) = wallet_fixture(&lock, keys).await;
+        persistence
+            .omit_activity_capability
+            .store(true, Ordering::SeqCst);
+        let operation = Arc::new(AssetLockOperationContext::new([0x98; 16]));
+        let _registration = wallet.register_wallet_drain_operation(operation.clone());
+        let error = wallet
+            .asset_locks
+            .begin_wallet_drain(&operation)
+            .await
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("shielded_activity_reconciliation"));
+        assert!(operation.snapshot().out_point.is_none());
+        assert_eq!(persistence.committed.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn should_atomically_replace_scan_aggregate_preserving_other_receipt_after_restart() {
+        let (lock, keys, st) = evidence_fixture();
+        let outputs = attempt_outputs(&lock, &st.serialize_to_bytes().unwrap(), &keys).unwrap();
+        let views = keys[&0].clone();
+        let (wallet, persistence, coordinator, dir) = wallet_fixture(&lock, keys.clone()).await;
+        wallet
+            .persist_drain_shielded_attempt(lock.out_point, &st)
+            .await
+            .unwrap();
+        let id = SubwalletId::new(wallet.wallet_id(), 0);
+        for (index, (account, cmx)) in outputs.iter().enumerate() {
+            observe(
+                &coordinator,
+                wallet.wallet_id(),
+                *account,
+                *cmx,
+                index as u64,
+            )
+            .await;
+        }
+        let unrelated_cmx = [0x91; 32];
+        observe(&coordinator, wallet.wallet_id(), 0, unrelated_cmx, 2).await;
+        let mut scan = crate::changeset::ShieldedChangeSet::default();
+        coordinator
+            .derive_activity_into_changeset(&[(id, views)], &mut scan)
+            .await
+            .unwrap();
+        let aggregate = coordinator
+            .store()
+            .read()
+            .await
+            .get_activity(id, 0, 10)
+            .unwrap();
+        assert_eq!(aggregate.len(), 1);
+        assert_eq!(aggregate[0].amount, 3_000);
+        assert_eq!(aggregate[0].note_cmxs.len(), 3);
+        // A distinct authored C discovered at the same anchor must survive,
+        // and must not cause residual B to be suppressed by overlap deduping.
+        let authored_cmx = [0x92; 32];
+        observe(&coordinator, wallet.wallet_id(), 0, authored_cmx, 3).await;
+        let mut authored = aggregate[0].clone();
+        authored.id = compute_activity_id(&[authored_cmx]);
+        authored.note_cmxs = vec![authored_cmx];
+        authored.amount = 1_000;
+        authored.kind = ShieldedActivityKind::Shield;
+        authored.created_at_ms = 123;
+        coordinator
+            .store()
+            .write()
+            .await
+            .save_activity(id, &authored)
+            .unwrap();
+        let before = coordinator
+            .store()
+            .read()
+            .await
+            .get_activity(id, 0, 10)
+            .unwrap();
+        let snapshot = crate::changeset::ShieldedSubwalletStartState {
+            activity: before.clone(),
+            notes: coordinator.store().read().await.get_all_notes(id).unwrap(),
+            ..Default::default()
+        };
+        persistence.activity.lock().unwrap().insert(id, snapshot);
+        // Only the activity callback fails; the lock write itself would succeed.
+        persistence.fail_activity.store(true, Ordering::SeqCst);
+        assert!(
+            reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
+                .await
+                .is_err()
+        );
+        let restored = persistence.load().unwrap();
+        assert_ne!(
+            persistence.committed.lock().unwrap()[&lock.out_point].status,
+            AssetLockStatus::Consumed
+        );
+        assert_eq!(restored.shielded.per_subwallet[&id].activity, before);
+        // Reopen a fresh coordinator cache entirely from the host snapshot.
+        drop(coordinator);
+        let wallet = restart_wallet(wallet, persistence.clone()).await;
+        let path = dir.0.join("reopened.sqlite");
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        let coordinator =
+            NetworkShieldedCoordinator::new(wallet.sdk.clone(), Network::Testnet, path, store);
+        coordinator
+            .register_wallet(wallet.wallet_id(), keys, wallet.persister().clone())
+            .await
+            .unwrap();
+        coordinator
+            .restore_for_wallet(wallet.wallet_id(), &restored.shielded)
+            .await
+            .unwrap();
+        persistence.fail_activity.store(false, Ordering::SeqCst);
+        assert!(
+            reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
+                .await
+                .unwrap()
+        );
+        let durable = persistence.load().unwrap();
+        let rows = &durable.shielded.per_subwallet[&id].activity;
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|row| row.id != aggregate[0].id));
+        assert_eq!(rows.iter().map(|row| row.amount).sum::<u64>(), 4_000);
+        assert!(rows.iter().any(
+            |row| row.kind == ShieldedActivityKind::ShieldFromAssetLock && row.amount == 2_000
+        ));
+        assert!(rows
+            .iter()
+            .any(|row| row.kind == ShieldedActivityKind::Received
+                && row.note_cmxs == vec![unrelated_cmx]
+                && row.amount == 1_000));
+        assert!(rows.contains(&authored));
+        assert_eq!(
+            persistence.committed.lock().unwrap()[&lock.out_point].status,
+            AssetLockStatus::Consumed
+        );
+        // A new scan cannot recreate the removed aggregate or double count A.
+        let mut scan = crate::changeset::ShieldedChangeSet::default();
+        coordinator
+            .derive_activity_into_changeset(
+                &[(
+                    id,
+                    wallet.shielded_keys.read().await.as_ref().unwrap()[&0].clone(),
+                )],
+                &mut scan,
+            )
+            .await
+            .unwrap();
+        // The existing live C may gain a confirmation height; no aggregate
+        // or duplicate of A/B may be emitted.
+        assert!(scan
+            .activity_entries
+            .values()
+            .flatten()
+            .all(|entry| entry.id == authored.id));
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .get_activity(id, 0, 10)
+                .unwrap()
+                .len(),
+            3
+        );
     }
 
     #[test]
@@ -1204,17 +1729,13 @@ mod tests {
         )]);
         assert!(attempt_outputs(&lock, &bytes, &other_keys).is_err());
         let mut altered = st.clone();
-        if let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(v0)) =
-            &mut altered
-        {
-            v0.value_balance += 1;
+        if let StateTransition::ShieldFromAssetLock(transition) = &mut altered {
+            transition.set_value_balance(transition.value_balance() + 1);
         }
         assert!(attempt_outputs(&lock, &altered.serialize_to_bytes().unwrap(), &keys).is_err());
         let mut unsigned = st;
-        if let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V0(v0)) =
-            &mut unsigned
-        {
-            v0.signature = Default::default();
+        if let StateTransition::ShieldFromAssetLock(transition) = &mut unsigned {
+            transition.set_signature(Default::default());
         }
         assert!(attempt_outputs(&lock, &unsigned.serialize_to_bytes().unwrap(), &keys).is_err());
     }

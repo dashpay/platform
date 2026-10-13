@@ -1080,9 +1080,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         }
 
-        // Record the exact outpoint BEFORE any persistence callback can fail
-        // or panic. An uncertain store/flush keeps this context pending even
-        // though no network call has happened: restart may recover the row.
+        // Keep the exact outpoint if a lock-row store/flush is uncertain:
+        // restart may recover that row even before network dispatch. A known
+        // funding-pool failure below clears it because no row was written.
         if let Some(operation) = operation {
             operation.set(AssetLockOperationState::Pending, Some(out_point));
         }
@@ -1110,14 +1110,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         };
         if let Err(e) = pool_durability {
             tracing::error!(error = %e, "failed to persist asset-lock funding index");
-            if operation.is_some() {
-                // Do not release an ambiguous durability write or expose its
-                // row to resume. The call-local context remains fail-closed.
-                return Err(PlatformWalletError::Persistence(format!(
-                    "drain funding indices could not be made durable before dispatch: {e}"
-                )));
-            }
-            if funding_type == AssetLockFundingType::IdentityInvitation {
+            if operation.is_some() || funding_type == AssetLockFundingType::IdentityInvitation {
+                // Only funding pools have been written: no lock row can be
+                // recovered and no transaction was sent. Keep the consumed
+                // funding index, but discard the unpublished outpoint.
+                if let Some(operation) = operation {
+                    operation.set(AssetLockOperationState::NotSent, None);
+                }
                 // The pooled build reserved every selected input across its
                 // contributing accounts under `reservation_token`. Nothing
                 // was broadcast, so abandon like the drain-floor branch
@@ -1148,6 +1147,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 )
                 .await;
                 in_broadcast_pin.settle_released();
+                if operation.is_some() {
+                    return Err(PlatformWalletError::Persistence(format!(
+                        "drain funding indices could not be made durable before dispatch: {e}"
+                    )));
+                }
                 return Err(PlatformWalletError::AssetLockTransaction(format!(
                     "aborted before broadcast: could not durably record the invitation \
                      funding index (broadcasting anyway would risk voucher-key reuse on \
@@ -1573,6 +1577,7 @@ mod tests {
         flushes: std::sync::atomic::AtomicUsize,
         fail_flush: bool,
         fail_load: std::sync::atomic::AtomicBool,
+        fail_next_pool_store: std::sync::atomic::AtomicBool,
         fail_on_flush: Option<usize>,
         restored_wallet: Option<(Wallet, ManagedWalletInfo)>,
     }
@@ -1613,6 +1618,13 @@ mod tests {
             _wallet_id: WalletId,
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            if !changeset.account_address_pools.is_empty()
+                && self
+                    .fail_next_pool_store
+                    .swap(false, std::sync::atomic::Ordering::SeqCst)
+            {
+                return Err(PersistenceError::backend("simulated pool store failure"));
+            }
             self.stored
                 .lock()
                 .expect("capturing persistence mutex")
@@ -4135,11 +4147,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_wallet_drain_flush_failure_keep_exact_context_without_exposing_resume() {
+    async fn should_wallet_drain_pool_store_failure_release_inputs_for_retry() {
+        assert_wallet_drain_pool_failure_can_retry(true).await;
+    }
+
+    #[tokio::test]
+    async fn should_wallet_drain_pool_flush_failure_release_inputs_for_retry() {
+        assert_wallet_drain_pool_failure_can_retry(false).await;
+    }
+
+    async fn assert_wallet_drain_pool_failure_can_retry(fail_store: bool) {
         let (wallet_manager, wallet_id, _, signer) =
-            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+            funded_wallet_manager_dual_standard(&[700_000, 900_000], &[800_000]).await;
         let persistence = Arc::new(CapturingPersistence {
-            fail_flush: true,
+            fail_next_pool_store: std::sync::atomic::AtomicBool::new(fail_store),
+            fail_on_flush: (!fail_store).then_some(1),
             ..CapturingPersistence::for_wallet(&wallet_manager, wallet_id)
         });
         let broadcaster = Arc::new(CountingOkBroadcaster::default());
@@ -4149,10 +4171,10 @@ mod tests {
             wallet_id,
             Arc::new(Notify::new()),
             broadcaster.clone(),
-            WalletPersister::new(wallet_id, persistence),
+            WalletPersister::new(wallet_id, persistence.clone()),
         );
         let operation = Arc::new(super::AssetLockOperationContext::new([41; 16]));
-        let _registration = manager.register_wallet_drain_operation(operation.clone());
+        let registration = manager.register_wallet_drain_operation(operation.clone());
         manager.begin_wallet_drain(&operation).await.unwrap();
         let result = manager
             .broadcast_funded_asset_lock_with_operation(
@@ -4168,13 +4190,13 @@ mod tests {
             )
             .await;
         assert!(matches!(result, Err(PlatformWalletError::Persistence(_))));
-        drop(_registration);
+        drop(registration);
         assert_eq!(broadcaster.calls(), 0);
         assert!(manager.list_tracked_locks().await.is_empty());
-        assert!(operation.snapshot().out_point.is_some());
+        assert_eq!(operation.snapshot().out_point, None);
         assert_eq!(
             operation.snapshot().state,
-            super::AssetLockOperationState::Pending
+            super::AssetLockOperationState::NotSent
         );
         assert_eq!(
             manager
@@ -4183,9 +4205,50 @@ mod tests {
                 .unwrap(),
             operation.snapshot()
         );
-        let second = Arc::new(super::AssetLockOperationContext::new([42; 16]));
-        let _second_registration = manager.register_wallet_drain_operation(second.clone());
-        assert!(manager.begin_wallet_drain(&second).await.is_err());
+
+        // Retry immediately with the same operation ID and all three original
+        // inputs, including the second account family. No TTL sweep is needed.
+        let retry = Arc::new(super::AssetLockOperationContext::new([41; 16]));
+        let _registration = manager.register_wallet_drain_operation(retry.clone());
+        assert_eq!(manager.begin_wallet_drain(&retry).await.unwrap(), None);
+        manager
+            .broadcast_funded_asset_lock_with_operation(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: Some(1),
+                },
+                &crate::ASSET_LOCK_FUNDING_SOURCES,
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                Some(&retry),
+            )
+            .await
+            .unwrap();
+        assert_eq!(broadcaster.calls(), 1);
+        let locks = manager.list_tracked_locks().await;
+        assert_eq!(locks.len(), 1);
+        assert_eq!(locks[0].transaction.input.len(), 3);
+        // The failed build consumed a key: successful retry must persist both
+        // used indices rather than rolling the funding pool backwards.
+        assert!(persistence.stored.lock().unwrap().iter().any(|cs| {
+            cs.account_address_pools.iter().any(|pool| {
+                matches!(
+                    pool.account_type,
+                    key_wallet::account::AccountType::AssetLockShieldedAddressTopUp
+                ) && pool
+                    .addresses
+                    .iter()
+                    .filter(|address| {
+                        matches!(
+                            address.state,
+                            key_wallet::managed_account::address_pool::AddressState::Used
+                        )
+                    })
+                    .count()
+                    == 2
+            })
+        }));
     }
 
     #[tokio::test]

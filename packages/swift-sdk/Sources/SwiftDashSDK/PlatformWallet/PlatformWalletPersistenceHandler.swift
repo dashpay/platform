@@ -3318,6 +3318,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 | PlatformWalletPersistenceCapabilities.dashpayPayments
                 | PlatformWalletPersistenceCapabilities.assetLockOperationIds
                 | PlatformWalletPersistenceCapabilities.shieldedFundingAttempts
+                | PlatformWalletPersistenceCapabilities.shieldedActivityReconciliation
         )
     }
 
@@ -3360,6 +3361,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         extensionCallbacks.on_persist_shielded_funding_attempt_fn = persistShieldedFundingAttemptCallback
         extensionCallbacks.on_load_shielded_funding_attempts_fn = loadShieldedFundingAttemptsCallback
         extensionCallbacks.on_load_shielded_funding_attempts_free_fn = loadShieldedFundingAttemptsFreeCallback
+        extensionCallbacks.on_remove_shielded_activity_fn = removeShieldedActivityCallback
         return extensionCallbacks
     }
 
@@ -5729,61 +5731,91 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// `entryId` refines the existing row in place: a `Pending` row flips
     /// to `Confirmed`/`Failed`, and a scan-derived `ShieldedSpend` can be
     /// upgraded to a richer kind (the Rust side re-emits the same id).
-    func persistShieldedActivity(walletId: Data, snapshots: [ShieldedActivitySnapshot]) {
+    @discardableResult
+    func persistShieldedActivity(walletId: Data, snapshots: [ShieldedActivitySnapshot]) -> Bool {
         onQueue {
-            for snap in snapshots {
-                let wid = snap.walletId
-                let acct = snap.accountIndex
-                let eid = snap.entryId
-                let predicate = #Predicate<PersistentShieldedActivity> {
-                    $0.walletId == wid && $0.accountIndex == acct && $0.entryId == eid
+            do {
+                for snap in snapshots {
+                    guard snap.walletId == walletId, walletId.count == 32, snap.entryId.count == 32,
+                          snap.noteCmxs.count % 32 == 0, snap.spentNullifiers.count % 32 == 0 else {
+                        throw AssetLockPersistenceError.malformedRecord
+                    }
+                    let wid = snap.walletId
+                    let acct = snap.accountIndex
+                    let eid = snap.entryId
+                    let predicate = #Predicate<PersistentShieldedActivity> {
+                        $0.walletId == wid && $0.accountIndex == acct && $0.entryId == eid
+                    }
+                    var descriptor = FetchDescriptor<PersistentShieldedActivity>(predicate: predicate)
+                    descriptor.fetchLimit = 1
+                    if let existing = try modelFetcher.fetch(descriptor, in: backgroundContext).first {
+                        existing.kindTag = snap.kindTag
+                        existing.direction = snap.direction
+                        existing.status = snap.status
+                        existing.amount = snap.amount
+                        existing.fee = snap.fee
+                        existing.hasFee = snap.hasFee
+                        existing.blockHeight = snap.blockHeight
+                        existing.hasBlockHeight = snap.hasBlockHeight
+                        existing.createdAtMs = snap.createdAtMs
+                        existing.minNotePosition = snap.minNotePosition
+                        existing.hasMinNotePosition = snap.hasMinNotePosition
+                        existing.identityId = snap.identityId
+                        existing.counterparty = snap.counterparty
+                        existing.memo = snap.memo
+                        existing.noteCmxs = snap.noteCmxs
+                        existing.spentNullifiers = snap.spentNullifiers
+                        existing.lastUpdated = Date()
+                    } else {
+                        let row = PersistentShieldedActivity(
+                            walletId: snap.walletId,
+                            accountIndex: snap.accountIndex,
+                            entryId: snap.entryId,
+                            kindTag: snap.kindTag,
+                            direction: snap.direction,
+                            status: snap.status,
+                            amount: snap.amount,
+                            fee: snap.fee,
+                            hasFee: snap.hasFee,
+                            blockHeight: snap.blockHeight,
+                            hasBlockHeight: snap.hasBlockHeight,
+                            createdAtMs: snap.createdAtMs,
+                            minNotePosition: snap.minNotePosition,
+                            hasMinNotePosition: snap.hasMinNotePosition,
+                            identityId: snap.identityId,
+                            counterparty: snap.counterparty,
+                            memo: snap.memo,
+                            noteCmxs: snap.noteCmxs,
+                            spentNullifiers: snap.spentNullifiers
+                        )
+                        backgroundContext.insert(row)
+                    }
                 }
-                var descriptor = FetchDescriptor<PersistentShieldedActivity>(predicate: predicate)
-                descriptor.fetchLimit = 1
-                if let existing = try? backgroundContext.fetch(descriptor).first {
-                    existing.kindTag = snap.kindTag
-                    existing.direction = snap.direction
-                    existing.status = snap.status
-                    existing.amount = snap.amount
-                    existing.fee = snap.fee
-                    existing.hasFee = snap.hasFee
-                    existing.blockHeight = snap.blockHeight
-                    existing.hasBlockHeight = snap.hasBlockHeight
-                    existing.createdAtMs = snap.createdAtMs
-                    existing.minNotePosition = snap.minNotePosition
-                    existing.hasMinNotePosition = snap.hasMinNotePosition
-                    existing.identityId = snap.identityId
-                    existing.counterparty = snap.counterparty
-                    existing.memo = snap.memo
-                    existing.noteCmxs = snap.noteCmxs
-                    existing.spentNullifiers = snap.spentNullifiers
-                    existing.lastUpdated = Date()
-                } else {
-                    let row = PersistentShieldedActivity(
-                        walletId: snap.walletId,
-                        accountIndex: snap.accountIndex,
-                        entryId: snap.entryId,
-                        kindTag: snap.kindTag,
-                        direction: snap.direction,
-                        status: snap.status,
-                        amount: snap.amount,
-                        fee: snap.fee,
-                        hasFee: snap.hasFee,
-                        blockHeight: snap.blockHeight,
-                        hasBlockHeight: snap.hasBlockHeight,
-                        createdAtMs: snap.createdAtMs,
-                        minNotePosition: snap.minNotePosition,
-                        hasMinNotePosition: snap.hasMinNotePosition,
-                        identityId: snap.identityId,
-                        counterparty: snap.counterparty,
-                        memo: snap.memo,
-                        noteCmxs: snap.noteCmxs,
-                        spentNullifiers: snap.spentNullifiers
-                    )
-                    backgroundContext.insert(row)
+                if !inChangeset { try backgroundContext.save() }
+                return true
+            } catch {
+                if !inChangeset { backgroundContext.rollback() }
+                return false
+            }
+        }
+    }
+
+    /// Remove only the rows selected by Rust, within the same atomic round
+    /// as their replacements and the asset-lock completion marker.
+    func removeShieldedActivity(walletId: Data, accountIndex: UInt32, entryIds: [Data]) throws {
+        try onQueue {
+            guard inChangeset else { throw AssetLockPersistenceError.requiresChangeset }
+            guard walletId.count == 32, entryIds.allSatisfy({ $0.count == 32 }) else {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            for entryId in entryIds {
+                let descriptor = FetchDescriptor<PersistentShieldedActivity>(predicate: #Predicate {
+                    $0.walletId == walletId && $0.accountIndex == accountIndex && $0.entryId == entryId
+                })
+                for row in try modelFetcher.fetch(descriptor, in: backgroundContext) {
+                    backgroundContext.delete(row)
                 }
             }
-            saveBackgroundContextIfNeeded(operation: "shielded_activity", walletId: walletId)
         }
     }
 
@@ -6149,13 +6181,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             let descriptor = FetchDescriptor<PersistentShieldedActivity>()
             var rows: [PersistentShieldedActivity]
             do {
-                rows = try backgroundContext.fetch(descriptor)
+                rows = try modelFetcher.fetch(descriptor, in: backgroundContext)
+                if let network = self.network {
+                    let raw = network.rawValue
+                    let wallets = try modelFetcher.fetch(FetchDescriptor<PersistentWallet>(
+                        predicate: #Predicate { $0.networkRaw == raw }
+                    ), in: backgroundContext)
+                    let ids = Set(wallets.map { $0.walletId })
+                    rows = rows.filter { ids.contains($0.walletId) }
+                }
             } catch {
                 resultErrored = true
                 return
-            }
-            if let inNetworkIds = self.inNetworkWalletIds() {
-                rows = rows.filter { inNetworkIds.contains($0.walletId) }
             }
             if rows.isEmpty {
                 return
@@ -6168,16 +6205,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             allocation.entriesCount = rows.count
             var written = 0
             for row in rows {
-                guard row.walletId.count == 32, row.entryId.count == 32 else { continue }
-                // Exact conversion, not truncating: a stored tag outside
-                // u8 range (corruption / unmigrated future tag) must NOT
-                // wrap into a different valid-looking discriminant (256 →
-                // 0 = Shield/In/Pending) — that would bypass Rust's
-                // unknown-tag fallback. Drop the row instead.
-                guard let kindTagU8 = UInt8(exactly: row.kindTag),
+                // A partial restore cannot establish durable history. Fail
+                // the whole read on corrupt rows or linkage instead of hiding
+                // them and allowing recovery to commit a completion marker.
+                guard row.walletId.count == 32, row.entryId.count == 32,
+                      row.identityId.isEmpty || row.identityId.count == 32,
+                      row.noteCmxs.count % 32 == 0, row.spentNullifiers.count % 32 == 0,
+                      let kindTagU8 = UInt8(exactly: row.kindTag),
                       let directionU8 = UInt8(exactly: row.direction),
                       let statusU8 = UInt8(exactly: row.status) else {
-                    continue
+                    allocation.release()
+                    resultErrored = true
+                    return
                 }
 
                 // Per-row variable-length buffers: counterparty, memo,
@@ -6224,10 +6263,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     counterparty_len: UInt(cpLen),
                     memo_ptr: memoLen > 0 ? UnsafePointer(memoPtr) : nil,
                     memo_len: UInt(memoLen),
-                    // A persisted blob that isn't a whole number of
-                    // 32-byte elements is corrupt — drop the linkage
-                    // (count 0, null ptr) rather than silently truncating
-                    // trailing bytes into a wrong-but-plausible array.
+                    // Linkage lengths were validated before allocation;
+                    // preserve every complete 32-byte element on restore.
                     note_cmxs_ptr: cmxLen > 0 && cmxLen % 32 == 0 ? UnsafePointer(cmxPtr) : nil,
                     note_cmxs_count: cmxLen % 32 == 0 ? UInt(cmxLen / 32) : 0,
                     spent_nullifiers_ptr: nfLen > 0 && nfLen % 32 == 0 ? UnsafePointer(nfPtr) : nil,
@@ -10861,7 +10898,8 @@ private func persistShieldedActivityCallback(
     entriesPtr: UnsafePointer<ShieldedActivityFFI>?,
     count: UInt
 ) -> Int32 {
-    guard let context = context, let walletIdPtr = walletIdPtr else { return 0 }
+    guard let context, let walletIdPtr, count <= UInt(Int.max),
+          count == 0 || entriesPtr != nil else { return -1 }
     let handler = Unmanaged<PlatformWalletPersistenceHandler>
         .fromOpaque(context)
         .takeUnretainedValue()
@@ -10874,21 +10912,24 @@ private func persistShieldedActivityCallback(
             let e = entriesPtr[i]
             // Copy every pointer-backed field out now — the Rust
             // pointers are only valid for this callback window.
+            func validBuffer(_ ptr: UnsafePointer<UInt8>?, _ len: UInt) -> Bool {
+                len <= UInt(Int.max) && (len == 0 || ptr != nil)
+            }
+            let (cmxBytes, cmxOverflow) = UInt(e.note_cmxs_count).multipliedReportingOverflow(by: 32)
+            let (nfBytes, nfOverflow) = UInt(e.spent_nullifiers_count).multipliedReportingOverflow(by: 32)
+            guard !cmxOverflow, !nfOverflow,
+                  validBuffer(e.counterparty_ptr, UInt(e.counterparty_len)),
+                  validBuffer(e.memo_ptr, UInt(e.memo_len)),
+                  validBuffer(e.note_cmxs_ptr, cmxBytes),
+                  validBuffer(e.spent_nullifiers_ptr, nfBytes) else { return -1 }
             func data(_ ptr: UnsafePointer<UInt8>?, _ len: UInt) -> Data {
-                if let ptr = ptr, len > 0 { return Data(bytes: ptr, count: Int(len)) }
-                return Data()
+                guard let ptr, len > 0 else { return Data() }
+                return Data(bytes: ptr, count: Int(len))
             }
             let counterparty = data(e.counterparty_ptr, UInt(e.counterparty_len))
             let memo = data(e.memo_ptr, UInt(e.memo_len))
-            // The counts are Rust-supplied: use checked multiplication so
-            // a corrupt row degrades to an empty linkage instead of a
-            // trapped overflow crashing the callback path.
-            func byteLen(_ count: UInt) -> UInt {
-                let (value, overflow) = count.multipliedReportingOverflow(by: 32)
-                return overflow ? 0 : value
-            }
-            let noteCmxs = data(e.note_cmxs_ptr, byteLen(UInt(e.note_cmxs_count)))
-            let spentNullifiers = data(e.spent_nullifiers_ptr, byteLen(UInt(e.spent_nullifiers_count)))
+            let noteCmxs = data(e.note_cmxs_ptr, cmxBytes)
+            let spentNullifiers = data(e.spent_nullifiers_ptr, nfBytes)
             let identityId = e.has_identity_id != 0 ? dataFromTuple32(e.identity_id) : Data()
             snapshots.append(.init(
                 walletId: dataFromTuple32(e.wallet_id),
@@ -10913,8 +10954,34 @@ private func persistShieldedActivityCallback(
             ))
         }
     }
-    handler.persistShieldedActivity(walletId: walletId, snapshots: snapshots)
-    return 0
+    return handler.persistShieldedActivity(walletId: walletId, snapshots: snapshots) ? 0 : -1
+}
+
+private func removeShieldedActivityCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    accountIndex: UInt32,
+    entryIdsPtr: UnsafePointer<UInt8>?,
+    count: UInt
+) -> Int32 {
+    guard let context, let walletIdPtr, count <= UInt(Int.max / 32),
+          count == 0 || entryIdsPtr != nil else { return -1 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+    let ids: [Data]
+    if let entryIdsPtr {
+        ids = (0..<Int(count)).map { index in
+            Data(bytes: entryIdsPtr.advanced(by: index * 32), count: 32)
+        }
+    } else {
+        ids = []
+    }
+    do {
+        try handler.removeShieldedActivity(walletId: walletId, accountIndex: accountIndex, entryIds: ids)
+        return 0
+    } catch {
+        return -1
+    }
 }
 
 private func persistShieldedSyncedIndicesCallback(

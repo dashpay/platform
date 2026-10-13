@@ -231,6 +231,11 @@ pub struct NetworkShieldedCoordinator {
     /// other way round.
     lifecycle: tokio::sync::Mutex<()>,
 
+    /// Serialize scan-derived history persistence with exact drain replacement.
+    /// Held through persistence, so a previously derived aggregate cannot land
+    /// after its canonical replacement. Never protects viewing keys or network I/O.
+    pub(super) activity_checkpoint: tokio::sync::Mutex<()>,
+
     /// Wallets whose per-subwallet store state has been successfully
     /// hydrated from the host's persisted snapshot this session
     /// (`restore_for_wallet` completed without error after the
@@ -399,6 +404,7 @@ impl NetworkShieldedCoordinator {
             progress_handler: std::sync::Mutex::new(None),
             tree_progress_handler: std::sync::Mutex::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
+            activity_checkpoint: tokio::sync::Mutex::new(()),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             clear_generation: std::sync::atomic::AtomicU64::new(0),
         }
@@ -1455,23 +1461,12 @@ impl NetworkShieldedCoordinator {
         // id, so re-running is idempotent. Failures are logged and
         // swallowed: a derivation miss must never fail a sync pass.
         let mut notes = notes;
+        let activity_checkpoint = self.activity_checkpoint.lock().await;
         if let Err(e) = self
             .derive_activity_into_changeset(&subwallets, &mut notes.changeset)
             .await
         {
             tracing::warn!(error = %e, "Shielded activity derivation failed; skipping this pass");
-        }
-
-        // Identity-funded shields have no input nullifiers and use an
-        // outputs-only empty-tree anchor, so the ordinary stale-reservation
-        // pass can never schedule them. After activity derivation has first
-        // cleared guards for outputs observed by this scan, drive each still-
-        // unresolved byte-identical transition once per wallet. Wallet-wide
-        // enumeration includes guards rehydrated from the durable store.
-        let wallet_ids: HashSet<WalletId> = subwallets.iter().map(|(id, _)| id.wallet_id).collect();
-        for wallet_id in wallet_ids {
-            super::operations::redrive_pending_identity_shields(&self.sdk, &self.store, wallet_id)
-                .await;
         }
 
         // The note-side changeset already carries saves, synced
@@ -1502,6 +1497,15 @@ impl NetworkShieldedCoordinator {
                     );
                 }
             }
+        }
+        drop(activity_checkpoint);
+
+        // Re-drive only after history is persisted and its checkpoint guard is
+        // released: network I/O must not block exact history reconciliation.
+        let wallet_ids: HashSet<WalletId> = subwallets.iter().map(|(id, _)| id.wallet_id).collect();
+        for wallet_id in wallet_ids {
+            super::operations::redrive_pending_identity_shields(&self.sdk, &self.store, wallet_id)
+                .await;
         }
 
         // Cooldown decision based on aggregate activity across
@@ -1764,7 +1768,7 @@ impl NetworkShieldedCoordinator {
     ///
     /// All client-side (Option B): no node / DAPI query, only data the
     /// store already holds.
-    async fn derive_activity_into_changeset(
+    pub(super) async fn derive_activity_into_changeset(
         &self,
         subwallets: &[(SubwalletId, AccountViewingKeys)],
         changeset: &mut crate::changeset::ShieldedChangeSet,
@@ -2130,7 +2134,7 @@ fn build_per_wallet_summary(
 /// in `fund_from_asset_lock.rs`). A malformed recipient (wrong length /
 /// off-curve) returns `false` (treated as external) so a corrupt row
 /// can't silently mask a real send.
-fn is_own_orchard_recipient(views: &AccountViewingKeys, recipient: &[u8]) -> bool {
+pub(super) fn is_own_orchard_recipient(views: &AccountViewingKeys, recipient: &[u8]) -> bool {
     let raw: [u8; 43] = match recipient.try_into() {
         Ok(b) => b,
         Err(_) => return false,

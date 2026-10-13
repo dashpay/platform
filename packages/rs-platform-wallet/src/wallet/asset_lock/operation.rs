@@ -154,6 +154,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         &self,
         out_point: OutPoint,
         operation_id: [u8; 16],
+        history: crate::changeset::ShieldedChangeSet,
     ) -> Result<(), PlatformWalletError> {
         self.require_wallet_drain_persistence()?;
         let mut candidate = self
@@ -164,7 +165,20 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
         candidate.status = AssetLockStatus::Consumed;
         candidate.proof = None;
-        self.persist_drain_lock_snapshot(&candidate)?;
+        let mut changes = crate::changeset::AssetLockChangeSet::default();
+        changes
+            .asset_locks
+            .insert(candidate.out_point, (&candidate).into());
+        self.persister
+            .store(crate::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(changes),
+                shielded: Some(history),
+                ..Default::default()
+            })
+            .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+        self.persister
+            .flush()
+            .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
         let mut manager = self.wallet_manager.write().await;
         let lock = manager
             .get_wallet_info_mut(&self.wallet_id)

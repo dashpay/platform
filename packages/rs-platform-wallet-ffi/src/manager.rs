@@ -15,7 +15,7 @@ use crate::persistence::{
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
     PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn, PersistenceCallbacks,
     PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
-    PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+    RemoveShieldedActivityFn, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
@@ -299,6 +299,7 @@ unsafe fn persistence_extension_callbacks(
             on_load_shielded_funding_attempts_free_fn,
             FreeShieldedFundingAttemptsFn
         ),
+        remove_shielded_activity: slot!(on_remove_shielded_activity_fn, RemoveShieldedActivityFn),
     }
 }
 
@@ -1443,6 +1444,33 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn should_size_gate_shielded_activity_removal_slot() {
+        unsafe extern "C" fn remove(
+            _: *mut c_void,
+            _: *const u8,
+            _: u32,
+            _: *const u8,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        let mut ext = PersistenceCallbacksExtension {
+            on_remove_shielded_activity_fn: Some(remove),
+            ..Default::default()
+        };
+        assert!(unsafe { persistence_extension_callbacks(&ext) }
+            .remove_shielded_activity
+            .is_some());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_remove_shielded_activity_fn
+        );
+        assert!(unsafe { persistence_extension_callbacks(&ext) }
+            .remove_shielded_activity
+            .is_none());
     }
 
     /// A host whose `struct_size` stops right after the chainlock-height

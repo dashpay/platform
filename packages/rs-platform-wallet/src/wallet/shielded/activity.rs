@@ -452,7 +452,35 @@ pub fn derive_activity_from_scan_data(
     input: &ScanDeriveInput,
     existing_cmxs: &std::collections::BTreeMap<[u8; 32], [u8; 32]>,
 ) -> DerivedActivity {
-    let clusters = cluster_events(input);
+    derive_activity_from_scan_data_inner(input, existing_cmxs, false)
+}
+
+/// Reclassify the unowned remainder of a superseded scan aggregate. Preserve
+/// all notes as nullifier/spend context while excluding already-owned outputs
+/// from clusters, so another authored row cannot hide an unrelated receipt.
+pub(super) fn derive_unowned_activity_from_scan_data(
+    input: &ScanDeriveInput,
+    existing_cmxs: &BTreeMap<[u8; 32], [u8; 32]>,
+) -> DerivedActivity {
+    derive_activity_from_scan_data_inner(input, existing_cmxs, true)
+}
+
+fn derive_activity_from_scan_data_inner(
+    input: &ScanDeriveInput,
+    existing_cmxs: &BTreeMap<[u8; 32], [u8; 32]>,
+    exclude_owned_outputs: bool,
+) -> DerivedActivity {
+    let mut clusters = cluster_events(input);
+    if exclude_owned_outputs {
+        for cluster in clusters.values_mut() {
+            cluster
+                .received
+                .retain(|note| !existing_cmxs.contains_key(&note.cmx));
+            cluster
+                .outgoing
+                .retain(|note| !existing_cmxs.contains_key(&note.cmx));
+        }
+    }
     let mut out = DerivedActivity::default();
     // Scan-derived entries deliberately carry NO height and NO
     // timestamp (dashwallet-ios restored-history acceptance criteria):

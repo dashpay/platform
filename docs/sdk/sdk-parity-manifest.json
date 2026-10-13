@@ -9,6 +9,7 @@
     "invitations",
     "pending_contact_crypto",
     "provider_transactions",
+    "shielded_activity_reconciliation",
     "shielded_funding_attempts",
     "shielded_viewing_keys",
     "tracked_asset_locks",
@@ -1624,6 +1625,7 @@
         "asset_lock_funding_indices",
         "asset_lock_operation_ids",
         "atomic_changesets",
+        "shielded_activity_reconciliation",
         "shielded_funding_attempts",
         "tracked_asset_locks",
         "wallet_restore"
@@ -1681,6 +1683,14 @@
           "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/AssetLockOperationPersistenceTests.swift",
           "id": "testSignedFundingAttemptsAreAppendOnlyAndSurviveConsumedReopen",
           "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/AssetLockOperationPersistenceTests",
+          "covers_restart": true
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ShieldedActivityReconciliationTests.swift",
+          "id": "testReplacementAndCompletionSurviveReopenWithoutTouchingOtherAccountsOrWallets",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/ShieldedActivityReconciliationTests",
           "covers_restart": true
         }
       ]
