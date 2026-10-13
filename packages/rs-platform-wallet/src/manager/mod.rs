@@ -24,7 +24,7 @@ use tokio_util::sync::CancellationToken;
 
 use key_wallet_manager::{WalletEvent, WalletManager};
 
-use crate::broadcast_probe::DapiAcceptanceProbe;
+use crate::broadcast_probe::{AcceptanceProbe, DapiAcceptanceProbe};
 use crate::changeset::core_bridge::spawn_observed_wallet_event_adapter;
 use crate::changeset::PlatformWalletPersistence;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
@@ -489,6 +489,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         persister: Arc<P>,
         app_handler: Arc<dyn PlatformEventHandler>,
     ) -> Self {
+        let probe = Arc::new(DapiAcceptanceProbe::new(Arc::clone(&sdk)));
+        Self::with_acceptance_probe(sdk, persister, app_handler, probe)
+    }
+
+    /// [`Self::new`] with the probe the broadcast resolver asks the network
+    /// through.
+    fn with_acceptance_probe(
+        sdk: Arc<dash_sdk::Sdk>,
+        persister: Arc<P>,
+        app_handler: Arc<dyn PlatformEventHandler>,
+        acceptance_probe: Arc<dyn AcceptanceProbe>,
+    ) -> Self {
         // Take the manager's lossless, unbounded persistence receiver BEFORE
         // the manager is wrapped in the shared `Arc<RwLock>` and handed to any
         // producer. A broadcast subscription would drop events emitted during
@@ -519,7 +531,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // to it once that exists. Built before the adapter, which also feeds
         // it wallet events from the lossless channel.
         let broadcast_resolver = Arc::new(BroadcastResolver::new(
-            Arc::new(DapiAcceptanceProbe::new(Arc::clone(&sdk))),
+            acceptance_probe,
             Arc::clone(&wallet_manager),
         ));
         // Spawn the wallet-event adapter that translates upstream
@@ -1134,6 +1146,9 @@ impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
 mod tests {
     use super::*;
 
+    use crate::broadcast_probe::{ProbeOutcome, ProbeVerdict};
+    use dashcore::hashes::Hash as _;
+
     use dash_async::WorkerStatus;
 
     use crate::changeset::{
@@ -1391,6 +1406,179 @@ mod tests {
             highest_synced_height.load(std::sync::atomic::Ordering::SeqCst),
             TIP,
             "a joined shutdown must commit every watermark the manager emitted"
+        );
+    }
+
+    /// Counts the probes it is asked for and decides nothing.
+    #[derive(Default)]
+    struct CountingProbe(std::sync::atomic::AtomicUsize);
+
+    impl CountingProbe {
+        fn probes(&self) -> usize {
+            self.0.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AcceptanceProbe for CountingProbe {
+        async fn probe(&self, _transaction: &dashcore::Transaction) -> ProbeOutcome {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            ProbeOutcome {
+                verdict: ProbeVerdict::Unresolved {
+                    reason: "counted".to_string(),
+                },
+                answered: true,
+            }
+        }
+    }
+
+    /// Wait for `holds`, asked every few milliseconds, or fail naming `what`.
+    async fn eventually<F, Fut>(what: &str, mut holds: F)
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = bool>,
+    {
+        let waited = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while !holds().await {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        assert!(waited.is_ok(), "never happened: {what}");
+    }
+
+    /// The constructor must connect the lossless wallet-event channel to the
+    /// broadcast resolver: a record change that reaches the resolver only
+    /// through that channel wakes an idle wallet, and the next block's pass
+    /// reads it and probes the new send. No SPV client runs here, so nothing
+    /// forwards the fan-out's copy of the events; without the constructor's
+    /// observer the wallet stays idle and the first wait below fails.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn constructor_wires_the_lossless_event_channel_into_the_broadcast_resolver() {
+        use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Witness};
+        use key_wallet::mnemonic::Mnemonic;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet_manager::{WalletEvent, WalletInterface};
+
+        const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon about";
+
+        let probe = Arc::new(CountingProbe::default());
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = PlatformWalletManager::with_acceptance_probe(
+            sdk,
+            Arc::new(NoopPersister),
+            Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
+            Arc::clone(&probe) as Arc<dyn AcceptanceProbe>,
+        );
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid test mnemonic")
+            .to_seed("");
+        let wallet_id = manager
+            .create_wallet_from_seed_bytes(
+                key_wallet::Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("register the test wallet")
+            .wallet_id();
+        let resolver = Arc::clone(&manager.broadcast_resolver);
+        resolver.set_enabled(true);
+        // A height step, told to the resolver as the SPV fan-out tells it.
+        let step_to = |height: u32| {
+            let manager = &manager;
+            let resolver = &resolver;
+            async move {
+                manager
+                    .wallet_manager
+                    .write()
+                    .await
+                    .update_wallet_synced_height(&wallet_id, height);
+                resolver.on_wallet_event(&WalletEvent::SyncHeightAdvanced { wallet_id, height });
+            }
+        };
+
+        // Following the tip with nothing unsettled: the wallet goes idle.
+        step_to(100).await;
+        step_to(101).await;
+        eventually("the wallet goes idle", || resolver.is_idle(&wallet_id)).await;
+        assert_eq!(probe.probes(), 0);
+
+        // An unconfirmed payment to the wallet, and a send of the wallet's
+        // that spends it. Their events reach the resolver through the
+        // lossless channel alone.
+        let address = manager
+            .wallet_manager
+            .read()
+            .await
+            .monitored_addresses()
+            .into_iter()
+            .next()
+            .expect("a monitored address");
+        let funding = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: dashcore::Txid::from_byte_array([7; 32]),
+                    vout: 0,
+                },
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: 100_000_000,
+                script_pubkey: address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let send = Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: funding.txid(),
+                    vout: 0,
+                },
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![TxOut {
+                value: 99_999_000,
+                script_pubkey: ScriptBuf::new_op_return(&[0u8; 4]),
+            }],
+            special_transaction_payload: None,
+        };
+        {
+            let mut wallet_manager = manager.wallet_manager.write().await;
+            wallet_manager
+                .process_mempool_transaction(&funding, None)
+                .await;
+            wallet_manager
+                .process_mempool_transaction(&send, None)
+                .await;
+        }
+        eventually("the lossless channel wakes the idle wallet", || async {
+            !resolver.is_idle(&wallet_id).await
+        })
+        .await;
+        assert_eq!(probe.probes(), 0, "a wake reads nothing by itself");
+
+        step_to(102).await;
+        eventually("the next block's pass probes the send's chain", || async {
+            probe.probes() > 0
+        })
+        .await;
+
+        let report = manager.shutdown().await;
+        assert_eq!(
+            report.per_worker.get(&WalletWorker::EventAdapter),
+            Some(&WorkerStatus::Ok),
+            "{report:?}"
         );
     }
 

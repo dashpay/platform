@@ -1264,6 +1264,14 @@ enum Command {
     SyncComplete {
         tip: u32,
     },
+    /// Whether the wallet is idle: no pass running or queued, and none due
+    /// at any height (see [`WalletEntry::wait_until`]). Answered in order
+    /// with the other commands.
+    #[cfg(test)]
+    IsIdle {
+        wallet_id: WalletId,
+        reply: oneshot::Sender<bool>,
+    },
 }
 
 /// What a finished job reports back to the actor.
@@ -1841,6 +1849,15 @@ impl Actor {
                 self.wallets.insert(wallet_id, WalletEntry::default());
             }
             Command::WalletRemoved(wallet_id) => self.drop_wallet(&wallet_id, "removed"),
+            #[cfg(test)]
+            Command::IsIdle { wallet_id, reply } => {
+                let idle = self.wallets.get(&wallet_id).is_some_and(|entry| {
+                    entry.run.is_none()
+                        && entry.pending.is_none()
+                        && entry.wait_until == Some(u32::MAX)
+                });
+                let _ = reply.send(idle);
+            }
         }
     }
 
@@ -2580,6 +2597,18 @@ impl BroadcastResolver {
     /// The last value passed to [`set_enabled`](Self::set_enabled).
     pub(crate) fn is_enabled(&self) -> bool {
         self.enabled.load(Ordering::SeqCst)
+    }
+
+    /// Whether the actor holds the wallet idle (see [`Command::IsIdle`]).
+    /// `false` once the actor is gone.
+    #[cfg(test)]
+    pub(crate) async fn is_idle(&self, wallet_id: &WalletId) -> bool {
+        let (reply, answer) = oneshot::channel();
+        self.send(Command::IsIdle {
+            wallet_id: *wallet_id,
+            reply,
+        });
+        answer.await.unwrap_or(false)
     }
 
     /// Forget a removed wallet — call after it has left the wallet manager:
