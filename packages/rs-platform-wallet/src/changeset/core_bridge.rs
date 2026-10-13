@@ -143,7 +143,8 @@ struct AdapterFaultState {
     /// Sent-payment rows a truncation returned to pending in a round a
     /// `store()` rejected, per wallet. That verdict is decided once, with
     /// the fork, so the rows are laid under that wallet's next round until
-    /// a store accepts them. Session-scoped, like the truncations.
+    /// a store accepts them or refuses them for good on a retry.
+    /// Session-scoped, like the truncations.
     unstored_reversals: HashMap<WalletId, PaymentOverlay>,
 }
 
@@ -742,7 +743,7 @@ fn commit_wallet<P>(
     } = wallet_batch;
     {
         // Under this round's own rows: a verdict reached since is the newer.
-        let carries_reversals = fault.unstored_reversals.contains_key(&wallet_id);
+        let fresh_reversals = returned_to_pending(Some(&payments));
         if let Some(mut owed) = fault.unstored_reversals.remove(&wallet_id) {
             merge_payment_overlays(&mut owed, payments);
             payments = owed;
@@ -919,14 +920,19 @@ fn commit_wallet<P>(
                     .insert(wallet_id, offered_truncations);
             }
             // Whole rows, so a copy the backend also kept changes nothing:
-            // these are set aside on every failure but one. A round that
-            // already carried such rows and is refused for good gives them
-            // up: the store may never take them — their identity removed,
-            // say — and they would fail every later round of the wallet.
-            if !offered_reversals.is_empty() && (error.is_transient() || !carries_reversals) {
-                fault
-                    .unstored_reversals
-                    .insert(wallet_id, offered_reversals);
+            // these are set aside on every failure. One that is not transient
+            // keeps only the rows this round reported itself: a row carried
+            // from an earlier round may never be taken — its identity
+            // removed, say — and would fail every later round of the wallet.
+            if !offered_reversals.is_empty() {
+                let owed = if error.is_transient() {
+                    offered_reversals
+                } else {
+                    fresh_reversals
+                };
+                if !owed.is_empty() {
+                    fault.unstored_reversals.insert(wallet_id, owed);
+                }
             }
         }
         // Recorded only once the store has RETURNED, and whether it accepted
@@ -7565,6 +7571,72 @@ mod tests {
         assert_eq!(
             third.truncations, stored[0].truncations,
             "and the truncation it rode with is applied"
+        );
+    }
+
+    /// The round that gives a carried row up can hold a reversal of its
+    /// own, from a second fork. That one has been refused once, not twice,
+    /// and nothing reports its fork again either.
+    #[test]
+    fn should_keep_a_fresh_reversal_when_a_carried_one_is_given_up() {
+        use crate::wallet::identity::{PaymentEntry, PaymentStatus};
+        let wallet_id = [0x38u8; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS,
+        );
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        let freeze_logged = AtomicBool::new(false);
+        let fresh = super::PaymentOverlay::from([(
+            Identifier::from([0xCC; 32]),
+            BTreeMap::from([(
+                "cafe".to_string(),
+                PaymentEntry::new_sent(Identifier::from([0xDD; 32]), 70_000, None),
+            )]),
+        )]);
+
+        let rounds = [
+            (one_verdict_overlay(PaymentStatus::Pending), true),
+            (fresh.clone(), true),
+            (super::PaymentOverlay::default(), false),
+        ];
+        let mut stored = Vec::new();
+        for (seq, (payments, refused)) in rounds.into_iter().enumerate() {
+            if refused {
+                persister.fail_next(wallet_id);
+            }
+            let mut batch = BTreeMap::new();
+            batch.insert(
+                wallet_id,
+                WalletBatch {
+                    core: watermark_with_rows(700 + seq as u32, 700 + seq as u32),
+                    asset_locks: AssetLockChangeSet::default(),
+                    payments,
+                },
+            );
+            commit_batch(
+                &persister,
+                batch,
+                seq,
+                &mut fault,
+                &sync_fault,
+                &freeze_logged,
+                &mut Vec::new(),
+            );
+            stored.push(obs_rx.try_recv().expect("the round reaches store()"));
+        }
+
+        assert_eq!(
+            stored[1].dashpay_payments.as_ref().map(BTreeMap::len),
+            Some(2),
+            "the refused round held the carried row and its own"
+        );
+        assert_eq!(
+            stored[2].dashpay_payments,
+            Some(fresh),
+            "its own row is offered again, the carried one is not"
         );
     }
 
