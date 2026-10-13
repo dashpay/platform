@@ -8468,14 +8468,12 @@ mod tests {
     }
 
     #[test]
-    fn asset_lock_reconciliation_requires_every_callback_leg() {
+    fn asset_lock_reconciliation_requires_atomic_persistence_callbacks() {
         fn complete_callbacks() -> PersistenceCallbacks {
             PersistenceCallbacks {
                 on_changeset_begin_fn: Some(noop_begin),
                 on_changeset_end_fn: Some(noop_end),
                 on_persist_asset_locks_fn: Some(noop_asset_locks),
-                on_load_wallet_list_fn: Some(noop_load_wallets),
-                on_load_wallet_list_free_fn: Some(noop_free_wallets),
                 ..Default::default()
             }
         }
@@ -8491,18 +8489,8 @@ mod tests {
         missing_end.on_changeset_end_fn = None;
         let mut missing_asset_locks = complete_callbacks();
         missing_asset_locks.on_persist_asset_locks_fn = None;
-        let mut missing_load = complete_callbacks();
-        missing_load.on_load_wallet_list_fn = None;
-        let mut missing_load_free = complete_callbacks();
-        missing_load_free.on_load_wallet_list_free_fn = None;
 
-        for callbacks in [
-            missing_begin,
-            missing_end,
-            missing_asset_locks,
-            missing_load,
-            missing_load_free,
-        ] {
+        for callbacks in [missing_begin, missing_end, missing_asset_locks] {
             assert!(!declared_persister(callbacks, required)
                 .persistence_capabilities()
                 .contains(required));

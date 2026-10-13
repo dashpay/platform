@@ -126,10 +126,10 @@ impl PersistenceCapabilities {
     pub const SHIELDED_FVK_RESTART: Self =
         Self(Self::ATOMIC_CHANGESETS.0 | Self::SHIELDED_VIEWING_KEYS.0);
 
-    /// Capabilities required to durably reconcile an asset-lock status and
-    /// restore that exact row after process restart.
+    /// Capabilities required to atomically persist reconciliation of an
+    /// already-loaded tracked asset lock.
     pub const ASSET_LOCK_RECONCILIATION: Self =
-        Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0 | Self::WALLET_RESTORE.0);
+        Self(Self::ATOMIC_CHANGESETS.0 | Self::TRACKED_ASSET_LOCKS.0);
 
     pub const fn from_bits_retain(bits: u64) -> Self {
         Self(bits)
@@ -252,8 +252,24 @@ mod tests {
         assert_eq!(PersistenceCapabilities::DASHPAY_PAYMENTS.bits(), 0x1000);
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
-            0x281
+            0x201
         );
+    }
+
+    #[test]
+    fn reconciliation_requires_atomic_tracked_asset_lock_persistence() {
+        let required = PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
+        assert!(required.contains(PersistenceCapabilities::ASSET_LOCK_RECONCILIATION));
+        assert_eq!(required, PersistenceCapabilities::ASSET_LOCK_RECONCILIATION);
+        for incomplete in [
+            PersistenceCapabilities::NONE,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+            PersistenceCapabilities::TRACKED_ASSET_LOCKS,
+            PersistenceCapabilities::WALLET_RESTORE,
+        ] {
+            assert!(!incomplete.contains(PersistenceCapabilities::ASSET_LOCK_RECONCILIATION));
+        }
     }
 
     #[test]
