@@ -1,0 +1,67 @@
+{
+  "$formatVersion": "0",
+  "id": "5ZJxGSKmh7hGaBXv4ZZLPRmXr9ZwRbrKC5xgPGkRp5Yd",
+  "ownerId": "AtirhSVpAWF7dEt6dLAmesC4Sr1MsJ9bFC1nLAoNnq2S",
+  "version": 1,
+  "documentSchemas": {
+    "like": {
+      "type": "object",
+      "indexOnly": true,
+      "documentsMutable": false,
+      "canBeDeleted": true,
+      "properties": {
+        "postId": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 0
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 61 },
+          "maxItems": 4,
+          "uniqueItems": true,
+          "position": 1
+        },
+        "postAuthor": {
+          "type": "array",
+          "byteArray": true,
+          "minItems": 32,
+          "maxItems": 32,
+          "contentMediaType": "application/x.dash.dpp.identifier",
+          "position": 2
+        }
+      },
+      "required": ["$createdAt", "postId", "postAuthor"],
+      "indices": [
+        {
+          "name": "byPost",
+          "properties": [{ "postId": "asc" }],
+          "terminal": "$ownerId",
+          "rangeCountable": true
+        },
+        {
+          "name": "byTagPost",
+          "properties": [{ "tags": "asc" }, { "postId": "asc" }],
+          "rangeCountable": true
+        },
+        {
+          "name": "byTrendTagPost",
+          "properties": [{ "$createdAt": "asc" }, { "tags": "asc" }, { "postId": "asc" }],
+          "terminal": "$ownerId",
+          "rangeCountable": true,
+          "timeRange": { "on": "$createdAt", "range": 86400, "step": 21600, "ttl": 604800 },
+          "outlivesDelete": true
+        },
+        {
+          "name": "byAuthorPostTime",
+          "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }, { "$createdAt": "asc" }],
+          "terminal": "$ownerId"
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -32,7 +32,7 @@ impl Drive {
     /// [`DriveDocumentCountQuery::detect_mode`] that exactly one
     /// `In` clause is present in `where_clauses`.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_count_per_in_value_no_proof(
+    pub(crate) fn execute_document_count_per_in_value_no_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,

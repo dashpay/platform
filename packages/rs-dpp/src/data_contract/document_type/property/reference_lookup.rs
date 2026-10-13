@@ -24,7 +24,9 @@
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
-use crate::data_contract::document_type::property::lookup_preimage::LookupHashKey;
+use crate::data_contract::document_type::property::lookup_preimage::{
+    LookupHashKey, LookupKeyParam,
+};
 use crate::data_contract::document_type::property::{
     is_transient, top_level_property, DocumentPropertyReferenceTarget, DocumentPropertyType,
 };
@@ -36,7 +38,7 @@ const MODERATORS_CHANGE: &str = "the contract's moderators change";
 /// Why a key part moves when it is an immutable, optional `deletableDocument`
 /// reference by id: a replace may clear it once its document is deleted.
 const CLEARED_ONCE_DELETED: &str = "a replace can clear once its document is deleted";
-use crate::data_contract::document_type::{DocumentTypeRef, Index};
+use crate::data_contract::document_type::{property_names, DocumentTypeRef, Index};
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
     CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, CREATOR_ID, ID, OWNER_ID,
@@ -44,11 +46,14 @@ use crate::document::property_names::{
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 use crate::nft::TradeMode;
+use crate::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::{Identifier, Value};
+use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::iter;
 use std::mem::Discriminant;
 
 /// The wire name of [`LookupKeySource::ReferenceValue`].
@@ -130,6 +135,10 @@ impl LookupKeySource {
 /// meta-schema v3 puts on index property names.
 pub const MAX_LOOKUP_PATH_LENGTH: usize = 256;
 
+/// The most properties a `chooseFirst` orders commitments by (`by`): as many as an index holds,
+/// the property it fills aside, plus a last `$id`.
+pub const MAX_CHOOSE_FIRST_ORDER: usize = 10;
+
 /// The most key parts a lookup may map, the most properties an index can have.
 pub const MAX_LOOKUP_KEYS: usize = 10;
 
@@ -138,9 +147,10 @@ pub const MAX_LOOKUP_KEYS: usize = 10;
 /// the referenced document type whose properties are exactly the ones `keys`
 /// fills ([`Self::resolve_index`]), with one key part per index property. With
 /// a computed key it also holds what the reference declares, beside `findBy`,
-/// of the document found: `minimumAgeBlocks` and `consume`. It serializes as
-/// the parsed model, those two inside it.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Encode, Decode, DecodeUntrusted)]
+/// of the document found: its `constraints` (`minimumAgeBlocks` and
+/// `chooseFirst`) and `consume`. It serializes as the schema spells it, the
+/// constraints inside `constraints`.
+#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode, DecodeUntrusted)]
 pub struct DocumentReferenceLookup {
     /// Every property of the index, by its name on the referenced side
     /// (`$ownerId` among the system ones), mapped to the referring-side source
@@ -151,32 +161,151 @@ pub struct DocumentReferenceLookup {
     /// except in the lookup of an `ownerRefersTo` or `creatorRefersTo` holding
     /// a computed key, where it may be left out.
     pub keys: BTreeMap<String, LookupKeySource>,
-    /// With a computed key only: how many blocks before the create the
+    /// On a lookup judged on the create alone only
+    /// ([`Self::is_checked_on_create_only`]): how many blocks before the create the
     /// document the key finds must have been created (the reference's
-    /// `minimumAgeBlocks`, beside `findBy`), judged on its
+    /// `constraints.minimumAgeBlocks`), judged on its
     /// `$createdAtBlockHeight`, so that 1 keeps a commitment and its reveal out
     /// of the same block. The referenced document type must
     /// record `$createdAtBlockHeight`.
-    #[serde(rename = "minimumAgeBlocks", skip_serializing_if = "Option::is_none")]
     pub minimum_age_blocks: Option<u32>,
-    /// With a computed key only: whether the create deletes the document the
+    /// On a lookup judged on the create alone only
+    /// ([`Self::is_checked_on_create_only`]): whether the create deletes the document the
     /// key found (the reference's `consume`, beside `findBy`), in the same
     /// state transition. Only a `deletableDocument` reference whose `where`
     /// pairs the found document's `$ownerId` with the writer's may consume,
     /// into a
     /// document type of the declaring contract whose documents their owner
     /// may delete.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub consume: bool,
+    /// On a lookup whose `findBy` holds exactly `"$ownerId": "$ownerId"` and a function of
+    /// the create's values, so judged on the create alone: the reference's
+    /// `constraints.chooseFirst`, which requires the found document to be the first valid
+    /// commitment among those holding the same value there, see [`LookupChooseFirst`].
+    pub choose_first: Option<LookupChooseFirst>,
+}
+
+/// As the schema spells it: `keys`, then `constraints` (`minimumAgeBlocks` and
+/// `chooseFirst`) when any is declared, then `consume` when set.
+impl Serialize for DocumentReferenceLookup {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Constraints<'a> {
+            #[serde(rename = "minimumAgeBlocks", skip_serializing_if = "Option::is_none")]
+            minimum_age_blocks: Option<u32>,
+            #[serde(rename = "chooseFirst", skip_serializing_if = "Option::is_none")]
+            choose_first: Option<&'a LookupChooseFirst>,
+        }
+        let has_constraints = self.minimum_age_blocks.is_some() || self.choose_first.is_some();
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("keys", &self.keys)?;
+        if has_constraints {
+            map.serialize_entry(
+                "constraints",
+                &Constraints {
+                    minimum_age_blocks: self.minimum_age_blocks,
+                    choose_first: self.choose_first.as_ref(),
+                },
+            )?;
+        }
+        if self.consume {
+            map.serialize_entry("consume", &true)?;
+        }
+        map.end()
+    }
+}
+
+/// A lookup's `constraints.chooseFirst`, `{ "among", "validWhen": { "<property>": <function> },
+/// "by": [...] }`: the found document must be the first valid commitment among the documents of
+/// the referenced type holding the same value at `among`.
+///
+/// `among` is the property the lookup's `findBy` function fills, a hash of values the
+/// referring document reveals that names the thing committed to (a name) without naming who
+/// committed: every commitment to the same thing holds it, whoever made it, and anyone may
+/// copy it, so the found document holds the very value the create reveals. A commitment is
+/// valid when the value it holds at `valid_when_property` is `valid_when`, a function of the
+/// same values and of `"$ownerId"`, computed with that commitment's owner: computing it takes
+/// knowing the values, not just the hash. The found document must be valid itself, with the
+/// writer as its owner, or a copy of a pending commitment landing first would reveal too.
+///
+/// The commitments are ordered by `by`, properties of the referenced document type each
+/// ascending or descending, through its index over `among` followed by those properties; a
+/// last `$id` may stand outside that index when it is not unique, whose entries are kept by
+/// id in the direction of its last property (ascending under `among` alone), the direction
+/// the last `$id` must run in. A create whose found commitment is preceded by a valid one is refused
+/// (`ReferencedDocumentPrecededError`), and two commitments equal on every `by` property
+/// precede neither other.
+#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode, DecodeUntrusted)]
+pub struct LookupChooseFirst {
+    /// The property of the referenced document type whose value groups the commitments: the
+    /// one the `findBy` function fills.
+    pub among: String,
+    /// The property of the referenced document type `valid_when` fills.
+    pub valid_when_property: String,
+    /// The owner-bound function a valid commitment holds at `valid_when_property`, reading
+    /// `"$ownerId"` (the commitment's owner) and the values the `findBy` function reads.
+    pub valid_when: LookupHashKey,
+    /// The order the commitments to the same values are chosen in, first entry first.
+    pub by: Vec<ChooseFirstOrder>,
+}
+
+/// One entry of a `chooseFirst` `by`: a property of the referenced document type and the
+/// direction commitments are ordered in by it.
+#[derive(Debug, PartialEq, Eq, Clone, Encode, Decode, DecodeUntrusted)]
+pub struct ChooseFirstOrder {
+    /// The property, a schema property or a system one such as `$createdAtBlockHeight`.
+    pub property: String,
+    /// Whether the commitment with the lower value comes first.
+    pub ascending: bool,
+}
+
+impl LookupChooseFirst {
+    /// Whether the last `by` entry is `$id`, which the index's entries are kept by rather than
+    /// one of its properties.
+    pub fn orders_by_id_last(&self) -> bool {
+        self.by.last().is_some_and(|order| order.property == ID)
+    }
+
+    /// The `by` entries the index orders, `property` excluded: every entry but a last `$id`.
+    pub fn index_order(&self) -> &[ChooseFirstOrder] {
+        if self.orders_by_id_last() {
+            &self.by[..self.by.len() - 1]
+        } else {
+            &self.by
+        }
+    }
+}
+
+/// As the schema spells it, every `by` entry with its direction.
+impl Serialize for LookupChooseFirst {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let by: Vec<BTreeMap<&str, &str>> = self
+            .by
+            .iter()
+            .map(|order| {
+                BTreeMap::from([(
+                    order.property.as_str(),
+                    if order.ascending { "asc" } else { "desc" },
+                )])
+            })
+            .collect();
+        let valid_when = BTreeMap::from([(self.valid_when_property.as_str(), &self.valid_when)]);
+        let mut map = serializer.serialize_map(Some(3))?;
+        map.serialize_entry("among", &self.among)?;
+        map.serialize_entry("validWhen", &valid_when)?;
+        map.serialize_entry("by", &by)?;
+        map.end()
+    }
 }
 
 impl DocumentReferenceLookup {
-    /// A lookup by `keys` with neither a minimum age nor consumption.
+    /// A lookup by `keys` with neither a minimum age, consumption nor `chooseFirst`.
     pub fn new(keys: BTreeMap<String, LookupKeySource>) -> Self {
         DocumentReferenceLookup {
             keys,
             minimum_age_blocks: None,
             consume: false,
+            choose_first: None,
         }
     }
 
@@ -299,13 +428,17 @@ impl DocumentReferenceLookup {
             .sum()
     }
 
-    /// Whether this lookup is judged only when the referring document is
-    /// created: it holds a computed key, a commitment the create reveals.
-    /// Nothing such a lookup reads can change afterwards (registration makes
-    /// every stored value it reads fixed once written), and the commitment it
-    /// found may be consumed or deleted, so a replace never re-validates it.
-    pub fn is_checked_on_create_only(&self) -> bool {
-        self.hash_key().is_some()
+    /// Whether this lookup, declared on a document type whose documents can
+    /// (`documents_mutable`) or can not be replaced, is judged only when the
+    /// referring document is created: it holds a computed key, a commitment the
+    /// create reveals, or its type's documents are never replaced, and a
+    /// replace is the one write that judges a reference again. Nothing such a
+    /// lookup reads can change afterwards (registration makes every stored value
+    /// it reads fixed once written, and no `changeFields` entry may name one),
+    /// and the document it found may be consumed or deleted, so a replace never
+    /// re-validates it.
+    pub fn is_checked_on_create_only(&self, documents_mutable: bool) -> bool {
+        self.hash_key().is_some() || !documents_mutable
     }
 
     /// The referring document type's property paths the key reads as is, in
@@ -343,22 +476,24 @@ impl DocumentReferenceLookup {
     /// (not listed under `immutable` with a condition, which could let a replace
     /// set it later unchecked), unless it is transient, never stored and read from
     /// the create alone. On a property the reference's own value must fill
-    /// the key exactly once, as a `"."` source or a param of the computed key,
-    /// and on a string or byte array property, `reference_type` not an
-    /// identifier, as a param only, a source having to match an index
-    /// property of the same kind. A param names a single property carrying
+    /// the key exactly once, as a `"."` source or a param of the computed key;
+    /// on a string or byte array property, not an identifier, a `"."` source
+    /// fills an index property holding the same kind of value, which
+    /// [`Self::referenced_side_error`] checks. A param names a single property carrying
     /// the reference by its path, never `"."`, which stands only for a value
     /// without one (each element of a typed array, the writer, the creator);
     /// only the lookup of an `ownerRefersTo` or `creatorRefersTo`,
     /// `reference_path` `$ownerId` or `$creatorId`, may leave the value out
     /// beside a computed key, its declaration applying to every create
-    /// whatever the writer is.
+    /// whatever the writer is. A `chooseFirst` follows
+    /// [`Self::choose_first_referring_side_error`].
     pub fn referring_side_error(
         &self,
         declaring: DocumentTypeRef,
         reference_path: &str,
     ) -> Option<String> {
-        let computed = self.is_checked_on_create_only();
+        let computed = self.hash_key().is_some();
+        let create_only = self.is_checked_on_create_only(declaring.documents_mutable());
         let on_the_document = reference_path == OWNER_ID || reference_path == CREATOR_ID;
         let carrier_type = declaring
             .flattened_properties()
@@ -379,22 +514,6 @@ impl DocumentReferenceLookup {
                      property carrying the reference by its path, \"{reference_path}\""
                 ));
             }
-        }
-        // A string or byte array carrying the reference is no identifier
-        let revealed = matches!(
-            carrier_type,
-            Some(DocumentPropertyType::String(_) | DocumentPropertyType::ByteArray(_))
-        );
-        if revealed
-            && self
-                .keys
-                .values()
-                .any(|source| matches!(source, LookupKeySource::ReferenceValue))
-        {
-            return Some(format!(
-                "\"{reference_path}\" is not an identifier, so its value fills the key as a \
-                 param of a computed key, not as a source of its own"
-            ));
         }
         if computed && !on_the_document {
             let reads = if named_by_path {
@@ -431,12 +550,15 @@ impl DocumentReferenceLookup {
                     continue;
                 }
                 LookupKeySource::OwnerId => {
-                    if owner_can_change(declaring) {
+                    // A lookup judged when the document is created only, so a later transfer
+                    // or purchase moving the writer moves no key
+                    if !create_only && owner_can_change(declaring) {
                         return Some(format!(
                             "findBy \"{index_property}\" reads \"$ownerId\", which a transfer or \
                              a purchase of the referring document changes without re-validating \
                              the reference: findBy may read the writer only on a document type \
-                             that cannot be transferred or traded"
+                             that cannot be transferred or traded, beside a function, or on a \
+                             type whose documents are never replaced"
                         ));
                     }
                     continue;
@@ -497,21 +619,128 @@ impl DocumentReferenceLookup {
                 ));
             }
         }
+        self.choose_first_referring_side_error(declaring)
+    }
+
+    /// Why this lookup's `chooseFirst`, declared on `declaring`, cannot tell a valid
+    /// commitment from a copy; `None` when it can or there is none:
+    ///
+    /// * `findBy` holds exactly `"$ownerId": "$ownerId"` and a function filling `among`, so
+    ///   the found document is the writer's commitment holding the very value the create
+    ///   reveals, the one its competitors hold. Any other entry would be a part of the
+    ///   commitment a competitor is never compared on. The function makes the lookup judged
+    ///   on the create alone ([`Self::is_checked_on_create_only`]);
+    /// * the `findBy` function reads neither the writer nor `"."`: its value must be the same
+    ///   for every identity committing to the same values;
+    /// * `validWhen` reads `"$ownerId"`, standing for each commitment's owner, and no `"."`,
+    ///   so a commitment names its owner twice, once in that hash and once as its owner:
+    ///   copying another identity's hash yields a commitment whose owner is not the one
+    ///   hashed. Its params follow the rules of a `findBy` function's
+    ///   ([`LookupHashKey::referring_side_error`]), and it fills a property `findBy` does not
+    ///   name;
+    /// * the two functions read the same properties: a property only `validWhen` read (a
+    ///   salt) would make every competitor look like a copy, and one only the `findBy`
+    ///   function read (a tag) would let a later committer pick another value for it and
+    ///   stand where no competitor exists;
+    /// * a create of `declaring` offers nobody else to pay its gas
+    ///   (`documentActionTokenCost` `gasFeesPaidBy`): a create relying on a sponsor is
+    ///   judged, state included, before anyone has paid for it, which the competitor scan
+    ///   must not be.
+    fn choose_first_referring_side_error(&self, declaring: DocumentTypeRef) -> Option<String> {
+        let choose_first = self.choose_first.as_ref()?;
+        let among = choose_first.among.as_str();
+        let valid_when_property = choose_first.valid_when_property.as_str();
+        let reads_writer = |key: &LookupHashKey| {
+            key.params
+                .iter()
+                .any(|param| matches!(param, LookupKeyParam::Writer))
+        };
+        let find_by_key = match (
+            self.keys.get(among),
+            self.keys.get(OWNER_ID),
+            self.keys.len(),
+        ) {
+            (Some(LookupKeySource::Hash(key)), Some(LookupKeySource::OwnerId), 2) => key,
+            _ => {
+                return Some(format!(
+                    "chooseFirst among \"{among}\" needs findBy to hold exactly the entry \
+                     \"{OWNER_ID}\": \"{OWNER_ID}\" and a function filling \"{among}\", so the \
+                     found document is the writer's commitment to the values the create reveals"
+                ))
+            }
+        };
+        if reads_writer(find_by_key) || find_by_key.reference_value_uses() > 0 {
+            return Some(format!(
+                "chooseFirst among \"{among}\" groups commitments by the findBy function, which \
+                 may read neither \"{OWNER_ID}\" nor \".\": its value is the same for every \
+                 identity committing to the same values"
+            ));
+        }
+        if !reads_writer(&choose_first.valid_when) {
+            return Some(format!(
+                "chooseFirst validWhen \"{valid_when_property}\" must read \"{OWNER_ID}\", each \
+                 commitment's owner: a commitment is valid when its owner could compute it, which \
+                 a copy of another identity's cannot"
+            ));
+        }
+        if choose_first.valid_when.reference_value_uses() > 0 {
+            return Some(format!(
+                "chooseFirst validWhen \"{valid_when_property}\" is computed for every \
+                 commitment, so it may not read \".\""
+            ));
+        }
+        if let Some(reason) = choose_first.valid_when.referring_side_error(declaring) {
+            return Some(format!(
+                "chooseFirst validWhen function \"{valid_when_property}\" {reason}"
+            ));
+        }
+        if self.keys.contains_key(valid_when_property) {
+            return Some(format!(
+                "chooseFirst validWhen \"{valid_when_property}\" names a property findBy names: \
+                 it fills a property of its own"
+            ));
+        }
+        let find_by_reads: BTreeSet<&str> = find_by_key.properties_read().collect();
+        let valid_when_reads: BTreeSet<&str> = choose_first.valid_when.properties_read().collect();
+        if let Some(only_one_reads) = find_by_reads.symmetric_difference(&valid_when_reads).next() {
+            return Some(format!(
+                "chooseFirst validWhen \"{valid_when_property}\" must read the properties the \
+                 findBy function \"{among}\" reads and no others, and \"{only_one_reads}\" is read \
+                 by one of them only: a valid commitment holding the same value must have committed \
+                 to the same values"
+            ));
+        }
+        if declaring
+            .document_creation_token_cost()
+            .is_some_and(|cost| cost.gas_fees_paid_by != GasFeesPaidBy::DocumentOwner)
+        {
+            return Some(format!(
+                "chooseFirst among \"{among}\" reads the commitment's competitors when a document \
+                 is created, so its creates may not offer gas sponsorship (gasFeesPaidBy): a create \
+                 relying on a sponsor is judged before anyone pays for it"
+            ));
+        }
         None
     }
 
-    /// Why this lookup, declared on a property of `declaring`, cannot resolve
-    /// in `referenced`, the referenced document type; `None` when it can. The
+    /// Why this lookup, declared on `declaring` (on the property at
+    /// `reference_property`, `None` for its owner or creator reference),
+    /// cannot resolve in `referenced`, the referenced document type; `None`
+    /// when it can. The
     /// properties `findBy` names must be exactly those of a unique index that
     /// does not bucket its first property ([`Self::resolve_index`]), so the key
     /// finds at most one document; the referenced type may not be `indexOnly`;
     /// no index property may be transient, a value no stored document holds;
     /// and each source must hold the same kind of value as the index property
-    /// it fills, or no document could ever match. The key must also stay with
-    /// the document it found, see [`Self::moving_key_part`].
+    /// it fills, or no document could ever match: `"."` holds an identifier,
+    /// or the value of the string or byte array property carrying the
+    /// reference. The key must also stay with the document it found, see
+    /// [`Self::moving_key_part`], and a `chooseFirst` must find the found
+    /// document's competitors, see [`Self::choose_first_referenced_side_error`].
     pub fn referenced_side_error(
         &self,
         declaring: DocumentTypeRef,
+        reference_property: Option<&str>,
         referenced: DocumentTypeRef,
     ) -> Option<String> {
         let index_name = match self.resolve_index(referenced) {
@@ -547,28 +776,21 @@ impl DocumentReferenceLookup {
                 ));
             };
             let source_kind = match source {
-                // Both are identifiers, the reference's own value because
-                // `refersTo` is only allowed on identifiers
-                LookupKeySource::ReferenceValue | LookupKeySource::OwnerId => {
+                LookupKeySource::ReferenceValue => {
+                    reference_value_kind(declaring, reference_property)
+                }
+                LookupKeySource::OwnerId => {
                     std::mem::discriminant(&DocumentPropertyType::Identifier)
                 }
                 // A hash is a byte array exactly as long as the hash's output,
                 // which the index property must hold
                 LookupKeySource::Hash(key) => {
-                    let length = key.function.output_length();
-                    let holds_hash = matches!(
-                        referenced
-                            .flattened_properties()
-                            .get(index_property)
-                            .map(|property| &property.property_type),
-                        Some(DocumentPropertyType::ByteArray(sizes))
-                            if sizes.min_size == Some(length) && sizes.max_size == Some(length)
-                    );
-                    if !holds_hash {
+                    if !holds_hash(referenced, index_property, key) {
                         return Some(format!(
                             "findBy function \"{index_property}\" is a {} hash, so the index \
-                             property must be a byte array of exactly {length} bytes",
-                            key.function.as_str()
+                             property must be a byte array of exactly {} bytes",
+                            key.function.as_str(),
+                            key.function.output_length()
                         ));
                     }
                     continue;
@@ -591,19 +813,19 @@ impl DocumentReferenceLookup {
                 ));
             }
         }
-        // A minimum age is judged against the found document's creation height,
-        // so the type must record one; consuming deletes the document as its
-        // own owner would, which the type must allow, or keep for consumption
-        // alone (`canBeDeleted: "onlyWhenConsumed"`)
+        // A minimum age is judged against the found document's creation height, so the
+        // type must record one; consuming deletes the document as its own owner would,
+        // which the type must allow, or keep for consumption alone (`canBeDeleted:
+        // "onlyWhenConsumed"`)
         if self.minimum_age_blocks.is_some()
             && !referenced
                 .required_fields()
                 .contains(CREATED_AT_BLOCK_HEIGHT)
         {
             return Some(format!(
-                "minimumAgeBlocks is judged against the found document's \
-                 {CREATED_AT_BLOCK_HEIGHT}, which \"{}\" does not record: list \
-                 {CREATED_AT_BLOCK_HEIGHT} in its `required`",
+                "{} is judged against the found document's {CREATED_AT_BLOCK_HEIGHT}, which \
+                 \"{}\" does not record: list {CREATED_AT_BLOCK_HEIGHT} in its `required`",
+                property_names::MINIMUM_AGE_BLOCKS,
                 referenced.name()
             ));
         }
@@ -646,6 +868,14 @@ impl DocumentReferenceLookup {
                 referenced.name()
             ));
         }
+        // Nor rules gating its delete, which only a delete transition judges
+        if self.consume && !referenced.delete_constraints().is_empty() {
+            return Some(format!(
+                "consume deletes the found document without a delete transition, so \"{}\" \
+                 may declare no deleteConstraints: they would not be judged",
+                referenced.name()
+            ));
+        }
         if self.consume
             && referenced.security_level_requirement() < declaring.security_level_requirement()
         {
@@ -676,6 +906,126 @@ impl DocumentReferenceLookup {
                 referenced.name()
             ));
         }
+        self.choose_first_referenced_side_error(referenced)
+    }
+
+    /// Why this lookup's `chooseFirst` cannot find the competitors of a document of
+    /// `referenced`, the referenced document type; `None` when it can or there is none. What
+    /// `among` must be is judged with the rest of `findBy`, whose function fills it, and its
+    /// unique index over exactly `$ownerId` and `among` holds an identity to one commitment to
+    /// a value, so filling the competitors a create reads, which stand before an older valid
+    /// one, takes as many identities as are read. Beyond that:
+    ///
+    /// * the property `validWhen` fills is a stored byte array exactly as long as its
+    ///   function's output, fixed once written;
+    /// * the type's documents expire (`ttl`): a commitment never revealed would otherwise
+    ///   precede every later one for good;
+    /// * every property `by` orders commitments by is recorded on each of them and fixed once
+    ///   written ([`choose_first_order_error`]), and an index holds exactly `among` followed
+    ///   by them, in that order, through which the commitments are read in order; a last
+    ///   `$id` stands outside it, and then the index is not unique, whose entries are kept by
+    ///   id;
+    /// * every unique index holding `among`, or the property `validWhen` fills, holds
+    ///   `$ownerId` too, or a copy of a pending commitment's value landing first would keep
+    ///   the commitment out of state, without its copier knowing the values.
+    ///
+    /// Every flag read here is immutable on contract update, and a type's indexes never
+    /// change, so the answer holds for good.
+    fn choose_first_referenced_side_error(&self, referenced: DocumentTypeRef) -> Option<String> {
+        let choose_first = self.choose_first.as_ref()?;
+        let among = choose_first.among.as_str();
+        let valid_when_property = choose_first.valid_when_property.as_str();
+        let name = referenced.name();
+        if !holds_hash(referenced, valid_when_property, &choose_first.valid_when) {
+            return Some(format!(
+                "chooseFirst validWhen \"{valid_when_property}\" is a {} hash, so it must be a byte \
+                 array of exactly {} bytes of \"{name}\"",
+                choose_first.valid_when.function.as_str(),
+                choose_first.valid_when.function.output_length()
+            ));
+        }
+        if is_transient(referenced, valid_when_property) {
+            return Some(format!(
+                "chooseFirst validWhen names \"{valid_when_property}\" of \"{name}\", which is \
+                 transient or inside a transient object: its value is never stored, so no \
+                 commitment could be found valid"
+            ));
+        }
+        if let Some(why) = why_value_can_change(referenced, valid_when_property) {
+            return Some(format!(
+                "chooseFirst validWhen names \"{valid_when_property}\" of \"{name}\", which {why}: \
+                 a commitment must keep the value it committed with, so the property must be \
+                 fixed once the document is written"
+            ));
+        }
+        if referenced.documents_ttl_seconds().is_none() {
+            return Some(format!(
+                "chooseFirst reads the commitments of \"{name}\", whose documents must expire \
+                 (declare a `ttl`): a commitment never revealed would otherwise precede every \
+                 later one for good"
+            ));
+        }
+        let holds = |index: &Index, name: &str| {
+            index
+                .properties
+                .iter()
+                .any(|index_property| index_property.name == name)
+        };
+        // Every property commitments are ordered by is on every one of them, as written
+        for order in choose_first.index_order() {
+            let by = order.property.as_str();
+            if let Some(why) = choose_first_order_error(referenced, by) {
+                return Some(format!(
+                    "chooseFirst among \"{among}\" orders by \"{by}\" of \"{name}\", which {why}: \
+                     commitments are ordered by the values they were written with"
+                ));
+            }
+        }
+        let index_properties: Vec<&str> = iter::once(among)
+            .chain(
+                choose_first
+                    .index_order()
+                    .iter()
+                    .map(|order| order.property.as_str()),
+            )
+            .collect();
+        match referenced.indexes().iter().find(|(_, index)| {
+            index
+                .properties
+                .iter()
+                .map(|index_property| index_property.name.as_str())
+                .eq(index_properties.iter().copied())
+        }) {
+            None => {
+                return Some(format!(
+                    "chooseFirst among \"{among}\" reads the commitments holding the same value in \
+                     order through an index of \"{name}\" over exactly ({}), in that order, which \
+                     it does not have",
+                    index_properties.join(", ")
+                ))
+            }
+            Some((index_name, index)) if index.unique && choose_first.orders_by_id_last() => {
+                return Some(format!(
+                    "index \"{index_name}\" of \"{name}\" over ({}) is unique, so it keeps no \
+                     entries by {ID}: chooseFirst may order by {ID} last only through a \
+                     non-unique index",
+                    index_properties.join(", ")
+                ))
+            }
+            Some(_) => {}
+        }
+        // Both hashes a commitment holds can be copied from its pending transition
+        for copyable_property in [among, valid_when_property] {
+            if let Some((index_name, _)) = referenced.indexes().iter().find(|(_, index)| {
+                index.unique && holds(index, copyable_property) && !holds(index, OWNER_ID)
+            }) {
+                return Some(format!(
+                    "index \"{index_name}\" of \"{name}\" is unique over \"{copyable_property}\" \
+                     without {OWNER_ID}: a copy of a pending commitment's value landing first \
+                     would keep the commitment out"
+                ));
+            }
+        }
         None
     }
 
@@ -703,7 +1053,8 @@ impl DocumentReferenceLookup {
 
     /// The equality values of the key the lookup assembles for one write, by
     /// index property name: `reference_value` for `"."` (the identifier
-    /// property's value, one array element, the writer or the creator),
+    /// property's value, one array element, the writer or the creator, or the
+    /// value of a string or byte array property carrying the reference),
     /// `owner_id` for `"$ownerId"`, the value at each source path in
     /// `document_data`, and `computed_key`, the hash the caller computed and
     /// billed, for a computed key: this never hashes, so a hash is never taken
@@ -716,7 +1067,7 @@ impl DocumentReferenceLookup {
     /// Either way a key with a missing part finds no document.
     pub fn key_values(
         &self,
-        reference_value: Identifier,
+        reference_value: &Value,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
         computed_key: Option<&Value>,
@@ -725,9 +1076,7 @@ impl DocumentReferenceLookup {
             .iter()
             .map(|(index_property, source)| {
                 let value = match source {
-                    LookupKeySource::ReferenceValue => {
-                        Value::Identifier(reference_value.to_buffer())
-                    }
+                    LookupKeySource::ReferenceValue => reference_value.clone(),
                     LookupKeySource::OwnerId => Value::Identifier(owner_id.to_buffer()),
                     LookupKeySource::Property(path) => {
                         document_data.get_optional_at_path(path).ok()??.clone()
@@ -842,6 +1191,68 @@ pub(crate) fn clearable_once_its_document_is_deleted(
                         )
                     )
             })
+}
+
+/// Why commitments of `referenced` cannot be ordered by `property`, one of a `chooseFirst`'s
+/// `by`; `None` when they can. The value must be on every commitment as it was written: not
+/// transient, listed in `required` with every object around it (`$ownerId` is always there),
+/// and fixed once written ([`why_value_can_change`]).
+fn choose_first_order_error(referenced: DocumentTypeRef, property: &str) -> Option<String> {
+    if is_transient(referenced, property) {
+        return Some("is transient or inside a transient object".to_string());
+    }
+    if property != OWNER_ID {
+        let mut prefix = String::new();
+        for segment in property.split('.') {
+            if !prefix.is_empty() {
+                prefix.push('.');
+            }
+            prefix.push_str(segment);
+            if !referenced.required_fields().contains(&prefix) {
+                return Some(
+                    "is not recorded on every document: list it, and every object around it, in \
+                     `required`"
+                        .to_string(),
+                );
+            }
+        }
+    }
+    why_value_can_change(referenced, property).map(str::to_string)
+}
+
+/// Whether the property `property` of `document_type` can hold the hash `key` computes: a
+/// byte array exactly as long as its function's output. A `findBy` function's property and a
+/// `chooseFirst` one are judged by this one rule.
+fn holds_hash(document_type: DocumentTypeRef, property: &str, key: &LookupHashKey) -> bool {
+    let length = key.function.output_length();
+    matches!(
+        document_type
+            .flattened_properties()
+            .get(property)
+            .map(|property| &property.property_type),
+        Some(DocumentPropertyType::ByteArray(sizes))
+            if sizes.min_size == Some(length) && sizes.max_size == Some(length)
+    )
+}
+
+/// The kind of value `"."` stands for on a reference of `declaring` carried by
+/// the property at `reference_property` (`None` for the owner or creator
+/// reference): the value of a string or byte array property, and an
+/// identifier otherwise (an identifier property's value, an element of a
+/// typed array of them, the writer or the creator).
+fn reference_value_kind(
+    declaring: DocumentTypeRef,
+    reference_property: Option<&str>,
+) -> Discriminant<DocumentPropertyType> {
+    match reference_property
+        .and_then(|path| declaring.flattened_properties().get(path))
+        .map(|property| &property.property_type)
+    {
+        Some(carrier @ (DocumentPropertyType::String(_) | DocumentPropertyType::ByteArray(_))) => {
+            carrier.value_kind()
+        }
+        _ => std::mem::discriminant(&DocumentPropertyType::Identifier),
+    }
 }
 
 /// The kind of value an index property of `document_type` holds: a system
@@ -993,6 +1404,7 @@ mod tests {
                 .collect(),
             minimum_age_blocks: None,
             consume: false,
+            choose_first: None,
         }
     }
 
@@ -1008,7 +1420,11 @@ mod tests {
             None
         );
         assert_eq!(
-            lookup.referenced_side_error(declaring.as_ref(), join_request().as_ref()),
+            lookup.referenced_side_error(
+                declaring.as_ref(),
+                Some("memberId"),
+                join_request().as_ref()
+            ),
             None
         );
     }
@@ -1064,7 +1480,11 @@ mod tests {
             ),
         ] {
             let error = lookup(&keys)
-                .referenced_side_error(declaring.as_ref(), join_request().as_ref())
+                .referenced_side_error(
+                    declaring.as_ref(),
+                    Some("memberId"),
+                    join_request().as_ref(),
+                )
                 .expect("findBy should be refused");
             assert!(error.contains(fragment), "{keys:?}: {error}");
         }
@@ -1074,7 +1494,11 @@ mod tests {
     fn should_refuse_a_source_of_the_wrong_value_kind() {
         let declaring = elected_charter();
         let error = lookup(&[("submittedCharterId", "note"), ("$ownerId", ".")])
-            .referenced_side_error(declaring.as_ref(), join_request().as_ref())
+            .referenced_side_error(
+                declaring.as_ref(),
+                Some("memberId"),
+                join_request().as_ref(),
+            )
             .expect("the string source should be refused");
         assert!(error.contains("holds a different kind of value"), "{error}");
     }
@@ -1105,7 +1529,7 @@ mod tests {
         ]);
         let declaring = elected_charter();
         let refused = |referenced: DocumentType| {
-            lookup.referenced_side_error(declaring.as_ref(), referenced.as_ref())
+            lookup.referenced_side_error(declaring.as_ref(), Some("memberId"), referenced.as_ref())
         };
 
         // A replace could move `submittedCharterId`, a transfer or a purchase `$ownerId`
@@ -1153,7 +1577,11 @@ mod tests {
             "transient": ["submittedCharterId"]
         }));
         let error = lookup
-            .referenced_side_error(elected_charter().as_ref(), referenced.as_ref())
+            .referenced_side_error(
+                elected_charter().as_ref(),
+                Some("memberId"),
+                referenced.as_ref(),
+            )
             .expect("an index over a transient property should be refused");
         assert!(
             error.contains(
@@ -1246,7 +1674,7 @@ mod tests {
         // A key id reference holds a u32 like the plain key id it is matched with
         let lookup = lookup(&[("keyId", "signerKeyId"), ("$ownerId", ".")]);
         assert_eq!(
-            lookup.referenced_side_error(declaring.as_ref(), referenced.as_ref()),
+            lookup.referenced_side_error(declaring.as_ref(), Some("memberId"), referenced.as_ref()),
             None
         );
     }
@@ -1267,14 +1695,22 @@ mod tests {
             ])
         };
         let error = consuming
-            .referenced_side_error(elected_charter().as_ref(), keeps_history.as_ref())
+            .referenced_side_error(
+                elected_charter().as_ref(),
+                Some("memberId"),
+                keeps_history.as_ref(),
+            )
             .expect("consuming a type that keeps history should be refused");
         assert!(error.contains("its documents keep history"), "{error}");
 
         // The same type without the history may be consumed
         let deletable = join_request_with(platform_value!({ "canBeDeleted": true }));
         assert_eq!(
-            consuming.referenced_side_error(elected_charter().as_ref(), deletable.as_ref()),
+            consuming.referenced_side_error(
+                elected_charter().as_ref(),
+                Some("memberId"),
+                deletable.as_ref()
+            ),
             None
         );
     }
@@ -1302,14 +1738,19 @@ mod tests {
         let data = BTreeMap::from([("submittedCharterId".to_string(), Value::Identifier([5; 32]))]);
 
         assert_eq!(
-            lookup.key_values(member, &data, owner, None),
+            lookup.key_values(&Value::Identifier(member.to_buffer()), &data, owner, None),
             Some(BTreeMap::from([
                 ("$ownerId".to_string(), Value::Identifier([3; 32])),
                 ("submittedCharterId".to_string(), Value::Identifier([5; 32])),
             ]))
         );
         assert_eq!(
-            lookup.key_values(member, &BTreeMap::new(), owner, None),
+            lookup.key_values(
+                &Value::Identifier(member.to_buffer()),
+                &BTreeMap::new(),
+                owner,
+                None
+            ),
             None
         );
         assert_eq!(

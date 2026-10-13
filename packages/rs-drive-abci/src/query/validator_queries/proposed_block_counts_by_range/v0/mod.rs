@@ -31,28 +31,24 @@ impl<C> Platform<C> {
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetEvonodesProposedEpochBlocksResponseV0>, Error> {
         let config = &self.config.drive;
-        let limit = limit
-            .map_or(Some(config.default_query_limit), |limit_value| {
+        // A refused limit is a request error: returned through `?` it would reach the client as
+        // an internal error, which clients retry on every other node.
+        let limit = check_validation_result_with_data!(limit.map_or(
+            Ok(config.default_query_limit),
+            |limit_value| {
                 if limit_value == 0
                     || limit_value > u16::MAX as u32
                     || limit_value as u16 > config.max_query_limit
                 {
-                    None
+                    Err(QueryError::Query(QuerySyntaxError::InvalidLimit(format!(
+                        "limit {} out of bounds of [1, {}]",
+                        limit_value, config.max_query_limit
+                    ))))
                 } else {
-                    Some(limit_value as u16)
+                    Ok(limit_value as u16)
                 }
-            })
-            .ok_or_else(|| {
-                let message = if let Some(limit) = limit {
-                    format!(
-                        "limit {} greater than max limit {}",
-                        limit, config.max_query_limit
-                    )
-                } else {
-                    "limit must be set in proposed block count by range query".to_string()
-                };
-                drive::error::Error::Query(QuerySyntaxError::InvalidLimit(message))
-            })?;
+            }
+        ));
 
         let formatted_start = match start {
             None => None,
@@ -145,59 +141,62 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dpp::dashcore::Network;
 
     #[test]
-    fn test_query_limit_zero_returns_error() {
-        let (platform, _state, _version) = setup_platform(Some((1, 1)), Network::Testnet, None);
+    fn should_refuse_a_zero_limit_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
-            epoch: Some(0),
-            limit: Some(0),
-            start: None,
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+                epoch: Some(0),
+                limit: Some(0),
+                start: None,
+                prove,
+            };
 
-        let result = platform.query_proposed_block_counts_by_range_v0(request, &_state, _version);
-
-        assert!(result.is_err(), "limit of 0 should return an error");
+            assert_invalid_argument_status(
+                platform.query_proposed_block_counts_by_range_v0(request, &state, version),
+            );
+        }
     }
 
     #[test]
-    fn test_query_limit_exceeds_max_returns_error() {
+    fn should_refuse_a_limit_over_the_max_as_invalid_argument() {
         let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
-
         let over_limit = platform.platform.config.drive.max_query_limit as u32 + 1;
-        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
-            epoch: Some(0),
-            limit: Some(over_limit),
-            start: None,
-            prove: false,
-        };
 
-        let result = platform.query_proposed_block_counts_by_range_v0(request, &state, version);
+        for prove in [false, true] {
+            let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+                epoch: Some(0),
+                limit: Some(over_limit),
+                start: None,
+                prove,
+            };
 
-        assert!(result.is_err(), "limit over max should return an error");
+            assert_invalid_argument_status(
+                platform.query_proposed_block_counts_by_range_v0(request, &state, version),
+            );
+        }
     }
 
     #[test]
-    fn test_query_limit_exceeds_u16_max_returns_error() {
+    fn should_refuse_a_limit_over_u16_as_invalid_argument() {
         let (platform, state, version) = setup_platform(Some((1, 1)), Network::Testnet, None);
 
-        let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
-            epoch: Some(0),
-            limit: Some(u16::MAX as u32 + 1),
-            start: None,
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+                epoch: Some(0),
+                limit: Some(u16::MAX as u32 + 1),
+                start: None,
+                prove,
+            };
 
-        let result = platform.query_proposed_block_counts_by_range_v0(request, &state, version);
-
-        assert!(
-            result.is_err(),
-            "limit over u16::MAX should return an error"
-        );
+            assert_invalid_argument_status(
+                platform.query_proposed_block_counts_by_range_v0(request, &state, version),
+            );
+        }
     }
 
     #[test]

@@ -20,7 +20,7 @@ impl Drive {
     /// `documents_summable: Some(matching_property)` — a proof of the
     /// type's primary-key SumTree.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_sum_point_lookup_proof(
+    pub(crate) fn execute_document_sum_point_lookup_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,

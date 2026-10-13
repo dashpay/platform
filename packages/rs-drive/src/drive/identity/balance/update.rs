@@ -72,8 +72,12 @@ mod tests {
             // cost. v0/v1 grovedb formulas are byte-stable so
             // `should_add_to_balance_first_version_estimated` keeps the
             // 4_278_840 pin.
+            // Grove version 4 then sizes the replaced root key of the sum
+            // tree holding the balance as a sum tree, 9 replaced bytes
+            // (3_600 credits) above the plain-tree sizing:
+            // 4_378_100 -> 4_381_700.
             let expected_fee_result = FeeResult {
-                processing_fee: 4378100,
+                processing_fee: 4381700,
                 removed_bytes_from_system: 0,
                 ..Default::default()
             };
@@ -439,8 +443,11 @@ mod tests {
         #[test]
         fn should_remove_from_balance_latest_version_estimated() {
             let platform_version = PlatformVersion::latest();
+            // Grove version 4 sizes the replaced root key of the sum tree
+            // holding the balance as a sum tree, 9 replaced bytes (3_600
+            // credits) above the first version's plain-tree sizing.
             let expected_fee_result = FeeResult {
-                processing_fee: 2476860,
+                processing_fee: 2480460,
                 removed_bytes_from_system: 0,
                 ..Default::default()
             };

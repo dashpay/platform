@@ -582,12 +582,17 @@ fn surviving_stored_input_claims(
 ) -> Result<HashSet<dashcore::OutPoint>, WalletStorageError> {
     use dashcore::hashes::Hash;
 
-    let mut stmt =
-        tx.prepare_cached("SELECT txid, record_blob FROM core_transactions WHERE wallet_id = ?1 AND record_blob IS NOT NULL")?;
+    // Pre-read length gates, as in `load_state`: neither column is
+    // materialized before its stored size is validated.
+    let mut stmt = tx.prepare_cached(
+        "SELECT length(txid), txid, length(record_blob), record_blob \
+         FROM core_transactions WHERE wallet_id = ?1 AND record_blob IS NOT NULL",
+    )?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     let mut claims: HashSet<dashcore::OutPoint> = HashSet::new();
     while let Some(row) = rows.next()? {
-        let txid_bytes: Vec<u8> = row.get(0)?;
+        blob::check_size(row.get(0)?)?;
+        let txid_bytes: Vec<u8> = row.get(1)?;
         let Ok(txid_array) = <[u8; 32]>::try_from(txid_bytes.as_slice()) else {
             return Err(WalletStorageError::blob_decode(
                 "core_transactions.txid must be exactly 32 bytes",
@@ -597,7 +602,8 @@ fn surviving_stored_input_claims(
         if swept_txids.contains(&key_txid) {
             continue;
         }
-        let blob_bytes: Vec<u8> = row.get(1)?;
+        blob::check_size(row.get(2)?)?;
+        let blob_bytes: Vec<u8> = row.get(3)?;
         let record: TransactionRecord = blob::decode(&blob_bytes)?;
         if record.txid != key_txid {
             return Err(WalletStorageError::blob_decode(
@@ -3417,5 +3423,60 @@ mod tests {
         let mut corrupt = bytes.clone();
         corrupt.extend_from_slice(&[0xFFu8; 4]);
         assert_eq!(chain_lock_height(&corrupt), None);
+    }
+
+    /// The stored-claims scan checks each stored width before it reads the
+    /// column: an oversize key or record is `BlobTooLarge`, whatever it holds.
+    #[test]
+    fn should_reject_oversize_stored_claimant_before_reading_it() {
+        use rusqlite::types::Value;
+
+        let oversize = blob::BLOB_SIZE_LIMIT_BYTES + 1;
+        let key = || Value::Blob(vec![0x11; 32]);
+        let cases = [
+            (
+                "txid",
+                Value::Blob(vec![0x11; oversize]),
+                Value::Blob(vec![0]),
+            ),
+            ("record", key(), Value::Blob(vec![0; oversize])),
+            // A blob reader cannot read text at all, so only a gate that
+            // runs before the read can report this one by its size.
+            (
+                "record stored as text",
+                key(),
+                Value::Text("a".repeat(oversize)),
+            ),
+        ];
+        let mut ungated = Vec::new();
+        for (column, txid, record) in cases {
+            let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+            migrations::run(&mut conn).unwrap();
+            let wallet_id = [0x4Cu8; 32];
+            conn.execute(
+                "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+                params![&wallet_id[..]],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) \
+                 VALUES (?1, ?2, 1, ?3)",
+                params![&wallet_id[..], txid, record],
+            )
+            .unwrap();
+            let tx = conn.transaction().unwrap();
+
+            let error = surviving_stored_input_claims(&tx, &wallet_id, &HashSet::new())
+                .expect_err("an oversize stored claimant must fail the scan");
+
+            let gated = matches!(
+                error,
+                WalletStorageError::BlobTooLarge { len_bytes, .. } if len_bytes == oversize
+            );
+            if !gated {
+                ungated.push(format!("{column}: {error:?}"));
+            }
+        }
+        assert_eq!(ungated, Vec::<String>::new());
     }
 }

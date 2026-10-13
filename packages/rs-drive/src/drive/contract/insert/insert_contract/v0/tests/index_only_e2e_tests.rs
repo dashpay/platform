@@ -3738,6 +3738,55 @@ fn empty_byte_array_trigger_takes_the_value_lane_not_the_skip_lane() {
     assert_grovedb_is_consistent(&drive);
 }
 
+/// An empty byte array given as an empty list, as a client may send it, is the
+/// same present-but-empty value: the walkers enter it under the empty key, as
+/// the delete probes and the row commitment read it, and a delete in either
+/// form removes the entry an insert in either form wrote.
+#[test]
+fn should_take_an_empty_list_byte_array_trigger_as_the_empty_value() {
+    let (drive, contract) = setup_likes();
+    let pin_path = sibling_doctype_path(&contract, "pin");
+    let empty_lane = |x: &str, y: &str| {
+        let mut lane = pin_path.clone();
+        lane.extend([
+            b"tag".to_vec(),
+            Vec::new(),
+            b"x".to_vec(),
+            x.as_bytes().to_vec(),
+            b"y".to_vec(),
+            y.as_bytes().to_vec(),
+            vec![0],
+        ]);
+        lane
+    };
+    let as_list = |mut pin: Document| {
+        pin.set("tag", Value::Array(vec![]));
+        pin
+    };
+
+    let listed = as_list(build_pin(&contract, Some(&[]), "x1", "y1", OWNER_1, 1));
+    insert_pin(&drive, &contract, &listed, true).expect("insert an empty-list tag pin");
+    assert!(
+        matches!(
+            read_grove_element(&drive, &empty_lane("x1", "y1"), &OWNER_1),
+            Some(Element::Item(..))
+        ),
+        "the empty list is entered under the empty key"
+    );
+    delete_pin(&drive, &contract, listed, true).expect("delete it as an empty list");
+    assert!(read_grove_element(&drive, &empty_lane("x1", "y1"), &OWNER_1).is_none());
+
+    let bytes = build_pin(&contract, Some(&[]), "x2", "y2", OWNER_1, 2);
+    insert_pin(&drive, &contract, &bytes, true).expect("insert an empty-bytes tag pin");
+    delete_pin(&drive, &contract, as_list(bytes), true).expect("delete it as an empty list");
+    assert!(
+        read_grove_element(&drive, &empty_lane("x2", "y2"), &OWNER_1).is_none(),
+        "a delete in the other form leaves no entry behind"
+    );
+
+    assert_grovedb_is_consistent(&drive);
+}
+
 // ── the real payoff shape: the untagged like ────────────────────────────
 
 /// A like carrying no hashtag — `byHashtagPost` is `skipIfAbsent` with
