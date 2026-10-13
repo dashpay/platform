@@ -1740,17 +1740,7 @@ impl Actor {
                 if !self.enabled || self.uncertain.remove(&txid).is_none() {
                     return;
                 }
-                let token = self.next_echo_token;
-                self.next_echo_token += 1;
-                self.echo_lookups.insert(txid, token);
-                let source = Arc::clone(&self.source);
-                self.jobs.spawn(async move {
-                    JobDone::EchoListed {
-                        txid,
-                        wallets: source.holders(txid).await.own,
-                        token,
-                    }
-                });
+                self.look_up_echo(txid);
             }
             Command::SetEnabled(enabled) => {
                 if enabled == self.enabled {
@@ -1848,6 +1838,23 @@ impl Actor {
         }
     }
 
+    /// Find the wallets an echoed send is an unsettled own send of: its
+    /// acceptance is theirs. A lookup already out for `txid` is superseded —
+    /// its result no longer carries the current token.
+    fn look_up_echo(&mut self, txid: Txid) {
+        let token = self.next_echo_token;
+        self.next_echo_token += 1;
+        self.echo_lookups.insert(txid, token);
+        let source = Arc::clone(&self.source);
+        self.jobs.spawn(async move {
+            JobDone::EchoListed {
+                txid,
+                wallets: source.holders(txid).await.own,
+                token,
+            }
+        });
+    }
+
     /// The registration a pass read, or was to read, is not in the wallet
     /// manager. This manager's own removals queue `WalletRemoved` under the
     /// same guard, and commands are handled before job results, so in
@@ -1867,15 +1874,20 @@ impl Actor {
     }
 
     /// Drop the wallet's entry, stop its pass and forget its state, the host
-    /// told to clear what it showed (logged with `trigger`). Report lookups
-    /// still out are made again, and the wallet leaves `reported`.
+    /// told to clear what it showed (logged with `trigger`). Report and echo
+    /// lookups still out are made again, and the wallet leaves `reported`.
     fn drop_wallet(&mut self, wallet_id: &WalletId, trigger: &'static str) {
         if let Some(run) = self.wallets.remove(wallet_id).and_then(|entry| entry.run) {
             run.abort.abort();
         }
-        // Which wallet an echo's lookup will name is not known yet: withdraw
-        // them all — at worst an acceptance waits for the next probe.
-        self.echo_lookups.clear();
+        // An echo's lookup may name the wallet gone, or a registration this
+        // one replaces: look again, so the acceptance reaches the wallets
+        // that hold the send now. The echo was already taken out of
+        // `uncertain`, so dropping its lookup would lose it for the others.
+        let echoes: Vec<Txid> = self.echo_lookups.keys().copied().collect();
+        for txid in echoes {
+            self.look_up_echo(txid);
+        }
         // A report's lookup may name the wallet gone: look again, so the
         // other holders still get their forced probe and priority.
         let reports: Vec<Txid> = self.report_lookups.keys().copied().collect();
@@ -5499,6 +5511,62 @@ mod tests {
         rig.settle().await;
 
         assert_eq!(rig.sent(), vec![ResolverEvent::Cleared(txid(1))]);
+    }
+
+    /// An echo's acceptance survives another wallet's registration or removal
+    /// while its lookup is out: the lookup is made again, not dropped.
+    #[tokio::test]
+    async fn should_keep_an_echo_whose_lookup_another_wallets_change_overtook() {
+        let other: WalletId = [8u8; 32];
+        for change in [Command::WalletAdded(other), Command::WalletRemoved(other)] {
+            let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+            let mut rig = enabled(probe).await;
+            rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+            rig.views(other, Vec::new());
+            rig.send(Command::Seen {
+                wallet_id: wallet(),
+                touched: false,
+            })
+            .await;
+            rig.send(Command::Uncertain(txid(1))).await;
+            rig.sent();
+
+            // The echo's lookup is out when the other wallet changes.
+            rig.handle(Command::Echoed(txid(1)));
+            rig.handle(change);
+            rig.settle().await;
+
+            assert_eq!(
+                rig.sent(),
+                vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
+            );
+        }
+    }
+
+    /// The wallet an echo was for is removed while the lookup is out: the
+    /// lookup made again names no holder, and nothing is published for it.
+    #[tokio::test]
+    async fn should_drop_an_echo_whose_wallet_was_removed_before_its_lookup_landed() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: false,
+        })
+        .await;
+        rig.send(Command::Uncertain(txid(1))).await;
+        rig.sent();
+
+        rig.handle(Command::Echoed(txid(1)));
+        rig.source.views.lock().expect("views").remove(&wallet());
+        rig.handle(Command::WalletRemoved(wallet()));
+        rig.settle().await;
+
+        assert!(!rig
+            .sent()
+            .iter()
+            .any(|event| matches!(event, ResolverEvent::Verdict(..))));
     }
 
     /// A late acceptance is news only to a wallet where the send is still an
