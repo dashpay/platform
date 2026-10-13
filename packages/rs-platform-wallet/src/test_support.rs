@@ -668,6 +668,19 @@ pub async fn test_platform_wallet_manager() -> (
     Arc<crate::PlatformWalletManager<NoopTestPersister>>,
     WalletId,
 ) {
+    test_platform_wallet_manager_with(Arc::new(NoopTestEventHandler), None).await
+}
+
+/// [`test_platform_wallet_manager`] with the host's `event_handler` and,
+/// when given, the probe the broadcast resolver asks the network through
+/// (the DAPI one otherwise).
+pub(crate) async fn test_platform_wallet_manager_with(
+    event_handler: Arc<dyn crate::events::PlatformEventHandler>,
+    acceptance_probe: Option<Arc<dyn crate::broadcast_probe::AcceptanceProbe>>,
+) -> (
+    Arc<crate::PlatformWalletManager<NoopTestPersister>>,
+    WalletId,
+) {
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
@@ -677,13 +690,15 @@ pub async fn test_platform_wallet_manager() -> (
 
     let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
     let persister = Arc::new(NoopTestPersister);
-    let event_handler: Arc<dyn crate::events::PlatformEventHandler> =
-        Arc::new(NoopTestEventHandler);
-    let manager = Arc::new(crate::PlatformWalletManager::new(
-        sdk,
-        persister,
-        event_handler,
-    ));
+    let manager = Arc::new(match acceptance_probe {
+        Some(probe) => crate::PlatformWalletManager::with_acceptance_probe(
+            sdk,
+            persister,
+            event_handler,
+            probe,
+        ),
+        None => crate::PlatformWalletManager::new(sdk, persister, event_handler),
+    });
 
     let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
     let seed_bytes = mnemonic.to_seed("");

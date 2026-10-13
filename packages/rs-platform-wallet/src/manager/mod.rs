@@ -495,7 +495,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// [`Self::new`] with the probe the broadcast resolver asks the network
     /// through.
-    fn with_acceptance_probe(
+    pub(crate) fn with_acceptance_probe(
         sdk: Arc<dash_sdk::Sdk>,
         persister: Arc<P>,
         app_handler: Arc<dyn PlatformEventHandler>,
@@ -1511,33 +1511,12 @@ mod tests {
     async fn probing_manager(
         probe: Arc<dyn AcceptanceProbe>,
         handler: Arc<dyn PlatformEventHandler>,
-    ) -> (PlatformWalletManager<NoopPersister>, WalletId) {
-        use key_wallet::mnemonic::Mnemonic;
-        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-
-        const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
-             abandon abandon abandon abandon abandon about";
-
-        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-        let manager = PlatformWalletManager::with_acceptance_probe(
-            sdk,
-            Arc::new(NoopPersister),
-            handler,
-            probe,
-        );
-        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
-            .expect("valid test mnemonic")
-            .to_seed("");
-        let wallet_id = manager
-            .create_wallet_from_seed_bytes(
-                key_wallet::Network::Testnet,
-                &seed,
-                WalletAccountCreationOptions::Default,
-                Some(0),
-            )
-            .await
-            .expect("register the test wallet")
-            .wallet_id();
+    ) -> (
+        Arc<PlatformWalletManager<crate::test_support::NoopTestPersister>>,
+        WalletId,
+    ) {
+        let (manager, wallet_id) =
+            crate::test_support::test_platform_wallet_manager_with(handler, Some(probe)).await;
         manager.broadcast_resolver.set_enabled(true);
         (manager, wallet_id)
     }
@@ -1568,7 +1547,7 @@ mod tests {
     /// forwards the fan-out's copy of the events; without the constructor's
     /// observer the wallet stays idle and the first wait below fails.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn constructor_wires_the_lossless_event_channel_into_the_broadcast_resolver() {
+    async fn should_wire_the_lossless_event_channel_into_the_broadcast_resolver() {
         let probe = Arc::new(CountingProbe::default());
         let (manager, wallet_id) = probing_manager(
             Arc::clone(&probe) as Arc<dyn AcceptanceProbe>,
@@ -1635,7 +1614,7 @@ mod tests {
     /// per-wallet generation there) then sees no verdict of the removed
     /// wallet stamped as a successor's.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn remove_wallet_waits_for_a_verdict_the_resolver_is_publishing() {
+    async fn should_finish_a_removal_only_after_a_verdict_the_resolver_is_publishing() {
         let (release, held) = std::sync::mpsc::channel();
         let handler = Arc::new(HeldVerdictHandler {
             entered: tokio::sync::Notify::new(),
@@ -1647,7 +1626,6 @@ mod tests {
             Arc::clone(&handler) as Arc<dyn PlatformEventHandler>,
         )
         .await;
-        let manager = Arc::new(manager);
 
         // A send to probe, then two steps that follow the tip: the pass
         // probes it and publishes its verdict, which the handler holds.

@@ -927,25 +927,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
         }
 
-        // The removal above only queued the broadcast resolver's part. Its
-        // task could be publishing a verdict of this wallet's right now, and
-        // a host cannot tell one that arrives after this call returned from a
-        // verdict of a wallet registered under the same id since. Wait for
-        // the task to get past the removal, outside the wallet-manager lock
-        // (its reads take that lock). Bounded: a host handler that never
-        // returns must not hold a removal for ever.
-        if !self
-            .broadcast_resolver
-            .caught_up(RESOLVER_REMOVAL_BUDGET)
-            .await
-        {
-            tracing::warn!(
-                wallet_id = %hex::encode(wallet_id),
-                "remove_wallet: the broadcast resolver did not get to the removal in time; \
-                 a verdict for this wallet may still reach the host"
-            );
-        }
-
         // Test-only rendezvous: the window a concurrent same-id registration can
         // publish a new generation into. Sits AFTER every id-keyed unregister,
         // so state a midpoint recreation installs is never torn down by this
@@ -1003,6 +984,28 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // itself, so no payment operation can observe the wallet as live and then
         // act on it after this returns.
         tear_down(&removed);
+        drop(_teardown);
+
+        // The removal only queued the broadcast resolver's part. Its task
+        // could be publishing a verdict of this wallet's right now, and a
+        // host cannot tell one that arrives after this call returned from a
+        // verdict of a wallet registered under the same id since. Wait for
+        // the task to get past the removal. Last, with the wallet out of both
+        // maps and the gate released, so nothing else waits with it; and
+        // outside the wallet-manager lock, which the task's reads take.
+        // Bounded: a host handler that never returns must not hold a removal
+        // for ever.
+        if !self
+            .broadcast_resolver
+            .caught_up(RESOLVER_REMOVAL_BUDGET)
+            .await
+        {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                "remove_wallet: the broadcast resolver did not get to the removal in time; \
+                 a verdict for this wallet may still reach the host"
+            );
+        }
 
         Ok(removed)
     }
