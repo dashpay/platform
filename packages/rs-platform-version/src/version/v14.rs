@@ -277,8 +277,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     v1 judges the fee against the sponsor's balance, refusing an insisting
 ///     batch unpaid when it falls short (`GasSponsorInsufficientBalanceError`,
 ///     40222) and handing a preferring one back to the signer; `execute_event`
-///     v1 charges whoever was admitted. The batch's signer only funds the
-///     principal, and its minimum balance pre-check v1
+///     v1 charges whoever was admitted. The batch's signer funds the principal
+///     and the processing fee its own `user_fee_increase` adds: the sponsor is
+///     judged on and charged the fee without the increase, the signer's balance
+///     and key budget have to cover the increase (refused unpaid with
+///     `IdentityInsufficientBalanceError`, 40210, when the balance does not),
+///     and execution charges it to the signer as a fee of its own. Its minimum
+///     balance pre-check v1
 ///     (`identity_minimum_balance_pre_check`) asks no more of a batch that
 ///     requests sponsorship. A failed batch is never sponsored, so check tx
 ///     validates the state of a sponsored batch whose signer is under the fee
@@ -2559,10 +2564,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     one entry per document (no `$createdAt`, skip, `outlivesDelete` or
 ///     typed array) has its whole key inside the array index's key without
 ///     the array, the array is top-level, alone in the index and declares
-///     `uniqueItems`, and the index is neither `preallocated` nor a
-///     `summableOffCountIndex` index; such an index is never the proof index,
-///     a counter's source or the only index keeping another required
-///     property. Its row commitment holds the list in order (an empty, null or
+///     `uniqueItems`, and the index is `preallocated` or a
+///     `summableOffCountIndex` index only as 95 says; such an index is never
+///     the proof index, a counter's source or the only index keeping another
+///     required property. Its row commitment holds the list in order (an empty, null or
 ///     absent list alike), its entry probes fan out per element, the create's
 ///     state probe skips it, and synthesis rebuilds an entry as a document
 ///     listing its one element. Every indexOnly entry insert bills its
@@ -2623,13 +2628,44 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     referenced one for a `contains`, at
 ///     `FEE_VERSION3.document_reference.where_list_credits_per_element` (100
 ///     credits, a field added in place to `FEE_DOCUMENT_REFERENCE_VERSION1`,
-///     which every schedule carries and only this version reads). `Index::preallocation_bindings` and
-///     `Index::count_index_derivations` bind no index property that is a typed
-///     array, so no preallocated or `summableOffCountIndex` index is keyed
-///     through a pair of lists; inert while an indexOnly type, the only one
-///     declaring either, indexes no typed array. Inert before this version:
-///     only parser generation 3 reads a `where`, and this module and that
-///     validation are reached from this version only.
+///     which every schedule carries and only this version reads). A pair of
+///     lists keys a preallocated or `summableOffCountIndex` index only by its
+///     elements, as 95 says. Inert before this version: only parser generation
+///     3 reads a `where`, and this module and that validation are reached from
+///     this version only.
+///
+/// 95. **Preallocated and counter indexes keyed by the elements of a list**:
+///     an indexOnly type's index naming a typed array (92) may be
+///     `preallocated` or a `summableOffCountIndex` index when a `where`
+///     equality (94) makes the array equal to a typed array of the referenced
+///     document. `Index::preallocation_bindings` binds such an index property
+///     through the pair (`PreallocatedKeySource::ReferencedDocumentListElements`,
+///     appended) and `Index::count_index_derivations` derives it; `contains`
+///     and `containsAll` bind nothing. Parser generation 3 (in place,
+///     `apply_index_only`) admits either keyword on an array index only so
+///     bound (10231 otherwise) and asks a `summableOffCountIndex` array index,
+///     which keeps no entries, for no other index keeping its documents apart;
+///     the contract-level rules (55, 68 and the counter's lossless rule) judge
+///     the list as a whole. Contract create and update state validation (data
+///     contract reference validation 0, in place) refuses with 40126 a list
+///     pair keying a preallocated index whose referenced elements can hold more
+///     than 255 bytes. Drive (in place): the v1 document insert preallocates
+///     such an index's trees under each distinct element of the referenced
+///     document's list, keyed as the referring type keys its elements, and
+///     nothing for a list no referring document can hold (empty, absent or no
+///     list; longer than the referring array's `maxItems` or shorter than its
+///     `minItems`; repeating an element where it declares `uniqueItems`; or
+///     holding an element keyed as empty or wider than the referring
+///     elements); the v2 insert and delete walkers move one counter per
+///     element where the counter's own level is the array; the document cost
+///     model follows. The v1 insert's preallocation also inserts a plain tree
+///     (a value tree, a `0` bucket) under a tree the same walk created
+///     without reading whether it exists, and the dry run of a document change
+///     (`estimate_document_change_as_insert_operations` 1) preallocates
+///     nothing, as an applied change never does. Inert before this version: only parser
+///     generation 3 admits `preallocated`, `summableOffCountIndex`, an indexed
+///     typed array and a `where`, and every contract that registers today
+///     binds no typed array.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by

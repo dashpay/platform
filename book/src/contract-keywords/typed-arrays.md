@@ -124,7 +124,7 @@ Where a typed array cannot be used:
 
 - as an index-only type's terminal or entry payload: a terminal keys one entry and an entry payload is one value (10231, or `InvalidIndexPropertyTypeError` 10206 in a terminal). An index of an index-only type may name one, under the rules of [Index-Only Types](index-only.md#typed-arrays);
 - inside an object, when an index names it: an indexed typed array is a top-level property (10231);
-- in a `where` entry of a reference, other than as a list: two typed arrays of one element kind may be compared as lists (the same elements in the same order), and a referenced typed array may be asked to `contains` a value or `containsAll` of another typed array's elements; a float element is refused, and a typed array is equal to no single value (see [Typed arrays](refers-to.md#typed-arrays) in References);
+- in a `where` entry of a reference, other than as a list: two typed arrays of one element kind may be compared as lists (the same elements in the same order), and a referenced typed array may be asked to `contains` a value or `containsAll` of another typed array's elements; a float element is refused, and a typed array is equal to no single value (see [Typed arrays](refers-to.md#typed-arrays) in References). An equality between two lists can key a `preallocated` or `summableOffCountIndex` index of an index-only type by the elements of the list (see [Counting per element](index-only.md#counting-per-element));
 - as an operand of a [propertyConstraints](property-constraints.md) rule, other than in a `present` or `absent` test;
 - with [`encryptedFor`](encrypted-for.md), which only a byte array takes.
 

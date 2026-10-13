@@ -44,3 +44,4 @@ mod shared_prefix_aggregation_e2e_tests;
 mod sibling_null_flags_e2e_tests;
 mod skip_if_absent_e2e_tests;
 mod summable_off_count_index_e2e_tests;
+mod typed_array_counter_index_e2e_tests;

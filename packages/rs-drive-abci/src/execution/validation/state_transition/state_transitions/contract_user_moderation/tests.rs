@@ -85,6 +85,7 @@ mod referenced_rules;
 mod restore_constraints;
 mod retraction;
 mod seated_team;
+mod typed_array_counters;
 mod typed_array_where;
 
 const DATA_CONTRACT_NOT_PRESENT: u32 = 10400;

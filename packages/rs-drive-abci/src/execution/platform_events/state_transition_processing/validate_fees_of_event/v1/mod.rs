@@ -47,9 +47,10 @@ pub(in crate::execution::platform_events::state_transition_processing) fn requir
         .saturating_add(user_fee_increase_amount)
 }
 
-/// Whether the gas sponsor pays: their balance covers the gas estimated with them paying and the
-/// document action fees they owe. Whoever pays the gas pays the action fees, so this is the one
-/// question; execution charges whoever fee validation settled on by it ([`SettledFees`]).
+/// Whether the gas sponsor pays: their balance covers the gas estimated with them paying, less
+/// the user fee increase the signer pays, and the document action fees they owe. Whoever pays
+/// the gas pays the action fees, so this is the one question; execution charges whoever fee
+/// validation settled on by it ([`SettledFees`]).
 fn gas_sponsor_pays(
     gas_sponsor: &ResolvedGasSponsor,
     required_gas: Credits,
@@ -62,8 +63,8 @@ fn gas_sponsor_pays(
     )?))
 }
 
-/// What the gas sponsor's balance has to cover: the estimated gas and the document action fees
-/// they would owe.
+/// What the gas sponsor's balance has to cover: the estimated gas less the user fee increase,
+/// and the document action fees they would owe.
 fn required_from_gas_sponsor(
     gas_sponsor: &ResolvedGasSponsor,
     required_gas: Credits,
@@ -74,10 +75,11 @@ fn required_from_gas_sponsor(
 
 /// What fee validation settled on for an event: the gas estimated for the payer, and the gas
 /// sponsor who pays it and the document action fees, if one does. Execution charges this payer
-/// rather than asking again, so fee validation and execution never name different payers.
+/// rather than asking again, so fee validation and execution never name different payers. A
+/// sponsor pays the gas less the user fee increase, which the identity pays.
 #[derive(Debug, Clone)]
 pub(in crate::execution::platform_events::state_transition_processing) struct SettledFees {
-    /// The gas estimated for the payer
+    /// The gas estimated for the payer, the user fee increase included
     pub estimated_fee_result: FeeResult,
     /// The gas sponsor who pays; `None` when the identity pays
     pub paying_sponsor: Option<ResolvedGasSponsor>,
@@ -123,11 +125,12 @@ where
     /// * the usage limits of the key that signed the state transition: a key whose expiry is at
     ///   or before the block time can no longer sign, and what the transition requires from the
     ///   key's budget (see [`required_from_key_budget`]) must fit in what is left of it;
-    /// * the contract owner a document batch asks to pay its gas: the fee is judged against the
-    ///   sponsor's balance, and the identity only has to fund `removed_balance`. A sponsor whose
-    ///   balance falls short refuses a batch that insists on them (`GasFeesPaidBy::ContractOwner`)
-    ///   unpaid, and hands a batch that merely prefers them back to the identity's balance. When
-    ///   the sponsor pays, the key's budget only has to cover `removed_balance`.
+    /// * the contract owner a document batch asks to pay its gas: the fee without the user fee
+    ///   increase is judged against the sponsor's balance, and the identity only has to fund
+    ///   `removed_balance` and the increase, which it chose. A sponsor whose balance falls short
+    ///   refuses a batch that insists on them (`GasFeesPaidBy::ContractOwner`) unpaid, and hands
+    ///   a batch that merely prefers them back to the identity's balance. When the sponsor pays,
+    ///   the key's budget only has to cover `removed_balance` and the increase.
     ///
     /// * the document action fees a batch owes (the `actionFees` keyword): whoever pays the gas
     ///   pays them. The gas is estimated for the payer, as execution applies the batch: first
@@ -292,18 +295,37 @@ where
 
         // The sponsor is judged on the batch as it runs when they pay: estimated with the
         // action fees they owe, never an owner part, since a sponsor is the contract owner.
+        // The user fee increase is the signer's choice, so the signer pays it and the sponsor
+        // pays the gas as if none was chosen.
         if let Some(gas_sponsor) = gas_sponsor {
-            let (estimated_fee_result, _) = estimate_paid_by(gas_sponsor.identity_id)?;
-            let required_balance = required_gas(&estimated_fee_result);
+            let (estimated_fee_result, user_fee_increase_amount) =
+                estimate_paid_by(gas_sponsor.identity_id)?;
+            let required_balance =
+                required_gas(&estimated_fee_result).saturating_sub(user_fee_increase_amount);
             if gas_sponsor_pays(gas_sponsor, required_balance, action_fees)? {
-                // The key's budget only has to cover the principal.
-                return Ok(match key_budget_exceeded(principal) {
-                    Some(error) => refused(estimated_fee_result, error),
-                    None => ConsensusValidationResult::new_with_data(SettledFees {
+                // The identity funds the principal and the fee increase, and its key's budget
+                // has to cover both.
+                let required_from_identity = principal.saturating_add(user_fee_increase_amount);
+                if balance < required_from_identity {
+                    return Ok(insufficient_balance(
                         estimated_fee_result,
-                        paying_sponsor: Some(*gas_sponsor),
-                    }),
-                });
+                        required_from_identity,
+                    ));
+                }
+                return Ok(
+                    match key_budget_exceeded(required_from_key_budget(
+                        Some(principal),
+                        0,
+                        None,
+                        user_fee_increase_amount,
+                    )) {
+                        Some(error) => refused(estimated_fee_result, error),
+                        None => ConsensusValidationResult::new_with_data(SettledFees {
+                            estimated_fee_result,
+                            paying_sponsor: Some(*gas_sponsor),
+                        }),
+                    },
+                );
             }
             if gas_sponsor.strict {
                 return Ok(refused(
