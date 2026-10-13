@@ -2,6 +2,11 @@ mod v0;
 mod v1;
 mod v2;
 
+#[cfg(test)]
+mod credit_pool_backfill_tests;
+#[cfg(test)]
+mod token_history_storage_flags_tests;
+
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;

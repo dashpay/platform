@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
     bucket_index_keys, index_level_tree_types_with_continuation_demotion,
-    index_only_level_skips_when_absent, level_removes_entry,
+    index_only_level_skips_when_absent, level_keys, level_removes_entry, LevelKeys,
 };
 use crate::drive::document::time_range_ttl::entry_key_bucket_start;
 use crate::drive::document::unique_event_id;
@@ -185,6 +185,7 @@ impl Drive {
             if !level_removes_entry(
                 sub_level,
                 &document_and_contract_info.owned_document_info.document_info,
+                document_and_contract_info.document_type,
             )? {
                 continue;
             }
@@ -227,37 +228,72 @@ impl Drive {
                 .map(|bucketing| bucketing.source())
                 .unwrap_or(name.as_str());
 
-            // with the example of the dashpay contract's first index
-            // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
-            let document_top_field = match document_and_contract_info
-                .owned_document_info
-                .document_info
-                .get_raw_for_document_type(
-                    property_name,
-                    document_type,
-                    document_and_contract_info.owned_document_info.owner_id,
-                    Some((sub_level, event_id)),
-                    platform_version,
-                )? {
-                Some(document_top_field) => document_top_field,
-                // An unrequired property on an indexOnly type is a skip
-                // property of every index that holds it: the insert walker
-                // wrote no entries through this branch for a document
-                // missing it, so its delete removes none — mirroring the
-                // insert skip is what keeps delete-by-values exact
-                // (`level_reaches_entry` has normally passed the branch by
-                // already; this is the defensive arm). The delete's estimation
-                // dry-run runs on a worst-case document info that always
-                // resolves a value, so estimation sweeps this branch as
-                // written — a deliberate over-estimate that keeps the dry
-                // run an upper bound.
-                None if index_only_level_skips_when_absent(document_type, property_name) => {
-                    continue;
+            // Mirror of the insert walker: an indexed typed array (protocol version 14) entered
+            // the document once per distinct element, so its delete removes one entry per
+            // element. The branch is only reached for a document holding at least one.
+            let (index_keys, any_fields_null): (Vec<DriveKeyInfo>, bool) = match level_keys(
+                &document_and_contract_info.owned_document_info.document_info,
+                sub_level,
+                property_name,
+                document_type,
+                document_and_contract_info.owned_document_info.owner_id,
+                Some((sub_level, event_id)),
+                platform_version,
+            )? {
+                LevelKeys::Elements(element_keys) => (element_keys, false),
+                // with the example of the dashpay contract's first index
+                // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
+                LevelKeys::Value(value) => {
+                    let document_top_field = match value {
+                        Some(document_top_field) => document_top_field,
+                        // An unrequired property on an indexOnly type is a skip
+                        // property of every index that holds it: the insert walker
+                        // wrote no entries through this branch for a document
+                        // missing it, so its delete removes none — mirroring the
+                        // insert skip is what keeps delete-by-values exact
+                        // (`level_reaches_entry` has normally passed the branch by
+                        // already; this is the defensive arm). The delete's estimation
+                        // dry-run runs on a worst-case document info that always
+                        // resolves a value, so estimation sweeps this branch as
+                        // written — a deliberate over-estimate that keeps the dry
+                        // run an upper bound.
+                        None if index_only_level_skips_when_absent(
+                            document_type,
+                            property_name,
+                        ) =>
+                        {
+                            continue;
+                        }
+                        // A stored type's absent value keeps its null-layout empty
+                        // key.
+                        None => DriveKeyInfo::default(),
+                    };
+
+                    let any_fields_null = document_top_field.is_empty();
+
+                    // Mirror the insert side's bucket fan-out: a bucketed
+                    // first-property node removes one index entry per window the
+                    // document's value fell into. The keys are recomputed
+                    // deterministically through the same shared helper the insert
+                    // walker uses, so they match exactly what insert wrote —
+                    // including the null case (single null entry) and the pre-origin
+                    // case (no entries on either side).
+                    let bucket_keys = bucket_index_keys(
+                        sub_level.bucketing(),
+                        document_top_field,
+                        // A validated contract cannot exceed this; the clamp only
+                        // bounds estimation work for unvalidated transforms. The
+                        // `unwrap_or(1)` arm is a protocol version without
+                        // time-range indexes, where no transform can exist.
+                        platform_version
+                            .system_limits
+                            .max_time_range_overlap_factor
+                            .unwrap_or(1),
+                    );
+                    (bucket_keys, any_fields_null)
                 }
-                // A stored type's absent value keeps its null-layout empty
-                // key.
-                None => DriveKeyInfo::default(),
             };
+            let all_fields_null = any_fields_null;
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
@@ -292,29 +328,6 @@ impl Drive {
                     },
                 );
             }
-
-            let any_fields_null = document_top_field.is_empty();
-            let all_fields_null = document_top_field.is_empty();
-
-            // Mirror the insert side's bucket fan-out: a bucketed
-            // first-property node removes one index entry per window the
-            // document's value fell into. The keys are recomputed
-            // deterministically through the same shared helper the insert
-            // walker uses, so they match exactly what insert wrote —
-            // including the null case (single null entry) and the pre-origin
-            // case (no entries on either side).
-            let index_keys: Vec<DriveKeyInfo> = bucket_index_keys(
-                sub_level.bucketing(),
-                document_top_field,
-                // A validated contract cannot exceed this; the clamp only
-                // bounds estimation work for unvalidated transforms. The
-                // `unwrap_or(1)` arm is a protocol version without
-                // time-range indexes, where no transform can exist.
-                platform_version
-                    .system_limits
-                    .max_time_range_overlap_factor
-                    .unwrap_or(1),
-            );
 
             let bucket_count = index_keys.len();
             for (bucket, index_key) in index_keys.into_iter().enumerate() {
@@ -356,8 +369,8 @@ impl Drive {
                     }
                 }
                 // The final bucket takes ownership of `index_path`; earlier
-                // buckets (only a time-range fan-out has more than one)
-                // clone it.
+                // keys (a window or an array's elements fan out to more
+                // than one) clone it.
                 let own_index_path = if bucket + 1 == bucket_count {
                     std::mem::take(&mut index_path)
                 } else {

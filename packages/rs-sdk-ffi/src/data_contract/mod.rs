@@ -19,8 +19,11 @@
 //!   - The query function re-exports from `queries::*`.
 //!   - The `propertyConstraints` rules of a document type, and the
 //!     pre-check of a document against them (`property_constraints`).
+//!   - A contract JSON with its property type shorthands written in full
+//!     (`property_type_shorthands`).
 
 mod property_constraints;
+mod property_type_shorthands;
 mod put;
 mod queries;
 mod util;
@@ -62,6 +65,7 @@ pub use property_constraints::{
     dash_sdk_data_contract_check_property_constraints,
     dash_sdk_data_contract_get_property_constraints,
 };
+pub use property_type_shorthands::dash_sdk_data_contract_json_expand_property_type_shorthands;
 
 // Re-export query functions
 pub use queries::{

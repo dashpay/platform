@@ -280,6 +280,13 @@ pub struct IndexLevel {
     /// `false` on every other level, and on every contract without such an
     /// index.
     created_at_indexed_only_by_outliving: bool,
+    /// When the property reached at this level is a typed array an index keys by its
+    /// elements (protocol version 14), the array's `maxItems`: the walkers write, remove and
+    /// diff one value tree per distinct element of the document here, each with every level
+    /// below it, and the window drain budgets for as many. Stamped by the document type
+    /// parser ([`Self::stamp_indexed_arrays`]), which alone knows the property types, so
+    /// `None` on every level of a contract without an indexed array.
+    indexed_array_max_items: Option<u16>,
     /// unique level identifier
     level_identifier: u64,
 }
@@ -302,6 +309,7 @@ impl IndexLevel {
             outlives_delete_at_or_below: false,
             cleared_on_delete_at_or_below: false,
             created_at_indexed_only_by_outliving: false,
+            indexed_array_max_items: None,
             level_identifier,
         }
     }
@@ -324,6 +332,33 @@ impl IndexLevel {
     /// level, if any. Only set on first-property nodes.
     pub fn bucketing(&self) -> Option<&IndexBucketing> {
         self.bucketing.as_ref()
+    }
+
+    /// Whether the property reached at this level is a typed array, keyed once by each of a
+    /// document's distinct elements (see [`Self::stamp_indexed_arrays`]).
+    pub fn indexes_array_elements(&self) -> bool {
+        self.indexed_array_max_items.is_some()
+    }
+
+    /// The `maxItems` of the typed array reached at this level, when an index keys the
+    /// document by its elements here: the most value trees one document writes at this level.
+    pub fn indexed_array_max_items(&self) -> Option<u16> {
+        self.indexed_array_max_items
+    }
+
+    /// Marks every level reached through one of `array_properties`, the typed array
+    /// properties the document type's indexes name with their `maxItems`, as keyed by the
+    /// array's elements. The index tree is built from the indexes alone, which do not know
+    /// their properties' types; the document type parser calls this with the arrays it
+    /// resolved. A level key is the property's name except on a bucketed first level, whose
+    /// source is a timestamp or an integer, never a typed array.
+    pub fn stamp_indexed_arrays(&mut self, array_properties: &BTreeMap<String, u16>) {
+        for (level_key, sub_level) in self.sub_index_levels.iter_mut() {
+            if let Some(max_items) = array_properties.get(level_key) {
+                sub_level.indexed_array_max_items = Some(*max_items);
+            }
+            sub_level.stamp_indexed_arrays(array_properties);
+        }
     }
 
     /// Whether this level hosts a prefix-level Count ranking — see the field
@@ -944,6 +979,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -989,6 +1025,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![
@@ -1019,6 +1056,7 @@ mod tests {
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
                 summable_off_count_index: None,
+                indexed_array: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -1047,6 +1085,7 @@ mod tests {
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
                 summable_off_count_index: None,
+                indexed_array: None,
             },
         ];
 
@@ -1101,6 +1140,7 @@ mod tests {
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
                 summable_off_count_index: None,
+                indexed_array: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -1129,6 +1169,7 @@ mod tests {
                 skip_if_absent: false,
                 skip_if_absent_properties: Vec::new(),
                 summable_off_count_index: None,
+                indexed_array: None,
             },
         ];
 
@@ -1159,6 +1200,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1211,6 +1253,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1246,6 +1289,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1304,6 +1348,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1333,6 +1378,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1385,6 +1431,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1414,6 +1461,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1466,6 +1514,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1495,6 +1544,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1547,6 +1597,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1599,6 +1650,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1628,6 +1680,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1680,6 +1733,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1709,6 +1763,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1767,6 +1822,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1802,6 +1858,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1860,6 +1917,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let new_indices = vec![Index {
@@ -1895,6 +1953,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let old_index_structure =
@@ -1961,6 +2020,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }
     }
 
@@ -2033,6 +2093,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }
     }
 
@@ -2112,6 +2173,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }
     }
 
@@ -2555,6 +2617,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         }];
 
         let mut new_indices = old_indices.clone();
@@ -2614,6 +2677,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
 
         for (old_flag, new_flag) in [(false, true), (true, false)] {
@@ -2675,6 +2739,7 @@ mod tests {
             skip_if_absent: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            indexed_array: None,
         };
 
         for (old_flag, new_flag) in [(false, true), (true, false)] {

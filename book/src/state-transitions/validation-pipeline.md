@@ -155,8 +155,9 @@ let remaining_address_balances =
 
 ## Stage 5: Identity Nonce Validation
 
-Nonces prevent replay attacks. Each identity-signed transition carries a nonce that must
-be strictly greater than the last used nonce for that identity (or identity-contract pair).
+Nonces prevent replay attacks. Each nonce must be unused for that identity (or
+identity-contract pair) and fall within the bounded nonce window. Nonces can be
+accepted out of order; see [Identity Nonces](../data-model/identities.md#identity-nonces).
 The platform checks this against the stored nonce in state.
 
 ```rust
