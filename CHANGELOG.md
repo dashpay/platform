@@ -1,3 +1,24 @@
+## [5.0.0-beta.6](https://github.com/dashpay/platform/compare/v5.0.0-beta.5...v5.0.0-beta.6) (2026-10-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** charge a sponsored batch's fee increase to its signer (PV14) (#5398)
+* **platform:** key preallocated and summableOffCountIndex indexes through a typed-array where (PV14) (#5394)
+* **platform:** compare typed arrays in refersTo where entries (PV14) (#5388)
+* **platform:** let an indexOnly type index the elements of a typed array (PV14) (#5390)
+
+### Features
+
+* **platform:** compare typed arrays in refersTo where entries (PV14) ([#5388](https://github.com/dashpay/platform/issues/5388))
+* **platform:** key preallocated and summableOffCountIndex indexes through a typed-array where (PV14) ([#5394](https://github.com/dashpay/platform/issues/5394))
+* **platform:** let an indexOnly type index the elements of a typed array (PV14) ([#5390](https://github.com/dashpay/platform/issues/5390))
+
+
+### Bug Fixes
+
+* **platform:** charge a sponsored batch's fee increase to its signer (PV14) ([#5398](https://github.com/dashpay/platform/issues/5398))
+
 ## [5.0.0-beta.5](https://github.com/dashpay/platform/compare/v5.0.0-beta.4...v5.0.0-beta.5) (2026-10-12)
 
 
