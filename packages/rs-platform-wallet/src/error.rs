@@ -421,8 +421,9 @@ pub enum PlatformWalletError {
     /// the caller chose as an input itself and which is not final.
     /// `available` / `required` are key-wallet's figures for the build when it
     /// names them. An asset lock that found no final coin names the requested
-    /// amount as `required`; a drain always names its minimum lock floor
-    /// there, and no amount when it has no floor.
+    /// amount as `required`; a drain names the larger of its minimum lock
+    /// floor and key-wallet's figure there, and no amount when it has no
+    /// floor.
     #[error(
         "Core funds are waiting for network confirmation: {} DASH not yet confirmed{}{}{}",
         dash_amount(*waiting),
@@ -615,10 +616,12 @@ pub enum PlatformWalletError {
     /// installs the positive Type 18 pool-fee floor before building), and only
     /// a floor-less drain reports `required: 0`. A drain over a few final
     /// duffs, too little to build from, reports the larger of the floor and
-    /// key-wallet's own fee-and-dust figure. The floor is a lock value, net of
-    /// the fee, so `required − available` is short of what to add by the fee.
-    /// The floor is additionally enforced downstream against the built
-    /// payload once the lock value is known.
+    /// key-wallet's own fee-and-dust figure. The pair is not an amount to add:
+    /// `available` counts only the coins that are final, so coins still
+    /// waiting on the network that fall short of the floor are left out of
+    /// it, and the floor is a lock value, net of the fee. The floor is
+    /// additionally enforced downstream against the built payload once the
+    /// lock value is known.
     ///
     /// [`CoreInsufficientFunds`]: Self::CoreInsufficientFunds
     /// [`CorePooledInsufficientFunds`]: Self::CorePooledInsufficientFunds

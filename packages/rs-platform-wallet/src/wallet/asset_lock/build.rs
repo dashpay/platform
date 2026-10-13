@@ -332,9 +332,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     ) => {
                         // For a few final duffs key-wallet names the fee and
                         // dust the build fell short of. A drain needs its
-                        // floor when that is the larger. The floor is a lock
-                        // value, net of the fee, so the gap to `available`
-                        // is short of what to add by the fee.
+                        // floor when that is the larger. The pair is not an
+                        // amount to add: `available` is the final coins
+                        // only, and the floor is net of the fee.
                         let required = if drain { required.max(floor) } else { required };
                         match waiting {
                             Some(waiting) => PlatformWalletError::CoreFundsAwaitingNetwork {
