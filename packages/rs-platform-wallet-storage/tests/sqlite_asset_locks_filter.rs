@@ -12,6 +12,7 @@ use dashcore::{OutPoint, Transaction, Txid};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry, PlatformWalletPersistence};
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
+use platform_wallet_storage::sqlite::error::WalletStorageError;
 use platform_wallet_storage::sqlite::schema::asset_locks;
 
 fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
@@ -267,6 +268,81 @@ fn should_migrate_legacy_blob_without_reencoding_and_reject_invalid_operation_id
     assert!(conn
         .execute("UPDATE asset_locks SET operation_id = NULL", [])
         .is_err());
+}
+
+#[test]
+fn should_reject_conflicting_operation_id_before_mutating_any_stored_columns() {
+    fn stored_row(
+        conn: &rusqlite::Connection,
+        wallet_id: &[u8; 32],
+    ) -> Vec<rusqlite::types::Value> {
+        conn.query_row(
+            "SELECT * FROM asset_locks WHERE wallet_id = ?1",
+            [wallet_id.as_slice()],
+            |row| {
+                (0..row.as_ref().column_count())
+                    .map(|index| row.get(index))
+                    .collect()
+            },
+        )
+        .unwrap()
+    }
+
+    // Exercise the regular upsert and the consumed-row sidecar fallback.
+    for status in [AssetLockStatus::Broadcast, AssetLockStatus::Consumed] {
+        let (persister, _tmp, path) = fresh_persister();
+        let wallet_id = wid(0xAA);
+        ensure_wallet_meta(&persister, &wallet_id);
+        let outpoint = op(0x34);
+        let mut original = entry(outpoint, status);
+        original.operation_id = Some([8; 16]);
+        original.shielded_funding_attempts = vec![vec![18, 1, 2, 3]];
+        persister
+            .store(
+                wallet_id,
+                platform_wallet::changeset::PlatformWalletChangeSet {
+                    asset_locks: Some(AssetLockChangeSet {
+                        asset_locks: [(outpoint, original)].into_iter().collect(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let mut incoming = entry(outpoint, AssetLockStatus::ChainLocked);
+        incoming.operation_id = Some([9; 16]);
+        // The empty prefix used to pass the signed-attempt validation.
+        assert!(incoming.shielded_funding_attempts.is_empty());
+        incoming.account_index = 7;
+        incoming.identity_index = 11;
+        incoming.amount_duffs = 2_000;
+        incoming.transaction.lock_time = 123;
+        let changeset = AssetLockChangeSet {
+            asset_locks: [(outpoint, incoming)].into_iter().collect(),
+            ..Default::default()
+        };
+        let mut conn = persister.lock_conn_for_test();
+        let before = stored_row(&conn, &wallet_id);
+        let tx = conn.transaction().unwrap();
+        assert!(matches!(
+            asset_locks::apply(&tx, &wallet_id, &changeset),
+            Err(WalletStorageError::BlobDecode {
+                reason: "asset lock operation ID cannot change"
+            })
+        ));
+        // The Rust validation must reject before SQL, rather than relying on
+        // the immutable-UUID trigger or transaction rollback to preserve data.
+        tx.commit().unwrap();
+        assert_eq!(stored_row(&conn, &wallet_id), before);
+        drop(conn);
+        drop(persister);
+        let reopened = reopen(&path);
+        assert_eq!(
+            stored_row(&reopened.lock_conn_for_test(), &wallet_id),
+            before
+        );
+    }
 }
 
 #[test]

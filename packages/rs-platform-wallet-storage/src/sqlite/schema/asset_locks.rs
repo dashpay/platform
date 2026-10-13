@@ -192,6 +192,21 @@ pub fn apply(
                     shielded_funding_attempts_blob: row.get(1)?,
                 }),
             ).optional()?;
+            // A signed attempt belongs to this immutable operation UUID.
+            // Reject the whole snapshot before either lifecycle or sidecar
+            // writes, even when it carries no attempts of its own.
+            if let (Some(incoming), Some(stored)) = (
+                entry.operation_id.as_ref(),
+                existing
+                    .as_ref()
+                    .and_then(|row| row.operation_id.as_deref()),
+            ) {
+                if incoming.as_slice() != stored {
+                    return Err(WalletStorageError::blob_decode(
+                        "asset lock operation ID cannot change",
+                    ));
+                }
+            }
             let old_attempts = decode_attempts(
                 existing
                     .as_ref()
