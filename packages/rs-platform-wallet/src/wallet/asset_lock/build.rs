@@ -1280,6 +1280,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     // settle released, not fence inputs whose transaction was
                     // never sent and can no longer be resumed (same shape as
                     // the contact-send rejection arm).
+                    // The durable row is gone. Publish the known-unsent result
+                    // before cancellable cleanup can leave a stale context.
+                    if let Some(operation) = operation {
+                        operation.set(AssetLockOperationState::NotSent, None);
+                    }
                     let mut in_broadcast_pin = in_broadcast_pin;
                     in_broadcast_pin.settle_released_on_drop();
                     crate::wallet::reservations::release_reservation_after_rejected_broadcast(
@@ -1291,9 +1296,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     )
                     .await;
                     in_broadcast_pin.settle_released();
-                    if let Some(operation) = operation {
-                        operation.set(AssetLockOperationState::NotSent, None);
-                    }
                 } else {
                     // An untrack guard fired: the row advanced past `Built`, or
                     // resume state says the transaction may already be live or
@@ -1579,6 +1581,7 @@ mod tests {
         fail_next_pool_store: std::sync::atomic::AtomicBool,
         fail_on_flush: Option<usize>,
         restored_wallet: Option<(Wallet, ManagedWalletInfo)>,
+        before_remove: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     }
 
     impl CapturingPersistence {
@@ -1623,6 +1626,15 @@ mod tests {
                     .swap(false, std::sync::atomic::Ordering::SeqCst)
             {
                 return Err(PersistenceError::backend("simulated pool store failure"));
+            }
+            if changeset
+                .asset_locks
+                .as_ref()
+                .is_some_and(|locks| !locks.removed.is_empty())
+            {
+                if let Some(hook) = self.before_remove.lock().unwrap().as_ref() {
+                    hook();
+                }
             }
             self.stored
                 .lock()
@@ -4379,6 +4391,67 @@ mod tests {
                     == 2
             })
         }));
+    }
+
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_publish_not_sent_before_cancelled_rejection_cleanup() {
+        let (wallet_manager, wallet_id, _, signer) =
+            funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        let (manager, persistence) = asset_lock_manager_over(
+            wallet_manager.clone(),
+            wallet_id,
+            Arc::new(AlwaysRejectedBroadcaster),
+        );
+        let blocked_manager = Arc::new(Mutex::new(None));
+        let blocker_slot = blocked_manager.clone();
+        *persistence.before_remove.lock().unwrap() = Some(Box::new(move || {
+            // Untracking is complete; delay only reservation cleanup.
+            *blocker_slot.lock().unwrap() = Some(wallet_manager.clone().try_write_owned().unwrap());
+        }));
+        let operation = Arc::new(super::AssetLockOperationContext::new([43; 16]));
+        let registration = manager.register_wallet_drain_operation(operation.clone());
+        manager.begin_wallet_drain(&operation).await.unwrap();
+        let mut future = Box::pin(manager.broadcast_funded_asset_lock_with_operation(
+            super::AssetLockBuildAmount::DrainAll {
+                minimum_lock_duffs: Some(1),
+            },
+            &crate::ASSET_LOCK_FUNDING_SOURCES,
+            0,
+            AssetLockFundingType::AssetLockShieldedAddressTopUp,
+            0,
+            &signer,
+            Some(&operation),
+        ));
+        assert!(futures::poll!(&mut future).is_pending());
+        assert_eq!(persistence.removed_outpoints().len(), 1);
+        assert_eq!(
+            persistence
+                .flushes
+                .load(std::sync::atomic::Ordering::SeqCst),
+            3
+        );
+        drop(future);
+        drop(registration);
+        blocked_manager.lock().unwrap().take();
+        assert_eq!(
+            operation.snapshot().state,
+            super::AssetLockOperationState::NotSent
+        );
+        assert!(operation.snapshot().out_point.is_none());
+        assert_eq!(
+            manager
+                .wallet_drain_operation_status([43; 16])
+                .await
+                .unwrap(),
+            operation.snapshot()
+        );
+        // Neither the same UUID nor another UUID is stranded by context_pending.
+        for id in [[43; 16], [44; 16]] {
+            let retry = Arc::new(super::AssetLockOperationContext::new(id));
+            let _registration = manager.register_wallet_drain_operation(retry.clone());
+            assert_eq!(manager.begin_wallet_drain(&retry).await.unwrap(), None);
+        }
     }
 
     #[tokio::test]

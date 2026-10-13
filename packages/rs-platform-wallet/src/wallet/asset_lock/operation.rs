@@ -147,22 +147,27 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         self.persist_drain_lock_snapshot(&candidate)
     }
 
-    /// The evidence remains on the terminal row. Commit the tombstone before
-    /// publishing completion, so a write failure remains safely retryable.
+    /// Commit the tombstone before publishing completion. The caller owns the
+    /// activity-store guard and must publish history synchronously afterwards.
+    /// Refuse a busy manager without waiting: no cancellation or lock-order
+    /// inversion may separate durable completion from its memory publication.
     #[cfg(feature = "shielded")]
-    pub(crate) async fn complete_wallet_drain(
+    pub(crate) fn complete_wallet_drain(
         &self,
         out_point: OutPoint,
         operation_id: [u8; 16],
         history: crate::changeset::ShieldedChangeSet,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<bool, PlatformWalletError> {
         self.require_wallet_drain_persistence()?;
-        let mut candidate = self
-            .list_tracked_locks()
-            .await
-            .into_iter()
-            .find(|lock| lock.out_point == out_point && lock.operation_id == Some(operation_id))
+        let Ok(mut manager) = self.wallet_manager.try_write() else {
+            return Ok(false);
+        };
+        let lock = manager
+            .get_wallet_info_mut(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get_mut(&out_point))
+            .filter(|lock| lock.operation_id == Some(operation_id))
             .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
+        let mut candidate = lock.clone();
         candidate.status = AssetLockStatus::Consumed;
         candidate.proof = None;
         let mut changes = crate::changeset::AssetLockChangeSet::default();
@@ -179,19 +184,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         self.persister
             .flush()
             .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
-        let mut manager = self.wallet_manager.write().await;
-        let lock = manager
-            .get_wallet_info_mut(&self.wallet_id)
-            .and_then(|info| info.tracked_asset_locks.get_mut(&out_point))
-            .filter(|lock| lock.operation_id == Some(operation_id))
-            .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
         lock.status = AssetLockStatus::Consumed;
         lock.proof = None;
         self.resume_dispatch_claims
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .remove(&out_point);
-        Ok(())
+        Ok(true)
     }
 
     #[cfg(feature = "shielded")]

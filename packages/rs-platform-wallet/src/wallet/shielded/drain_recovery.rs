@@ -402,7 +402,11 @@ impl PlatformWallet {
             .map(|bytes| attempt_outputs(&lock, bytes, &keys))
             .collect::<Result<Vec<_>, _>>()?;
         let observed = {
-            let store = coordinator.store().read().await;
+            // A scan owns this lock across its network stream. Status must
+            // report Pending instead of holding shield_guard behind that I/O.
+            let Ok(store) = coordinator.store().try_read() else {
+                return Ok(false);
+            };
             let mut observed = BTreeSet::new();
             for account in keys.keys() {
                 let id = SubwalletId::new(self.wallet_id(), *account);
@@ -456,15 +460,23 @@ impl PlatformWallet {
         // Serialize with scan derivation through its host persistence round.
         // Build a replacement without mutating the memory cache: if the atomic
         // history+tombstone write fails, a retry still sees the original rows.
-        let _checkpoint = coordinator.activity_checkpoint.lock().await;
-        let history = {
-            let store = coordinator.store().read().await;
-            drain_history_changeset(&*store, self.wallet_id(), &keys, &actions, matched_outputs)?
+        let Ok(_checkpoint) = coordinator.activity_checkpoint.try_lock() else {
+            return Ok(false);
         };
-        self.asset_locks
-            .complete_wallet_drain(out_point, operation_id, history.clone())
-            .await?;
-        let mut store = coordinator.store().write().await;
+        let Ok(mut store) = coordinator.store().try_write() else {
+            return Ok(false);
+        };
+        let history =
+            drain_history_changeset(&*store, self.wallet_id(), &keys, &actions, matched_outputs)?;
+        // Acquire every publication guard before persistence. The completion
+        // helper and all cache updates below are synchronous, so cancellation
+        // cannot expose a durable tombstone with stale aggregate history.
+        if !self
+            .asset_locks
+            .complete_wallet_drain(out_point, operation_id, history.clone())?
+        {
+            return Ok(false);
+        }
         for (id, removed) in history.activity_removed {
             for entry_id in removed {
                 store.remove_activity(id, &entry_id).map_err(invalid)?;
@@ -1259,21 +1271,13 @@ mod tests {
             .await;
         }
         // History and terminal tombstone commit together, before the memory
-        // cache is updated and with no key/store guard held by callbacks.
+        // cache is updated. The store guard prevents a cancellation gap;
+        // the unrelated viewing-key slot stays available to callbacks.
         let activity_store = coordinator.store().clone();
         let key_slot = wallet.shielded_keys.clone();
-        let subwallet = SubwalletId::new(wallet.wallet_id(), 0);
         *persistence.before_store.lock().unwrap() = Some(Box::new(move || {
             assert!(key_slot.try_write().is_ok());
-            assert_eq!(
-                activity_store
-                    .try_read()
-                    .unwrap()
-                    .get_activity(subwallet, 0, 10)
-                    .unwrap()
-                    .len(),
-                0
-            );
+            assert!(activity_store.try_read().is_err());
         }));
         assert!(
             reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
@@ -1311,6 +1315,181 @@ mod tests {
                 .is_none(),
             "a new explicitly requested drain is no longer blocked"
         );
+    }
+
+    #[tokio::test]
+    async fn should_publish_committed_drain_history_without_a_cancellation_gap() {
+        for block_manager in [true, false] {
+            let (lock, keys, st) = evidence_fixture();
+            let views = keys[&0].clone();
+            let outputs = attempt_outputs(&lock, &st.serialize_to_bytes().unwrap(), &keys).unwrap();
+            let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+            wallet
+                .persist_drain_shielded_attempt(lock.out_point, &st)
+                .await
+                .unwrap();
+            for (index, (account, cmx)) in outputs.iter().enumerate() {
+                observe(
+                    &coordinator,
+                    wallet.wallet_id(),
+                    *account,
+                    *cmx,
+                    index as u64,
+                )
+                .await;
+            }
+            let id = SubwalletId::new(wallet.wallet_id(), 0);
+            let unrelated = [0x93; 32];
+            observe(&coordinator, wallet.wallet_id(), 0, unrelated, 2).await;
+            let mut scan = crate::changeset::ShieldedChangeSet::default();
+            coordinator
+                .derive_activity_into_changeset(&[(id, views.clone())], &mut scan)
+                .await
+                .unwrap();
+            persistence
+                .store(
+                    wallet.wallet_id(),
+                    PlatformWalletChangeSet {
+                        shielded: Some(scan),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            persistence.flush(wallet.wallet_id()).unwrap();
+
+            // On the old path, the callback can take either publication lock:
+            // the first post-commit poll then suspends and can be cancelled.
+            let manager_blocker = Arc::new(Mutex::new(None));
+            let store_blocker = Arc::new(Mutex::new(None));
+            let manager_slot = manager_blocker.clone();
+            let store_slot = store_blocker.clone();
+            let manager = wallet.wallet_manager.clone();
+            let store = coordinator.store().clone();
+            *persistence.before_store.lock().unwrap() = Some(Box::new(move || {
+                if block_manager {
+                    *manager_slot.lock().unwrap() = manager.clone().try_write_owned().ok();
+                } else {
+                    *store_slot.lock().unwrap() = store.clone().try_write_owned().ok();
+                }
+            }));
+            let mut future = Box::pin(reconcile_fully_consumed(
+                &wallet,
+                &coordinator,
+                lock.out_point,
+            ));
+            let result = futures::poll!(&mut future);
+            drop(future);
+            manager_blocker.lock().unwrap().take();
+            store_blocker.lock().unwrap().take();
+            assert!(matches!(result, std::task::Poll::Ready(Ok(true))),
+                "durable commit must publish all caches before returning to the executor: {result:?}");
+            *persistence.before_store.lock().unwrap() = None;
+            let history = coordinator
+                .store()
+                .read()
+                .await
+                .get_activity(id, 0, 10)
+                .unwrap();
+            assert_eq!(history.len(), 2);
+            assert!(history
+                .iter()
+                .any(|entry| entry.note_cmxs == vec![unrelated] && entry.amount == 1_000));
+            assert!(history.iter().any(|entry| entry.kind
+                == ShieldedActivityKind::ShieldFromAssetLock
+                && entry.amount == 2_000));
+            assert_eq!(persistence.activity.lock().unwrap()[&id].activity.len(), 2);
+            assert_eq!(
+                persistence.committed.lock().unwrap()[&lock.out_point].status,
+                AssetLockStatus::Consumed
+            );
+            assert_eq!(
+                wallet.asset_locks.list_tracked_locks().await[0].status,
+                AssetLockStatus::Consumed
+            );
+            let mut next_scan = crate::changeset::ShieldedChangeSet::default();
+            coordinator
+                .derive_activity_into_changeset(&[(id, views)], &mut next_scan)
+                .await
+                .unwrap();
+            assert!(
+                next_scan.activity_entries.is_empty(),
+                "a later scan cannot duplicate/overwrite the canonical drain"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_leave_drain_pending_when_publication_guards_are_busy() {
+        for block_manager in [true, false] {
+            let (lock, keys, st) = evidence_fixture();
+            let outputs = attempt_outputs(&lock, &st.serialize_to_bytes().unwrap(), &keys).unwrap();
+            let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+            wallet
+                .persist_drain_shielded_attempt(lock.out_point, &st)
+                .await
+                .unwrap();
+            for (index, (account, cmx)) in outputs.iter().enumerate() {
+                observe(
+                    &coordinator,
+                    wallet.wallet_id(),
+                    *account,
+                    *cmx,
+                    index as u64,
+                )
+                .await;
+            }
+            let proof_ready = Notify::new();
+            let mut future = Box::pin(wallet.reconcile_wallet_drain_with_consumption_check(
+                &coordinator,
+                lock.out_point,
+                |_| async {
+                    proof_ready.notified().await;
+                    Ok(StateTransitionProofResult::VerifiedAssetLockConsumed(
+                        StoredAssetLockInfo::FullyConsumed,
+                    ))
+                },
+            ));
+            assert!(futures::poll!(&mut future).is_pending());
+            let manager_guard = block_manager.then(|| wallet.wallet_manager.try_read().unwrap());
+            let store_guard = (!block_manager).then(|| coordinator.store().try_write().unwrap());
+            proof_ready.notify_one();
+            let result = futures::poll!(&mut future);
+            drop(future);
+            drop(manager_guard);
+            drop(store_guard);
+            assert_ne!(
+                persistence.committed.lock().unwrap()[&lock.out_point].status,
+                AssetLockStatus::Consumed,
+                "cancellation/contended publication must not commit terminal state"
+            );
+            assert!(matches!(result, std::task::Poll::Ready(Ok(false))));
+            assert!(
+                reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
+                    .await
+                    .unwrap()
+            );
+            assert_exact_drain_history(&wallet, &coordinator, &outputs).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn should_return_pending_status_without_waiting_for_a_scan() {
+        let (lock, keys, st) = evidence_fixture();
+        let (wallet, _, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+        wallet
+            .persist_drain_shielded_attempt(lock.out_point, &st)
+            .await
+            .unwrap();
+        let scan = coordinator.store().write().await;
+        let mut future = Box::pin(
+            wallet.shielded_wallet_drain_operation_status(&coordinator, lock.operation_id.unwrap()),
+        );
+        let result = futures::poll!(&mut future);
+        drop(future);
+        assert!(matches!(result, std::task::Poll::Ready(Ok(snapshot))
+            if snapshot.state == AssetLockOperationState::Pending && snapshot.out_point == Some(lock.out_point)));
+        assert!(wallet.shield_guard.try_lock().is_ok());
+        drop(scan);
     }
 
     #[tokio::test]
