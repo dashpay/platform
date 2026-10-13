@@ -1098,6 +1098,132 @@ fn should_key_preallocated_trees_as_the_referring_type_does() {
     .is_some());
 }
 
+/// A post whose list no like can hold preallocates nothing for the index the
+/// like keys by the list, and the model prices it as Drive charges it. The
+/// post's byte arrays may be empty and its list longer than the like's: the
+/// like's elements hold at least a byte (an indexed byte array element must),
+/// and its list at most 2 distinct elements. So a list with an empty element,
+/// one of 3 elements and one repeating an element preallocate no tag tree,
+/// while a list of 2 distinct non-empty elements preallocates one per element.
+#[test]
+fn should_preallocate_nothing_for_a_list_no_referring_document_can_hold() {
+    let platform_version = PlatformVersion::latest();
+    let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+    let contract = contract_with(platform_value!({
+        "post": {
+            "type": "object",
+            "documentsMutable": false,
+            "canBeDeleted": false,
+            "properties": {
+                "tags": {
+                    "type": "array",
+                    "items": { "type": "array", "byteArray": true, "maxItems": 8 },
+                    "maxItems": 8,
+                    "position": 0,
+                },
+            },
+            "additionalProperties": false,
+        },
+        "like": {
+            "type": "object",
+            "indexOnly": true,
+            "documentsMutable": false,
+            "canBeDeleted": true,
+            "properties": {
+                "postId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "refersTo": {
+                        "type": "permanentDocument",
+                        "documentType": "post",
+                        "where": { "tags": "tags" },
+                    },
+                    "position": 0,
+                },
+                "tags": {
+                    "type": "array",
+                    "items": { "type": "array", "byteArray": true, "minItems": 1, "maxItems": 8 },
+                    "maxItems": 2,
+                    "uniqueItems": true,
+                    "position": 1,
+                },
+            },
+            "indices": [
+                { "name": "byPost", "properties": [{ "postId": "asc" }], "terminal": "$ownerId" },
+                {
+                    "name": "byTagPost",
+                    "properties": [{ "tags": "asc" }, { "postId": "asc" }],
+                    "terminal": "$ownerId",
+                    "preallocated": true,
+                },
+            ],
+            "required": ["postId"],
+            "additionalProperties": false,
+        },
+    }));
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            platform_version,
+        )
+        .expect("expected to apply the contract");
+    let post_type = contract.document_type_for_name("post").expect("post");
+    let bytes = |elements: &[&[u8]]| {
+        Value::Array(
+            elements
+                .iter()
+                .map(|element| Value::Bytes(element.to_vec()))
+                .collect(),
+        )
+    };
+    for (seed, tags, preallocated) in [
+        (1, bytes(&[b"", b"\x01"]), vec![]),
+        (2, bytes(&[b"\x01", b"\x02", b"\x03"]), vec![]),
+        (3, bytes(&[b"\x04", b"\x04"]), vec![]),
+        (4, bytes(&[b"\x05", b"\x06"]), vec![vec![0x05], vec![0x06]]),
+    ] {
+        let mut post = post_type
+            .random_document(Some(seed), platform_version)
+            .expect("expected a post");
+        post.set_properties(BTreeMap::from([("tags".to_string(), tags)]));
+        let writes = writes_of(&contract, post_type, &post);
+        let modeled: Vec<Vec<u8>> = writes
+            .iter()
+            .filter(|write| write.referring_type.is_some() && write.path == [b"tags".to_vec()])
+            .map(|write| write.key.clone())
+            .collect();
+        assert_eq!(modeled, preallocated, "post {seed}");
+        let cost = document_create_cost(
+            &contract,
+            post_type,
+            &post,
+            &CostAssumptions::new(platform_version),
+            platform_version,
+        )
+        .expect("expected a cost");
+        let fee = insert(&drive, &contract, post_type, &post).expect("expected to insert the post");
+        assert_eq!(
+            fee.storage_fee, cost.storage_credits.new_values,
+            "post {seed}"
+        );
+        for key in [&[][..], &[0x01], &[0x04], &[0x05], &[0x06]] {
+            let written = element(&drive, &contract, "like", &[b"tags".to_vec()], key).is_some();
+            assert_eq!(
+                written,
+                preallocated.iter().any(|tag| tag.as_slice() == key),
+                "post {seed}, tag {key:?}"
+            );
+        }
+    }
+}
+
 #[test]
 fn should_refuse_an_earlier_protocol_version() {
     let platform_version = PlatformVersion::latest();

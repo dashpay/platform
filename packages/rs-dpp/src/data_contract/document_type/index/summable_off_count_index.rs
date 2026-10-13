@@ -15,7 +15,11 @@
 //! `where` on a same-contract `permanentDocument` or `moderatedDocument`
 //! reference held by a source property: consensus makes it equal the
 //! referenced document's value when the document is written, and the
-//! referenced document is the one the source property's value names.
+//! referenced document is the one the source property's value names. A typed
+//! array fixed so (an equality with a referenced typed array, protocol
+//! version 14) holds the referenced document's whole list, so every document
+//! of a source group is entered under each of the same elements, and each
+//! element's group holds exactly that source group.
 
 use super::preallocation::same_contract_record_reference;
 use crate::data_contract::document_type::property::{DocumentProperty, DocumentReferenceKind};
@@ -70,6 +74,8 @@ impl Index {
             {
                 continue;
             }
+            // The referring document's own system values are never fixed by a
+            // referenced document
             if property.starts_with('$') {
                 return Err(property);
             }
@@ -84,6 +90,12 @@ impl Index {
                 else {
                     continue;
                 };
+                // Only `where` equalities sit in `property_agreement`. A typed
+                // array is fixed only by an equality with a referenced typed
+                // array, the one agreement registration admits for it:
+                // `contains` and `containsAll` are no equalities, and documents
+                // of one post whose lists only hold, or are held by, its list
+                // would spread over several groups
                 let Some(referenced) = reference.property_agreement.get(property) else {
                     continue;
                 };

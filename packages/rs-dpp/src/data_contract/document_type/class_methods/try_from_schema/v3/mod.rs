@@ -2042,11 +2042,15 @@ mod string_find_by_key_tests;
 #[cfg(all(test, feature = "validation"))]
 mod transient_tests;
 #[cfg(all(test, feature = "validation"))]
+mod typed_array_counter_index_tests;
+#[cfg(all(test, feature = "validation"))]
 mod typed_array_reference_tests;
 #[cfg(all(test, feature = "validation"))]
 mod typed_array_test_helpers;
 #[cfg(all(test, feature = "validation", feature = "random-documents"))]
 mod typed_array_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_where_tests;
 
 #[cfg(test)]
 mod tests {

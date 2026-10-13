@@ -65,7 +65,8 @@ pub use reference_lookup::{
     ChooseFirstOrder, DocumentReferenceLookup, LookupChooseFirst, LookupKeySource,
 };
 pub use reference_where::{
-    WhereBoundRead, WhereCondition, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
+    where_list_elements, where_lists_elements_read, where_lists_equal, WhereBoundRead,
+    WhereCondition, WhereContainsBound, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
     WhereOrdering, WhereOrderingBound,
 };
 
@@ -823,7 +824,9 @@ pub enum DocumentPropertyReferenceTarget {
         /// are validated at contract registration: both sides must exist
         /// and share one value kind (an identifier on the referring side
         /// for the system names), and `$creatorId` needs a referenced
-        /// document type that records creator ids at all.
+        /// document type that records creator ids at all. Two typed arrays
+        /// of one element kind may be paired, and are then equal as lists
+        /// ([`where_lists_equal`]); a typed array pairs with nothing else.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         property_agreement: BTreeMap<String, String>,
         /// The other `where` entries, by referenced property: a literal the

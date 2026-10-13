@@ -98,11 +98,16 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
             // it rather than colliding, so it is not probed. The rest of the
             // create's entries still decide whether it is a duplicate. A
             // summableOffCountIndex index keeps no entries (it yields no paths),
-            // so it decides nothing.
+            // so it decides nothing. Nor is an index of a typed array (protocol
+            // version 14) probed: registration puts the whole key of another
+            // probed index, one keeping each document once, inside its key
+            // without the array, so a create colliding on one of its element
+            // entries collides on that index's entry, and the reads per element
+            // would never be the first to find it.
             for index in document_type
                 .indexes()
                 .values()
-                .filter(|index| !index.outlives_delete)
+                .filter(|index| !index.outlives_delete && index.indexed_array.is_none())
             {
                 let entry_exists = platform
                     .drive
