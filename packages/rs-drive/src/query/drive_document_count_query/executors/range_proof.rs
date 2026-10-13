@@ -20,7 +20,7 @@ impl Drive {
     /// Returns proof bytes that the client verifies via
     /// `GroveDb::verify_aggregate_count_query`.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_count_range_proof(
+    pub(crate) fn execute_document_count_range_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,

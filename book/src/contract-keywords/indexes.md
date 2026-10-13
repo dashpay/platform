@@ -2,7 +2,7 @@
 
 A document type's `indices` list says which queries its documents can answer and which values must be unique. Without an index, a query can only address a document by its `$id`. With one, Drive keeps the documents sorted by the index's properties, so a query that fixes those properties reaches the matching documents directly instead of reading the whole type. Every index costs storage and processing on each write, and an index can never be added, removed or changed once the document type exists, so a contract author decides them before the document type is registered.
 
-This chapter covers the keywords every index can use: `name`, `properties`, `unique`, `nullSearchable` and `skipIfAbsent`. The other index keywords, for contests, counts, sums, rankings, time windows and index-only types, have their own chapters (see [More index keywords](#more-index-keywords)).
+This chapter covers the keywords every index can use: `name`, `properties`, `unique`, `nullSearchable` and `skipIfAbsent`, and indexes on the elements of a [typed array](#typed-arrays). The other index keywords, for contests, counts, sums, rankings, time windows and index-only types, have their own chapters (see [More index keywords](#more-index-keywords)).
 
 ## Example
 
@@ -86,11 +86,12 @@ What may be indexed:
 - **System properties**: `$ownerId`, `$createdAt`, `$updatedAt`, `$transferredAt`, their `*BlockHeight` and `*CoreBlockHeight` variants, `$creatorId` on a type that records it, and `$moderatedAt` and `$moderatedBy` on a type that lists `moderatorAbilities.changeFields`, in a non-unique index, from protocol version 14 (see [System Properties](system-properties.md)). A timestamp or block height is only recorded when the type lists it in `required`; an index on one that is not required holds every document under null.
 - **Not `$id`**, which the document type's primary tree already indexes (`SystemPropertyIndexAlreadyPresentError`, 10208).
 - **A value of the document a reference points at**, from protocol version 14: `"<reference property>.<field>"`, such as `postId.$ownerId`, read from the referenced document and never stored. See [Values of Referenced Documents](derived-index-properties.md).
+- **The elements of a typed array**, from protocol version 14: the document is entered once per distinct element. See [Typed arrays](#typed-arrays).
 
 What each indexed property must be, because its value becomes a GroveDB key of at most 255 bytes:
 
 - A property the type defines (`UndefinedIndexPropertyError`, 10209).
-- Not an object, an array of values or a typed array (`InvalidIndexPropertyTypeError`, 10206). A byte array, including an identifier, is fine.
+- Not an object or an array of values (`InvalidIndexPropertyTypeError`, 10206). A byte array, including an identifier, is fine, and so is a top-level typed array from protocol version 14, whose elements are then held to the limits below.
 - A string must declare `maxLength` of at most 63, since a character can take four bytes. A byte array must declare `maxItems` of at most 255. A missing or larger bound is refused (`InvalidIndexedPropertyConstraintError`, 10205). An index with a ranking has tighter bounds (see [Ranked Indexes](ranked.md)).
 - From protocol version 14, not a transient property, nor one inside a transient object: its value is never stored, so the index would never hold it. See [transient](transient.md).
 
@@ -186,6 +187,46 @@ Rules at registration:
 
 Respelling `true` as the array of the same properties, or the other way round, is no change on a contract update.
 
+## Typed arrays
+
+From protocol version 14 an index may name a top-level [typed array](typed-arrays.md). Each distinct element of a document's list is one entry, keyed exactly as a property of the element's type is, so elements sort like values of that type and a hashtag query reads the same keys a single-hashtag index would.
+
+```json
+"indices": [
+  { "name": "byHashtag", "properties": [{ "hashtags": "asc" }, { "$createdAt": "asc" }] },
+  { "name": "byAuthorHashtag", "properties": [{ "$ownerId": "asc" }, { "hashtags": "asc" }] },
+  { "name": "trending", "properties": [{ "hashtags": "asc" }],
+    "countable": "countable", "rangeCountable": true, "rankedCountable": true }
+]
+```
+
+**What is written.** A post tagged `["dash", "news", "dash"]` is under `dash` and `news` in each of these indexes: twice, not three times. An empty or absent list writes nothing into an index naming the array: the array is always in the index's skip set, whether `skipIfAbsent` is declared or not. A replace keeps the entries of the elements both versions hold, adds and removes the others, and moves every entry of an index whose other values changed. A delete removes them all.
+
+**Reading the elements.** Two operators read a typed array, and no other operator may name one:
+
+| Operator | Value | Matches |
+|---|---|---|
+| `contains` | one value of the element type | documents whose list holds it |
+| `containsAny` | 1 to 100 distinct values | documents whose list holds any of them |
+
+```json
+{ "where": [["hashtags", "contains", "dash"]], "orderBy": [["$createdAt", "desc"]] }
+```
+
+returns the posts tagged `dash`, newest first. A query reads an index naming an array only when it binds the array with one of the two: `$ownerId == X` alone does not read `byAuthorHashtag`, which would return each post once per hashtag. `contains` is an equality on the element's key: it takes `orderBy` on the properties after the array and a `startAt` or `startAfter` cursor, whose document must hold the element. `containsAny` is an `in` on the elements: it needs an `orderBy` on the array, which sets the order the elements are walked in, the page holds each document once (where it first appears) though the limit counts every entry the walk passed, and it takes no cursor, since a cursor names a document and not the element it was reached under. Nor does it read the page or a sub-query of a composite query, whose documents are read out of one merged proof without the repeats dropped; `contains` may. A typed array may only be ordered by with `containsAny`.
+
+**Counts, sums and rankings.** Totals are per element: `count(*)` with `hashtags contains "dash"` is the number of posts tagged `dash`, and `containsAny` grouped by the array gives one total per element (a post tagged `dash` and `news` counts in both). A total over several elements would count a post once per element it holds, so a count, sum or average reads several elements only grouped by them, and without a range folding the groups together. A ranking of the array ranks elements by the documents holding them: `trending` above is "the most used hashtags". A ranking pinned to an element reads it with `contains`.
+
+Rules at registration:
+
+- The array is a top-level property, and an index names at most one (10231).
+- Its elements are held to the key limits of their type, on the `items` schema: a string `maxLength` of at most 63 (61, or 59, on a ranked level), a byte array `maxItems` of at most 255 (247 or 239 ranked), and a byte array element declares `minItems` of at least 1, since an empty byte array is keyed like a missing value (`InvalidIndexedPropertyConstraintError`, 10205).
+- The array's `maxItems` is at most 16, or 4 when the index also has a [`timeRange`](time-range.md) or [`integerRange`](integer-range.md) window, which enters the document once per window and element (10205).
+- One document of a type with an indexed array writes at most 256 index entries across its indexes: each index counts 1, times its windows, times its array's `maxItems` (10231).
+- The index is not `unique` or contested, keeps `nullSearchable` at `true` and ranks no level above the array (a document would count there once per element) (10231). On an [index-only type](index-only.md#typed-arrays) another index must keep its entries apart, and the array must declare `uniqueItems`.
+- `skipIfAbsent` whose only skip property would be the array is refused, since the index skips a document without elements already (10231). Beside another optional property of the index it skips on that property as usual.
+- A [value of a referenced document](derived-index-properties.md) may sit beside the array in an index, but not read through it: an element is not one referenced document.
+
 ## Null handling
 
 A property is null in an index when the document leaves it out. Putting the rules above together:
@@ -216,6 +257,8 @@ A document type that the update adds may declare any indexes, as a new contract 
 | Characters in an index property path | 256 |
 | `maxLength` of an indexed string | 63 (lower on a ranked index) |
 | `maxItems` of an indexed byte array | 255 (lower on a ranked index) |
+| `maxItems` of an indexed typed array | 16 (4 under a `timeRange` or `integerRange` window) |
+| Index entries one document writes, on a type with an indexed typed array | 256 |
 | Contested indexes per document type | 1 |
 
 ## More index keywords

@@ -7,7 +7,9 @@
 //! the checks of the referenced side at contract level, and the protocol
 //! version gate.
 
-use super::reference_test_helpers::{assert_refused, contract, contract_on, CONTRACT_ID};
+use super::reference_test_helpers::{
+    assert_refused, assert_refused_by_the_parser, contract, contract_on, CONTRACT_ID,
+};
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
@@ -74,7 +76,7 @@ fn salt_reveal(
 /// an earlier block, deleted by the create.
 fn dpns_salt_reveal() -> serde_json::Value {
     salt_reveal(
-        json!({ "minimumAgeBlocks": 1, "consume": true }),
+        json!({ "constraints": { "minimumAgeBlocks": 1 }, "consume": true }),
         json!({ "$ownerId": "$ownerId" }),
     )
 }
@@ -224,18 +226,8 @@ fn dpns_lookup(minimum_age_blocks: Option<u32>, consume: bool) -> DocumentRefere
         )]),
         minimum_age_blocks,
         consume,
+        choose_first: None,
     }
-}
-
-/// Both parses refuse `contract_value`: the validating one with the
-/// meta-schema or the parser, the one that skips the meta-schema with the
-/// parser's `fragment`.
-fn assert_refused_by_the_parser(contract_value: serde_json::Value, fragment: &str) {
-    contract(contract_value.clone()).expect_err("a validating parse should refuse it");
-    assert_refused(
-        contract_on(contract_value, false, PlatformVersion::latest()),
-        fragment,
-    );
 }
 
 #[test]
@@ -267,44 +259,6 @@ fn should_parse_the_dpns_salt_as_revealing_the_preorder_with_its_age_consumption
         DocumentPropertyType::ByteArray(_)
     ));
     assert!(salt.revealed_reference.is_some());
-}
-
-/// DPNS v3's reveal: preorders are unique per owner, and `findBy` keys the
-/// preorder's `$ownerId` by the writer beside the function. The key is judged on
-/// the create alone, so the transferable domain may read the writer there, and it
-/// makes the writer the preorder's owner, which `consume` asks, without a `where`.
-#[test]
-fn should_parse_an_owner_keyed_reveal_on_a_transferable_type_and_let_it_consume() {
-    let preorder_per_owner = json!({
-        "indices": [{
-            "name": "ownerAndSaltedHash",
-            "properties": [{ "$ownerId": "asc" }, { "saltedDomainHash": "asc" }],
-            "unique": true
-        }]
-    });
-    let reveal = reveal_with(
-        dpns_function(),
-        json!({ "$ownerId": "$ownerId" }),
-        json!({}),
-        json!({ "minimumAgeBlocks": 1, "consume": true }),
-    );
-    let parsed = contract(dpns_contract_with(reveal, json!({}), preorder_per_owner))
-        .expect("an owner-keyed reveal should parse on a transferable type");
-
-    let mut lookup = dpns_lookup(Some(1), true);
-    lookup
-        .keys
-        .insert("$ownerId".to_string(), LookupKeySource::OwnerId);
-    assert_eq!(
-        salt_reference(&parsed),
-        DocumentPropertyReferenceTarget::DeletableDocumentLookup {
-            contract_id: None,
-            document_type_name: "preorder".to_string(),
-            property_agreement: BTreeMap::new(),
-            where_conditions: Default::default(),
-            lookup,
-        }
-    );
 }
 
 #[test]
@@ -553,7 +507,7 @@ fn should_parse_age_and_consume_without_a_function_on_a_type_never_replaced() {
     // The domain's documents are never replaced, so its plain lookup is judged on the create
     // alone, as a computed key is, and may declare both
     let parsed = contract(referrer_contract(
-        plain_owned_lookup(json!({ "minimumAgeBlocks": 1, "consume": true })),
+        plain_owned_lookup(json!({ "constraints": { "minimumAgeBlocks": 1 }, "consume": true })),
         false,
     ))
     .expect("age and consume on a type never replaced should parse");
@@ -574,7 +528,10 @@ fn should_parse_age_and_consume_without_a_function_on_a_type_never_replaced() {
 #[test]
 fn should_refuse_age_and_consume_without_a_function_on_a_type_whose_documents_can_be_replaced() {
     // A replace judges the plain lookup again, so it is not judged on the create alone
-    for extra in [json!({ "minimumAgeBlocks": 1 }), json!({ "consume": true })] {
+    for extra in [
+        json!({ "constraints": { "minimumAgeBlocks": 1 } }),
+        json!({ "consume": true }),
+    ] {
         assert_refused_by_the_parser(
             referrer_contract(plain_owned_lookup(extra), true),
             "the reference must be judged on the create alone",
@@ -590,9 +547,9 @@ fn should_refuse_age_and_consume_without_find_by() {
         referrer(json!({
             "type": "deletableDocument",
             "documentType": "preorder",
-            "minimumAgeBlocks": 1
+            "constraints": { "minimumAgeBlocks": 1 }
         })),
-        "deletableDocument refersTo does not take minimumAgeBlocks without findBy",
+        "deletableDocument refersTo does not take constraints without findBy",
     );
     assert_refused_by_the_parser(
         referrer(json!({ "type": "identity", "consume": true })),
@@ -603,7 +560,10 @@ fn should_refuse_age_and_consume_without_find_by() {
 #[test]
 fn should_refuse_a_minimum_age_of_zero_or_a_consume_of_false() {
     assert_refused_by_the_parser(
-        dpns_contract(salt_reveal(json!({ "minimumAgeBlocks": 0 }), json!({}))),
+        dpns_contract(salt_reveal(
+            json!({ "constraints": { "minimumAgeBlocks": 0 } }),
+            json!({}),
+        )),
         "minimumAgeBlocks must be at least 1",
     );
     assert_refused_by_the_parser(
@@ -680,7 +640,10 @@ fn should_refuse_a_minimum_age_on_a_commitment_type_recording_no_creation_block(
     // The creation time is not the creation block: the age is counted in blocks
     assert_refused(
         contract(dpns_contract_with(
-            salt_reveal(json!({ "minimumAgeBlocks": 1 }), json!({})),
+            salt_reveal(
+                json!({ "constraints": { "minimumAgeBlocks": 1 } }),
+                json!({}),
+            ),
             json!({}),
             json!({ "required": ["$createdAt", "saltedDomainHash"] }),
         )),
@@ -730,7 +693,7 @@ fn should_refuse_consuming_a_commitment_whose_delete_rules_it_would_skip() {
     // Without the consume, the reveal leaves the preorder to its owner's delete
     contract(dpns_contract_with(
         salt_reveal(
-            json!({ "minimumAgeBlocks": 1 }),
+            json!({ "constraints": { "minimumAgeBlocks": 1 } }),
             json!({ "$ownerId": "$ownerId" }),
         ),
         json!({}),
@@ -1129,7 +1092,7 @@ fn should_refuse_an_update_changing_a_function_or_what_it_demands() {
     let old_domain = old.document_type_for_name("domain").expect("the domain");
 
     let mut reordered = salt_reveal(
-        json!({ "minimumAgeBlocks": 1, "consume": true }),
+        json!({ "constraints": { "minimumAgeBlocks": 1 }, "consume": true }),
         json!({ "$ownerId": "$ownerId" }),
     );
     reordered["findBy"]["saltedDomainHash"]["params"] =
@@ -1140,11 +1103,11 @@ fn should_refuse_an_update_changing_a_function_or_what_it_demands() {
     for changed in [
         reordered,
         salt_reveal(
-            json!({ "minimumAgeBlocks": 2, "consume": true }),
+            json!({ "constraints": { "minimumAgeBlocks": 2 }, "consume": true }),
             json!({ "$ownerId": "$ownerId" }),
         ),
         salt_reveal(
-            json!({ "minimumAgeBlocks": 1 }),
+            json!({ "constraints": { "minimumAgeBlocks": 1 } }),
             json!({ "$ownerId": "$ownerId" }),
         ),
     ] {

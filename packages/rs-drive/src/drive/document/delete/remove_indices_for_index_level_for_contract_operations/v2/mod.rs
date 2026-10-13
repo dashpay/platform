@@ -12,7 +12,7 @@ use std::collections::HashMap;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
-    document_takes_part_in_index, index_level_tree_types_with_continuation_demotion,
+    document_takes_part_in_index, index_level_tree_types_with_continuation_demotion, level_keys,
     level_removes_entry,
 };
 use crate::drive::document::summable_off_count_counter::CounterChange;
@@ -107,6 +107,7 @@ impl Drive {
                 && document_takes_part_in_index(
                     &index_type.skip_if_absent_properties,
                     &document_and_contract_info.owned_document_info.document_info,
+                    document_and_contract_info.document_type,
                 )?
             {
                 // An entry written before protocol version 14 can sit in
@@ -182,6 +183,7 @@ impl Drive {
             if !level_removes_entry(
                 sub_level,
                 &document_and_contract_info.owned_document_info.document_info,
+                document_and_contract_info.document_type,
             )? {
                 continue;
             }
@@ -197,17 +199,18 @@ impl Drive {
             let mut sub_level_index_path_info = index_path_info.clone();
             let index_property_key = KeyRef(name.as_bytes());
 
-            let document_index_field = document_and_contract_info
-                .owned_document_info
-                .document_info
-                .get_raw_for_document_type(
-                    name,
-                    document_type,
-                    document_and_contract_info.owned_document_info.owner_id,
-                    Some((sub_level, event_id)),
-                    platform_version,
-                )?
-                .unwrap_or_default();
+            // Mirror of the insert walker: an indexed typed array (protocol version 14) holds
+            // one value tree of the document per distinct element.
+            let document_index_fields = level_keys(
+                &document_and_contract_info.owned_document_info.document_info,
+                sub_level,
+                name,
+                document_type,
+                document_and_contract_info.owned_document_info.owner_id,
+                Some((sub_level, event_id)),
+                platform_version,
+            )?
+            .nested_keys();
 
             sub_level_index_path_info.push(index_property_key)?;
 
@@ -218,9 +221,11 @@ impl Drive {
             // pruning the trees it leaves empty as a drained member bucket's
             // are. Nothing continues below it.
             if let Some(index_type) = sub_level.summable_off_count_index_info() {
+                // The group's value, or each distinct element of a typed array
+                // a `where` equality fixes (see the insert walker)
                 self.add_summable_off_count_counter_operations(
                     sub_level_index_path_info,
-                    document_index_field,
+                    document_index_fields,
                     property_name_tree_type,
                     CounterChange::Decrement {
                         keep_at_zero: index_type.preallocated,
@@ -275,35 +280,47 @@ impl Drive {
                 );
             }
 
-            // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
-            // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
+            // The final value takes the path; earlier ones (only an indexed typed array's
+            // elements are several) clone it.
+            let value_count = document_index_fields.len();
+            for (position, document_index_field) in document_index_fields.into_iter().enumerate() {
+                let mut value_index_path_info = if position + 1 == value_count {
+                    std::mem::replace(&mut sub_level_index_path_info, PathAsVec(Vec::new()))
+                } else {
+                    sub_level_index_path_info.clone()
+                };
+                // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
+                // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
-            // The flags follow this sub-level's own path, as on insert.
-            let sub_level_any_fields_null = any_fields_null || document_index_field.is_empty();
-            let sub_level_all_fields_null = all_fields_null && document_index_field.is_empty();
-            legacy_any_fields_null |= document_index_field.is_empty();
+                // The flags follow this sub-level's own path, as on insert.
+                let sub_level_any_fields_null = any_fields_null || document_index_field.is_empty();
+                let sub_level_all_fields_null = all_fields_null && document_index_field.is_empty();
+                // Carried into every later sibling, as before protocol version 14; an element
+                // of an indexed typed array is never empty, so it carries nothing.
+                legacy_any_fields_null |= document_index_field.is_empty();
 
-            // we push the actual value of the index path
-            sub_level_index_path_info.push(document_index_field)?;
-            // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
-            // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
-            self.remove_indices_for_index_level_for_contract_operations_v2(
-                document_and_contract_info,
-                sub_level_index_path_info,
-                sub_level,
-                sub_level_any_fields_null,
-                sub_level_all_fields_null,
-                legacy_any_fields_null,
-                value_tree_type,
-                storage_flags,
-                previous_batch_operations,
-                estimated_costs_only_with_layer_info,
-                skip_missing_expired_entry,
-                event_id,
-                transaction,
-                batch_operations,
-                platform_version,
-            )?;
+                // we push the actual value of the index path
+                value_index_path_info.push(document_index_field)?;
+                // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
+                // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
+                self.remove_indices_for_index_level_for_contract_operations_v2(
+                    document_and_contract_info,
+                    value_index_path_info,
+                    sub_level,
+                    sub_level_any_fields_null,
+                    sub_level_all_fields_null,
+                    legacy_any_fields_null,
+                    value_tree_type,
+                    storage_flags,
+                    previous_batch_operations,
+                    estimated_costs_only_with_layer_info,
+                    skip_missing_expired_entry,
+                    event_id,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+            }
         }
         Ok(())
     }

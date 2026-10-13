@@ -40,6 +40,7 @@ mod system_agreement;
 mod token_cost_policy;
 mod transfer;
 mod typed_array_references;
+mod typed_array_where;
 
 use super::*;
 

@@ -404,8 +404,9 @@ private fun PropertyConstraintsFormSection(section: PropertyConstraintsSection) 
 
 /**
  * One `propertyConstraints` rule: its name, the rule as declared, what it
- * reads, the system times and heights, the totals and the values of referenced documents it
- * reads, and whether an owner change is judged against it too
+ * reads, the system times, heights and revisions, the stored version, the totals and the
+ * values of referenced documents it reads, and whether an owner change is judged against it
+ * too
  * (← `PropertyConstraintRowView` in DocumentTypeDetailsView.swift).
  */
 @Composable
@@ -413,6 +414,7 @@ private fun PropertyConstraintRow(rule: DocumentPropertyConstraint) {
     val prettyRule = remember(rule) { rule.prettyRuleJson }
     val reads = remember(rule) { propertyConstraintReadsText(rule) }
     val systemReads = remember(rule) { propertyConstraintSystemReadsText(rule) }
+    val storedReads = remember(rule) { propertyConstraintStoredReadsText(rule) }
     val totals = remember(rule) { propertyConstraintTotalsText(rule) }
     val referenced = remember(rule) { propertyConstraintReferencedReadsText(rule) }
     Column(
@@ -463,6 +465,19 @@ private fun PropertyConstraintRow(rule: DocumentPropertyConstraint) {
                 color = MaterialTheme.colorScheme.tertiary,
             )
         }
+        if (storedReads != null) {
+            Text(
+                storedReads,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                modifier = Modifier.testTag("documentType.propertyConstraint.${rule.name}.readsStored"),
+            )
+            Text(
+                PROPERTY_CONSTRAINT_STORED_READS_NOTE,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
         if (totals != null) {
             Text(
                 totals,
@@ -491,8 +506,9 @@ private fun PropertyConstraintRow(rule: DocumentPropertyConstraint) {
         }
         if (rule.readsOwner) {
             Text(
-                "Reads \$ownerId, the document's owner: transfers and purchases are judged " +
-                    "against this rule too.",
+                "Reads the owner (\$ownerId, \$old.\$ownerId, the owner before the write, " +
+                    "or a total that depends on the owner): transfers and purchases are " +
+                    "judged against this rule too.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.tertiary,
             )

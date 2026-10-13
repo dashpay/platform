@@ -265,16 +265,30 @@ fn should_refuse_delete_rules_reading_what_no_rule_may() {
         "document type \"poll\" deleteConstraints rule \"rule\" reads \"question\", which has \
          type string, not integer or boolean",
     );
-    // The meta-schema refuses the path first; a stored contract meets the parser
-    poll_delete_rule(json!({ "present": "$old.status" }))
-        .expect_err("the meta-schema refuses a path through $old.");
-    expect_structure_error(
-        poll_contract(
-            json!({ "deleteConstraints": { "rule": { "present": "$old.status" } } }),
-            false,
+    // A delete rule is judged on the stored document itself, which its plain paths
+    // read, so none reads through `$old.`: a property, the owner or a system value
+    for (rule, path) in [
+        (json!({ "present": "$old.status" }), "$old.status"),
+        (
+            json!({ "notEqual": ["$old.$ownerId", "$ownerId"] }),
+            "$old.$ownerId",
         ),
-        "only a condition judging a replace",
-    );
+        (
+            json!({ "lessThan": ["$old.$createdAt", "endsAt"] }),
+            "$old.$createdAt",
+        ),
+    ] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                poll_contract(json!({ "deleteConstraints": { "rule": rule } }), full_validation),
+                &format!(
+                    "document type \"poll\" deleteConstraints rule \"rule\" reads \"{path}\", but \
+                     a deleteConstraints rule is judged on the stored document itself, so its plain \
+                     paths read it: name it without `$old.`"
+                ),
+            );
+        }
+    }
 }
 
 /// A total a delete rule reads is checked with the contract's other types, as a

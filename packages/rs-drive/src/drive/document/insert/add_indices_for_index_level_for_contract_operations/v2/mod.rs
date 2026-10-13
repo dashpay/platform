@@ -1,7 +1,7 @@
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
     continuation_contributes_zero, document_takes_part_in_index,
-    index_level_tree_types_with_continuation_demotion, level_reaches_entry,
+    index_level_tree_types_with_continuation_demotion, level_keys, level_reaches_entry,
 };
 use crate::drive::document::summable_off_count_counter::CounterChange;
 use crate::drive::Drive;
@@ -131,6 +131,7 @@ impl Drive {
             if document_takes_part_in_index(
                 &index_type.skip_if_absent_properties,
                 &document_and_contract_info.owned_document_info.document_info,
+                document_and_contract_info.document_type,
             )? {
                 self.add_reference_for_index_level_for_contract_operations(
                     document_and_contract_info,
@@ -202,6 +203,7 @@ impl Drive {
             if !level_reaches_entry(
                 sub_level,
                 &document_and_contract_info.owned_document_info.document_info,
+                document_and_contract_info.document_type,
             )? {
                 continue;
             }
@@ -237,17 +239,21 @@ impl Drive {
             let mut sub_level_index_path_info = index_path_info.clone();
             let index_property_key = KeyRef(name.as_bytes());
 
-            let document_index_field = document_and_contract_info
-                .owned_document_info
-                .document_info
-                .get_raw_for_document_type(
-                    name,
-                    document_type,
-                    document_and_contract_info.owned_document_info.owner_id,
-                    Some((sub_level, event_id)),
-                    platform_version,
-                )?
-                .unwrap_or_default();
+            // An indexed typed array (protocol version 14) enters the document once per
+            // distinct element: one value tree per element, each with everything below it.
+            // The sub-level is only reached for a document holding at least one element (the
+            // array is in the skip set of every index naming it). Every other property keys
+            // the document by its single value.
+            let document_index_fields = level_keys(
+                &document_and_contract_info.owned_document_info.document_info,
+                sub_level,
+                name,
+                document_type,
+                document_and_contract_info.owned_document_info.owner_id,
+                Some((sub_level, event_id)),
+                platform_version,
+            )?
+            .nested_keys();
 
             let path_key_info = index_property_key
                 .clone()
@@ -301,9 +307,13 @@ impl Drive {
             // bucket and every member entry, and nothing continues below it
             // (registration refuses an index that would).
             if sub_level.summable_off_count_index_info().is_some() {
+                // The group's value, or, when the counter's property is a typed
+                // array a `where` equality fixes (protocol version 14), each of
+                // its distinct elements: a group per element, each holding the
+                // whole source group
                 self.add_summable_off_count_counter_operations(
                     sub_level_index_path_info,
-                    document_index_field,
+                    document_index_fields,
                     property_name_tree_type,
                     CounterChange::Increment {
                         parent_created: property_name_tree_created,
@@ -358,52 +368,65 @@ impl Drive {
                 );
             }
 
-            // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
-            // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
+            // The final value takes the path; earlier ones (only an indexed typed array's
+            // elements are several) clone it.
+            let value_count = document_index_fields.len();
+            for (position, document_index_field) in document_index_fields.into_iter().enumerate() {
+                let mut value_index_path_info = if position + 1 == value_count {
+                    std::mem::replace(
+                        &mut sub_level_index_path_info,
+                        PathInfo::PathAsVec(Vec::new()),
+                    )
+                } else {
+                    sub_level_index_path_info.clone()
+                };
+                // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
+                // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
-            let path_key_info = document_index_field
-                .clone()
-                .add_path_info(sub_level_index_path_info.clone());
+                let path_key_info = document_index_field
+                    .clone()
+                    .add_path_info(value_index_path_info.clone());
 
-            // here we are inserting the value tree
-            self.batch_insert_empty_tree_if_not_exists(
-                path_key_info.clone(),
-                value_tree_type,
-                *storage_flags,
-                value_apply_type,
-                transaction,
-                previous_batch_operations,
-                batch_operations,
-                &platform_version.drive,
-            )?;
+                // here we are inserting the value tree
+                self.batch_insert_empty_tree_if_not_exists(
+                    path_key_info.clone(),
+                    value_tree_type,
+                    *storage_flags,
+                    value_apply_type,
+                    transaction,
+                    previous_batch_operations,
+                    batch_operations,
+                    &platform_version.drive,
+                )?;
 
-            // The flags follow this sub-level's own path: a sibling's
-            // missing value says nothing about the indexes below this one.
-            let sub_level_any_fields_null = any_fields_null || document_index_field.is_empty();
-            let sub_level_all_fields_null = all_fields_null && document_index_field.is_empty();
+                // The flags follow this sub-level's own path: a sibling's
+                // missing value says nothing about the indexes below this one.
+                let sub_level_any_fields_null = any_fields_null || document_index_field.is_empty();
+                let sub_level_all_fields_null = all_fields_null && document_index_field.is_empty();
 
-            // we push the actual value of the index path
-            sub_level_index_path_info.push(document_index_field)?;
-            // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
-            // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
-            // Propagate the actual (post-demotion) `value_tree_type`
-            // forward — the next level reads it to pick the correct
-            // zero-contribution op for its own continuation children.
-            self.add_indices_for_index_level_for_contract_operations_v2(
-                document_and_contract_info,
-                sub_level_index_path_info,
-                sub_level,
-                sub_level_any_fields_null,
-                sub_level_all_fields_null,
-                value_tree_type,
-                previous_batch_operations,
-                storage_flags,
-                estimated_costs_only_with_layer_info,
-                event_id,
-                transaction,
-                batch_operations,
-                platform_version,
-            )?;
+                // we push the actual value of the index path
+                value_index_path_info.push(document_index_field)?;
+                // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/
+                // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference/<accountReference>
+                // Propagate the actual (post-demotion) `value_tree_type`
+                // forward — the next level reads it to pick the correct
+                // zero-contribution op for its own continuation children.
+                self.add_indices_for_index_level_for_contract_operations_v2(
+                    document_and_contract_info,
+                    value_index_path_info,
+                    sub_level,
+                    sub_level_any_fields_null,
+                    sub_level_all_fields_null,
+                    value_tree_type,
+                    previous_batch_operations,
+                    storage_flags,
+                    estimated_costs_only_with_layer_info,
+                    event_id,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+            }
         }
         Ok(())
     }

@@ -1,0 +1,73 @@
+{
+  "$formatVersion": "1",
+  "id": "5oEzAP4izB65uRm2yDAEf9oALGwHpWkDfyKb8zBY3euC",
+  "ownerId": "5sAHJgXjaUPK3X1YQWV9x2ZvaS9VVaS3ENzFCNE8nzDu",
+  "version": 1,
+  "documentSchemas": {
+    "name": {
+      "type": "object",
+      "documentsMutable": false,
+      "canBeDeleted": false,
+      "transferable": 1,
+      "properties": {
+        "normalizedLabel": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 63,
+          "position": 0
+        },
+        "normalizedParentDomainName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "position": 1
+        }
+      },
+      "required": [
+        "normalizedLabel",
+        "normalizedParentDomainName"
+      ],
+      "creatorRefersTo": {
+        "type": "deletableDocument",
+        "contractId": "5jKh25biPsnrmLWXXuqKNH2Q67j69T4Q7Zew5c8wJKaV",
+        "documentType": "unindexedPreorder",
+        "findBy": {
+          "$ownerId": "$ownerId",
+          "nameHash": {
+            "function": "sys.hash.sha256d",
+            "params": [
+              "normalizedLabel",
+              {
+                "const": "."
+              },
+              "normalizedParentDomainName"
+            ]
+          }
+        },
+        "constraints": {
+          "minimumAgeBlocks": 1,
+          "chooseFirst": {
+            "among": "nameHash",
+            "validWhen": {
+              "ownerNameHash": {
+                "function": "sys.hash.sha256d",
+                "params": [
+                  "$ownerId",
+                  "normalizedLabel",
+                  {
+                    "const": "."
+                  },
+                  "normalizedParentDomainName"
+                ]
+              }
+            },
+            "by": [
+              "$createdAtBlockHeight"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

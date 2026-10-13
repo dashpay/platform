@@ -1,3 +1,78 @@
+## [Unreleased]
+
+### Tests
+
+* **platform:** freeze historical BLS, GroveDB/checkpoint, transaction signing, DashPay encryption, and FFI node-ID compatibility vectors, with a script to reproduce them through ignored tests on a pinned historical checkout.
+
+## [5.0.0-beta.6](https://github.com/dashpay/platform/compare/v5.0.0-beta.5...v5.0.0-beta.6) (2026-10-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** charge a sponsored batch's fee increase to its signer (PV14) (#5398)
+* **platform:** key preallocated and summableOffCountIndex indexes through a typed-array where (PV14) (#5394)
+* **platform:** compare typed arrays in refersTo where entries (PV14) (#5388)
+* **platform:** let an indexOnly type index the elements of a typed array (PV14) (#5390)
+
+### Features
+
+* **platform:** compare typed arrays in refersTo where entries (PV14) ([#5388](https://github.com/dashpay/platform/issues/5388))
+* **platform:** key preallocated and summableOffCountIndex indexes through a typed-array where (PV14) ([#5394](https://github.com/dashpay/platform/issues/5394))
+* **platform:** let an indexOnly type index the elements of a typed array (PV14) ([#5390](https://github.com/dashpay/platform/issues/5390))
+
+
+### Bug Fixes
+
+* **platform:** charge a sponsored batch's fee increase to its signer (PV14) ([#5398](https://github.com/dashpay/platform/issues/5398))
+
+## [5.0.0-beta.5](https://github.com/dashpay/platform/compare/v5.0.0-beta.4...v5.0.0-beta.5) (2026-10-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** index the elements of typed arrays (PV14) (#5370)
+* **platform:** propertyConstraints rules read the stored document ($old., $revision, PV14) (#5373)
+* **drive:** fee estimates size sum and count index trees as what they are (PV14) (#5377)
+* **dpp:** choose the first valid commitment to the same values (chooseFirst) (#5371)
+* **platform:** key unsigned integer index values in value order (#5350)
+* **platform:** rules that read the referenced document (PV14) (#5369)
+* **dpp:** consume and minimumAgeBlocks on any reference judged on the create alone (#5365)
+* **dpp:** find a referenced document by a string or byte array property's value (#5367)
+
+### Features
+
+* **dpp:** choose the first valid commitment to the same values (chooseFirst) ([#5371](https://github.com/dashpay/platform/issues/5371))
+* **dpp:** consume and minimumAgeBlocks on any reference judged on the create alone ([#5365](https://github.com/dashpay/platform/issues/5365))
+* **dpp:** find a referenced document by a string or byte array property's value ([#5367](https://github.com/dashpay/platform/issues/5367))
+* **platform:** index the elements of typed arrays (PV14) ([#5370](https://github.com/dashpay/platform/issues/5370))
+* **platform:** propertyConstraints rules read the stored document ($old., $revision, PV14) ([#5373](https://github.com/dashpay/platform/issues/5373))
+* **platform:** rules that read the referenced document (PV14) ([#5369](https://github.com/dashpay/platform/issues/5369))
+* **sdk:** query the elements of typed arrays over the wire (PV14) ([#5372](https://github.com/dashpay/platform/issues/5372))
+
+
+### Bug Fixes
+
+* classify unsupported offsets and composite limits ([#5349](https://github.com/dashpay/platform/issues/5349))
+* **dapi:** classify malformed protobuf requests as invalid arguments ([#5351](https://github.com/dashpay/platform/issues/5351))
+* **drive:** fee estimates size sum and count index trees as what they are (PV14) ([#5377](https://github.com/dashpay/platform/issues/5377))
+* **drive:** let startAt and startAfter page documentsSummable types (PV14) ([#5376](https://github.com/dashpay/platform/issues/5376))
+* **platform:** backfill historical credit nullifiers at pv14 activation ([#5341](https://github.com/dashpay/platform/issues/5341))
+* **platform:** key unsigned integer index values in value order ([#5350](https://github.com/dashpay/platform/issues/5350))
+* **platform:** verify signed protocol versions and use one identity proof ([#5361](https://github.com/dashpay/platform/issues/5361))
+* **sdk:** bind voting proof queries to the default limit ([#5356](https://github.com/dashpay/platform/issues/5356))
+
+
+### Documentation
+
+* correct nonce validation wording ([#5362](https://github.com/dashpay/platform/issues/5362))
+* write identifiers and fixed-size byte arrays with the type shorthands in the book ([#5378](https://github.com/dashpay/platform/issues/5378))
+
+
+### Tests
+
+* **drive-abci:** require the estimate, not the actual fee, for a 128-output transfer to addresses ([#5385](https://github.com/dashpay/platform/issues/5385))
+* **drive-abci:** verify query errors over gRPC and original proofs ([#5343](https://github.com/dashpay/platform/issues/5343))
+
 ## [5.0.0-beta.4](https://github.com/dashpay/platform/compare/v5.0.0-beta.3...v5.0.0-beta.4) (2026-10-09)
 
 

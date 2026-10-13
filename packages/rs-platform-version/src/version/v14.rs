@@ -277,8 +277,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     v1 judges the fee against the sponsor's balance, refusing an insisting
 ///     batch unpaid when it falls short (`GasSponsorInsufficientBalanceError`,
 ///     40222) and handing a preferring one back to the signer; `execute_event`
-///     v1 charges whoever was admitted. The batch's signer only funds the
-///     principal, and its minimum balance pre-check v1
+///     v1 charges whoever was admitted. The batch's signer funds the principal
+///     and the processing fee its own `user_fee_increase` adds: the sponsor is
+///     judged on and charged the fee without the increase, the signer's balance
+///     and key budget have to cover the increase (refused unpaid with
+///     `IdentityInsufficientBalanceError`, 40210, when the balance does not),
+///     and execution charges it to the signer as a fee of its own. Its minimum
+///     balance pre-check v1
 ///     (`identity_minimum_balance_pre_check`) asks no more of a batch that
 ///     requests sponsorship. A failed batch is never sponsored, so check tx
 ///     validates the state of a sponsored batch whose signer is under the fee
@@ -1164,6 +1169,38 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `submittedCharter`'s `rewardSplit` members add up to 100, replacing the
 ///     charter-specific check, whose error 11001 keeps its place in
 ///     `BasicError` but is never produced.
+///     A rule reads `$revision`, an integer operand (`SystemValue::Revision`),
+///     1 on a create and one more for each later write, on a type keeping a
+///     revision (`requires_revision`); a transfer, a purchase and a price
+///     update, which move it, are judged against the rules reading it. A rule
+///     reads the stored version of the document a write replaces through
+///     `$old.` (`STORED_DOCUMENT_PREFIX`), as the condition of item 66 does: a
+///     property (`$old.status`, in any read a bare path takes, checked as the
+///     path after it), `$old.$ownerId`, and a time, a height or `$revision`
+///     (`SystemRead::stored`); only on a type keeping a revision and not
+///     indexOnly, never in a `countOf` or `sumOf` filter, and never in a rule
+///     of `deleteConstraints`, which reads the stored document by its plain
+///     paths (parser generation 3; `validate_stored_version_reads` once the
+///     moderator abilities are parsed). `DocumentSystemValues::stored` gives
+///     it: `StoredVersion::Absent` on a create, where a property under it is
+///     absent, `$old.$ownerId` equals no identifier and a stored time, height
+///     or revision reads 0; on a replace the document replaced, its properties
+///     rebuilt from the written ones and `stored_changed_values`, its owner,
+///     times, heights and revision taken from the fetched document by the batch
+///     transformer and kept on the action beside the totals
+///     (`PropertyConstraintReads`, which replaces the boxed totals) when a
+///     rule or a condition reads them; on a transfer, a purchase or a price
+///     update the document before it, the write judged only against the rules
+///     reading what it changes, of either version. A moderator's change of a
+///     document's fields (`DocumentSystemValues::changed_fields`) is judged
+///     against the rules reading a field it writes, of either version,
+///     `$revision` or a total, and a moderator's restore (`SystemChange::Restore`,
+///     through `validate_property_constraints_for_system_change`) against the
+///     rules reading a total, with `$old.` reading the restored document: rules
+///     never change once registered, so no other rule could give another
+///     verdict than at the document's last write. A rule reading a stored
+///     version a client does not give is not judged, and one consensus does
+///     not give is an error, as for a total.
 ///     A rule may also read a value of the document a reference of the type
 ///     points at, `{ "referenced": [reference, field] }`, wherever a path
 ///     stands: `field` is a property path of the referenced type, its `$id`,
@@ -1180,9 +1217,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     through anything but a stored property holding one reference
 ///     to one document by id or by a `findBy` without a function, beside what
 ///     a transfer, a purchase or a price update of a type that has them
-///     changes, beside a field moderators change, read or deciding a total
-///     over the type's own documents, and beside any total over the type's
-///     own documents where a moderator's restore can bring one back (10231);
+///     changes (`$revision` and `$old.` reads included), beside what a
+///     moderator's change of the fields a type keeps for them is judged
+///     against (such a field, of either version, `$revision`, or any total),
+///     and beside any total where a moderator's restore, judged against every
+///     rule reading one, can bring a document back (10231);
 ///     and
 ///     `create_document_types_from_document_schemas` 1, in place, checks what
 ///     it reads of a type of the same contract (10231: the field exists, is
@@ -1429,7 +1468,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     given as a `$ref` to the contract's `$defs` from the definition, as the
 ///     core parse does, when it checks a rule's string constants and defaults
 ///     against the property's `enum` and an `encryptedFor` key id's bounds; it
-///     refused every such contract with a decoding error before.
+///     refused every such contract with a decoding error before. The stored
+///     version a rule reads through `$old.` (item 39) is judged as stored too,
+///     and a `$old` key the written data carries itself, which no property can
+///     name, is dropped before a rule reads it
+///     (`DocumentSystemValues::judged_data`).
 ///
 /// 53. **Properties the platform generates (`generatedFrom`)**: the property
 ///     keyword (meta-schema v3, `apply_generated_from` 0, `GeneratedFrom` on
@@ -1550,7 +1593,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     ability, appended to `ModerationAbility`, on the type, and citing a
 ///     listed reason) sets or removes those fields on any document of the type,
 ///     whoever owns it. The changed document is judged as a replace judges one
-///     (schema, `propertyConstraints` with their totals, `distinctFrom`,
+///     (schema, the `propertyConstraints` reading a field it changes, `$revision`
+///     or a total, with the stored document under `$old.` (item 39), `distinctFrom`,
 ///     `encryptedFor` shapes, unique indexes through
 ///     `validate_moderated_document_uniqueness`, the restore's check
 ///     generalized and renamed), its references are not checked again, and it
@@ -1668,11 +1712,11 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     beside a `findBy` function, or any `findBy` on a document type whose
 ///     documents are never replaced, `documentsMutable: false`, since a replace
 ///     is the one write that judges a reference again), and not beside
-///     `inList`, may declare `minimumAgeBlocks`, judged by
+///     `inList`, may declare `minimumAgeBlocks` (inside its `constraints`,
+///     beside `findBy`), judged by
 ///     document create state validation 2 against the found document's
 ///     `$createdAtBlockHeight` (`ReferencedDocumentRequirementNotMetError`,
-///     40142), and
-///     `consume`, which deletes the found document with the create
+///     40142), and `consume`, which deletes the found document with the create
 ///     (`DocumentCreateTransitionAction` `consumed_documents`, a batch touching
 ///     it elsewhere refused with 40120). The hash is computed once per key and
 ///     billed as `ValidationOperation::DoubleSha256` by the blocks it hashes,
@@ -1683,10 +1727,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     referring type (item 32 refuses that otherwise): a transfer or a
 ///     purchase moves the writer part of its key, but no later write judges it.
 ///     A `where` entry `{"$ownerId": "$ownerId"}` makes the commitment the
-///     writer's own, and so does a `findBy` entry `{"$ownerId": "$ownerId"}`
-///     through a unique index over the owner and the hash, which beside a
-///     function a transferable referring type may declare too, the key being
-///     judged on the create alone; `consume` requires one of the two, into the declaring contract,
+///     writer's own, and `consume` requires it, into the declaring contract,
 ///     on a type whose owners may delete, that keeps no history, declares no
 ///     delete token cost or delete action fee and requires no stricter
 ///     signature security level than the declaring type; batch advanced
@@ -1701,8 +1742,62 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `moderatorAbilities.changeFields` (57). `creatorRefersTo` takes a
 ///     `deletableDocument` target judged on the create alone, and the `findBy` of an
 ///     `ownerRefersTo` or `creatorRefersTo` may leave the value out beside
-///     one. DPNS v3 declares such a reveal (90). See
-///     `book/src/data-model/documents.md`.
+///     one. The declaration reproduces the DPNS preorder hash of a name under
+///     a parent byte for byte; the DPNS contract and its create trigger are
+///     unchanged. See `book/src/data-model/documents.md`.
+///
+///     `chooseFirst` (`LookupChooseFirst`), the other entry of a reference's
+///     `constraints`, sits on a `deletableDocument` reference whose `findBy`
+///     holds exactly the entry `"$ownerId": "$ownerId"` and a function filling
+///     `among`, reading neither the writer nor `"."`, whose hash every
+///     commitment to the same values holds, whoever made it:
+///     `{ "among", "validWhen": { "<property>": <function> }, "by" }`,
+///     `validWhen` an owner-bound function (reading `"$ownerId"`, standing for
+///     each commitment's owner, and exactly the properties the `findBy`
+///     function reads) and `by` the order the commitments are chosen in
+///     (properties ascending or descending, `ChooseFirstOrder`, a last `$id`
+///     breaking ties). Document reference validation 0, in place, refuses a
+///     found document past its type's `ttl` (40120) or not holding `validWhen`
+///     computed with the writer (40120, `DoubleSha256`, `WriterPreimage`), and
+///     reads in one billed query the documents holding the found one's value
+///     at `among` in `by` order (`fetch_documents_holding_in_order`, through
+///     the index over `among` and the ordered properties), as far as the found
+///     one's value of the first, at most
+///     `SYSTEM_LIMITS_V4.max_choose_first_candidates` (1,000; backfilled into
+///     the earlier tables, which nothing reads there). The first that comes
+///     strictly before the found one, by the keys the index holds them under,
+///     is not past its type's `ttl` and holds `validWhen` computed with its own
+///     owner (`DoubleSha256` each) refuses the create
+///     (`ReferencedDocumentPrecededError`, 40149). A copied hash names another
+///     owner and never refuses, one equal on every `by` property is no
+///     competitor, and when none of the documents read refuses, the create
+///     stands. The query and the competitors' hashes bill at most
+///     `FEE_VERSION3.document_reference.choose_first_credits_per_candidate`
+///     (100,000; a new fee group, unread before this version) times that
+///     limit, and check tx, which validates no state of such a create,
+///     reserves that whole budget and the create's `findBy` and `validWhen`
+///     hashes on top of its estimated fee (not consensus). Registration, on
+///     the same contract and on another (`DocumentReferenceLookup`'s
+///     `referring_side_error` and `referenced_side_error`, and the parser's
+///     `validate_reference_lookup_sources`), requires the `validWhen` property
+///     to be a stored 32-byte byte array fixed once written; every `by`
+///     property to be recorded on every document, fixed once written and not
+///     transient (a last `$id` in the direction of the property before it,
+///     ascending alone: the index keeps ids that way and the capped query reads
+///     them so); the referenced type to expire (`ttl`), to hold the index over
+///     `among` and the `by` properties (not unique under a last `$id`) and no
+///     unique index holding `among`, or the `validWhen` property, without
+///     `$ownerId`; at most one `chooseFirst` per type, not on typed array
+///     elements or expression operands, a `where` holding nothing but
+///     `"$ownerId": "$ownerId"` (no condition), and no gas sponsorship of the
+///     declaring type's creates (a sponsored create is judged, state included,
+///     before anyone pays). `constraints` holds `minimumAgeBlocks`,
+///     `chooseFirst` or both and nothing else, and either one beside `findBy`
+///     is refused. Document create structure validation 1 refuses a create
+///     missing a param of `validWhen` (10423). Inert before this version: only
+///     meta-schema v3 admits `constraints` and the `"$ownerId"` param, so the
+///     writer reaching `hash_lookup_key` in place in reference validation 0
+///     and batch state 0 changes nothing earlier.
 ///
 /// 62. **Null flags follow each index's own path**: the v2 index-level
 ///     insert and delete walkers give each sub-level the null flags of its
@@ -1855,8 +1950,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     `sumOf`, and is judged on the document the replace writes (its
 ///     `$updatedAt` the replace's block time, so `$updatedAt - $createdAt`
 ///     is the document's age), with the stored document's properties read
-///     through `$old.<path>` (`STORED_DOCUMENT_PREFIX`), which only such a
-///     condition may read. Document replace state validation 1, extended in
+///     through `$old.<path>` (`STORED_DOCUMENT_PREFIX`), and its owner, times,
+///     heights and revision through `$old.$ownerId`, `$old.$updatedAt` and the
+///     rest, which a `propertyConstraints` rule reads too (item 39), as it
+///     reads `$revision`. Document replace state validation 1, extended in
 ///     place, refuses a replace changing, adding or removing a property whose
 ///     condition holds, or faults, with `DocumentImmutablePropertyChangedError`
 ///     (40128); the stored properties are rebuilt from the written ones and
@@ -2310,9 +2407,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     through generation 0.
 ///
 /// 87. **Moderator document restores obey `propertyConstraints`**: moderation state
-///     validation 0, in place, judges every rule of the restored type after uniqueness
-///     and before constructing restoration operations. The retained document supplies
-///     its original id, owner, properties, times and heights. The shared aggregate reader
+///     validation 0, in place, judges the rules of the restored type that read a
+///     `countOf` or `sumOf` total (`SystemChange::Restore`, item 39), the only values
+///     that can have moved while the document was gone, after uniqueness and before
+///     constructing restoration operations. The retained document supplies its original
+///     id, owner, properties, times, heights and revision, and is the stored version a
+///     rule reads through `$old.`. The shared aggregate reader
 ///     adds it to the live totals as an insertion, with no contribution from its removal
 ///     record. A failing rule returns paid `DocumentPropertyConstraintViolatedError`
 ///     (10422) in a block, charging the moderator and consuming its nonce while leaving
@@ -2424,46 +2524,148 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     meta-schemas v0 to v2 refuse both names (no JSON Schema type), and
 ///     parser generations 0 to 2 refuse them as unsupported property types.
 ///
-/// 92. **DPNS v3 checks a name's create with keywords**:
-///     `SYSTEM_DATA_CONTRACT_VERSIONS_V3` selects DPNS contract v3, loaded at
-///     genesis (which still inserts the `dash` top-level domain). Its `domain`
-///     generates `normalizedLabel` and `normalizedParentDomainName` with
-///     `sys.stringTransformations.homographSafeASCII` (53; a value sent that
-///     differs is `DocumentPropertyNotGeneratedError`, 10424). Its
-///     `creatorRefersTo` finds the creator's own `preorder` of the name from an
-///     earlier block and deletes it (61: `findBy` `$ownerId` and `ownerNameHash`,
-///     the sha256d of the creator's id, the normalized label, `"."` and the
-///     normalized parent, `minimumAgeBlocks: 1`, `consume`; refused with 40120 or
-///     40142). A preorder carries no salt: it holds `ownerNameHash`, unique per
-///     owner (`ownerAndNameHash` over `$ownerId` and `ownerNameHash`, replacing
-///     `saltedHash`), and `nameHash`, the same hash without the owner, indexed
-///     with the creation height (`nameHashAndHeight`), and lives an hour (`ttl`
-///     3600, so it refunds nothing when consumed). A copy of a pending preorder
-///     neither blocks it nor, its hash binding the owner, lets the copier reveal
-///     the name. The `domain` keeps `preorderSalt` declared, transient and no
-///     longer required, so domains written under v1 and v2 decode. The rule
-///     `recordsIdentityIsOwner` (`$transferredAt` equal to `$createdAt` implies
-///     `records.identity` equal to `$ownerId`) holds a new name's identity
-///     record to its owner (10422); a transfer or a purchase in a later block,
-///     judged with its own time, no longer reads the record, and one in the
-///     block that created the name is refused. The `domain` sets
-///     `canBeDeleted: false` and the `preorder` requires `$createdAt` (for its
-///     `ttl`) and `$createdAtBlockHeight`; the `domain`'s property positions, transient
-///     list and stored encoding are v2's, so stored domains decode unchanged.
-///     `transition_to_version_14` re-stores DPNS through
-///     `Drive::apply_contract_rebuilding_document_types`: every preorder made
-///     before the upgrade is deleted, unrefunded, and the `preorder` type is
-///     rebuilt as the contract update creates a type it adds, the layout a
-///     chain born at this version has. `create_domain_data_trigger` 2
-///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V10`) keeps only the parent domain
-///     checks: a top-level domain only by the contract owner, the parent
-///     present, no subdomains allowed under a name, and the parent's subdomain
-///     rule. Data trigger bindings 2, in place, drop the `domain` Replace and
-///     Delete rejects; `documentsMutable` and `canBeDeleted` false refuse both
-///     (`InvalidDocumentTransitionActionError`, 10404). The writer reaches the
-///     computed key's preimage through `hash_lookup_key`, in place in reference
-///     validation 0 and batch state 0, inert before this version: only
-///     meta-schema v3 admits a computed key, and the `"$ownerId"` param.
+/// 92. **Indexes on the elements of a typed array**: an index may name a
+///     top-level typed array property, at any position, one per index, and
+///     keys a document once by each distinct element, an element keyed as a
+///     property of the element type is. Parser generation 3 (in place) admits
+///     it and refuses, under full validation: a
+///     unique or contested index, `nullSearchable: false`, a ranking above the
+///     array, a second array (10231); a `maxItems` above
+///     `SYSTEM_LIMITS_V4.max_indexed_array_items` (16), or
+///     `max_windowed_indexed_array_items` (4) on an index with a `timeRange`
+///     or `integerRange`, and elements past the key limits of their type or
+///     byte array elements that may be empty (10205); and a type whose
+///     document can write more than `max_index_entries_per_document` (256)
+///     index entries (10231). On every parse it adds the array to the index's
+///     skip set (`skip_if_absent` keeps the declared keyword) and stamps its
+///     index level with the array's `maxItems`
+///     (`IndexLevel::stamp_indexed_arrays`). `serialize_value_for_key` and
+///     `deserialize_value_for_key` 1 (90, in place) key a typed array
+///     property's value as one element, keyed as a property of the element's
+///     type is, an unsigned element in value order, and
+///     `get_raw_array_elements_for_document_type` 0 (new, `DOCUMENT_VERSIONS_V4`,
+///     `None` before) gives a document's sorted, distinct element keys. The
+///     v2 insert and delete walkers (in place) write and remove one value tree
+///     per element at a stamped level, a document with no element reaching
+///     none of its branches; the v1 update (in place) diffs the old and new
+///     entries of an index naming an array, or bucketing its first property,
+///     inserting and refreshing first and deleting last. The document cost
+///     and the TTL drain budget count an array's `maxItems`, and the document
+///     `ttl` cleanup weight counts the levels from the array on once per
+///     element it allows. Queries read the elements with `contains` (one
+///     element: an equality on its key, cursors allowed when the cursor
+///     document holds it) and `containsAny` (an `in` over several: a page
+///     drops a document's repeats, on the server and in verification, and
+///     takes no cursor); grouping v1 groups them, grouping v0 refuses them,
+///     an index naming an array is read only with its elements bound, and
+///     count, sum and average requests read several elements only grouped
+///     per element. An indexOnly type's index of a typed array is admitted,
+///     on every parse (`apply_index_only`, 10231), when another index keeping
+///     one entry per document (no `$createdAt`, skip, `outlivesDelete` or
+///     typed array) has its whole key inside the array index's key without
+///     the array, the array is top-level, alone in the index and declares
+///     `uniqueItems`, and the index is `preallocated` or a
+///     `summableOffCountIndex` index only as 95 says; such an index is never
+///     the proof index, a counter's source or the only index keeping another
+///     required property. Its row commitment holds the list in order (an empty, null or
+///     absent list alike), its entry probes fan out per element, the create's
+///     state probe skips it, and synthesis rebuilds an entry as a document
+///     listing its one element. Every indexOnly entry insert bills its
+///     commitment's double-SHA256 by its preimage, the dry run by the widest
+///     preimage the type allows. Inert before this version: generations 0 to
+///     2 refuse a typed array in an index, meta-schemas v0 to v2 have none,
+///     and indexOnly types exist from this version only.
+///
+/// 93. **Fee estimates size sum and count trees, and sum items, as they are
+///     stored**: grovedb's `GROVE_V4`
+///     (`average_case_propagated_aggregate_kind` 1) estimates a sum, big sum,
+///     count or count-sum tree that a batch creates together with its contents
+///     as that tree rather than as a plain tree. The `apply: false` estimate of
+///     a document insert under a countable or summable index (which creates the
+///     value tree and its `0` bucket with the document's reference) no longer
+///     comes in below the applied storage fee: by 9 bytes per aggregate of each
+///     tree created, 18 bytes for a summable index. A replaced root key of such
+///     a tree is sized the same way in the estimate's replaced bytes, so an
+///     estimate that rewrites a sum tree's root (an identity or token balance
+///     change among them) charges 9 more replaced bytes per tree. `GROVE_V4`
+///     also sizes an inserted `SumItem` or `ItemWithSumItem`, and a replaced
+///     `ItemWithSumItem`, with its sum at the fixed 9-byte width the apply
+///     charges, up to 8 bytes more per item, in both estimators
+///     (`average_case_sum_item_cost_size` 1 and
+///     `worst_case_sum_item_cost_size` 1). Applied fees are unchanged. Inert
+///     before this version: `GROVE_V1` to `GROVE_V3` keep the old sizing.
+///
+/// 94. **`where` entries over typed arrays**: a `refersTo` `where` (63) may
+///     compare a referenced typed array as a list. An equality between two
+///     typed arrays (`"tags": "tags"`, kept in `property_agreement`) holds for
+///     the same elements in the same order; `{ "contains": b }`
+///     (`WhereCondition::Contains`, appended) for a list holding an element
+///     equal to `b`, a referring property of the element kind or `"$ownerId"`
+///     (a writer gate on identifier elements, asked about on every replace);
+///     `{ "containsAll": b }` (`WhereCondition::ContainsAll`, appended) for a
+///     list holding every element of the referring typed array `b`. Elements
+///     compare as two single values do (`where_lists_equal`, by
+///     `Value::same_scalar_data`): an identifier equals its 32 bytes and an
+///     integer is the same at any width; a list left out is the
+///     empty one, so two left out are equal and every list holds all of one
+///     left out, while a `contains` value left out is held by no list. Meta-schema
+///     v3 and parser generation 3 (in place) read both keys, refusing them on
+///     `$ownerId`, `$creatorId` and `$id` and a `containsAll` of the writer.
+///     Contract create and update state validation (data contract reference
+///     validation 0, in place) admits a typed array pair, until now refused
+///     with 40126, when both sides are stored typed arrays whose elements share
+///     one value kind other than a float, and refuses with 40126: a typed array
+///     paired with anything else, a `contains` or `containsAll` of a property
+///     that is no typed array, of float elements, bounded by the reference
+///     property itself or by a value of another kind (the writer only among
+///     identifiers), a `moderatedDocument` `contains` of the writer whose list
+///     no removal record keeps. `const`, `in`, `notEqual` and the orderings
+///     still refuse a typed array. Document reference validation 0 (in place)
+///     checks them against the document found or the removal record, refusing
+///     with 40127, and refuses an entry whose referring path is no object on
+///     the way as a mismatch. Before comparing, it bills the list elements
+///     such an entry reads, both lists for an equality and a `containsAll`, the
+///     referenced one for a `contains`, at
+///     `FEE_VERSION3.document_reference.where_list_credits_per_element` (100
+///     credits, a field added in place to `FEE_DOCUMENT_REFERENCE_VERSION1`,
+///     which every schedule carries and only this version reads). A pair of
+///     lists keys a preallocated or `summableOffCountIndex` index only by its
+///     elements, as 95 says. Inert before this version: only parser generation
+///     3 reads a `where`, and this module and that validation are reached from
+///     this version only.
+///
+/// 95. **Preallocated and counter indexes keyed by the elements of a list**:
+///     an indexOnly type's index naming a typed array (92) may be
+///     `preallocated` or a `summableOffCountIndex` index when a `where`
+///     equality (94) makes the array equal to a typed array of the referenced
+///     document. `Index::preallocation_bindings` binds such an index property
+///     through the pair (`PreallocatedKeySource::ReferencedDocumentListElements`,
+///     appended) and `Index::count_index_derivations` derives it; `contains`
+///     and `containsAll` bind nothing. Parser generation 3 (in place,
+///     `apply_index_only`) admits either keyword on an array index only so
+///     bound (10231 otherwise) and asks a `summableOffCountIndex` array index,
+///     which keeps no entries, for no other index keeping its documents apart;
+///     the contract-level rules (55, 68 and the counter's lossless rule) judge
+///     the list as a whole. Contract create and update state validation (data
+///     contract reference validation 0, in place) refuses with 40126 a list
+///     pair keying a preallocated index whose referenced elements can hold more
+///     than 255 bytes. Drive (in place): the v1 document insert preallocates
+///     such an index's trees under each distinct element of the referenced
+///     document's list, keyed as the referring type keys its elements, and
+///     nothing for a list no referring document can hold (empty, absent or no
+///     list; longer than the referring array's `maxItems` or shorter than its
+///     `minItems`; repeating an element where it declares `uniqueItems`; or
+///     holding an element keyed as empty or wider than the referring
+///     elements); the v2 insert and delete walkers move one counter per
+///     element where the counter's own level is the array; the document cost
+///     model follows. The v1 insert's preallocation also inserts a plain tree
+///     (a value tree, a `0` bucket) under a tree the same walk created
+///     without reading whether it exists, and the dry run of a document change
+///     (`estimate_document_change_as_insert_operations` 1) preallocates
+///     nothing, as an applied change never does. Inert before this version: only parser
+///     generation 3 admits `preallocated`, `summableOffCountIndex`, an indexed
+///     typed array and a `where`, and every contract that registers today
+///     binds no typed array.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
@@ -2562,7 +2764,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry; verify_identity_signed_signature 1: a BLS12_381 signature must verify
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys; serialize_value_for_key 1 keys unsigned integers in value order (except a property ending a rangeSummable index)
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys; serialize_value_for_key 1 keys unsigned integers in value order (except a property ending a rangeSummable index); generation 3 indexes the elements of typed arrays, on indexOnly types under the item 92 rules
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
@@ -2571,12 +2773,12 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3, // changed: daily_withdrawal_limit v2 — a percentage of the total credits a day ago; credit_pool_bundle_binding Some(0) — the credit pool's outputs-only bundles bind a kind tag and their owner
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33); withdrawals v2 admits the terminal FAILED status; DPNS v3 checks a name's create with keywords
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33); withdrawals v2 admits the terminal FAILED status
     // The TTL ephemeral-bytes rate (270 credits/byte to processing) rides
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries; max_rekey_batch_moves (10,000) for the unsigned index value key rewrite
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries; max_rekey_batch_moves (10,000) for the unsigned index value key rewrite; a refersTo chooseFirst reads at most 1,000 competitors; an indexed typed array holds at most 16 elements (4 under a window), and a document writes at most 256 index entries
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

@@ -22,7 +22,7 @@
 //!       }
 //!     },
 //!     "where": { "$ownerId": "$ownerId" },
-//!     "minimumAgeBlocks": 1,
+//!     "constraints": { "minimumAgeBlocks": 1 },
 //!     "consume": true
 //!   }
 //! }
@@ -69,6 +69,8 @@ pub const LOOKUP_KEY_PARAMS: &str = "params";
 pub const LOOKUP_KEY_CONST: &str = "const";
 /// The param naming the value carrying the reference.
 pub const LOOKUP_KEY_REFERENCE_VALUE: &str = ".";
+/// The `refersTo` keyword a computed key is declared under by default, named in its errors.
+const LOOKUP_KEY_FIND_BY: &str = "findBy";
 
 /// The most params a computed key may list, the bound meta-schema v3 puts on
 /// it.
@@ -153,28 +155,34 @@ impl LookupHashKey {
     /// params' properties resolve to is checked once the document type is
     /// parsed, see [`Self::referring_side_error`].
     pub fn from_value(value: &Value) -> Result<Self, DataContractError> {
+        Self::from_value_of(value, LOOKUP_KEY_FIND_BY)
+    }
+
+    /// [`Self::from_value`] for a function declared under the `refersTo` keyword `keyword`
+    /// (`findBy` or `chooseFirst`), which its errors name.
+    pub fn from_value_of(value: &Value, keyword: &str) -> Result<Self, DataContractError> {
         let map = value.to_btree_ref_string_map()?;
         if let Some(unknown) = map
             .keys()
             .find(|key| !matches!(key.as_str(), LOOKUP_KEY_FUNCTION | LOOKUP_KEY_PARAMS))
         {
             return Err(DataContractError::InvalidContractStructure(format!(
-                "a refersTo findBy function takes function and params, not {unknown:?}"
+                "a refersTo {keyword} function takes function and params, not {unknown:?}"
             )));
         }
         let function_name = map
             .get(LOOKUP_KEY_FUNCTION)
             .and_then(|value| value.as_text())
             .ok_or_else(|| {
-                DataContractError::InvalidContractStructure(
-                    "a refersTo findBy function names its function, a string".to_string(),
-                )
+                DataContractError::InvalidContractStructure(format!(
+                    "a refersTo {keyword} function names its function, a string"
+                ))
             })?;
         let function = match SystemFunction::from_wire_name(function_name) {
             Some(SystemFunction::Hash(function)) => function,
             _ => {
                 return Err(DataContractError::InvalidContractStructure(format!(
-                    "a refersTo findBy function {function_name:?} is not a hash, \
+                    "a refersTo {keyword} function {function_name:?} is not a hash, \
                      expected one of {:?}",
                     HashFunction::ALL.map(|function| function.as_str())
                 )))
@@ -184,20 +192,20 @@ impl LookupHashKey {
             .get(LOOKUP_KEY_PARAMS)
             .and_then(|value| value.as_array())
             .ok_or_else(|| {
-                DataContractError::InvalidContractStructure(
-                    "a refersTo findBy function lists its params".to_string(),
-                )
+                DataContractError::InvalidContractStructure(format!(
+                    "a refersTo {keyword} function lists its params"
+                ))
             })?;
         if values.is_empty() || values.len() > MAX_LOOKUP_KEY_PARAMS {
             return Err(DataContractError::InvalidContractStructure(format!(
-                "a refersTo findBy function lists between 1 and {MAX_LOOKUP_KEY_PARAMS} \
+                "a refersTo {keyword} function lists between 1 and {MAX_LOOKUP_KEY_PARAMS} \
                  params, found {}",
                 values.len()
             )));
         }
         let params = values
             .iter()
-            .map(parse_param)
+            .map(|value| parse_param(value, keyword))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(LookupHashKey { function, params })
     }
@@ -395,11 +403,67 @@ impl LookupHashKey {
             self.function.block_count(preimage.len()),
         ))
     }
+
+    /// The preimage of this key for a create of a document of `declaring` by `writer_id`, as
+    /// [`Self::preimage`] joins it, kept with the offset of each `"$ownerId"` param in it. A
+    /// commitment by another identity to the same values holds the hash of the same bytes with
+    /// those 32-byte slots holding that identity, so [`WriterPreimage::key_value_for`] computes
+    /// it without reading the document again.
+    pub fn writer_preimage(
+        &self,
+        declaring: DocumentTypeRef,
+        reference_id: Option<Identifier>,
+        writer_id: Identifier,
+        document_data: &BTreeMap<String, Value>,
+    ) -> Result<WriterPreimage, LookupPreimageError> {
+        let parts = self.parts(declaring, reference_id, writer_id, document_data)?;
+        let mut writer_offsets = Vec::new();
+        let mut offset = 0;
+        // `parts` holds one entry per param, in order
+        for (param, part) in self.params.iter().zip(&parts) {
+            if matches!(param, LookupKeyParam::Writer) {
+                writer_offsets.push(offset);
+            }
+            offset += part.len();
+        }
+        Ok(WriterPreimage {
+            function: self.function,
+            bytes: parts.concat(),
+            writer_offsets,
+        })
+    }
+}
+
+/// A computed key's preimage with the offsets of its `"$ownerId"` params, see
+/// [`LookupHashKey::writer_preimage`].
+#[derive(Debug, Clone)]
+pub struct WriterPreimage {
+    function: HashFunction,
+    bytes: Vec<u8>,
+    writer_offsets: Vec<usize>,
+}
+
+impl WriterPreimage {
+    /// The key a commitment by `writer` to the values of the preimage holds, with how many
+    /// SHA-256 blocks computing it took ([`HashFunction::block_count`]), what the write is
+    /// billed for: the same as [`LookupHashKey::key_value`] with `writer` as the writer.
+    pub fn key_value_for(&mut self, writer: Identifier) -> ([u8; 32], u16) {
+        let writer = writer.to_buffer();
+        for &offset in &self.writer_offsets {
+            if let Some(slot) = self.bytes.get_mut(offset..offset + writer.len()) {
+                slot.copy_from_slice(&writer);
+            }
+        }
+        (
+            self.function.digest(&self.bytes),
+            self.function.block_count(self.bytes.len()),
+        )
+    }
 }
 
 /// Reads one param: `"."`, `"$ownerId"`, a dotted property path, or
 /// `{ "const": text }`.
-fn parse_param(value: &Value) -> Result<LookupKeyParam, DataContractError> {
+fn parse_param(value: &Value, keyword: &str) -> Result<LookupKeyParam, DataContractError> {
     if let Some(path) = value.as_text() {
         if path == LOOKUP_KEY_REFERENCE_VALUE {
             return Ok(LookupKeyParam::ReferenceValue);
@@ -409,7 +473,7 @@ fn parse_param(value: &Value) -> Result<LookupKeyParam, DataContractError> {
         }
         if path.is_empty() || path.len() > MAX_LOOKUP_KEY_PATH_LENGTH || path.starts_with('$') {
             return Err(DataContractError::InvalidContractStructure(format!(
-                "a refersTo findBy function param is \".\", \"$ownerId\", {{ \"const\": text }} \
+                "a refersTo {keyword} function param is \".\", \"$ownerId\", {{ \"const\": text }} \
                  or the path of a schema property of 1 to {MAX_LOOKUP_KEY_PATH_LENGTH} \
                  characters, not {path:?}"
             )));
@@ -417,30 +481,30 @@ fn parse_param(value: &Value) -> Result<LookupKeyParam, DataContractError> {
         return Ok(LookupKeyParam::Property(path.to_string()));
     }
     let map = value.to_btree_ref_string_map().map_err(|_| {
-        DataContractError::InvalidContractStructure(
-            "a refersTo findBy function param is \".\", a property path or { \"const\": text }"
-                .to_string(),
-        )
+        DataContractError::InvalidContractStructure(format!(
+            "a refersTo {keyword} function param is \".\", \"$ownerId\", a property path or \
+             {{ \"const\": text }}"
+        ))
     })?;
     let mut entries = map.iter();
     let (Some((key, text)), None) = (entries.next(), entries.next()) else {
-        return Err(DataContractError::InvalidContractStructure(
-            "a refersTo findBy function param object holds exactly one key, const".to_string(),
-        ));
+        return Err(DataContractError::InvalidContractStructure(format!(
+            "a refersTo {keyword} function param object holds exactly one key, const"
+        )));
     };
     if key.as_str() != LOOKUP_KEY_CONST {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "a refersTo findBy function param object takes const, not {key:?}"
+            "a refersTo {keyword} function param object takes const, not {key:?}"
         )));
     }
     let text = text.as_text().ok_or_else(|| {
-        DataContractError::InvalidContractStructure(
-            "a refersTo findBy function const must be a string".to_string(),
-        )
+        DataContractError::InvalidContractStructure(format!(
+            "a refersTo {keyword} function const must be a string"
+        ))
     })?;
     if text.is_empty() || text.len() > MAX_LOOKUP_KEY_CONST_BYTES {
         return Err(DataContractError::InvalidContractStructure(format!(
-            "a refersTo findBy function const holds between 1 and \
+            "a refersTo {keyword} function const holds between 1 and \
              {MAX_LOOKUP_KEY_CONST_BYTES} bytes"
         )));
     }
@@ -525,12 +589,12 @@ fn value_bytes<'a>(param: &str, value: &'a Value) -> Result<Cow<'a, [u8]>, Looku
     }
 }
 
-/// The first reference of `document_type` whose computed lookup key a create
-/// by `owner_id` carrying `document_data` cannot reveal, with the path the
-/// reference is declared at (a property path, `$ownerId` or `$creatorId`): a
-/// param it reads is absent, of the wrong kind or behind a repeated key, or a
-/// variable-length value holds its separator. `None` when every such key can
-/// be joined.
+/// The first reference of `document_type` whose computed lookup key, or the
+/// function of its `chooseFirst`, a create by `owner_id` carrying
+/// `document_data` cannot reveal, with the path the reference is declared at
+/// (a property path, `$ownerId` or `$creatorId`): a param it reads is absent,
+/// of the wrong kind or behind a repeated key, or a variable-length value holds
+/// its separator. `None` when every such key can be joined.
 ///
 /// A property carrying a computed key anywhere in its declaration (a single
 /// target, a leaf of a reference expression, on its elements) is first read
@@ -578,12 +642,13 @@ pub fn first_unrevealable_lookup_key(
             }
             ReferenceHolder::Owner | ReferenceHolder::Creator => true,
         };
-        let Some(key) = target
+        let Some(lookup) = target
             .as_any_document_reference()
             .and_then(|declaration| declaration.lookup)
-            .and_then(|lookup| lookup.hash_key())
-            .map(|(_, key)| key)
         else {
+            continue;
+        };
+        let Some((_, key)) = lookup.hash_key() else {
             continue;
         };
         // An unset reference property is not validated
@@ -599,6 +664,27 @@ pub fn first_unrevealable_lookup_key(
         if let Err(error) = key.check_preimage(document_type, reference_id, owner_id, document_data)
         {
             return Some((holder.path().to_string(), error));
+        }
+        // The `chooseFirst` `validWhen` function reads the writer and no `"."` (registration
+        // refuses it) and the properties the `findBy` function reads, which are there by now,
+        // but its separators may differ, so a value may hold one of them only
+        if let Some(choose_first) = &lookup.choose_first {
+            if let Err(error) =
+                choose_first
+                    .valid_when
+                    .check_preimage(document_type, None, owner_id, document_data)
+            {
+                return Some((
+                    holder.path().to_string(),
+                    LookupPreimageError {
+                        reason: format!(
+                            "{}, in the preimage of the chooseFirst validWhen function",
+                            error.reason
+                        ),
+                        ..error
+                    },
+                ));
+            }
         }
     }
     None
@@ -742,6 +828,33 @@ mod tests {
                 &document
             )
         );
+    }
+
+    /// The preimage kept for one writer gives every other writer's key by its `"$ownerId"`
+    /// slots alone, as computing the key for that writer from the document does.
+    #[test]
+    fn should_give_another_writers_key_from_the_writers_preimage() {
+        let domain = domain();
+        let key = LookupHashKey::from_value(&platform_value!({
+            "function": "sys.hash.sha256d",
+            "params": ["$ownerId", "normalizedLabel", { "const": "." }, "parentDomainName", "$ownerId"]
+        }))
+        .expect("the key should parse");
+        let document = data(&[
+            ("normalizedLabel", "al1ce".into()),
+            ("parentDomainName", "dash".into()),
+        ]);
+        let alice = Identifier::new([0xA1; 32]);
+        let bob = Identifier::new([0xB0; 32]);
+        let mut preimage = key
+            .writer_preimage(domain.as_ref(), None, alice, &document)
+            .expect("the preimage assembles");
+        for writer in [bob, alice] {
+            assert_eq!(
+                Ok(preimage.key_value_for(writer)),
+                key.key_value(domain.as_ref(), None, writer, &document)
+            );
+        }
     }
 
     #[test]

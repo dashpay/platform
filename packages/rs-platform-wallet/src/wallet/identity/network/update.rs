@@ -21,6 +21,7 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::error::PlatformWalletError;
 
+use super::signing_key::AvailableSigningKey;
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs` for the same pattern.
@@ -136,14 +137,14 @@ impl IdentityWallet {
         // Pick the MASTER signing key — DPP requires identity update
         // transitions to be authorized by MASTER specifically.
         let master_key_id = identity
-            .public_keys()
-            .iter()
-            .find(|(_, key)| {
-                key.purpose() == Purpose::AUTHENTICATION
-                    && key.security_level() == SecurityLevel::MASTER
-                    && key.key_type() == KeyType::ECDSA_SECP256K1
-            })
-            .map(|(id, _)| *id)
+            .available_signing_key(
+                signer,
+                Purpose::AUTHENTICATION,
+                &[SecurityLevel::MASTER],
+                &[KeyType::ECDSA_SECP256K1],
+                true,
+            )?
+            .map(|key| key.id())
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
                     "No signable master key found on identity".to_string(),

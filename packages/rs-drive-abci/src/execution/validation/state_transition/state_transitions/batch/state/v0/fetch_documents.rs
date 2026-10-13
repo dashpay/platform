@@ -25,7 +25,7 @@ use drive::grovedb::TransactionArg;
 use drive::query::drive_contested_document_query::{
     DriveContestedDocumentQuery, PrimaryContestedInternalClauses,
 };
-use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
+use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
 
 // ============================================================================
@@ -610,8 +610,9 @@ pub(crate) fn fetch_document_through_lookup(
 /// a string and a byte array: the empty string as `"\0"`, and an empty byte
 /// array as no value at all. So for those the document must hold exactly the
 /// same text or bytes, whichever binary form either side carries; every other
-/// kind encodes one value one way only, and holds by being found.
-fn holds_key_part(
+/// kind encodes one value one way only, and holds by being found. A `chooseFirst`
+/// reads it for the 32-byte hashes it compares, which it judges byte for byte.
+pub(crate) fn holds_key_part(
     document_type: DocumentTypeRef,
     document: &Document,
     index_property: &str,
@@ -633,6 +634,84 @@ fn holds_key_part(
         ),
         _ => true,
     }
+}
+
+// ============================================================================
+// fetch_documents_holding_in_order
+// ============================================================================
+
+/// The documents of `document_type` holding `value` at `property`, read in `order` (each
+/// entry a property and whether it ascends; within equal values the index keeps them by id,
+/// in the direction of the last) through the type's index over exactly `property` and the
+/// ordered properties, which registration demands, bounded by `range` on the first ordered
+/// property, at most `limit`: the commitments a `refersTo` `chooseFirst` reads. Expired
+/// documents the cleanup has not reached yet are among them, as the index still holds them.
+///
+/// Returns the documents and the query's processing cost, which the caller bills within the
+/// scan's budget. Only reached from the document reference validation, which exists from
+/// protocol version 14, so it carries no version of its own.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fetch_documents_holding_in_order(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    property: &str,
+    value: Value,
+    order: &[(String, bool)],
+    range: Option<WhereClause>,
+    limit: u16,
+    epoch: &Epoch,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<(Vec<Document>, FeeResult), Error> {
+    let drive_query = DriveDocumentQuery {
+        contract,
+        document_type,
+        internal_clauses: InternalClauses {
+            primary_key_in_clause: None,
+            primary_key_equal_clause: None,
+            in_clauses: Vec::new(),
+            range_clause: range,
+            equal_clauses: BTreeMap::from([(
+                property.to_string(),
+                WhereClause {
+                    field: property.to_string(),
+                    operator: WhereOperator::Equal,
+                    value,
+                },
+            )]),
+        },
+        offset: None,
+        limit: Some(limit),
+        order_by: order
+            .iter()
+            .map(|(field, ascending)| {
+                (
+                    field.clone(),
+                    OrderClause {
+                        field: field.clone(),
+                        ascending: *ascending,
+                    },
+                )
+            })
+            .collect(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+
+    let documents_outcome = drive.query_documents(
+        drive_query,
+        Some(epoch),
+        false,
+        transaction,
+        Some(platform_version.protocol_version),
+    )?;
+    let cost = FeeResult::new_from_processing_fee(documents_outcome.cost());
+
+    Ok((documents_outcome.documents_owned(), cost))
 }
 
 // ============================================================================

@@ -55,14 +55,18 @@ pub use generated_from::{
 pub use list_element_reference::ListElementReference;
 pub use lookup_preimage::{
     first_unrevealable_lookup_key, LookupHashKey, LookupKeyParam, LookupPreimageError,
+    WriterPreimage,
 };
 pub use reference_expression::{
     ReferenceCombinator, ReferenceOperands, COMBINABLE_REFERENCE_TARGET_TYPES,
     MAX_REFERENCE_EXPRESSION_DECODE_DEPTH,
 };
-pub use reference_lookup::{DocumentReferenceLookup, LookupKeySource};
+pub use reference_lookup::{
+    ChooseFirstOrder, DocumentReferenceLookup, LookupChooseFirst, LookupKeySource,
+};
 pub use reference_where::{
-    WhereBoundRead, WhereCondition, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
+    where_list_elements, where_lists_elements_read, where_lists_equal, WhereBoundRead,
+    WhereCondition, WhereContainsBound, WhereLiteral, WhereLiteralKind, WhereNotEqualBound,
     WhereOrdering, WhereOrderingBound,
 };
 
@@ -233,6 +237,20 @@ impl DocumentProperty {
     /// predates every `requiredSince` annotation.
     pub fn always_required(&self) -> bool {
         self.required && self.required_since.is_none()
+    }
+}
+
+/// The typed array property `name` names among a document type's
+/// `flattened_properties` (protocol version 14), or `None` when it names no
+/// property or a property of another type. The one reading of "is this a
+/// typed array" shared by the parser, the write walkers, pricing and queries.
+pub fn typed_array_property<'a>(
+    flattened_properties: &'a IndexMap<String, DocumentProperty>,
+    name: &str,
+) -> Option<&'a TypedArrayProperty> {
+    match &flattened_properties.get(name)?.property_type {
+        DocumentPropertyType::TypedArray(typed_array) => Some(typed_array),
+        _ => None,
     }
 }
 
@@ -806,7 +824,9 @@ pub enum DocumentPropertyReferenceTarget {
         /// are validated at contract registration: both sides must exist
         /// and share one value kind (an identifier on the referring side
         /// for the system names), and `$creatorId` needs a referenced
-        /// document type that records creator ids at all.
+        /// document type that records creator ids at all. Two typed arrays
+        /// of one element kind may be paired, and are then equal as lists
+        /// ([`where_lists_equal`]); a typed array pairs with nothing else.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         property_agreement: BTreeMap<String, String>,
         /// The other `where` entries, by referenced property: a literal the
@@ -3281,7 +3301,9 @@ impl DocumentPropertyType {
                     "we should never try encoding an object".to_string(),
                 ),
             )),
-            // Arrays are never index keys: the parser refuses an index on one
+            // No array is keyed whole: parser generations before 3 refuse an index on
+            // one, and from generation 3 `serialize_value_for_key` keys a typed array by
+            // each element, through the element's type
             DocumentPropertyType::Array(_)
             | DocumentPropertyType::VariableTypeArray(_)
             | DocumentPropertyType::TypedArray(_) => Err(ProtocolError::DataContractError(
@@ -10747,6 +10769,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    choose_first: None,
                 },
             }
             .to_string(),
@@ -10802,6 +10825,7 @@ mod tests {
             keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
             minimum_age_blocks: None,
             consume: false,
+            choose_first: None,
         };
         let target = DocumentPropertyReferenceTarget::PermanentDocumentLookup {
             contract_id: None,
@@ -11141,6 +11165,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    choose_first: None,
                 },
             },
             DocumentPropertyReferenceTarget::AnyOf(ReferenceOperands::new(vec![
@@ -11177,6 +11202,7 @@ mod tests {
                     keys: [("$ownerId".to_string(), LookupKeySource::ReferenceValue)].into(),
                     minimum_age_blocks: None,
                     consume: false,
+                    choose_first: None,
                 },
             },
             DocumentPropertyReferenceTarget::ModeratedDocument {

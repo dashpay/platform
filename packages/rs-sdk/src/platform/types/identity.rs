@@ -1,6 +1,7 @@
 //! Identity related types and functions
 
 use crate::delegate_enum;
+use crate::sdk::ProofResponseMetadata;
 use crate::{
     platform::{proto, Query},
     Error,
@@ -34,6 +35,17 @@ delegate_enum! {
     (GetIdentity,proto::GetIdentityRequest,proto::GetIdentityResponse),
     (GetIdentityByPublicKeyHash, proto::GetIdentityByPublicKeyHashRequest, proto::GetIdentityByPublicKeyHashResponse),
     (GetIdentityByNonUniquePublicKeyHash, proto::GetIdentityByNonUniquePublicKeyHashRequest, proto::GetIdentityByNonUniquePublicKeyHashResponse)
+}
+
+impl ProofResponseMetadata for IdentityResponse {
+    fn response_metadata(&self) -> Result<&ResponseMetadata, drive_proof_verifier::Error> {
+        match self {
+            Self::GetIdentity(response) => response.response_metadata(),
+            Self::GetIdentityByPublicKeyHash(response) => response.response_metadata(),
+            Self::GetIdentityByNonUniquePublicKeyHash(response) => response.response_metadata(),
+            Self::Unknown => Err(drive_proof_verifier::Error::EmptyVersion),
+        }
+    }
 }
 
 impl Query<IdentityRequest> for dpp::prelude::Identifier {

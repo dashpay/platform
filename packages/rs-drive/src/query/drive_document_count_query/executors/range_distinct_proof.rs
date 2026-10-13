@@ -31,7 +31,7 @@ impl Drive {
     /// divergence. The SDK reads it back off the request when
     /// building the verifier's `PathQuery`.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_count_range_distinct_proof(
+    pub(crate) fn execute_document_count_range_distinct_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,

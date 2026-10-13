@@ -11,6 +11,7 @@ use crate::platform::Identifier;
 use arc_swap::ArcSwapOption;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+use dapi_grpc::platform::VersionedGrpcResponse;
 #[cfg(not(target_arch = "wasm32"))]
 use dapi_grpc::tonic::transport::Certificate;
 use dash_context_provider::ContextProvider;
@@ -48,6 +49,53 @@ use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
 mod quorum_key;
+#[cfg(all(test, feature = "mocks"))]
+mod signed_version_tests;
+
+/// Metadata needed to select the rules for interpreting a proved response.
+/// Reading it does not authenticate it or update the SDK's stored version.
+pub trait ProofResponseMetadata {
+    /// Read the response metadata before proof and signature verification.
+    fn response_metadata(&self) -> Result<&ResponseMetadata, drive_proof_verifier::Error>;
+}
+
+impl<T: VersionedGrpcResponse> ProofResponseMetadata for T {
+    fn response_metadata(&self) -> Result<&ResponseMetadata, drive_proof_verifier::Error> {
+        self.metadata()
+            .map_err(|error| drive_proof_verifier::Error::ResponseDecodeError {
+                error: error.to_string(),
+            })
+    }
+}
+
+/// Select proof rules without weakening the SDK's stored version.
+pub(crate) fn verifier_version(
+    stored: &'static PlatformVersion,
+    signed: u32,
+) -> &'static PlatformVersion {
+    if signed <= stored.protocol_version {
+        return stored;
+    }
+
+    // The quorum signature binds metadata.protocol_version as StateId.app_version.
+    // Selecting interpretation rules before authentication cannot accept a false
+    // version claim: its signature must still verify before metadata is learned.
+    match (signed <= PlatformVersion::latest().protocol_version)
+        .then(|| PlatformVersion::get(signed))
+    {
+        Some(Ok(version)) => version,
+        _ => {
+            let newest = PlatformVersion::latest();
+            tracing::debug!(
+                signed_protocol_version = signed,
+                stored_protocol_version = stored.protocol_version,
+                verifier_protocol_version = newest.protocol_version,
+                "unverified protocol version is unknown; selecting newest known verifier table"
+            );
+            newest
+        }
+    }
+}
 
 /// How many data contracts fit in the cache.
 pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
@@ -60,10 +108,9 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 ///
 /// Mainnet, testnet and regtest seed at protocol version 13, the lowest version
 /// any of those networks still runs. Devnets seed at 14: they are cut from the
-/// current development line, and their contracts use index grammar that
-/// version 13 cannot deserialize, so a lower seed would fail the very first
-/// proved request instead of ratcheting (the ratchet only runs after a proof
-/// verifies).
+/// current development line. Proved reads can use a newer version named in
+/// their signed response metadata even when the SDK starts with a lower seed;
+/// the stored version ratchets only after proof and signature verification.
 ///
 /// Not a runtime clamp: [`SdkBuilder::with_initial_version`] can seed an unpinned
 /// SDK *below* this value (no construction-time floor), and auto-detect
@@ -372,6 +419,9 @@ impl Sdk {
     }
 
     /// Verify response metadata against the current state of the SDK.
+    ///
+    /// The metadata must come from a proof whose quorum signature has already
+    /// been verified: this method learns the reported protocol version.
     pub fn verify_response_metadata(
         &self,
         method_name: &str,
@@ -427,6 +477,16 @@ impl Sdk {
         metadata: &ResponseMetadata,
         arrival: Option<MetadataArrival>,
     ) -> Result<(), Error> {
+        if metadata.protocol_version > self.protocol_version_number()
+            && PlatformVersion::get(metadata.protocol_version).is_err()
+        {
+            tracing::warn!(
+                signed_protocol_version = metadata.protocol_version,
+                stored_protocol_version = self.protocol_version_number(),
+                verifier_protocol_version = PlatformVersion::latest().protocol_version,
+                "authenticated network protocol version is unknown; using newest known verifier table"
+            );
+        }
         self.verify_response_metadata_as_of(method_name, metadata, arrival)
             .inspect_err(|err| {
                 tracing::warn!(%err, method = method_name, "received response with stale metadata; try another server");
@@ -538,22 +598,11 @@ impl Sdk {
     ///
     /// ## Protocol version bootstrapping
     ///
-    /// On a fresh auto-detect SDK (i.e. one built without [`SdkBuilder::with_version()`]), the
-    /// first call to this method uses the per-network [`min_protocol_version`] floor as a fallback
-    /// because no network response has been received yet to teach the SDK the real network version.
-    ///
-    /// The actual network version is learned only *after* proof parsing succeeds, when
-    /// [`Self::verify_response_metadata()`] processes `metadata.protocol_version`. A proof the
-    /// SDK's version can not read, such as a contract written with grammar only a newer
-    /// protocol version parses, is read as [`Self::parse_proof_at_the_reported_version`] sets
-    /// out: under the newest version this SDK knows, then under the version the response
-    /// reports, which the proof's quorum signature covers. If the connected network runs an
-    /// older protocol version **and** proof interpretation differs between that version and the
-    /// seeded [`min_protocol_version`] without failing, the very first request may still read
-    /// the proof the seeded way. Subsequent requests will use the correct version.
-    ///
-    /// Callers that must guarantee correct version behaviour on the first request should pin
-    /// the version explicitly via [`SdkBuilder::with_version()`].
+    /// Proof interpretation uses the response's signed protocol version when
+    /// it is newer than the stored version, including on a pinned SDK. An
+    /// unknown newer version uses the newest known verifier table with a warning.
+    /// The stored version is learned only after proof and signature verification
+    /// succeeds, and is never lowered; a pin still governs construction.
     pub(crate) async fn parse_proof_with_metadata_and_proof<R, O: FromProof<R> + MockResponse>(
         &self,
         request: O::Request,
@@ -562,7 +611,7 @@ impl Sdk {
     ) -> Result<(Option<O>, ResponseMetadata, Proof), Error>
     where
         O::Request: Mockable + Clone,
-        O::Response: Clone,
+        O::Response: Clone + ProofResponseMetadata,
     {
         let provider = self
             .context_provider()
@@ -575,97 +624,16 @@ impl Sdk {
             }
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref mock, .. } => {
-                let verified = mock
-                    .lock()
-                    .await
-                    .parse_proof_with_metadata(request, response)?;
+                let verified = mock.lock().await.parse_proof_with_metadata(
+                    request,
+                    response,
+                    self.version(),
+                )?;
                 // Proof and signature verification (the `?`) must precede this
                 // call; see `accept_verified_metadata`.
                 self.accept_verified_metadata(method_name, &verified.1, None)?;
                 Ok(verified)
             }
-        }
-    }
-
-    /// Parses and verifies `response` under the SDK's protocol version, and, when that fails on
-    /// an SDK that learns its version from the network, under the version the response reports.
-    ///
-    /// A fresh SDK starts at its network's [`min_protocol_version`], and a proof can hold what
-    /// only a newer protocol version reads, such as a contract written with the `bytes` and
-    /// `identifier` property type shorthands of protocol version 14. The version is learned
-    /// from a verified response, so such a proof would fail every time. The response is then
-    /// parsed under the newest version this SDK knows, which verifies the proof and its quorum
-    /// signature, over a state id that signs the protocol version the response reports, and,
-    /// when that version is another one this SDK knows, parsed again under it. A pinned SDK, or
-    /// one already at the newest version it knows, reports the first failure.
-    ///
-    /// A failure of the quorum signature or its key is reported as it is, under either version:
-    /// the signature is checked once the proof was read, so under the SDK's version another
-    /// version would read it no differently, and under the newest one it is the closer account
-    /// of the response. A missing key ([`drive_proof_verifier::Error::QuorumKeyUnavailable`])
-    /// thus reaches [`Self::verify_fetching_quorum_key`], which fetches it and calls this again.
-    ///
-    /// The request and response are borrowed and copied once for each parse, so the caller's
-    /// copies serve a later call too.
-    fn parse_proof_at_the_reported_version<R, O: FromProof<R>>(
-        &self,
-        request: &O::Request,
-        response: &O::Response,
-        provider: &dyn ContextProvider,
-        current: &PlatformVersion,
-    ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
-    where
-        O::Request: Clone,
-        O::Response: Clone,
-    {
-        let latest = PlatformVersion::latest();
-        let error = match O::maybe_from_proof_with_metadata(
-            request.clone(),
-            response.clone(),
-            self.network,
-            current,
-            provider,
-        ) {
-            Ok(parsed) => return Ok(parsed),
-            Err(error) => error,
-        };
-        if self.version_pinned
-            || current.protocol_version >= latest.protocol_version
-            || fails_after_reading_the_proof(&error)
-        {
-            return Err(error);
-        }
-        let parsed = match O::maybe_from_proof_with_metadata(
-            request.clone(),
-            response.clone(),
-            self.network,
-            latest,
-            provider,
-        ) {
-            Ok(parsed) => parsed,
-            Err(signature_error) if fails_after_reading_the_proof(&signature_error) => {
-                return Err(signature_error)
-            }
-            Err(_) => return Err(error),
-        };
-        let reported = parsed.1.protocol_version;
-        match PlatformVersion::get(reported) {
-            Ok(reported) if reported.protocol_version != latest.protocol_version => {
-                tracing::debug!(
-                    target: "dash_sdk::protocol_version",
-                    current = current.protocol_version,
-                    reported = reported.protocol_version,
-                    "parsed a proof under the protocol version its response reports"
-                );
-                O::maybe_from_proof_with_metadata(
-                    request.clone(),
-                    response.clone(),
-                    self.network,
-                    reported,
-                    provider,
-                )
-            }
-            _ => Ok(parsed),
         }
     }
 
@@ -861,20 +829,6 @@ pub(crate) fn verify_metadata_time(
         "received response with valid time"
     );
     Ok(())
-}
-
-/// Whether `error` comes from the quorum signature or its key, checked once a proof was read, so
-/// that reading the proof under another protocol version would not change it.
-fn fails_after_reading_the_proof(error: &drive_proof_verifier::Error) -> bool {
-    matches!(
-        error,
-        drive_proof_verifier::Error::QuorumKeyUnavailable { .. }
-            | drive_proof_verifier::Error::InvalidPublicKey { .. }
-            | drive_proof_verifier::Error::InvalidSignature { .. }
-            | drive_proof_verifier::Error::InvalidSignatureFormat { .. }
-            | drive_proof_verifier::Error::SignatureVerificationError { .. }
-            | drive_proof_verifier::Error::SignDigestFailed { .. }
-    )
 }
 
 /// If current metadata height is behind previously seen height by more than `tolerance`, the remote node
@@ -1175,6 +1129,9 @@ impl SdkBuilder {
     ///
     /// Select specific version of Dash Platform to use. This pins the version and
     /// disables auto-detection.
+    ///
+    /// The pin governs construction. Proof verification may use a newer table
+    /// named in the response's quorum-signed metadata without changing the pin.
     ///
     /// The pinned version is used as-is; it is not clamped to the per-network
     /// [`min_protocol_version`].
@@ -2574,406 +2531,6 @@ pub(crate) mod test {
             )
             .await
             .expect("register epoch refresh expectation");
-    }
-
-    /// The quorum the scripted proof names as its signer.
-    const PROBE_QUORUM: (u32, [u8; 32], u32) = (4, [7; 32], 1);
-
-    /// The request of a stand-in for a proof holding what only some protocol versions read,
-    /// such as a contract written with grammar protocol version 13 can not parse. It scripts
-    /// the proof: under a version below `decodes_from` it fails to decode; once read, it asks
-    /// the provider for the key of [`PROBE_QUORUM`] when `key_needs_fetch`, failing while the
-    /// provider has none, and its quorum signature fails under the versions in
-    /// `signature_fails_at`; otherwise it holds the version it was parsed under
-    /// ([`ReadableFrom`]), its response reporting `reports`. Every version it is parsed under is
-    /// recorded in `attempts`, which its copies share.
-    #[derive(Debug, Clone)]
-    struct ProbeRequest {
-        decodes_from: u32,
-        reports: u32,
-        key_needs_fetch: bool,
-        signature_fails_at: Vec<u32>,
-        attempts: Arc<std::sync::Mutex<Vec<u32>>>,
-    }
-
-    impl ProbeRequest {
-        fn new(decodes_from: u32, reports: u32) -> Self {
-            Self {
-                decodes_from,
-                reports,
-                key_needs_fetch: false,
-                signature_fails_at: Vec::new(),
-                attempts: Default::default(),
-            }
-        }
-
-        fn needing_its_key_fetched(mut self) -> Self {
-            self.key_needs_fetch = true;
-            self
-        }
-
-        fn with_signature_failing_at(mut self, version: u32) -> Self {
-            self.signature_fails_at.push(version);
-            self
-        }
-
-        fn attempts(&self) -> Vec<u32> {
-            self.attempts.lock().expect("the attempts lock").clone()
-        }
-    }
-
-    #[derive(Debug, Clone)]
-    struct ProbeResponse;
-
-    /// What the scripted proof holds: the protocol version it was parsed under.
-    #[derive(Debug)]
-    struct ReadableFrom(u32);
-
-    impl drive_proof_verifier::FromProof<ProbeRequest> for ReadableFrom {
-        type Request = ProbeRequest;
-        type Response = ProbeResponse;
-
-        fn maybe_from_proof_with_metadata<'a, I: Into<ProbeRequest>, O: Into<ProbeResponse>>(
-            request: I,
-            _response: O,
-            _network: Network,
-            platform_version: &dpp::version::PlatformVersion,
-            provider: &'a dyn dash_context_provider::ContextProvider,
-        ) -> Result<
-            (
-                Option<Self>,
-                ResponseMetadata,
-                dapi_grpc::platform::v0::Proof,
-            ),
-            drive_proof_verifier::Error,
-        >
-        where
-            Self: Sized + 'a,
-        {
-            let request: ProbeRequest = request.into();
-            let version = platform_version.protocol_version;
-            request
-                .attempts
-                .lock()
-                .expect("the attempts lock")
-                .push(version);
-            if version < request.decodes_from {
-                return Err(drive_proof_verifier::Error::ResponseDecodeError {
-                    error: "unsupported property type: bytes".to_string(),
-                });
-            }
-            let (quorum_type, quorum_hash, core_chain_locked_height) = PROBE_QUORUM;
-            if request.key_needs_fetch {
-                if let Err(error) = provider.get_quorum_public_key(
-                    quorum_type,
-                    quorum_hash,
-                    core_chain_locked_height,
-                ) {
-                    return Err(drive_proof_verifier::Error::QuorumKeyUnavailable {
-                        quorum_type,
-                        quorum_hash,
-                        core_chain_locked_height,
-                        error,
-                    });
-                }
-            }
-            if request.signature_fails_at.contains(&version) {
-                return Err(drive_proof_verifier::Error::InvalidSignature {
-                    error: "the quorum signature does not verify".to_string(),
-                });
-            }
-            Ok((
-                Some(ReadableFrom(version)),
-                ResponseMetadata {
-                    height: 1,
-                    time_ms: chrono::Utc::now().timestamp_millis() as u64,
-                    protocol_version: request.reports,
-                    ..Default::default()
-                },
-                Default::default(),
-            ))
-        }
-    }
-
-    /// A provider holding no quorum key until asked to fetch one, then holding it; it counts
-    /// the fetches.
-    #[derive(Default)]
-    struct KeyFetchedOnRequest {
-        fetched: std::sync::atomic::AtomicBool,
-        fetches: std::sync::atomic::AtomicUsize,
-    }
-
-    impl dash_context_provider::ContextProvider for KeyFetchedOnRequest {
-        fn get_data_contract(
-            &self,
-            _id: &dpp::prelude::Identifier,
-            _platform_version: &dpp::version::PlatformVersion,
-        ) -> Result<
-            Option<Arc<dpp::prelude::DataContract>>,
-            dash_context_provider::ContextProviderError,
-        > {
-            Ok(None)
-        }
-
-        fn get_token_configuration(
-            &self,
-            _token_id: &dpp::prelude::Identifier,
-        ) -> Result<
-            Option<dpp::data_contract::TokenConfiguration>,
-            dash_context_provider::ContextProviderError,
-        > {
-            Ok(None)
-        }
-
-        fn get_quorum_public_key(
-            &self,
-            _quorum_type: u32,
-            _quorum_hash: [u8; 32],
-            _core_chain_locked_height: u32,
-        ) -> Result<[u8; 48], dash_context_provider::ContextProviderError> {
-            if self.fetched.load(std::sync::atomic::Ordering::SeqCst) {
-                Ok([7; 48])
-            } else {
-                Err(dash_context_provider::ContextProviderError::InvalidQuorum(
-                    "not cached".to_string(),
-                ))
-            }
-        }
-
-        fn fetch_quorum_public_key(
-            &self,
-            _quorum_type: u32,
-            _quorum_hash: [u8; 32],
-            _core_chain_locked_height: u32,
-        ) -> Option<dash_context_provider::QuorumKeyFuture> {
-            self.fetches
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            self.fetched
-                .store(true, std::sync::atomic::Ordering::SeqCst);
-            Some(Box::pin(async { Ok(Some([7; 48])) }))
-        }
-
-        fn get_platform_activation_height(
-            &self,
-        ) -> Result<dpp::prelude::CoreBlockHeight, dash_context_provider::ContextProviderError>
-        {
-            Ok(1)
-        }
-    }
-
-    /// The newest protocol version this SDK knows.
-    fn latest() -> u32 {
-        dpp::version::PlatformVersion::latest().protocol_version
-    }
-
-    /// A mock SDK that learns its version from the network, starting at `version`.
-    fn sdk_seeded_at(version: u32) -> super::Sdk {
-        SdkBuilder::new_mock()
-            .with_initial_version(
-                dpp::version::PlatformVersion::get(version).expect("a known protocol version"),
-            )
-            .build()
-            .expect("the mock SDK builds")
-    }
-
-    /// The scripted proof read as the version fallback reads it, from the SDK's version: the
-    /// version it was read under.
-    fn parse_probe(
-        sdk: &super::Sdk,
-        request: &ProbeRequest,
-    ) -> Result<u32, drive_proof_verifier::Error> {
-        // A provider holding no quorum key, which it is never asked to fetch here
-        let provider = KeyFetchedOnRequest::default();
-        sdk.parse_proof_at_the_reported_version::<ProbeRequest, ReadableFrom>(
-            request,
-            &ProbeResponse,
-            &provider,
-            sdk.version(),
-        )
-        .map(|(object, _, _)| object.expect("the probe holds an object").0)
-    }
-
-    /// A fresh SDK reads a proof only the newest version parses: under the newest version it
-    /// knows, which the response reports
-    #[test]
-    fn should_parse_a_proof_its_version_can_not_read_at_the_version_the_response_reports() {
-        let latest = latest();
-        let sdk = sdk_seeded_at(latest - 1);
-        let request = ProbeRequest::new(latest, latest);
-
-        assert_eq!(
-            parse_probe(&sdk, &request).expect("the proof parses"),
-            latest
-        );
-        assert_eq!(request.attempts(), [latest - 1, latest]);
-    }
-
-    /// A response reporting a version between the SDK's and the newest is read again under it
-    #[test]
-    fn should_parse_again_under_a_reported_version_older_than_the_newest() {
-        let latest = latest();
-        let sdk = sdk_seeded_at(latest - 2);
-        let request = ProbeRequest::new(latest - 1, latest - 1);
-
-        assert_eq!(
-            parse_probe(&sdk, &request).expect("the proof parses"),
-            latest - 1
-        );
-        assert_eq!(request.attempts(), [latest - 2, latest, latest - 1]);
-    }
-
-    /// The parse under the reported version decides: its failure is reported
-    #[test]
-    fn should_report_a_failure_of_the_parse_under_the_reported_version() {
-        let latest = latest();
-        let sdk = sdk_seeded_at(latest - 2);
-        let request =
-            ProbeRequest::new(latest - 1, latest - 1).with_signature_failing_at(latest - 1);
-
-        assert!(matches!(
-            parse_probe(&sdk, &request),
-            Err(drive_proof_verifier::Error::InvalidSignature { .. })
-        ));
-        assert_eq!(request.attempts(), [latest - 2, latest, latest - 1]);
-    }
-
-    /// A proof the newest version reads but whose signature fails reports that failure, not the
-    /// decoding error of the SDK's version
-    #[test]
-    fn should_report_a_signature_failure_under_the_newest_version_over_the_decoding_error() {
-        let latest = latest();
-        let sdk = sdk_seeded_at(latest - 1);
-        let request = ProbeRequest::new(latest, latest).with_signature_failing_at(latest);
-
-        assert!(matches!(
-            parse_probe(&sdk, &request),
-            Err(drive_proof_verifier::Error::InvalidSignature { .. })
-        ));
-    }
-
-    /// A proof that decodes only under the newest version but whose quorum key is not cached
-    /// reports the missing key, so the caller fetches it and reads the proof again
-    #[test]
-    fn should_report_a_missing_quorum_key_found_under_the_newest_version() {
-        let latest = latest();
-        let sdk = sdk_seeded_at(latest - 1);
-        let request = ProbeRequest::new(latest, latest).needing_its_key_fetched();
-
-        assert!(matches!(
-            parse_probe(&sdk, &request),
-            Err(drive_proof_verifier::Error::QuorumKeyUnavailable { .. })
-        ));
-    }
-
-    /// The quorum-key verification fetches the key a proof only a newer version reads is
-    /// signed with, and reads it again through the version fallback: under the SDK's version,
-    /// the newest and the one the response reports, which the SDK then learns
-    #[tokio::test]
-    async fn should_fetch_a_missing_key_and_read_the_proof_again_through_the_version_fallback() {
-        let latest = latest();
-        let sdk = sdk_seeded_at(latest - 2);
-        let provider = KeyFetchedOnRequest::default();
-        let request = ProbeRequest::new(latest - 1, latest - 1).needing_its_key_fetched();
-
-        let (object, _, _) = sdk
-            .verify_fetching_quorum_key::<ProbeRequest, ReadableFrom>(
-                request.clone(),
-                ProbeResponse,
-                &provider,
-                "probe",
-            )
-            .await
-            .expect("the proof is read once its key is fetched");
-
-        assert_eq!(object.expect("the probe holds an object").0, latest - 1);
-        assert_eq!(
-            provider.fetches.load(std::sync::atomic::Ordering::SeqCst),
-            1
-        );
-        assert_eq!(
-            request.attempts(),
-            [latest - 2, latest, latest - 2, latest, latest - 1]
-        );
-        assert_eq!(sdk.version().protocol_version, latest - 1);
-    }
-
-    /// A proof read under the SDK's version whose signature fails is not read under another
-    #[test]
-    fn should_not_try_another_version_after_a_signature_failure() {
-        let latest = latest();
-        let sdk = sdk_seeded_at(latest - 1);
-        let request = ProbeRequest::new(latest - 1, latest).with_signature_failing_at(latest - 1);
-
-        assert!(matches!(
-            parse_probe(&sdk, &request),
-            Err(drive_proof_verifier::Error::InvalidSignature { .. })
-        ));
-        assert_eq!(request.attempts(), [latest - 1]);
-    }
-
-    /// A pinned SDK keeps its version, failure included
-    #[test]
-    fn should_report_the_failure_of_a_pinned_sdk() {
-        let latest = latest();
-        let sdk = SdkBuilder::new_mock()
-            .with_version(
-                dpp::version::PlatformVersion::get(latest - 1).expect("a known protocol version"),
-            )
-            .build()
-            .expect("the mock SDK builds");
-        let request = ProbeRequest::new(latest, latest);
-
-        assert!(matches!(
-            parse_probe(&sdk, &request),
-            Err(drive_proof_verifier::Error::ResponseDecodeError { .. })
-        ));
-        assert_eq!(request.attempts(), [latest - 1]);
-    }
-
-    /// The quorum-key verification every network response goes through reads a proof its
-    /// version can not under the version the response reports, and the SDK learns that version
-    #[tokio::test]
-    async fn should_learn_the_version_of_a_proof_read_through_the_quorum_key_verification() {
-        let latest = latest();
-        let sdk = sdk_seeded_at(latest - 1);
-        let provider = sdk.context_provider().expect("the mock SDK has a provider");
-        let request = ProbeRequest::new(latest, latest);
-
-        let (object, metadata, _) = sdk
-            .verify_fetching_quorum_key::<ProbeRequest, ReadableFrom>(
-                request.clone(),
-                ProbeResponse,
-                &provider,
-                "probe",
-            )
-            .await
-            .expect("the proof is read under the newest version");
-
-        assert_eq!(object.expect("the probe holds an object").0, latest);
-        assert_eq!(metadata.protocol_version, latest);
-        assert_eq!(sdk.version().protocol_version, latest);
-        assert_eq!(request.attempts(), [latest - 1, latest]);
-    }
-
-    /// A response whose signature fails under the version it is read under teaches the SDK no
-    /// version
-    #[tokio::test]
-    async fn should_not_learn_a_version_from_a_proof_whose_signature_fails() {
-        let latest = latest();
-        let sdk = sdk_seeded_at(latest - 1);
-        let provider = sdk.context_provider().expect("the mock SDK has a provider");
-        let request = ProbeRequest::new(latest, latest).with_signature_failing_at(latest);
-
-        sdk.verify_fetching_quorum_key::<ProbeRequest, ReadableFrom>(
-            request,
-            ProbeResponse,
-            &provider,
-            "probe",
-        )
-        .await
-        .expect_err("the signature fails");
-
-        assert_eq!(sdk.version().protocol_version, latest - 1);
     }
 
     /// Seeded below `LATEST_VERSION`, a proven refresh ratchets the SDK up to the

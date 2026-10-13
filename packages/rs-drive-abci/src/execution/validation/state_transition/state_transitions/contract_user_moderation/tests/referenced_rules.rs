@@ -203,8 +203,10 @@ fn comment_schema() -> Value {
     })
 }
 
-/// A stall on a topic, kept to a hundred and one posts on it while it is
-/// open, with a note only moderators write
+/// A stall on a topic, written only while the topic is open, with a note
+/// only moderators write. Its rule reads no total: registration refuses a rule
+/// reading a referenced document beside one on a type keeping fields for its
+/// moderators, whose change is judged against every rule reading a total
 fn stall_schema() -> Value {
     platform_value!({
         "type": "object",
@@ -220,12 +222,7 @@ fn stall_schema() -> Value {
         },
         "required": ["topicId"],
         "propertyConstraints": {
-            "fewPosts": {
-                "lessThanOrEqual": [
-                    { "countOf": [THREAD_POST, { "topicId": "topicId" }] },
-                    { "add": [{ "referenced": ["topicId", "open"] }, 100] }
-                ]
-            }
+            "topicOpen": { "equal": [{ "referenced": ["topicId", "open"] }, 1] }
         },
         "additionalProperties": false,
     })
@@ -252,49 +249,6 @@ async fn setup() -> Setup {
 
 fn id_value(id: Identifier) -> Value {
     Value::Identifier(id.to_buffer())
-}
-
-/// A creation by `actor` of a document of `document_type_name` holding exactly
-/// `properties`
-async fn create_with(
-    setup: &Setup,
-    actor: &Actor,
-    document_type_name: &str,
-    properties: Vec<(&str, Value)>,
-) -> (Document, StateTransition) {
-    setup
-        .create_document_of_type_with(actor, document_type_name, |document| {
-            document.properties_mut().clear();
-            for (property, value) in properties {
-                document.set(property, value);
-            }
-        })
-        .await
-}
-
-/// The replacement of `document` by `actor`, its owner, its revision bumped
-async fn replacement(
-    actor: &Actor,
-    contract: &DataContract,
-    document_type_name: &str,
-    document: &mut Document,
-) -> StateTransition {
-    document.increment_revision().expect("revision increments");
-    BatchTransition::new_document_replacement_transition_from_document(
-        document.clone(),
-        contract
-            .document_type_for_name(document_type_name)
-            .expect("expected the document type"),
-        &actor.key,
-        actor.contract_nonce(),
-        0,
-        None,
-        &actor.signer,
-        PlatformVersion::latest(),
-        None,
-    )
-    .await
-    .expect("expected to build the replacement")
 }
 
 fn assert_rule_broken(execution: &StateTransitionExecutionResult, rule: &str) {
@@ -585,13 +539,14 @@ async fn should_check_every_where_entry_of_a_removed_document_a_rule_reads() {
 }
 
 /// A moderator's change of a field judges no rule reading a referenced
-/// document, and reads none of its totals: the stall's rule, reading the posts
-/// on its topic and the topic itself, is left for the owner's writes.
+/// document: the stall's rule, reading whether its topic is open, is left for
+/// the owner's writes, so a moderator changes the note of a stall whose topic
+/// has closed.
 #[tokio::test]
-async fn should_change_a_field_without_reading_a_total_of_a_rule_it_does_not_judge() {
+async fn should_change_a_field_without_judging_a_rule_reading_a_reference() {
     let setup = setup().await;
     let transaction = setup.platform.drive.grove.start_transaction();
-    let (topic, create_topic) = create_with(
+    let (mut topic, create_topic) = create_with(
         &setup,
         &setup.user,
         TOPIC,
@@ -607,6 +562,10 @@ async fn should_change_a_field_without_reading_a_total_of_a_rule_it_does_not_jud
     )
     .await;
     assert_success(&setup.process(&create_stall, &transaction));
+
+    topic.set("open", Value::Bool(false));
+    let close = replacement(&setup.user, &setup.contract, TOPIC, &mut topic).await;
+    assert_success(&setup.process(&close, &transaction));
 
     let change = setup
         .moderate(
