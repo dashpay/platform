@@ -1820,7 +1820,7 @@ dependencies = [
 [[package]]
 name = "dash-network"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=d036d844b1daf5d840b777babe6f82b5df5a9ae7#d036d844b1daf5d840b777babe6f82b5df5a9ae7"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=90359ed58a993bab0d4e267b4029bab132a56532#90359ed58a993bab0d4e267b4029bab132a56532"
 dependencies = [
  "cbindgen 0.29.4",
  "grovedb-bincode",
@@ -1831,7 +1831,7 @@ dependencies = [
 [[package]]
 name = "dash-network-seeds"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=d036d844b1daf5d840b777babe6f82b5df5a9ae7#d036d844b1daf5d840b777babe6f82b5df5a9ae7"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=90359ed58a993bab0d4e267b4029bab132a56532#90359ed58a993bab0d4e267b4029bab132a56532"
 dependencies = [
  "dash-network",
 ]
@@ -1963,7 +1963,7 @@ dependencies = [
 [[package]]
 name = "dash-spv"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=d036d844b1daf5d840b777babe6f82b5df5a9ae7#d036d844b1daf5d840b777babe6f82b5df5a9ae7"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=90359ed58a993bab0d4e267b4029bab132a56532#90359ed58a993bab0d4e267b4029bab132a56532"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2019,7 +2019,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=d036d844b1daf5d840b777babe6f82b5df5a9ae7#d036d844b1daf5d840b777babe6f82b5df5a9ae7"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=90359ed58a993bab0d4e267b4029bab132a56532#90359ed58a993bab0d4e267b4029bab132a56532"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2044,7 +2044,7 @@ dependencies = [
 [[package]]
 name = "dashcore-crypto"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=d036d844b1daf5d840b777babe6f82b5df5a9ae7#d036d844b1daf5d840b777babe6f82b5df5a9ae7"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=90359ed58a993bab0d4e267b4029bab132a56532#90359ed58a993bab0d4e267b4029bab132a56532"
 dependencies = [
  "base58ck 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "bitcoin-crypto",
@@ -2065,12 +2065,12 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=d036d844b1daf5d840b777babe6f82b5df5a9ae7#d036d844b1daf5d840b777babe6f82b5df5a9ae7"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=90359ed58a993bab0d4e267b4029bab132a56532#90359ed58a993bab0d4e267b4029bab132a56532"
 
 [[package]]
 name = "dashcore-rpc"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=d036d844b1daf5d840b777babe6f82b5df5a9ae7#d036d844b1daf5d840b777babe6f82b5df5a9ae7"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=90359ed58a993bab0d4e267b4029bab132a56532#90359ed58a993bab0d4e267b4029bab132a56532"
 dependencies = [
  "dashcore-rpc-json",
  "hex-conservative 1.3.0",
@@ -2083,7 +2083,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=d036d844b1daf5d840b777babe6f82b5df5a9ae7#d036d844b1daf5d840b777babe6f82b5df5a9ae7"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=90359ed58a993bab0d4e267b4029bab132a56532#90359ed58a993bab0d4e267b4029bab132a56532"
 dependencies = [
  "dashcore",
  "grovedb-bincode",
@@ -2098,7 +2098,7 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=d036d844b1daf5d840b777babe6f82b5df5a9ae7#d036d844b1daf5d840b777babe6f82b5df5a9ae7"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=90359ed58a993bab0d4e267b4029bab132a56532#90359ed58a993bab0d4e267b4029bab132a56532"
 dependencies = [
  "bitcoin_hashes 0.14.101",
  "grovedb-bincode",
@@ -3184,7 +3184,7 @@ dependencies = [
 [[package]]
 name = "git-state"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=d036d844b1daf5d840b777babe6f82b5df5a9ae7#d036d844b1daf5d840b777babe6f82b5df5a9ae7"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=90359ed58a993bab0d4e267b4029bab132a56532#90359ed58a993bab0d4e267b4029bab132a56532"
 
 [[package]]
 name = "glob"
@@ -4424,7 +4424,7 @@ dependencies = [
 [[package]]
 name = "key-wallet"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=d036d844b1daf5d840b777babe6f82b5df5a9ae7#d036d844b1daf5d840b777babe6f82b5df5a9ae7"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=90359ed58a993bab0d4e267b4029bab132a56532#90359ed58a993bab0d4e267b4029bab132a56532"
 dependencies = [
  "async-trait",
  "bip39",
@@ -4447,7 +4447,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-ffi"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=d036d844b1daf5d840b777babe6f82b5df5a9ae7#d036d844b1daf5d840b777babe6f82b5df5a9ae7"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=90359ed58a993bab0d4e267b4029bab132a56532#90359ed58a993bab0d4e267b4029bab132a56532"
 dependencies = [
  "cbindgen 0.29.4",
  "dash-network",
@@ -4463,7 +4463,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-manager"
 version = "0.45.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=d036d844b1daf5d840b777babe6f82b5df5a9ae7#d036d844b1daf5d840b777babe6f82b5df5a9ae7"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=90359ed58a993bab0d4e267b4029bab132a56532#90359ed58a993bab0d4e267b4029bab132a56532"
 dependencies = [
  "async-trait",
  "dashcore",

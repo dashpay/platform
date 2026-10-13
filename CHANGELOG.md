@@ -17,10 +17,13 @@
 
 ### Changed
 
-- **Rust dependencies:** pin rust-dashcore to `dev` at `d036d844`, which includes
+- **Rust dependencies:** pin rust-dashcore to `dev` at `90359ed5`, which includes
   [rust-dashcore#1149](https://github.com/dashpay/rust-dashcore/pull/1149):
   legacy BLS public-key and canonical PlatformNodeId serialization are restored
-  and the pre-v4 coinbase payload Serde layout is preserved. Adapt WASM
+  and the pre-v4 coinbase payload Serde layout is preserved; and
+  [rust-dashcore#1155](https://github.com/dashpay/rust-dashcore/pull/1155):
+  a special transaction payload is decoded only from transaction version 3,
+  as Core does. Adapt WASM
   private-key hex decoding to the removal of `dashcore_hashes::hex`, compact
   ECDSA signatures to `dashcore::sign_message::MessageSignature` (the accepted
   signatures and the encoded bytes are unchanged), and masternode payload
