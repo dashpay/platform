@@ -665,7 +665,9 @@ pub(crate) fn is_catch_up_step(previous: Option<u32>, height: u32) -> bool {
 /// way, behind another task's queue, so it comes within moments. Without a
 /// limit, a completion whose step was lost would turn a step of some later
 /// scan that happens to land at that old tip into an arrival, and start
-/// windows there.
+/// windows there. A step that takes longer than this is a catch-up step
+/// again, and its pass waits for the next completion. Measured on the
+/// monotonic clock, which stands still while the device sleeps.
 const COMPLETED_AHEAD_TTL: Duration = Duration::from_secs(30);
 
 /// A wallet at `height` is at a sync's completed `tip`, as far as following
@@ -853,7 +855,7 @@ pub(crate) fn begin_pass(
             scheduled_queue.push((turn, first, view));
         }
     }
-    let named = take_in_turn(named, usize::MAX);
+    named.sort_unstable_by_key(|(turn, _)| *turn);
     let reached = take_in_turn(forced_queue, MAX_FORCED_ROOTS_PER_PASS);
     let forced_due: Vec<&OutgoingView> = named
         .into_iter()
@@ -1461,6 +1463,17 @@ struct WalletEntry {
 }
 
 impl WalletEntry {
+    /// Whether a pass that follows the tip ran at `height` or above, or one
+    /// anchored at exactly `height` runs or is queued.
+    fn followed_at(&self, height: u32) -> bool {
+        self.followed_pass_at.is_some_and(|at| at >= height)
+            || [
+                self.run.as_ref().and_then(|run| run.anchor_at),
+                self.pending.as_ref().and_then(|pending| pending.anchor_at),
+            ]
+            .contains(&Some(height))
+    }
+
     /// Whether a pass that follows the tip ran, runs or is queued for the
     /// wallet at `height` or above.
     fn anchored_at_or_above(&self, height: u32) -> bool {
@@ -1655,6 +1668,10 @@ impl Actor {
                         // later wallet change brings it back.
                         self.report_lookups
                             .retain(|_, (_, lookup)| lookup.id() != error.id());
+                        // So does a panicked echo lookup its echo: a wallet
+                        // change must not make it again.
+                        self.echo_lookups
+                            .retain(|_, (_, lookup)| lookup.id() != error.id());
                         for entry in self.wallets.values_mut() {
                             entry.wait_until = None;
                         }
@@ -1730,11 +1747,15 @@ impl Actor {
                 // The completion that came first may have run this height's
                 // pass already (a wallet with no step since launch reads its
                 // own height): no second walk over the records then.
+                // Only one anchored at this very height: a completion
+                // anchors a wallet it has no height for at its own tip, and
+                // that pass's read drops the anchor when the wallet turns out
+                // to be a block or two below.
                 if arrived
                     && self
                         .wallets
                         .get(&wallet_id)
-                        .is_some_and(|entry| entry.anchored_at_or_above(height))
+                        .is_some_and(|entry| entry.followed_at(height))
                 {
                     return;
                 }
@@ -2701,6 +2722,10 @@ impl BroadcastResolver {
     /// calls the host from itself, so once it has reached this barrier the
     /// removal is behind it and so is every callback from before. Not to be
     /// awaited under the wallet-manager lock: the task's reads take it.
+    ///
+    /// What it does not cover: a handler that holds the task longer than
+    /// `budget` (`false`), and a wallet registered under the same id while
+    /// this waits, whose first verdicts can be delivered before the answer.
     pub(crate) async fn caught_up(&self, budget: Duration) -> bool {
         let (reply, answer) = oneshot::channel();
         self.send(Command::Barrier(reply));
@@ -3862,6 +3887,8 @@ mod tests {
         /// Reads wait while set, so a test can hold a pass in its read.
         paused: StdMutex<bool>,
         resume: Notify,
+        /// Holder lookups panic while set.
+        holders_panic: StdMutex<bool>,
     }
 
     impl FakeSource {
@@ -3905,6 +3932,9 @@ mod tests {
     #[async_trait]
     impl WalletSource for FakeSource {
         async fn holders(&self, txid: Txid) -> Holders {
+            if *self.holders_panic.lock().expect("holders_panic") {
+                panic!("a holder lookup panics");
+            }
             let views = self.views.lock().expect("views");
             let held = |own: bool| {
                 views
@@ -5261,6 +5291,35 @@ mod tests {
         );
     }
 
+    /// A completion anchors a wallet it has no height for at its own tip.
+    /// When that wallet's first step lands a block or two below, the step
+    /// queues the pass at its own height: the completion's pass loses its
+    /// anchor once its read finds the wallet below it.
+    #[tokio::test]
+    async fn should_run_the_pass_when_the_first_step_lands_just_below_the_completion() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe.clone()).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.source
+            .synced
+            .lock()
+            .expect("synced")
+            .insert(wallet(), 148);
+
+        rig.handle(sync_complete(150));
+        rig.handle(Command::Height {
+            wallet_id: wallet(),
+            height: 148,
+        });
+        rig.settle().await;
+
+        assert_eq!(probe.probed(), [txid(1)]);
+        assert_eq!(
+            rig.actor.state.schedules[&(wallet(), txid(1))].window_start,
+            Some(148)
+        );
+    }
+
     /// An arrival at a completed tip still confines a pass anchored before
     /// the gap: a root that pass had not sent yet is left to the arrival's
     /// own pass, so its window starts at the tip, not at the height the
@@ -5802,6 +5861,36 @@ mod tests {
         assert_eq!(
             rig.sent(),
             vec![ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)]
+        );
+    }
+
+    /// An echo whose holder lookup panicked is given up, as a report whose
+    /// lookup panicked is: a wallet registered later does not have it looked
+    /// up again and accepted at that unrelated moment.
+    #[tokio::test]
+    async fn should_give_up_an_echo_whose_lookup_panicked() {
+        let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+        let mut rig = enabled(probe).await;
+        rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+        rig.send(Command::Seen {
+            wallet_id: wallet(),
+            touched: false,
+        })
+        .await;
+        rig.send(Command::Uncertain(txid(1))).await;
+        rig.sent();
+
+        *rig.source.holders_panic.lock().expect("holders_panic") = true;
+        rig.send(Command::Echoed(txid(1))).await;
+        *rig.source.holders_panic.lock().expect("holders_panic") = false;
+        assert!(rig.actor.echo_lookups.is_empty());
+
+        rig.send(Command::WalletAdded([0xEE; 32])).await;
+
+        assert!(
+            !rig.sent()
+                .contains(&ResolverEvent::Verdict(txid(1), ProbeVerdict::Accepted)),
+            "the given-up echo came back at a wallet change"
         );
     }
 

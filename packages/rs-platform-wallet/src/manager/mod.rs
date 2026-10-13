@@ -1155,6 +1155,7 @@ mod tests {
         ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::test_support::{test_platform_wallet_manager_with, NoopTestPersister};
 
     struct NoopPersister;
     impl PlatformWalletPersistence for NoopPersister {
@@ -1433,7 +1434,7 @@ mod tests {
     }
 
     /// How long a test waits for something another task does.
-    const TEST_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+    const TEST_WAIT: Duration = Duration::from_secs(10);
 
     /// Wait for `holds`, asked every few milliseconds, or fail naming `what`.
     async fn eventually<F, Fut>(what: &str, mut holds: F)
@@ -1443,7 +1444,7 @@ mod tests {
     {
         let waited = tokio::time::timeout(TEST_WAIT, async {
             while !holds().await {
-                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                tokio::time::sleep(Duration::from_millis(5)).await;
             }
         })
         .await;
@@ -1511,12 +1512,8 @@ mod tests {
     async fn probing_manager(
         probe: Arc<dyn AcceptanceProbe>,
         handler: Arc<dyn PlatformEventHandler>,
-    ) -> (
-        Arc<PlatformWalletManager<crate::test_support::NoopTestPersister>>,
-        WalletId,
-    ) {
-        let (manager, wallet_id) =
-            crate::test_support::test_platform_wallet_manager_with(handler, Some(probe)).await;
+    ) -> (Arc<PlatformWalletManager<NoopTestPersister>>, WalletId) {
+        let (manager, wallet_id) = test_platform_wallet_manager_with(handler, Some(probe)).await;
         manager.broadcast_resolver.set_enabled(true);
         (manager, wallet_id)
     }
@@ -1640,7 +1637,7 @@ mod tests {
             let manager = Arc::clone(&manager);
             async move { manager.remove_wallet(&wallet_id).await }
         });
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
         assert!(
             !removal.is_finished(),
             "the removal returned while a verdict of the wallet was still being delivered"

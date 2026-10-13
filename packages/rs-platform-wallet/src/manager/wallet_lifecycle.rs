@@ -805,7 +805,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // The validated handle is carried out of the loop: it is both what this
         // call returns and tears down, and the identity every mutation below is
         // matched against.
-        let (removed, _teardown) = loop {
+        let (removed, teardown) = loop {
             let candidate = {
                 let wallets = self.wallets.load();
                 match wallets.get(wallet_id) {
@@ -984,7 +984,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // itself, so no payment operation can observe the wallet as live and then
         // act on it after this returns.
         tear_down(&removed);
-        drop(_teardown);
+        drop(teardown);
 
         // The removal only queued the broadcast resolver's part. Its task
         // could be publishing a verdict of this wallet's right now, and a
@@ -994,7 +994,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // maps and the gate released, so nothing else waits with it; and
         // outside the wallet-manager lock, which the task's reads take.
         // Bounded: a host handler that never returns must not hold a removal
-        // for ever.
+        // for ever. Past the budget the removal still succeeds and a verdict
+        // of this wallet's may follow it; so may the first verdicts of a
+        // wallet registered under the same id while this waits.
         if !self
             .broadcast_resolver
             .caught_up(RESOLVER_REMOVAL_BUDGET)

@@ -54,9 +54,10 @@ public struct OutgoingTransactionProbeEvent: Sendable, Equatable {
 /// broadcast-probe callback reads its wallet's generation on the Rust thread
 /// that delivers it; `deleteWallet` bumps it once the native wallet is gone,
 /// so a verdict or clear still queued for the main actor is dropped there.
-/// The native removal returns only after the resolver's task is past it, so
-/// no verdict of the deleted wallet is handed to the callback after the
-/// bump and stamped with the new generation.
+/// The native removal returns only after the resolver's task is past it
+/// (it waits up to five seconds for a handler the task is held in), so no
+/// verdict of the deleted wallet is handed to the callback after the bump
+/// and stamped with the new generation.
 /// A wallet restored under the same deterministic id keeps the bumped
 /// generation: the deleted wallet's queued callbacks stay stale, its own
 /// are current. For that reason an entry is never removed: one counter stays
@@ -129,9 +130,9 @@ extension PlatformWalletManager {
     /// While on, the SDK resubmits to evonodes over DAPI the root of every
     /// chain of unconfirmed sends — the first unsettled transaction the chain
     /// depends on, which may be an incoming payment the wallet spent — right
-    /// after SPV reports a broadcast uncertain (each report; when the
-    /// reported send is built on other unsettled transactions, at most 8 of
-    /// those chains' roots at once, the rest in their turn), then, while the
+    /// after SPV reports a broadcast uncertain (each report: the send itself
+    /// when it is a root, and at most 8 of the roots its chain reaches, the
+    /// rest in their turn), then, while the
     /// wallet follows the chain tip, every block for 24 blocks from when it
     /// first did so for that root, and every 10 blocks after — a return from
     /// the background does not restart the 24 — 55 times at most (about a

@@ -30,8 +30,11 @@ use key_wallet::{DerivationPath, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
+use crate::broadcast_probe::AcceptanceProbe;
 #[cfg(test)]
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use crate::events::PlatformEventHandler;
+use crate::manager::PlatformWalletManager;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -675,12 +678,9 @@ pub async fn test_platform_wallet_manager() -> (
 /// when given, the probe the broadcast resolver asks the network through
 /// (the DAPI one otherwise).
 pub(crate) async fn test_platform_wallet_manager_with(
-    event_handler: Arc<dyn crate::events::PlatformEventHandler>,
-    acceptance_probe: Option<Arc<dyn crate::broadcast_probe::AcceptanceProbe>>,
-) -> (
-    Arc<crate::PlatformWalletManager<NoopTestPersister>>,
-    WalletId,
-) {
+    event_handler: Arc<dyn PlatformEventHandler>,
+    acceptance_probe: Option<Arc<dyn AcceptanceProbe>>,
+) -> (Arc<PlatformWalletManager<NoopTestPersister>>, WalletId) {
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
@@ -691,13 +691,10 @@ pub(crate) async fn test_platform_wallet_manager_with(
     let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
     let persister = Arc::new(NoopTestPersister);
     let manager = Arc::new(match acceptance_probe {
-        Some(probe) => crate::PlatformWalletManager::with_acceptance_probe(
-            sdk,
-            persister,
-            event_handler,
-            probe,
-        ),
-        None => crate::PlatformWalletManager::new(sdk, persister, event_handler),
+        Some(probe) => {
+            PlatformWalletManager::with_acceptance_probe(sdk, persister, event_handler, probe)
+        }
+        None => PlatformWalletManager::new(sdk, persister, event_handler),
     });
 
     let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");

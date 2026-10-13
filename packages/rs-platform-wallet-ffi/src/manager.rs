@@ -2147,7 +2147,9 @@ mod remove_wallet_lifecycle_tests {
 /// Turn automatic probing of unconfirmed sends on or off (off by default).
 ///
 /// While on, the roots of every unconfirmed chain are resubmitted to evonodes
-/// over DAPI — right after SPV reports a send uncertain (each report), then,
+/// over DAPI — right after SPV reports a send uncertain (each report: the
+/// send itself when it is a root, and at most 8 of the roots its chain
+/// reaches, the rest in their turn), then,
 /// while the wallet follows the chain tip, every block for 24 blocks from when
 /// it first did so for that root, and every 10 blocks after (a return from the
 /// background does not restart the 24), 55 times at most (about a day of
