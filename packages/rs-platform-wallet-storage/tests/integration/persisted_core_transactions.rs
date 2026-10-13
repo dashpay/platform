@@ -1,7 +1,7 @@
 //! Wallet rows that embed a Dash Core transaction keep decoding across
 //! rust-dashcore upgrades.
 //!
-//! `fixtures/core_transaction_rows.txt` holds one row per line: a name and a
+//! `tests/fixtures/core_transaction_rows.txt` holds one row per line: a name and a
 //! blob in hex. `asset_lock_lifecycle` is an `asset_locks.lifecycle_blob`;
 //! every other row is a `core_transactions.record_blob` (a key-wallet
 //! `TransactionRecord`). Both embed a `dashcore::Transaction` through
@@ -45,7 +45,7 @@
 //! println!("asset_lock_lifecycle {}", hex::encode(asset_locks::encode_entry_for_test(&entry)?));
 //! ```
 
-mod common;
+use crate::common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
 use dashcore::transaction::special_transaction::TransactionPayload;
@@ -56,7 +56,7 @@ use platform_wallet_storage::sqlite::schema::{asset_locks, blob};
 use platform_wallet_storage::LoadCtx;
 use rusqlite::params;
 
-const ROWS: &str = include_str!("fixtures/core_transaction_rows.txt");
+const ROWS: &str = include_str!("../fixtures/core_transaction_rows.txt");
 
 /// Each row and the transaction it must decode to.
 const EXPECTED: [(&str, &str); 19] = [

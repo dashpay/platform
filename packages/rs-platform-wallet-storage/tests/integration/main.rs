@@ -9,6 +9,7 @@
 mod common;
 
 mod fixture_gen;
+mod persisted_core_transactions;
 mod persistence_error_kind_mapping;
 mod review_4651_concurrent_payment;
 mod secrets_api;
