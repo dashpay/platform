@@ -1117,6 +1117,54 @@ pub(crate) mod gas_sponsorship_tests {
     }
 
     #[tokio::test]
+    async fn should_let_a_contract_owner_who_covers_only_the_unincreased_gas_sponsor_a_fee_increase(
+    ) {
+        for gas_fees_paid_by in [
+            GasFeesPaidBy::ContractOwner,
+            GasFeesPaidBy::PreferContractOwner,
+        ] {
+            // The gas estimated with the contract owner paying and no increase, read off the
+            // same creation on an identical chain: exactly what their balance has to hold
+            let probe = Sponsorship::new(
+                gas_fees_paid_by,
+                dash_to_credits!(0.1),
+                dash_to_credits!(0.1),
+                15,
+            );
+            let transition = probe
+                .card_creation_with_fee_increase(gas_fees_paid_by, 0)
+                .await;
+            let tx = probe.platform.drive.grove.start_transaction();
+            let SuccessfulExecution {
+                estimated_fees: Some(estimated_fees),
+                ..
+            } = probe.process(&transition, &tx)
+            else {
+                panic!("expected a successful execution with an estimate");
+            };
+            let unincreased_gas = estimated_fees.total_base_fee();
+            // A 100% increase doubles the processing fee, so the gas with it no longer fits
+            assert!(estimated_fees.processing_fee > 0);
+
+            let setup =
+                Sponsorship::new(gas_fees_paid_by, unincreased_gas, dash_to_credits!(1), 15);
+            let transition = setup
+                .card_creation_with_fee_increase(gas_fees_paid_by, 100)
+                .await;
+            assert_eq!(setup.check_tx(&transition), Vec::<u32>::new());
+
+            let tx = setup.platform.drive.grove.start_transaction();
+            let result = setup.process(&transition, &tx);
+            assert_matches!(result, SuccessfulExecution { .. });
+            let owner_paid = unincreased_gas - setup.credits(&setup.contract_owner, &tx);
+            let user_paid = dash_to_credits!(1) - setup.credits(&setup.user, &tx);
+            assert!(owner_paid > 0, "the contract owner pays the gas");
+            assert!(user_paid > 0, "the user pays its fee increase");
+            assert_eq!(total_fee(&result), owner_paid + user_paid);
+        }
+    }
+
+    #[tokio::test]
     async fn should_refuse_a_sponsored_creation_whose_signer_cannot_pay_its_fee_increase_unpaid() {
         for gas_fees_paid_by in [
             GasFeesPaidBy::ContractOwner,
