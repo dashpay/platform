@@ -156,9 +156,14 @@ pub fn find_in_summaries<'a>(
 
 #[cfg(test)]
 pub(crate) mod test_support {
-    //! Synthetic list summaries for locator tests. Kept `pub(crate)` so the
-    //! locator tests build lists the same way.
-    use super::MasternodeListSummary;
+    //! Synthetic list summaries for locator tests, and the raw list entries
+    //! behind them for the paths that read entries. Kept `pub(crate)` so the
+    //! locator and update-service tests build lists the same way.
+    use super::{EntryMasternodeType, MasternodeListEntry, MasternodeListSummary};
+    use dashcore::bls_sig_utils::BLSPublicKey;
+    use dashcore::hashes::Hash;
+    use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
+    use dashcore::{PlatformNodeId, ProTxHash, PubkeyHash};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 
     /// A regular masternode at `10.0.0.<seed>:9999` whose proTxHash,
@@ -194,6 +199,35 @@ pub(crate) mod test_support {
 
     pub(crate) fn ip(seed: u8) -> IpAddr {
         IpAddr::V4(Ipv4Addr::new(10, 0, 0, seed))
+    }
+
+    /// The raw list entry [`masternode`] summarizes: a version-2 regular
+    /// masternode with a legacy address.
+    pub(crate) fn masternode_entry(seed: u8) -> MasternodeListEntry {
+        MasternodeListEntry {
+            version: 2,
+            pro_reg_tx_hash: ProTxHash::from_byte_array([seed; 32]),
+            confirmed_hash: None,
+            service_address: MasternodeNetInfo::Legacy(SocketAddr::V4(SocketAddrV4::new(
+                Ipv4Addr::new(10, 0, 0, seed),
+                9999,
+            ))),
+            operator_public_key: BLSPublicKey::from([seed; 48]),
+            key_id_voting: PubkeyHash::from_byte_array([seed; 20]),
+            is_valid: true,
+            mn_type: EntryMasternodeType::Regular,
+        }
+    }
+
+    /// The raw list entry [`evonode`] summarizes.
+    pub(crate) fn evonode_entry(seed: u8) -> MasternodeListEntry {
+        MasternodeListEntry {
+            mn_type: EntryMasternodeType::HighPerformance {
+                platform_http_port: 443,
+                platform_node_id: PlatformNodeId::from_byte_array([seed ^ 0xFF; 20]),
+            },
+            ..masternode_entry(seed)
+        }
     }
 }
 

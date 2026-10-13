@@ -17,7 +17,9 @@
 
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderMasternodeType;
-use dashcore::blockdata::transaction::special_transaction::provider_update_service::ProviderUpdateServicePayload;
+use dashcore::blockdata::transaction::special_transaction::provider_update_service::{
+    ProTxVersion, ProviderUpdateServicePayload,
+};
 use dashcore::blockdata::transaction::special_transaction::{
     SpecialTransactionBasePayloadEncodable, TransactionPayload,
 };
@@ -26,6 +28,7 @@ use dashcore::blsful::{Bls12381G2Impl, SecretKey as BlsSecretKey, SignatureSchem
 use dashcore::hash_types::InputsHash;
 use dashcore::hashes::Hash;
 use dashcore::platform_node_id::PlatformNodeId;
+use dashcore::sml::masternode_list_entry::MasternodeListEntry;
 use dashcore::{Address as DashAddress, Network, Transaction, Txid};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
@@ -105,21 +108,13 @@ pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + S
     operator_secret: Zeroizing<[u8; 32]>,
     signer: &S,
 ) -> Result<SignedCoreTransaction, PlatformWalletError> {
-    let summaries = spv
-        .masternode_list_summaries()
+    let entries = spv
+        .masternode_list_entries()
         .await
         .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
-    let entry = summaries
-        .iter()
-        .find(|entry| entry.pro_tx_hash == params.pro_tx_hash)
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidParameter(format!(
-                "masternode {} is not in the masternode list",
-                display_hex(&params.pro_tx_hash)
-            ))
-        })?;
+    let (entry, v24_active) = update_service_target(&entries, &params.pro_tx_hash)?;
 
-    verify_operator_secret(&entry.operator_public_key, &operator_secret)?;
+    verify_operator_secret(entry.operator_public_key.as_ref(), &operator_secret)?;
 
     let operator_reward = fetch_operator_reward(wallet, &params.pro_tx_hash).await?;
     let script_payout = resolve_operator_payout_script(
@@ -128,10 +123,38 @@ pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + S
         wallet.network(),
     )?;
 
-    let placeholder =
-        prepare_update_service_placeholder(entry, params.platform_p2p_port, script_payout)?;
+    let placeholder = prepare_update_service_placeholder(
+        entry,
+        wallet.network(),
+        v24_active,
+        params.platform_p2p_port,
+        script_payout,
+    )?;
 
     build_sign_update_service(wallet.core(), placeholder, operator_secret, signer).await
+}
+
+/// The list entry for `pro_tx_hash` (wire order) and whether the list shows
+/// that the V24 hard fork is active. Version-3 entries exist only once V24
+/// is active, so any one of them proves it; until the first one appears the
+/// list reads as pre-V24.
+pub(crate) fn update_service_target<'a>(
+    entries: &'a [MasternodeListEntry],
+    pro_tx_hash: &[u8; 32],
+) -> Result<(&'a MasternodeListEntry, bool), PlatformWalletError> {
+    let entry = entries
+        .iter()
+        .find(|entry| entry.pro_reg_tx_hash.as_byte_array() == pro_tx_hash)
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidParameter(format!(
+                "masternode {} is not in the masternode list",
+                display_hex(pro_tx_hash)
+            ))
+        })?;
+    let v24_active = entries
+        .iter()
+        .any(|entry| entry.version >= ProTxVersion::ExtAddr as u16);
+    Ok((entry, v24_active))
 }
 
 /// The `operatorReward` (basis points) the masternode was registered with,
@@ -260,10 +283,13 @@ pub(crate) fn verify_operator_secret(
 /// and filled by the payload finalizer after input selection. Always version
 /// 2 (BasicBLS) — every current network is past the v19 hard fork.
 pub(crate) fn prepare_update_service_placeholder(
-    entry: &MasternodeListSummary,
+    entry: &MasternodeListEntry,
+    _network: Network,
+    _v24_active: bool,
     platform_p2p_port: Option<u16>,
     script_payout: ScriptBuf,
 ) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
+    let entry = MasternodeListSummary::from_entry(entry);
     // A v3 extended entry advertises an endpoint map the version-2 payload
     // cannot express: Core would replace the whole map with the single
     // address below, downgrading the entry and discarding live endpoints.
@@ -444,14 +470,20 @@ fn display_hex(pro_tx_hash: &[u8; 32]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::super::list::test_support::{evonode, masternode};
+    use super::super::list::test_support::{evonode_entry, masternode_entry};
+    use super::super::record::core_v24_vectors::{decode, EVO_PRO_UP_SERV_TX};
     use super::*;
     use crate::broadcaster::BroadcastError;
     use crate::test_support::{
         funded_wallet_manager, funded_wallet_manager_with_outputs, WalletSigner,
     };
+    use dashcore::bls_sig_utils::BLSPublicKey;
     use dashcore::blsful::{PublicKey as BlsPublicKey, Signature as BlsSignature};
-    use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
+    use dashcore::sml::masternode_list_entry::net_info::{
+        Bip155Network, ExtNetInfo, NetInfoEntry, NetInfoPurpose,
+    };
+    use dashcore::sml::masternode_list_entry::{EntryMasternodeType, MasternodeNetInfo};
+    use dashcore::ProTxHash;
     use key_wallet::account::StandardAccountType;
     use std::sync::{Arc, Mutex};
 
@@ -459,10 +491,14 @@ mod tests {
     /// order) so the test keypair is deterministic.
     const OPERATOR_SECRET: [u8; 32] = [7u8; 32];
 
-    fn operator_entry(seed: u8, evo: bool) -> MasternodeListSummary {
+    fn operator_entry(seed: u8, evo: bool) -> MasternodeListEntry {
         let (basic, _) = bls_public_keys(&OPERATOR_SECRET).expect("valid test scalar");
-        let mut entry = if evo { evonode(seed) } else { masternode(seed) };
-        entry.operator_public_key = basic;
+        let mut entry = if evo {
+            evonode_entry(seed)
+        } else {
+            masternode_entry(seed)
+        };
+        entry.operator_public_key = BLSPublicKey::from(basic);
         entry
     }
 
@@ -513,7 +549,81 @@ mod tests {
 
     fn regular_placeholder() -> ProviderUpdateServicePayload {
         let entry = operator_entry(0x44, false);
-        prepare_update_service_placeholder(&entry, None, ScriptBuf::new()).expect("placeholder")
+        prepare_update_service_placeholder(&entry, Network::Devnet, false, None, ScriptBuf::new())
+            .expect("placeholder")
+    }
+
+    /// The version-3 ProUpServTx Dash Core v24 mined for evonode
+    /// `a9cbebcd…`: CoreP2P 68.67.122.237:20001, PlatformP2P port 26656,
+    /// PlatformHttps port 1443, no operator payout.
+    fn core_v3_update() -> ProviderUpdateServicePayload {
+        let Some(TransactionPayload::ProviderUpdateServicePayloadType(payload)) =
+            decode(EVO_PRO_UP_SERV_TX).special_transaction_payload
+        else {
+            panic!("the vector is a ProUpServTx");
+        };
+        payload
+    }
+
+    /// The version-3 list entry that update leaves behind, operated by the
+    /// test operator key.
+    fn core_v3_evonode_entry() -> MasternodeListEntry {
+        let update = core_v3_update();
+        MasternodeListEntry {
+            version: 3,
+            pro_reg_tx_hash: ProTxHash::from_byte_array(update.pro_tx_hash.to_byte_array()),
+            service_address: update.service_address,
+            mn_type: EntryMasternodeType::HighPerformance {
+                platform_http_port: 1443,
+                platform_node_id: update.platform_node_id.expect("an evonode update"),
+            },
+            ..operator_entry(0, true)
+        }
+    }
+
+    /// The list is keyed by the wire-order proTxHash; the summary fixtures'
+    /// `[seed; 32]` hashes read the same reversed, so the vector's real one
+    /// pins the orientation. V24 comes from the whole list: a legacy target
+    /// next to a version-3 entry is past V24 too.
+    #[test]
+    fn should_find_the_entry_in_wire_order_and_read_v24_from_the_whole_list() {
+        let display =
+            hex::decode("a9cbebcd8f262c822146b9354ce994afe7d0974356d7223284ff510659b2a122")
+                .expect("hex");
+        let mut wire = [0u8; 32];
+        wire.copy_from_slice(&display);
+        wire.reverse();
+
+        let v3 = core_v3_evonode_entry();
+        let legacy = operator_entry(0x22, true);
+        let legacy_hash = legacy.pro_reg_tx_hash.to_byte_array();
+        let mixed = vec![legacy.clone(), v3.clone()];
+
+        let (found, v24_active) =
+            update_service_target(&mixed, &wire).expect("found by wire order");
+        assert_eq!(found, &v3);
+        assert!(v24_active);
+
+        let (found, v24_active) =
+            update_service_target(&mixed, &legacy_hash).expect("legacy entry found");
+        assert_eq!(found, &legacy);
+        assert!(
+            v24_active,
+            "a version-3 neighbour shows V24 for a legacy target"
+        );
+
+        let pre_v24 = vec![legacy.clone(), operator_entry(0x33, false)];
+        let (_, v24_active) = update_service_target(&pre_v24, &legacy_hash).expect("found");
+        assert!(!v24_active, "no version-3 entry, no V24");
+
+        let mut display_order = [0u8; 32];
+        display_order.copy_from_slice(&display);
+        let err = update_service_target(&mixed, &display_order)
+            .expect_err("a display-order hash is not the wire-order key");
+        assert!(
+            matches!(&err, PlatformWalletError::InvalidParameter(message) if message.contains("not in the masternode list")),
+            "got {err:?}"
+        );
     }
 
     /// The placeholder re-asserts the list entry's address as a pre-v3
@@ -521,12 +631,19 @@ mod tests {
     #[test]
     fn should_carry_the_entry_address_as_a_legacy_entry() {
         let entry = operator_entry(0x44, false);
-        let payload = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
-            .expect("placeholder");
-        assert_eq!(
-            payload.service_address,
-            MasternodeNetInfo::Legacy(entry.service_address.expect("entry address")),
-        );
+        let payload = prepare_update_service_placeholder(
+            &entry,
+            Network::Devnet,
+            false,
+            None,
+            ScriptBuf::new(),
+        )
+        .expect("placeholder");
+        assert!(matches!(
+            entry.service_address,
+            MasternodeNetInfo::Legacy(_)
+        ));
+        assert_eq!(payload.service_address, entry.service_address);
     }
 
     #[test]
@@ -582,8 +699,14 @@ mod tests {
     #[test]
     fn placeholder_for_a_regular_masternode_omits_the_platform_fields() {
         let entry = operator_entry(0x11, false);
-        let payload = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
-            .expect("regular placeholder");
+        let payload = prepare_update_service_placeholder(
+            &entry,
+            Network::Devnet,
+            false,
+            None,
+            ScriptBuf::new(),
+        )
+        .expect("regular placeholder");
         assert_eq!(
             payload.version,
             ProviderUpdateServicePayload::CURRENT_VERSION
@@ -594,7 +717,7 @@ mod tests {
         );
         assert_eq!(
             payload.pro_tx_hash,
-            Txid::from_byte_array(entry.pro_tx_hash)
+            Txid::from_byte_array(entry.pro_reg_tx_hash.to_byte_array())
         );
         assert_eq!(payload.platform_node_id, None);
         assert_eq!(payload.platform_p2p_port, None);
@@ -602,29 +725,51 @@ mod tests {
         assert_eq!(payload.inputs_hash, InputsHash::all_zeros());
         assert_eq!(payload.payload_sig, BLSSignature::from([0u8; 96]));
 
-        let err = prepare_update_service_placeholder(&entry, Some(26656), ScriptBuf::new())
-            .expect_err("a platform P2P port on a regular masternode must be refused");
+        let err = prepare_update_service_placeholder(
+            &entry,
+            Network::Devnet,
+            false,
+            Some(26656),
+            ScriptBuf::new(),
+        )
+        .expect_err("a platform P2P port on a regular masternode must be refused");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
     }
 
     #[test]
     fn placeholder_for_an_evonode_requires_and_carries_the_platform_triplet() {
         let entry = operator_entry(0x22, true);
-        let payload = prepare_update_service_placeholder(&entry, Some(26656), ScriptBuf::new())
-            .expect("evonode placeholder");
+        let EntryMasternodeType::HighPerformance {
+            platform_http_port,
+            platform_node_id,
+        } = entry.mn_type
+        else {
+            panic!("an evonode entry");
+        };
+        let payload = prepare_update_service_placeholder(
+            &entry,
+            Network::Devnet,
+            false,
+            Some(26656),
+            ScriptBuf::new(),
+        )
+        .expect("evonode placeholder");
         assert_eq!(
             payload.mn_type,
             Some(ProviderMasternodeType::HighPerformance as u16)
         );
-        assert_eq!(
-            payload.platform_node_id,
-            entry.platform_node_id.map(PlatformNodeId::from_byte_array)
-        );
+        assert_eq!(payload.platform_node_id, Some(platform_node_id));
         assert_eq!(payload.platform_p2p_port, Some(26656));
-        assert_eq!(payload.platform_http_port, entry.platform_http_port);
+        assert_eq!(payload.platform_http_port, Some(platform_http_port));
 
-        let err = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
-            .expect_err("an evonode payload without the P2P port must be refused");
+        let err = prepare_update_service_placeholder(
+            &entry,
+            Network::Devnet,
+            false,
+            None,
+            ScriptBuf::new(),
+        )
+        .expect_err("an evonode payload without the P2P port must be refused");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
     }
 
@@ -633,13 +778,30 @@ mod tests {
         // A v2 payload would replace the whole endpoint map with the primary
         // address — refuse even though a routable primary exists.
         let mut entry = operator_entry(0x55, false);
-        entry.has_extended_net_info = true;
+        entry.version = 3;
+        entry.service_address = MasternodeNetInfo::Extended(ExtNetInfo {
+            version: 1,
+            purposes: vec![(
+                NetInfoPurpose::CoreP2P,
+                vec![NetInfoEntry::Service {
+                    network: Bip155Network::Ipv4,
+                    addr: vec![10, 0, 0, 0x55],
+                    port: 9999,
+                }],
+            )],
+        });
         assert!(
-            entry.service_address.is_some(),
+            entry.service_address.primary_service_address().is_some(),
             "primary address present and routable"
         );
-        let err = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
-            .expect_err("an extended-net-info entry must be refused");
+        let err = prepare_update_service_placeholder(
+            &entry,
+            Network::Devnet,
+            false,
+            None,
+            ScriptBuf::new(),
+        )
+        .expect_err("an extended-net-info entry must be refused");
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
     }
 
@@ -707,15 +869,6 @@ mod tests {
         assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
     }
 
-    #[test]
-    fn placeholder_refuses_an_entry_without_a_plain_service_address() {
-        let mut entry = operator_entry(0x33, false);
-        entry.service_address = None;
-        let err = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
-            .expect_err("no service address to re-assert");
-        assert!(matches!(err, PlatformWalletError::InvalidParameter(_)));
-    }
-
     #[tokio::test]
     async fn builds_signs_and_broadcasts_a_pro_up_serv_tx() {
         let (wallet_manager, wallet_id, generation, signer) =
@@ -731,8 +884,14 @@ mod tests {
         );
 
         let entry = operator_entry(0x44, true);
-        let placeholder = prepare_update_service_placeholder(&entry, Some(26656), ScriptBuf::new())
-            .expect("placeholder");
+        let placeholder = prepare_update_service_placeholder(
+            &entry,
+            Network::Devnet,
+            false,
+            Some(26656),
+            ScriptBuf::new(),
+        )
+        .expect("placeholder");
 
         let prepared =
             build_sign_update_service(&core, placeholder, Zeroizing::new(OPERATOR_SECRET), &signer)
@@ -784,7 +943,10 @@ mod tests {
             Some(ProviderMasternodeType::HighPerformance as u16)
         );
         assert_eq!(payload.platform_p2p_port, Some(26656));
-        assert_eq!(payload.platform_http_port, entry.platform_http_port);
+        assert_eq!(
+            payload.platform_http_port,
+            MasternodeListSummary::from_entry(&entry).platform_http_port
+        );
         assert_ne!(payload.payload_sig, BLSSignature::from([0u8; 96]));
 
         // The payload signature verifies under the basic scheme against the
