@@ -1511,10 +1511,11 @@ fn parse_indices(
 ///   `false` would say nothing;
 /// - no ranking sits at a level above the array, where a document would count once per
 ///   element;
-/// - the type is not indexOnly: each of its indexes is a uniqueness rule over a document's
-///   values, which per-element entries are not;
 /// - the array holds at most `max_indexed_array_items` elements, or
 ///   `max_windowed_indexed_array_items` when the index also groups by a window.
+///
+/// An indexOnly type's index of a typed array also follows the rules
+/// `apply_index_only` checks on every parse (`index_only_array_index_error`).
 #[cfg(feature = "validation")]
 fn validate_indexed_array_index(
     ctx: &CoreParseContext<'_>,
@@ -1543,13 +1544,6 @@ fn validate_indexed_array_index(
         return refused(
             "an indexed typed array must be a top-level property of the document type, not \
              a property inside an object"
-                .to_string(),
-        );
-    }
-    if ctx.index_only {
-        return refused(
-            "an indexOnly type's indexes are uniqueness rules over each document's values, \
-             and an index of a typed array enters a document once per element"
                 .to_string(),
         );
     }
@@ -3793,7 +3787,7 @@ fn summable_off_count_index_error(
         return Some(format!(
             "{prefix} sums the count of \"{source_name}\", which must hold every document \
              exactly once: it may not skip documents (skipIfAbsent), keep the entries of deleted \
-             ones (outlivesDelete) or involve $createdAt"
+             ones (outlivesDelete), involve $createdAt or name a typed array"
         ));
     }
     if let Some(missing) = source.properties.iter().find(|source_property| {
@@ -3830,6 +3824,113 @@ fn summable_off_count_index_error(
             "{prefix} is continued by index \"{other_name}\", which lists its properties first: \
              the value position of a summableOffCountIndex index's last property holds the group's \
              counter, so no other index can continue below it"
+        ));
+    }
+    None
+}
+
+/// The names an indexOnly index keys its entries by: its properties, then its
+/// terminal components.
+fn index_key_names(index: &Index) -> impl Iterator<Item = &str> {
+    index
+        .properties
+        .iter()
+        .map(|property| property.name.as_str())
+        .chain(index.terminal_components().iter().map(String::as_str))
+}
+
+/// Whether one of `indices` keeps exactly one entry for every live document
+/// ([`Index::keys_each_live_document_by_its_values`]) and has its whole key
+/// ([`index_key_names`]) inside `key`: two documents in state can then never
+/// share an entry keyed by `key`, since they would share that index's entry,
+/// which a create probes as a duplicate.
+fn keyed_by_a_document_index(indices: &BTreeMap<String, Index>, key: &BTreeSet<&str>) -> bool {
+    indices.values().any(|other| {
+        other.keys_each_live_document_by_its_values()
+            && index_key_names(other).all(|name| key.contains(name))
+    })
+}
+
+/// The rules an indexOnly document type checks for one index naming a typed array
+/// (protocol version 14), beyond those every indexed array follows
+/// (`validate_indexed_array_index`): the reason it is refused, or `None`.
+///
+/// Such an index enters a document once per element, while every other index of an
+/// indexOnly type keeps one entry per document and refuses a create whose entry is
+/// already there. So:
+///
+/// - Another index of the type keeps exactly one entry for every live document
+///   ([`Index::keys_each_live_document_by_its_values`]), and its whole key (its
+///   properties and terminal) is part of this index's key without the array. Two live
+///   documents sharing an entry here would share that index's entry, which their create
+///   refuses: the array index is no uniqueness rule of its own, and no entry of it ever
+///   stands for two documents.
+/// - The array declares `uniqueItems`, so every element of a list has an entry of its own.
+/// - It is neither `preallocated` nor a `summableOffCountIndex` index: a preallocated
+///   path is fixed by one referenced document, and a counter's group holds one value.
+/// - It names one array, a top-level property: the rules every indexed array follows
+///   run under full validation only, and these are what the entry probes and the row
+///   commitment rely on, so an indexOnly type checks them on every parse too.
+fn index_only_array_index_error(
+    index_name: &str,
+    index: &Index,
+    document_type: &DocumentTypeV2,
+    document_type_name: &str,
+) -> Option<String> {
+    let array_name = index.indexed_array.as_deref()?;
+    let prefix = format!(
+        "index \"{index_name}\" on indexOnly document type \"{document_type_name}\" names the \
+         typed array \"{array_name}\""
+    );
+    if let Some((_, second, _)) = index
+        .typed_arrays(&document_type.flattened_properties)
+        .nth(1)
+    {
+        return Some(format!(
+            "{prefix} and also \"{second}\": an index keys by the elements of one typed array"
+        ));
+    }
+    if array_name.contains('.') {
+        return Some(format!(
+            "{prefix}, which is inside an object: an indexed typed array is a top-level \
+             property of the document type"
+        ));
+    }
+    if index.preallocated {
+        return Some(format!(
+            "{prefix} and declares `preallocated`: a preallocated index's path is fixed by one \
+             referenced document, and an index of a typed array enters a document under each \
+             of its elements"
+        ));
+    }
+    if index.is_summable_off_count_index() {
+        return Some(format!(
+            "{prefix} and is a summableOffCountIndex index: a counter's group is one value, and \
+             a typed array holds many"
+        ));
+    }
+    let unique_items = index
+        .typed_arrays(&document_type.flattened_properties)
+        .next()
+        .is_some_and(|(_, _, typed_array)| typed_array.unique_items);
+    if !unique_items {
+        return Some(format!(
+            "{prefix}, which must declare `uniqueItems: true`: the index keeps an entry for \
+             every element of a list, and a list repeating an element would hold fewer \
+             entries than elements"
+        ));
+    }
+    let key: BTreeSet<&str> = index_key_names(index)
+        .filter(|name| *name != array_name)
+        .collect();
+    if !keyed_by_a_document_index(&document_type.indices, &key) {
+        return Some(format!(
+            "{prefix}, but its key without the array (its other properties and its terminal) \
+             holds the whole key of no index that keeps one entry for every document (an \
+             index that sets neither skipIfAbsent nor outlivesDelete, involves no $createdAt \
+             and names no typed array): every index of an indexOnly type refuses a create \
+             whose entry is already there, so without one two documents sharing an element \
+             would collide here. Add such an index, or the properties of one to this index"
         ));
     }
     None
@@ -4539,6 +4640,13 @@ pub(super) fn apply_index_only(
                 index_name, name,
             )));
         }
+        // An index of a typed array (protocol version 14) enters a document once
+        // per element: another index must keep each document's entries apart,
+        // and the keywords whose path or group is one value refuse it.
+        if let Some(message) = index_only_array_index_error(index_name, index, document_type, name)
+        {
+            return Err(structure_error(message));
+        }
         // `skipIfAbsent`: the skip set's members, and the levels an
         // aggregate may sit at, follow the rules every document type shares.
         // What only an indexOnly type needs (every optional property of an
@@ -4865,25 +4973,12 @@ pub(super) fn apply_index_only(
             // document, whose entry the create probes as a duplicate. The
             // entry then stands for no other live document than the one
             // writing it.
-            let key: BTreeSet<&str> = index
-                .properties
-                .iter()
-                .map(|property| property.name.as_str())
-                .chain(index.terminal_components().iter().map(String::as_str))
+            let key: BTreeSet<&str> = index_key_names(index)
                 .filter(|name| *name != CREATED_AT)
                 .collect();
             // (An index involving `$createdAt` never fits that key, so the
             // shared predicate's `$createdAt` term changes nothing here.)
-            let keyed_by_a_cleared_index = document_type.indices.values().any(|other| {
-                other.keys_each_live_document_by_its_values()
-                    && other
-                        .properties
-                        .iter()
-                        .map(|property| property.name.as_str())
-                        .chain(other.terminal_components().iter().map(String::as_str))
-                        .all(|name| key.contains(name))
-            });
-            if !keyed_by_a_cleared_index {
+            if !keyed_by_a_document_index(&document_type.indices, &key) {
                 return Err(structure_error(format!(
                     "index \"{}\" on indexOnly document type \"{}\" declares \
                      `outlivesDelete`, but its key (its properties but $createdAt, and its \
@@ -4952,7 +5047,9 @@ pub(super) fn apply_index_only(
     // the type would work while transition-proof requests failed. (Every
     // index already embeds `$ownerId`, so any `$createdAt`-free non-skip
     // index qualifies as the proof index.) Nor may it outlive deletes: a
-    // delete's proof shows the entry gone, which such an index keeps.
+    // delete's proof shows the entry gone, which such an index keeps, nor
+    // name a typed array, whose index has no entry for an empty list (the
+    // array rule above already wants such an index beside every array index).
     let has_proof_index = document_type
         .indices
         .values()
@@ -5057,21 +5154,29 @@ pub(super) fn apply_index_only(
                     property_name, name, property_name,
                 )));
             }
-        } else if !document_type
-            .indices
-            .values()
-            .any(|index| !index.skip_if_absent && !index.outlives_delete && holds_property(index))
-        {
+        } else if !document_type.indices.values().any(|index| {
+            !index.skip_if_absent
+                && !index.outlives_delete
+                && holds_property(index)
+                // An index of a typed array (protocol version 14) has no entry
+                // for a list without elements, so it keeps no other property of
+                // such a document: it holds only the array itself for sure
+                && index
+                    .indexed_array
+                    .as_deref()
+                    .is_none_or(|array| array == property_name)
+        }) {
             // Nor may an outlivesDelete index be the only one holding it: a
             // delete carries every schema property, and could not be checked
             // against entries it leaves
             return Err(structure_error(format!(
                 "property \"{}\" on indexOnly document type \"{}\" does not appear in any \
-                 index that neither sets skipIfAbsent nor outlivesDelete (as a property or \
-                 terminal): on an indexOnly type only indexed values exist and are \
-                 recoverable, a skipIfAbsent index holds no value at all for documents it \
-                 skips, and an outlivesDelete index is not checked by a delete, so the \
-                 property would be silently dropped",
+                 index that neither sets skipIfAbsent nor outlivesDelete, nor names a typed \
+                 array other than the property (as a property or terminal): on an indexOnly \
+                 type only indexed values exist and are recoverable, a skipIfAbsent index \
+                 holds no value at all for documents it skips, an index of a typed array none \
+                 for a document whose list is empty, and an outlivesDelete index is not \
+                 checked by a delete, so the property would be silently dropped",
                 property_name, name,
             )));
         }

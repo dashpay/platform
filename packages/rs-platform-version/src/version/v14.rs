@@ -2523,7 +2523,7 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     top-level typed array property, at any position, one per index, and
 ///     keys a document once by each distinct element, an element keyed as a
 ///     property of the element type is. Parser generation 3 (in place) admits
-///     it and refuses, under full validation: an indexOnly type (10231), a
+///     it and refuses, under full validation: a
 ///     unique or contested index, `nullSearchable: false`, a ranking above the
 ///     array, a second array (10231); a `maxItems` above
 ///     `SYSTEM_LIMITS_V4.max_indexed_array_items` (16), or
@@ -2554,8 +2554,22 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     takes no cursor); grouping v1 groups them, grouping v0 refuses them,
 ///     an index naming an array is read only with its elements bound, and
 ///     count, sum and average requests read several elements only grouped
-///     per element. Inert before this version: generations 0 to 2 refuse a
-///     typed array in an index and meta-schemas v0 to v2 have none.
+///     per element. An indexOnly type's index of a typed array is admitted,
+///     on every parse (`apply_index_only`, 10231), when another index keeping
+///     one entry per document (no `$createdAt`, skip, `outlivesDelete` or
+///     typed array) has its whole key inside the array index's key without
+///     the array, the array is top-level, alone in the index and declares
+///     `uniqueItems`, and the index is neither `preallocated` nor a
+///     `summableOffCountIndex` index; such an index is never the proof index,
+///     a counter's source or the only index keeping another required
+///     property. Its row commitment holds the list in order (an empty, null or
+///     absent list alike), its entry probes fan out per element, the create's
+///     state probe skips it, and synthesis rebuilds an entry as a document
+///     listing its one element. Every indexOnly entry insert bills its
+///     commitment's double-SHA256 by its preimage, the dry run by the widest
+///     preimage the type allows. Inert before this version: generations 0 to
+///     2 refuse a typed array in an index, meta-schemas v0 to v2 have none,
+///     and indexOnly types exist from this version only.
 ///
 /// 93. **Fee estimates size sum and count trees, and sum items, as they are
 ///     stored**: grovedb's `GROVE_V4`
@@ -2575,6 +2589,47 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`average_case_sum_item_cost_size` 1 and
 ///     `worst_case_sum_item_cost_size` 1). Applied fees are unchanged. Inert
 ///     before this version: `GROVE_V1` to `GROVE_V3` keep the old sizing.
+///
+/// 94. **`where` entries over typed arrays**: a `refersTo` `where` (63) may
+///     compare a referenced typed array as a list. An equality between two
+///     typed arrays (`"tags": "tags"`, kept in `property_agreement`) holds for
+///     the same elements in the same order; `{ "contains": b }`
+///     (`WhereCondition::Contains`, appended) for a list holding an element
+///     equal to `b`, a referring property of the element kind or `"$ownerId"`
+///     (a writer gate on identifier elements, asked about on every replace);
+///     `{ "containsAll": b }` (`WhereCondition::ContainsAll`, appended) for a
+///     list holding every element of the referring typed array `b`. Elements
+///     compare as two single values do (`where_lists_equal`, by
+///     `Value::same_scalar_data`): an identifier equals its 32 bytes and an
+///     integer is the same at any width; a list left out is the
+///     empty one, so two left out are equal and every list holds all of one
+///     left out, while a `contains` value left out is held by no list. Meta-schema
+///     v3 and parser generation 3 (in place) read both keys, refusing them on
+///     `$ownerId`, `$creatorId` and `$id` and a `containsAll` of the writer.
+///     Contract create and update state validation (data contract reference
+///     validation 0, in place) admits a typed array pair, until now refused
+///     with 40126, when both sides are stored typed arrays whose elements share
+///     one value kind other than a float, and refuses with 40126: a typed array
+///     paired with anything else, a `contains` or `containsAll` of a property
+///     that is no typed array, of float elements, bounded by the reference
+///     property itself or by a value of another kind (the writer only among
+///     identifiers), a `moderatedDocument` `contains` of the writer whose list
+///     no removal record keeps. `const`, `in`, `notEqual` and the orderings
+///     still refuse a typed array. Document reference validation 0 (in place)
+///     checks them against the document found or the removal record, refusing
+///     with 40127, and refuses an entry whose referring path is no object on
+///     the way as a mismatch. Before comparing, it bills the list elements
+///     such an entry reads, both lists for an equality and a `containsAll`, the
+///     referenced one for a `contains`, at
+///     `FEE_VERSION3.document_reference.where_list_credits_per_element` (100
+///     credits, a field added in place to `FEE_DOCUMENT_REFERENCE_VERSION1`,
+///     which every schedule carries and only this version reads). `Index::preallocation_bindings` and
+///     `Index::count_index_derivations` bind no index property that is a typed
+///     array, so no preallocated or `summableOffCountIndex` index is keyed
+///     through a pair of lists; inert while an indexOnly type, the only one
+///     declaring either, indexes no typed array. Inert before this version:
+///     only parser generation 3 reads a `where`, and this module and that
+///     validation are reached from this version only.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
@@ -2673,7 +2728,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry; verify_identity_signed_signature 1: a BLS12_381 signature must verify
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys; serialize_value_for_key 1 keys unsigned integers in value order (except a property ending a rangeSummable index)
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys; serialize_value_for_key 1 keys unsigned integers in value order (except a property ending a rangeSummable index); generation 3 indexes the elements of typed arrays, on indexOnly types under the item 92 rules
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,

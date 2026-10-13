@@ -2047,6 +2047,8 @@ mod typed_array_reference_tests;
 mod typed_array_test_helpers;
 #[cfg(all(test, feature = "validation", feature = "random-documents"))]
 mod typed_array_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_where_tests;
 
 #[cfg(test)]
 mod tests {

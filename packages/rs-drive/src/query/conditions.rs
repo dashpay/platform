@@ -86,7 +86,9 @@ pub enum WhereOperator {
     /// An element of a typed array is one of the values (protocol version 14):
     /// an `In` on the elements an index keys the array by. A document holding
     /// several of the values is under each of them; a documents query returns
-    /// it once, at its first.
+    /// it once, at its first. On an indexOnly type each entry is a document of
+    /// its own, rebuilt as one listing the element it sits under, so a
+    /// documents query returns one per value the document holds.
     ContainsAny,
 }
 

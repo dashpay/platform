@@ -36,8 +36,8 @@ use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
 use crate::data_contract::document_type::property::{
-    is_path_listed, DocumentProperty, DocumentPropertyType, DocumentReferenceDeclaration,
-    DocumentReferenceKind,
+    is_path_listed, typed_array_property, DocumentProperty, DocumentPropertyType,
+    DocumentReferenceDeclaration, DocumentReferenceKind,
 };
 use crate::data_contract::document_type::{DocumentTypeRef, Index};
 use crate::document::property_names::{ID, OWNER_ID};
@@ -216,9 +216,9 @@ impl Index {
             let Some(property) = flattened_properties.get(&candidate.name) else {
                 continue;
             };
-            // Only a scalar reference can bind: a preallocated index is on an
-            // indexOnly type, which indexes no typed array, so element
-            // references never reach one. A
+            // Only a scalar reference can bind: an element reference of a
+            // typed array is no scalar identifier, and `apply_index_only`
+            // refuses a preallocated index naming a typed array anyway. A
             // lookup reference of either kind never matches either: its value
             // is not the referenced document's `$id`. Nor
             // does a reference expression (`anyOf` / `allOf`), even of
@@ -248,6 +248,14 @@ impl Index {
                             // when an agreement binds the writer's `$ownerId` to
                             // it: that agreement is a write gate, and deriving an
                             // owner-prefixed path from it is left for later.
+                            None
+                        } else if typed_array_property(flattened_properties, &index_property.name)
+                            .is_some()
+                        {
+                            // A list is no tree key: a `where` equality between two
+                            // typed arrays binds no index property. Inert while an
+                            // indexOnly type, the only one declaring `preallocated`,
+                            // indexes no typed array
                             None
                         } else {
                             reference.property_agreement.get(&index_property.name).map(
@@ -375,6 +383,52 @@ mod tests {
             summable_off_count_index: None,
             indexed_array: None,
         }
+    }
+
+    fn tags_property() -> DocumentProperty {
+        use crate::data_contract::document_type::array::TypedArrayProperty;
+        use crate::data_contract::document_type::property::StringPropertySizes;
+        DocumentProperty {
+            property_type: DocumentPropertyType::TypedArray(TypedArrayProperty {
+                item_type: Box::new(DocumentPropertyType::String(StringPropertySizes {
+                    min_length: Some(1),
+                    max_length: Some(63),
+                    max_bytes: None,
+                })),
+                item_constraints: Default::default(),
+                min_items: None,
+                max_items: 4,
+                unique_items: true,
+            }),
+            ..string_property()
+        }
+    }
+
+    /// A `where` equality between two typed arrays compares lists, and a list
+    /// is no tree key: no preallocated path and no `summableOffCountIndex`
+    /// group is fixed through it.
+    #[test]
+    fn should_bind_no_index_property_through_a_pair_of_typed_arrays() {
+        let own_contract_id = Identifier::from([1u8; 32]);
+        let mut properties = IndexMap::new();
+        properties.insert("tags".to_string(), tags_property());
+        properties.insert(
+            "postId".to_string(),
+            identifier_reference_property("post", None, &[("tags", "tags")]),
+        );
+
+        let index = index_on(&["tags", "postId"]);
+        assert!(index
+            .preallocation_bindings(&properties, own_contract_id)
+            .is_empty());
+
+        let source = index_on(&["postId"]);
+        let mut counts = index_on(&["postId", "tags"]);
+        counts.summable_off_count_index = Some(source.name.clone());
+        assert_eq!(
+            counts.count_index_derivations(&source, &properties, own_contract_id),
+            Err("tags")
+        );
     }
 
     #[test]

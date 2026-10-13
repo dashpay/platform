@@ -307,7 +307,8 @@ impl Drive {
             // bucket and every member entry, and nothing continues below it
             // (registration refuses an index that would).
             if sub_level.summable_off_count_index_info().is_some() {
-                // An indexOnly type indexes no typed array: the counter's group is one value.
+                // A summableOffCountIndex index names no typed array (registration refuses
+                // one): the counter's group is one value.
                 let document_index_field =
                     document_index_fields.into_iter().next().unwrap_or_default();
                 self.add_summable_off_count_counter_operations(
