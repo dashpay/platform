@@ -162,6 +162,12 @@ impl SpvRuntime {
 
         let retained_config = config.clone();
 
+        // TODO(dashpay/rust-dashcore#1103): dash-spv follows a fork as soon as a
+        // peer sends a header whose parent is a stored block below the tip, and
+        // rewinds its storage and the wallets to that block before the competing
+        // branch is checked against the expected difficulty or chain work. Only
+        // the best ChainLock bounds the rewind. Pin the upstream fix when it
+        // lands: https://github.com/dashpay/rust-dashcore/issues/1103
         let spv_client = DashSpvClient::new(
             config,
             network_manager,
