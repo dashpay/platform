@@ -248,24 +248,31 @@ public final class PersistentTransaction {
                     && seen.insert($0.outpoint).inserted
             }
         }
-        let hasUnownedTxos = (inputs + outputs).contains { !PlatformWalletPersistenceHandler.isWalletOwnedTxo($0) }
-        if participatingWalletIds == [walletId], !hasUnownedTxos {
+        let unownedTxos = (inputs + outputs).filter { !PlatformWalletPersistenceHandler.isWalletOwnedTxo($0) }
+        let isSoleParticipant = participatingWalletIds == [walletId]
+        if isSoleParticipant, unownedTxos.isEmpty {
             return netAmountUnavailable == true ? nil : netAmount
         }
+        let walletInputs = owned(inputs)
+        let walletOutputs = owned(outputs)
+        guard !walletInputs.isEmpty || !walletOutputs.isEmpty else { return nil }
+        let computed = Self.reconciledAccounting(
+            inputs: walletInputs, ownedOutputAmounts: walletOutputs.map(\.amount),
+            allOutputsOwned: false, previousDirection: direction, isAssetLock: isAssetLock
+        )?.netAmount
         // Computed from TXOs alone: a pending input this wallet recorded may be
         // one of its own still-unlinked coins, so the sum is only provisional.
+        // It stands when only a contact's watch-only TXOs kept the sole
+        // participant off its stored amount and that amount agrees with it.
         // TODO(wallet-scoped-accounting-from-rust): a foreign payment to two
         // local wallets leaves an unresolvable pending input per wallet, so both
         // show "Amount unavailable". Store Rust's per-wallet net amount instead
         // (tracked in #5226).
-        guard !pendingInputs.contains(where: { $0.walletId == walletId }) else { return nil }
-        let walletInputs = owned(inputs)
-        let walletOutputs = owned(outputs)
-        guard !walletInputs.isEmpty || !walletOutputs.isEmpty else { return nil }
-        return Self.reconciledAccounting(
-            inputs: walletInputs, ownedOutputAmounts: walletOutputs.map(\.amount),
-            allOutputsOwned: false, previousDirection: direction, isAssetLock: isAssetLock
-        )?.netAmount
+        if pendingInputs.contains(where: { $0.walletId == walletId }) {
+            guard isSoleParticipant, netAmountUnavailable != true, computed == netAmount,
+                  unownedTxos.allSatisfy(PlatformWalletPersistenceHandler.isContactTxo) else { return nil }
+        }
+        return computed
     }
 
     /// Direction relative to one wallet for transactions shared by multiple local wallets.

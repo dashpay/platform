@@ -692,4 +692,41 @@ final class TransactionAccountingTests: XCTestCase {
         XCTAssertEqual(row.netAmount(for: walletId), 40)
     }
 
+    func testShouldReportReceivedAmountDespiteContactOutputWhenStoredAmountAgrees() throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = container.mainContext
+        let walletId = Data(repeating: 1, count: 32)
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        let contactAccount = PersistentAccount(
+            wallet: wallet, accountType: PlatformWalletPersistenceHandler.dashpayExternalAccountTypeTag,
+            accountIndex: 0, accountTypeName: "DashPay External Account"
+        )
+        context.insert(wallet)
+        context.insert(contactAccount)
+        let payment = PersistentTransaction(
+            txid: Data(repeating: 3, count: 32), transactionData: Data(),
+            direction: CoreDirectionCode.incoming, netAmount: 40
+        )
+        let received = PersistentTxo(transaction: payment, vout: 0, amount: 40, address: "", height: 1)
+        received.walletId = walletId
+        let contactOutput = PersistentTxo(transaction: payment, vout: 1, amount: 60, address: "", height: 1)
+        contactOutput.walletId = walletId
+        contactOutput.account = contactAccount
+        context.insert(payment)
+        context.insert(received)
+        context.insert(contactOutput)
+        // The foreign input: every prevout with no local TXO is recorded as pending.
+        context.insert(PersistentPendingInput(
+            outpoint: Data(repeating: 9, count: 36), inputIndex: 0,
+            spendingTxid: payment.txid, spendingTransaction: payment, walletId: walletId
+        ))
+        try context.save()
+        XCTAssertEqual(
+            payment.netAmount(for: walletId), 40, "a contact's output does not make the received amount unknown"
+        )
+        // A stored amount the wallet's own outputs do not confirm may hide an unlinked coin of ours.
+        payment.netAmount = -60
+        XCTAssertNil(payment.netAmount(for: walletId))
+    }
+
 }
