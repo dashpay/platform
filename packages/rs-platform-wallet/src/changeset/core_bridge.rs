@@ -1347,6 +1347,28 @@ async fn build_core_changeset(
                 ..CoreChangeSet::default()
             }
         }
+        WalletEvent::ChainTruncated {
+            height,
+            txids,
+            unconfirmed_txids,
+            restored_outpoints,
+            ..
+        } => {
+            // TODO(#5380): mirror the truncation to the persister. The wallet
+            // has already dropped these records in memory, but `CoreChangeSet`
+            // cannot express it: the heights are monotonic-max on merge, a
+            // `SweepBatch` needs a winning transaction, and nothing demotes a
+            // confirmed record to unconfirmed. Until it can, the stored rows
+            // and the stored sync height stay as they were before the fork.
+            tracing::warn!(
+                height,
+                removed = txids.len(),
+                unconfirmed = unconfirmed_txids.len(),
+                restored = restored_outpoints.len(),
+                "Chain truncation is not mirrored to the persister; stored wallet state keeps the replaced branch"
+            );
+            CoreChangeSet::default()
+        }
         WalletEvent::SyncHeightAdvanced { height, .. } => CoreChangeSet {
             synced_height: Some(*height),
             ..CoreChangeSet::default()
@@ -1474,9 +1496,11 @@ fn sent_payment_evidence(event: &WalletEvent) -> Vec<(String, SentPaymentEvidenc
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => finality(inserted.iter().chain(updated.iter())),
-        WalletEvent::SyncHeightAdvanced { .. } | WalletEvent::ChainLockProcessed { .. } => {
-            Vec::new()
-        }
+        // TODO(#5380): a payment whose confirmation a truncation undid keeps
+        // the verdict it already has.
+        WalletEvent::SyncHeightAdvanced { .. }
+        | WalletEvent::ChainLockProcessed { .. }
+        | WalletEvent::ChainTruncated { .. } => Vec::new(),
     }
 }
 
@@ -2259,6 +2283,26 @@ mod swept_transaction_projection_tests {
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
         }
+    }
+
+    /// Pins the gap tracked in #5380: a truncation reaches the bridge but
+    /// produces no persistable change, least of all a sweep (it has no
+    /// winning transaction) or a height (heights only move up on merge).
+    #[tokio::test]
+    async fn should_persist_nothing_for_a_chain_truncation() {
+        let event = WalletEvent::ChainTruncated {
+            wallet_id: WALLET_ID,
+            height: WINNER_HEIGHT,
+            txids: vec![txid(1)],
+            unconfirmed_txids: vec![txid(2)],
+            restored_outpoints: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+
+        let cs = build_core_changeset(&test_manager(), &event).await;
+
+        assert!(cs.is_empty(), "a truncation is not mirrored yet");
     }
 
     #[tokio::test]

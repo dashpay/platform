@@ -439,6 +439,26 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(keyMessage, detail)
     }
 
+    func testShouldPreserveSpvProcessRestartRequiredFromFFI() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SPV_PROCESS_RESTART_REQUIRED
+        )
+        XCTAssertEqual(code, .errorSpvProcessRestartRequired)
+        XCTAssertEqual(code.rawValue, 59)
+        let detail = "teardown task 12 panicked with message \"boom\""
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .spvProcessRestartRequired(let message) = error else {
+            return XCTFail("lost typed restart-required error")
+        }
+        XCTAssertEqual(message, detail)
+        // The panic detail is log material; the alert text is fixed.
+        XCTAssertEqual(error.failureReason, detail)
+        XCTAssertEqual(
+            error.errorDescription,
+            "Sync could not be stopped cleanly. Restart the app to use it again."
+        )
+    }
+
     func testShouldPreserveShieldedIdentityDebitPendingFFIResult() {
         let code = PlatformWalletResultCode(
             ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_DEBIT_PENDING

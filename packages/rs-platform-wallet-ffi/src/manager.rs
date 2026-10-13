@@ -711,9 +711,11 @@ pub unsafe extern "C" fn platform_wallet_manager_get_wallet(
 
 /// Destroy a PlatformWalletManager handle.
 ///
-/// Runs the full lifecycle shutdown (bounded: quiesce + join every
-/// coordinator, SPV, the payment-hook tasks, and the event adapter) and
-/// removes the handle. Always returns `Success` for a live handle.
+/// Runs the full lifecycle shutdown (quiesce + join every coordinator,
+/// SPV, the payment-hook tasks, and the event adapter) and removes the
+/// handle. Shutdown waits are bounded except for SPV's waits for a
+/// concurrent start/stop and in-flight client queries. Always returns
+/// `Success` for a live handle.
 ///
 /// A non-clean shutdown — a worker that outlived its join budget — is
 /// logged, **not** surfaced as an error, because it is no longer a

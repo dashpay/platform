@@ -209,7 +209,7 @@ Accepted values are simple levels ('off'|'error'|'warn'|'info'|'debug'|'trace') 
 ## Environment & compatibility
 
 - ESM-only package ("type": "module"). Use dynamic import in CJS.
-- Node.js: 16+ recommended (18+ preferred).
+- Node.js: >= 22.
 - Browsers: modern engines with WebAssembly + Web Workers.
 
 ---

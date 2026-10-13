@@ -3,7 +3,7 @@
 //! Reproduce with scripts/generate_historical_test_vectors.sh.
 
 use platform_encryption::*;
-use secp256k1::{PublicKey, Secp256k1, SecretKey};
+use secp256k1::{PublicKey, SecretKey};
 
 const SHARED_KEY: [u8; 32] = [
     0x41, 0x44, 0xa9, 0xee, 0xca, 0x1b, 0x8c, 0xd1, 0x88, 0x4c, 0x7f, 0xdb, 0x14, 0xa5, 0x6a, 0x23,
@@ -52,31 +52,25 @@ const ENCRYPTED_PRIVATE_DATA: [u8; 48] = [
 
 #[test]
 fn should_match_historical_ecdh_shared_secret() {
-    let sender = SecretKey::from_slice(&[0xc0; 32]).unwrap();
-    let recipient = SecretKey::from_slice(&[0x0d; 32]).unwrap();
+    let sender = SecretKey::from_secret_bytes([0xc0; 32]).unwrap();
+    let recipient = SecretKey::from_secret_bytes([0x0d; 32]).unwrap();
     assert_eq!(
-        derive_shared_key_ecdh(
-            &sender,
-            &PublicKey::from_secret_key(&Secp256k1::new(), &recipient)
-        ),
+        derive_shared_key_ecdh(&sender, &PublicKey::from_secret_key(&recipient)),
         SHARED_KEY
     );
     assert_eq!(
-        derive_shared_key_ecdh(
-            &recipient,
-            &PublicKey::from_secret_key(&Secp256k1::new(), &sender)
-        ),
+        derive_shared_key_ecdh(&recipient, &PublicKey::from_secret_key(&sender)),
         SHARED_KEY
     );
 }
 
 #[test]
 fn should_match_historical_compact_xpub_and_ciphertext() {
-    let account = SecretKey::from_slice(&[7; 32]).unwrap();
+    let account = SecretKey::from_secret_bytes([7; 32]).unwrap();
     let xpub = compact_xpub_bytes(
         [0x11, 0x22, 0x33, 0x44],
         [0xaa; 32],
-        PublicKey::from_secret_key(&Secp256k1::new(), &account).serialize(),
+        PublicKey::from_secret_key(&account).serialize(),
     );
     assert_eq!(xpub, COMPACT_XPUB);
     assert_eq!(

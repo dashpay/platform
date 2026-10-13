@@ -25,13 +25,8 @@ const COINBASE_TRANSACTION_TYPE: u16 = 5;
 /// coinbase transaction; `0` when it carries no payload or its payload predates version 3,
 /// before the credit pool existed, which is how Core's own unlock limit reads such a block.
 ///
-/// Decoded with `deserialize_partial`: the pinned payload decoder reads the fields of version 3
-/// for every later version and stops after the balance, while the version 4 payload Core v24
-/// requires appends `merkleRootAssetUnlocks` after it. A strict `deserialize`, and so a whole
-/// `Block` decode, refuses those unread bytes. Core has only ever appended fields to the
-/// payload, and its consensus rules (`CheckCbTx`) refuse versions it does not know, so the
-/// balance stays where version 3 put it unless a Core release moves it, which Platform would
-/// have to follow anyway.
+/// Uses `deserialize_partial` to tolerate appended payload fields after those understood
+/// by the decoder. The credit-pool balance occupies the same field from version 3 onward.
 pub(crate) fn credit_pool_balance_from_coinbase(coinbase: &[u8]) -> Result<u64, String> {
     let (transaction, _) = deserialize_partial::<Transaction>(coinbase)
         .map_err(|e| format!("coinbase cannot be decoded: {e}"))?;
@@ -487,6 +482,7 @@ mod tests {
             best_cl_height: Some(30),
             best_cl_signature: Some(BLSSignature::from([3; 96])),
             asset_locked_amount: Some(BALANCE_DUFFS),
+            merkle_root_asset_unlocks: None,
         })
     }
 
@@ -499,7 +495,7 @@ mod tests {
     }
 
     /// Core v24 blocks carry a version 4 payload, which appends `merkleRootAssetUnlocks`
-    /// after the balance; the pinned transaction decoder cannot read it.
+    /// after the balance.
     #[test]
     fn should_read_the_balance_of_a_version_4_coinbase() {
         let version_3 = coinbase(Some(version_3_payload()));
@@ -528,6 +524,7 @@ mod tests {
             best_cl_height: None,
             best_cl_signature: None,
             asset_locked_amount: None,
+            merkle_root_asset_unlocks: None,
         });
         assert_eq!(
             credit_pool_balance_from_coinbase(&coinbase(Some(version_2))),

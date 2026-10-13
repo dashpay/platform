@@ -5,6 +5,9 @@
   "main": "src/index.js",
   "unpkg": "dist/wallet-lib.min.js",
   "types": "src/index.d.ts",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build:web": "webpack --stats-error-details",
     "lint": "eslint .",

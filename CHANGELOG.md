@@ -4,6 +4,46 @@
 
 * **platform:** freeze historical BLS, GroveDB/checkpoint, transaction signing, DashPay encryption, and FFI node-ID compatibility vectors, with a script to reproduce them through ignored tests on a pinned historical checkout.
 
+### Fixed
+
+- **dpp:** require a WASM-compatible `blst` version for BLS signatures and Core
+  message/quorum verification, including external consumers with older dependency lockfiles.
+- **platform-test-suite:** retry proof reads while the local quorum sidecar publishes
+  a rotated key, with a bounded wait and full proof verification on each attempt.
+- **platform-wallet-ffi:** adapt platform node ID derivation to the updated
+  rust-dashcore API, restoring native SDK builds while preserving canonical bytes.
+- **drive-abci:** preserve the fixed 48-byte quorum-key disk encoding independently
+  of the BLS backend, with historical saved-state and checkpoint regression fixtures.
+
+### Changed
+
+- **Rust dependencies:** pin rust-dashcore to `dev` at `d036d844`, which includes
+  [rust-dashcore#1149](https://github.com/dashpay/rust-dashcore/pull/1149):
+  legacy BLS public-key and canonical PlatformNodeId serialization are restored
+  and the pre-v4 coinbase payload Serde layout is preserved. Adapt WASM
+  private-key hex decoding to the removal of `dashcore_hashes::hex`, compact
+  ECDSA signatures to `dashcore::sign_message::MessageSignature` (the accepted
+  signatures and the encoded bytes are unchanged), and masternode payload
+  handling to the version-3 ProRegTx / ProUpServTx types.
+- **platform-wallet:** a chain reorganization reported by key-wallet
+  (`WalletEvent::ChainTruncated`) updates the in-memory balance but is not yet
+  mirrored to persisted wallet state
+  ([#5380](https://github.com/dashpay/platform/issues/5380)). Version-3
+  provider payloads are read through their pre-v3 fields only.
+- **Breaking (Rust features):** remove DPP's `core_key_wallet_bip_38` and SDK's
+  `core_key_wallet_bip38` feature forwards because upstream removed BIP38 support.
+- **Breaking (C API):** the unified FFI no longer exports
+  `bip38_encrypt_private_key` and `bip38_decrypt_private_key`. Both were
+  unsupported-operation stubs that upstream removed; direct C and Swift callers
+  must drop their calls.
+
+- **dpp (Rust API migration):** BLS types now live under `dpp::bls::{PublicKey,
+  SecretKey, Signature, BlsError}`; the generic `dpp::bls_signatures` re-export
+  is removed. Use `PublicKey::to_bytes()`, `SecretKey::from_be_bytes()` returning
+  `Option`, and Basic `sign(message)` / `Signature::from_compressed()`. The
+  `serialization::dashcore::bls_pubkey` Serde adapter remains a deprecated alias.
+  Serialized encodings and consensus rules are unchanged. See [#5320](https://github.com/dashpay/platform/pull/5320).
+
 ## [5.0.0-beta.2](https://github.com/dashpay/platform/compare/v5.0.0-beta.1...v5.0.0-beta.2) (2026-10-06)
 
 
