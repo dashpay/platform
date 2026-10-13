@@ -1711,10 +1711,10 @@ async fn collect_usage_deltas(
 /// the walk itself is [`utxo_credit_verdicts_from_wallet`], factored so
 /// tests can drive it against a bare `ManagedWalletInfo`. `BlockProcessed`
 /// uses this over the event's own records (block records carry their
-/// block context and cannot read `Doomed`); `TransactionDetected` and
-/// `TransactionInstantLocked` read their slices and verdicts under one
-/// guard through
-/// [`wallet_slices_and_verdicts_for_txid`].
+/// block context and cannot read `Doomed`); `TransactionDetected` reads its
+/// slices and verdicts under one guard through
+/// [`wallet_slices_and_verdicts_for_txid`], and `TransactionInstantLocked`
+/// under its own guard through [`slices_and_verdicts_for_txid`].
 async fn utxo_credit_verdicts(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
@@ -1968,8 +1968,7 @@ fn collect_usage_deltas_from_accounts(
 /// Every account slice the manager currently holds for `txid` in
 /// `wallet_id` — the authoritative "all accounts matched so far"
 /// snapshot behind the wallet-level fold (see the `TransactionDetected`
-/// arm of [`build_core_changeset`], and [`instant_lock_changeset`]) —
-/// together with the credit verdicts
+/// arm of [`build_core_changeset`]) — together with the credit verdicts
 /// of the owned slices' outputs ([`utxo_credit_verdicts_from_wallet`]),
 /// both read under ONE wallet read guard, so the records a verdict is
 /// judged on and the wallet state it is judged against are the same
@@ -1990,6 +1989,10 @@ async fn wallet_slices_and_verdicts_for_txid(
 }
 
 /// The slices `info` holds of `txid` and the verdicts of their owned outputs.
+/// The caller holds the wallet read guard, so the records a verdict is judged
+/// on, the wallet state it is judged against, and anything else the caller
+/// reads under that guard ([`instant_lock_changeset`]'s finality check) are
+/// one snapshot.
 fn slices_and_verdicts_for_txid(
     info: &PlatformWalletInfo,
     txid: &Txid,
@@ -2962,7 +2965,7 @@ mod contact_watch_only_projection_tests {
     use key_wallet::transaction_checking::BlockInfo;
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
-    use key_wallet::{Network, WalletCoreBalance};
+    use key_wallet::{Network, Wallet, WalletCoreBalance};
     use key_wallet_manager::WalletManager;
 
     const WALLET_ID: WalletId = [9u8; 32];
@@ -3895,6 +3898,34 @@ mod contact_watch_only_projection_tests {
         }
     }
 
+    /// The changeset of `lock` arriving for `txid`, projected against a
+    /// manager that holds `wallet` with `info`.
+    async fn lock_changeset(
+        wallet: Wallet,
+        info: PlatformWalletInfo,
+        txid: Txid,
+        lock: InstantLock,
+    ) -> CoreChangeSet {
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+        let wallet_id = wm.insert_wallet(wallet, info).expect("insert wallet");
+        let event = WalletEvent::TransactionInstantLocked {
+            wallet_id,
+            txid,
+            instant_lock: lock,
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+        build_core_changeset(&Arc::new(RwLock::new(wm)), &event).await
+    }
+
+    fn chain_lock_at(block_height: u32) -> ChainLock {
+        ChainLock {
+            block_height,
+            block_hash: BlockHash::all_zeros(),
+            signature: BLSSignature::from([0u8; 96]),
+        }
+    }
+
     /// Set the context of the slice `account_type` holds of `txid`.
     fn set_slice_context(
         info: &mut PlatformWalletInfo,
@@ -4030,18 +4061,8 @@ mod contact_watch_only_projection_tests {
         );
 
         let info = platform_info(ctx.managed_wallet);
-        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
-        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
-        let manager = Arc::new(RwLock::new(wm));
 
-        let event = WalletEvent::TransactionInstantLocked {
-            wallet_id,
-            txid: spend.txid(),
-            instant_lock: lock,
-            balance: WalletCoreBalance::default(),
-            account_balances: BTreeMap::new(),
-        };
-        let cs = build_core_changeset(&manager, &event).await;
+        let cs = lock_changeset(ctx.wallet, info, spend.txid(), lock).await;
 
         assert!(cs
             .instant_locks_for_non_final_records
@@ -4101,18 +4122,8 @@ mod contact_watch_only_projection_tests {
         // The lock arrives the way the manager applies it.
         let lock = InstantLock::default();
         info.mark_instant_send_utxos(&spend.txid(), &lock);
-        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
-        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
-        let manager = Arc::new(RwLock::new(wm));
 
-        let event = WalletEvent::TransactionInstantLocked {
-            wallet_id,
-            txid: spend.txid(),
-            instant_lock: lock,
-            balance: WalletCoreBalance::default(),
-            account_balances: BTreeMap::new(),
-        };
-        let cs = build_core_changeset(&manager, &event).await;
+        let cs = lock_changeset(ctx.wallet, info, spend.txid(), lock).await;
 
         assert!(cs
             .instant_locks_for_non_final_records
@@ -4203,17 +4214,8 @@ mod contact_watch_only_projection_tests {
         );
         let lock = InstantLock::default();
         info.mark_instant_send_utxos(&txid, &lock);
-        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
-        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
-        let event = WalletEvent::TransactionInstantLocked {
-            wallet_id,
-            txid,
-            instant_lock: lock,
-            balance: WalletCoreBalance::default(),
-            account_balances: BTreeMap::new(),
-        };
 
-        let cs = build_core_changeset(&Arc::new(RwLock::new(wm)), &event).await;
+        let cs = lock_changeset(ctx.wallet, info, txid, lock).await;
 
         assert!(cs.instant_locks_for_non_final_records.contains_key(&txid));
         assert_eq!(cs.records.len(), 1);
@@ -4264,17 +4266,8 @@ mod contact_watch_only_projection_tests {
             let txid = spend.txid();
             let mut info = platform_info(ctx.managed_wallet);
             set_slice_context(&mut info, chain_locked, &txid, in_chain_locked_block(2));
-            let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
-            let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
-            let event = WalletEvent::TransactionInstantLocked {
-                wallet_id,
-                txid,
-                instant_lock: InstantLock::default(),
-                balance: WalletCoreBalance::default(),
-                account_balances: BTreeMap::new(),
-            };
 
-            let cs = build_core_changeset(&Arc::new(RwLock::new(wm)), &event).await;
+            let cs = lock_changeset(ctx.wallet, info, txid, InstantLock::default()).await;
 
             assert!(
                 cs.instant_locks_for_non_final_records.is_empty(),
@@ -4297,11 +4290,7 @@ mod contact_watch_only_projection_tests {
         let mut info = platform_info(ctx.managed_wallet);
         // The block reached one account's slice only, then its chain lock.
         set_slice_context(&mut info, bip44_account_0(), &txid, in_block(2));
-        info.apply_chain_lock(ChainLock {
-            block_height: 2,
-            block_hash: BlockHash::all_zeros(),
-            signature: BLSSignature::from([0u8; 96]),
-        });
+        info.apply_chain_lock(chain_lock_at(2));
         let lock = InstantLock::default();
         info.mark_instant_send_utxos(&txid, &lock);
         let contexts = slice_contexts(&info, &txid);
@@ -4312,17 +4301,8 @@ mod contact_watch_only_projection_tests {
             ),
             "the sibling is still unconfirmed, got {contexts:?}"
         );
-        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
-        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
-        let event = WalletEvent::TransactionInstantLocked {
-            wallet_id,
-            txid,
-            instant_lock: lock,
-            balance: WalletCoreBalance::default(),
-            account_balances: BTreeMap::new(),
-        };
 
-        let cs = build_core_changeset(&Arc::new(RwLock::new(wm)), &event).await;
+        let cs = lock_changeset(ctx.wallet, info, txid, lock).await;
 
         assert!(cs.records.is_empty(), "the sibling slice is not re-emitted");
         assert!(cs.account_records.is_empty());
@@ -4381,11 +4361,7 @@ mod contact_watch_only_projection_tests {
             }
         }
         // The block reached the contact's slice only, then its chain lock.
-        info.apply_chain_lock(ChainLock {
-            block_height: 2,
-            block_hash: BlockHash::all_zeros(),
-            signature: BLSSignature::from([0u8; 96]),
-        });
+        info.apply_chain_lock(chain_lock_at(2));
         assert!(
             info.core_wallet
                 .accounts
@@ -4397,17 +4373,8 @@ mod contact_watch_only_projection_tests {
         );
         let lock = InstantLock::default();
         info.mark_instant_send_utxos(&txid, &lock);
-        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
-        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
-        let event = WalletEvent::TransactionInstantLocked {
-            wallet_id,
-            txid,
-            instant_lock: lock,
-            balance: WalletCoreBalance::default(),
-            account_balances: BTreeMap::new(),
-        };
 
-        let cs = build_core_changeset(&Arc::new(RwLock::new(wm)), &event).await;
+        let cs = lock_changeset(ctx.wallet, info, txid, lock).await;
 
         assert!(cs.instant_locks_for_non_final_records.contains_key(&txid));
         assert_eq!(cs.account_records.len(), 2, "both own slices");
@@ -4419,24 +4386,36 @@ mod contact_watch_only_projection_tests {
         );
     }
 
-    /// An InstantSend lock for a txid a known wallet holds no record for
-    /// (pruned at its chain lock) keeps the lock alone.
+    /// A lock for a transaction the wallet holds as chain-locked changes
+    /// nothing, whether the chain-locked record is kept or pruned.
     #[tokio::test]
-    async fn should_carry_only_the_lock_when_the_record_is_pruned() {
+    async fn should_drop_the_lock_of_a_transaction_chain_locked_before_it() {
+        let (ctx, spend) = dual_account_mempool_spend().await;
+        let txid = spend.txid();
+        let mut info = platform_info(ctx.managed_wallet);
+        for account in [bip44_account_0(), bip32_account_0()] {
+            set_slice_context(&mut info, account, &txid, in_block(2));
+        }
+        info.apply_chain_lock(chain_lock_at(2));
+        let lock = InstantLock::default();
+        info.mark_instant_send_utxos(&txid, &lock);
+
+        let cs = lock_changeset(ctx.wallet, info, txid, lock).await;
+
+        assert!(cs.instant_locks_for_non_final_records.is_empty());
+        assert!(cs.records.is_empty());
+        assert!(cs.account_records.is_empty());
+    }
+
+    /// An InstantSend lock for a txid a known wallet never held keeps the
+    /// lock alone.
+    #[tokio::test]
+    async fn should_carry_only_the_lock_when_the_transaction_was_never_held() {
         let ctx = TestWalletContext::new_random();
         let info = platform_info(ctx.managed_wallet);
-        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
-        let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
         let txid = Txid::from_byte_array([9; 32]);
-        let event = WalletEvent::TransactionInstantLocked {
-            wallet_id,
-            txid,
-            instant_lock: InstantLock::default(),
-            balance: WalletCoreBalance::default(),
-            account_balances: BTreeMap::new(),
-        };
 
-        let cs = build_core_changeset(&Arc::new(RwLock::new(wm)), &event).await;
+        let cs = lock_changeset(ctx.wallet, info, txid, InstantLock::default()).await;
 
         assert!(cs.records.is_empty());
         assert!(cs.account_records.is_empty());
