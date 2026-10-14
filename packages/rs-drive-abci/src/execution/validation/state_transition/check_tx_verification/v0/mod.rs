@@ -8,7 +8,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dpp::identity::state_transition::OptionallyAssetLockProved;
+use dpp::identity::state_transition::{AssetLockProved, OptionallyAssetLockProved};
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
@@ -42,7 +42,10 @@ use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
+use dpp::consensus::basic::BasicError;
 use dpp::identity::PartialIdentity;
+use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::prelude::AddressNonce;
 
 #[allow(clippy::too_many_arguments)]
@@ -202,6 +205,29 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     return Ok(
                         ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
                             result.errors,
+                        ),
+                    );
+                }
+            }
+
+            // An identity create carries its identity id outside the bytes the asset lock key
+            // signs, and the id is the transition's mempool sender. One whose id is not the one
+            // its asset lock's outpoint derives can never create an identity, and as a sender it
+            // could take the place of the identity another asset lock creates, so it is refused
+            // here, before the asset lock proof is verified. Basic structure has checked that
+            // the outpoint exists. Admission is not consensus, so every protocol version gets
+            // this.
+            if let StateTransition::IdentityCreate(identity_create) = state_transition {
+                if identity_create.asset_lock_proof().create_identifier()?
+                    != identity_create.identity_id()
+                {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_error(
+                            BasicError::InvalidIdentifierError(InvalidIdentifierError::new(
+                                "identity_id".to_string(),
+                                "does not match created identifier from asset lock".to_string(),
+                            ))
+                            .into(),
                         ),
                     );
                 }
@@ -426,7 +452,10 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
                 result.data
             } else {
-                None
+                // The action built for advanced structure validation is kept, so the transition
+                // is not transformed again: for an asset lock that would verify the proof and
+                // its signature a second time
+                action
             };
 
             let action = if let Some(action) = action {

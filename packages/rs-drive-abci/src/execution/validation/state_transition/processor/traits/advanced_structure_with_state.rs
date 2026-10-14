@@ -139,12 +139,20 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
     /// so their owners should not be charged for them. Admission is not consensus, so every
     /// protocol version gets this.
     ///
+    /// An identity create is checked here so that one whose identity id is not the one its
+    /// asset lock derives, or whose key proofs of possession fail, never enters the mempool: the
+    /// asset lock signature covers neither the identity id nor the key signatures, so the asset
+    /// lock owner should not be charged for them, and from protocol version 14 a block refuses
+    /// them unpaid. A key structure failure, which a block charges, is refused here too.
+    /// Admission is not consensus, so every protocol version gets this.
+    ///
     /// A masternode vote is checked here for the same reason: a block refuses a vote with the
     /// wrong voting key unpaid. Its state validation, which check_tx also runs, needs the action.
     fn requires_advanced_structure_validation_with_state_on_check_tx(&self) -> bool {
         matches!(
             self,
             StateTransition::Batch(_)
+                | StateTransition::IdentityCreate(_)
                 | StateTransition::IdentityCreateFromAddresses(_)
                 | StateTransition::MasternodeVote(_)
         )
@@ -275,9 +283,13 @@ mod tests {
         use super::*;
 
         #[test]
-        fn should_return_true_only_for_batch_identity_create_from_addresses_and_masternode_vote() {
+        fn should_return_true_only_for_batch_identity_creates_and_masternode_vote() {
             let batch = StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default()));
             assert!(batch.requires_advanced_structure_validation_with_state_on_check_tx());
+            let identity_create = StateTransition::IdentityCreate(IdentityCreateTransition::V0(
+                IdentityCreateTransitionV0::default(),
+            ));
+            assert!(identity_create.requires_advanced_structure_validation_with_state_on_check_tx());
             let identity_create_from_addresses = StateTransition::IdentityCreateFromAddresses(
                 IdentityCreateFromAddressesTransition::V0(
                     IdentityCreateFromAddressesTransitionV0::default(),
@@ -294,13 +306,15 @@ mod tests {
         #[test]
         fn should_return_false_for_other_transitions() {
             let transitions: Vec<(&str, StateTransition)> = vec![
-                (
-                    "IdentityCreate",
-                    StateTransition::IdentityCreate(IdentityCreateTransition::V0(
-                        IdentityCreateTransitionV0::default(),
-                    )),
-                ),
                 ("DataContractCreate", make_data_contract_create_st()),
+                (
+                    "AddressFundingFromAssetLock",
+                    StateTransition::AddressFundingFromAssetLock(
+                        AddressFundingFromAssetLockTransition::V0(
+                            AddressFundingFromAssetLockTransitionV0::default(),
+                        ),
+                    ),
+                ),
             ];
             for (name, st) in transitions {
                 assert!(

@@ -2542,7 +2542,8 @@ mod tests {
     /// The asset lock key signs an identity create's signable bytes, which leave out the
     /// identity id and every key's proof of possession. From protocol version 14 a block
     /// refuses, unpaid, a transition whose only fault is in one of those fields, and the asset
-    /// lock it carries is left unused.
+    /// lock it carries is left unused. check_tx refuses such a transition at every protocol
+    /// version.
     mod fields_outside_the_asset_lock_signature {
         use super::*;
         use crate::execution::check_tx::CheckTxLevel;
@@ -2558,8 +2559,15 @@ mod tests {
         use dpp::consensus::basic::BasicError;
         use dpp::consensus::signature::SignatureError;
         use dpp::consensus::ConsensusError;
+        use dpp::dashcore::consensus::serialize;
+        use dpp::dashcore::hashes::Hash;
+        use dpp::dashcore::{BlockHash, OutPoint, Transaction};
+        use dpp::dashcore_rpc::json::GetRawTransactionResult;
         use dpp::fee::Credits;
-        use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        use dpp::identity::state_transition::asset_lock_proof::{
+            AssetLockProof, InstantAssetLockProof,
+        };
         use dpp::identity::KeyType::ECDSA_HASH160;
         use dpp::identity::{Purpose, SecurityLevel};
         use dpp::platform_value::Bytes36;
@@ -2567,7 +2575,16 @@ mod tests {
         use dpp::state_transition::public_key_in_creation::accessors::{
             IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
         };
+        use dpp::tests::fixtures::{
+            instant_asset_lock_is_lock_fixture, instant_asset_lock_proof_transaction_fixture,
+        };
         use dpp::version::ProtocolVersion;
+        use platform_version::version::LATEST_VERSION;
+
+        /// check_tx refuses these transitions at every protocol version. Protocol versions 1 to
+        /// 13 validate an identity create the same way, and 14 changes only its advanced
+        /// structure, so the first, the last before 14 and the latest stand for all of them.
+        const CHECK_TX_PROTOCOL_VERSIONS: [ProtocolVersion; 3] = [1, 13, LATEST_VERSION];
 
         #[derive(Clone, Copy, Debug)]
         enum Fault {
@@ -2668,9 +2685,20 @@ mod tests {
             WithoutAMasterKey,
         }
 
+        /// How an identity create proves its asset lock.
+        #[derive(Clone, Copy)]
+        enum AssetLockProofKind {
+            /// An instant lock of the asset lock transaction
+            Instant,
+            /// The asset lock transaction's outpoint, chain locked at the genesis core height;
+            /// Core is asked for the transaction
+            Chain,
+        }
+
         struct Registration {
             identity_id: Identifier,
             asset_lock_proof: AssetLockProof,
+            asset_lock_transaction: Transaction,
             transition: StateTransition,
         }
 
@@ -2690,6 +2718,16 @@ mod tests {
 
         /// An identity create funded by an instant asset lock, with every signature valid.
         async fn registration(keys: Keys, platform_version: &PlatformVersion) -> Registration {
+            registration_proved_by(keys, AssetLockProofKind::Instant, platform_version).await
+        }
+
+        /// An identity create whose asset lock is proved by `proof_kind`, with every signature
+        /// valid.
+        async fn registration_proved_by(
+            keys: Keys,
+            proof_kind: AssetLockProofKind,
+            platform_version: &PlatformVersion,
+        ) -> Registration {
             let mut signer = SimpleSigner::default();
             let mut rng = StdRng::seed_from_u64(567);
 
@@ -2734,13 +2772,24 @@ mod tests {
                 .random_public_and_private_key_data(&mut rng, platform_version)
                 .expect("expected to get key pair");
 
-            let asset_lock_proof = instant_asset_lock_proof_fixture(
+            let asset_lock_transaction = instant_asset_lock_proof_transaction_fixture(
                 Some(
                     PrivateKey::from_byte_array(&pk, Network::Testnet)
                         .expect("expected a private key"),
                 ),
                 None,
             );
+            let asset_lock_proof = match proof_kind {
+                AssetLockProofKind::Instant => AssetLockProof::Instant(InstantAssetLockProof::new(
+                    instant_asset_lock_is_lock_fixture(asset_lock_transaction.txid()),
+                    asset_lock_transaction.clone(),
+                    0,
+                )),
+                AssetLockProofKind::Chain => AssetLockProof::Chain(ChainAssetLockProof::new(
+                    0,
+                    OutPoint::new(asset_lock_transaction.txid(), 0).into(),
+                )),
+            };
 
             let identity: Identity = IdentityV0 {
                 id: asset_lock_proof
@@ -2768,6 +2817,7 @@ mod tests {
             Registration {
                 identity_id: identity.id(),
                 asset_lock_proof,
+                asset_lock_transaction,
                 transition,
             }
         }
@@ -2869,6 +2919,181 @@ mod tests {
                     platform_version,
                 )
                 .expect("expected to fetch the identity balance")
+        }
+
+        /// check_tx refuses, at every protocol version, an identity create whose identity id is
+        /// not the one its asset lock derives, while a transition with the same signable bytes
+        /// and the derived identity id is still admitted. The identity id is checked before the
+        /// asset lock proof, so the refusal names the identity id even once the asset lock is
+        /// spent.
+        #[tokio::test]
+        async fn should_refuse_at_check_tx_an_identity_create_whose_identity_id_does_not_match_its_asset_lock(
+        ) {
+            let fault = Fault::IdentityIdNotFromAssetLock;
+            for protocol_version in CHECK_TX_PROTOCOL_VERSIONS {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let platform = new_platform(protocol_version);
+                let registration = registration(Keys::Valid, platform_version).await;
+                let faulty = fault.applied_to(&registration.transition);
+
+                let errors = check_tx(&platform, &faulty, CheckTxLevel::FirstTimeCheck);
+                assert_matches!(
+                    errors.as_slice(),
+                    [error] if fault.is_reported_by(error),
+                    "at protocol version {protocol_version}: {errors:?}"
+                );
+                assert_eq!(
+                    check_tx(
+                        &platform,
+                        &registration.transition,
+                        CheckTxLevel::FirstTimeCheck
+                    ),
+                    vec![],
+                    "at protocol version {protocol_version}"
+                );
+
+                let created =
+                    process_block(&platform, &[&registration.transition], platform_version);
+                assert_eq!(
+                    created.valid_count(),
+                    1,
+                    "{:?}",
+                    created.execution_results()
+                );
+                let errors = check_tx(&platform, &faulty, CheckTxLevel::FirstTimeCheck);
+                assert_matches!(
+                    errors.as_slice(),
+                    [error] if fault.is_reported_by(error),
+                    "at protocol version {protocol_version} once the asset lock is spent: {errors:?}"
+                );
+            }
+        }
+
+        /// check_tx runs an identity create's advanced structure validation at every protocol
+        /// version, so a transition with the fault never enters the mempool, while a transition
+        /// with the same signable bytes and no fault is still admitted.
+        async fn assert_refused_at_check_tx(fault: Fault) {
+            for protocol_version in CHECK_TX_PROTOCOL_VERSIONS {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let platform = new_platform(protocol_version);
+                let registration = registration(Keys::Valid, platform_version).await;
+
+                let errors = check_tx(
+                    &platform,
+                    &fault.applied_to(&registration.transition),
+                    CheckTxLevel::FirstTimeCheck,
+                );
+                assert_matches!(
+                    errors.as_slice(),
+                    [error] if fault.is_reported_by(error),
+                    "at protocol version {protocol_version}: {errors:?}"
+                );
+                assert_eq!(
+                    check_tx(
+                        &platform,
+                        &registration.transition,
+                        CheckTxLevel::FirstTimeCheck
+                    ),
+                    vec![],
+                    "at protocol version {protocol_version}"
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn should_refuse_at_check_tx_an_identity_create_with_an_invalid_key_proof_of_possession(
+        ) {
+            assert_refused_at_check_tx(Fault::InvalidKeyProofOfPossession).await;
+        }
+
+        #[tokio::test]
+        async fn should_refuse_at_check_tx_an_identity_create_with_a_signature_on_a_hash_key() {
+            assert_refused_at_check_tx(Fault::SignatureOnAHashKey).await;
+        }
+
+        /// A key structure failure is charged by a block, but check_tx refuses it too, at every
+        /// protocol version, since it runs the same advanced structure validation.
+        #[tokio::test]
+        async fn should_refuse_at_check_tx_an_identity_create_with_an_invalid_key_structure() {
+            for protocol_version in CHECK_TX_PROTOCOL_VERSIONS {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let platform = new_platform(protocol_version);
+                let registration = registration(Keys::WithoutAMasterKey, platform_version).await;
+
+                let errors = check_tx(
+                    &platform,
+                    &registration.transition,
+                    CheckTxLevel::FirstTimeCheck,
+                );
+                assert_matches!(
+                    errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::MissingMasterPublicKeyError(_)
+                    )],
+                    "at protocol version {protocol_version}: {errors:?}"
+                );
+            }
+        }
+
+        /// check_tx validates an identity create's advanced structure on the action it built
+        /// and keeps that action, so the asset lock is verified once: Core is asked for a chain
+        /// asset lock's transaction once.
+        #[tokio::test]
+        async fn should_verify_the_asset_lock_once_at_check_tx() {
+            for protocol_version in CHECK_TX_PROTOCOL_VERSIONS {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let mut platform = new_platform(protocol_version);
+                let registration = registration_proved_by(
+                    Keys::Valid,
+                    AssetLockProofKind::Chain,
+                    platform_version,
+                )
+                .await;
+
+                let transaction = registration.asset_lock_transaction.clone();
+                platform
+                    .core_rpc
+                    .expect_get_optional_transaction_extended_info()
+                    .times(1)
+                    .returning(move |_| {
+                        Ok(Some(GetRawTransactionResult {
+                            in_active_chain: true,
+                            hex: serialize(&transaction),
+                            txid: transaction.txid(),
+                            size: 0,
+                            version: transaction.version as u32,
+                            tx_type: 8,
+                            locktime: transaction.lock_time,
+                            vin: vec![],
+                            vout: vec![],
+                            extra_payload_size: None,
+                            extra_payload: None,
+                            blockhash: Some(BlockHash::all_zeros()),
+                            confirmations: Some(1),
+                            time: Some(0),
+                            blocktime: Some(0),
+                            height: Some(0),
+                            instantlock: false,
+                            instantlock_internal: false,
+                            chainlock: true,
+                        }))
+                    });
+
+                assert_eq!(
+                    check_tx(
+                        &platform,
+                        &registration.transition,
+                        CheckTxLevel::FirstTimeCheck
+                    ),
+                    vec![],
+                    "at protocol version {protocol_version}"
+                );
+                platform.core_rpc.checkpoint();
+            }
         }
 
         /// The asset lock key did not sign the field at fault, so a block refuses the

@@ -317,7 +317,9 @@ signature covers the keys but neither the identity id nor the key signatures, wh
 out of the signable bytes. From protocol version 14 an identity id or proof of possession
 failure is therefore refused without a fee instead of charging the asset lock a penalty, and
 the asset lock is left as it was; a key structure failure is still charged. A block holding
-such a transition is refused, as for any unpaid result.
+such a transition is refused, as for any unpaid result. `check_tx` runs this stage for
+`IdentityCreate` too, at every protocol version, so such a transition does not reach a block; it
+checks the identity id first, before verifying the asset lock proof.
 
 ## Stage 10: State Validation
 
