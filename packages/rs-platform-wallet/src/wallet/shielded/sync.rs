@@ -176,38 +176,21 @@ impl MultiSyncNotesResult {
     }
 }
 
-/// Generation counters for the store state a sync pass snapshots before it
-/// starts downloading: the shared tree's leaf count, and each wallet's
-/// registered subwallets, watermarks and notes.
+/// Generations a sync pass re-checks under the store write guard before each
+/// write, since it no longer holds that lock across its download.
 ///
-/// A pass no longer holds the store write lock while it waits on the
-/// network (sends and other short wallet operations would queue behind
-/// the whole download), so lifecycle operations — wallet removal, a
-/// re-bind that drops or re-keys accounts, a host snapshot restore,
-/// Clear — can land between two of the pass's lock acquisitions. Each of
-/// them bumps a generation here, and the pass re-checks the generations
-/// it depends on every time it takes the lock to write; a moved one means
-/// the pass's snapshot is stale and it abandons the pass
-/// ([`NoteSyncOutcome::Superseded`]) instead of writing notes / watermarks
-/// for a wallet that was purged, on top of a restore it never saw, or
-/// commitments into a tree that was reset.
+/// Lifecycle operations that conflict with an in-flight pass (wallet removal,
+/// a re-bind that drops or re-keys accounts, a host snapshot restore, Clear)
+/// bump a generation under the same guard, so either the pass's write lands
+/// first or the pass sees the bump and returns
+/// [`NoteSyncOutcome::Superseded`] without writing. Wallet changes bump only
+/// that wallet, so binding one wallet doesn't abandon a pass over others;
+/// Clear bumps the tree generation, which every pass depends on.
 ///
-/// Wallet-scoped changes bump only that wallet's generation, so binding or
-/// restoring one wallet doesn't throw away a pass that is scanning only
-/// others (the multi-wallet launch case); Clear bumps the tree generation,
-/// which every pass depends on.
-///
-/// The bump methods take the store write guard, so a bump is always
-/// ordered against the pass's check-under-the-same-lock: either the pass's
-/// write lands first (and the lifecycle operation then applies on top of
-/// it, exactly as when the pass held the lock throughout), or the pass
-/// observes the new generation and writes nothing. A pass must
-/// [`watch`](Self::watch) BEFORE it snapshots the account registry:
-/// lifecycle operations change the registry before they bump, so a pass
-/// that read the registry before a change is guaranteed to have watched
-/// the generation from before it. Clear is the one operation that resets
-/// the store before it clears the registry, so it bumps both before the
-/// reset and again after the registry is cleared.
+/// A pass must [`watch`](Self::watch) before it snapshots the account
+/// registry, because lifecycle operations change the registry before they
+/// bump. Clear resets the store before clearing the registry, so it bumps
+/// both before the reset and after.
 #[derive(Debug, Default)]
 pub(crate) struct StoreEpoch(std::sync::Mutex<Generations>);
 
