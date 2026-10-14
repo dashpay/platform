@@ -257,3 +257,38 @@ pub fn store_and_flush(
     persister.store(wallet_id, cs).expect("store");
     persister.flush(wallet_id).expect("flush");
 }
+
+/// Names a table case in the output of an assertion that fails under it.
+pub struct Case(pub String);
+
+impl Drop for Case {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            eprintln!("failed case: {}", self.0);
+        }
+    }
+}
+
+/// A wallet's first round: testnet metadata, its account manifest, and `core`.
+pub fn registration(
+    wallet: &key_wallet::Wallet,
+    core: Option<platform_wallet::changeset::CoreChangeSet>,
+) -> platform_wallet::changeset::PlatformWalletChangeSet {
+    use platform_wallet::changeset::{AccountRegistrationEntry, WalletMetadataEntry};
+    let accounts = wallet.accounts.all_accounts().into_iter();
+    platform_wallet::changeset::PlatformWalletChangeSet {
+        wallet_metadata: Some(WalletMetadataEntry {
+            network: dashcore::Network::Testnet,
+            wallet_group_id: [0; 32],
+            birth_height: 0,
+        }),
+        account_registrations: accounts
+            .map(|account| AccountRegistrationEntry {
+                account_type: account.account_type,
+                account_xpub: account.account_xpub,
+            })
+            .collect(),
+        core,
+        ..Default::default()
+    }
+}
