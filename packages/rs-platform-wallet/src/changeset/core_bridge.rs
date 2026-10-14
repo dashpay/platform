@@ -45,6 +45,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 use dashcore::blockdata::transaction::{txout::TxOut, OutPoint};
+use dashcore::ephemerealdata::instant_lock::InstantLock;
+use dashcore::Txid;
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, AddressState};
 use key_wallet::managed_account::transaction_record::{OutputRole, TransactionRecord};
@@ -59,8 +61,8 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{
-    merge_payment_overlays, AssetLockChangeSet, CoreChangeSet, HighestUsedIndexes, PaymentOverlay,
-    PlatformWalletChangeSet, SweepBatch, UtxoCreditVerdict,
+    fold_same_txid_records, merge_payment_overlays, AssetLockChangeSet, CoreChangeSet,
+    HighestUsedIndexes, PaymentOverlay, PlatformWalletChangeSet, SweepBatch, UtxoCreditVerdict,
 };
 use crate::changeset::merge::Merge;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
@@ -423,10 +425,8 @@ async fn run_wallet_event_adapter<P>(
         let mut closed = false;
         {
             let wallet_id = event.wallet_id();
-            // For events that need to consult per-wallet state (today only
-            // `TransactionInstantLocked`, which checks finality before
-            // recording the IS lock), `build_core_changeset` takes a brief
-            // read lock on the manager.
+            // For events that need to consult per-wallet state,
+            // `build_core_changeset` takes a brief read lock on the manager.
             let core = build_core_changeset(&wallet_manager, &event).await;
             let asset_locks = reconstruct_asset_locks_for_event(&wallet_manager, &event).await;
             let payments = sent_payment_verdicts(&wallet_manager, &event).await;
@@ -1115,6 +1115,73 @@ async fn reconstruct_asset_locks_for_event(
     reconstruction::reconstruct_tracked_asset_locks(wallet_manager, &wallet_id, &candidates).await
 }
 
+/// The changeset of an InstantSend lock: the lock, and the locked record as
+/// the manager holds it now. Nothing for a transaction the wallet already
+/// holds as chain-locked: the chain lock supersedes the lock.
+async fn instant_lock_changeset(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: &WalletId,
+    txid: &Txid,
+    instant_lock: &InstantLock,
+) -> CoreChangeSet {
+    let mut cs = CoreChangeSet::default();
+    // One guard for the finality check and the re-emitted slices, so both
+    // come from the same snapshot.
+    let guard = wallet_manager.read().await;
+    let Some(info) = guard.get_wallet_info(wallet_id) else {
+        // Wallet gone: just the lock.
+        cs.instant_locks_for_non_final_records
+            .insert(*txid, instant_lock.clone());
+        return cs;
+    };
+    // IS-lock is informative only for non-final records: drop it once any
+    // of the wallet's own accounts holds the transaction as chain-locked.
+    // - Any account counts, not the first: a chain lock promotes only the
+    //   slices already in the block, so a sibling can still read
+    //   unconfirmed. Re-emitted alone, that sibling would replace the
+    //   stored chain-locked row with one account's unconfirmed share.
+    // - `transaction_is_finalized` also sees a chain-locked slice pruned
+    //   from the records (`keep-finalized-transactions` off, the default).
+    // - A contact's watch-only slice never reaches the stored row, so its
+    //   finality says nothing about that row.
+    let chain_locked = info
+        .core_wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .filter(|account| !account.managed_account_type().is_contact_owned())
+        .any(|account| {
+            account.transaction_is_finalized(txid)
+                || account.transactions().get(txid).is_some_and(|record| {
+                    matches!(record.context, TransactionContext::InChainLockedBlock(_))
+                })
+        });
+    if chain_locked {
+        return cs;
+    }
+    cs.instant_locks_for_non_final_records
+        .insert(*txid, instant_lock.clone());
+    // No slices (the wallet never held the transaction) leave just the lock.
+    let (slices, verdicts) = slices_and_verdicts_for_txid(info, txid);
+    // The persister learns a record's context only from a re-emitted
+    // record; the lock map above does not carry it there. The wallet
+    // rewrote an unconfirmed record's context to `InstantSend` before
+    // emitting this event (a mined record keeps its block), so re-emit the
+    // manager's slices for the txid. Without this the stored row stays at
+    // mempool until the block, and a send the network has locked keeps
+    // reading "Sending". Same shape as a `BlockProcessed` update: the
+    // records and their owned outputs' verdicts, from which a persister
+    // rewrites the transaction's own coins as it does for a block.
+    cs.account_records = slices
+        .into_iter()
+        .filter(|r| !is_contact_watch_only(r))
+        .collect();
+    cs.records = cs.account_records.clone();
+    fold_same_txid_records(&mut cs.records);
+    cs.utxo_credit_verdicts = verdicts;
+    cs
+}
+
 /// Project an upstream [`WalletEvent`] into a [`CoreChangeSet`] suitable
 /// for atomic persistence.
 async fn build_core_changeset(
@@ -1184,7 +1251,7 @@ async fn build_core_changeset(
             let (addresses_marked_used, account_highest_used) =
                 collect_usage_deltas(wallet_manager, wallet_id, vec![&**record]).await;
             let mut folded = owned.clone();
-            crate::changeset::changeset::fold_same_txid_records(&mut folded);
+            fold_same_txid_records(&mut folded);
             CoreChangeSet {
                 // New UTXOs from the owned slices only (a watch-only
                 // chain's outputs are the contact's coins); spends
@@ -1212,18 +1279,7 @@ async fn build_core_changeset(
             txid,
             instant_lock,
             ..
-        } => {
-            // IS-lock is informative only for non-final records. If the
-            // wallet has already chain-locked this txid, drop the lock —
-            // chain-lock supersedes IS finality.
-            if is_chain_locked(wallet_manager, wallet_id, txid).await {
-                return CoreChangeSet::default();
-            }
-            let mut cs = CoreChangeSet::default();
-            cs.instant_locks_for_non_final_records
-                .insert(*txid, instant_lock.clone());
-            cs
-        }
+        } => instant_lock_changeset(wallet_manager, wallet_id, txid, instant_lock).await,
         WalletEvent::BlockProcessed {
             wallet_id,
             height,
@@ -1266,7 +1322,7 @@ async fn build_core_changeset(
                     .cloned(),
             );
             cs.records = cs.account_records.clone();
-            crate::changeset::changeset::fold_same_txid_records(&mut cs.records);
+            fold_same_txid_records(&mut cs.records);
             cs.last_processed_height = Some(*height);
             // Pool extensions triggered by any record in this block.
             // Already deduped upstream by `project_derived_addresses`;
@@ -1654,9 +1710,10 @@ async fn collect_usage_deltas(
 /// the walk itself is [`utxo_credit_verdicts_from_wallet`], factored so
 /// tests can drive it against a bare `ManagedWalletInfo`. `BlockProcessed`
 /// uses this over the event's own records (block records carry their
-/// block context and cannot read `Doomed`); `TransactionDetected` reads
-/// its slices and their verdicts under one guard through
-/// [`wallet_slices_and_verdicts_for_txid`].
+/// block context and cannot read `Doomed`); `TransactionDetected` reads its
+/// slices and verdicts under one guard through
+/// [`wallet_slices_and_verdicts_for_txid`], and `TransactionInstantLocked`
+/// under its own guard through [`slices_and_verdicts_for_txid`].
 async fn utxo_credit_verdicts(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     wallet_id: &WalletId,
@@ -1907,31 +1964,6 @@ fn collect_usage_deltas_from_accounts(
     (marked_used, highest_used)
 }
 
-/// Returns `true` when the wallet's stored record for `txid` is in a
-/// chain-locked block. Used to gate IS-lock projection.
-async fn is_chain_locked(
-    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    wallet_id: &WalletId,
-    txid: &dashcore::Txid,
-) -> bool {
-    let guard = wallet_manager.read().await;
-    let Some(info) = guard.get_wallet_info(wallet_id) else {
-        return false;
-    };
-    // Walk every account; if any holds an in-memory record for this
-    // txid, the chain-lock determination falls out of its
-    // `TransactionContext`. With `keep-finalized-transactions` off
-    // (the default) `transactions()` returns an empty map regardless
-    // of state — chain-lock delivery is event-driven in that mode, and
-    // this helper just reports "no record locally" by returning false.
-    for account in info.core_wallet.accounts.all_accounts() {
-        if let Some(record) = account.transactions().get(txid) {
-            return matches!(record.context, TransactionContext::InChainLockedBlock(_));
-        }
-    }
-    false
-}
-
 /// Every account slice the manager currently holds for `txid` in
 /// `wallet_id` — the authoritative "all accounts matched so far"
 /// snapshot behind the wallet-level fold (see the `TransactionDetected`
@@ -1952,6 +1984,21 @@ async fn wallet_slices_and_verdicts_for_txid(
 )> {
     let guard = wallet_manager.read().await;
     let info = guard.get_wallet_info(wallet_id)?;
+    Some(slices_and_verdicts_for_txid(info, txid))
+}
+
+/// The slices `info` holds of `txid` and the verdicts of their owned outputs.
+/// The caller holds the wallet read guard, so the records a verdict is judged
+/// on, the wallet state it is judged against, and anything else the caller
+/// reads under that guard ([`instant_lock_changeset`]'s finality check) are
+/// one snapshot.
+fn slices_and_verdicts_for_txid(
+    info: &PlatformWalletInfo,
+    txid: &Txid,
+) -> (
+    Vec<TransactionRecord>,
+    BTreeMap<OutPoint, UtxoCreditVerdict>,
+) {
     let mut slices = Vec::new();
     for account in info.core_wallet.accounts.all_accounts() {
         if let Some(record) = account.transactions().get(txid) {
@@ -1963,7 +2010,7 @@ async fn wallet_slices_and_verdicts_for_txid(
         .filter(|r| !is_contact_watch_only(r))
         .collect();
     let verdicts = utxo_credit_verdicts_from_wallet(&info.core_wallet, &owned);
-    Some((slices, verdicts))
+    (slices, verdicts)
 }
 
 /// Is this record owned by a contact's watch-only DashPay chain?
@@ -2900,16 +2947,24 @@ mod contact_watch_only_projection_tests {
     //! for the coin that landed on the contact's chain.
 
     use super::*;
+    use crate::wallet::core::WalletGeneration;
+    use crate::wallet::identity::IdentityManager;
+    use dashcore::bls_sig_utils::BLSSignature;
+    use dashcore::ephemerealdata::chain_lock::ChainLock;
     use dashcore::hashes::Hash;
     use dashcore::{Address as DashAddress, BlockHash, Txid};
     use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Witness};
-    use key_wallet::account::{AccountType, StandardAccountType};
+    use key_wallet::account::{Account, AccountType, StandardAccountType};
     use key_wallet::managed_account::transaction_record::{
         InputDetail, OutputDetail, TransactionDirection,
     };
+    use key_wallet::managed_account::ManagedCoreFundsAccount;
+    use key_wallet::test_utils::TestWalletContext;
     use key_wallet::transaction_checking::transaction_router::TransactionType;
     use key_wallet::transaction_checking::BlockInfo;
-    use key_wallet::{Network, WalletCoreBalance};
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+    use key_wallet::{Network, Wallet, WalletCoreBalance};
     use key_wallet_manager::WalletManager;
 
     const WALLET_ID: WalletId = [9u8; 32];
@@ -2943,6 +2998,13 @@ mod contact_watch_only_projection_tests {
         }
     }
 
+    fn bip32_account_0() -> AccountType {
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP32Account,
+        }
+    }
+
     fn contact_external_account() -> AccountType {
         AccountType::DashpayExternalAccount {
             index: 0,
@@ -2953,6 +3015,14 @@ mod contact_watch_only_projection_tests {
 
     fn in_block(height: u32) -> TransactionContext {
         TransactionContext::InBlock(BlockInfo::new(
+            height,
+            BlockHash::from_slice(&[4u8; 32]).expect("valid block hash"),
+            1_234_567_890,
+        ))
+    }
+
+    fn in_chain_locked_block(height: u32) -> TransactionContext {
+        TransactionContext::InChainLockedBlock(BlockInfo::new(
             height,
             BlockHash::from_slice(&[4u8; 32]).expect("valid block hash"),
             1_234_567_890,
@@ -3712,7 +3782,7 @@ mod contact_watch_only_projection_tests {
         );
 
         let mut records = vec![no_input_slice, unrelated, funding_slice];
-        crate::changeset::changeset::fold_same_txid_records(&mut records);
+        fold_same_txid_records(&mut records);
 
         assert_eq!(records.len(), 2);
         assert_eq!(
@@ -3728,23 +3798,21 @@ mod contact_watch_only_projection_tests {
         assert_eq!(records[1].txid, unrelated_tx.txid());
     }
 
-    /// The adapter drain is NOT where a multi-account transaction's
-    /// mempool slices reliably meet: live matching emits one
-    /// `TransactionDetected` per account, and a drain can commit
-    /// between them. The projection must therefore rebuild the
-    /// wallet-level row from the MANAGER's slices — an event carrying
-    /// one account's slice still yields the full fold, so the
-    /// persisted row converges no matter how events land in drains.
-    #[tokio::test]
-    async fn mempool_slice_event_rebuilds_the_full_fold_from_the_manager() {
-        use crate::wallet::core::WalletGeneration;
-        use crate::wallet::identity::IdentityManager;
-        use key_wallet::test_utils::TestWalletContext;
+    /// A wallet funded on two standard accounts and one mempool transaction
+    /// spending both accounts' coins, so the wallet holds one slice of it per
+    /// account. Mirrors `test_support::funded_wallet_manager_dual_standard`;
+    /// separate because the spend must be checked before the managed wallet
+    /// moves into a manager.
+    async fn dual_account_mempool_spend() -> (TestWalletContext, Transaction) {
+        dual_account_mempool_spend_with_change(0).await
+    }
 
-        // A wallet funded on TWO standard accounts (mirrors
-        // `test_support::funded_wallet_manager_dual_standard`, kept
-        // inline because the spend must be checked before the managed
-        // wallet moves into the manager).
+    /// [`dual_account_mempool_spend`] with `change` duffs back to the BIP44
+    /// account when not zero. That account then matches the transaction by
+    /// its output too, which the spend-only BIP32 account does not.
+    async fn dual_account_mempool_spend_with_change(
+        change: u64,
+    ) -> (TestWalletContext, Transaction) {
         let mut ctx = TestWalletContext::new_random();
         let bip44_address = ctx.receive_address.clone();
         let bip32_address = {
@@ -3794,25 +3862,157 @@ mod contact_watch_only_projection_tests {
                     witness: Witness::new(),
                 })
                 .collect(),
-            output: vec![TxOut {
-                value: 149_999_000,
-                script_pubkey: DashAddress::dummy(Network::Testnet, 7).script_pubkey(),
-            }],
+            output: [
+                (
+                    149_999_000 - change,
+                    DashAddress::dummy(Network::Testnet, 7),
+                ),
+                (change, bip44_address),
+            ]
+            .into_iter()
+            .filter(|(value, _)| *value > 0)
+            .map(|(value, address)| TxOut {
+                value,
+                script_pubkey: address.script_pubkey(),
+            })
+            .collect(),
             special_transaction_payload: None,
         };
         let result = ctx
             .check_transaction(&spend, TransactionContext::Mempool)
             .await;
         assert!(result.is_relevant, "spend should match both accounts");
+        (ctx, spend)
+    }
 
-        let info = PlatformWalletInfo {
-            core_wallet: ctx.managed_wallet,
+    /// A wallet whose BIP44 account holds one chain-locked coin of
+    /// [`FUNDING`], and the transaction that paid it.
+    async fn single_coin_wallet() -> (TestWalletContext, Transaction) {
+        let mut ctx = TestWalletContext::new_random();
+        let funding = Transaction::dummy(&ctx.receive_address.clone(), 0..1, &[FUNDING]);
+        let funded = ctx
+            .check_transaction(
+                &funding,
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    1,
+                    BlockHash::from_slice(&[4u8; 32]).expect("valid block hash"),
+                    1_700_000_000,
+                )),
+            )
+            .await;
+        assert!(funded.is_relevant, "funding tx should be relevant");
+        (ctx, funding)
+    }
+
+    /// A transaction spending `funding`'s coin into `output`.
+    fn spend_of(funding: &Transaction, output: Vec<TxOut>) -> Transaction {
+        Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint {
+                    txid: funding.txid(),
+                    vout: 0,
+                },
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output,
+            special_transaction_payload: None,
+        }
+    }
+
+    /// One output of `value` to an address that is not the wallet's.
+    fn paid_away(value: u64) -> TxOut {
+        TxOut {
+            value,
+            script_pubkey: DashAddress::dummy(Network::Testnet, 7).script_pubkey(),
+        }
+    }
+
+    /// The wallet's `PlatformWalletInfo`, as a manager holds it.
+    fn platform_info(core_wallet: ManagedWalletInfo) -> PlatformWalletInfo {
+        PlatformWalletInfo {
+            core_wallet,
             generation: Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
             observed_input_conflicts: Default::default(),
+        }
+    }
+
+    /// The changeset of `lock` arriving for `txid`, projected against a
+    /// manager that holds `wallet` with `info`.
+    async fn lock_changeset(
+        wallet: Wallet,
+        info: PlatformWalletInfo,
+        txid: Txid,
+        lock: InstantLock,
+    ) -> CoreChangeSet {
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
+        let wallet_id = wm.insert_wallet(wallet, info).expect("insert wallet");
+        let event = WalletEvent::TransactionInstantLocked {
+            wallet_id,
+            txid,
+            instant_lock: lock,
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
         };
+        build_core_changeset(&Arc::new(RwLock::new(wm)), &event).await
+    }
+
+    fn chain_lock_at(block_height: u32) -> ChainLock {
+        ChainLock {
+            block_height,
+            block_hash: BlockHash::all_zeros(),
+            signature: BLSSignature::from([0u8; 96]),
+        }
+    }
+
+    /// Set the context of the slice `account_type` holds of `txid`.
+    fn set_slice_context(
+        info: &mut PlatformWalletInfo,
+        account_type: AccountType,
+        txid: &Txid,
+        context: TransactionContext,
+    ) {
+        for mut account in info.core_wallet.accounts.all_accounts_mut() {
+            if let Some(record) = account.transactions_mut().get_mut(txid) {
+                if record.account_type == account_type {
+                    record.update_context(context.clone());
+                }
+            }
+        }
+    }
+
+    /// The context of each slice the wallet holds of `txid`, by account.
+    fn slice_contexts(
+        info: &PlatformWalletInfo,
+        txid: &Txid,
+    ) -> BTreeMap<AccountType, TransactionContext> {
+        info.core_wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .filter_map(|account| account.transactions().get(txid))
+            .map(|record| (record.account_type, record.context.clone()))
+            .collect()
+    }
+
+    /// The adapter drain is NOT where a multi-account transaction's
+    /// mempool slices reliably meet: live matching emits one
+    /// `TransactionDetected` per account, and a drain can commit
+    /// between them. The projection must therefore rebuild the
+    /// wallet-level row from the MANAGER's slices — an event carrying
+    /// one account's slice still yields the full fold, so the
+    /// persisted row converges no matter how events land in drains.
+    #[tokio::test]
+    async fn mempool_slice_event_rebuilds_the_full_fold_from_the_manager() {
+        let (ctx, spend) = dual_account_mempool_spend().await;
+
+        let info = platform_info(ctx.managed_wallet);
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
         let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
         let manager = Arc::new(RwLock::new(wm));
@@ -3852,6 +4052,451 @@ mod contact_watch_only_projection_tests {
             2,
             "both account slices ride along for account-scoped persisters"
         );
+    }
+
+    /// An InstantSend lock on a mempool send re-emits the send's row with
+    /// its `InstantSend` context. The lock event carries only a txid, so
+    /// without the re-emission the stored row stayed at mempool until the
+    /// block — a send the network had locked kept reading "Sending".
+    #[tokio::test]
+    async fn should_re_emit_the_locked_record_on_an_instant_lock() {
+        let (mut ctx, funding) = single_coin_wallet().await;
+        // A send of the whole coin to a foreign address: no change, so
+        // no output of ours for the lock to mark — only the context moves.
+        let spend = spend_of(&funding, vec![paid_away(99_999_000)]);
+        let sent = ctx
+            .check_transaction(&spend, TransactionContext::Mempool)
+            .await;
+        assert!(sent.is_relevant, "the spend should match");
+        let lock = InstantLock::default();
+        assert!(
+            ctx.managed_wallet
+                .mark_instant_send_utxos(&spend.txid(), &lock),
+            "the lock rewrites the send's context"
+        );
+
+        let info = platform_info(ctx.managed_wallet);
+
+        let cs = lock_changeset(ctx.wallet, info, spend.txid(), lock).await;
+
+        assert!(cs
+            .instant_locks_for_non_final_records
+            .contains_key(&spend.txid()));
+        assert_eq!(cs.records.len(), 1, "the send's row is re-emitted");
+        assert_eq!(cs.records[0].txid, spend.txid());
+        assert!(
+            matches!(cs.records[0].context, TransactionContext::InstantSend(_)),
+            "the row carries the lock, got {:?}",
+            cs.records[0].context
+        );
+        assert!(cs.new_utxos.is_empty(), "a lock adds no coins");
+        assert!(cs.spent_utxos.is_empty(), "a lock spends no coins");
+    }
+
+    /// A lock that reaches a send the wallet already saw in a block re-emits
+    /// the record with its block: stored as the lock alone would have it, a
+    /// mined send would read as unconfirmed, and no later event emits the
+    /// record again.
+    #[tokio::test]
+    async fn should_keep_the_stored_block_when_a_lock_follows_the_block() {
+        let block = |height: u32| {
+            BlockInfo::new(
+                height,
+                BlockHash::from_slice(&[height as u8; 32]).expect("valid block hash"),
+                1_700_000_000,
+            )
+        };
+        let (mut ctx, funding) = single_coin_wallet().await;
+        let spend = spend_of(&funding, vec![paid_away(99_999_000)]);
+        ctx.check_transaction(&spend, TransactionContext::Mempool)
+            .await;
+        ctx.check_transaction(&spend, TransactionContext::InBlock(block(2)))
+            .await;
+
+        let mut info = platform_info(ctx.managed_wallet);
+        // The lock arrives the way the manager applies it.
+        let lock = InstantLock::default();
+        info.mark_instant_send_utxos(&spend.txid(), &lock);
+
+        let cs = lock_changeset(ctx.wallet, info, spend.txid(), lock).await;
+
+        assert!(cs
+            .instant_locks_for_non_final_records
+            .contains_key(&spend.txid()));
+        assert_eq!(cs.records.len(), 1);
+        for record in cs.records.iter().chain(&cs.account_records) {
+            assert_eq!(
+                record.block_info().map(|b| b.height()),
+                Some(2),
+                "the stored row keeps its block, got {:?}",
+                record.context
+            );
+        }
+    }
+
+    /// A lock that reaches a transaction whose slices differ in finality
+    /// leaves each confirmed slice as it was: the chain-locked slice is not
+    /// downgraded to its sibling's plain block.
+    #[tokio::test]
+    async fn should_keep_each_confirmed_slice_as_it_was_when_a_lock_arrives() {
+        let (ctx, spend) = dual_account_mempool_spend().await;
+        let txid = spend.txid();
+        let mut info = platform_info(ctx.managed_wallet);
+        let bip32 = bip32_account_0();
+        set_slice_context(&mut info, bip44_account_0(), &txid, in_block(2));
+        set_slice_context(&mut info, bip32, &txid, in_chain_locked_block(2));
+
+        info.mark_instant_send_utxos(&txid, &InstantLock::default());
+
+        let contexts = slice_contexts(&info, &txid);
+        assert_eq!(contexts.len(), 2, "both accounts hold a slice");
+        assert!(
+            matches!(contexts[&bip44_account_0()], TransactionContext::InBlock(_)),
+            "the mined slice keeps its block, got {:?}",
+            contexts[&bip44_account_0()]
+        );
+        assert!(
+            matches!(contexts[&bip32], TransactionContext::InChainLockedBlock(_)),
+            "the chain-locked slice keeps its finality, got {:?}",
+            contexts[&bip32]
+        );
+    }
+
+    /// A lock that reaches a transaction with one mined and one mempool
+    /// slice locks the mempool slice and leaves the mined one in its block.
+    #[tokio::test]
+    async fn should_lock_only_the_unconfirmed_slice_of_a_partly_mined_transaction() {
+        let (ctx, spend) = dual_account_mempool_spend().await;
+        let txid = spend.txid();
+        let mut info = platform_info(ctx.managed_wallet);
+        let bip32 = bip32_account_0();
+        set_slice_context(&mut info, bip32, &txid, in_block(2));
+
+        info.mark_instant_send_utxos(&txid, &InstantLock::default());
+
+        let contexts = slice_contexts(&info, &txid);
+        assert!(
+            matches!(
+                contexts[&bip44_account_0()],
+                TransactionContext::InstantSend(_)
+            ),
+            "the mempool slice takes the lock, got {:?}",
+            contexts[&bip44_account_0()]
+        );
+        assert!(
+            matches!(contexts[&bip32], TransactionContext::InBlock(_)),
+            "the mined slice keeps its block, got {:?}",
+            contexts[&bip32]
+        );
+    }
+
+    /// The order a pooled send with change takes when its lock is late: the
+    /// block confirms the slice that holds the change, the spend-only
+    /// sibling stays unconfirmed, and then the lock arrives. The stored row
+    /// keeps the block, and both slices go out, the mined one with the coin
+    /// that came back.
+    #[tokio::test]
+    async fn should_re_emit_a_partly_mined_send_with_its_block_and_its_change() {
+        let (mut ctx, spend) = dual_account_mempool_spend_with_change(1_000_000).await;
+        let txid = spend.txid();
+        ctx.check_transaction(&spend, in_block(2)).await;
+        let mut info = platform_info(ctx.managed_wallet);
+        let mined = slice_contexts(&info, &txid);
+        assert!(
+            matches!(mined[&bip44_account_0()], TransactionContext::InBlock(_))
+                && matches!(mined[&bip32_account_0()], TransactionContext::Mempool),
+            "the block reaches only the slice with an output: {mined:?}"
+        );
+        let lock = InstantLock::default();
+        info.mark_instant_send_utxos(&txid, &lock);
+
+        let cs = lock_changeset(ctx.wallet, info, txid, lock).await;
+
+        assert!(cs.instant_locks_for_non_final_records.contains_key(&txid));
+        assert_eq!(cs.records.len(), 1);
+        assert_eq!(
+            cs.records[0].block_info().map(|block| block.height()),
+            Some(2),
+            "the wallet-level row keeps the block, got {:?}",
+            cs.records[0].context
+        );
+        let slices: BTreeMap<_, _> = cs
+            .account_records
+            .iter()
+            .map(|record| (record.account_type, &record.context))
+            .collect();
+        assert!(matches!(
+            slices[&bip44_account_0()],
+            TransactionContext::InBlock(_)
+        ));
+        assert!(matches!(
+            slices[&bip32_account_0()],
+            TransactionContext::InstantSend(_)
+        ));
+        let mined = cs
+            .account_records
+            .iter()
+            .find(|record| record.account_type == bip44_account_0())
+            .expect("bip44 slice");
+        assert!(
+            mined.output_details.iter().any(|detail| detail.index == 1
+                && matches!(detail.role, OutputRole::Received | OutputRole::Change)),
+            "the mined slice carries the coin back to the wallet: {:?}",
+            mined.output_details
+        );
+        assert!(
+            cs.utxo_credit_verdicts.is_empty(),
+            "a credited coin needs no verdict: {:?}",
+            cs.utxo_credit_verdicts
+        );
+    }
+
+    /// A lock for a transaction with a chain-locked slice is dropped whole,
+    /// whichever slice comes first: a chain lock promotes only the slices
+    /// already in the block, so a sibling can still read unconfirmed.
+    #[tokio::test]
+    async fn should_drop_the_lock_when_any_slice_is_chain_locked() {
+        for chain_locked in [bip44_account_0(), bip32_account_0()] {
+            let (ctx, spend) = dual_account_mempool_spend().await;
+            let txid = spend.txid();
+            let mut info = platform_info(ctx.managed_wallet);
+            set_slice_context(&mut info, chain_locked, &txid, in_chain_locked_block(2));
+
+            let cs = lock_changeset(ctx.wallet, info, txid, InstantLock::default()).await;
+
+            assert!(
+                cs.instant_locks_for_non_final_records.is_empty(),
+                "a chain-locked {chain_locked:?} slice supersedes the lock"
+            );
+            assert!(cs.records.is_empty());
+            assert!(cs.account_records.is_empty());
+        }
+    }
+
+    /// A lock that arrives after the chain lock, for a transaction with a
+    /// slice the chain lock did not reach, changes nothing: that slice alone
+    /// would replace the stored chain-locked row with one account's
+    /// unconfirmed share. Holds whether or not the chain-locked slice is
+    /// pruned from the records.
+    #[tokio::test]
+    async fn should_not_re_emit_the_unconfirmed_sibling_of_a_chain_locked_slice() {
+        let (ctx, spend) = dual_account_mempool_spend().await;
+        let txid = spend.txid();
+        let mut info = platform_info(ctx.managed_wallet);
+        // The block reached one account's slice only, then its chain lock.
+        set_slice_context(&mut info, bip44_account_0(), &txid, in_block(2));
+        info.apply_chain_lock(chain_lock_at(2));
+        let lock = InstantLock::default();
+        info.mark_instant_send_utxos(&txid, &lock);
+        let contexts = slice_contexts(&info, &txid);
+        assert!(
+            matches!(
+                contexts[&bip32_account_0()],
+                TransactionContext::InstantSend(_)
+            ),
+            "the sibling is still unconfirmed, got {contexts:?}"
+        );
+
+        let cs = lock_changeset(ctx.wallet, info, txid, lock).await;
+
+        assert!(cs.records.is_empty(), "the sibling slice is not re-emitted");
+        assert!(cs.account_records.is_empty());
+        assert!(cs.utxo_credit_verdicts.is_empty());
+        assert!(
+            cs.instant_locks_for_non_final_records.is_empty(),
+            "the chain lock supersedes the lock"
+        );
+    }
+
+    /// A contact's watch-only slice never reaches the stored row, so its
+    /// chain lock says nothing about that row: the wallet's own slices of
+    /// the same transaction are still re-emitted with the lock.
+    #[tokio::test]
+    async fn should_re_emit_own_slices_beside_a_chain_locked_contact_slice() {
+        let (mut ctx, spend) = dual_account_mempool_spend().await;
+        let txid = spend.txid();
+        let xpub = ctx
+            .wallet
+            .accounts
+            .standard_bip32_accounts
+            .get(&0)
+            .expect("bip32 account")
+            .account_xpub;
+        ctx.managed_wallet
+            .accounts
+            .insert_funds_bearing_account(ManagedCoreFundsAccount::from_account(&Account {
+                parent_wallet_id: Some(ctx.wallet.wallet_id),
+                account_type: contact_external_account(),
+                network: Network::Testnet,
+                account_xpub: xpub,
+                is_watch_only: true,
+            }))
+            .expect("insert the contact account");
+        let mut info = platform_info(ctx.managed_wallet);
+        let contact_slice = record_with(
+            &spend,
+            contact_external_account(),
+            in_block(2),
+            TransactionType::Standard,
+            TransactionDirection::Incoming,
+            vec![],
+            vec![output(
+                0,
+                OutputRole::Received,
+                &contact_address(),
+                spend.output[0].value,
+            )],
+            spend.output[0].value as i64,
+        );
+        for mut account in info.core_wallet.accounts.all_accounts_mut() {
+            if account.managed_account_type().to_account_type() == contact_external_account() {
+                account
+                    .transactions_mut()
+                    .insert(txid, contact_slice.clone());
+            }
+        }
+        // The block reached the contact's slice only, then its chain lock.
+        info.apply_chain_lock(chain_lock_at(2));
+        assert!(
+            info.core_wallet
+                .accounts
+                .all_accounts()
+                .into_iter()
+                .any(|account| account.managed_account_type().is_contact_owned()
+                    && account.transaction_is_finalized(&txid)),
+            "the contact account holds the transaction as finalized"
+        );
+        let lock = InstantLock::default();
+        info.mark_instant_send_utxos(&txid, &lock);
+
+        let cs = lock_changeset(ctx.wallet, info, txid, lock).await;
+
+        assert!(cs.instant_locks_for_non_final_records.contains_key(&txid));
+        assert_eq!(cs.account_records.len(), 2, "both own slices");
+        assert_eq!(cs.records.len(), 1);
+        assert!(
+            matches!(cs.records[0].context, TransactionContext::InstantSend(_)),
+            "got {:?}",
+            cs.records[0].context
+        );
+    }
+
+    /// A lock for a transaction the wallet holds as chain-locked changes
+    /// nothing, whether the chain-locked record is kept or pruned.
+    #[tokio::test]
+    async fn should_drop_the_lock_of_a_transaction_chain_locked_before_it() {
+        let (ctx, spend) = dual_account_mempool_spend().await;
+        let txid = spend.txid();
+        let mut info = platform_info(ctx.managed_wallet);
+        for account in [bip44_account_0(), bip32_account_0()] {
+            set_slice_context(&mut info, account, &txid, in_block(2));
+        }
+        info.apply_chain_lock(chain_lock_at(2));
+        let lock = InstantLock::default();
+        info.mark_instant_send_utxos(&txid, &lock);
+
+        let cs = lock_changeset(ctx.wallet, info, txid, lock).await;
+
+        assert!(cs.instant_locks_for_non_final_records.is_empty());
+        assert!(cs.records.is_empty());
+        assert!(cs.account_records.is_empty());
+    }
+
+    /// A lock on a send that is in no block yet re-emits the send with its
+    /// change output and the lock: a persister takes the change coin's lock
+    /// from that record (the lock changeset adds no coins), so after a
+    /// restart before the block the coin is still locked.
+    #[tokio::test]
+    async fn should_re_emit_the_change_of_an_unmined_send_with_its_lock() {
+        let (mut ctx, funding) = single_coin_wallet().await;
+        let xpub = ctx.xpub;
+        let change_address = ctx
+            .managed_wallet
+            .first_bip44_managed_account_mut()
+            .expect("bip44 managed account")
+            .next_change_address(Some(&xpub), true)
+            .expect("a change address");
+        let spend = spend_of(
+            &funding,
+            vec![
+                paid_away(99_999_000 - CHANGE),
+                TxOut {
+                    value: CHANGE,
+                    script_pubkey: change_address.script_pubkey(),
+                },
+            ],
+        );
+        let sent = ctx
+            .check_transaction(&spend, TransactionContext::Mempool)
+            .await;
+        assert!(sent.is_relevant, "the spend should match");
+        let mut info = platform_info(ctx.managed_wallet);
+        let lock = InstantLock::default();
+        assert!(
+            info.mark_instant_send_utxos(&spend.txid(), &lock),
+            "the lock rewrites the unmined send"
+        );
+
+        let cs = lock_changeset(ctx.wallet, info, spend.txid(), lock).await;
+
+        assert_eq!(cs.account_records.len(), 1, "one account holds the send");
+        let slice = &cs.account_records[0];
+        assert_eq!(slice.account_type, bip44_account_0());
+        assert_eq!(slice.direction, TransactionDirection::Outgoing);
+        assert_eq!(slice.input_details.len(), 1, "the wallet's own coin");
+        assert!(
+            matches!(slice.context, TransactionContext::InstantSend(_)),
+            "the slice carries the lock, got {:?}",
+            slice.context
+        );
+        let change: Vec<&OutputDetail> = slice
+            .output_details
+            .iter()
+            .filter(|output| output.role == OutputRole::Change)
+            .collect();
+        assert_eq!(change.len(), 1, "the change output rides with the slice");
+        assert_eq!((change[0].index, change[0].value), (1, CHANGE));
+        assert!(
+            cs.utxo_credit_verdicts.is_empty(),
+            "nothing tells a persister to withhold the change coin"
+        );
+        assert!(cs.new_utxos.is_empty(), "a lock adds no coins by itself");
+    }
+
+    /// An InstantSend lock for a txid a known wallet never held keeps the
+    /// lock alone.
+    #[tokio::test]
+    async fn should_carry_only_the_lock_when_the_transaction_was_never_held() {
+        let ctx = TestWalletContext::new_random();
+        let info = platform_info(ctx.managed_wallet);
+        let txid = Txid::from_byte_array([9; 32]);
+
+        let cs = lock_changeset(ctx.wallet, info, txid, InstantLock::default()).await;
+
+        assert!(cs.records.is_empty());
+        assert!(cs.account_records.is_empty());
+        assert!(cs.utxo_credit_verdicts.is_empty());
+        assert!(cs.instant_locks_for_non_final_records.contains_key(&txid));
+    }
+
+    /// An InstantSend lock for a wallet the manager does not know keeps the
+    /// lock alone.
+    #[tokio::test]
+    async fn should_carry_only_the_lock_when_no_record_is_held() {
+        let txid = |byte: u8| Txid::from_byte_array([byte; 32]);
+        let event = WalletEvent::TransactionInstantLocked {
+            wallet_id: [0x21u8; 32],
+            txid: txid(9),
+            instant_lock: InstantLock::default(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        };
+        let cs = build_core_changeset(&test_manager(), &event).await;
+        assert!(cs.records.is_empty());
+        assert!(cs.account_records.is_empty());
+        assert!(cs
+            .instant_locks_for_non_final_records
+            .contains_key(&txid(9)));
     }
 
     /// A contact spending an output that a *pre-fix* build already

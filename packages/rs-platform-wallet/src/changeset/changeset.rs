@@ -91,7 +91,8 @@ pub struct CoreChangeSet {
     ///
     /// Includes records first stored (`TransactionDetected`,
     /// `BlockProcessed.inserted`), records whose context advanced
-    /// (`BlockProcessed.updated` — e.g. a mempool tx that just confirmed),
+    /// (`BlockProcessed.updated` — e.g. a mempool tx that just confirmed;
+    /// `TransactionInstantLocked` — the locked record as the wallet holds it),
     /// and coinbase records that crossed the maturity threshold
     /// (`BlockProcessed.matured`). The event bridge folds a
     /// transaction's per-account slices into a single record whose
@@ -144,9 +145,10 @@ pub struct CoreChangeSet {
     /// `InstantSend`, or `InBlock` context — anything `InChainLockedBlock`
     /// is excluded since chain-lock finality already supersedes IS).
     ///
-    /// Populated from `WalletEvent::TransactionInstantLocked`. The
-    /// persister applies these by looking up the matching record and
-    /// updating its `context` to `TransactionContext::InstantSend(..)`.
+    /// Populated from `WalletEvent::TransactionInstantLocked`. A persister
+    /// that keeps locks stores them from here; the record's own context
+    /// reaches it through the record the same event re-emits in `records`
+    /// when the wallet still holds one.
     /// Chain-locked records skip this map entirely — by the time a
     /// transaction is chain-locked it's final, and IS-lock state is
     /// no longer informative.
