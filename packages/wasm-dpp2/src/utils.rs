@@ -158,10 +158,18 @@ fn wasm_ptr_of_js_val(js_value: &JsValue, class_name: &str) -> WasmDppResult<u32
     // Static metadata and prototype membership distinguish local wrapper classes
     // before an instance getter can borrow through a caller-supplied pointer.
     let constructor = read(js_value, "constructor")?;
-    if !constructor.is_function()
-        || read(&constructor, "__struct")?.as_string().as_deref() != Some(class_name)
-        || read(&constructor, "__wasm_dpp_module")? != wasm_module_brand()
-    {
+    if !constructor.is_function() {
+        return Err(invalid_instance());
+    }
+    let static_class_name = read(&constructor, "__struct")?.as_string();
+    if static_class_name.as_deref() != Some(class_name) {
+        return Err(WasmDppError::invalid_argument(format!(
+            "JS object constructor name mismatch. Expected {}, provided {}.",
+            class_name,
+            static_class_name.as_deref().unwrap_or_default()
+        )));
+    }
+    if read(&constructor, "__wasm_dpp_module")? != wasm_module_brand() {
         return Err(invalid_instance());
     }
     let prototype = read(&constructor, "prototype")?;
