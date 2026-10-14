@@ -9,7 +9,11 @@ import {
   NETWORK_TESTNET,
   SSL_PROVIDERS,
 } from '../src/constants.js';
-import { stockImagePattern, historicalStockImagePattern } from '../src/config/stockImages.js';
+import {
+  stockImagePattern,
+  stockPrereleaseImagePattern,
+  historicalStockImagePattern,
+} from '../src/config/stockImages.js';
 import generateRandomString from '../src/util/generateRandomString.js';
 
 /**
@@ -1684,6 +1688,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         //
         // Only tags a release published are moved, so a tag the operator chose
         // in this namespace (dashpay/drive:4-local) is left alone.
+        //
+        // getStored, not get: get resolves the derived default to this build's
+        // own tag, which would pin the node to it.
         const stockDriveImage = stockImagePattern('dashpay/drive', 4);
         const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
 
@@ -1691,12 +1698,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             const driveDocker = options.platform?.drive?.abci?.docker;
             if (driveDocker && stockDriveImage.test(driveDocker.image)) {
-              driveDocker.image = base.get('platform.drive.abci.docker.image');
+              driveDocker.image = base.getStored('platform.drive.abci.docker.image');
             }
 
             const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
             if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
-              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+              rsDapiDocker.image = base.getStored('platform.dapi.rsDapi.docker.image');
             }
           });
 
@@ -1760,14 +1767,16 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
             }
 
+            // getStored, not get: get resolves the derived default to this
+            // build's own tag, which would pin the node to it.
             const driveDocker = options.platform?.drive?.abci?.docker;
             if (driveDocker && stockDriveImage.test(driveDocker.image)) {
-              driveDocker.image = base.get('platform.drive.abci.docker.image');
+              driveDocker.image = base.getStored('platform.drive.abci.docker.image');
             }
 
             const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
             if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
-              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+              rsDapiDocker.image = base.getStored('platform.dapi.rsDapi.docker.image');
             }
 
             // The schema no longer defines this and accepts no undefined
@@ -1817,6 +1826,41 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             const whitelist = options.core?.rpc?.users?.drive_consensus?.whitelist;
             if (Array.isArray(whitelist) && !whitelist.includes('getdeploymentinfo')) {
               whitelist.push('getdeploymentinfo');
+            }
+          });
+
+        return configFile;
+      },
+      '5.0.0-rc.3': (configFile) => {
+        // Unset every Drive and rs-dapi tag an earlier release stored, so the node
+        // runs the image line this build ships. Drive carries the protocol: a node
+        // left on an older line keeps running the old protocol and stops when the
+        // network activates the new one.
+        //
+        // 4.1.0 and 4.1.1 were released from the 4.1 line, which still stored the
+        // derived tag (`4`), and stamp a version above the 4.1.0-rc.4 migration
+        // that unsets it. 5.0 prereleases wrote their own tag (`5-rc`) into a
+        // config stamped 4.1.0 when they ran the 4.1.1 migration on it. Keyed at
+        // this release so configs those prereleases already stamped run it too.
+        //
+        // Only tags a release stored are unset. No release before this one stored
+        // the stable `5` tag, a minor line (`4.1`) or an exact version, so any of
+        // those is the operator's choice and is left alone.
+        const isStockImage = (repository, image) => (
+          stockImagePattern(repository, 4).test(image)
+          || stockPrereleaseImagePattern(repository, 5).test(image)
+        );
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker && isStockImage('dashpay/drive', driveDocker.image)) {
+              driveDocker.image = null;
+            }
+
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker && isStockImage('dashpay/rs-dapi', rsDapiDocker.image)) {
+              rsDapiDocker.image = null;
             }
           });
 
