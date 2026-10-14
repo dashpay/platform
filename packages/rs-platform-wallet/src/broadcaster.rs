@@ -20,7 +20,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use dash_sdk::dapi_client::transport::TransportError;
 use dash_sdk::dapi_client::{DapiClientError, DapiRequestExecutor, IntoInner, RequestSettings};
-use dash_sdk::dapi_grpc::core::v0::BroadcastTransactionRequest;
+use dash_sdk::dapi_grpc::core::v0::{BroadcastTransactionRequest, BroadcastTransactionResponse};
 use dash_sdk::dapi_grpc::tonic::Code;
 use dash_spv::BroadcastResult;
 use dashcore::{consensus, Transaction, Txid};
@@ -131,31 +131,42 @@ impl TransactionBroadcaster for DapiBroadcaster {
             bypass_limits: false,
         };
 
-        // A node that answers `AlreadyExists` (-27) has the transaction in a block,
-        // so that is success. Every other failure stays `MaybeSent`, including
-        // Core's own rejections: one node's `missingorspent` is also what a
-        // lagging node, a node that has not seen our unconfirmed parent, and
-        // a mined transaction whose outputs are all spent produce (see
-        // `broadcast_probe`), and the `Rejected` contract demands proof that
-        // the transaction never entered the network — which one answer cannot
-        // give. `sdk.execute` also retries transport failures across nodes, so
-        // an earlier attempt may have delivered it before this error.
-        match self
+        let result = self
             .sdk
             .execute(request, RequestSettings::default())
             .await
-            .into_inner()
+            .into_inner();
+        dapi_broadcast_outcome(transaction.txid(), result)
+    }
+}
+
+/// What a DAPI broadcast answer means for the send.
+///
+/// A node that answers `AlreadyExists` (Core's -27: the transaction is
+/// mined and at least one of its outputs is still unspent) has it, so that
+/// is success, whatever the message says. Every other
+/// failure stays `MaybeSent`, including Core's own rejections: one node's
+/// `missingorspent` is also what a lagging node, a node that has not seen
+/// our unconfirmed parent, and a mined transaction whose outputs are all
+/// spent produce (see `broadcast_probe`), and the `Rejected` contract
+/// demands proof that the transaction never entered the network, which
+/// one answer cannot give. `sdk.execute` also retries transport failures
+/// across nodes, so an earlier attempt may have delivered it before this
+/// error.
+fn dapi_broadcast_outcome(
+    txid: Txid,
+    result: Result<BroadcastTransactionResponse, DapiClientError>,
+) -> Result<Txid, BroadcastError> {
+    match result {
+        Ok(_response) => Ok(txid),
+        Err(DapiClientError::Transport(TransportError::Grpc(status)))
+            if status.code() == Code::AlreadyExists =>
         {
-            Ok(_response) => Ok(transaction.txid()),
-            Err(DapiClientError::Transport(TransportError::Grpc(status)))
-                if status.code() == Code::AlreadyExists =>
-            {
-                Ok(transaction.txid())
-            }
-            Err(error) => Err(BroadcastError::MaybeSent {
-                reason: format!("DAPI broadcast failed: {error}"),
-            }),
+            Ok(txid)
         }
+        Err(error) => Err(BroadcastError::MaybeSent {
+            reason: format!("DAPI broadcast failed: {error}"),
+        }),
     }
 }
 
@@ -289,6 +300,8 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
 
+    use dash_sdk::dapi_grpc::tonic::Status;
+
     use super::*;
 
     struct AcceptanceSpy {
@@ -382,6 +395,87 @@ mod tests {
                     "{label}: got {result:?}"
                 ),
             }
+        }
+    }
+
+    /// A DAPI node that already has the transaction (`AlreadyExists`) is a
+    /// delivered send. A Core refusal stays `MaybeSent`, never `Rejected`,
+    /// whichever code DAPI gives it (-25: `InvalidArgument` from JS-DAPI,
+    /// `FailedPrecondition` from rs-dapi; -26: `FailedPrecondition` from
+    /// both; any other Core error: `Internal` from JS-DAPI, `Unavailable`
+    /// from rs-dapi): a mined
+    /// transaction whose outputs are all spent is refused the same way. So
+    /// does a transport failure, and running out of nodes after an attempt
+    /// that may have delivered it.
+    #[test]
+    fn should_take_already_exists_as_sent_and_every_other_dapi_failure_as_maybe_sent() {
+        let txid = transaction().txid();
+        let grpc = |code, message: &str| {
+            Err(DapiClientError::Transport(TransportError::Grpc(
+                Status::new(code, message),
+            )))
+        };
+
+        let sent = [
+            ("accepted", Ok(BroadcastTransactionResponse::default())),
+            (
+                "already in chain",
+                grpc(Code::AlreadyExists, "Transaction already in chain: <txid>"),
+            ),
+        ];
+        for (label, answer) in sent {
+            let outcome = dapi_broadcast_outcome(txid, answer);
+            assert!(
+                matches!(outcome, Ok(sent) if sent == txid),
+                "{label}: got {outcome:?}"
+            );
+        }
+
+        let maybe_sent = [
+            (
+                "JS-DAPI refusal",
+                grpc(
+                    Code::InvalidArgument,
+                    "invalid transaction: bad-txns-inputs-missingorspent",
+                ),
+            ),
+            (
+                "rs-dapi refusal",
+                grpc(
+                    Code::FailedPrecondition,
+                    "Transaction is rejected: bad-txns-inputs-missingorspent",
+                ),
+            ),
+            (
+                "lock conflict",
+                grpc(
+                    Code::FailedPrecondition,
+                    "Transaction is rejected: tx-txlock-conflict",
+                ),
+            ),
+            (
+                "JS-DAPI rethrown Core error",
+                grpc(Code::Internal, "Internal error"),
+            ),
+            (
+                "rs-dapi other Core error",
+                grpc(Code::Unavailable, "still warming up"),
+            ),
+            ("transport", grpc(Code::Unavailable, "connection refused")),
+            ("deadline", grpc(Code::DeadlineExceeded, "timeout")),
+            (
+                "out of nodes after an attempt",
+                Err(DapiClientError::NoAvailableAddressesToRetry(Box::new(
+                    TransportError::Grpc(Status::new(Code::Unavailable, "connection refused")),
+                ))),
+            ),
+        ];
+        for (label, answer) in maybe_sent {
+            let outcome = dapi_broadcast_outcome(txid, answer);
+            assert!(
+                matches!(outcome, Err(BroadcastError::MaybeSent { .. })),
+                "{label}: got {outcome:?}"
+            );
         }
     }
 
