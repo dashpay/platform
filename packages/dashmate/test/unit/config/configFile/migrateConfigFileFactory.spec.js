@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import semver from 'semver';
-import { DERIVED_DEFAULTS } from '../../../../src/config/derivedDefaults.js';
 import { STOCK_PRERELEASE_IDS } from '../../../../src/config/stockImages.js';
 import Config from '../../../../src/config/Config.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
@@ -31,6 +30,9 @@ describe('migrateConfigFileFactory', () => {
    * every default that changed since put back the way that release had it (see
    * configs/defaults at its tag), and the Drive and rs-dapi images it stored.
    *
+   * A release that changes a default needs a step here as well, or the fixture
+   * stops matching what earlier releases wrote.
+   *
    * @param {string} release
    * @param {string|null} imageTag - tag stored for both images, or null for none
    * @return {Object}
@@ -44,8 +46,13 @@ describe('migrateConfigFileFactory', () => {
       options.platform.dapi.rsDapi.docker.image = imageTag === null ? null : `dashpay/rs-dapi:${imageTag}`;
 
       const { whitelist } = options.core.rpc.users.drive_consensus;
+      const removeFromWhitelist = (method) => {
+        expect(whitelist, 'the default whitelist changed; update this fixture').to.include(method);
+        whitelist.splice(whitelist.indexOf(method), 1);
+      };
+
       if (semver.lt(release, '5.0.0-rc.2')) {
-        whitelist.splice(whitelist.indexOf('getdeploymentinfo'), 1);
+        removeFromWhitelist('getdeploymentinfo');
       }
 
       if (semver.lt(release, '5.0.0-beta.4')) {
@@ -53,7 +60,7 @@ describe('migrateConfigFileFactory', () => {
       }
 
       if (semver.lt(release, '5.0.0-beta.2')) {
-        whitelist.splice(whitelist.indexOf('getspecialtxes'), 1);
+        removeFromWhitelist('getspecialtxes');
       }
 
       if (semver.lt(release, '5.0.0-beta.1')) {
@@ -267,13 +274,14 @@ describe('migrateConfigFileFactory', () => {
     // when the network activates the new one.
     //
     // Each entry is a release and the tag it stored. Every release up to 4.1.1
-    // stored the tag it derived from its own version. 5.0 prereleases store none
-    // on a fresh install, but wrote their own tag into a config stamped 4.1.0
-    // when they ran the 4.1.1 migration on it.
+    // stored the tag it derived from its own version. 4.2 and 5.0 prereleases
+    // store none on a fresh install, but wrote their own tag into a config
+    // stamped 4.1.0 when they ran the 4.1.1 migration on it.
     const releases = [
       ['4.0.0', '4'],
       ['4.1.0', '4'],
       ['4.1.1', '4'],
+      ['4.2.0-beta.7', '4-beta'],
       ['5.0.0-beta.6', '5-beta'],
       ['5.0.0-rc.1', '5-rc'],
       ['5.0.0-rc.2', '5-rc'],
@@ -281,8 +289,6 @@ describe('migrateConfigFileFactory', () => {
     ];
 
     const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
-    const driveImagePath = 'platform.drive.abci.docker.image';
-    const rsDapiImagePath = 'platform.dapi.rsDapi.docker.image';
 
     for (const [release, imageTag] of releases) {
       const configFileData = getConfigFileDataWrittenBy(release, imageTag);
@@ -290,7 +296,9 @@ describe('migrateConfigFileFactory', () => {
       const migrated = migrateConfigFile(configFileData, release, version);
 
       for (const [name, options] of Object.entries(migrated.configs)) {
-        const written = `${name} config ${release} wrote with the ${imageTag} tag`;
+        const written = imageTag === null
+          ? `${name} config ${release} wrote with no image`
+          : `${name} config ${release} wrote with the ${imageTag} tag`;
 
         // Unset, not re-pinned: a tag pinned here would strand the node again
         // at the next release.
@@ -303,29 +311,28 @@ describe('migrateConfigFileFactory', () => {
           `rs-dapi image not unset for the ${written}`,
         );
 
-        const config = new Config(name, options);
-        expect(config.get(driveImagePath)).to.equal(DERIVED_DEFAULTS[driveImagePath]());
-        expect(config.get(rsDapiImagePath)).to.equal(DERIVED_DEFAULTS[rsDapiImagePath]());
+        expect(() => new Config(name, options), `migrated ${written} does not load`).to.not.throw();
       }
     }
   });
 
-  it('should never store the Drive and rs-dapi tag this build derives', async () => {
+  it('should only ever unset a stock Drive or rs-dapi tag, never pin another', async () => {
     // A stored tag is pinned: no later release moves it. A migration that copies
     // the default with base.get() rather than base.getStored() stores this
     // build's own tag, which strands the node one release later - `5-rc` once
-    // 5.0 is stable, `5` once 6.0 is out. Each migration is run on its own,
-    // because a later one in the same upgrade can hide what an earlier one
-    // stored. Migrations older than 4.0.0 expect shapes today's config no
-    // longer has.
+    // 5.0 is stable, `5` once 6.0 is out. So every migration must leave a tag
+    // as it is or unset it.
+    //
+    // Each migration is run on its own, because a later one in the same upgrade
+    // can hide what an earlier one stored. Migrations older than 4.0.0 expect
+    // shapes today's config no longer has.
     const migrations = Object.entries(container.resolve('getConfigFileMigrations')())
       .filter(([key]) => semver.gte(key, '4.0.0'));
-    const driveImagePath = 'platform.drive.abci.docker.image';
-    const rsDapiImagePath = 'platform.dapi.rsDapi.docker.image';
-    const derivedDriveImage = DERIVED_DEFAULTS[driveImagePath]();
-    const derivedRsDapiImage = DERIVED_DEFAULTS[rsDapiImagePath]();
 
-    const stockTags = ['4', ...STOCK_PRERELEASE_IDS.map((id) => `4-${id}`)];
+    const stockTags = ['4', '5'].flatMap((major) => [
+      major,
+      ...STOCK_PRERELEASE_IDS.map((id) => `${major}-${id}`),
+    ]);
 
     for (const [key, migrate] of migrations) {
       for (const tag of stockTags) {
@@ -334,13 +341,13 @@ describe('migrateConfigFileFactory', () => {
         const migrated = migrate(configFileData);
 
         for (const [name, options] of Object.entries(migrated.configs)) {
-          expect(options.platform.drive.abci.docker.image).to.not.equal(
-            derivedDriveImage,
-            `the ${key} migration stored the derived drive tag for ${name} holding ${tag}`,
+          expect(options.platform.drive.abci.docker.image).to.be.oneOf(
+            [null, `dashpay/drive:${tag}`],
+            `the ${key} migration pinned a drive image for ${name} holding ${tag}`,
           );
-          expect(options.platform.dapi.rsDapi.docker.image).to.not.equal(
-            derivedRsDapiImage,
-            `the ${key} migration stored the derived rs-dapi tag for ${name} holding ${tag}`,
+          expect(options.platform.dapi.rsDapi.docker.image).to.be.oneOf(
+            [null, `dashpay/rs-dapi:${tag}`],
+            `the ${key} migration pinned an rs-dapi image for ${name} holding ${tag}`,
           );
         }
       }
@@ -357,9 +364,10 @@ describe('migrateConfigFileFactory', () => {
     const operatorTags = [
       // a published minor line or exact version
       '4.1',
+      '4.1-rc',
       '4.1.1',
       '5.0.0-rc.2',
-      // the stable 5 tag, which no release before this one stored
+      // the stable 5 tag, which no release up to 5.0.0-rc.2 stored
       '5',
       // locally built or vendor-patched under the stock namespace
       '4-local',
@@ -385,17 +393,21 @@ describe('migrateConfigFileFactory', () => {
         }
       }
 
-      const configFileData = getConfigFileDataWrittenBy(release, '4');
-      for (const options of Object.values(configFileData.configs)) {
-        options.platform.drive.abci.docker.image = 'registry.example.com/drive:4';
-        options.platform.dapi.rsDapi.docker.image = 'registry.example.com/rs-dapi:4';
-      }
+      // The stock tag under another registry name, including the fully
+      // qualified form of Docker Hub, which no release wrote.
+      for (const registry of ['registry.example.com', 'docker.io/dashpay']) {
+        const configFileData = getConfigFileDataWrittenBy(release, '4');
+        for (const options of Object.values(configFileData.configs)) {
+          options.platform.drive.abci.docker.image = `${registry}/drive:4`;
+          options.platform.dapi.rsDapi.docker.image = `${registry}/rs-dapi:4`;
+        }
 
-      const migrated = migrateConfigFile(configFileData, release, version);
+        const migrated = migrateConfigFile(configFileData, release, version);
 
-      for (const options of Object.values(migrated.configs)) {
-        expect(options.platform.drive.abci.docker.image).to.equal('registry.example.com/drive:4');
-        expect(options.platform.dapi.rsDapi.docker.image).to.equal('registry.example.com/rs-dapi:4');
+        for (const options of Object.values(migrated.configs)) {
+          expect(options.platform.drive.abci.docker.image).to.equal(`${registry}/drive:4`);
+          expect(options.platform.dapi.rsDapi.docker.image).to.equal(`${registry}/rs-dapi:4`);
+        }
       }
     }
   });

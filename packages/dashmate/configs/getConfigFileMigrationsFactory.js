@@ -1658,9 +1658,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         // happened to derive: null means "use the line this dashmate build
         // ships", and a string is the operator's own and is never touched.
         //
-        // This is the last time a stock tag has to be recognised by shape. From
-        // here on the distinction is recorded rather than inferred, so no future
-        // release needs a migration to re-pin these images.
+        // From here on the distinction is recorded rather than inferred. Releases
+        // from the 4.1 line kept storing the derived tag, so the 5.0.0-rc.3
+        // migration recognises stock tags by shape once more for configs they
+        // stamped.
         const stockDriveImage = stockImagePattern('dashpay/drive', 4);
         const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
 
@@ -1839,13 +1840,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         //
         // 4.1.0 and 4.1.1 were released from the 4.1 line, which still stored the
         // derived tag (`4`), and stamp a version above the 4.1.0-rc.4 migration
-        // that unsets it. 5.0 prereleases wrote their own tag (`5-rc`) into a
-        // config stamped 4.1.0 when they ran the 4.1.1 migration on it. Keyed at
-        // this release so configs those prereleases already stamped run it too.
+        // that unsets it. 4.2 and 5.0 prereleases wrote their own tag (`4-dev`,
+        // `4-beta`, `5-beta`, `5-rc`) into a config stamped 4.1.0 when they ran
+        // the 4.1.1 migration on it. Keyed at this release so configs those
+        // prereleases already stamped run it too.
         //
-        // Only tags a release stored are unset. No release before this one stored
-        // the stable `5` tag, a minor line (`4.1`) or an exact version, so any of
-        // those is the operator's choice and is left alone.
+        // Only tags a release stored are unset. No release up to 5.0.0-rc.2
+        // stored the stable `5` tag, a minor line (`4.1`) or an exact version, so
+        // any of those is the operator's choice and is left alone.
         const isStockImage = (repository, image) => (
           stockImagePattern(repository, 4).test(image)
           || stockPrereleaseImagePattern(repository, 5).test(image)
