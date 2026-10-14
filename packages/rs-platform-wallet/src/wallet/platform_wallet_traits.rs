@@ -19,7 +19,7 @@ use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::transaction_checking::WalletTransactionChecker;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::{
-    ApplyChainLockOutcome, WalletInfoInterface,
+    ApplyChainLockOutcome, Truncation, WalletInfoInterface,
 };
 use key_wallet::wallet::managed_wallet_info::TransactionRecord;
 use key_wallet::{Network, Utxo, Wallet, WalletCoreBalance};
@@ -136,6 +136,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.accounts()
     }
 
+    fn unrecorded_spend_heights(&self, tx: &Transaction) -> BTreeSet<u32> {
+        self.core_wallet.unrecorded_spend_heights(tx)
+    }
+
     fn immature_transactions(&self) -> Vec<Transaction> {
         self.core_wallet.immature_transactions()
     }
@@ -155,6 +159,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     fn update_synced_height(&mut self, current_height: u32) {
         self.core_wallet.update_synced_height(current_height);
+    }
+
+    fn truncate_above(&mut self, height: CoreBlockHeight) -> Result<Truncation, key_wallet::Error> {
+        self.core_wallet.truncate_above(height)
     }
 
     fn matured_coinbase_records(
@@ -201,6 +209,12 @@ impl WalletInfoInterface for PlatformWalletInfo {
             "apply_chain_lock delegated"
         );
         outcome
+    }
+
+    // The trait default is a no-op, which would keep every observed spend
+    // until the first chain lock is applied.
+    fn note_chain_lock_height(&mut self, height: CoreBlockHeight) {
+        self.core_wallet.note_chain_lock_height(height);
     }
 }
 
@@ -298,5 +312,64 @@ impl std::fmt::Debug for PlatformWalletInfo {
             .field("wallet_id", &hex::encode(self.core_wallet.wallet_id()))
             .field("identity_count", &self.identity_manager.identity_count())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dashcore::{BlockHash, OutPoint, TxIn};
+    use key_wallet::transaction_checking::BlockInfo;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    use super::*;
+
+    fn spending(outpoint: OutPoint) -> Transaction {
+        Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: outpoint,
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        }
+    }
+
+    /// dash-spv notes a chain-lock height during the initial sync, before a
+    /// chain lock is applied. Spends observed at or below the synced height
+    /// are final from then on and are forgotten.
+    #[tokio::test]
+    async fn should_prune_final_observed_spends_when_a_chain_lock_height_is_noted() {
+        let mut wallet = Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
+            .expect("test wallet");
+        let mut info = PlatformWalletInfo::from_wallet(&wallet, 0);
+        let final_spend = OutPoint::new(Txid::from([0x01; 32]), 0);
+        let open_spend = OutPoint::new(Txid::from([0x03; 32]), 0);
+        for (outpoint, height) in [(final_spend, 50), (open_spend, 150)] {
+            let block = BlockInfo::new(height, BlockHash::from([0x07; 32]), 1_735_689_600);
+            info.check_core_transaction(
+                &spending(outpoint),
+                TransactionContext::InBlock(block),
+                &mut wallet,
+                true,
+                false,
+            )
+            .await;
+        }
+        info.update_synced_height(100);
+        assert_eq!(info.core_wallet.observed_spent_outpoints().len(), 2);
+
+        info.note_chain_lock_height(200);
+
+        let observed = info.core_wallet.observed_spent_outpoints();
+        assert!(
+            !observed.contains_key(&final_spend),
+            "a spend at height 50 is final below synced height 100"
+        );
+        assert!(
+            observed.contains_key(&open_spend),
+            "a spend at height 150 is above synced height 100"
+        );
     }
 }

@@ -8968,7 +8968,6 @@ mod tests {
     use dashcore::blockdata::transaction::txout::TxOut;
     use dashcore::blockdata::transaction::Transaction;
     use dashcore::consensus::encode::serialize;
-    use dashcore::secp256k1::Secp256k1;
     use dashcore::{Network, ScriptBuf};
     use key_wallet::account::{Account, AccountType, StandardAccountType};
     use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
@@ -9127,8 +9126,7 @@ mod tests {
         let seed = mnemonic.to_seed("");
         let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
             .expect("master derivation must succeed");
-        let secp = Secp256k1::new();
-        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let xpub = ExtendedPubKey::from_priv(&master);
         let account = Account::from_xpub(
             None,
             AccountType::Standard {
@@ -9160,8 +9158,7 @@ mod tests {
         let seed = mnemonic.to_seed("");
         let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
             .expect("master derivation must succeed");
-        let secp = Secp256k1::new();
-        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let xpub = ExtendedPubKey::from_priv(&master);
         let account = Account::from_xpub(None, account_type, xpub, Network::Testnet)
             .expect("Account::from_xpub on a valid xpub must succeed");
         let mut accounts = key_wallet::AccountCollection::new();
@@ -9275,8 +9272,7 @@ mod tests {
         let seed = mnemonic.to_seed("");
         let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
             .expect("master derivation must succeed");
-        let secp = Secp256k1::new();
-        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let xpub = ExtendedPubKey::from_priv(&master);
         let account =
             Account::from_xpub(None, AccountType::ProviderOwnerKeys, xpub, Network::Testnet)
                 .expect("Account::from_xpub on a valid xpub must succeed");

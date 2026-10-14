@@ -7,8 +7,7 @@ use crate::types::{PreviousQuorumsResponse, QuorumData, QuorumsResponse};
 
 use arc_swap::ArcSwap;
 use dash_context_provider::{ContextProvider, ContextProviderError, QuorumKeyFuture};
-use dpp::bls_signatures::inner_types::Group;
-use dpp::bls_signatures::{Bls12381G2Impl, PublicKey};
+use dpp::bls::PublicKey;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 // QuorumHash is just [u8; 32]
@@ -891,13 +890,12 @@ impl TrustedHttpContextProvider {
             )));
         }
 
-        let public_key =
-            PublicKey::<Bls12381G2Impl>::try_from(pubkey_bytes.as_slice()).map_err(|error| {
-                ContextProviderError::QuorumSourceUnavailable(format!(
-                    "Invalid BLS public key: {error}"
-                ))
-            })?;
-        if bool::from(public_key.0.is_identity()) {
+        let public_key = PublicKey::try_from(pubkey_bytes.as_slice()).map_err(|error| {
+            ContextProviderError::QuorumSourceUnavailable(format!(
+                "Invalid BLS public key: {error}"
+            ))
+        })?;
+        if public_key.is_identity() {
             return Err(ContextProviderError::QuorumSourceUnavailable(
                 "BLS public key is the identity point".to_string(),
             ));
@@ -1232,7 +1230,7 @@ impl ContextProvider for TrustedHttpContextProvider {
 mod tests {
     use super::*;
     use crate::quorum_refresh::MIN_GAP;
-    use dpp::bls_signatures::SecretKey;
+    use dpp::bls::SecretKey;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
     use std::sync::mpsc;
@@ -1240,9 +1238,10 @@ mod tests {
     use std::time::{Duration, Instant};
 
     fn quorum_key(seed: u8) -> [u8; 48] {
-        let key = SecretKey::<Bls12381G2Impl>::from_hash(&[seed]).public_key();
-        let bytes: Vec<u8> = (&key).into();
-        bytes.try_into().expect("BLS public key is 48 bytes")
+        SecretKey::from_ikm(&[seed; 32])
+            .expect("32 bytes of keying material")
+            .public_key()
+            .to_bytes()
     }
 
     fn accept_before(listener: &TcpListener, deadline: Instant) -> TcpStream {
@@ -1805,6 +1804,40 @@ mod tests {
                 Err(ContextProviderError::QuorumSourceUnavailable(_))
             ),
             "a cached unusable key is still a source failure: {cached:?}"
+        );
+        server.join().expect("mock quorum server must finish");
+    }
+
+    /// The identity point is a well-formed key that verifies nothing, so it
+    /// is refused like a malformed one.
+    #[tokio::test]
+    async fn should_reject_an_identity_point_bls_key_from_the_trusted_source() {
+        let identity = format!("c0{}", "00".repeat(47));
+        let (base_url, server) = spawn_http_responses(vec![
+            (
+                "/quorums",
+                200,
+                current_response(0x11, 0).replace(&hex::encode(quorum_key(0)), &identity),
+            ),
+            ("/previous", 200, empty_previous_response()),
+        ]);
+        let provider = provider_for(base_url);
+
+        let fetched = fetch_missing(&provider, 0x11).await;
+        assert!(
+            matches!(
+                fetched,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "the identity point must not be reported as a fetched quorum key: {fetched:?}"
+        );
+        let cached = provider.get_quorum_public_key(6, [0x11; 32], 1);
+        assert!(
+            matches!(
+                cached,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "a cached identity point is still a source failure: {cached:?}"
         );
         server.join().expect("mock quorum server must finish");
     }
