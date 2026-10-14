@@ -1,3 +1,5 @@
+use dash_sdk::error::ContextProviderError;
+use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
 use dpp::consensus::ConsensusError;
@@ -812,6 +814,25 @@ pub enum PlatformWalletError {
     #[error("SPV error: {0}")]
     SpvError(String),
 
+    /// dash-spv holds the quorum but has not verified it (status `Unknown` or
+    /// `Skipped`), so its key must not verify Platform proofs yet. Usually
+    /// transient: the status settles once the lists the check needs arrive.
+    /// Distinct from a missing quorum, which is [`Self::SpvError`]. See
+    /// [`Self::quorum_lookup_context_error`] for the SDK error class.
+    #[error(
+        "quorum {quorum_type}:{} is not verified by SPV yet ({status})",
+        hex::encode(quorum_hash)
+    )]
+    QuorumNotVerified {
+        /// The LLMQ type the lookup asked for.
+        quorum_type: u32,
+        /// The quorum hash as Platform names it.
+        quorum_hash: [u8; 32],
+        /// dash-spv's verification status for the quorum. Never `Verified`
+        /// or `Invalid`.
+        status: LLMQEntryVerificationStatus,
+    },
+
     /// SPV startup or teardown panicked and may have left background work
     /// running. Not retryable: restart the process.
     /// FFI mirror: `PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired`.
@@ -1064,6 +1085,27 @@ impl PlatformWalletError {
                 consensus_error_of(source)
             }
             _ => None,
+        }
+    }
+
+    /// The SDK error a [`ContextProvider::get_quorum_public_key`] backed by
+    /// [`SpvRuntime::get_quorum_public_key`] reports for this lookup failure.
+    ///
+    /// [`Self::QuorumNotVerified`] becomes
+    /// [`ContextProviderError::QuorumSourceUnavailable`]: the trusted source
+    /// cannot vouch for the key yet, which is not the responding node's fault,
+    /// so the SDK does not ban it. Every other error, a missing quorum
+    /// included, becomes [`ContextProviderError::Generic`], which the SDK
+    /// treats as a failed proof.
+    ///
+    /// [`ContextProvider::get_quorum_public_key`]: dash_sdk::platform::ContextProvider::get_quorum_public_key
+    /// [`SpvRuntime::get_quorum_public_key`]: crate::SpvRuntime::get_quorum_public_key
+    pub fn quorum_lookup_context_error(&self) -> ContextProviderError {
+        match self {
+            Self::QuorumNotVerified { .. } => {
+                ContextProviderError::QuorumSourceUnavailable(self.to_string())
+            }
+            _ => ContextProviderError::Generic(self.to_string()),
         }
     }
 }
@@ -1926,6 +1968,46 @@ mod identity_insufficient_balance_tests {
                 assert!(s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX));
             }
             other => panic!("expected preserved Sdk(Protocol(Generic)), got {other:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod quorum_lookup_context_error_tests {
+    use super::*;
+    use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationSkipStatus;
+
+    /// An unverified key is the trusted source's gap, not the node's fault,
+    /// so it maps to the SDK's non-ban class and keeps its diagnostic text.
+    #[test]
+    fn should_map_an_unverified_quorum_to_quorum_source_unavailable() {
+        let error = PlatformWalletError::QuorumNotVerified {
+            quorum_type: 6,
+            quorum_hash: [0xab; 32],
+            status: LLMQEntryVerificationStatus::Skipped(
+                LLMQEntryVerificationSkipStatus::NotMarkedForVerification,
+            ),
+        };
+
+        match error.quorum_lookup_context_error() {
+            ContextProviderError::QuorumSourceUnavailable(reason) => {
+                assert_eq!(reason, error.to_string());
+                assert!(reason.contains(&hex::encode([0xab; 32])), "{reason}");
+                assert!(reason.contains("NotMarkedForVerification"), "{reason}");
+            }
+            other => panic!("expected QuorumSourceUnavailable, got {other:?}"),
+        }
+    }
+
+    /// A missing quorum keeps the failed-proof class: the node named a quorum
+    /// the trusted source does not hold.
+    #[test]
+    fn should_map_a_missing_quorum_to_a_generic_error() {
+        let error = PlatformWalletError::SpvError("Quorum not found".to_string());
+
+        match error.quorum_lookup_context_error() {
+            ContextProviderError::Generic(reason) => assert_eq!(reason, error.to_string()),
+            other => panic!("expected Generic, got {other:?}"),
         }
     }
 }
