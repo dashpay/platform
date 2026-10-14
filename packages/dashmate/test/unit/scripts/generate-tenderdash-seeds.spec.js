@@ -24,7 +24,7 @@ describe('generate-tenderdash-seeds CLI', () => {
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dashmate-seed-generator-'));
     for (const file of [
-      'scripts/generate-tenderdash-seeds.js', 'scripts/tenderdash-seeds.js', 'src/tenderdash/seedSetHash.js',
+      'scripts/generate-tenderdash-seeds.js', 'src/tenderdash/seedSnapshot.js', 'src/tenderdash/seedSetHash.js',
     ]) {
       const target = path.join(dir, file);
       fs.mkdirSync(path.dirname(target), { recursive: true });

@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { checkSnapshot, fetchSnapshot, MAX_AGE_SECONDS } from './tenderdash-seeds.js';
+import { checkSnapshot, fetchSnapshot, MAX_AGE_SECONDS } from '../src/tenderdash/seedSnapshot.js';
 
 const file = new URL('../configs/defaults/tenderdash-seeds.json', import.meta.url);
 const snapshots = JSON.parse(fs.readFileSync(file, 'utf8'));

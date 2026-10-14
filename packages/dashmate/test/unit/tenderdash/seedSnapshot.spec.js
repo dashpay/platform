@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import {
   generateSnapshot, fetchSnapshot, checkSnapshot, QUORUM_URLS,
-} from '../../../scripts/tenderdash-seeds.js';
+} from '../../../src/tenderdash/seedSnapshot.js';
 import seedSetHash from '../../../src/tenderdash/seedSetHash.js';
 
 const NOW = 1800000000;

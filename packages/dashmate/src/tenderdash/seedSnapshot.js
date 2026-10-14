@@ -1,6 +1,6 @@
 import { isIPv4 } from 'net';
 import crypto from 'crypto';
-import seedSetHash from '../src/tenderdash/seedSetHash.js';
+import seedSetHash from './seedSetHash.js';
 
 export const QUORUM_URLS = {
   mainnet: 'https://quorums.mainnet.networks.dash.org/masternodes',
