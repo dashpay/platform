@@ -31,7 +31,7 @@ jobs:
   refresh:
     if: github.repository == 'dashpay/platform'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Merge the base into open freeze PRs
         env:
@@ -55,10 +55,13 @@ jobs:
           [[ -n "$prs" ]] || echo "No open freeze PRs target $BASE"
           failed=0
           for pr in $prs; do
-            # At most three merges; every pass re-reads the head, so the last one
-            # only confirms. update-branch is asynchronous, and a concurrent push
-            # (e.g. by the freeze worker) fails expected_head_sha.
-            for attempt in 1 2 3 4; do
+            # At most three update requests; every pass re-reads the head and
+            # checks it first, so the result of the last request is confirmed.
+            # A rejected request (e.g. a concurrent push by the freeze worker
+            # failing expected_head_sha) is retried; an accepted one merges
+            # asynchronously, so wait for the head to move.
+            requests=0
+            while true; do
               sha=$(gh api "repos/$REPO/pulls/$pr" --jq .head.sha)
               behind=$(gh api "repos/$REPO/compare/$BASE...$sha" --jq .behind_by)
               if [[ "$behind" == 0 ]]; then
@@ -69,13 +72,30 @@ jobs:
                 echo "#$pr is $behind commit(s) behind $BASE (dry run)"
                 continue 2
               fi
-              [[ "$attempt" -lt 4 ]] || break
-              echo "#$pr is $behind commit(s) behind $BASE; merging (attempt $attempt)"
-              gh api -X PUT "repos/$REPO/pulls/$pr/update-branch" \
-                -f expected_head_sha="$sha" > /dev/null || true
-              sleep 10
+              (( requests < 3 )) || break
+              requests=$((requests + 1))
+              echo "#$pr is $behind commit(s) behind $BASE; merging (request $requests)"
+              if ! error=$(gh api -X PUT "repos/$REPO/pulls/$pr/update-branch" \
+                  -f expected_head_sha="$sha" 2>&1 > /dev/null); then
+                problem="update-branch was rejected: ${error//$'\n'/ }"
+                sleep 5
+                continue
+              fi
+              problem="$BASE moved again after each merge"
+              moved=false
+              for _ in {1..12}; do
+                sleep 5
+                if [[ "$(gh api "repos/$REPO/pulls/$pr" --jq .head.sha)" != "$sha" ]]; then
+                  moved=true
+                  break
+                fi
+              done
+              if [[ "$moved" != true ]]; then
+                problem="update-branch was accepted, but the head did not change within 60 seconds"
+                break
+              fi
             done
-            echo "::error::https://github.com/$REPO/pull/$pr is still behind $BASE (merge conflict or token permissions). Merge $BASE into its branch so its CI runs again."
+            echo "::error::https://github.com/$REPO/pull/$pr is still behind $BASE: $problem. Merge $BASE into its branch so its CI runs again."
             failed=1
           done
           exit "$failed"

@@ -295,11 +295,12 @@ and never contain user wallet material.
 - An unsupported development database may require an explicit app-data reset
   by its owner. Export/recover any needed development wallet first. The app does
   not silently erase an unrecognized database to make migrations succeed.
-- A refresh run fails when a freeze PR stays behind its base after three merge
-  attempts, usually a merge conflict (GitHub then also blocks merging) or an
-  invalid token. Merge the base into the branch, or replace the token, then rerun
-  the workflow on that base branch with `dry_run` cleared. Manual runs default to
-  a dry run that only reports PRs that are behind.
+- A refresh run fails when a freeze PR stays behind its base after three update
+  requests, or when an accepted update does not land within a minute; the error
+  says which. Usual causes are a merge conflict (GitHub then also blocks merging)
+  or an invalid token. Merge the base into the branch, or replace the token,
+  then rerun the workflow on that base branch with `dry_run` cleared. Manual
+  runs default to a dry run that only reports PRs that are behind.
 
 Run the automation tests with:
 
