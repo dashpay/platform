@@ -226,13 +226,20 @@ object StateTransitionParser {
         // the external fun resolves to UnsatisfiedLinkError.
         Sdk.initialize()
         val blob = mapNativeErrors { TransactionsNative.parseStateTransition(transitionBytes) }
-        return try {
+        return decodeBlob(blob)
+    }
+
+    /**
+     * [parseBlob], with a blob this decoder cannot read reported as a
+     * [org.dashfoundation.dashsdk.errors.DashSdkError] like every native
+     * failure, so callers have one error path. That happens on a Rust/Kotlin
+     * layout drift and on values the Kotlin types cannot hold (a key limit
+     * above `Long.MAX_VALUE`, a key id above `Int.MAX_VALUE`).
+     */
+    internal fun decodeBlob(blob: ByteArray): ParsedStateTransition = mapNativeErrors {
+        try {
             parseBlob(blob)
         } catch (e: RuntimeException) {
-            // A blob the JNI layer produced but this decoder cannot read is
-            // a Rust/Kotlin layout drift, not caller input; surface it as
-            // the same exception type native failures use so callers have
-            // one error path.
             throw DashSDKException(
                 BLOB_DECODE_ERROR_CODE,
                 "parsed state transition blob could not be decoded: ${e.message}",

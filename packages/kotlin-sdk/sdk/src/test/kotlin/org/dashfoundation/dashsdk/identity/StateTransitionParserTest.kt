@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.identity
 
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -212,6 +213,12 @@ class StateTransitionParserTest {
             StateTransitionParser.parseBlob(patched)
         }
         assertTrue(error.message!!.contains("totalBudget"))
+
+        // `parse` reports the same refusal through the public error hierarchy.
+        val mapped = assertThrows(DashSdkError.InternalError::class.java) {
+            StateTransitionParser.decodeBlob(patched)
+        }
+        assertTrue(mapped.message!!.contains("totalBudget"))
     }
 
     /**
