@@ -337,7 +337,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //   height, and a cursor written from here could advance it past rows
         //   that never landed — so nothing is stored at all: the in-memory
         //   rewind still runs the rescan, and the next launch re-runs it,
-        //   which is the pre-record behaviour;
+        //   which is the pre-record behaviour. The latch is never cleared, so
+        //   the pass's coverage is still installed in memory for the rest of
+        //   the session, or every later sweep would rewind to the same
+        //   contacts again. It keeps the debt: should anything store the
+        //   record later, the owed cursor rides with it;
         // - a backend that cannot hold the record durably gets none at all
         //   (`persists_backfill_coverage`): one whose `store` only buffers
         //   commits at a later `flush` that can still drop the round, and one
@@ -399,7 +403,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             };
             self.persister.store(changeset).map(|()| true).map_err(Some)
         };
-        match stored {
+        let installed = match stored {
             Ok(durable) => {
                 // In memory only (`durable` false), the staged record carries
                 // no debt: nothing will ever be stored for it to settle.
@@ -408,23 +412,38 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     durable_cursors
                         .insert(self.wallet_id, crate::changeset::DurableCursor::at(cursor));
                 }
-                for (owner, contact, _, _) in &to_mark {
-                    if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
-                        managed.dashpay_rescan_triggered_mut().insert(*contact);
-                    }
+                true
+            }
+            Err(Some(error)) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(self.wallet_id),
+                    error = %error,
+                    "DashPay rescan: failed to persist the backfill record; the next pass \
+                     retries and the next launch re-runs this backfill"
+                );
+                false
+            }
+            Err(None) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(self.wallet_id),
+                    "DashPay rescan: persistence fault latched; keeping this backfill's coverage \
+                     for the session only — the next launch re-runs it"
+                );
+                // Coverage for the session, the debt kept beside it.
+                let live = &info.dashpay_backfill;
+                staged.unpersisted_cursor = live.unpersisted_cursor;
+                staged.unpersisted_cursor_epoch = live.unpersisted_cursor_epoch;
+                staged.unpersisted_extent = live.unpersisted_extent;
+                info.dashpay_backfill = staged;
+                true
+            }
+        };
+        if installed {
+            for (owner, contact, _, _) in &to_mark {
+                if let Some(managed) = info.identity_manager.managed_identity_mut(owner) {
+                    managed.dashpay_rescan_triggered_mut().insert(*contact);
                 }
             }
-            Err(Some(error)) => tracing::warn!(
-                wallet_id = %hex::encode(self.wallet_id),
-                error = %error,
-                "DashPay rescan: failed to persist the backfill record; the next pass \
-                 retries and the next launch re-runs this backfill"
-            ),
-            Err(None) => tracing::warn!(
-                wallet_id = %hex::encode(self.wallet_id),
-                "DashPay rescan: persistence fault latched; not recording backfill coverage \
-                 over a held-back cursor — the next launch re-runs this backfill"
-            ),
         }
         Ok(floor)
     }
@@ -6507,7 +6526,9 @@ mod tests {
     /// round written then would advance it past rows that never landed, so
     /// the reconcile rewinds in memory but stores nothing — the next launch
     /// re-runs the backfill, the pre-record behaviour
-    /// (dashpay/platform#4302 review).
+    /// (dashpay/platform#4302 review). The latch never clears, so the pass's
+    /// coverage is kept for the session: once the scan climbs back past the
+    /// contact, later sweeps must not rewind to it again.
     #[tokio::test]
     async fn a_latched_persistence_fault_keeps_the_record_off_disk() {
         let (manager, persister, wallet_id) = make_wallet().await;
@@ -6536,11 +6557,53 @@ mod tests {
             persister.stores.lock().unwrap().is_empty(),
             "nothing reaches the persister while the fault is latched"
         );
+        {
+            let wm = manager.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            assert_eq!(info.core_wallet.synced_height(), 100);
+            assert_eq!(
+                info.dashpay_backfill.covered_from(&owner, &contact, 0),
+                Some(100),
+                "the pass's coverage is kept for the session"
+            );
+            assert_eq!(
+                info.dashpay_backfill.unpersisted_cursor,
+                Some(100),
+                "beside the cursor it still owes the host"
+            );
+        }
+
+        // The rescan climbs back past the contact in memory; the latched
+        // adapter records no durable advance. Later sweeps must not rewind to
+        // the contact again.
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("info")
+                .core_wallet
+                .update_synced_height(1_000);
+        }
+        for _ in 0..2 {
+            assert_eq!(
+                wallet
+                    .identity()
+                    .dashpay()
+                    .reconcile_dashpay_rescan()
+                    .await
+                    .expect("later pass under the latched fault"),
+                None,
+                "a contact this session already backfilled must not be rewound to again"
+            );
+        }
+        assert!(persister.stores.lock().unwrap().is_empty());
         let wm = manager.wallet_manager.read().await;
-        let info = wm.get_wallet_info(&wallet_id).expect("info");
-        assert_eq!(info.core_wallet.synced_height(), 100);
-        assert!(info.dashpay_backfill.is_empty());
-        assert_eq!(info.dashpay_backfill.unpersisted_cursor, Some(100));
+        assert_eq!(
+            wm.get_wallet_info(&wallet_id)
+                .expect("info")
+                .core_wallet
+                .synced_height(),
+            1_000
+        );
     }
 
     /// The host lags memory (a healthy backlog: the adapter has not yet
