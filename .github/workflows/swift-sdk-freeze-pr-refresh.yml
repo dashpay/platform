@@ -47,6 +47,12 @@ jobs:
             echo "::error::SCHEMA_RELEASE_TOKEN is not available"
             exit 1
           fi
+          # A manual run may pick any ref; only a development branch is a base
+          # that freeze PRs target, so anything else would pass vacuously.
+          if [[ "$BASE" != v*-dev ]]; then
+            echo "::error::Run this workflow on a v*-dev branch, not $BASE"
+            exit 1
+          fi
           # A fork can reuse the branch name; only the worker's branches count.
           prs=$(gh api --paginate "repos/$REPO/pulls?state=open&base=$BASE&per_page=100" --jq '.[]
             | select(.head.repo.full_name == env.REPO
