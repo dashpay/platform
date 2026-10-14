@@ -497,21 +497,28 @@ mod tests {
     /// the same identity, at the same fee, with the same balance.
     #[tokio::test]
     async fn should_create_the_same_identity_from_a_proof_with_another_payload_length_prefix() {
-        let original = create_identity_with_proof_payload_length_prefix_shifted_by(0).await;
-        for shift in [1, -1] {
+        let original =
+            create_identity_with_proof_payload_length_prefix(|length| vec![length]).await;
+        let prefixes: [(&str, fn(u8) -> Vec<u8>); 4] = [
+            ("one more", |length| vec![length + 1]),
+            ("one less", |length| vec![length - 1]),
+            ("three bytes wide", |_| vec![0xfd, 0x00, 0x01]),
+            ("five bytes wide", |_| vec![0xfe, 0x00, 0x00, 0x01, 0x00]),
+        ];
+        for (case, prefix) in prefixes {
             assert_eq!(
-                create_identity_with_proof_payload_length_prefix_shifted_by(shift).await,
+                create_identity_with_proof_payload_length_prefix(prefix).await,
                 original,
-                "prefix shifted by {shift}"
+                "prefix {case}"
             );
         }
     }
 
     /// Executes, at the latest protocol version, an IdentityCreate whose serialized instant
-    /// proof has its asset-lock payload length prefix shifted by `shift`, and returns the
-    /// processing fee and the new identity's balance.
-    async fn create_identity_with_proof_payload_length_prefix_shifted_by(
-        shift: i16,
+    /// proof has its 1-byte asset-lock payload length prefix replaced by `prefix(length)`, and
+    /// returns the processing fee and the new identity's balance.
+    async fn create_identity_with_proof_payload_length_prefix(
+        prefix: fn(u8) -> Vec<u8>,
     ) -> (dpp::fee::Credits, dpp::fee::Credits) {
         use dpp::dashcore::consensus::serialize;
         use dpp::prelude::AssetLockProof;
@@ -611,8 +618,18 @@ mod tests {
             .windows(proof_transaction.len())
             .position(|bytes| bytes == proof_transaction.as_slice())
             .expect("expected the proof transaction in the serialized transition");
-        let prefix = &mut identity_create_serialized_transition[transaction_at + prefix_at];
-        *prefix = u8::try_from(i16::from(*prefix) + shift).expect("1-byte prefix");
+        let new_prefix = prefix(proof_transaction[prefix_at]);
+        // The proof's transaction bytes follow their bincode length, a single byte below 251.
+        let length = &mut identity_create_serialized_transition[transaction_at - 1];
+        assert_eq!(usize::from(*length), proof_transaction.len());
+        *length = u8::try_from(proof_transaction.len() - 1 + new_prefix.len())
+            .ok()
+            .filter(|length| *length < 251)
+            .expect("a 1-byte bincode length");
+        identity_create_serialized_transition.splice(
+            transaction_at + prefix_at..=transaction_at + prefix_at,
+            new_prefix.iter().copied(),
+        );
 
         let transaction = platform.drive.grove.start_transaction();
 
@@ -632,7 +649,7 @@ mod tests {
         assert_eq!(
             processing_result.valid_count(),
             1,
-            "prefix shifted by {shift}"
+            "prefix {new_prefix:02x?}"
         );
 
         platform

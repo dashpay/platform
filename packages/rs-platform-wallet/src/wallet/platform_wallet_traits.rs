@@ -3,7 +3,7 @@
 //! Implements [`WalletInfoInterface`], [`WalletTransactionChecker`], and
 //! [`ManagedAccountOperations`] by delegating to the inner `ManagedWalletInfo`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use async_trait::async_trait;
 use dashcore::ephemerealdata::chain_lock::ChainLock;
@@ -198,7 +198,42 @@ impl WalletInfoInterface for PlatformWalletInfo {
     }
 
     fn mark_instant_send_utxos(&mut self, txid: &Txid, lock: &InstantLock) -> bool {
-        self.core_wallet.mark_instant_send_utxos(txid, lock)
+        // key-wallet at the pinned revision rewrites the record's context to
+        // `InstantSend` even when the transaction is already in a block. That
+        // context carries no block, so a chain lock no longer promotes the
+        // record and the persister would store a mined send as unconfirmed.
+        // A lock can reach a mined transaction: dash-spv applies one for as
+        // long as its mempool manager tracks the transaction, which ends
+        // only when that manager handles the block's event. Keep each
+        // confirmed slice's own context across the call: the slices of one
+        // transaction share the block but not always the finality, so one
+        // slice's context must not stand in for another's. As upstream, the
+        // mined record then does not carry the lock: an asset lock mined
+        // before its lock is proven by the chain lock, not by the
+        // InstantSend lock. Fixed upstream in dashpay/rust-dashcore#1037;
+        // drop this once the pin carries it (tracked in #5430).
+        let confirmed: BTreeMap<_, _> = self
+            .core_wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .filter_map(|account| account.transactions().get(txid))
+            .filter(|record| record.is_confirmed())
+            .map(|record| (record.account_type, record.context.clone()))
+            .collect();
+        let changed = self.core_wallet.mark_instant_send_utxos(txid, lock);
+        if confirmed.is_empty() {
+            return changed;
+        }
+        for mut account in self.core_wallet.accounts.all_accounts_mut() {
+            let Some(record) = account.transactions_mut().get_mut(txid) else {
+                continue;
+            };
+            if let Some(context) = confirmed.get(&record.account_type) {
+                record.update_context(context.clone());
+            }
+        }
+        changed
     }
 
     fn monitor_revision(&self) -> u64 {

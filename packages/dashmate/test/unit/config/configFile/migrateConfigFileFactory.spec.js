@@ -406,6 +406,39 @@ describe('migrateConfigFileFactory', () => {
     }
   });
 
+  it('should let Drive call getdeploymentinfo on Core from a 5.0.0-rc.1 config', async () => {
+    // Drive reads the platform activation fork with getdeploymentinfo on Core v24, and
+    // Core answers a method missing from the consensus user's whitelist with HTTP 403.
+    const fromVersion = '5.0.0-rc.1';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = fromVersion;
+    for (const options of Object.values(configFileData.configs)) {
+      const { whitelist } = options.core.rpc.users.drive_consensus;
+      expect(whitelist).to.include('getdeploymentinfo');
+      whitelist.splice(whitelist.indexOf('getdeploymentinfo'), 1);
+    }
+    configFileData.configs.testnet.core.rpc.users.drive_consensus.whitelist.push('getblockcount');
+    configFileData.configs.mainnet.core.rpc.users.drive_consensus.whitelist = null;
+
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+    expect(migrated.configs.base.core.rpc.users.drive_consensus.whitelist)
+      .to.include('getdeploymentinfo');
+    expect(migrated.configs.local.core.rpc.users.drive_consensus.whitelist)
+      .to.include('getdeploymentinfo');
+    // A method the operator allowed stays allowed.
+    expect(migrated.configs.testnet.core.rpc.users.drive_consensus.whitelist)
+      .to.include.members(['getdeploymentinfo', 'getblockcount']);
+    // A user without a whitelist may already call every method.
+    expect(migrated.configs.mainnet.core.rpc.users.drive_consensus.whitelist).to.equal(null);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
+  });
+
   it('should keep an operator image that predates the 4.0.0 re-pin', async () => {
     // Every config older than 4.0.0 crosses the unconditional re-pin in that
     // migration, so it is the first place operator intent can be respected. It
