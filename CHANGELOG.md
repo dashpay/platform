@@ -8,8 +8,6 @@
 
 - **dpp:** require a WASM-compatible `blst` version for BLS signatures and Core
   message/quorum verification, including external consumers with older dependency lockfiles.
-- **platform-test-suite:** retry proof reads while the local quorum sidecar publishes
-  a rotated key, with a bounded wait and full proof verification on each attempt.
 - **platform-wallet-ffi:** adapt platform node ID derivation to the updated
   rust-dashcore API, restoring native SDK builds while preserving canonical bytes.
 - **drive-abci:** preserve the fixed 48-byte quorum-key disk encoding independently
