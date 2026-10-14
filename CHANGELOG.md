@@ -37,6 +37,10 @@
   [rust-dashcore#1112](https://github.com/dashpay/rust-dashcore/pull/1112)
   (`9ea53592`): restored spend claims are held once per wallet and guard every
   funding account, including one registered after the wallet is loaded.
+- **platform-wallet-storage (breaking Rust API):** `WalletStorageError` is
+  `#[non_exhaustive]`, so a `match` on it outside the crate needs a wildcard
+  arm. New variants: `TransactionBodyConflict`, `UnknownWalletNetwork` and
+  `NetAmountOverflow`.
 - **platform-wallet:** a chain reorganization reported by key-wallet
   (`WalletEvent::ChainTruncated`) updates the in-memory balance but is not yet
   mirrored to persisted wallet state
