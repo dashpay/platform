@@ -2,7 +2,9 @@ use crate::execution::validation::state_transition::batch::action_validation::do
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::property_constraints::StoredSystemValues;
 use dpp::data_contract::DataContract;
+use dpp::document::Document;
 use dpp::platform_value::Identifier;
 use dpp::prelude::ConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
@@ -18,7 +20,9 @@ use drive::state_transition_action::batch::batched_transition::BatchedTransition
 /// already refused, whose own refusal stands.
 ///
 /// The condition is judged as an `immutable` entry's is, on the document the replace writes (its
-/// `$updatedAt` this block's time), with the stored one under `$old`. Every other rule of the
+/// `$updatedAt` this block's time), with `stored`, the stored document, read through `$old.`: its
+/// properties as the action rebuilds them, its owner, times, heights and revision as stored, since
+/// the transformer attaches those to the action only afterwards. Every other rule of the
 /// type still judges the replace afterwards. Judged in the transformer, after the stored
 /// document is fetched, so the mempool refuses a barred owner's replace as a block does. Added in
 /// place to the shipped transformer at protocol version 14 and inert before it: the gate, and so
@@ -26,6 +30,7 @@ use drive::state_transition_action::batch::batched_transition::BatchedTransition
 pub(super) fn judge_barred_replace(
     contract: &DataContract,
     result: &ConsensusValidationResult<BatchedTransitionAction>,
+    stored: &Document,
     owner_id: Identifier,
     bar: &ConsensusError,
 ) -> Option<ConsensusError> {
@@ -42,12 +47,9 @@ pub(super) fn judge_barred_replace(
         .document_type_optional_for_name(action.base().document_type_name())
         .and_then(|document_type| {
             document_type.retracted_when().map(|condition| {
-                condition
-                    .holds(
-                        &action.condition_data(),
-                        &action.condition_system_values(owner_id),
-                    )
-                    .unwrap_or(false)
+                let (data, system) = action
+                    .condition_inputs(owner_id, Some(&StoredSystemValues::of_document(stored)));
+                condition.holds(&data, &system).unwrap_or(false)
             })
         })
         .unwrap_or(false);

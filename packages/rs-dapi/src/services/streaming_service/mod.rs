@@ -525,4 +525,23 @@ mod tests {
             assert_eq!(status.code(), tonic::Code::InvalidArgument);
         }
     }
+
+    /// A block Core v24 mined (its coinbase is a version 4 CbTx) yields its
+    /// hash, so the live header stream delivers it.
+    #[test]
+    fn block_hash_from_block_bytes_reads_a_core_v24_block() {
+        use dashcore_rpc::dashcore::block::Header;
+        use dashcore_rpc::dashcore::consensus::encode::deserialize;
+
+        let bytes = hex::decode(
+            include_str!("../../../tests/vectors/core_v24_devnet/block_15146.hex").trim(),
+        )
+        .expect("vector is hex");
+        let header: Header = deserialize(&bytes[..80]).expect("header");
+
+        let (hash, hash_string) =
+            block_hash_from_block_bytes(&bytes).expect("a Core v24 block decodes");
+        assert_eq!(hash, header.block_hash().to_byte_array());
+        assert_eq!(hash_string, header.block_hash().to_string());
+    }
 }

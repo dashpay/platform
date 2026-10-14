@@ -189,6 +189,7 @@ fn expected_reference(pairs: &[(&str, &str)], in_list: &str) -> DocumentProperty
     DocumentPropertyReferenceTarget::ListElement(ListElementReference {
         contract_id: None,
         document_type_name: "electedCharter".to_string(),
+        where_conditions: Default::default(),
         property_agreement: pairs
             .iter()
             .map(|(referring, referenced)| (referring.to_string(), referenced.to_string()))
@@ -386,11 +387,12 @@ fn should_refuse_a_list_element_reference_on_a_non_identifier_property() {
     schema["documentSchemas"]["resignation"]["properties"]["note"]["refersTo"] =
         members_of_the_charter();
     contract(schema.clone()).expect_err("the meta-schema should refuse it");
-    // A string's value is no id: findBy on it must be a function reading it
+    // A string's value is no id, and a list holds ids: findBy on it must read
+    // the value into a key
     assert_refused(
         contract_on(schema, false, PlatformVersion::latest()),
         "refersTo on a string or byte array property must be a permanentDocument or \
-         deletableDocument reference found by a findBy function",
+         deletableDocument reference found by a findBy reading the value",
     );
 }
 
@@ -782,6 +784,7 @@ fn should_find_a_value_only_in_the_list_the_referenced_document_holds() {
     let reference = ListElementReference {
         contract_id: None,
         document_type_name: "electedCharter".to_string(),
+        where_conditions: Default::default(),
         property_agreement: BTreeMap::from([("meta.charterId".to_string(), "$id".to_string())]),
         in_list: "seats.members".to_string(),
     };
@@ -811,4 +814,41 @@ fn should_find_a_value_only_in_the_list_the_referenced_document_holds() {
         DocumentPropertyReferenceTarget::ListElement(reference).to_string(),
         "list element (seats.members of the electedCharter document meta.charterId names)"
     );
+}
+
+/// `constraints` (`minimumAgeBlocks`, `chooseFirst`) and `consume` describe a document
+/// `findBy` finds by a key. A list element reference has nothing to hold them, so both parses
+/// refuse them rather than drop them unenforced, on a referring type whose documents are never
+/// replaced too
+#[test]
+fn should_refuse_minimum_age_blocks_consume_and_choose_first_beside_in_list() {
+    let mut never_replaced = charter_contract(members_of_the_charter());
+    never_replaced["documentSchemas"]["resignation"]["documentsMutable"] = json!(false);
+    contract(never_replaced.clone()).expect("the list element reference registers alone");
+
+    for (keyword, value) in [
+        ("constraints", json!({ "minimumAgeBlocks": 100 })),
+        ("consume", json!(true)),
+        (
+            "constraints",
+            json!({
+                "chooseFirst": {
+                    "among": "nameHash",
+                    "validWhen": {
+                        "ownerNameHash": { "function": "sys.hash.sha256d", "params": ["$ownerId", "reason"] }
+                    },
+                    "by": ["$createdAtBlockHeight"]
+                }
+            }),
+        ),
+    ] {
+        let mut schema = never_replaced.clone();
+        schema["documentSchemas"]["resignation"]["properties"]["memberId"]["refersTo"][keyword] =
+            value;
+        contract(schema.clone()).expect_err("the meta-schema should refuse it");
+        assert_refused(
+            contract_on(schema, false, PlatformVersion::latest()),
+            "permanentDocument refersTo inList does not take constraints or consume",
+        );
+    }
 }

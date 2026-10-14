@@ -2556,14 +2556,11 @@ mod token_pool_mint_burn_claim_purchase_tests {
         assert_tokens_conserved(&platform);
     }
 
-    /// Proving a pool group action's proposal. A group action writes nothing into the pool until
-    /// the last required signature arrives: the operation converters push the pool write only
-    /// when the action closes, while the signer's power entry is recorded on every signature. A
-    /// proposal's proof therefore shows an untouched pool — no notes created, no nullifiers
-    /// spent — and the verifier has to read it as an open action rather than as a burn or mint
-    /// that failed to happen.
+    /// A group can hold a pending mint and a completed burn at the same time. Each proof must
+    /// report the named action's status and recorded signing power, with the current pool state:
+    /// the mint has created no notes, while the completed burn has spent its nullifiers.
     #[tokio::test]
-    async fn test_a_pool_group_action_proposal_proof_verifies_as_an_open_action() {
+    async fn should_verify_pool_group_actions_when_active_and_closed_actions_share_a_group() {
         let platform_version = PlatformVersion::latest();
         let mut platform = platform_with_latest_version();
         let mut rng = StdRng::seed_from_u64(9107);
@@ -2586,31 +2583,18 @@ mod token_pool_mint_burn_claim_purchase_tests {
                         self_changing_admin_action_takers_allowed: false,
                     })
                 };
-                // Burning and minting are put under groups of their own so that the burn can
-                // close while the mint proposal is still open: a proof's action status is read
-                // from the group's active and closed action trees, so one group holding an open
-                // action and a closed one at the same time cannot be resolved to either.
                 token_configuration.set_manual_burning_rules(group_rules(0));
-                token_configuration.set_manual_minting_rules(group_rules(1));
+                token_configuration.set_manual_minting_rules(group_rules(0));
             }),
             None,
             Some(
-                [
-                    (
-                        0,
-                        Group::V0(GroupV0 {
-                            members: [(proposer.id(), 1), (confirmer.id(), 1)].into(),
-                            required_power: 2,
-                        }),
-                    ),
-                    (
-                        1,
-                        Group::V0(GroupV0 {
-                            members: [(proposer.id(), 1), (confirmer.id(), 1)].into(),
-                            required_power: 2,
-                        }),
-                    ),
-                ]
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(proposer.id(), 1), (confirmer.id(), 1)].into(),
+                        required_power: 2,
+                    }),
+                )]
                 .into(),
             ),
             None,
@@ -2620,19 +2604,32 @@ mod token_pool_mint_burn_claim_purchase_tests {
         let known_contracts: BTreeMap<Identifier, DataContract> =
             BTreeMap::from([(contract.id(), contract.clone())]);
         let verify = |transition: &StateTransition| {
+            let committed_root = platform
+                .drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("committed root hash");
             let proof = platform
                 .drive
                 .prove_state_transition(transition, None, platform_version)
                 .expect("prove the pool group transition")
                 .into_data()
                 .expect("proof bytes rather than an error");
-            Drive::verify_state_transition_was_executed_with_proof(
+            let result = Drive::verify_state_transition_was_executed_with_proof(
                 transition,
                 &BlockInfo::default(),
                 &proof,
                 &|id| Ok(known_contracts.get(id).cloned().map(std::sync::Arc::new)),
                 platform_version,
-            )
+            );
+            if let Ok((root_hash, _)) = &result {
+                assert_eq!(
+                    *root_hash, committed_root,
+                    "the verified transition proof must match the committed state"
+                );
+            }
+            result
         };
 
         // Fund the pool so the burn below has a note to spend.
@@ -2679,7 +2676,7 @@ mod token_pool_mint_burn_claim_purchase_tests {
                 proposer.id(),
             ),
             None,
-            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(1)),
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
             &proposer_key,
             3,
             0,
@@ -2736,6 +2733,12 @@ mod token_pool_mint_burn_claim_purchase_tests {
         );
         let (burn_bundle, _) =
             build_spend_bundle(note, merkle_path, anchor, burn_amount, &extra, 33);
+        let mut expected_unspent_nullifiers: Vec<_> = burn_bundle
+            .actions
+            .iter()
+            .map(|action| (action.nullifier.to_vec(), false))
+            .collect();
+        expected_unspent_nullifiers.sort_unstable();
         let proposer_nonce = 4;
         let burn_proposal = BatchTransition::new_token_burn_from_pool_transition(
             token_id,
@@ -2780,10 +2783,9 @@ mod token_pool_mint_burn_claim_purchase_tests {
             ) => {
                 assert_eq!(*power, 1, "one of the two required signatures is recorded");
                 assert_eq!(*status, GroupActionStatus::ActionActive);
-                assert_eq!(statuses.len(), burn_bundle.actions.len());
-                assert!(
-                    statuses.iter().all(|(_, spent)| !*spent),
-                    "an open action has spent nothing, got {statuses:?}"
+                assert_eq!(
+                    statuses, &expected_unspent_nullifiers,
+                    "an open action must report every requested nullifier as unspent"
                 );
             },
             "an open burn-from-pool proposal must be reported as a group action over the pool"
@@ -2834,9 +2836,16 @@ mod token_pool_mint_burn_claim_purchase_tests {
             token_id,
             &burn_bundle.actions[0].nullifier
         ));
+        assert_eq!(pool_balance(&platform, token_id), 10_000 - burn_amount);
 
-        let (_root_hash, outcome) =
-            verify(&burn_confirmation).expect("the closing signature's proof must verify");
+        let (_root_hash, outcome) = verify(&burn_confirmation).expect(
+            "the closing burn signature's proof must verify while the same group holds an \
+             open mint action",
+        );
+        let expected_spent_nullifiers: Vec<_> = expected_unspent_nullifiers
+            .iter()
+            .map(|(nullifier, _)| (nullifier.clone(), true))
+            .collect();
         assert_matches!(
             outcome.result(),
             StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedNullifiers(
@@ -2846,12 +2855,38 @@ mod token_pool_mint_burn_claim_purchase_tests {
             ) => {
                 assert_eq!(*power, 2, "both required signatures are recorded");
                 assert_eq!(*status, GroupActionStatus::ActionClosed);
-                assert!(
-                    statuses.iter().all(|(_, spent)| *spent),
-                    "a closed burn has spent every nullifier it named, got {statuses:?}"
+                assert_eq!(
+                    statuses, &expected_spent_nullifiers,
+                    "a closed burn must report every requested nullifier as spent"
                 );
             },
             "the closing signature must still be reported as a group action over the pool"
+        );
+
+        let (_root_hash, outcome) = verify(&mint_proposal).expect(
+            "the still-open mint proposal's proof must verify while the same group holds a \
+             closed burn action",
+        );
+        assert_matches!(
+            outcome.result(),
+            StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedPoolBalance(
+                power,
+                status,
+                balance,
+            ) => {
+                assert_eq!(*power, 1, "only the proposer's signature is recorded for the mint");
+                assert_eq!(*status, GroupActionStatus::ActionActive);
+                assert_eq!(
+                    *balance,
+                    Some(10_000 - burn_amount),
+                    "the pending mint must report the pool balance left by the completed burn"
+                );
+            },
+            "the pending mint must remain an active group action after another action closes"
+        );
+        assert!(
+            outcome.is_execution_proved(),
+            "the mint proposal's recorded signature remains proved after the burn closes"
         );
     }
 

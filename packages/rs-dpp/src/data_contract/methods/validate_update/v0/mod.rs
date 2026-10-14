@@ -574,10 +574,11 @@ mod tests {
                 has_shielded_pool: _,
                 minimum_pool_notes_for_outgoing: _,
                 minimum_pool_notes_for_outgoing_change_rules: _,
+                transferable: _,
             } = original;
 
             type Change = fn(&mut TokenConfigurationV1);
-            let changes: [(&str, Change); 3] = [
+            let changes: [(&str, Change); 4] = [
                 ("has_shielded_pool", |v1| v1.has_shielded_pool = false),
                 ("minimum_pool_notes_for_outgoing", |v1| {
                     v1.minimum_pool_notes_for_outgoing = Some(1)
@@ -588,6 +589,7 @@ mod tests {
                             AuthorizedActionTakers::ContractOwner,
                         )
                 }),
+                ("transferable", |v1| v1.transferable = false),
             ];
             for (field, change) in changes {
                 let mut old_data_contract =

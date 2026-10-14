@@ -63,7 +63,7 @@ The owner is the identity that created the document, until a transfer or a purch
 `$ownerId` may be indexed, and several keywords read it, where it usually stands for the writer of the document:
 
 - [`distinctFrom`](distinct-from.md): `"$ownerId"` makes a property differ from the owner.
-- [`propertyConstraints`](property-constraints.md): a rule may compare an identifier property with `$ownerId`.
+- [`propertyConstraints`](property-constraints.md): a rule may compare an identifier property with `$ownerId`, or with `$old.$ownerId`, the owner of the [stored version](property-constraints.md#the-stored-version-old) a write replaces, and a transfer or purchase is judged against such a rule.
 - [References](refers-to.md): a `where` entry, a `findBy` source and `identityProperty` may name it, and [`ownerRefersTo`](owner-refers-to.md) checks the owner itself.
 - [`encryptedFor`](encrypted-for.md): `"recipient": "$ownerId"` marks a message the writer encrypts to themself.
 
@@ -77,7 +77,7 @@ The owner is the identity that created the document, until a transfer or a purch
 | **Since** | protocol version 1 |
 | **Errors** | `InvalidDocumentRevisionError` (40106): a transition whose revision is not the stored one plus one |
 
-A new document has revision 1. Every replace, transfer, price update and purchase raises it by one, and the transition must state the new revision: the stored revision plus one. A transition built against an older copy of the document is refused, rather than silently overwriting a newer one. A moderator's change of the fields a type keeps for its moderators raises it by one too; the moderation transition states no revision, the platform sets it, and an owner's replace built before the change is refused. A type whose documents can never change after creation carries no revision. `$revision` is not one of the system properties an index may name.
+A new document has revision 1. Every replace, transfer, price update and purchase raises it by one, and the transition must state the new revision: the stored revision plus one. A transition built against an older copy of the document is refused, rather than silently overwriting a newer one. A moderator's change of the fields a type keeps for its moderators raises it by one too; the moderation transition states no revision, the platform sets it, and an owner's replace built before the change is refused. A type whose documents can never change after creation carries no revision. `$revision` is not one of the system properties an index may name. A [`propertyConstraints`](property-constraints.md#times-and-heights) rule may read it as an integer, and `$old.$revision`, the revision of the stored version a write replaces; a moderator's restore keeps it.
 
 ## Timestamps
 

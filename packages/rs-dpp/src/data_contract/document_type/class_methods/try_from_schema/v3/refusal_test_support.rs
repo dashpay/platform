@@ -1,8 +1,35 @@
-//! The refusal assertion the parser tests of index keywords share.
+//! What the parser suites share: the refusal assertion of the index keyword
+//! tests, and the value a whole contract is parsed from.
 
 use crate::data_contract::document_type::DocumentType;
 use crate::ProtocolError;
+use platform_value::{platform_value, Value};
 use std::collections::BTreeMap;
+
+/// The id of the contract [`contract_value`] builds.
+pub(super) const CONTRACT_ID: [u8; 32] = [7; 32];
+
+/// A format 1 contract at `version` with `document_schemas`, and the contract's
+/// `$defs` when `schema_defs` is given, owned by `[8; 32]`.
+pub(super) fn contract_value(
+    version: u32,
+    document_schemas: Value,
+    schema_defs: Option<BTreeMap<String, Value>>,
+) -> Value {
+    let mut contract = platform_value!({
+        "$formatVersion": "1",
+        "id": Value::Identifier(CONTRACT_ID),
+        "ownerId": Value::Identifier([8; 32]),
+        "version": version,
+        "documentSchemas": document_schemas,
+    });
+    if let Some(schema_defs) = schema_defs {
+        contract
+            .set_value("schemaDefs", Value::from(schema_defs))
+            .expect("the contract is a map");
+    }
+    contract
+}
 
 /// Asserts `result` refuses the contract with an error naming `fragment`, as
 /// a consensus error: a paid refusal needs the consensus variant, since a bare

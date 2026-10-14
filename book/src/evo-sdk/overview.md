@@ -3,7 +3,7 @@
 The **Evo SDK** (`@dashevo/evo-sdk`) is the primary JavaScript/TypeScript SDK
 for building applications on Dash Platform. It provides a high-level,
 strongly-typed facade over the WebAssembly-based Rust SDK, working in both
-Node.js (≥ 18.18) and modern browsers.
+Node.js (≥ 22) and modern browsers.
 
 > **API reference**: For detailed per-method documentation with interactive
 > examples, see the [Evo SDK Docs](https://dashpay.github.io/evo-sdk-website/docs.html).

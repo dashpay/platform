@@ -5,7 +5,7 @@
 
 use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
-use dash_sdk::dpp::dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+use dash_sdk::dpp::dashcore::secp256k1::{PublicKey, SecretKey};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
@@ -215,9 +215,7 @@ impl WasmSdk {
 
         // A private key that is not the sender key's would write a message nobody can read
         let sender_public_key = secp256k1_public_key(&sender_key, "senderKey")?;
-        if PublicKey::from_secret_key(&Secp256k1::signing_only(), &sender_private_key)
-            != sender_public_key
-        {
+        if PublicKey::from_secret_key(&sender_private_key) != sender_public_key {
             return Err(WasmSdkError::invalid_argument(
                 "senderPrivateKey is not the private half of senderKey",
             ));

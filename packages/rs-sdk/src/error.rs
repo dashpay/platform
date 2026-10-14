@@ -38,7 +38,7 @@ pub enum Error {
     Protocol(#[from] ProtocolError),
     /// Proof verification error
     #[error("Proof verification error: {0}")]
-    Proof(#[from] drive_proof_verifier::Error),
+    Proof(#[source] drive_proof_verifier::Error),
     /// Invalid Proved Response error
     #[error("Invalid Proved Response error: {0}")]
     InvalidProvedResponse(String),
@@ -136,6 +136,40 @@ pub enum Error {
     /// A property declared `encryptedFor` could not be encrypted or decrypted
     #[error(transparent)]
     EncryptedFor(#[from] EncryptedForError),
+}
+
+impl Error {
+    /// Whether this error is a trusted quorum-source failure, looking through
+    /// nested retry-exhaustion wrappers. This is distinct from
+    /// [`CanRetry::can_retry`] and does not affect node-ban attribution.
+    pub fn is_quorum_source_unavailable(&self) -> bool {
+        match self {
+            Self::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(_)) => true,
+            Self::NoAvailableAddressesToRetry(last_error) => {
+                last_error.is_quorum_source_unavailable()
+            }
+            _ => false,
+        }
+    }
+}
+
+/// A trusted source outage is not the responding node's fault. Preserve that
+/// attribution and quorum context; every other verifier failure stays `Proof`.
+impl From<drive_proof_verifier::Error> for Error {
+    fn from(value: drive_proof_verifier::Error) -> Self {
+        match value {
+            drive_proof_verifier::Error::QuorumKeyUnavailable {
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+                error: ContextProviderError::QuorumSourceUnavailable(reason),
+            } => Self::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(format!(
+                "quorum {quorum_type}:{} at Core chain-locked height {core_chain_locked_height}: {reason}",
+                hex::encode(quorum_hash)
+            ))),
+            error => Self::Proof(error),
+        }
+    }
 }
 
 impl From<dash_platform_queries::Error> for Error {
@@ -420,6 +454,30 @@ pub enum StaleNodeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only the typed source failure, including nested retry exhaustion,
+    /// receives source attribution; sibling variants and messages do not.
+    #[test]
+    fn should_identify_only_typed_quorum_source_failures_through_retry_exhaustion() {
+        let mut source = Error::ContextProviderError(
+            ContextProviderError::QuorumSourceUnavailable("offline".to_string()),
+        );
+        assert!(source.is_quorum_source_unavailable());
+        for _ in 0..2 {
+            source = Error::NoAvailableAddressesToRetry(Box::new(source));
+            assert!(source.is_quorum_source_unavailable());
+        }
+        for unrelated in [
+            Error::ContextProviderError(ContextProviderError::InvalidQuorum(
+                "quorum source unavailable".to_string(),
+            )),
+            Error::Generic("QuorumSourceUnavailable: quorum source unavailable".to_string()),
+        ] {
+            assert!(!unrelated.is_quorum_source_unavailable());
+            let wrapped = Error::NoAvailableAddressesToRetry(Box::new(unrelated));
+            assert!(!wrapped.is_quorum_source_unavailable());
+        }
+    }
 
     mod from_dapi_client_error {
         use super::*;
