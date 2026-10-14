@@ -3,7 +3,6 @@ import { spawn } from 'child_process';
 import { expect } from 'chai';
 import tenderdashSeeds from '../../../../configs/defaults/tenderdashSeeds.js';
 import seedSetHash from '../../../../src/tenderdash/seedSetHash.js';
-import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
 import renderServiceTemplatesFactory from '../../../../src/templates/renderServiceTemplatesFactory.js';
 import renderTemplateFactory from '../../../../src/templates/renderTemplateFactory.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
@@ -294,7 +293,10 @@ describe('ConfigFileJsonRepository', () => {
       expect(reread.getConfig('base').get('description')).to.equal('second');
     });
 
-    it('should save and render the same identity only for changed fullnodes', () => {
+    it('should store a changed fullnode without generating a node identity', () => {
+      // A node's private key comes from the command that needs it. Saving
+      // must not invent one - every incidental save, and the rescue copy
+      // written after losing the lock, would otherwise carry a fresh key.
       const repository = new ConfigFileJsonRepository(
         identityMigration,
         homeDir,
@@ -302,23 +304,15 @@ describe('ConfigFileJsonRepository', () => {
         CURRENT_FORMAT_VERSION,
       );
       const configFile = createDefaults();
-      for (const name of ['node1', 'untouched']) {
-        configFile.createConfig(name, 'base');
-        configFile.getConfig(name).set('core.masternode.enable', false);
-      }
-      configFile.getConfig('untouched').markAsSaved();
+      configFile.createConfig('node1', 'base');
+      configFile.getConfig('node1').set('core.masternode.enable', false);
 
       repository.write(configFile);
 
       const saved = JSON.parse(fs.readFileSync(configFilePath, 'utf8'));
-      const identity = saved.configs.node1.platform.drive.tenderdash.node;
-      expect(identity.id).to.equal(deriveTenderdashNodeId(identity.key));
-      expect(saved.configs.untouched.platform.drive.tenderdash.node.key).to.equal(null);
-      expect(saved.configs.base.platform.drive.tenderdash.node.key).to.equal(null);
-      expect(configFile.getConfig('node1').isChanged()).to.be.true();
-      const rendered = renderServiceTemplatesFactory(renderTemplateFactory())(configFile.getConfig('node1'));
-      expect(JSON.parse(rendered['platform/drive/tenderdash/node_key.json']).priv_key.value)
-        .to.equal(identity.key);
+      expect(saved.configs.node1.platform.drive.tenderdash.node)
+        .to.deep.equal({ id: null, key: null });
+      expect(configFile.getConfig('node1').get('platform.drive.tenderdash.node.key')).to.equal(null);
     });
   });
 

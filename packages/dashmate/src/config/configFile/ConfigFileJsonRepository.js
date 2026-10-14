@@ -6,7 +6,6 @@ import lockfile from 'proper-lockfile';
 import semver from 'semver';
 import writeFileAtomic from 'write-file-atomic';
 import getDefaultSeedUpdates from '../../tenderdash/getDefaultSeedUpdates.js';
-import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js';
 import Config from '../Config.js';
 import { PACKAGE_ROOT_DIR } from '../../constants.js';
 import ConfigFileNotFoundError from '../errors/ConfigFileNotFoundError.js';
@@ -465,12 +464,6 @@ export default class ConfigFileJsonRepository {
    * @param {ConfigFile} configFile
    */
   #save(configFile) {
-    // Persist the identity before rendering. Only changed configs will have
-    // their service files rendered; leave untouched configs' identities alone.
-    configFile.getAllConfigs()
-      .filter((config) => config.isChanged())
-      .forEach(ensureTenderdashNodeKey);
-
     const configFileJSON = `${JSON.stringify(configFile.toObject(), undefined, 2)}\n`;
 
     if (this.#compromised) {
