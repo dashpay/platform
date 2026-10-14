@@ -78,6 +78,21 @@ interface WalletDao {
     )
     suspend fun advanceChainLockHeight(walletId: ByteArray, height: Int, nowMillis: Long): Int
 
+    /**
+     * Lower the stored synced height to [height] when it is above it — a
+     * chain truncation at [height]. Never raises it, and a narrow column
+     * write for the same reason as [advanceChainLockHeight].
+     *
+     * @param nowMillis epoch millis for the `lastUpdated` stamp.
+     * @return number of rows updated (0 when the wallet row is gone or its
+     *   height is already at or below [height]).
+     */
+    @Query(
+        "UPDATE wallets SET syncedHeight = :height, lastUpdated = :nowMillis " +
+            "WHERE walletId = :walletId AND syncedHeight > :height"
+    )
+    suspend fun lowerSyncedHeight(walletId: ByteArray, height: Int, nowMillis: Long): Int
+
     @Delete
     suspend fun delete(wallet: WalletEntity)
 

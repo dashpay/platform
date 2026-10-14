@@ -11,8 +11,9 @@ use crate::persistence::{
     FFIPersister, FreeTrackedMasternodesFn, LoadIdentityBalanceBlockTimeFn,
     LoadTrackedMasternodesFn, PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
-    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn, PersistenceCallbacks,
-    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    PersistWalletChangesetSweepsFn, PersistWalletChangesetTruncationsFn,
+    PersistWalletChangesetUtxoVerdictsFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
@@ -276,6 +277,10 @@ unsafe fn persistence_extension_callbacks(
         load_identity_balance_block_time: slot!(
             on_load_identity_balance_block_time_fn,
             LoadIdentityBalanceBlockTimeFn
+        ),
+        wallet_changeset_truncations: slot!(
+            on_persist_wallet_changeset_truncations_fn,
+            PersistWalletChangesetTruncationsFn
         ),
     }
 }
@@ -1306,6 +1311,36 @@ mod tests {
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
         assert!(parsed.persist_identity_balance_block_time.is_none());
         assert!(parsed.load_identity_balance_block_time.is_none());
+    }
+
+    /// A host whose `struct_size` stops before the truncations slot keeps
+    /// its earlier slots and never has this one read.
+    #[test]
+    fn should_read_the_truncations_slot_only_from_an_extension_that_covers_it() {
+        unsafe extern "C" fn persist_truncations(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const crate::core_wallet_types::ChainTruncationFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        let slot_offset = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_wallet_changeset_truncations_fn
+        );
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_wallet_changeset_sweeps_fn: Some(persist_wallet_changeset_sweeps),
+            on_persist_wallet_changeset_truncations_fn: Some(persist_truncations),
+            ..Default::default()
+        };
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.wallet_changeset_truncations.is_some());
+
+        ext.struct_size = slot_offset;
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.wallet_changeset_sweeps.is_some());
+        assert!(parsed.wallet_changeset_truncations.is_none());
     }
 
     /// A host whose `struct_size` stops right after the chainlock-height

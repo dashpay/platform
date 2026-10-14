@@ -67,6 +67,10 @@ final class InvitationPersistenceTests: XCTestCase {
             // `PersistentDashpayPayment` rows, so the sweep's Failed flip
             // may ride this store's rounds — genuinely attested.
             | PlatformWalletPersistenceCapabilities.dashpayPayments
+            // Chain truncations: the handler wires
+            // `on_persist_wallet_changeset_truncations_fn` and cuts the
+            // mirror back in the round that carries them.
+            | PlatformWalletPersistenceCapabilities.coreChainTruncation
 
         XCTAssertEqual(
             capabilities.version,

@@ -598,6 +598,28 @@ impl WalletGeneration {
         }
     }
 
+    /// Fence every coin in `outpoints` that a chain truncation handed back.
+    ///
+    /// The transaction that spent such a coin was mined once. The wallet has
+    /// dropped its record, but the network still relays it and will normally
+    /// mine it again, so a new spend of the coin would conflict with a
+    /// transaction on the wire. The pending-spend phase therefore opens again
+    /// and ends the way it always does: when the spend is observed. This
+    /// holds for coins this generation never dispatched too — a spend made
+    /// by another instance of the same wallet comes back identically.
+    ///
+    /// The cost: when the undone spend is never mined again, nothing reports
+    /// the coin spent, and a send that selects it fails with the in-broadcast
+    /// conflict until the wallet is restarted.
+    pub(crate) fn fence_restored(&self, outpoints: impl IntoIterator<Item = OutPoint>) {
+        let mut pinned = self.in_broadcast_lock();
+        for outpoint in outpoints {
+            let fence = pinned.entry(outpoint).or_default();
+            fence.observed_spent = false;
+            fence.pending = true;
+        }
+    }
+
     /// End one dispatch's hold on `outpoints` — the [`InBroadcastPin`] release
     /// half of [`pin_in_broadcast`](Self::pin_in_broadcast).
     ///

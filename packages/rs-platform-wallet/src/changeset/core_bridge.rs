@@ -59,8 +59,9 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{
-    coalesce_account_records, merge_payment_overlays, AssetLockChangeSet, CoreChangeSet,
-    HighestUsedIndexes, PaymentOverlay, PlatformWalletChangeSet, SweepBatch, UtxoCreditVerdict,
+    coalesce_account_records, merge_payment_overlays, AssetLockChangeSet, ChainTruncation,
+    CoreChangeSet, HighestUsedIndexes, PaymentOverlay, PlatformWalletChangeSet, SweepBatch,
+    UtxoCreditVerdict,
 };
 use crate::changeset::merge::Merge;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
@@ -136,6 +137,17 @@ struct AdapterFaultState {
     /// Set by a `store()` rejection, or by the panic-recovery branch for a
     /// wallet whose commit outcome is unknown: freezes only the named wallets.
     per_wallet: HashMap<WalletId, bool>,
+    /// Truncations a `store()` rejected and did not keep, per wallet. The
+    /// fork is reported once and no rescan repeats it, so they lead that
+    /// wallet's next round until a store accepts them. Session-scoped: a
+    /// restart before that round loses them.
+    unapplied_truncations: HashMap<WalletId, Vec<ChainTruncation>>,
+    /// Sent-payment rows a truncation returned to pending in a round a
+    /// `store()` rejected, per wallet. That verdict is decided once, with
+    /// the fork, so the rows are laid under that wallet's next round until
+    /// a store accepts them or refuses them for good on a retry.
+    /// Session-scoped, like the truncations.
+    unstored_reversals: HashMap<WalletId, PaymentOverlay>,
 }
 
 impl AdapterFaultState {
@@ -729,9 +741,44 @@ fn commit_wallet<P>(
     let WalletBatch {
         mut core,
         asset_locks,
-        payments,
+        mut payments,
     } = wallet_batch;
     {
+        // Under this round's own rows: a verdict reached since is the newer.
+        let fresh_reversals = returned_to_pending(Some(&payments));
+        if let Some(mut owed) = fault.unstored_reversals.remove(&wallet_id) {
+            merge_payment_overlays(&mut owed, payments);
+            payments = owed;
+        }
+        // A truncation this wallet's store rejected goes first: everything
+        // folded since describes the wallet after it.
+        if let Some(unapplied) = fault.unapplied_truncations.remove(&wallet_id) {
+            let mut owed = CoreChangeSet {
+                truncations: unapplied,
+                ..CoreChangeSet::default()
+            };
+            owed.merge(core);
+            core = owed;
+        }
+        // Withheld, not faulted: see `CORE_CHAIN_TRUNCATION` for why freezing
+        // the watermark, as the sweep gate below does, would recover nothing.
+        // The merge has already rewritten the rest of the round as the
+        // truncation left it, so that part is still correct to store.
+        if !core.truncations.is_empty()
+            && !persister
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::CORE_CHAIN_TRUNCATION)
+        {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_id),
+                truncations = core.truncations.len(),
+                fork_height = core.truncations.iter().map(|t| t.height).min(),
+                "Persister does not advertise CORE_CHAIN_TRUNCATION; withholding this round's \
+                 chain truncation. Stored wallet state keeps the replaced branch above the fork \
+                 height until the host rescans."
+            );
+            core.truncations.clear();
+        }
         // Sent-payment verdicts reach a host only through the payment-overlay
         // slot, which a persister advertises with `DASHPAY_PAYMENTS`. A host
         // without it would take the round, return `Ok`, and drop the verdict
@@ -847,7 +894,49 @@ fn commit_wallet<P>(
             dashpay_payments_overlay: payments,
             ..PlatformWalletChangeSet::default()
         };
+        let offered_truncations = cs
+            .core
+            .as_ref()
+            .map(|core| core.truncations.clone())
+            .unwrap_or_default();
+        let offered_reversals = returned_to_pending(cs.dashpay_payments_overlay.as_ref());
         let store_result = persister.store(wallet_id, cs);
+        if let Err(error) = &store_result {
+            // A backend that kept the failed round for its own retry still
+            // holds the truncation. A second copy would land after what that
+            // round stores behind it, and cut that away.
+            //
+            // Any other failure sets the truncation aside, a round whose
+            // outcome the backend could not vouch for included. Applied over
+            // a round that did land in part, it takes away only what that
+            // round stored above the fork — rows this rejection already
+            // counts as unstored — and it lowers the stored height to the
+            // fork, where the frozen watermark keeps it, so the next start
+            // scans them back in. Withholding it would leave the replaced
+            // branch in the store for good.
+            let kept_by_backend =
+                error.is_transient() && !persister.store_transient_is_reissuable();
+            if !offered_truncations.is_empty() && !kept_by_backend {
+                fault
+                    .unapplied_truncations
+                    .insert(wallet_id, offered_truncations);
+            }
+            // Whole rows, so a copy the backend also kept changes nothing:
+            // these are set aside on every failure. One that is not transient
+            // keeps only the rows this round reported itself: a row carried
+            // from an earlier round may never be taken — its identity
+            // removed, say — and would fail every later round of the wallet.
+            if !offered_reversals.is_empty() {
+                let owed = if error.is_transient() {
+                    offered_reversals
+                } else {
+                    fresh_reversals
+                };
+                if !owed.is_empty() {
+                    fault.unstored_reversals.insert(wallet_id, owed);
+                }
+            }
+        }
         // Recorded only once the store has RETURNED, and whether it accepted
         // or rejected — both are answers. A wallet whose store panicked never
         // reaches this line, and one the loop never got to is never pushed at
@@ -1187,7 +1276,20 @@ async fn build_core_changeset(
                 collect_usage_deltas(wallet_manager, wallet_id, vec![&**record]).await;
             let mut folded = owned.clone();
             crate::changeset::changeset::fold_same_txid_records(&mut folded);
+            // A lock that arrives with the transaction lives only in the
+            // record's context, which mining replaces. Stored on its own it
+            // survives that, so a truncation returning the transaction to
+            // the mempool leaves its outputs InstantSend-locked in the store
+            // as it does in the wallet. Read from the event, not the
+            // snapshot above, which may already be past that truncation.
+            let instant_locks_for_non_final_records = match &record.context {
+                TransactionContext::InstantSend(lock) => {
+                    BTreeMap::from([(record.txid, lock.clone())])
+                }
+                _ => BTreeMap::new(),
+            };
             CoreChangeSet {
+                instant_locks_for_non_final_records,
                 // New UTXOs from the owned slices only (a watch-only
                 // chain's outputs are the contact's coins); spends
                 // from ALL slices, so a contact spending an output a
@@ -1351,20 +1453,25 @@ async fn build_core_changeset(
             restored_outpoints,
             ..
         } => {
-            // TODO(#5380): mirror the truncation to the persister. The wallet
-            // has already dropped these records in memory, but `CoreChangeSet`
-            // cannot express it: the heights are monotonic-max on merge, a
-            // `SweepBatch` needs a winning transaction, and nothing demotes a
-            // confirmed record to unconfirmed. Until it can, the stored rows
-            // and the stored sync height stay as they were before the fork.
-            tracing::warn!(
+            // The wallet has already dropped these records. Every other arm
+            // only appends or raises, so without this one the store keeps
+            // the replaced branch and a height above the fork.
+            tracing::info!(
                 height,
                 removed = txids.len(),
                 unconfirmed = unconfirmed_txids.len(),
                 restored = restored_outpoints.len(),
-                "Chain truncation is not mirrored to the persister; stored wallet state keeps the replaced branch"
+                "Mirroring a chain truncation to the persister"
             );
-            CoreChangeSet::default()
+            CoreChangeSet {
+                truncations: vec![ChainTruncation {
+                    height: *height,
+                    txids: txids.clone(),
+                    unconfirmed_txids: unconfirmed_txids.clone(),
+                    restored_outpoints: restored_outpoints.clone(),
+                }],
+                ..CoreChangeSet::default()
+            }
         }
         WalletEvent::SyncHeightAdvanced { height, .. } => CoreChangeSet {
             synced_height: Some(*height),
@@ -1419,6 +1526,9 @@ enum SentPaymentEvidence {
     /// The transaction reached a context that is final for DashPay display —
     /// mined, or InstantSend-locked.
     Final,
+    /// A fork dropped the block that held the transaction and no InstantSend
+    /// lock covers it: unconfirmed again, and free to be mined again.
+    Unmined,
 }
 
 /// The complete set of legal `Sent` payment transitions, and the only place a
@@ -1430,10 +1540,13 @@ enum SentPaymentEvidence {
 /// | `Confirmed` | `Swept`  | `Failed`    | An IS-locked payment evicted by a chainlocked winner is a dead payment reported as good — the worst of the two. |
 /// | `Pending`   | `Final`  | `Confirmed` | The ordinary confirm: mempool → mined / IS-locked.                                    |
 /// | `Failed`    | `Final`  | `Confirmed` | A chainlock can reinstate a transaction a sweep removed; without this edge the repair is unreachable. |
+/// | `Confirmed` | `Unmined`| `Pending`   | The block that confirmed it is gone; the block that mines it again takes the ordinary confirm.          |
 ///
-/// The two remaining pairs — `Failed` + `Swept` and `Confirmed` + `Final` —
-/// return `None`: the entry already carries that verdict, so re-emitting it
-/// would put an unchanged row on the store round for every re-detection.
+/// `Failed` + `Swept` and `Confirmed` + `Final` return `None`: the entry
+/// already carries that verdict, so re-emitting it would put an unchanged row
+/// on the store round for every re-detection. So does `Pending` + `Unmined`.
+/// `Failed` + `Unmined` returns `None` because a truncation does not bring a
+/// swept transaction back.
 ///
 /// Exhaustive on purpose (no `_` arm): a future [`PaymentStatus`] variant must
 /// fail to compile here and be given an explicit edge, rather than be silently
@@ -1442,7 +1555,7 @@ fn next_sent_payment_status(
     current: PaymentStatus,
     evidence: SentPaymentEvidence,
 ) -> Option<PaymentStatus> {
-    use SentPaymentEvidence::{Final, Swept};
+    use SentPaymentEvidence::{Final, Swept, Unmined};
     match (current, evidence) {
         (PaymentStatus::Pending, Swept) => Some(PaymentStatus::Failed),
         (PaymentStatus::Confirmed, Swept) => Some(PaymentStatus::Failed),
@@ -1450,6 +1563,9 @@ fn next_sent_payment_status(
         (PaymentStatus::Pending, Final) => Some(PaymentStatus::Confirmed),
         (PaymentStatus::Failed, Final) => Some(PaymentStatus::Confirmed),
         (PaymentStatus::Confirmed, Final) => None,
+        (PaymentStatus::Confirmed, Unmined) => Some(PaymentStatus::Pending),
+        (PaymentStatus::Pending, Unmined) => None,
+        (PaymentStatus::Failed, Unmined) => None,
     }
 }
 
@@ -1493,11 +1609,15 @@ fn sent_payment_evidence(event: &WalletEvent) -> Vec<(String, SentPaymentEvidenc
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => finality(inserted.iter().chain(updated.iter())),
-        // TODO(#5380): a payment whose confirmation a truncation undid keeps
-        // the verdict it already has.
-        WalletEvent::SyncHeightAdvanced { .. }
-        | WalletEvent::ChainLockProcessed { .. }
-        | WalletEvent::ChainTruncated { .. } => Vec::new(),
+        // `unconfirmed_txids` are left out: they stay InstantSend-locked,
+        // which is still final for DashPay display.
+        WalletEvent::ChainTruncated { txids, .. } => txids
+            .iter()
+            .map(|txid| (txid.to_string(), SentPaymentEvidence::Unmined))
+            .collect(),
+        WalletEvent::SyncHeightAdvanced { .. } | WalletEvent::ChainLockProcessed { .. } => {
+            Vec::new()
+        }
     }
 }
 
@@ -1539,6 +1659,13 @@ fn sent_payment_evidence(event: &WalletEvent) -> Vec<(String, SentPaymentEvidenc
 /// the sweep from the frozen watermark, which re-derives the verdict. A
 /// rollback ledger would only defend a divergence that cannot outlive the
 /// session that caused it.
+///
+/// The exception is a payment a truncation returned to pending: no scan
+/// reports the fork again, so nothing re-derives that verdict. Those rows are
+/// offered again with the wallet's next round, as the truncation is (see
+/// [`returned_to_pending`]). The list is held in memory only; a restart
+/// before a store accepts them leaves the stored payment confirmed, and so
+/// does a second refusal that is not transient.
 pub(crate) async fn sent_payment_verdicts(
     wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     event: &WalletEvent,
@@ -1617,6 +1744,23 @@ pub(crate) async fn sent_payment_verdicts(
         }
     }
     overlay
+}
+
+/// The rows of `overlay` a truncation returned to pending. `Pending` is the
+/// status only that verdict writes (see [`next_sent_payment_status`]), so the
+/// status alone picks them out.
+fn returned_to_pending(overlay: Option<&PaymentOverlay>) -> PaymentOverlay {
+    let mut rows = PaymentOverlay::default();
+    for (owner, payments) in overlay.into_iter().flatten() {
+        for (txid, entry) in payments {
+            if entry.status == PaymentStatus::Pending {
+                rows.entry(*owner)
+                    .or_default()
+                    .insert(txid.clone(), entry.clone());
+            }
+        }
+    }
+    rows
 }
 
 /// The status `entry` moves to under `evidence`, or `None` if it does not
@@ -2196,6 +2340,7 @@ impl CoreChangeSet {
         self.records.is_empty()
             && self.account_records.is_empty()
             && self.sweeps.is_empty()
+            && self.truncations.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
@@ -2289,24 +2434,36 @@ mod swept_transaction_projection_tests {
         }
     }
 
-    /// Pins the gap tracked in #5380: a truncation reaches the bridge but
-    /// produces no persistable change, least of all a sweep (it has no
-    /// winning transaction) or a height (heights only move up on merge).
+    /// A truncation carries txids and outpoints but no records, so like a
+    /// sweep it has to reach the persister on the strength of those alone.
     #[tokio::test]
-    async fn should_persist_nothing_for_a_chain_truncation() {
+    async fn should_mirror_a_chain_truncation_to_the_persister() {
         let event = WalletEvent::ChainTruncated {
             wallet_id: WALLET_ID,
             height: WINNER_HEIGHT,
             txids: vec![txid(1)],
             unconfirmed_txids: vec![txid(2)],
-            restored_outpoints: Vec::new(),
+            restored_outpoints: vec![outpoint(3, 0)],
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
         };
 
         let cs = build_core_changeset(&test_manager(), &event).await;
 
-        assert!(cs.is_empty(), "a truncation is not mirrored yet");
+        assert_eq!(
+            cs.truncations,
+            vec![ChainTruncation {
+                height: WINNER_HEIGHT,
+                txids: vec![txid(1)],
+                unconfirmed_txids: vec![txid(2)],
+                restored_outpoints: vec![outpoint(3, 0)],
+            }]
+        );
+        assert!(cs.sweeps.is_empty(), "a truncation has no winner to name");
+        assert!(
+            !cs.is_empty_no_records(),
+            "the adapter must not skip the round"
+        );
     }
 
     #[tokio::test]
@@ -2860,12 +3017,90 @@ mod sent_payment_verdict_tests {
         );
     }
 
+    /// A truncation dropping the block of `removed`, keeping `unconfirmed`
+    /// as InstantSend-locked mempool transactions.
+    fn truncation_of(
+        wallet_id: WalletId,
+        removed: Vec<Txid>,
+        unconfirmed: Vec<Txid>,
+    ) -> WalletEvent {
+        WalletEvent::ChainTruncated {
+            wallet_id,
+            height: 1_499_000,
+            txids: removed,
+            unconfirmed_txids: unconfirmed,
+            restored_outpoints: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        }
+    }
+
+    /// A payment shown `Confirmed` on the strength of a block the chain no
+    /// longer has is not confirmed. It is not dead either — the transaction
+    /// can be mined again — so it goes back to `Pending`, and the block that
+    /// mines it again confirms it through the ordinary edge.
+    #[tokio::test]
+    async fn should_return_a_confirmed_sent_payment_to_pending_when_its_block_is_dropped() {
+        let (wallet_manager, wallet_id, txid) =
+            wallet_with_payment(PaymentDirection::Sent, PaymentStatus::Confirmed).await;
+        let event = truncation_of(wallet_id, vec![sent_transaction().txid()], Vec::new());
+
+        let overlay = sent_payment_verdicts(&wallet_manager, &event).await;
+
+        assert_eq!(only_row(&overlay, &txid).status, PaymentStatus::Pending);
+        assert_eq!(
+            stored_status(&wallet_manager, &wallet_id, &txid).await,
+            PaymentStatus::Pending
+        );
+
+        let mined_again =
+            sent_payment_verdicts(&wallet_manager, &chainlocked_reinstatement(wallet_id)).await;
+        assert_eq!(
+            only_row(&mined_again, &txid).status,
+            PaymentStatus::Confirmed
+        );
+    }
+
+    /// An InstantSend lock outlives the block: a kept transaction is still
+    /// final for DashPay display, so its payment does not move.
+    #[tokio::test]
+    async fn should_keep_a_sent_payment_confirmed_when_its_dropped_block_left_it_instant_locked() {
+        let (wallet_manager, wallet_id, txid) =
+            wallet_with_payment(PaymentDirection::Sent, PaymentStatus::Confirmed).await;
+        let event = truncation_of(wallet_id, Vec::new(), vec![sent_transaction().txid()]);
+
+        let overlay = sent_payment_verdicts(&wallet_manager, &event).await;
+
+        assert!(overlay.is_empty());
+        assert_eq!(
+            stored_status(&wallet_manager, &wallet_id, &txid).await,
+            PaymentStatus::Confirmed
+        );
+    }
+
+    /// A sweep's verdict stands through a truncation: the wallet does not
+    /// bring a swept transaction back when the block of its winner goes.
+    #[tokio::test]
+    async fn should_keep_a_failed_sent_payment_failed_when_a_block_is_dropped() {
+        let (wallet_manager, wallet_id, txid) =
+            wallet_with_payment(PaymentDirection::Sent, PaymentStatus::Failed).await;
+        let event = truncation_of(wallet_id, vec![sent_transaction().txid()], Vec::new());
+
+        let overlay = sent_payment_verdicts(&wallet_manager, &event).await;
+
+        assert!(overlay.is_empty());
+        assert_eq!(
+            stored_status(&wallet_manager, &wallet_id, &txid).await,
+            PaymentStatus::Failed
+        );
+    }
+
     /// The transition table, enumerated. Written out rather than derived so
     /// that adding an edge means editing this list — the point of the table
     /// is that every edge was chosen, not inferred.
     #[test]
-    fn the_transition_table_admits_exactly_the_four_intended_edges() {
-        use SentPaymentEvidence::{Final, Swept};
+    fn the_transition_table_admits_exactly_the_five_intended_edges() {
+        use SentPaymentEvidence::{Final, Swept, Unmined};
         let expected = [
             ((PaymentStatus::Pending, Swept), Some(PaymentStatus::Failed)),
             (
@@ -2882,6 +3117,12 @@ mod sent_payment_verdict_tests {
                 Some(PaymentStatus::Confirmed),
             ),
             ((PaymentStatus::Confirmed, Final), None),
+            (
+                (PaymentStatus::Confirmed, Unmined),
+                Some(PaymentStatus::Pending),
+            ),
+            ((PaymentStatus::Pending, Unmined), None),
+            ((PaymentStatus::Failed, Unmined), None),
         ];
         for ((from, evidence), to) in expected {
             assert_eq!(
@@ -2892,8 +3133,8 @@ mod sent_payment_verdict_tests {
         }
         assert_eq!(
             expected.iter().filter(|(_, to)| to.is_some()).count(),
-            4,
-            "four edges move an entry; the other two are no-ops"
+            5,
+            "five edges move an entry; the other four are no-ops"
         );
     }
 
@@ -4888,6 +5129,8 @@ mod tests {
         /// must be coupled to, since the sweep never re-emits once its round
         /// is durable.
         n_sweeps: usize,
+        /// Chain truncations the round carries, verbatim.
+        truncations: Vec<super::ChainTruncation>,
         /// The round's `dashpay_payments_overlay` verbatim — `None` when the
         /// round carried none, which is also what a payments-blind persister
         /// must see after the capability gate has withheld one.
@@ -4910,6 +5153,10 @@ mod tests {
     struct ProbePersister {
         obs: UnboundedSender<StoreObserved>,
         fail_once: Mutex<HashSet<WalletId>>,
+        /// Wallets whose NEXT `store()` fails as `Transient`. The probe does
+        /// not attest `store_transient_is_reissuable`, so this is a backend
+        /// that kept the failed round for its own retry.
+        fail_transiently_once: Mutex<HashSet<WalletId>>,
         /// Wallets whose NEXT `store()` panics instead of returning. Models a
         /// backend that dies mid-write — which surfaces as a `JoinError`
         /// instead of unwinding the whole adapter task.
@@ -4929,6 +5176,7 @@ mod tests {
             Self {
                 obs,
                 fail_once: Mutex::new(HashSet::new()),
+                fail_transiently_once: Mutex::new(HashSet::new()),
                 panic_once: Mutex::new(HashSet::new()),
                 block_until: Mutex::new(None),
                 blocked: Arc::new(AtomicBool::new(false)),
@@ -4957,6 +5205,9 @@ mod tests {
         fn fail_next(&self, wallet_id: WalletId) {
             self.fail_once.lock().unwrap().insert(wallet_id);
         }
+        fn fail_next_transiently(&self, wallet_id: WalletId) {
+            self.fail_transiently_once.lock().unwrap().insert(wallet_id);
+        }
         fn panic_next(&self, wallet_id: WalletId) {
             self.panic_once.lock().unwrap().insert(wallet_id);
         }
@@ -4984,7 +5235,12 @@ mod tests {
             if self.panic_once.lock().unwrap().remove(&wallet_id) {
                 panic!("probe persister: store panicked for {wallet_id:?}");
             }
-            let rejected = self.fail_once.lock().unwrap().remove(&wallet_id);
+            let kept_for_retry = self
+                .fail_transiently_once
+                .lock()
+                .unwrap()
+                .remove(&wallet_id);
+            let rejected = self.fail_once.lock().unwrap().remove(&wallet_id) || kept_for_retry;
             let _ = self.obs.send(StoreObserved {
                 wallet_id,
                 synced_height: core.and_then(|c| c.synced_height),
@@ -5001,6 +5257,7 @@ mod tests {
                     .map(|a| a.removed.len())
                     .unwrap_or(0),
                 n_sweeps: core.map(|c| c.sweeps.len()).unwrap_or(0),
+                truncations: core.map(|c| c.truncations.clone()).unwrap_or_default(),
                 dashpay_payments: changeset.dashpay_payments_overlay.clone(),
                 dashpay_identity_payments: changeset.identities.as_ref().map(|ids| {
                     ids.identities
@@ -5010,7 +5267,12 @@ mod tests {
                 }),
                 rejected,
             });
-            if rejected {
+            if kept_for_retry {
+                Err(PersistenceError::backend_with_kind(
+                    crate::changeset::traits::PersistenceErrorKind::Transient,
+                    "probe: forced transient store failure",
+                ))
+            } else if rejected {
                 Err(PersistenceError::backend("probe: forced store rejection"))
             } else {
                 Ok(())
@@ -6027,6 +6289,195 @@ mod tests {
         handle.await.unwrap();
     }
 
+    /// Height of the last block the truncations in this module keep.
+    const FORK_HEIGHT: u32 = 30;
+
+    fn truncated_event(wallet_id: WalletId) -> WalletEvent {
+        use dashcore::hashes::Hash as _;
+        WalletEvent::ChainTruncated {
+            wallet_id,
+            height: FORK_HEIGHT,
+            txids: vec![dashcore::Txid::from_byte_array([0x61; 32])],
+            unconfirmed_txids: Vec::new(),
+            restored_outpoints: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        }
+    }
+
+    /// The next round the probe sees, or a failed test instead of a hang.
+    async fn next_store(
+        obs_rx: &mut tokio::sync::mpsc::UnboundedReceiver<StoreObserved>,
+    ) -> StoreObserved {
+        tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv())
+            .await
+            .expect("a round must reach store() within the timeout")
+            .expect("a round must reach store()")
+    }
+
+    /// A persister that never attested `CORE_CHAIN_TRUNCATION` is not handed
+    /// one, and — unlike an unattested sweep — is not faulted for it: nothing
+    /// replays a truncation, so freezing its watermark would recover nothing.
+    #[tokio::test]
+    async fn should_withhold_a_truncation_from_a_persister_that_cannot_apply_it() {
+        let wallet_id = [31u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let sync_fault = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::clone(&sync_fault),
+            cancel.clone(),
+        ));
+
+        tx.send(truncated_event(wallet_id)).unwrap();
+        tx.send(sync_height_event(wallet_id, FORK_HEIGHT + 5))
+            .unwrap();
+        let mut seen = Vec::new();
+        while seen
+            .iter()
+            .all(|round: &StoreObserved| round.synced_height.is_none())
+        {
+            seen.push(next_store(&mut obs_rx).await);
+        }
+
+        assert!(
+            seen.iter().all(|round| round.truncations.is_empty()),
+            "a persister that cannot apply a truncation must not be handed one"
+        );
+        assert_eq!(
+            seen.last().and_then(|round| round.synced_height),
+            Some(FORK_HEIGHT + 5),
+            "the rest of the stream keeps persisting, watermark included"
+        );
+        assert!(!sync_fault.load(Ordering::Relaxed));
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn should_hand_a_truncation_to_a_persister_that_attests_it() {
+        let wallet_id = [32u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_CHAIN_TRUNCATION,
+        ));
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel.clone(),
+        ));
+
+        tx.send(truncated_event(wallet_id)).unwrap();
+        let round = next_store(&mut obs_rx).await;
+
+        assert_eq!(round.truncations.len(), 1);
+        assert_eq!(round.truncations[0].height, FORK_HEIGHT);
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// A rejected round leaves the store on the replaced branch, and no scan
+    /// reports a truncation twice. So the adapter offers it again, ahead of
+    /// whatever the wallet's next round carries, until a store accepts it.
+    #[tokio::test]
+    async fn should_offer_a_rejected_truncation_again_with_the_next_round() {
+        let wallet_id = [33u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_CHAIN_TRUNCATION,
+        ));
+        persister.fail_next(wallet_id);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel.clone(),
+        ));
+
+        tx.send(truncated_event(wallet_id)).unwrap();
+        let rejected = next_store(&mut obs_rx).await;
+        assert!(rejected.rejected);
+        assert_eq!(rejected.truncations.len(), 1);
+
+        tx.send(block_processed_event(wallet_id, FORK_HEIGHT + 1))
+            .unwrap();
+        let retried = next_store(&mut obs_rx).await;
+        assert!(!retried.rejected);
+        assert_eq!(
+            retried.truncations, rejected.truncations,
+            "the unapplied truncation rides the wallet's next round"
+        );
+        assert_eq!(retried.last_processed_height, Some(FORK_HEIGHT + 1));
+
+        tx.send(block_processed_event(wallet_id, FORK_HEIGHT + 2))
+            .unwrap();
+        let after = next_store(&mut obs_rx).await;
+        assert!(
+            after.truncations.is_empty(),
+            "an accepted truncation is not offered a third time"
+        );
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// A backend that fails `Transient` without attesting
+    /// `store_transient_is_reissuable` kept the round and retries it itself.
+    /// A second copy from the adapter would land after what that round
+    /// stored behind the truncation, and cut it away.
+    #[tokio::test]
+    async fn should_not_offer_a_truncation_again_to_a_persister_that_kept_the_failed_round() {
+        let wallet_id = [34u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::CORE_CHAIN_TRUNCATION,
+        ));
+        persister.fail_next_transiently(wallet_id);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            cancel.clone(),
+        ));
+
+        tx.send(truncated_event(wallet_id)).unwrap();
+        let kept = next_store(&mut obs_rx).await;
+        assert!(kept.rejected);
+        assert_eq!(kept.truncations.len(), 1);
+
+        tx.send(block_processed_event(wallet_id, FORK_HEIGHT + 1))
+            .unwrap();
+        let next = next_store(&mut obs_rx).await;
+        assert!(next.truncations.is_empty());
+
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
     /// The positive case for the same gate: a persister that attests
     /// `CORE_SWEEP_REMOVAL` is trusted normally, and the watermark keeps
     /// advancing through a sweep-bearing round exactly as it would through
@@ -6826,6 +7277,337 @@ mod tests {
         );
         assert_eq!(diag.persisted, Some(700));
         assert_eq!(diag.faulted, 0, "a payments-capable host is not a fault");
+    }
+
+    /// A fork is reported once, so the payment it returns to pending is
+    /// decided once. When the store rejects that round the truncation is
+    /// offered again; the payment row has to come with it, or the store
+    /// keeps a confirmed payment for a transaction no block holds.
+    #[test]
+    fn should_offer_the_payment_a_rejected_truncation_returned_to_pending_again() {
+        use crate::changeset::PersistenceCapabilities;
+        use crate::wallet::identity::PaymentStatus;
+        let wallet_id = [0x35u8; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::with_capabilities(
+            obs_tx,
+            PersistenceCapabilities::CORE_CHAIN_TRUNCATION
+                .union(PersistenceCapabilities::DASHPAY_PAYMENTS),
+        );
+        persister.fail_next(wallet_id);
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        let freeze_logged = AtomicBool::new(false);
+        let truncation = super::ChainTruncation {
+            height: 600,
+            txids: Vec::new(),
+            unconfirmed_txids: Vec::new(),
+            restored_outpoints: Vec::new(),
+        };
+
+        let mut rejected_round = BTreeMap::new();
+        rejected_round.insert(
+            wallet_id,
+            WalletBatch {
+                core: CoreChangeSet {
+                    truncations: vec![truncation.clone()],
+                    ..CoreChangeSet::default()
+                },
+                asset_locks: AssetLockChangeSet::default(),
+                payments: one_verdict_overlay(PaymentStatus::Pending),
+            },
+        );
+        commit_batch(
+            &persister,
+            rejected_round,
+            1,
+            &mut fault,
+            &sync_fault,
+            &freeze_logged,
+            &mut Vec::new(),
+        );
+        assert!(
+            obs_rx
+                .try_recv()
+                .expect("the round reaches store()")
+                .rejected
+        );
+
+        commit_batch(
+            &persister,
+            one_wallet_batch(wallet_id, watermark_with_rows(700, 700)),
+            2,
+            &mut fault,
+            &sync_fault,
+            &freeze_logged,
+            &mut Vec::new(),
+        );
+        let retried = obs_rx.try_recv().expect("the next round reaches store()");
+        assert_eq!(retried.truncations, vec![truncation]);
+        assert_eq!(
+            retried.dashpay_payments,
+            Some(one_verdict_overlay(PaymentStatus::Pending)),
+            "the payment the truncation returned to pending rides the retry"
+        );
+
+        commit_batch(
+            &persister,
+            one_wallet_batch(wallet_id, watermark_with_rows(701, 701)),
+            3,
+            &mut fault,
+            &sync_fault,
+            &freeze_logged,
+            &mut Vec::new(),
+        );
+        let after = obs_rx.try_recv().expect("the third round reaches store()");
+        assert_eq!(
+            after.dashpay_payments, None,
+            "a row a store accepted is not offered again"
+        );
+    }
+
+    /// What the store sees on the round after one it rejected, when the
+    /// rejected round carried `rejected` and the next one carries `next`.
+    fn payments_stored_after_a_rejected_round(
+        rejected: super::PaymentOverlay,
+        next: super::PaymentOverlay,
+    ) -> Option<super::PaymentOverlay> {
+        let wallet_id = [0x36u8; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS,
+        );
+        persister.fail_next(wallet_id);
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        let freeze_logged = AtomicBool::new(false);
+
+        for (seq, payments) in [(1, rejected), (2, next)] {
+            let mut batch = BTreeMap::new();
+            batch.insert(
+                wallet_id,
+                WalletBatch {
+                    core: watermark_with_rows(700 + seq as u32, 700 + seq as u32),
+                    asset_locks: AssetLockChangeSet::default(),
+                    payments,
+                },
+            );
+            commit_batch(
+                &persister,
+                batch,
+                seq,
+                &mut fault,
+                &sync_fault,
+                &freeze_logged,
+                &mut Vec::new(),
+            );
+        }
+        assert!(obs_rx.try_recv().expect("the first round").rejected);
+        obs_rx
+            .try_recv()
+            .expect("the second round")
+            .dashpay_payments
+    }
+
+    /// What the store sees over three rounds when the first is refused for
+    /// good and carries a truncation with the payment it returned to
+    /// pending, and the second is refused the way `second` says.
+    fn rounds_after_a_refused_reversal(
+        second: fn(&ProbePersister, WalletId),
+    ) -> Vec<StoreObserved> {
+        use crate::changeset::PersistenceCapabilities;
+        use crate::wallet::identity::PaymentStatus;
+        let wallet_id = [0x37u8; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::with_capabilities(
+            obs_tx,
+            PersistenceCapabilities::CORE_CHAIN_TRUNCATION
+                .union(PersistenceCapabilities::DASHPAY_PAYMENTS),
+        );
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        let freeze_logged = AtomicBool::new(false);
+
+        let mut stored = Vec::new();
+        for seq in 0..3usize {
+            let mut core = watermark_with_rows(700 + seq as u32, 700 + seq as u32);
+            let mut payments = super::PaymentOverlay::default();
+            match seq {
+                0 => {
+                    core.truncations = vec![super::ChainTruncation {
+                        height: 600,
+                        txids: Vec::new(),
+                        unconfirmed_txids: Vec::new(),
+                        restored_outpoints: Vec::new(),
+                    }];
+                    payments = one_verdict_overlay(PaymentStatus::Pending);
+                    persister.fail_next(wallet_id);
+                }
+                1 => second(&persister, wallet_id),
+                _ => {}
+            }
+            let mut batch = BTreeMap::new();
+            batch.insert(
+                wallet_id,
+                WalletBatch {
+                    core,
+                    asset_locks: AssetLockChangeSet::default(),
+                    payments,
+                },
+            );
+            commit_batch(
+                &persister,
+                batch,
+                seq,
+                &mut fault,
+                &sync_fault,
+                &freeze_logged,
+                &mut Vec::new(),
+            );
+            stored.push(obs_rx.try_recv().expect("the round reaches store()"));
+        }
+        assert!(stored[0].rejected && stored[1].rejected);
+        assert_eq!(
+            stored[1].dashpay_payments,
+            Some(one_verdict_overlay(PaymentStatus::Pending)),
+            "the second round carries the row the first one could not store"
+        );
+        stored
+    }
+
+    /// A store can refuse a carried row for good — its identity was removed
+    /// while the row waited. Offered again with every round, the row would
+    /// take each of them down, the truncation with it.
+    #[test]
+    fn should_stop_offering_a_carried_reversal_the_store_refuses_for_good() {
+        let stored = rounds_after_a_refused_reversal(|persister, wallet_id| {
+            persister.fail_next(wallet_id);
+        });
+
+        let third = &stored[2];
+        assert!(!third.rejected, "the round after the refusal goes through");
+        assert_eq!(
+            third.dashpay_payments, None,
+            "a row refused for good is not offered a third time"
+        );
+        assert_eq!(
+            third.truncations, stored[0].truncations,
+            "and the truncation it rode with is applied"
+        );
+    }
+
+    /// The round that gives a carried row up can hold a reversal of its
+    /// own, from a second fork. That one has been refused once, not twice,
+    /// and nothing reports its fork again either.
+    #[test]
+    fn should_keep_a_fresh_reversal_when_a_carried_one_is_given_up() {
+        use crate::wallet::identity::{PaymentEntry, PaymentStatus};
+        let wallet_id = [0x38u8; 32];
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = ProbePersister::with_capabilities(
+            obs_tx,
+            crate::changeset::PersistenceCapabilities::DASHPAY_PAYMENTS,
+        );
+        let sync_fault = AtomicBool::new(false);
+        let mut fault = AdapterFaultState::default();
+        let freeze_logged = AtomicBool::new(false);
+        let fresh = super::PaymentOverlay::from([(
+            Identifier::from([0xCC; 32]),
+            BTreeMap::from([(
+                "cafe".to_string(),
+                PaymentEntry::new_sent(Identifier::from([0xDD; 32]), 70_000, None),
+            )]),
+        )]);
+
+        let rounds = [
+            (one_verdict_overlay(PaymentStatus::Pending), true),
+            (fresh.clone(), true),
+            (super::PaymentOverlay::default(), false),
+        ];
+        let mut stored = Vec::new();
+        for (seq, (payments, refused)) in rounds.into_iter().enumerate() {
+            if refused {
+                persister.fail_next(wallet_id);
+            }
+            let mut batch = BTreeMap::new();
+            batch.insert(
+                wallet_id,
+                WalletBatch {
+                    core: watermark_with_rows(700 + seq as u32, 700 + seq as u32),
+                    asset_locks: AssetLockChangeSet::default(),
+                    payments,
+                },
+            );
+            commit_batch(
+                &persister,
+                batch,
+                seq,
+                &mut fault,
+                &sync_fault,
+                &freeze_logged,
+                &mut Vec::new(),
+            );
+            stored.push(obs_rx.try_recv().expect("the round reaches store()"));
+        }
+
+        assert_eq!(
+            stored[1].dashpay_payments.as_ref().map(BTreeMap::len),
+            Some(2),
+            "the refused round held the carried row and its own"
+        );
+        assert_eq!(
+            stored[2].dashpay_payments,
+            Some(fresh),
+            "its own row is offered again, the carried one is not"
+        );
+    }
+
+    /// A store that is merely busy has said nothing about the row, so it is
+    /// offered until a store answers.
+    #[test]
+    fn should_keep_offering_a_carried_reversal_through_a_transient_failure() {
+        use crate::wallet::identity::PaymentStatus;
+        let stored = rounds_after_a_refused_reversal(|persister, wallet_id| {
+            persister.fail_next_transiently(wallet_id);
+        });
+
+        assert_eq!(
+            stored[2].dashpay_payments,
+            Some(one_verdict_overlay(PaymentStatus::Pending)),
+        );
+    }
+
+    /// A swept or confirmed payment of a rejected round is re-derived by the
+    /// scan the frozen watermark forces at the next start, so it is not
+    /// carried: only the verdict nothing reports twice is.
+    #[test]
+    fn should_not_offer_a_verdict_the_next_scan_re_derives_again() {
+        use crate::wallet::identity::PaymentStatus;
+        for status in [PaymentStatus::Failed, PaymentStatus::Confirmed] {
+            assert_eq!(
+                payments_stored_after_a_rejected_round(
+                    one_verdict_overlay(status),
+                    super::PaymentOverlay::default(),
+                ),
+                None,
+                "{status:?}"
+            );
+        }
+    }
+
+    /// The payment was mined again before the retry: the round that says so
+    /// is the newer word on the row.
+    #[test]
+    fn should_store_the_newer_verdict_over_a_carried_return_to_pending() {
+        use crate::wallet::identity::PaymentStatus;
+        assert_eq!(
+            payments_stored_after_a_rejected_round(
+                one_verdict_overlay(PaymentStatus::Pending),
+                one_verdict_overlay(PaymentStatus::Confirmed),
+            ),
+            Some(one_verdict_overlay(PaymentStatus::Confirmed)),
+        );
     }
 
     /// A persister that never attested `DASHPAY_PAYMENTS` cannot apply the

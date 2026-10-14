@@ -31,8 +31,18 @@
   (`9ea53592`): restored spend claims are held once per wallet and guard every
   funding account, including one registered after the wallet is loaded.
 - **platform-wallet:** a chain reorganization reported by key-wallet
-  (`WalletEvent::ChainTruncated`) updates the in-memory balance but is not yet
-  mirrored to persisted wallet state
+  (`WalletEvent::ChainTruncated`) now reaches persisted wallet state as
+  `CoreChangeSet::truncations`. The SQLite backend and the Swift and Kotlin
+  persistence handlers remove the transactions of the dropped blocks and their
+  coins, keep InstantSend-locked ones as unconfirmed, restore the coins the
+  removed ones spent and lower the stored sync heights to the fork, so a
+  restart after a reorg loads the same wallet as no restart. FFI hosts receive
+  truncations through the size-negotiated
+  `on_persist_wallet_changeset_truncations_fn` extension callback, Kotlin
+  bridges through `onWalletChangesetChainTruncated`. A persister attests
+  support with the new
+  `PersistenceCapabilities::CORE_CHAIN_TRUNCATION` bit; one that does not is
+  not handed the truncation and keeps the replaced branch until it rescans
   ([#5380](https://github.com/dashpay/platform/issues/5380)).
 - **Breaking (Rust features):** remove DPP's `core_key_wallet_bip_38` and SDK's
   `core_key_wallet_bip38` feature forwards because upstream removed BIP38 support.

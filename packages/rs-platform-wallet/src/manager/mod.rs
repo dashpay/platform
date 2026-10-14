@@ -1235,6 +1235,85 @@ mod tests {
         );
     }
 
+    /// A truncation hands back a coin whose spend was mined once and may be
+    /// mined again, so the coin has to be fenced until the spend is seen a
+    /// second time — and from the moment the wallet lock is released, not
+    /// from the delivery of an event: a fork recovery truncates between two
+    /// runs of the SPV client, when nothing listens for one.
+    #[tokio::test]
+    async fn should_fence_a_coin_again_when_a_truncation_undoes_its_spend() {
+        use dashcore::hashes::Hash as _;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        use key_wallet_manager::WalletInterface;
+
+        const FORK_HEIGHT: u32 = 4;
+        let (wallet_manager, wallet_id, generation, _signer) =
+            crate::test_support::funded_wallet_manager(
+                key_wallet::account::account_type::StandardAccountType::BIP44Account,
+            )
+            .await;
+        let coin = {
+            let wm = wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("the funded wallet");
+            let utxos = info.core_wallet.utxos();
+            utxos.first().expect("the funded coin").outpoint
+        };
+        let spend = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![dashcore::TxIn {
+                previous_output: coin,
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        };
+        let block = dashcore::Block {
+            header: dashcore::block::Header {
+                version: dashcore::block::Version::default(),
+                prev_blockhash: dashcore::BlockHash::all_zeros(),
+                merkle_root: dashcore::TxMerkleNode::all_zeros(),
+                time: 0,
+                bits: dashcore::CompactTarget::from_consensus(0x1d00ffff),
+                nonce: 0,
+            },
+            txdata: vec![spend.clone()],
+        };
+        wallet_manager
+            .write()
+            .await
+            .process_block_for_wallets(
+                &block,
+                block.block_hash(),
+                FORK_HEIGHT + 1,
+                &std::collections::BTreeSet::from([wallet_id]),
+            )
+            .await;
+        assert!(
+            generation.in_broadcast_conflict(&spend).is_none(),
+            "a coin the wallet holds as spent needs no fence"
+        );
+
+        // No event is delivered to any handler from here on.
+        wallet_manager
+            .write()
+            .await
+            .truncate_above(FORK_HEIGHT)
+            .expect("no chain lock is applied above the fork");
+
+        assert_eq!(
+            generation.in_broadcast_conflict(&spend),
+            Some(coin),
+            "the undone spend may be mined again; the coin must not be re-selected"
+        );
+
+        generation.observe_spent([coin]);
+        assert!(
+            generation.in_broadcast_conflict(&spend).is_none(),
+            "seeing the spend again is what ends the fence"
+        );
+    }
+
     /// `shutdown()` joins every started coordinator through the shared
     /// [`ThreadRegistry`], reports each as cleanly joined, and is
     /// idempotent — a second call finds nothing running and still reports
