@@ -125,7 +125,7 @@ fn assert_full_data_preserved(conn: &Connection) {
         ),
         1
     );
-    // V019 drops Core history; the next SPV start rescans it from birth.
+    // V021 drops Core history; the next SPV start rescans it from birth.
     for table in ["core_utxos", "core_transactions"] {
         let sql = format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1");
         assert_eq!(count(conn, &sql, &full), 0, "{table}");
@@ -244,7 +244,7 @@ fn v014_backfills_recordless_confirmed_utxo_height() {
         assert_eq!(schema_version(&conn), 13);
     }
 
-    // Checked at V018: V019 then drops Core history for a rescan.
+    // Checked at V018: V021 then drops Core history for a rescan.
     let mut conn = Connection::open(&path).unwrap();
     mig::runner()
         .set_target(refinery::Target::Version(18))
@@ -457,6 +457,46 @@ fn forward_version_rejected_at_new_max() {
         Err(other) => panic!("expected SchemaVersionUnsupported, got {other:?}"),
         Ok(_) => panic!("forward-version DB must be refused"),
     }
+}
+
+/// A database that applied a later version before an earlier one was merged
+/// in is refused, typed and untouched, rather than skipping the earlier one.
+///
+/// This branch's V021 can land on a database before the 5.0 line's V019 and
+/// V020 are merged forward. Refinery's `abort_missing` (left at its default)
+/// then sees an embedded version below the applied maximum that was never
+/// applied. Dropping V018's history row reproduces that state with the
+/// migrations this binary embeds.
+#[test]
+fn should_refuse_a_database_that_skipped_an_earlier_migration() {
+    let tmp = common::secure_tempdir().unwrap();
+    let path = tmp.path().join("wallet.db");
+    drop(SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap());
+    let history = |conn: &Connection| -> Vec<i64> {
+        let mut stmt = conn
+            .prepare("SELECT version FROM refinery_schema_history ORDER BY version")
+            .unwrap();
+        stmt.query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    let before = {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("DELETE FROM refinery_schema_history WHERE version = 18", [])
+            .unwrap();
+        history(&conn)
+    };
+
+    match SqlitePersister::open(SqlitePersisterConfig::new(&path)) {
+        Err(WalletStorageError::Migration(error)) => assert!(
+            matches!(error.kind(), refinery::error::Kind::MissingVersion(m) if m.version() == 18),
+            "expected MissingVersion(18), got {error:?}"
+        ),
+        Err(other) => panic!("expected a migration error, got {other:?}"),
+        Ok(_) => panic!("a skipped migration must not be applied out of order or ignored"),
+    }
+    assert_eq!(history(&Connection::open(&path).unwrap()), before);
 }
 
 /// A structural + row snapshot of the affected tables, for convergence

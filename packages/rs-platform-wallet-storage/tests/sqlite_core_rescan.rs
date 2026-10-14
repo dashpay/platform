@@ -1,6 +1,6 @@
 #![cfg(feature = "sqlite")]
 
-//! A wallet whose Core history was wiped (what V019 does to a V018 store)
+//! A wallet whose Core history was wiped (what V021 does to an older store)
 //! rebuilds it by rescanning from its birth height. These tests drive that
 //! rescan through the real manager, event adapter, store and load replay.
 
@@ -80,7 +80,7 @@ impl Chain {
     }
 }
 
-/// A registered wallet with no Core history, as V019 leaves it, and its first
+/// A registered wallet with no Core history, as V021 leaves it, and its first
 /// receive address.
 fn wiped_wallet(persister: &SqlitePersister) -> (WalletId, Address) {
     let (wallet, _, address) = wallet_with_receive_address();

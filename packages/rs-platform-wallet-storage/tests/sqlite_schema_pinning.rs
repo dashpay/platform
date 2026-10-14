@@ -15,13 +15,13 @@ use platform_wallet_storage::sqlite::{migrations as mig, schema::versions::Domai
 /// Golden `(version, name)` fingerprint of the frozen migration set. Bump
 /// deliberately only when adding/removing/renaming a migration file.
 const EXPECTED_ID_FINGERPRINT: &str =
-    "edecaf720a714fb2b689e3a3a416a2300a15a9c846138f417e6fb6affb745b1b";
+    "614dba33d4bed98ff46cb5e81ee1d61257332fec68143201aa084469f8037890";
 
 /// Golden content-level fingerprint over every migration's rendered SQL.
 /// Bump it only when ADDING a migration file; a body change on an already
 /// applied migration is a defect, not a golden to refresh.
 const EXPECTED_SQL_FINGERPRINT: &str =
-    "4b9bf85fd4ac487a88fefbab2a42552fe4d1815c68d1fba7e6fdf45d72a8e400";
+    "fe47c34573f4d107feb12030371e01158965be4db69bcbc76e795d853a15e5b1";
 
 /// The migrations merged `v4.2-dev` already ships. Refinery keys
 /// `refinery_schema_history` by version and validates an applied migration's
@@ -36,6 +36,14 @@ const MERGED_MIGRATION_VERSIONS: &[(i32, &str)] = &[
     (5, "dpns_name_states"),
     (6, "tracked_masternodes"),
     (7, "utxo_sweep_winner_height"),
+];
+
+/// Versions another release line publishes and this one does not ship yet.
+/// They stay free here until that line is merged forward, and then carry
+/// exactly these names; anything else is a version clash with shipped data.
+const RESERVED_FOR_OTHER_LINES: &[(i32, &str)] = &[
+    (19, "asset_lock_operation_id"),
+    (20, "shielded_funding_attempts"),
 ];
 
 /// Historical table names: V008 renames wallet metadata, and its typed
@@ -93,6 +101,25 @@ fn merged_migration_versions_keep_their_shipped_names() {
             *name,
             "version {version} must stay `{name}`; it is owned by merged history"
         );
+    }
+}
+
+/// A version another line ships is either still free here or holds that
+/// line's migration.
+///
+/// IF THIS FAILS: a migration on this branch took a version the 5.0 line
+/// already uses. Renumber it past the reserved range.
+#[test]
+fn reserved_migration_versions_hold_only_their_owners_migrations() {
+    let embedded = mig::embedded_migrations();
+    for (version, name) in RESERVED_FOR_OTHER_LINES {
+        if let Some((_, found)) = embedded.iter().find(|(v, _)| v == version) {
+            assert_eq!(
+                found.as_str(),
+                *name,
+                "version {version} belongs to `{name}` on another release line"
+            );
+        }
     }
 }
 

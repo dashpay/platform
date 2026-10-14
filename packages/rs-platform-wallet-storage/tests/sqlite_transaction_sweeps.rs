@@ -3763,7 +3763,7 @@ fn should_preserve_mainline_sweep_holds_through_rehydration_migrations() {
         params![w.as_slice(), encoded],
     )
     .unwrap();
-    // Through V018: V019 drops Core history for a rescan, holds included.
+    // Through V018: V021 drops Core history for a rescan, holds included.
     migrations::runner()
         .set_target(refinery::Target::Version(18))
         .run(&mut conn)
@@ -3778,7 +3778,7 @@ fn should_preserve_mainline_sweep_holds_through_rehydration_migrations() {
     migrations::run(&mut conn).unwrap();
     assert!(
         !row_exists(&conn, &w, &input),
-        "V019 drops the hold with the rest of Core history"
+        "V021 drops the hold with the rest of Core history"
     );
 }
 

@@ -12,7 +12,7 @@
   rust-dashcore API, restoring native SDK builds while preserving canonical bytes.
 - **drive-abci:** preserve the fixed 48-byte quorum-key disk encoding independently
   of the BLS backend, with historical saved-state and checkpoint regression fixtures.
-- **platform-wallet-storage:** the V019 migration rebuilds Core history by
+- **platform-wallet-storage:** the V021 migration rebuilds Core history by
   rescanning it instead of repairing stored records in place: it deletes every
   wallet's Core transactions, UTXOs and instant locks and rewinds the filter
   checkpoint to just below the wallet's birth height, so the next SPV start

@@ -1544,7 +1544,7 @@ pub fn list_unspent_utxos(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sqlite::migrations::{self, insert_test_wallet, rewind_to_v018, wallet_db};
+    use crate::sqlite::migrations::{self, insert_test_wallet, rewind_v021, wallet_db};
     use dashcore::address::Payload;
     use dashcore::hashes::Hash;
     use dashcore::{BlockHash, OutPoint, PubkeyHash, Transaction, TxOut, Txid};
@@ -1742,13 +1742,13 @@ mod tests {
             .collect()
     }
 
-    /// V019 rebuilds Core history by rescanning it: whatever a V018 database
+    /// V021 rebuilds Core history by rescanning it: whatever an older database
     /// stored (an undecodable record or an unconfirmed one included), its Core
     /// transactions, UTXOs and instant locks go, each wallet's filter
     /// checkpoint rewinds to just below its birth (never forward), and every
     /// other row stays, the chain facts in `core_sync_state` included.
     #[test]
-    fn should_drop_core_history_and_rescan_from_birth_when_migrating_from_v018() {
+    fn should_drop_core_history_and_rescan_from_birth_when_migrating_to_v021() {
         let wallet_id = [0xADu8; 32];
         let mut conn = wallet_db(&wallet_id);
         conn.execute("UPDATE wallets SET birth_height = 100", [])
@@ -1802,10 +1802,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        rewind_to_v018(&conn);
+        rewind_v021(&conn);
         let kept = non_core_rows(&conn);
 
-        migrations::run(&mut conn).expect("no stored history can block V019");
+        migrations::run(&mut conn).expect("no stored history can block V021");
 
         for table in [
             "core_transactions",

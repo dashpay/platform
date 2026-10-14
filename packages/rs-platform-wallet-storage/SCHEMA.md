@@ -42,7 +42,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Eleven tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), the `identity_scan_states` / `identity_scan_failed_indices` pair (V017), and the `core_transaction_inputs` / `core_transaction_record_originals` pair (V019) — see the [Migrations](#migrations) log for what each adds in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Eleven tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), the `identity_scan_states` / `identity_scan_failed_indices` pair (V017), and the `core_transaction_inputs` / `core_transaction_record_originals` pair (V021) — see the [Migrations](#migrations) log for what each adds in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -468,12 +468,12 @@ spent and is permanently outside the collector's reach.
 
 ### `core_transaction_inputs`
 
-Raw-input index (V019): one row per input outpoint of every stored transaction
+Raw-input index (V021): one row per input outpoint of every stored transaction
 record, written whether or not the store knows the spent output yet. When an
 owned output is recorded later, the runtime history repair looks up its
 outpoint here to find the stored records that spend it and repairs their
 accounting (`input_details`, direction, the output's spent mark). Rows are
-written with `INSERT OR IGNORE` on each record write. The V019 migration
+written with `INSERT OR IGNORE` on each record write. The V021 migration
 drops the history stored before the index existed, so every indexed record
 is one written since; the rescan from birth fills the index again.
 
@@ -484,7 +484,7 @@ is one written since; the rescan from birth fills the index again.
 
 ### `core_transaction_record_originals`
 
-Append-only archive (V019) of the pre-repair `core_transactions.record_blob`.
+Append-only archive (V021) of the pre-repair `core_transactions.record_blob`.
 Before the runtime history repair first rewrites a record, the blob it
 replaces is copied here with `INSERT OR IGNORE`, so the first original is kept
 verbatim and never replaced. It is never loaded; it exists so a wrong repair
@@ -904,4 +904,5 @@ table-rebuild migration, as V004 does.
 | V016 | `V016__identity_keys_null_scope_requires_existing_identity.rs` | Recreates the `identity_keys` null-scope trigger pair (see Triggers above) to also reject a NULL-scoped key naming an identity that does not exist at all, closing the gap where V008's guard caught only the wallet-owned case. |
 | V017 | `V017__identity_scan_state.rs` | Adds `identity_scan_states` (one row per wallet: the last gap-limit identity-scan verdict — `complete`, `probed_from`/`probed_through`, `unlocated_gap`) and `identity_scan_failed_indices` (indices probed without an answer, cascading from the verdict row via `wallet_id`). Purely additive; an upgraded database reads back "no verdict recorded" for every wallet until the next scan (dashpay/platform#4365). |
 | V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` / `pending_contact_crypto` by the deleted identity id, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner`, `idx_ignored_senders_owner`, and `idx_pending_contact_crypto_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
-| V019 | `V019__core_transaction_accounting.rs` | Adds `core_transaction_inputs` (raw-input index, with `idx_core_transaction_inputs_outpoint`) and `core_transaction_record_originals` (append-only archive of pre-repair record blobs). Records stored before V019 may carry wrong input details, net amounts and directions and have no indexed inputs, so instead of repairing them in place V019 deletes every wallet's Core history (`core_utxos`, `core_instant_locks`, `core_transactions`) and lowers each `core_sync_state.synced_height` to just below the wallet's birth height (never raising it), so the next SPV start rescans from birth and records the history again through the current accounting. `last_processed_height` and the chainlock stay, as chain facts; the SPV header/filter store, address pools, asset locks, identities, DashPay and metadata rows are untouched. Unconfirmed transactions are not re-delivered by a rescan and return only if the network relays them again. |
+| V019–V020 | — | Not used on this line. Reserved for the 5.0 line's asset-lock migrations (`asset_lock_operation_id`, `shielded_funding_attempts`), which reach it through a forward merge. Refinery applies versions in order, so a database at V018 takes V019, V020 and V021 in that order once they are merged. |
+| V021 | `V021__core_transaction_accounting.rs` | Adds `core_transaction_inputs` (raw-input index, with `idx_core_transaction_inputs_outpoint`) and `core_transaction_record_originals` (append-only archive of pre-repair record blobs). Records stored before V021 may carry wrong input details, net amounts and directions and have no indexed inputs, so instead of repairing them in place V021 deletes every wallet's Core history (`core_utxos`, `core_instant_locks`, `core_transactions`) and lowers each `core_sync_state.synced_height` to just below the wallet's birth height (never raising it), so the next SPV start rescans from birth and records the history again through the current accounting. `last_processed_height` and the chainlock stay, as chain facts; the SPV header/filter store, address pools, asset locks, identities, DashPay and metadata rows are untouched. Unconfirmed transactions are not re-delivered by a rescan and return only if the network relays them again. |

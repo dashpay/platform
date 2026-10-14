@@ -2,9 +2,9 @@
 //! keep each record's pre-repair blob so every repair stays reversible, and
 //! rebuild the Core history stored before both by rescanning it.
 //!
-//! Records stored before V019 may carry wrong input details, net amounts and
+//! Records stored before V021 may carry wrong input details, net amounts and
 //! directions, and their raw inputs were never indexed. Rather than repair
-//! them in place, V019 drops each wallet's Core history (transactions, UTXOs,
+//! them in place, V021 drops each wallet's Core history (transactions, UTXOs,
 //! instant locks) and rewinds its filter checkpoint to just below its birth
 //! height, so the next SPV start rescans it from birth and records it again
 //! through the current accounting. The SPV header/filter store, the address
