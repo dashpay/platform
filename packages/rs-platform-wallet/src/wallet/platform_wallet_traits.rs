@@ -180,7 +180,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
         // mined record then does not carry the lock: an asset lock mined
         // before its lock is proven by the chain lock, not by the
         // InstantSend lock. Fixed upstream in dashpay/rust-dashcore#1037;
-        // drop this once the pin carries it.
+        // drop this once the pin carries it (tracked in #5430).
         let confirmed: BTreeMap<_, _> = self
             .core_wallet
             .accounts

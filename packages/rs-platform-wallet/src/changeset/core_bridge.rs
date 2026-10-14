@@ -1164,15 +1164,14 @@ async fn instant_lock_changeset(
     // No slices (the wallet never held the transaction) leave just the lock.
     let (slices, verdicts) = slices_and_verdicts_for_txid(info, txid);
     // The persister learns a record's context only from a re-emitted
-    // record; the lock map above does not carry it there. The wallet rewrote
-    // an unconfirmed record's context to `InstantSend` before emitting this
-    // event (a mined record keeps its block), so re-emit the manager's
-    // slices for the txid — without this the stored row stays at mempool
-    // until the block, and a send the network has locked keeps reading
-    // "Sending". Same shape as a `BlockProcessed`
-    // update: the records and their owned outputs' verdicts, from which a
-    // persister rewrites the transaction's own coins as it does for a
-    // block.
+    // record; the lock map above does not carry it there. The wallet
+    // rewrote an unconfirmed record's context to `InstantSend` before
+    // emitting this event (a mined record keeps its block), so re-emit the
+    // manager's slices for the txid. Without this the stored row stays at
+    // mempool until the block, and a send the network has locked keeps
+    // reading "Sending". Same shape as a `BlockProcessed` update: the
+    // records and their owned outputs' verdicts, from which a persister
+    // rewrites the transaction's own coins as it does for a block.
     cs.account_records = slices
         .into_iter()
         .filter(|r| !is_contact_watch_only(r))
