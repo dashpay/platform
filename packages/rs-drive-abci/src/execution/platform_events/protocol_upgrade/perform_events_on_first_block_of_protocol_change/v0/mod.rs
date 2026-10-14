@@ -9,7 +9,9 @@ use dpp::data_contracts::SystemDataContract;
 use dpp::fee::Credits;
 use dpp::platform_value::Identifier;
 use dpp::serialization::PlatformDeserializableTrusted;
+use dpp::system_data_contracts::dpns_contract::v1::document_types::preorder;
 use dpp::system_data_contracts::load_system_data_contract;
+use dpp::version::v14::PROTOCOL_VERSION_14;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use dpp::voting::vote_polls::VotePoll;
@@ -118,6 +120,10 @@ impl<C> Platform<C> {
 
         if previous_protocol_version < 14 && platform_version.protocol_version >= 14 {
             self.transition_to_version_14(block_info, transaction, platform_version)?;
+        }
+
+        if previous_protocol_version < 15 && platform_version.protocol_version >= 15 {
+            self.transition_to_version_15(block_info, transaction, platform_version)?;
         }
 
         Ok(())
@@ -687,7 +693,19 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
-        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
+        // A ladder reaching past protocol version 14 in one block (12 straight to 15) gives
+        // this rung a table holding DPNS v3, which only `transition_to_version_15` installs,
+        // through its rebuild of the preorders: a plain update here would leave them under
+        // v3, and the rebuild would then skip a type already stored as declared. This rung
+        // installs v2 then, loaded as protocol version 14, the newest holding it, would. A
+        // target of 13 or 14 loads v2 by its own table, as before.
+        let dpns_platform_version = if platform_version.system_data_contracts.dpns > 2 {
+            PlatformVersion::get(PROTOCOL_VERSION_14)?
+        } else {
+            platform_version
+        };
+        let dpns_contract =
+            load_system_data_contract(SystemDataContract::DPNS, dpns_platform_version)?;
 
         self.drive.apply_contract(
             &dpns_contract,
@@ -886,6 +904,31 @@ impl<C> Platform<C> {
         // earlier versions selecting this generation cannot execute the backfill.
         self.drive
             .backfill_historical_credit_pool_nullifiers(transaction, platform_version)?;
+
+        Ok(())
+    }
+
+    /// When transitioning to version 15 we re-store the DPNS contract whose v3
+    /// schema checks a domain create with keywords instead of most of its data
+    /// trigger.
+    fn transition_to_version_15(
+        &self,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        // DPNS contract v3 (v15 note 1): its preorders are unsalted, one per owner and name,
+        // which no contract update can turn a unique index into, so the `preorder` type is
+        // rebuilt and every preorder made before this block is deleted, unrefunded.
+        let dpns_contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)?;
+
+        self.drive.apply_contract_rebuilding_document_types(
+            &dpns_contract,
+            &[preorder::NAME],
+            block_info,
+            transaction,
+            platform_version,
+        )?;
 
         Ok(())
     }
