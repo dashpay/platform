@@ -21,17 +21,21 @@ on:
 permissions:
   contents: read
 
-# Each run re-reads the base, so a superseded pending run loses nothing. Not the
-# freeze worker's group: a queued refresh would cancel a pending freeze dispatch.
+# Each run re-reads the base, so a superseded pending run loses nothing. Dry
+# runs get their own group, so one can never replace a pending run that writes.
+# Not the freeze worker's group: a queued refresh would cancel a pending freeze
+# dispatch.
 concurrency:
-  group: swift-sdk-freeze-pr-refresh-${{ github.ref }}
+  group: swift-sdk-freeze-pr-refresh-${{ github.ref }}-${{ inputs.dry_run && 'dry-run' || 'write' }}
   cancel-in-progress: false
 
 jobs:
   refresh:
     if: github.repository == 'dashpay/platform'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # A PR takes at most three requests with a 60-second wait each (about four
+    # minutes); there is one freeze PR per schema version, so a few at most.
+    timeout-minutes: 20
     steps:
       - name: Merge the base into open freeze PRs
         env:
