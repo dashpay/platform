@@ -1806,6 +1806,22 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '5.0.0-rc.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // When Drive initializes a chain, it reads the platform activation fork with
+            // getdeploymentinfo: Core v24 reports deployments only there. Core refuses the
+            // method to the consensus user until its whitelist names it, and loads the
+            // whitelist only when Core itself restarts. Added to the operator's list rather
+            // than replacing it; a user without a whitelist may already call every method.
+            const whitelist = options.core?.rpc?.users?.drive_consensus?.whitelist;
+            if (Array.isArray(whitelist) && !whitelist.includes('getdeploymentinfo')) {
+              whitelist.push('getdeploymentinfo');
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 

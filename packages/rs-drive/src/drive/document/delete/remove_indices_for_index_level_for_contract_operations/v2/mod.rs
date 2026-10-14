@@ -221,12 +221,11 @@ impl Drive {
             // pruning the trees it leaves empty as a drained member bucket's
             // are. Nothing continues below it.
             if let Some(index_type) = sub_level.summable_off_count_index_info() {
-                // An indexOnly type indexes no typed array: the counter's group is one value.
-                let document_index_field =
-                    document_index_fields.into_iter().next().unwrap_or_default();
+                // The group's value, or each distinct element of a typed array
+                // a `where` equality fixes (see the insert walker)
                 self.add_summable_off_count_counter_operations(
                     sub_level_index_path_info,
-                    document_index_field,
+                    document_index_fields,
                     property_name_tree_type,
                     CounterChange::Decrement {
                         keep_at_zero: index_type.preallocated,

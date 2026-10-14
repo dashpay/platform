@@ -1049,6 +1049,99 @@ describe('DataContract — refersTo declarations (v14)', () => {
     });
   });
 
+  describe('where over typed arrays', () => {
+    const tags = (position: number) => ({
+      type: 'array',
+      items: { type: 'string', minLength: 1, maxLength: 63 },
+      maxItems: 4,
+      uniqueItems: true,
+      position,
+    });
+
+    /**
+     * A like copying its post's tags, and a note naming one of them, written
+     * only by one of the post's members.
+     */
+    const listSchemas = {
+      post: {
+        type: 'object',
+        canBeDeleted: false,
+        documentsMutable: false,
+        properties: {
+          tags: tags(0),
+          members: {
+            type: 'array',
+            items: {
+              type: 'array',
+              byteArray: true,
+              minItems: 32,
+              maxItems: 32,
+              contentMediaType: 'application/x.dash.dpp.identifier',
+            },
+            maxItems: 4,
+            position: 1,
+          },
+        },
+        additionalProperties: false,
+      },
+      like: {
+        type: 'object',
+        properties: {
+          postId: identifierProperty(0, {
+            type: 'permanentDocument',
+            documentType: 'post',
+            where: { tags: 'tags' },
+          }),
+          tags: tags(1),
+        },
+        required: ['postId'],
+        additionalProperties: false,
+      },
+      note: {
+        type: 'object',
+        properties: {
+          postId: identifierProperty(0, {
+            type: 'permanentDocument',
+            documentType: 'post',
+            where: {
+              members: { contains: '$ownerId' },
+              tags: { containsAll: 'tags' },
+            },
+          }),
+          tags: tags(1),
+        },
+        required: ['postId'],
+        additionalProperties: false,
+      },
+    };
+
+    function buildListContract() {
+      return new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(4),
+        schemas: listSchemas,
+        definitions: null,
+        fullValidation: true,
+        platformVersion: new PlatformVersion(14),
+      });
+    }
+
+    it('should carry an equality between typed arrays as an equality', () => {
+      const [postId] = buildListContract().documentTypeReferences('like') as Reference[];
+
+      expect(postId.where).to.deep.equal({ tags: 'tags' });
+    });
+
+    it('should carry contains and containsAll as the schema writes them', () => {
+      const [postId] = buildListContract().documentTypeReferences('note') as Reference[];
+
+      expect(postId.where).to.deep.equal({
+        members: { contains: '$ownerId' },
+        tags: { containsAll: 'tags' },
+      });
+    });
+  });
+
   describe('ownerRefersTo and creatorRefersTo', () => {
     /**
      * A `resignation` may only be written by the owner of a join request for

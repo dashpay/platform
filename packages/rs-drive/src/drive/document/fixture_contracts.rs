@@ -18,8 +18,10 @@ use std::collections::BTreeSet;
 /// `nullSearchable: false` index (their null flags follow each index's own
 /// path), `summableOffCountIndex` counters ranked by sum and average at
 /// an earlier level, and indexes on the elements of typed arrays of every
-/// element type, at the first and a later position and under a window.
-pub(crate) const CONTRACTS: [&str; 25] = [
+/// element type, at the first and a later position and under a window, on
+/// stored and indexOnly types, and preallocated counters per element of a
+/// typed array a `where` equality fixes.
+pub(crate) const CONTRACTS: [&str; 27] = [
     "tests/supporting_files/contract/family/family-contract.json",
     "tests/supporting_files/contract/family/family-contract-fields-optional.json",
     "tests/supporting_files/contract/family/family-contract-countable.json",
@@ -45,6 +47,8 @@ pub(crate) const CONTRACTS: [&str; 25] = [
     "tests/supporting_files/contract/yappr-likes/yappr-likes-summable-off-count-index-contract.json",
     "tests/supporting_files/contract/array-index/array-index-contract.json",
     "tests/supporting_files/contract/array-index/array-index-with-types-contract.json",
+    "tests/supporting_files/contract/yappr-likes/yappr-likes-tags-contract.json",
+    "tests/supporting_files/contract/yappr-likes/yappr-likes-tags-counters-contract.json",
 ];
 
 /// Leaves out the optional properties of the type's unique indexes, so a

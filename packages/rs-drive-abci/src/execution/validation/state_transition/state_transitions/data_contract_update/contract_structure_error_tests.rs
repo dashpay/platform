@@ -126,6 +126,70 @@ async fn update_expiring_summed_amount(amount: Value) -> Outcome {
     .await
 }
 
+/// An indexOnly `like` whose `tags`, declaring `uniqueItems` as `unique_items` says, a
+/// per-tag index names beside `byPost`, which keeps each like once.
+fn tagged_like_schema(unique_items: bool) -> Value {
+    platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "postId": { "type": "identifier", "position": 0 },
+            "tags": {
+                "type": "array",
+                "items": { "type": "string", "maxLength": 61 },
+                "maxItems": 4,
+                "uniqueItems": unique_items,
+                "position": 1
+            }
+        },
+        "required": ["postId"],
+        "indices": [
+            { "name": "byPost", "properties": [{ "postId": "asc" }] },
+            { "name": "byTagPost", "properties": [{ "tags": "asc" }, { "postId": "asc" }] }
+        ],
+        "additionalProperties": false
+    })
+}
+
+/// Updates a stored contract whose only document type is the indexOnly `like` of
+/// [`tagged_like_schema`], giving it the schema `like`.
+async fn update_tagged_like(like: Value) -> Outcome {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = TestPlatformBuilder::new()
+        .with_initial_protocol_version(platform_version.protocol_version)
+        .build_with_mock_rpc()
+        .set_genesis_state();
+
+    let (identity, signer, key) = setup_identity(&mut platform, 5080, dash_to_credits!(1.0));
+
+    let data_contract = DataContractFactory::new(platform_version.protocol_version)
+        .expect("expected the factory")
+        .create(
+            identity.id(),
+            1,
+            platform_value!({ "like": tagged_like_schema(true) }),
+            None,
+            None,
+        )
+        .expect("a like indexing its unique tags beside byPost registers")
+        .data_contract_owned();
+    update_stored_contract(
+        &platform,
+        &identity,
+        &signer,
+        &key,
+        &data_contract,
+        |contract| {
+            contract
+                .document_schemas_mut()
+                .insert("like".to_string(), like);
+        },
+        platform_version,
+    )
+    .await
+}
+
 /// Stores `data_contract`, then sends its update to version 2 with its serialized form edited by
 /// `edit_contract`, signed by `identity` with the contract nonce `UPDATE_NONCE`.
 async fn update_stored_contract(
@@ -271,5 +335,18 @@ async fn should_update_an_expiring_summed_property_keeping_it_never_negative() {
         StateTransitionExecutionResult::SuccessfulExecution { .. },
         "block: {:?}",
         outcome.block
+    );
+}
+
+/// An update can not drop `uniqueItems` from a typed array an index of an indexOnly type
+/// names: every parse of the updated type checks it, `check_tx`'s included.
+#[tokio::test]
+async fn should_refuse_an_update_dropping_unique_items_from_an_index_only_indexed_array() {
+    let outcome = update_tagged_like(tagged_like_schema(false)).await;
+
+    assert_paid_contract_structure_error(
+        &outcome,
+        "must declare `uniqueItems: true`",
+        UPDATE_NONCE,
     );
 }

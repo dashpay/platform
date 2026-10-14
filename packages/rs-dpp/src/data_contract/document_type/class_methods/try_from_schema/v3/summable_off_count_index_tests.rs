@@ -13,9 +13,9 @@ use platform_value::{platform_value, Identifier, Value};
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
-const CONTRACT_ID: [u8; 32] = [9; 32];
+pub(super) const CONTRACT_ID: [u8; 32] = [9; 32];
 
-fn identifier(position: u64, refers_to: Option<Value>) -> Value {
+pub(super) fn identifier(position: u64, refers_to: Option<Value>) -> Value {
     let mut property = platform_value!({
         "type": "array",
         "byteArray": true,
@@ -100,7 +100,7 @@ fn like(indices: Vec<Value>) -> Value {
     })
 }
 
-fn by_post() -> Value {
+pub(super) fn by_post() -> Value {
     platform_value!({
         "name": "byPost",
         "properties": [{ "postId": "asc" }],
@@ -122,7 +122,7 @@ fn config() -> DataContractConfig {
         }))
 }
 
-fn parse(
+pub(super) fn parse(
     post: Value,
     like: Value,
     full_validation: bool,
@@ -153,7 +153,7 @@ fn parse_schemas(
     )
 }
 
-fn with(mut index: Value, key: &str, value: Value) -> Value {
+pub(super) fn with(mut index: Value, key: &str, value: Value) -> Value {
     index.set_value(key, value).expect("index key applies");
     index
 }

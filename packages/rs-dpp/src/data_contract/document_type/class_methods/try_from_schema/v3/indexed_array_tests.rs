@@ -397,20 +397,362 @@ fn should_refuse_a_declared_skip_whose_only_skip_property_is_the_array() {
     assert_eq!(index.skip_if_absent_properties, ["hashtags", "language"]);
 }
 
+/// `tags` of an indexOnly `like`: at most 4 strings, `uniqueItems` as given.
+fn like_tags(unique_items: bool) -> Value {
+    platform_value!({
+        "type": "array",
+        "items": { "type": "string", "maxLength": 61 },
+        "maxItems": 4,
+        "uniqueItems": unique_items,
+        "position": 1
+    })
+}
+
+fn identifier(position: u32) -> Value {
+    platform_value!({
+        "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
+        "contentMediaType": "application/x.dash.dpp.identifier",
+        "position": position
+    })
+}
+
+/// An indexOnly `like` of a post carrying the post's `tags` and author, with
+/// `indices` beside `byAuthorPostTime`, which holds `postAuthor`.
+fn like_schema(tags: Value, indices: Value) -> Value {
+    let mut indices = match indices {
+        Value::Array(indices) => indices,
+        other => panic!("indices are a list, got {other:?}"),
+    };
+    indices.push(platform_value!({
+        "name": "byAuthorPostTime",
+        "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }, { "$createdAt": "asc" }]
+    }));
+    platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "postId": identifier(0),
+            "tags": tags,
+            "postAuthor": identifier(2)
+        },
+        "required": ["$createdAt", "postId", "postAuthor"],
+        "indices": Value::Array(indices),
+        "additionalProperties": false
+    })
+}
+
+/// The `byPost` index of a like: one like per (post, owner).
+fn by_post() -> Value {
+    platform_value!({
+        "name": "byPost", "properties": [{ "postId": "asc" }], "terminal": "$ownerId",
+        "rangeCountable": true
+    })
+}
+
+/// The per-tag index of a like.
+fn by_tag_post() -> Value {
+    platform_value!({
+        "name": "byTagPost", "properties": [{ "tags": "asc" }, { "postId": "asc" }],
+        "rangeCountable": true
+    })
+}
+
+/// The trending per-tag index of a like: a day's window every 6 hours, kept a
+/// week past its end, outliving a delete.
+fn by_trend_tag_post() -> Value {
+    platform_value!({
+        "name": "byTrendTagPost",
+        "properties": [{ "$createdAt": "asc" }, { "tags": "asc" }, { "postId": "asc" }],
+        "terminal": "$ownerId",
+        "rangeCountable": true,
+        "timeRange": { "on": "$createdAt", "range": 86400, "step": 21600, "ttl": 604800 },
+        "outlivesDelete": true
+    })
+}
+
+/// An indexOnly type may index the elements of a typed array when another
+/// index keeps each document once under part of the array index's key: there
+/// `byPost`, whose key (`postId`, `$ownerId`) is inside each tag index's key
+/// without the array. The array is in each tag index's skip set, so a like
+/// without tags is in neither, and no tag index is ever the proof index.
 #[test]
-fn should_refuse_an_indexed_array_on_an_index_only_type() {
+fn should_admit_an_index_only_array_index_beside_an_index_keeping_each_document_once() {
+    let schema = like_schema(
+        like_tags(true),
+        platform_value!([by_post(), by_tag_post(), by_trend_tag_post()]),
+    );
+    for full_validation in [true, false] {
+        let document_type =
+            parse_dispatched(schema.clone(), PlatformVersion::latest(), full_validation)
+                .expect("the like parses");
+        let indexes = document_type.indexes();
+        for name in ["byTagPost", "byTrendTagPost"] {
+            let index = indexes.get(name).expect("the tag index");
+            assert_eq!(index.indexed_array.as_deref(), Some("tags"), "{name}");
+            assert_eq!(index.skip_if_absent_properties, ["tags"], "{name}");
+            assert!(!index.keys_each_live_document_by_its_values(), "{name}");
+            // The terminal defaults to the owner, as on every indexOnly index
+            assert_eq!(index.terminal_components(), ["$ownerId"], "{name}");
+        }
+        assert!(indexes
+            .get("byPost")
+            .expect("byPost")
+            .keys_each_live_document_by_its_values());
+        assert_eq!(
+            document_type
+                .index_structure()
+                .sub_levels()
+                .get("tags")
+                .expect("the tag level")
+                .indexed_array_max_items(),
+            Some(4)
+        );
+    }
+}
+
+/// Without an index keeping each document once under part of the array
+/// index's key, two likes sharing a tag would collide on its entry: refused on
+/// every parse. An index that skips documents, outlives deletes or involves
+/// `$createdAt` keeps no document apart, and an index outside the array
+/// index's key does not either.
+#[test]
+fn should_refuse_an_index_only_array_index_no_other_index_keeps_apart() {
+    let outside_the_key = like_schema(
+        like_tags(true),
+        platform_value!([
+            {
+                "name": "byAuthor", "properties": [{ "postAuthor": "asc" }],
+                "terminal": "$ownerId"
+            },
+            by_tag_post()
+        ]),
+    );
+    let with_created_at = like_schema(
+        like_tags(true),
+        platform_value!([
+            {
+                "name": "byAuthorPost", "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }],
+                "terminal": "$ownerId"
+            },
+            {
+                "name": "byTimePost", "properties": [{ "$createdAt": "asc" }, { "postId": "asc" }],
+                "terminal": "$ownerId"
+            },
+            {
+                "name": "byTimeTagPost",
+                "properties": [{ "$createdAt": "asc" }, { "tags": "asc" }, { "postId": "asc" }]
+            }
+        ]),
+    );
+    for schema in [outside_the_key, with_created_at] {
+        for full_validation in [true, false] {
+            expect_structure_error(
+                parse_dispatched(schema.clone(), PlatformVersion::latest(), full_validation),
+                "holds the whole key of no index that keeps one entry for every document",
+            );
+        }
+    }
+}
+
+/// An index of a typed array has no entry for a like without tags, so it can not
+/// be the only index keeping a required property: `postAuthor`, held only by
+/// `byTagPostAuthor`, would be committed and stored nowhere for an untagged
+/// like. It still keeps the array itself.
+#[test]
+fn should_refuse_a_required_property_only_an_index_only_array_index_holds() {
     let schema = platform_value!({
         "type": "object",
         "indexOnly": true,
         "documentsMutable": false,
-        "properties": { "hashtags": hashtags(10) },
-        "required": ["hashtags"],
-        "indices": [{ "name": "byHashtag", "properties": [{ "hashtags": "asc" }] }],
+        "properties": {
+            "postId": identifier(0),
+            "tags": like_tags(true),
+            "postAuthor": identifier(2)
+        },
+        "required": ["postId", "postAuthor"],
+        "indices": [
+            by_post(),
+            {
+                "name": "byTagPostAuthor",
+                "properties": [{ "tags": "asc" }, { "postId": "asc" }, { "postAuthor": "asc" }]
+            }
+        ],
         "additionalProperties": false
     });
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(schema.clone(), PlatformVersion::latest(), full_validation),
+            "property \"postAuthor\" on indexOnly document type \"charter\" does not appear \
+             in any index that neither sets skipIfAbsent nor outlivesDelete, nor names a typed \
+             array other than the property",
+        );
+    }
+
+    // A required array is kept by its own index
+    let mut required_tags = schema;
+    required_tags
+        .set_value(
+            "required",
+            platform_value!(["postId", "postAuthor", "tags"]),
+        )
+        .expect("keyword applies");
+    required_tags
+        .set_value(
+            "indices",
+            platform_value!([
+                by_post(),
+                by_tag_post(),
+                {
+                    "name": "byAuthorPost",
+                    "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }]
+                }
+            ]),
+        )
+        .expect("keyword applies");
+    for full_validation in [true, false] {
+        parse_dispatched(
+            required_tags.clone(),
+            PlatformVersion::latest(),
+            full_validation,
+        )
+        .expect("a required array its own index holds parses");
+    }
+}
+
+/// Each element of a like's tags has an entry of its own: an array that may
+/// repeat an element is refused.
+#[test]
+fn should_refuse_an_index_only_array_index_without_unique_items() {
     expect_structure_error(
-        parse(schema),
-        "an indexOnly type's indexes are uniqueness rules",
+        parse(like_schema(
+            like_tags(false),
+            platform_value!([by_post(), by_tag_post()]),
+        )),
+        "must declare `uniqueItems: true`",
+    );
+}
+
+/// An indexOnly type's array index names one top-level array on every parse,
+/// not only under full validation: the entry probes and the row commitment
+/// key the one array the index stamps, by its top-level name.
+#[test]
+fn should_refuse_a_second_or_nested_array_on_an_index_only_type_on_every_parse() {
+    let two_arrays = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "postId": identifier(0),
+            "tags": like_tags(true),
+            "postAuthor": identifier(2),
+            "topics": {
+                "type": "array",
+                "items": { "type": "string", "maxLength": 61 },
+                "maxItems": 4,
+                "uniqueItems": true,
+                "position": 3
+            }
+        },
+        "required": ["$createdAt", "postId", "postAuthor"],
+        "indices": [
+            by_post(),
+            {
+                "name": "byTagTopicPost",
+                "properties": [{ "tags": "asc" }, { "topics": "asc" }, { "postId": "asc" }]
+            },
+            {
+                "name": "byAuthorPostTime",
+                "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }, { "$createdAt": "asc" }]
+            }
+        ],
+        "additionalProperties": false
+    });
+    let nested = platform_value!({
+        "type": "object",
+        "indexOnly": true,
+        "documentsMutable": false,
+        "properties": {
+            "postId": identifier(0),
+            "meta": {
+                "type": "object",
+                "properties": { "tags": like_tags(true) },
+                "additionalProperties": false,
+                "position": 1
+            },
+            "postAuthor": identifier(2)
+        },
+        "required": ["$createdAt", "postId", "postAuthor", "meta"],
+        "indices": [
+            by_post(),
+            {
+                "name": "byTagPost",
+                "properties": [{ "meta.tags": "asc" }, { "postId": "asc" }]
+            },
+            {
+                "name": "byAuthorPostTime",
+                "properties": [{ "postAuthor": "asc" }, { "postId": "asc" }, { "$createdAt": "asc" }]
+            }
+        ],
+        "additionalProperties": false
+    });
+    for full_validation in [true, false] {
+        expect_structure_error(
+            parse_dispatched(
+                two_arrays.clone(),
+                PlatformVersion::latest(),
+                full_validation,
+            ),
+            "an index keys by the elements of one typed array",
+        );
+        expect_structure_error(
+            parse_dispatched(nested.clone(), PlatformVersion::latest(), full_validation),
+            if full_validation {
+                "an indexed typed array must be a top-level property"
+            } else {
+                "which is inside an object: an indexed typed array is a top-level property"
+            },
+        );
+    }
+    // The second array is the indexOnly rule's own finding without full validation
+    expect_structure_error(
+        parse_dispatched(two_arrays, PlatformVersion::latest(), false),
+        "and also \"topics\"",
+    );
+}
+
+/// `preallocated` and `summableOffCountIndex` stay refused on an index of a
+/// typed array no `where` equality binds to a referenced typed array (here the
+/// like refers to nothing): a preallocated path is fixed by one referenced
+/// document, and a counter's group is one element of one list. The bound shape
+/// is admitted (`typed_array_counter_index_tests`).
+#[test]
+fn should_refuse_a_preallocated_or_counting_index_only_array_index() {
+    let mut preallocated = by_tag_post();
+    preallocated
+        .set_value("preallocated", Value::Bool(true))
+        .expect("keyword applies");
+    expect_structure_error(
+        parse(like_schema(
+            like_tags(true),
+            platform_value!([by_post(), preallocated]),
+        )),
+        "declares `preallocated`, but its path is not determined by a reference",
+    );
+
+    let counter = platform_value!({
+        "name": "tagLikes",
+        "properties": [{ "tags": "asc" }, { "postId": "asc" }],
+        "summableOffCountIndex": "byPost",
+        "rangeCountable": true,
+        "rangeSummable": true
+    });
+    expect_structure_error(
+        parse(like_schema(
+            like_tags(true),
+            platform_value!([by_post(), counter]),
+        )),
+        "has \"tags\", which is neither a property of its source \"byPost\" nor fixed by it",
     );
 }
 
