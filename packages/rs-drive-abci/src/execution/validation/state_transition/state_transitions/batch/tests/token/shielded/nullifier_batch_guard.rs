@@ -724,6 +724,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .unwrap()
         )
     );
+    // The root differs per protocol version: pinned at `PlatformVersion::latest()`.
     assert_eq!(
         hex::encode(
             pool.platform
@@ -733,7 +734,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "c9acef9766a472f6d04abd174bf5efb0dcc22b107e7833156816dacefb7a2bc9"
+        "5b430f0d21fc521ee60b2e336215e777e5ea29362a9a438a0ad4c6788ee7e8c8"
     );
     assert_eq!(
         pool.platform
@@ -2152,42 +2153,44 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             hex::encode(hash_single(settled.as_bytes())),
             result.execution_results()
         );
+        // The settled hashes cover GroveDB roots, which differ per protocol version: they are
+        // pinned at `PlatformVersion::latest()` and change when a new latest version is added.
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "7e3cf25f4080c94ef028ede8d3bdc982d0055feaef0d9e75dcae11287146d425",
-                "a92938b72bd217bbfcb2eae4543cc1f0952603846996138137171f8b09ee3a6f",
+                "dee201ee6bcacaad074abc0bb8397576aa051d21706096544b4ae00e767bce5a",
             ),
             "valid-payment" => (
                 "da69c2e10a0fe88df56655907ae5c3acd6700f13823358159f6240b1fb33c6d1",
-                "bf6c31ef6b600d6967970f8281f31cab6f2458c278af026aeca653402f01beb0",
+                "814e4be338931210577d98a57e5bf5b8ca345a39b9c34d2c33103ebd83713a59",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "49c5e6beeec4a7a5a965c879db6741fa0b06984838d320737696b2b38e02d3a5",
+                "7d5f448c6f0b34beadb2eb3fb78ba2eeff897ed2cf91bfcbb573f9f11d59c504",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "5e4cdb13a64c4aa4021db2b1f8b904802ad5e2da59b8a134a22a3f0f65b0ab8e",
+                "7a3d8acac710f82d63b953a449c72714433e66138e6180349abd27ab926dbb0a",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "67edd91cc0dd89e5311e2fb8cf44674dce2297f54355812596fe9e7e44f18deb",
+                "319ff415016cc4d239a6e661d05aa41d41f52048e16a546830281250f1002f9a",
             ),
             "open-mint-group" => (
                 "7f694d1f3507aaca0c5b5b1254eef3f8cd595379c23c32dea1d0a9c21d302088",
-                "3e4998d3dae6cfd9f92cb2423b3ff487916d824a5ab4a633410a951eccf4a6cc",
+                "8bcf55e33d62bc8cfa4993df2fc19754046f70be8af938f542011a1b2aea8bb6",
             ),
             "closing-mint-group" => (
                 "1901253314ac7c543ffa24ae22b91f6790365b66bfa9b477dce90bacd3c97e75",
-                "842e80ea186d371ef328afae81ef71489e78d18f42b7e90d022b58a29c4f7572",
+                "2d3dac540beb2247b12e2d3d9ee3d100dc96882be09cdaf580b7c4fa6a28afdf",
             ),
             "open-burn-group" => (
                 "eb4786ab90fb36ffc33d8167e199316929ef28cceb0dcff61e6612cd6fcc1d73",
-                "da0199ba62b4091a20128874f0246d55066214078081ebd282ab97acf400e6b8",
+                "af4df8577290f277a295490c298e34c8175fd1ff426accd30405419988ca7a1e",
             ),
             "closing-burn-group" => (
                 "dbb52b37ff8c4b451cf36ee3a6a8b1d299d0f786f55cad6c700ef1b947bc1179",
-                "dd6061541bca7a1f1e6137f5418bf49b8e4ff40b3fc076817511727327670e11",
+                "36360aa84290589597eb3c15d7f64a28e519def668c3abeb3d7ec1e637c8d522",
             ),
             _ => unreachable!("enumerated characterization case"),
         };
