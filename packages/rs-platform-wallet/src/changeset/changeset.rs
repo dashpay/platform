@@ -770,7 +770,12 @@ impl Merge for CoreChangeSet {
             } else {
                 // An advance composes by max, and keeps a rewind a rewind:
                 // `rewind(a)·advance(b)` still has to replace anything an
-                // outer accumulation merges this result behind.
+                // outer accumulation merges this result behind. A flag with
+                // no height beside it is meaningless, so it must not turn
+                // this advance into a rewind.
+                if self.synced_height.is_none() {
+                    self.synced_height_is_rewind = false;
+                }
                 self.synced_height = Some(self.synced_height.map_or(h, |existing| existing.max(h)));
             }
         }
@@ -3413,6 +3418,18 @@ mod tests {
                 ..PlatformWalletChangeSet::default()
             }
         }
+        // A changeset carrying the flag but no height, as an external
+        // constructor could build one: the flag is meaningless there.
+        fn heightless(flag: bool) -> PlatformWalletChangeSet {
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    synced_height: None,
+                    synced_height_is_rewind: flag,
+                    ..CoreChangeSet::default()
+                }),
+                ..PlatformWalletChangeSet::default()
+            }
+        }
         fn record_only() -> PlatformWalletChangeSet {
             PlatformWalletChangeSet {
                 dashpay_backfill: Some(DashPayBackfillRecord::default()),
@@ -3457,6 +3474,21 @@ mod tests {
                 "advance, advance, rewind",
                 || vec![advance(1_000), advance(1_200), rewind(100)],
                 (Some(100), true),
+            ),
+            (
+                "advance, heightless flagged, lower advance",
+                || vec![advance(1_000), heightless(true), advance(100)],
+                (Some(1_000), false),
+            ),
+            (
+                "advance, heightless unflagged, lower advance",
+                || vec![advance(1_000), heightless(false), advance(100)],
+                (Some(1_000), false),
+            ),
+            (
+                "rewind, heightless flagged, advance",
+                || vec![rewind(500), heightless(true), advance(900)],
+                (Some(900), true),
             ),
         ];
         for (name, parts, expected) in cases {
