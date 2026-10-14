@@ -68,4 +68,55 @@ mod tests {
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
         unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
     }
+
+    #[test]
+    fn should_reject_a_manager_without_shielded_support() {
+        use crate::event_handler::EventHandlerCallbacks;
+        use crate::manager::{platform_wallet_manager_create, platform_wallet_manager_destroy};
+        use crate::persistence::PersistenceCallbacks;
+
+        unsafe extern "C" fn begin(_: *mut std::ffi::c_void, _: *const u8) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end(_: *mut std::ffi::c_void, _: *const u8, _: bool) -> i32 {
+            0
+        }
+        let sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let persistence = PersistenceCallbacks {
+            on_changeset_begin_fn: Some(begin),
+            on_changeset_end_fn: Some(end),
+            ..Default::default()
+        };
+        let events = EventHandlerCallbacks {
+            context: std::ptr::null_mut(),
+            on_wallet_event_fn: None,
+            on_error_fn: None,
+            on_platform_address_sync_completed_fn: None,
+            on_shielded_sync_completed_fn: None,
+            on_shielded_sync_progress_fn: None,
+            on_shielded_tree_progress_fn: None,
+            release_fn: None,
+        };
+        let mut handle = NULL_HANDLE;
+        let created = unsafe {
+            platform_wallet_manager_create(
+                &sdk as *const dash_sdk::Sdk as *const std::ffi::c_void,
+                &persistence,
+                &events,
+                &mut handle,
+            )
+        };
+        assert_eq!(created.code, PlatformWalletFFIResultCode::Success);
+
+        let mut result = platform_wallet_manager_shielded_prefetch_spend_anchors(handle);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        unsafe { crate::platform_wallet_ffi_result_free(&mut result) };
+        assert_eq!(
+            unsafe { platform_wallet_manager_destroy(handle) }.code,
+            PlatformWalletFFIResultCode::Success
+        );
+    }
 }
