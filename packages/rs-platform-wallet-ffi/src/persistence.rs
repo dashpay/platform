@@ -1834,8 +1834,16 @@ impl PlatformWalletPersistence for FFIPersister {
 
     fn stores_dashpay_backfill(&self) -> bool {
         // The record reaches the host only through its extension slot; a
-        // host without it cannot store one, nor replace one it holds.
+        // host without it cannot store one, nor replace one it holds. And
+        // coverage vouches for the cursor it rides with, which reaches the
+        // host only through the changeset callback: `store` withholds every
+        // covering record from a host without one, so claiming the record
+        // here would let the owning layer count coverage as stored that the
+        // host never received. Such a host is treated like any other that
+        // cannot keep coverage durably, which still sends it the empty
+        // record that clears coverage it holds.
         self.wallet_dashpay_backfill_callback.is_some()
+            && self.callbacks.on_persist_wallet_changeset_fn.is_some()
     }
 
     fn store_commits_inline(&self) -> bool {
@@ -8865,9 +8873,28 @@ mod tests {
             }
             i32::from(host.fail.load(Ordering::SeqCst))
         }
+        unsafe extern "C" fn accounts(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountSpecFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn pools(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountAddressPoolFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        // `atomic_accounts`: atomic rounds and both account writers, but no
+        // changeset callback, so no cursor reaches the host.
         fn manager_for(
             host: Option<&'static Host>,
             slot: bool,
+            atomic_accounts: bool,
         ) -> PlatformWalletManager<FFIPersister> {
             let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
                 PersistenceCallbacks {
@@ -8876,9 +8903,18 @@ mod tests {
                     }),
                     on_load_wallet_list_fn: host.map(|_| load_wallets as _),
                     on_load_wallet_list_free_fn: host.map(|_| free_wallets as _),
+                    on_changeset_begin_fn: atomic_accounts.then_some(noop_begin as _),
+                    on_changeset_end_fn: atomic_accounts.then_some(noop_end as _),
+                    on_persist_account_registrations_fn: atomic_accounts.then_some(accounts as _),
+                    on_persist_account_address_pools_fn: atomic_accounts.then_some(pools as _),
                     ..PersistenceCallbacks::default()
                 },
-                PersistenceCapabilities::NONE,
+                if atomic_accounts {
+                    PersistenceCapabilities::ATOMIC_CHANGESETS
+                        .union(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS)
+                } else {
+                    PersistenceCapabilities::NONE
+                },
                 PersistenceExtensionCallbacks {
                     wallet_dashpay_backfill: slot.then_some(on_backfill as _),
                     ..Default::default()
@@ -8917,7 +8953,7 @@ mod tests {
                 Some(0),
             ))
         };
-        let wallet_id = create(&manager_for(None, true))
+        let wallet_id = create(&manager_for(None, true, false))
             .expect("the id this seed registers under")
             .wallet_id();
         let host = |holds_record: bool| -> &'static Host {
@@ -8940,7 +8976,7 @@ mod tests {
         // host that fails it fails the registration.
         let with_slot = host(true);
         with_slot.fail.store(true, Ordering::SeqCst);
-        let manager = manager_for(Some(with_slot), true);
+        let manager = manager_for(Some(with_slot), true, false);
         assert!(
             create(&manager).is_err(),
             "an invalidation the host failed must fail the registration"
@@ -8955,7 +8991,7 @@ mod tests {
         );
 
         // No slot: the coverage cannot be cleared, so nothing is published.
-        let manager = manager_for(Some(host(true)), false);
+        let manager = manager_for(Some(host(true)), false, false);
         match create(&manager) {
             Ok(_) => panic!("coverage the host cannot clear must block the registration"),
             Err(PlatformWalletError::PersisterStore(source)) => {
@@ -8969,9 +9005,93 @@ mod tests {
         // with or without the slot.
         for slot in [false, true] {
             let clean = host(false);
-            create(&manager_for(Some(clean), slot)).expect("nothing to clear");
+            create(&manager_for(Some(clean), slot, false)).expect("nothing to clear");
             assert_eq!(clean.invalidations.load(Ordering::SeqCst), 0);
         }
+
+        // Atomic rounds and both account writers, but no cursor callback:
+        // the host cannot keep coverage, so it is cleared like on any other
+        // such host and never offered coverage.
+        let cursorless = host(true);
+        create(&manager_for(Some(cursorless), true, true)).expect("the invalidation lands");
+        assert_eq!(cursorless.invalidations.load(Ordering::SeqCst), 1);
+        assert_eq!(cursorless.covering.load(Ordering::SeqCst), 0);
+    }
+
+    /// Coverage counts as durable on an FFI host only when everything it
+    /// rides with can reach the host: atomic rounds, both account writers,
+    /// the backfill slot, AND the changeset callback that carries the cursor
+    /// the coverage vouches for. `store` withholds every covering record
+    /// from a host without that callback, so advertising the record there
+    /// let the owning layer treat suppressed coverage as stored
+    /// (dashpay/platform#4302 review).
+    #[test]
+    fn backfill_coverage_needs_a_host_that_stores_its_cursor() {
+        use platform_wallet::changeset::persists_backfill_coverage;
+
+        unsafe extern "C" fn begin(_: *mut c_void, _: *const u8) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end(_: *mut c_void, _: *const u8, _: bool) -> i32 {
+            0
+        }
+        unsafe extern "C" fn accounts(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountSpecFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn pools(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountAddressPoolFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn changeset(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const WalletChangeSetFFI,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn backfill(
+            _: *mut c_void,
+            _: *const u8,
+            _: u32,
+            _: u32,
+            _: *const DashPayBackfillCoveredContactFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        let host = |cursor_callback: bool, slot: bool| {
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    on_changeset_begin_fn: Some(begin),
+                    on_changeset_end_fn: Some(end),
+                    on_persist_account_registrations_fn: Some(accounts),
+                    on_persist_account_address_pools_fn: Some(pools),
+                    on_persist_wallet_changeset_fn: cursor_callback.then_some(changeset as _),
+                    ..PersistenceCallbacks::default()
+                },
+                PersistenceCapabilities::ATOMIC_CHANGESETS
+                    .union(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS),
+                PersistenceExtensionCallbacks {
+                    wallet_dashpay_backfill: slot.then_some(backfill as _),
+                    ..Default::default()
+                },
+            )
+        };
+        assert!(
+            !persists_backfill_coverage(&host(false, true)),
+            "an atomic, account-capable host with the slot but no cursor callback"
+        );
+        assert!(!persists_backfill_coverage(&host(true, false)));
+        assert!(persists_backfill_coverage(&host(true, true)));
     }
 
     /// An atomic FFI host keeps outbound-account markers on disk only when it

@@ -5179,10 +5179,15 @@ mod tests {
             let manager = Arc::clone(&manager);
             async move { manager.load_from_persistor().await }
         });
-        tokio::task::spawn_blocking(move || entered_rx.recv())
-            .await
-            .expect("join")
-            .expect("the loader re-reads the host");
+        // Bounded inside the closure: a running blocking task cannot be
+        // cancelled, so a loader that skipped the re-read would otherwise
+        // hang the test instead of failing it.
+        tokio::task::spawn_blocking(move || {
+            entered_rx.recv_timeout(std::time::Duration::from_secs(10))
+        })
+        .await
+        .expect("join")
+        .expect("the loader re-reads the host within the deadline");
 
         // A same-id registration queues for the cursor lock while the
         // re-read runs.
