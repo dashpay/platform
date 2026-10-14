@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
-use tokio::sync::RwLock;
+use tokio::sync::{Notify, RwLock};
 use tokio::task::{JoinError, JoinHandle};
 
 use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
@@ -45,9 +45,6 @@ pub struct SpvQuorumPublicKey {
 /// Maximum wait per stop call; the owned teardown continues after this deadline.
 const SPV_STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// How often readiness is rechecked for a client with connected peers.
-const SPV_READINESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
-
 #[derive(Default)]
 enum Shutdown {
     #[default]
@@ -83,6 +80,11 @@ pub struct SpvRuntime {
     /// each stop or storage clear, so none of them interleave.
     shutdown: tokio::sync::Mutex<Shutdown>,
     peer_tracker: Arc<PeerTracker>,
+    /// Woken (`notify_waiters`) on every transition that can make
+    /// [`Self::is_broadcast_ready`] true: a client stored by `start`, and a
+    /// `PeersUpdated` snapshot stored by `peer_tracker`. Losing readiness
+    /// wakes no one; waiters only care about gaining it.
+    readiness_changed: Arc<Notify>,
 }
 
 /// Classify a failure from the SPV acceptance-check path
@@ -115,6 +117,7 @@ impl SpvRuntime {
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         event_manager: Arc<PlatformEventManager>,
     ) -> Self {
+        let readiness_changed = Arc::new(Notify::new());
         Self {
             event_manager,
             wallet_manager,
@@ -122,7 +125,8 @@ impl SpvRuntime {
             last_config: RwLock::new(None),
             task: Mutex::new(None),
             shutdown: tokio::sync::Mutex::new(Shutdown::Idle),
-            peer_tracker: Arc::new(PeerTracker::default()),
+            peer_tracker: Arc::new(PeerTracker::new(Arc::clone(&readiness_changed))),
+            readiness_changed,
         }
     }
 
@@ -181,6 +185,10 @@ impl SpvRuntime {
         let mut client = self.client.write().await;
         *client = Some(spv_client);
         *self.last_config.write().await = Some(retained_config);
+        // Release the client before waking readiness waiters so they can
+        // read it.
+        drop(client);
+        self.readiness_changed.notify_waiters();
 
         Ok(())
     }
@@ -281,10 +289,13 @@ impl SpvRuntime {
     /// ("client not started") verdict, and — having no retry — stays
     /// un-broadcast for the whole session.
     ///
-    /// Readiness is polled rather than pushed: "started" is a `client`
-    /// transition and "has peers" arrives as a dash-spv `PeersUpdated`
-    /// event, with no combined signal to subscribe to. The poll interval is
-    /// irrelevant next to the network latency being waited on.
+    /// Readiness is pushed, not polled: the wait re-checks only when
+    /// `start` stores a client or a `PeersUpdated` snapshot lands. While
+    /// neither happens it stays parked — including the "peers listed but
+    /// client gone" window `stop` leaves until it clears the tracker. It
+    /// registers for the wake-up before each check, so a transition racing
+    /// the check is never missed. Cancel-safe: dropping it drops only the
+    /// registration.
     ///
     /// The bound is a plain `Duration` and is applied with
     /// [`tokio::time::timeout`], which saturates an unrepresentable deadline
@@ -294,8 +305,13 @@ impl SpvRuntime {
     /// FFI frame aborts the host process.
     pub async fn wait_until_ready(&self, timeout: Duration) -> bool {
         tokio::time::timeout(timeout, async {
-            while !self.is_broadcast_ready().await {
-                tokio::time::sleep(SPV_READINESS_POLL_INTERVAL).await;
+            loop {
+                let mut changed = pin!(self.readiness_changed.notified());
+                changed.as_mut().enable();
+                if self.is_broadcast_ready().await {
+                    return;
+                }
+                changed.await;
             }
         })
         .await
@@ -1854,6 +1870,124 @@ mod tests {
             .await
             .expect("clean stop releases the data dir");
         let _ = std::fs::remove_dir_all(&storage);
+    }
+
+    /// The `PeersUpdated` event dash-spv pushes after a connection change.
+    fn one_peer_connected() -> dash_spv::network::NetworkEvent {
+        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+        dash_spv::network::NetworkEvent::PeersUpdated {
+            connected_count: 1,
+            addresses: vec![SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
+                19999,
+            )],
+            best_height: Some(1_100_000),
+        }
+    }
+
+    /// Spawn a readiness wait and prove it parked: it is still pending
+    /// after the runtime has had every chance to run it.
+    async fn parked_readiness_wait(runtime: &Arc<SpvRuntime>) -> tokio::task::JoinHandle<bool> {
+        let waiter = {
+            let runtime = Arc::clone(runtime);
+            tokio::spawn(async move { runtime.wait_until_ready(Duration::from_secs(30)).await })
+        };
+        for _ in 0..16 {
+            tokio::task::yield_now().await;
+        }
+        assert!(!waiter.is_finished(), "the wait must park while not ready");
+        waiter
+    }
+
+    /// Readiness is pushed, not polled: the first `PeersUpdated` of a
+    /// started client resolves a parked wait without any virtual time
+    /// passing. A sleep-poll would only notice on its next tick.
+    #[tokio::test(start_paused = true)]
+    async fn should_resolve_a_parked_wait_on_the_first_peers_updated_event() {
+        use dash_spv::EventHandler;
+
+        let (runtime, _storage) = offline_runtime().await;
+        let waiter = parked_readiness_wait(&runtime).await;
+        let parked_at = tokio::time::Instant::now();
+
+        runtime.peer_tracker.on_network_event(&one_peer_connected());
+
+        assert!(
+            waiter.await.unwrap(),
+            "the first peer makes the client ready"
+        );
+        assert_eq!(
+            parked_at.elapsed(),
+            Duration::ZERO,
+            "the event itself must wake the wait, not a later poll tick"
+        );
+        runtime.stop().await.unwrap();
+    }
+
+    /// The client-start transition is the other half of readiness, so it
+    /// must wake a parked wait on its own too — here with the peer snapshot
+    /// already populated, so `start` is the transition that completes it.
+    #[tokio::test(start_paused = true)]
+    async fn should_resolve_a_parked_wait_when_the_client_starts() {
+        use dash_spv::EventHandler;
+
+        let runtime = Arc::new(unstarted_runtime());
+        runtime.peer_tracker.on_network_event(&one_peer_connected());
+        let waiter = parked_readiness_wait(&runtime).await;
+        let parked_at = tokio::time::Instant::now();
+
+        let storage = tempfile::tempdir().unwrap();
+        runtime
+            .start(
+                ClientConfig::testnet()
+                    .with_storage_path(storage.path())
+                    .with_restrict_to_configured_peers(true),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            waiter.await.unwrap(),
+            "a started client with a peer is ready"
+        );
+        assert_eq!(
+            parked_at.elapsed(),
+            Duration::ZERO,
+            "the start itself must wake the wait, not a later poll tick"
+        );
+        runtime.stop().await.unwrap();
+    }
+
+    /// `stop` takes the client before it clears the peer snapshot, so
+    /// "peers but no client" is a real, possibly long-lived state while
+    /// teardown runs. A wait in it must sleep until something changes —
+    /// not re-check on a timer for its whole budget.
+    #[tokio::test(start_paused = true)]
+    async fn should_not_recheck_readiness_while_nothing_changes() {
+        use dash_spv::EventHandler;
+        use std::future::Future;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let runtime = unstarted_runtime();
+        runtime.peer_tracker.on_network_event(&one_peer_connected());
+
+        let polls = AtomicUsize::new(0);
+        let mut wait = std::pin::pin!(runtime.wait_until_ready(Duration::from_secs(30)));
+        let ready = std::future::poll_fn(|cx| {
+            polls.fetch_add(1, Ordering::Relaxed);
+            wait.as_mut().poll(cx)
+        })
+        .await;
+
+        assert!(!ready, "peers without a client are not ready");
+        let polls = polls.into_inner();
+        // One poll to park, one when the budget expires. A 250 ms poll
+        // would take 120 over the 30 s budget.
+        assert!(
+            polls <= 2,
+            "the wait re-checked {polls} times with no change"
+        );
     }
 
     /// Every other error on the acceptance path may follow a partial send
