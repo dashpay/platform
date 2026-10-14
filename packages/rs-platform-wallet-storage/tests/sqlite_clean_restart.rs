@@ -2,18 +2,12 @@
 
 mod common;
 
-use std::collections::BTreeSet;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use common::{registration, Case};
+use common::{mine, persist_events, registration, Case};
 use dashcore::{
-    block::{Header, Version},
-    bls_sig_utils::BLSSignature,
-    ephemerealdata::chain_lock::ChainLock,
-    hashes::Hash,
-    Block, BlockHash, CompactTarget, Network, OutPoint, ScriptBuf, Transaction, TxMerkleNode,
-    TxOut,
+    bls_sig_utils::BLSSignature, ephemerealdata::chain_lock::ChainLock, hashes::Hash, BlockHash,
+    Network, OutPoint, ScriptBuf, Transaction, TxOut,
 };
 use key_wallet::wallet::{
     initialization::WalletAccountCreationOptions,
@@ -24,64 +18,13 @@ use key_wallet::wallet::{
     ManagedWalletInfo,
 };
 use platform_wallet::{
-    changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence},
-    key_wallet_manager::{WalletEvent, WalletInterface, WalletManager},
+    changeset::PlatformWalletPersistence,
+    key_wallet_manager::{WalletInterface, WalletManager},
     test_support::core_fixtures::{block, check, outside, pay, spend_of},
     wallet::platform_wallet::PlatformWalletInfo,
 };
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
-use tokio::sync::{mpsc, RwLock};
-use tokio_util::sync::CancellationToken;
-
-type Manager = Arc<RwLock<WalletManager<PlatformWalletInfo>>>;
-
-async fn mine(manager: &Manager, wallet_id: [u8; 32], tx: Transaction, height: u32) {
-    let block = Block {
-        header: Header {
-            version: Version::default(),
-            prev_blockhash: BlockHash::from_byte_array([height as u8; 32]),
-            merkle_root: TxMerkleNode::all_zeros(),
-            time: height,
-            bits: CompactTarget::from_consensus(0x1d00ffff),
-            nonce: 0,
-        },
-        txdata: vec![tx],
-    };
-    manager
-        .write()
-        .await
-        .process_block_for_wallets(
-            &block,
-            block.block_hash(),
-            height,
-            &BTreeSet::from([wallet_id]),
-        )
-        .await;
-}
-
-async fn persist_events(
-    manager: &Manager,
-    persister: &Arc<SqlitePersister>,
-    events: &mut mpsc::UnboundedReceiver<WalletEvent>,
-) {
-    // Close one finite batch so completion proves every real manager event was stored.
-    let (sender, receiver) = mpsc::unbounded_channel();
-    while let Ok(event) = events.try_recv() {
-        sender.send(event).unwrap();
-    }
-    drop(sender);
-    let fault = Arc::new(AtomicBool::new(false));
-    spawn_wallet_event_adapter(
-        Arc::clone(manager),
-        Arc::downgrade(persister),
-        receiver,
-        Arc::clone(&fault),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
-    assert!(!fault.load(Ordering::Relaxed));
-}
+use tokio::sync::RwLock;
 
 fn assert_coins(info: &ManagedWalletInfo, funding: &Transaction, phase: &str) {
     let coins = &info.accounts.standard_bip44_accounts[&0].utxos;
