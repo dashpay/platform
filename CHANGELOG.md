@@ -1,3 +1,58 @@
+## [5.0.0-rc.2](https://github.com/dashpay/platform/compare/v5.0.0-rc.1...v5.0.0-rc.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* **drive-abci:** guard accepted token pool nullifiers within batches ([#5411](https://github.com/dashpay/platform/issues/5411))
+* **platform:** start on Dash Core v24, which no longer reports softforks in getblockchaininfo ([#5422](https://github.com/dashpay/platform/issues/5422))
+* **wasm-sdk:** accept Identifier instances in group queries ([#5405](https://github.com/dashpay/platform/issues/5405))
+* **wasm-sdk:** cache verified contract updates without regressing versions ([#5391](https://github.com/dashpay/platform/issues/5391))
+
+
+### Build System
+
+* install the downloaded cargo-binstall instead of reinstalling it ([#5424](https://github.com/dashpay/platform/issues/5424))
+
+
+### Code Refactoring
+
+* **dpp:** decode instant asset lock proofs with rust-dashcore's legacy asset lock decoder ([#5423](https://github.com/dashpay/platform/issues/5423))
+
+## [5.0.0-rc.1](https://github.com/dashpay/platform/compare/v5.0.0-beta.6...v5.0.0-rc.1) (2026-10-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** keep unknown Core payload layouts decodable (#5403)
+* bump grovedb to 6.1.0 (#5414)
+* **drive-abci:** return missing proposer payouts to processing pool (#5399)
+* **platform:** decode Core v24 blocks and transactions (#5392)
+
+### Bug Fixes
+
+* **drive-abci:** return missing proposer payouts to processing pool ([#5399](https://github.com/dashpay/platform/issues/5399))
+* **platform:** decode Core v24 blocks and transactions ([#5392](https://github.com/dashpay/platform/issues/5392))
+* **platform:** keep unknown Core payload layouts decodable ([#5403](https://github.com/dashpay/platform/issues/5403))
+* **sdk:** accept a contains pin in the ranked query type ([#5402](https://github.com/dashpay/platform/issues/5402))
+* **sdk:** return errors for unsupported proof modes ([#5387](https://github.com/dashpay/platform/issues/5387))
+* **wasm-sdk:** strip the default wasm URL from the sanitized glue ([#5389](https://github.com/dashpay/platform/issues/5389))
+
+
+### Miscellaneous Chores
+
+* **swift-sdk:** freeze App Store schema 3.0.0 ([#5368](https://github.com/dashpay/platform/issues/5368))
+
+
+### Tests
+
+* **platform-wallet-storage:** build the integration tests as one binary ([#5397](https://github.com/dashpay/platform/issues/5397))
+* **platform-wallet-storage:** move the Core transaction rows test into the integration binary ([#5415](https://github.com/dashpay/platform/issues/5415))
+
+
+### Build System
+
+* bump grovedb to 6.1.0 ([#5414](https://github.com/dashpay/platform/issues/5414))
+
 ## [5.0.0-beta.6](https://github.com/dashpay/platform/compare/v5.0.0-beta.5...v5.0.0-beta.6) (2026-10-13)
 
 

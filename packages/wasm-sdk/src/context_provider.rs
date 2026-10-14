@@ -349,6 +349,11 @@ impl WasmTrustedContext {
         self.inner.add_known_contract(contract);
     }
 
+    /// Keep the strictly newer contract, preserving the existing body on ties.
+    pub(crate) fn add_known_contract_if_newer(&self, contract: DataContract) -> Arc<DataContract> {
+        self.inner.add_known_contract_if_newer(contract)
+    }
+
     /// Get a data contract from the known contracts cache
     pub fn get_known_contract(&self, id: &Identifier) -> Option<Arc<DataContract>> {
         self.inner.get_known_contract(id)
