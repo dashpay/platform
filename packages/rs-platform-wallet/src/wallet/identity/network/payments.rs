@@ -6077,16 +6077,16 @@ mod tests {
         }
     }
 
-    /// A restored outbound-account marker suppresses the startup rebuild, so
-    /// it must not vouch for a pool its account's xpub does not derive. A
-    /// host that replaced the xpub on rotation but kept the old pool's rows
-    /// would otherwise hand out pre-rotation addresses on the next send.
-    /// The load clears the marker for such a pool, and the contact sweep
-    /// rebuilds the account from the current xpub (dashpay/platform#4302
-    /// review).
-    #[tokio::test]
-    async fn a_restored_marker_is_not_trusted_over_a_pool_its_current_xpub_does_not_derive() {
-        use crate::wallet::identity::network::contact_requests::external_account_needs_rebuild;
+    /// A wallet with one established contact whose outbound account is
+    /// registered and whose marker (7) is stamped: the state the restored-
+    /// marker validation runs against.
+    async fn wallet_with_a_marked_outbound_account() -> (
+        Arc<PlatformWalletManager<RecordingPersister>>,
+        WalletId,
+        Identifier,
+        Identifier,
+        key_wallet::account::account_collection::DashpayAccountKey,
+    ) {
         use crate::wallet::identity::{ContactRequest, EstablishedContact};
         use key_wallet::account::account_collection::DashpayAccountKey;
 
@@ -6128,6 +6128,22 @@ mod tests {
             user_identity_id: owner.to_buffer(),
             friend_identity_id: contact.to_buffer(),
         };
+        (manager, wallet_id, owner, contact, key)
+    }
+
+    /// A restored outbound-account marker suppresses the startup rebuild, so
+    /// it must not vouch for a pool its account's xpub does not derive. A
+    /// host that replaced the xpub on rotation but kept the old pool's rows
+    /// would otherwise hand out pre-rotation addresses on the next send.
+    /// The load clears the marker for such a pool, and the contact sweep
+    /// rebuilds the account from the current xpub (dashpay/platform#4302
+    /// review).
+    #[tokio::test]
+    async fn a_restored_marker_is_not_trusted_over_a_pool_its_current_xpub_does_not_derive() {
+        use crate::wallet::identity::network::contact_requests::external_account_needs_rebuild;
+
+        let (manager, wallet_id, owner, contact, key) =
+            wallet_with_a_marked_outbound_account().await;
 
         for (rotated, marker) in [(false, Some(7)), (true, None)] {
             let mut snapshot = reload_snapshot(&manager, wallet_id, owner, 1_000, None).await;
@@ -6162,6 +6178,88 @@ mod tests {
                 "only a pool the current xpub does not derive is rebuilt"
             );
         }
+    }
+
+    /// Validating a restored pool derives every restored address, and only a
+    /// marker can be distrusted by it. So the load derives nothing for a
+    /// relationship restored without a marker, nor on a backend whose markers
+    /// are all cleared anyway because it cannot keep them durably; it still
+    /// validates a marker it would otherwise trust (dashpay/platform#4302
+    /// review).
+    #[tokio::test]
+    async fn restored_pools_are_validated_only_where_a_marker_could_be_trusted() {
+        use crate::manager::pool_validations_on_this_thread as validations;
+
+        let (manager, wallet_id, owner, contact, key) =
+            wallet_with_a_marked_outbound_account().await;
+        // Rotated, so a validation would distrust the marker if it ran.
+        let snapshot = |marker: bool| {
+            let manager = Arc::clone(&manager);
+            async move {
+                let mut snapshot = reload_snapshot(&manager, wallet_id, owner, 1_000, None).await;
+                snapshot
+                    .wallet
+                    .accounts
+                    .dashpay_external_accounts
+                    .get_mut(&key)
+                    .expect("outbound account")
+                    .account_xpub = test_receiving_xpub(&contact, &owner);
+                if !marker {
+                    snapshot
+                        .identities
+                        .get_mut(&0)
+                        .expect("owner")
+                        .established_contact_mut(&contact)
+                        .expect("contact")
+                        .external_account_reference = None;
+                }
+                snapshot
+            }
+        };
+        // No marker restored: nothing to validate.
+        let before = validations();
+        let _ = reload(snapshot(false).await).await;
+        assert_eq!(
+            validations(),
+            before,
+            "a markerless relationship costs no derivation"
+        );
+
+        // A backend that cannot keep markers: all are cleared, none validated.
+        let before = validations();
+        let host = Arc::new(NonAtomicHost(Arc::new(snapshot(true).await)));
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let restarted = Arc::new(PlatformWalletManager::new(sdk, host, handler));
+        restarted.load_from_persistor().await.expect("load");
+        assert_eq!(
+            validations(),
+            before,
+            "an ineligible backend derives nothing"
+        );
+        {
+            let wm = restarted.wallet_manager.read().await;
+            assert_eq!(
+                wm.get_wallet_info(&wallet_id)
+                    .expect("info")
+                    .identity_manager
+                    .managed_identity(&owner)
+                    .expect("owner")
+                    .dashpay()
+                    .established_contacts()[&contact]
+                    .external_account_reference,
+                None,
+                "and its marker is still cleared"
+            );
+        }
+
+        // A marker an eligible backend would trust is still validated.
+        let before = validations();
+        let _ = reload(snapshot(true).await).await;
+        assert!(
+            validations() > before,
+            "a trusted marker's pool is validated"
+        );
     }
 
     /// [`ReloadPersister`] behind a backend whose `store` only buffers, with

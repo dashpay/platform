@@ -260,21 +260,25 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // contact's marker, and the first contact sweep rebuilds it from
             // the current xpub, as every cold start did before the marker
             // was persisted (dashpay/platform#4302 review).
-            let distrusted =
-                distrust_markers_of_foreign_external_pools(&wallet, &mut platform_info);
-            if distrusted > 0 {
-                tracing::warn!(
-                    wallet_id = %hex::encode(expected_wallet_id),
-                    contacts = distrusted,
-                    "load: restored DashPay external pools hold addresses their current xpub \
-                     does not derive; their accounts will be rebuilt"
-                );
-            }
+            //
             // A backend that cannot keep markers durably never had one written
             // by this process, and one it hands back may name an account it
             // did not keep: none is trusted, so the sweep rebuilds each
-            // outbound account once, as before the marker was persisted.
-            if !crate::changeset::persists_outbound_account_markers(&*self.persister) {
+            // outbound account once, as before the marker was persisted. Its
+            // pools are then not validated at all: no result could keep a
+            // marker that is cleared regardless.
+            if crate::changeset::persists_outbound_account_markers(&*self.persister) {
+                let distrusted =
+                    distrust_markers_of_foreign_external_pools(&wallet, &mut platform_info);
+                if distrusted > 0 {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(expected_wallet_id),
+                        contacts = distrusted,
+                        "load: restored DashPay external pools hold addresses their current \
+                         xpub does not derive; their accounts will be rebuilt"
+                    );
+                }
+            } else {
                 let cleared = clear_restored_outbound_markers(&mut platform_info);
                 if cleared > 0 {
                     tracing::info!(
@@ -1475,6 +1479,19 @@ fn distrust_markers_of_foreign_external_pools(
         .accounts
         .dashpay_external_accounts
         .iter()
+        // Only a marker can be distrusted, so a relationship without one
+        // costs no derivation.
+        .filter(|(key, _)| {
+            info.identity_manager
+                .managed_identity(&Identifier::from(key.user_identity_id))
+                .and_then(|managed| {
+                    managed
+                        .dashpay()
+                        .established_contacts()
+                        .get(&Identifier::from(key.friend_identity_id))
+                })
+                .is_some_and(|established| established.external_account_reference.is_some())
+        })
         .filter(|(key, managed)| {
             wallet
                 .accounts
@@ -1504,6 +1521,19 @@ fn distrust_markers_of_foreign_external_pools(
         }
     }
     cleared
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many restored pools [`pool_derives_from`] validated on this
+    /// thread, so a test can show a load did no derivation it did not need.
+    static POOL_VALIDATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many restored pools have been validated on this thread.
+#[cfg(test)]
+pub(crate) fn pool_validations_on_this_thread() -> usize {
+    POOL_VALIDATIONS.with(std::cell::Cell::get)
 }
 
 /// Clear every restored outbound-account marker on `info`. Returns how many
@@ -1542,6 +1572,8 @@ fn clear_restored_outbound_markers(info: &mut PlatformWalletInfo) -> usize {
 /// key. A failed derivation counts as a mismatch, and a hardened pool never
 /// matches: its children cannot be derived from a public key.
 fn pool_derives_from(pool: &AddressPool, account: &key_wallet::Account) -> bool {
+    #[cfg(test)]
+    POOL_VALIDATIONS.with(|count| count.set(count.get() + 1));
     if pool.pool_type == AddressPoolType::AbsentHardened {
         return pool.addresses.is_empty();
     }

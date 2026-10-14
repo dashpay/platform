@@ -5,6 +5,8 @@ pub mod dashpay_sync;
 pub mod dpns_sync;
 pub mod identity_sync;
 mod load;
+#[cfg(test)]
+pub(crate) use load::pool_validations_on_this_thread;
 mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
