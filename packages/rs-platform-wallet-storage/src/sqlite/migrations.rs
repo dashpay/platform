@@ -435,6 +435,55 @@ pub(crate) fn rewind_to_v018(conn: &rusqlite::Connection) {
     .unwrap();
 }
 
+/// A migrated in-memory database holding one testnet wallet born at 0.
+#[cfg(test)]
+pub(crate) fn wallet_db(wallet_id: &[u8; 32]) -> rusqlite::Connection {
+    let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+    run(&mut conn).unwrap();
+    insert_test_wallet(&conn, wallet_id, 0);
+    conn
+}
+
+/// A [`wallet_db`] whose one unspent row has a script over the connection's
+/// length cap, so reading the column itself fails: only a length-only
+/// pre-read reports it as oversize. Returns the row's outpoint.
+#[cfg(test)]
+pub(crate) fn oversize_script_db(
+    wallet_id: &[u8; 32],
+) -> (rusqlite::Connection, dashcore::OutPoint) {
+    use dashcore::hashes::Hash;
+
+    use crate::sqlite::conn::SQLITE_MAX_BLOB_BYTES;
+
+    let conn = wallet_db(wallet_id);
+    let outpoint = dashcore::OutPoint::new(dashcore::Txid::from_byte_array([0x42; 32]), 0);
+    conn.execute(
+        "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+         VALUES (?1, ?2, 0, ?3, 0)",
+        rusqlite::params![
+            &wallet_id[..],
+            crate::sqlite::schema::blob::encode_outpoint(&outpoint).unwrap(),
+            vec![0u8; SQLITE_MAX_BLOB_BYTES as usize + 1]
+        ],
+    )
+    .unwrap();
+    conn.set_limit(
+        rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
+        SQLITE_MAX_BLOB_BYTES,
+    )
+    .unwrap();
+    (conn, outpoint)
+}
+
+#[cfg(test)]
+pub(crate) fn insert_test_wallet(conn: &rusqlite::Connection, wallet_id: &[u8; 32], birth: i64) {
+    conn.execute(
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
+        rusqlite::params![&wallet_id[..], birth],
+    )
+    .unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
