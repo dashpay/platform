@@ -34,11 +34,8 @@ use async_trait::async_trait;
 
 use dpp::address_funds::AddressWitness;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
-use dpp::data_contract::document_type::{
-    index_only_row_commits_created_at, DocumentProperty, DocumentPropertyType, DocumentTypeRef,
-};
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::property_names::CREATED_AT;
 use dpp::document::Document;
@@ -51,7 +48,6 @@ use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{DataContract, Identifier};
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
-use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
 use dash_sdk::platform::documents::transitions::{
@@ -666,31 +662,22 @@ impl IdentityWallet {
             .fetch_contract_arc_for_document_op(contract_id, document_type_name)
             .await?;
 
-        let document_type = data_contract
-            .document_type_for_name(document_type_name)
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Document type {document_type_name:?} not found on contract {}: {e}",
-                    data_contract.id()
-                ))
-            })?;
-        let document = document_with_values(
-            document_type,
-            owner_identity_id,
-            document_id,
-            properties_json,
+        let (values, created_at) = values_from_json(properties_json)?;
+        let builder = DocumentDeleteTransitionBuilder::from_values(
+            data_contract,
+            document_type_name.to_string(),
+            *document_id,
+            *owner_identity_id,
+            values,
+            created_at,
             self.sdk.version(),
-        )?;
+        )
+        .map_err(delete_preparation_error)?;
 
         let signing_key = self
             .resolve_authentication_signing_key(owner_identity_id, signing_key_id, signer)
             .await?;
 
-        let builder = DocumentDeleteTransitionBuilder::from_document(
-            data_contract,
-            document_type_name.to_string(),
-            &document,
-        );
         let DocumentDeleteResult::Deleted(deleted_id) = self
             .sdk
             .document_delete(builder, &signing_key, &SignerRef(signer))
@@ -901,37 +888,11 @@ impl IdentityWallet {
     }
 }
 
-/// Build the document a delete-by-values transition is derived from:
-/// `properties_json` sanitized against the document type's schema, owned by
-/// `owner_identity_id`, with the id the document was created under.
-///
-/// Refuses, before anything is signed, what Platform would only refuse
-/// after the transition is broadcast and paid for: a type that is not
-/// `indexOnly` or whose documents can not be deleted, a property the type
-/// does not declare (also inside a declared object), a `$` field other
-/// than `$createdAt`, a missing
-/// required property, and a missing `$createdAt` on a type whose entries
-/// commit to it. A value of the wrong shape is not checked here. The
-/// document carries a creation time only when the caller gave one.
-fn document_with_values(
-    document_type: DocumentTypeRef,
-    owner_identity_id: &Identifier,
-    document_id: &Identifier,
+/// The values a delete-by-values names, parsed from `properties_json`, and
+/// its `$createdAt`, taken out of them.
+fn values_from_json(
     properties_json: &str,
-    platform_version: &PlatformVersion,
-) -> Result<Document, PlatformWalletError> {
-    if !document_type.index_only() {
-        return Err(PlatformWalletError::InvalidIdentityData(format!(
-            "Document type {:?} is not indexOnly: its documents are deleted by id",
-            document_type.name()
-        )));
-    }
-    if !document_type.documents_can_be_deleted() {
-        return Err(PlatformWalletError::InvalidIdentityData(format!(
-            "Documents of type {:?} can not be deleted",
-            document_type.name()
-        )));
-    }
+) -> Result<(BTreeMap<String, Value>, Option<u64>), PlatformWalletError> {
     let properties_value: serde_json::Value =
         serde_json::from_str(properties_json).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!(
@@ -952,107 +913,31 @@ fn document_with_values(
             ))
         })?),
     };
-    if let Some(name) = undeclared_property(
-        &mut properties
-            .iter()
-            .map(|(name, value)| (name.as_str(), value)),
-        &|name| document_type.properties().get(name),
-    ) {
-        return Err(PlatformWalletError::InvalidIdentityData(format!(
-            "Document type {:?} has no property {name:?} to delete by",
-            document_type.name()
-        )));
-    }
-    if created_at.is_none()
-        && index_only_row_commits_created_at(
-            document_type.required_fields(),
-            document_type.index_structure(),
-        )
-    {
-        return Err(PlatformWalletError::InvalidIdentityData(format!(
-            "Document type {:?} commits to {CREATED_AT}: the delete needs the value the \
-             document was created with",
-            document_type.name()
-        )));
-    }
-    document_type.sanitize_document_properties(&mut properties);
-    // Required properties are looked for the way the delete will carry
-    // them: with every `generatedFrom` property generated, and by path, so
-    // a nested one is found inside its object.
-    let mut carried = properties.clone();
-    document_type
-        .regenerate_generated_properties(&mut carried, platform_version)
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "Failed to generate document properties: {e}"
-            ))
-        })?;
-    let carried = Value::from(carried);
-    if let Some(path) = document_type.required_fields().iter().find(|path| {
-        !path.starts_with('$') && matches!(carried.get_optional_value_at_path(path), Ok(None))
-    }) {
-        return Err(PlatformWalletError::InvalidIdentityData(format!(
-            "Document type {:?} requires {path:?}: the delete needs every value the \
-             document was created with",
-            document_type.name()
-        )));
-    }
-    let mut document = document_type
-        .create_document_from_data(
-            properties.into(),
-            *owner_identity_id,
-            0,
-            0,
-            [0u8; 32],
-            platform_version,
-        )
-        .map_err(|e| {
-            PlatformWalletError::InvalidIdentityData(format!("Failed to build document: {e}"))
-        })?;
-    document.set_id(*document_id);
-    // `create_document_from_data` stamps the current time on a type that
-    // requires one. A delete names the stored entry, so it carries the
-    // caller's value or none.
-    document.set_created_at(created_at);
-    Ok(document)
+    Ok((properties, created_at))
 }
 
-/// The path of the first value the schema does not declare, looking inside
-/// declared objects. A `$` name is never declared. A value of the wrong
-/// kind for its property (a map where the schema has no object, or the
-/// other way round) is left for Platform to refuse.
-fn undeclared_property<'a>(
-    values: &mut dyn Iterator<Item = (&'a str, &'a Value)>,
-    declared: &dyn Fn(&str) -> Option<&'a DocumentProperty>,
-) -> Option<String> {
-    for (name, value) in values {
-        let Some(property) = declared(name).filter(|_| !name.starts_with('$')) else {
-            return Some(name.to_string());
-        };
-        let (DocumentPropertyType::Object(members), Value::Map(entries)) =
-            (&property.property_type, value)
-        else {
-            continue;
-        };
-        let mut nested = entries
-            .iter()
-            .filter_map(|(key, value)| key.as_text().map(|key| (key, value)));
-        if let Some(path) = undeclared_property(&mut nested, &|name| members.get(name)) {
-            return Some(format!("{name}.{path}"));
-        }
+/// A refusal of
+/// [`index_only_delete_document`](dash_sdk::platform::documents::transitions::index_only_delete_document)
+/// carries its own text; any other SDK error keeps its rendering.
+fn delete_preparation_error(error: dash_sdk::Error) -> PlatformWalletError {
+    match error {
+        dash_sdk::Error::Generic(message) => PlatformWalletError::InvalidIdentityData(message),
+        other => PlatformWalletError::InvalidIdentityData(other.to_string()),
     }
-    None
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::signing_key::tests::{lock_checking_signer, wallet_with_signing_keys};
     use super::*;
+    use dash_sdk::platform::documents::transitions::index_only_delete_document;
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use dpp::data_contract::document_type::DocumentTypeRef;
     use dpp::data_contracts::SystemDataContract;
     use dpp::document::DocumentV0Getters;
     use dpp::platform_value::platform_value;
     use dpp::system_data_contracts::load_system_data_contract;
+    use dpp::version::PlatformVersion;
 
     #[tokio::test]
     async fn should_reject_unavailable_explicit_document_key_outside_wallet_lock() {
@@ -1068,6 +953,26 @@ mod tests {
                 if message.starts_with(crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX)),
             "{error:?}"
         );
+    }
+
+    /// The document the wallet's delete-by-values path builds from JSON.
+    fn document_with_values(
+        document_type: DocumentTypeRef,
+        owner_identity_id: &Identifier,
+        document_id: &Identifier,
+        properties_json: &str,
+        platform_version: &PlatformVersion,
+    ) -> Result<Document, PlatformWalletError> {
+        let (values, created_at) = values_from_json(properties_json)?;
+        index_only_delete_document(
+            document_type,
+            *document_id,
+            *owner_identity_id,
+            values,
+            created_at,
+            platform_version,
+        )
+        .map_err(delete_preparation_error)
     }
 
     fn login_key_response_type(contract: &DataContract) -> DocumentTypeRef<'_> {
