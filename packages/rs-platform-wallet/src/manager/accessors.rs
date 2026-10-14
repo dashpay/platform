@@ -960,6 +960,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     AssetLockStatus::InstantSendLocked => 2,
                     AssetLockStatus::ChainLocked => 3,
                     AssetLockStatus::Consumed => 4,
+                    AssetLockStatus::DrainCompleted => 6,
                     AssetLockStatus::RecoveredFromChain => 5,
                 };
                 let (instant_lock_present, chain_lock_height) = match &lock.proof {

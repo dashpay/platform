@@ -1517,8 +1517,8 @@ impl Merge for AssetLockChangeSet {
                 ) {
                     continue;
                 }
-                if existing.status == AssetLockStatus::Consumed
-                    && entry.status != AssetLockStatus::Consumed
+                if existing.status == AssetLockStatus::DrainCompleted
+                    || (existing.status.is_consumed() && !entry.status.is_consumed())
                 {
                     // Terminality guards lifecycle state, never discards
                     // exact signed evidence carried by a delayed snapshot.
@@ -1558,7 +1558,7 @@ impl Merge for AssetLockChangeSet {
             let consumed = self
                 .asset_locks
                 .get(&out_point)
-                .is_some_and(|entry| entry.status == AssetLockStatus::Consumed);
+                .is_some_and(|entry| entry.status.is_consumed());
             if !consumed {
                 self.asset_locks.remove(&out_point);
                 self.removed.insert(out_point);
@@ -2590,6 +2590,19 @@ mod tests {
             cs.asset_locks.insert(outpoint, entry_with(status));
             cs
         };
+
+        let mut certified = cs_with(AssetLockStatus::Consumed);
+        certified.merge(cs_with(AssetLockStatus::DrainCompleted));
+        certified.merge(cs_with(AssetLockStatus::Consumed));
+        certified.merge(cs_with(AssetLockStatus::Broadcast));
+        let mut removal = AssetLockChangeSet::default();
+        removal.removed.insert(outpoint);
+        certified.merge(removal);
+        assert_eq!(
+            certified.asset_locks[&outpoint].status,
+            AssetLockStatus::DrainCompleted
+        );
+        assert!(!certified.removed.contains(&outpoint));
 
         // Stale recovery snapshot folded AFTER the consumption write.
         let mut folded = cs_with(AssetLockStatus::Consumed);

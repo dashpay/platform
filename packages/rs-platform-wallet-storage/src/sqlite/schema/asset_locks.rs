@@ -17,6 +17,7 @@ use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use platform_wallet::changeset::AssetLockChangeSet;
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
+use platform_wallet::wallet::asset_lock::{MAX_DRAIN_ATTEMPTS, MAX_DRAIN_ATTEMPT_BYTES};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
@@ -70,6 +71,7 @@ impl_persistable_blob!(ShieldedFundingAttemptsWire);
 /// Nullable recovery columns read independently of the frozen lifecycle blob.
 struct AssetLockRecoveryRow {
     operation_id: Option<Vec<u8>>,
+    lifecycle_blob: Vec<u8>,
     shielded_funding_attempts_blob: Option<Vec<u8>>,
 }
 
@@ -77,13 +79,45 @@ fn decode_attempts(bytes: Option<&[u8]>) -> Result<Vec<Vec<u8>>, WalletStorageEr
     let Some(bytes) = bytes else {
         return Ok(Vec::new());
     };
-    let wire: ShieldedFundingAttemptsWire = blob::decode(bytes)?;
-    if wire.version != 1 || wire.attempts.iter().any(Vec::is_empty) {
+    // Read the frozen bincode sequence framing before allocating any attempts.
+    // The regular serde Vec decoder can reserve attacker-controlled lengths.
+    fn read<T: bincode::Decode<()>>(bytes: &mut &[u8]) -> Result<T, WalletStorageError> {
+        let (value, consumed) = bincode::decode_from_slice(bytes, blob::bounded_config())?;
+        *bytes = &bytes[consumed..];
+        Ok(value)
+    }
+    let mut remaining = bytes;
+    let version: u32 = read(&mut remaining)?;
+    let count: u64 = read(&mut remaining)?;
+    if version != 1 || count > MAX_DRAIN_ATTEMPTS as u64 {
         return Err(WalletStorageError::blob_decode(
-            "invalid shielded funding attempts",
+            "invalid shielded funding attempt count",
         ));
     }
-    Ok(wire.attempts)
+    let mut payloads = Vec::with_capacity(count as usize);
+    let mut total = 0usize;
+    for _ in 0..count {
+        let len: u64 = read(&mut remaining)?;
+        let len = usize::try_from(len)
+            .map_err(|_| WalletStorageError::blob_decode("attempt length overflow"))?;
+        total = total
+            .checked_add(len)
+            .ok_or_else(|| WalletStorageError::blob_decode("attempt bytes overflow"))?;
+        if len == 0 || total > MAX_DRAIN_ATTEMPT_BYTES || len > remaining.len() {
+            return Err(WalletStorageError::blob_decode(
+                "invalid shielded funding attempt bytes",
+            ));
+        }
+        let (payload, rest) = remaining.split_at(len);
+        payloads.push(payload);
+        remaining = rest;
+    }
+    if !remaining.is_empty() {
+        return Err(WalletStorageError::blob_decode(
+            "trailing shielded funding attempt bytes",
+        ));
+    }
+    Ok(payloads.into_iter().map(<[u8]>::to_vec).collect())
 }
 
 /// Encode an [`AssetLockEntry`] to its on-disk `lifecycle_blob` form via the
@@ -185,11 +219,12 @@ pub fn apply(
             let op_bytes = blob::encode_outpoint(op)?;
             let lifecycle_blob = blob::encode(&AssetLockEntryWire::from_entry(entry)?)?;
             let existing: Option<AssetLockRecoveryRow> = tx.query_row(
-                "SELECT operation_id, shielded_funding_attempts_blob FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
+                "SELECT operation_id, shielded_funding_attempts_blob, lifecycle_blob FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
                 params![wallet_id.as_slice(), &op_bytes[..]],
                 |row| Ok(AssetLockRecoveryRow {
                     operation_id: row.get(0)?,
                     shielded_funding_attempts_blob: row.get(1)?,
+                    lifecycle_blob: row.get(2)?,
                 }),
             ).optional()?;
             // A signed attempt belongs to this immutable operation UUID.
@@ -207,13 +242,28 @@ pub fn apply(
                     ));
                 }
             }
+            // Both terminal variants project to SQL `consumed`, but the blob
+            // retains stronger proof-gated completion and must never regress.
+            if let Some(stored) = &existing {
+                let old: AssetLockEntryWire = blob::decode(&stored.lifecycle_blob)?;
+                if old.status == AssetLockStatus::DrainCompleted
+                    && entry.status != AssetLockStatus::DrainCompleted
+                {
+                    continue;
+                }
+            }
             let old_attempts = decode_attempts(
                 existing
                     .as_ref()
                     .and_then(|row| row.shielded_funding_attempts_blob.as_deref()),
             )?;
             let incoming = &entry.shielded_funding_attempts;
-            if incoming.iter().any(Vec::is_empty)
+            let incoming_bytes = incoming
+                .iter()
+                .try_fold(0usize, |total, bytes| total.checked_add(bytes.len()));
+            if incoming.len() > MAX_DRAIN_ATTEMPTS
+                || incoming_bytes.is_none_or(|total| total > MAX_DRAIN_ATTEMPT_BYTES)
+                || incoming.iter().any(Vec::is_empty)
                 || (!incoming.starts_with(&old_attempts) && !old_attempts.starts_with(incoming))
             {
                 return Err(WalletStorageError::blob_decode(
@@ -341,7 +391,7 @@ fn status_str(s: &AssetLockStatus) -> &'static str {
         AssetLockStatus::Broadcast => "broadcast",
         AssetLockStatus::InstantSendLocked => "is_locked",
         AssetLockStatus::ChainLocked => "chain_locked",
-        AssetLockStatus::Consumed => "consumed",
+        AssetLockStatus::Consumed | AssetLockStatus::DrainCompleted => "consumed",
         AssetLockStatus::RecoveredFromChain => "recovered_from_chain",
     }
 }
@@ -397,7 +447,7 @@ fn decode_row(
     }
     let blob_status = status_str(&entry.status);
     if blob_status != typed_status {
-        let consumed = typed_status == "consumed" || entry.status == AssetLockStatus::Consumed;
+        let consumed = typed_status == "consumed" || entry.status.is_consumed();
         ctx.tolerate(
             LoadSite::AssetLockStatusDrift,
             WalletStorageError::AssetLockStatusMismatch {
@@ -409,7 +459,7 @@ fn decode_row(
         // `load_unconsumed` pre-filters typed `consumed` rows, so the blob can
         // only withdraw a lock there. Sticky consumption also keeps the
         // unfiltered test/inspection reader conservative.
-        if consumed {
+        if consumed && entry.status != AssetLockStatus::DrainCompleted {
             entry.status = AssetLockStatus::Consumed;
         }
     }
@@ -509,7 +559,7 @@ pub fn load_unconsumed(
             attempts_blob,
             ctx,
         )?;
-        if tracked.status == AssetLockStatus::Consumed && tracked.operation_id.is_none() {
+        if tracked.status.is_consumed() && tracked.operation_id.is_none() {
             continue;
         }
         out.entry(acct).or_default().insert(outpoint, tracked);
@@ -615,6 +665,76 @@ mod tests {
                 shielded_funding_attempts: tracked.shielded_funding_attempts,
             })
             .expect("stored asset lock must load back")
+    }
+
+    #[test]
+    fn should_bound_attempt_archive_before_payload_allocation() {
+        for attempts in [
+            vec![vec![1]; MAX_DRAIN_ATTEMPTS],
+            vec![vec![2; MAX_DRAIN_ATTEMPT_BYTES]],
+        ] {
+            let bytes = blob::encode(&ShieldedFundingAttemptsWire {
+                version: 1,
+                attempts: attempts.clone(),
+            })
+            .unwrap();
+            assert_eq!(decode_attempts(Some(&bytes)).unwrap(), attempts);
+        }
+        for attempts in [
+            vec![vec![1]; MAX_DRAIN_ATTEMPTS + 1],
+            vec![vec![1; MAX_DRAIN_ATTEMPT_BYTES], vec![2]],
+        ] {
+            let bytes = blob::encode(&ShieldedFundingAttemptsWire {
+                version: 1,
+                attempts,
+            })
+            .unwrap();
+            assert!(decode_attempts(Some(&bytes)).is_err());
+        }
+        // Only the length prefix is present: reject it without allocating.
+        let bytes = bincode::encode_to_vec((1u32, u64::MAX), blob::bounded_config()).unwrap();
+        assert!(decode_attempts(Some(&bytes)).is_err());
+        let bytes = bincode::encode_to_vec((1u32, 1u64, u64::MAX), blob::bounded_config()).unwrap();
+        assert!(decode_attempts(Some(&bytes)).is_err());
+    }
+
+    #[test]
+    fn should_preserve_proven_drain_completion_over_stale_consumed_snapshot() {
+        let mut conn = migrated_conn();
+        let wallet = [0xAA; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet[..]],
+        )
+        .unwrap();
+        let mut entry =
+            entry_with_proof(sample_outpoint(90), AssetLockStatus::DrainCompleted, None);
+        entry.operation_id = Some([9; 16]);
+        assert_eq!(
+            roundtrip_through_db(&entry).status,
+            AssetLockStatus::DrainCompleted
+        );
+        for status in [
+            AssetLockStatus::DrainCompleted,
+            AssetLockStatus::Consumed,
+            AssetLockStatus::Built,
+        ] {
+            entry.status = status;
+            let mut cs = AssetLockChangeSet::default();
+            cs.asset_locks.insert(entry.out_point, entry.clone());
+            let tx = conn.transaction().unwrap();
+            apply(&tx, &wallet, &cs).unwrap();
+            tx.commit().unwrap();
+        }
+        let restored = load_state(&conn, &wallet, &LoadCtx::strict()).unwrap();
+        assert_eq!(
+            restored[&0][&entry.out_point].status,
+            AssetLockStatus::DrainCompleted
+        );
+        let projection: String = conn
+            .query_row("SELECT status FROM asset_locks", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(projection, "consumed");
     }
 
     /// Repro for #4133: a `proof: Some(AssetLockProof::Chain(..))` row must
@@ -817,6 +937,7 @@ mod tests {
             AssetLockStatus::ChainLocked,
             AssetLockStatus::Consumed,
             AssetLockStatus::RecoveredFromChain,
+            AssetLockStatus::DrainCompleted,
         ];
         for v in &variants {
             match v {
@@ -825,7 +946,8 @@ mod tests {
                 | AssetLockStatus::InstantSendLocked
                 | AssetLockStatus::ChainLocked
                 | AssetLockStatus::Consumed
-                | AssetLockStatus::RecoveredFromChain => {}
+                | AssetLockStatus::RecoveredFromChain
+                | AssetLockStatus::DrainCompleted => {}
             }
         }
         variants

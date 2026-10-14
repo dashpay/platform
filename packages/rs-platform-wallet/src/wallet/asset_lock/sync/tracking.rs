@@ -268,7 +268,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
             let mut cs = AssetLockChangeSet::default();
             match info.tracked_asset_locks.get_mut(out_point) {
-                Some(entry) if entry.status != AssetLockStatus::Consumed => {
+                Some(entry) if entry.operation_id.is_some() => {
+                    return Err(PlatformWalletError::Persistence(
+                        "wallet drains require authenticated completion through drain reconciliation".into(),
+                    ));
+                }
+                Some(entry) if !entry.status.is_consumed() => {
                     entry.status = AssetLockStatus::Consumed;
                     entry.proof = None; // one-shot — never relevant after consumption
                     cs.asset_locks.insert(*out_point, (&*entry).into());
@@ -441,7 +446,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point
             ))
         })?;
-        if entry.status == AssetLockStatus::Consumed {
+        if entry.status.is_consumed() {
             tracing::warn!(
                 outpoint = %out_point,
                 attempted = ?new_status,
@@ -449,6 +454,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                  transition was in flight; keeping the tombstone"
             );
             return Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point));
+        }
+        if new_status == AssetLockStatus::DrainCompleted
+            || (entry.operation_id.is_some() && new_status == AssetLockStatus::Consumed)
+        {
+            return Err(PlatformWalletError::Persistence(
+                "wallet drains require authenticated completion through drain reconciliation"
+                    .into(),
+            ));
         }
         if !expected(&entry.status) {
             tracing::info!(
@@ -503,8 +516,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point
             ))
         })?;
-        if entry.status == AssetLockStatus::Consumed {
+        if entry.status.is_consumed() {
             return Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point));
+        }
+        if new_status == AssetLockStatus::DrainCompleted
+            || (entry.operation_id.is_some() && new_status == AssetLockStatus::Consumed)
+        {
+            return Err(PlatformWalletError::Persistence(
+                "wallet drains require authenticated completion through drain reconciliation"
+                    .into(),
+            ));
         }
         if !expected(&entry.status) {
             return Ok(None);

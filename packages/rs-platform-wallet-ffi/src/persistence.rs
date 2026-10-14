@@ -36,6 +36,7 @@ use platform_wallet::changeset::{
     PlatformWalletChangeSet, PlatformWalletPersistence, ProviderKeyAccountEntry,
     ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
 };
+use platform_wallet::wallet::asset_lock::{MAX_DRAIN_ATTEMPTS, MAX_DRAIN_ATTEMPT_BYTES};
 use platform_wallet::wallet::platform_wallet::WalletId;
 #[cfg(feature = "shielded")]
 use platform_wallet::wallet::shielded::ShieldedActivityStatus;
@@ -6357,7 +6358,7 @@ fn load_shielded_funding_attempts(
             entries,
             count,
         };
-        if count > isize::MAX as usize / std::mem::size_of::<ShieldedFundingAttemptFFI>()
+        if count > MAX_DRAIN_ATTEMPTS
             || (count != 0 && (entries.is_null() || lock.operation_id.is_none()))
         {
             return Err(PersistenceError::backend(
@@ -6369,13 +6370,25 @@ fn load_shielded_funding_attempts(
         } else {
             unsafe { slice::from_raw_parts(entries, count) }
         };
-        let mut attempts = Vec::with_capacity(count);
+        let mut total_bytes = 0usize;
+        // Validate all lengths before constructing any payload slice or copying bytes.
         for row in rows {
+            total_bytes = total_bytes.checked_add(row.bytes_len).ok_or_else(|| {
+                PersistenceError::backend("shielded funding attempt bytes overflow")
+            })?;
+            if total_bytes > MAX_DRAIN_ATTEMPT_BYTES {
+                return Err(PersistenceError::backend(
+                    "shielded funding attempt archive exceeds budget",
+                ));
+            }
             if row.bytes.is_null() || row.bytes_len == 0 || row.bytes_len > isize::MAX as usize {
                 return Err(PersistenceError::backend(
                     "invalid signed shielded funding attempt",
                 ));
             }
+        }
+        let mut attempts = Vec::with_capacity(count);
+        for row in rows {
             attempts.push(unsafe { slice::from_raw_parts(row.bytes, row.bytes_len) }.to_vec());
         }
         lock.shielded_funding_attempts = attempts;
@@ -6530,6 +6543,7 @@ fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, Persistence
         3 => AssetLockStatus::ChainLocked,
         4 => AssetLockStatus::Consumed,
         5 => AssetLockStatus::RecoveredFromChain,
+        6 => AssetLockStatus::DrainCompleted,
         other => {
             return Err(PersistenceError::backend(format!(
                 "tracked asset lock: unknown status discriminant {}",
@@ -8992,7 +9006,14 @@ mod tests {
             }
             0
         }
-        for operation_id in [None, Some([0xA5; 16])] {
+        for (operation_id, status) in [
+            (None, platform_wallet::AssetLockStatus::Consumed),
+            (Some([0xA5; 16]), platform_wallet::AssetLockStatus::Consumed),
+            (
+                Some([0xA5; 16]),
+                platform_wallet::AssetLockStatus::DrainCompleted,
+            ),
+        ] {
             let entry = platform_wallet::changeset::AssetLockEntry {
                 out_point: dashcore::OutPoint {
                     txid: dashcore::Txid::from_byte_array([3; 32]),
@@ -9009,7 +9030,7 @@ mod tests {
                 funding_type: AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 identity_index: 0,
                 amount_duffs: 1000,
-                status: platform_wallet::AssetLockStatus::Consumed,
+                status: status.clone(),
                 proof: None,
                 operation_id,
                 shielded_funding_attempts: Vec::new(),
@@ -9033,10 +9054,7 @@ mod tests {
             )
             .expect("valid UUID sidecar");
             assert_eq!(restored[&7][&entry.out_point].operation_id, operation_id);
-            assert_eq!(
-                restored[&7][&entry.out_point].status,
-                platform_wallet::AssetLockStatus::Consumed
-            );
+            assert_eq!(restored[&7][&entry.out_point].status, status);
             let duplicated = [entries[0], entries[0]];
             let bad_wallet = WalletRestoreEntryFFI {
                 tracked_asset_locks: duplicated.as_ptr(),
@@ -9411,6 +9429,46 @@ mod tests {
         )
         .is_err());
         assert!(host.freed);
+        // Invalid addresses are deliberate: budget validation must finish before
+        // a payload pointer is dereferenced, including cumulative overflow.
+        for lengths in [
+            vec![1; MAX_DRAIN_ATTEMPTS + 1],
+            vec![MAX_DRAIN_ATTEMPT_BYTES + 1],
+            vec![MAX_DRAIN_ATTEMPT_BYTES, 1],
+            vec![usize::MAX, 1],
+        ] {
+            host.rows = lengths
+                .into_iter()
+                .map(|bytes_len| ShieldedFundingAttemptFFI {
+                    bytes: std::ptr::dangling(),
+                    bytes_len,
+                })
+                .collect();
+            host.freed = false;
+            assert!(load_shielded_funding_attempts(
+                load,
+                free,
+                std::ptr::addr_of_mut!(host).cast(),
+                &[42; 32],
+                &mut locks
+            )
+            .is_err());
+            assert!(host.freed);
+            assert_eq!(locks[&0][&out_point].shielded_funding_attempts, attempts);
+        }
+    }
+
+    #[test]
+    fn should_restore_proven_drain_completion_discriminant() {
+        assert_eq!(
+            status_from_u8(6).unwrap(),
+            platform_wallet::AssetLockStatus::DrainCompleted
+        );
+        assert_eq!(
+            status_from_u8(4).unwrap(),
+            platform_wallet::AssetLockStatus::Consumed
+        );
+        assert!(status_from_u8(7).is_err());
     }
 
     #[test]

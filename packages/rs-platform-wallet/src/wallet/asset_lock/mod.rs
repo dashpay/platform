@@ -7,7 +7,7 @@ mod build;
 mod operation;
 pub use operation::{
     AssetLockOperationContext, AssetLockOperationRegistration, AssetLockOperationSnapshot,
-    AssetLockOperationState,
+    AssetLockOperationState, MAX_DRAIN_ATTEMPTS, MAX_DRAIN_ATTEMPT_BYTES,
 };
 pub mod lock_notify_handler;
 pub mod manager;

@@ -578,7 +578,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // rs-platform-wallet-storage sqlite upsert; all other
                     // transitions stay last-write-wins because non-terminal
                     // statuses legitimately move both ways.
-                    if existing.statusRaw == 4 && entry.statusRaw != 4 {
+                    if (existing.statusRaw == 6 && entry.statusRaw != 6)
+                        || (existing.statusRaw == 4 && entry.statusRaw != 4 && entry.statusRaw != 6) {
                         continue
                     }
                     existing.walletId = walletId
@@ -662,7 +663,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // carries an upsert and a removal for the same
                     // outpoint, so the upserts-then-removals order above is
                     // layout, not load-bearing sequencing.
-                    if existing.statusRaw == 4 {
+                    if existing.statusRaw == 4 || existing.statusRaw == 6 {
                         continue
                     }
                     backgroundContext.delete(existing)
@@ -718,13 +719,51 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         }
     }
 
+    // Mirrors the native wallet's MAX_DRAIN_ATTEMPTS / MAX_DRAIN_ATTEMPT_BYTES.
+    fileprivate static let maxDrainAttempts = 64
+    fileprivate static let maxDrainAttemptBytes = 4 * 1024 * 1024
+
     private struct ShieldedFundingAttemptsArchive: Codable {
         let version: UInt32
         var attempts: [Data]
+        enum CodingKeys: CodingKey { case version, attempts }
+
+        init(version: UInt32, attempts: [Data]) {
+            self.version = version
+            self.attempts = attempts
+        }
+
+        init(from decoder: Decoder) throws {
+            let fields = try decoder.container(keyedBy: CodingKeys.self)
+            version = try fields.decode(UInt32.self, forKey: .version)
+            var rows = try fields.nestedUnkeyedContainer(forKey: .attempts)
+            guard version == 1, (rows.count ?? 0) <= maxDrainAttempts else {
+                throw AssetLockPersistenceError.malformedRecord
+            }
+            attempts = []
+            var total = 0
+            while !rows.isAtEnd {
+                guard attempts.count < maxDrainAttempts else {
+                    throw AssetLockPersistenceError.malformedRecord
+                }
+                let data = try rows.decode(Data.self)
+                let (next, overflow) = total.addingReportingOverflow(data.count)
+                guard !data.isEmpty, !overflow, next <= maxDrainAttemptBytes else {
+                    throw AssetLockPersistenceError.malformedRecord
+                }
+                total = next
+                attempts.append(data)
+            }
+        }
     }
 
     private static func decodeShieldedFundingAttempts(_ record: PersistentAssetLock) throws -> [Data] {
         guard let blob = record.shieldedFundingAttemptsBlob else { return [] }
+        // Bound the plist parser itself before it materializes its object graph.
+        // Allow XML base64 expansion plus framing; writers use compact binary plists.
+        guard blob.count <= maxDrainAttemptBytes * 2 + 64 * 1024 else {
+            throw AssetLockPersistenceError.malformedRecord
+        }
         let archive = try PropertyListDecoder().decode(ShieldedFundingAttemptsArchive.self, from: blob)
         guard archive.version == 1, !archive.attempts.contains(where: { $0.isEmpty }),
               archive.attempts.isEmpty || record.operationId?.count == 16 else {
@@ -756,6 +795,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 return
             }
             guard index == attempts.count else { throw AssetLockPersistenceError.malformedRecord }
+            guard attempts.count < Self.maxDrainAttempts,
+                  bytes.count <= Self.maxDrainAttemptBytes - attempts.reduce(0, { $0 + $1.count }) else {
+                throw AssetLockPersistenceError.malformedRecord
+            }
             attempts.append(bytes)
             let encoder = PropertyListEncoder()
             encoder.outputFormat = .binary
@@ -1105,7 +1148,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             guard decodeOutPointHex(record.outPointHex) != nil,
                   !record.transactionBytes.isEmpty,
                   (0...5).contains(record.fundingTypeRaw),
-                  (0...5).contains(record.statusRaw) else {
+                  (0...6).contains(record.statusRaw) else {
                 throw AssetLockPersistenceError.malformedRecord
             }
             if let operationId = record.operationId {
@@ -11853,7 +11896,9 @@ private func persistShieldedFundingAttemptCallback(
     attemptIndex: UInt32, bytes: UnsafePointer<UInt8>?, bytesLen: UInt
 ) -> Int32 {
     guard let context, let walletId, let outPoint, let operationId, let bytes,
-          let count = Int(exactly: bytesLen), count > 0 else { return -1 }
+          let count = Int(exactly: bytesLen), count > 0,
+          count <= PlatformWalletPersistenceHandler.maxDrainAttemptBytes,
+          Int(attemptIndex) < PlatformWalletPersistenceHandler.maxDrainAttempts else { return -1 }
     let handler = Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(context).takeUnretainedValue()
     do {
         try handler.persistShieldedFundingAttempt(

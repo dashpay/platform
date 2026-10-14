@@ -21,10 +21,8 @@ use super::tracked::{AssetLockStatus, TrackedAssetLock};
 // admitted attempt as evidence; exhaustion stops new dispatches, never recovery
 // or replay of an already recorded attempt. 64 attempts allow repeated freshness
 // retries, while 4 MiB bounds the archive even if individual transitions grow.
-#[cfg(feature = "shielded")]
-pub(super) const MAX_DRAIN_ATTEMPTS: usize = 64;
-#[cfg(feature = "shielded")]
-pub(super) const MAX_DRAIN_ATTEMPT_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_DRAIN_ATTEMPTS: usize = 64;
+pub const MAX_DRAIN_ATTEMPT_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetLockOperationState {
@@ -115,8 +113,10 @@ impl Drop for AssetLockOperationRegistration {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let last = self.operation.registrations.fetch_sub(1, Ordering::SeqCst) == 1;
+        let snapshot = self.operation.snapshot();
         if last
-            && self.operation.snapshot().out_point.is_none()
+            && (snapshot.out_point.is_none()
+                || snapshot.state == AssetLockOperationState::Completed)
             && operations
                 .get(&self.operation.operation_id)
                 .is_some_and(|current| Arc::ptr_eq(current, &self.operation))
@@ -130,7 +130,7 @@ impl Drop for AssetLockOperationRegistration {
 
 fn snapshot_for_lock(lock: &TrackedAssetLock) -> AssetLockOperationSnapshot {
     AssetLockOperationSnapshot {
-        state: if lock.status == AssetLockStatus::Consumed {
+        state: if lock.status == AssetLockStatus::DrainCompleted {
             AssetLockOperationState::Completed
         } else {
             AssetLockOperationState::Pending
@@ -140,6 +140,22 @@ fn snapshot_for_lock(lock: &TrackedAssetLock) -> AssetLockOperationSnapshot {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Keep queued/active callers' leases, but do not retain terminal contexts
+    /// for the manager's lifetime. Durable DrainCompleted remains authoritative.
+    fn publish_completed_operation(&self, operation_id: [u8; 16], out_point: OutPoint) {
+        let mut operations = self
+            .drain_operations
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(context) = operations.get(&operation_id) {
+            context.set(AssetLockOperationState::Completed, Some(out_point));
+            context.clear_checkpoint();
+            if context.registrations.load(Ordering::SeqCst) == 0 {
+                operations.remove(&operation_id);
+            }
+        }
+    }
+
     /// Retain every exact signed attempt before dispatch. Failed writes retain
     /// the candidate in memory too: a backend may have committed before its
     /// flush failed, so the next attempt must never reuse its append index.
@@ -161,7 +177,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     "drain attempt has no operation UUID".into(),
                 ));
             }
-            if lock.status == AssetLockStatus::Consumed {
+            if lock.status.is_consumed() {
                 return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
             }
             if !lock.shielded_funding_attempts.contains(&signed_attempt) {
@@ -207,7 +223,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .filter(|lock| lock.operation_id == Some(operation_id))
             .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
         let mut candidate = lock.clone();
-        candidate.status = AssetLockStatus::Consumed;
+        candidate.status = AssetLockStatus::DrainCompleted;
         candidate.proof = None;
         let mut changes = crate::changeset::AssetLockChangeSet::default();
         changes
@@ -228,8 +244,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             // notification must not suppress their live publication.
             tracing::warn!(%out_point, %error, "wallet drain committed inline; flush notification failed");
         }
-        lock.status = AssetLockStatus::Consumed;
+        lock.status = AssetLockStatus::DrainCompleted;
         lock.proof = None;
+        self.publish_completed_operation(operation_id, out_point);
         self.resume_dispatch_claims
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -321,6 +338,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // resume completing while the original context still says Pending.
         for snapshot in [live, durable, context].into_iter().flatten() {
             if snapshot.state == AssetLockOperationState::Completed {
+                if let Some(out_point) = snapshot.out_point {
+                    self.publish_completed_operation(operation_id, out_point);
+                }
                 return Ok(snapshot);
             }
         }
@@ -513,11 +533,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .unused_asset_locks
             .values()
             .flat_map(|locks| locks.values())
-            .any(|lock| lock.operation_id.is_some() && lock.status != AssetLockStatus::Consumed);
+            .any(|lock| {
+                lock.operation_id.is_some() && lock.status != AssetLockStatus::DrainCompleted
+            });
         let live_locks = self.list_tracked_locks().await;
-        let live_pending = live_locks
-            .iter()
-            .any(|lock| lock.operation_id.is_some() && lock.status != AssetLockStatus::Consumed);
+        let live_pending = live_locks.iter().any(|lock| {
+            lock.operation_id.is_some() && lock.status != AssetLockStatus::DrainCompleted
+        });
         let completed = live_locks
             .iter()
             .chain(
@@ -528,7 +550,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .flat_map(|wallet| wallet.unused_asset_locks.values())
                     .flat_map(|locks| locks.values()),
             )
-            .filter(|lock| lock.status == AssetLockStatus::Consumed)
+            .filter(|lock| lock.status == AssetLockStatus::DrainCompleted)
             .filter_map(|lock| lock.operation_id)
             .collect::<BTreeSet<_>>();
         let context_pending = self

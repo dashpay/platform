@@ -57,7 +57,8 @@ pub struct AssetLockEntryFFI {
     /// Locked amount in duffs (1 DASH = 1e8 duffs).
     pub amount_duffs: u64,
     /// Discriminant of [`AssetLockStatus`]:
-    /// 0 = Built, 1 = Broadcast, 2 = InstantSendLocked, 3 = ChainLocked.
+    /// 0 = Built, 1 = Broadcast, 2 = InstantSendLocked, 3 = ChainLocked,
+    /// 4 = Consumed, 5 = RecoveredFromChain, 6 = DrainCompleted (proven owned output).
     pub status: u8,
     /// Bincode-encoded [`AssetLockProof`] (standard config). Rust-owned,
     /// `null` + `0` length when the entry has no proof yet (statuses
@@ -172,6 +173,7 @@ fn status_to_u8(status: &AssetLockStatus) -> u8 {
         AssetLockStatus::ChainLocked => 3,
         AssetLockStatus::Consumed => 4,
         AssetLockStatus::RecoveredFromChain => 5,
+        AssetLockStatus::DrainCompleted => 6,
     }
 }
 

@@ -714,7 +714,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .tracked_resume_metadata(&out_point)
                     .await
                     .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
-                if status == crate::wallet::asset_lock::tracked::AssetLockStatus::Consumed {
+                if status.is_consumed() {
                     return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
                 }
                 // Invitation vouchers are bearer instruments: the credit

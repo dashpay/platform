@@ -119,8 +119,7 @@ extension PlatformWalletManager {
         fundingAccountIndex: UInt32 = 0
     ) async throws -> WalletDrainPreview {
         try walletDrainReadPreflight(walletId: walletId)
-        let handle = self.handle
-        return try await Task.detached(priority: .userInitiated) {
+        return try await withWalletDrainNativeOperation("shieldedWalletDrainPreview") { handle in
             try Self.withWalletDrainID(walletId) { walletPtr in
                 var preview = WalletDrainPreviewFFI()
                 try platform_wallet_manager_shielded_wallet_drain_preview(
@@ -128,7 +127,7 @@ extension PlatformWalletManager {
                 ).check()
                 return try WalletDrainPreview(ffi: preview)
             }
-        }.value
+        }
     }
 
     /// Drain the permitted transparent accounts into a single Orchard recipient.
@@ -143,6 +142,7 @@ extension PlatformWalletManager {
     ) async -> WalletDrainOutcome {
         do {
             try shieldedFundFromAssetLockPreflight(walletId: walletId, recipients: recipients)
+            try admitNativeOp("shieldedFundFromWalletDrain")
         } catch {
             // The ID may belong to an earlier call. Local validation cannot
             // establish that the persisted operation was never dispatched.
@@ -150,6 +150,7 @@ extension PlatformWalletManager {
                 state: .pending, outpoint: nil, error: Self.walletDrainError(error))
         }
 
+        defer { finishNativeOp() }
         let handle = self.handle
         let callIdentity = WalletDrainCallIdentity(
             manager: handle, walletId: walletId, operationId: operationId)
@@ -210,7 +211,7 @@ extension PlatformWalletManager {
         if Self.walletDrainCalls[callIdentity] != nil {
             return WalletDrainOutcome(state: .pending, outpoint: nil)
         }
-        return try await Task.detached(priority: .userInitiated) {
+        return try await withWalletDrainNativeOperation("shieldedWalletDrainStatus") { handle in
             try Self.withWalletDrainIDs(walletId, operationId: operationId) { walletPtr, operationPtr in
                 var outcome = WalletDrainOutcomeFFI()
                 outcome.state = WalletDrainOutcome.State.pending.rawValue
@@ -219,6 +220,19 @@ extension PlatformWalletManager {
                 ).check()
                 return WalletDrainOutcome(ffi: outcome)
             }
+        }
+    }
+
+    /// Retain admission through detached native execution and result conversion.
+    /// Cancellation of the awaiting task does not release the captured handle early.
+    func withWalletDrainNativeOperation<T: Sendable>(
+        _ name: String, body: @escaping @Sendable (Handle) throws -> T
+    ) async throws -> T {
+        try admitNativeOp(name)
+        defer { finishNativeOp() }
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            try body(handle)
         }.value
     }
 

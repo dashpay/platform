@@ -993,7 +993,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 AssetLockStatus::InstantSendLocked
                 | AssetLockStatus::ChainLocked
                 | AssetLockStatus::RecoveredFromChain
-                | AssetLockStatus::Consumed => None,
+                | AssetLockStatus::Consumed
+                | AssetLockStatus::DrainCompleted => None,
             };
             // Claim the dispatch window for the two statuses that can still
             // send, while the read guard that produced this snapshot is
@@ -1072,7 +1073,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             AssetLockStatus::InstantSendLocked
             | AssetLockStatus::ChainLocked
             | AssetLockStatus::RecoveredFromChain
-            | AssetLockStatus::Consumed => None,
+            | AssetLockStatus::Consumed
+            | AssetLockStatus::DrainCompleted => None,
         };
         if status == AssetLockStatus::Built && local_finality.is_some() {
             dispatch_claim
@@ -1743,7 +1745,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     }
                 }
             }
-            (AssetLockStatus::Consumed, _) => {
+            (AssetLockStatus::Consumed | AssetLockStatus::DrainCompleted, _) => {
                 // Terminal tombstone — the asset lock was already
                 // burned by a successful identity registration / top-up.
                 // Retaining this state makes the typed distinction from

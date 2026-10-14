@@ -34,13 +34,12 @@ use crate::changeset::AssetLockEntry;
 ///
 /// # Schema coupling
 ///
-/// Variants of this enum are persisted as TEXT in the
-/// `platform-wallet-storage` SQLite schema (column `asset_locks.status`
-/// — see `migrations/V001__initial.rs`). Any change to this enum
-/// (added or renamed variant) MUST also update:
-///   - `sqlite::schema::asset_locks::status_str` (writer mapping)
-///   - `sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS`
-///     (`CHECK` constraint domain)
+/// The authoritative SQLite `lifecycle_blob` stores this enum; never reorder
+/// existing variants. The `asset_locks.status` TEXT column is a query projection
+/// (see `migrations/V001__initial.rs`). `DrainCompleted` projects to `consumed`
+/// while its distinct appended blob discriminant retains the proof receipt.
+/// Changes MUST update `sqlite::schema::asset_locks::status_str` and its parity
+/// test; a new SQL label also requires `ASSET_LOCK_STATUS_LABELS` and a migration.
 /// Verified by the `asset_lock_status_labels_match_enum` unit test in
 /// that same module.
 #[derive(Debug, Clone, PartialEq)]
@@ -108,6 +107,19 @@ pub enum AssetLockStatus {
     /// Platform is the arbiter and rejects an already-spent outpoint
     /// with a typed error.
     RecoveredFromChain,
+    /// A wallet drain completed only after authenticated exact owned outputs
+    /// and proof-verified full consumption of the original outpoint. Committed
+    /// atomically with canonical shielded history by `complete_wallet_drain`.
+    /// Unlike generic `Consumed`, this is a durable drain-completion receipt.
+    DrainCompleted,
+}
+
+impl AssetLockStatus {
+    /// Terminal for generic asset-lock lifecycle and coin-selection purposes.
+    /// Drain success requires `DrainCompleted`, not generic `Consumed`.
+    pub fn is_consumed(&self) -> bool {
+        matches!(self, Self::Consumed | Self::DrainCompleted)
+    }
 }
 
 /// A tracked asset lock. Private keys are NOT stored here — they're

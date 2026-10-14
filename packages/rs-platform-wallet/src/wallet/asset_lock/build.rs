@@ -4144,16 +4144,15 @@ mod tests {
             super::AssetLockOperationState::NotSent
         );
         assert_eq!(manager.broadcaster.calls(), 1);
-        // Authenticated consumption, unlike an already-consumed report, is
-        // terminal and may be reported Completed by operation-ID lookup.
-        manager.consume_asset_lock(&outpoint).await.unwrap();
+        // Generic consumption cannot manufacture a proof-gated drain result.
+        assert!(manager.consume_asset_lock(&outpoint).await.is_err());
         assert_eq!(
             manager
                 .wallet_drain_operation_status([11; 16])
                 .await
                 .unwrap()
                 .state,
-            super::AssetLockOperationState::Completed
+            super::AssetLockOperationState::Pending
         );
     }
 

@@ -363,8 +363,8 @@ impl PlatformWalletInfo {
                     ) {
                         continue;
                     }
-                    if existing.status == AssetLockStatus::Consumed
-                        && entry.status != AssetLockStatus::Consumed
+                    if existing.status == AssetLockStatus::DrainCompleted
+                        || (existing.status.is_consumed() && !entry.status.is_consumed())
                     {
                         existing.operation_id = entry.operation_id;
                         existing.shielded_funding_attempts = entry.shielded_funding_attempts;
@@ -393,7 +393,7 @@ impl PlatformWalletInfo {
                 if self
                     .tracked_asset_locks
                     .get(&out_point)
-                    .is_some_and(|entry| entry.status == AssetLockStatus::Consumed)
+                    .is_some_and(|entry| entry.status.is_consumed())
                 {
                     continue;
                 }
@@ -916,6 +916,44 @@ mod tests {
         assert_eq!(restored.operation_id, operation_id);
         assert_eq!(restored.shielded_funding_attempts, attempts);
         assert_eq!(restored.status, AssetLockStatus::Consumed);
+    }
+
+    #[test]
+    fn should_preserve_proven_drain_completion_over_generic_consumption_and_removal() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        for status in [
+            AssetLockStatus::Consumed,
+            AssetLockStatus::DrainCompleted,
+            AssetLockStatus::Consumed,
+            AssetLockStatus::Broadcast,
+        ] {
+            apply_recovery_asset_lock(
+                &mut info,
+                &mut wallet,
+                recovery_asset_lock(status.clone(), Some([42; 16]), vec![vec![18, 1]]),
+            );
+            if status == AssetLockStatus::DrainCompleted {
+                assert_eq!(
+                    info.tracked_asset_locks[&OutPoint::default()].status,
+                    status
+                );
+            }
+        }
+        let mut removed = AssetLockChangeSet::default();
+        removed.removed.insert(OutPoint::default());
+        info.apply_changeset(
+            &mut wallet,
+            PlatformWalletChangeSet {
+                asset_locks: Some(removed),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            info.tracked_asset_locks[&OutPoint::default()].status,
+            AssetLockStatus::DrainCompleted
+        );
     }
 
     #[test]

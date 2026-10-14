@@ -148,6 +148,54 @@ final class AssetLockOperationPersistenceTests: XCTestCase {
         XCTAssertThrowsError(try handler.loadShieldedFundingAttempts(walletId: walletId, outPoint: rawOutPoint))
     }
 
+    func testShouldBoundAttemptArchivesBeforeRecovery() throws {
+        struct Archive: Encodable { let version = 1; let attempts: [Data] }
+        let limit = 4 * 1024 * 1024
+        for (attempts, valid) in [
+            (Array(repeating: Data([1]), count: 64), true),
+            ([Data(repeating: 1, count: limit)], true),
+            (Array(repeating: Data([1]), count: 65), false),
+            ([Data(repeating: 1, count: limit), Data([2])], false),
+            ([Data(repeating: 1, count: limit + 1)], false)
+        ] {
+            let container = try DashModelContainer.createInMemory()
+            let context = ModelContext(container)
+            let record = PersistentAssetLock(outPointHex: outPointHex, walletId: walletId,
+                transactionBytes: Data([1]), fundingTypeRaw: 5, identityIndexRaw: 0,
+                amountDuffs: 1000, statusRaw: 4, operationId: operationId)
+            let encoder = PropertyListEncoder()
+            encoder.outputFormat = .binary
+            record.shieldedFundingAttemptsBlob = try encoder.encode(Archive(attempts: attempts))
+            context.insert(record)
+            try context.save()
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+            if valid {
+                XCTAssertEqual(try handler.loadShieldedFundingAttempts(walletId: walletId, outPoint: rawOutPoint), attempts)
+            } else {
+                XCTAssertThrowsError(try handler.loadShieldedFundingAttempts(walletId: walletId, outPoint: rawOutPoint))
+            }
+        }
+    }
+
+    func testShouldPreserveProvenDrainCompletionAfterReopenAndStaleSnapshot() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("wallet.store")
+        try autoreleasepool {
+            let container = try DashModelContainer.create(url: url)
+            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+            try persist(handler, status: 4, operationId: operationId)
+            try persist(handler, status: 6, operationId: nil)
+            try persist(handler, status: 4, operationId: nil)
+            try persist(handler, status: 0, operationId: nil)
+        }
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: try DashModelContainer.create(url: url), network: .testnet)
+        XCTAssertEqual(try handler.loadCachedAssetLocks(walletId: walletId).first?.statusRaw, 6)
+        XCTAssertEqual(try handler.loadAssetLockOperationId(walletId: walletId, outPoint: rawOutPoint), operationId)
+    }
+
     func testFetchFailureRejectsPersistenceAndRecoveryRead() throws {
         struct FailingAssetLockFetcher: ModelFetching {
             enum Failure: Error { case read }

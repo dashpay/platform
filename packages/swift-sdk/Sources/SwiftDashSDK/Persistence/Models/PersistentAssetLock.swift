@@ -115,7 +115,8 @@ public final class PersistentAssetLock {
 
     /// Discriminant of [`AssetLockStatus`]:
     /// 0 = Built, 1 = Broadcast, 2 = InstantSendLocked, 3 = ChainLocked,
-    /// 4 = Consumed, 5 = RecoveredFromChain. Stored as `Int` so
+    /// 4 = Consumed, 5 = RecoveredFromChain, 6 = DrainCompleted (proven owned output).
+    /// Stored as `Int` so
     /// `#Predicate` can match raw values directly (the progress bar
     /// compares against 0/1/2/3 and the resumable-locks filter against
     /// 4 to hide already-spent rows).
