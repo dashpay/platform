@@ -215,7 +215,7 @@ impl TryFrom<RawInstantLockProof> for InstantAssetLockProof {
         // end the bytes. Neither the InstantSend lock nor the transition's signature covers the
         // prefix, so a node that read the payload through it would refuse proofs the other nodes
         // accept and pay for.
-        let transaction = Transaction::deserialize_ignoring_asset_lock_payload_length(
+        let transaction = Transaction::deserialize_with_legacy_asset_lock_framing(
             raw_instant_lock.transaction.as_slice(),
         )
         .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
@@ -689,12 +689,12 @@ mod tests {
         let without_inputs = [header, &[0, 1, 0], outputs, lock_time, payload].concat();
         // Both forms decode, so their mutations reach the decoding path, not only refusals.
         assert_eq!(
-            Transaction::deserialize_ignoring_asset_lock_payload_length(&witness_form)
+            Transaction::deserialize_with_legacy_asset_lock_framing(&witness_form)
                 .expect("the witness form decodes")
                 .txid(),
             deserialize::<Transaction>(&canonical).unwrap().txid()
         );
-        Transaction::deserialize_ignoring_asset_lock_payload_length(&without_inputs)
+        Transaction::deserialize_with_legacy_asset_lock_framing(&without_inputs)
             .expect("the asset lock without inputs decodes");
         let seeds = [canonical.clone(), witness_form, without_inputs];
 
@@ -729,7 +729,7 @@ mod tests {
                 }
             }
 
-            let decoded = Transaction::deserialize_ignoring_asset_lock_payload_length(&bytes);
+            let decoded = Transaction::deserialize_with_legacy_asset_lock_framing(&bytes);
             match (&decoded, byte_level_asset_lock_decoder(&bytes)) {
                 (Ok(transaction), Ok(expected)) => {
                     assert_eq!(transaction, &expected, "{}", hex::encode(&bytes));
