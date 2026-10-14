@@ -424,16 +424,14 @@ pub fn embedded_migrations_sql() -> Vec<String> {
         .collect()
 }
 
-/// Undo V019 so the next [`run`] replays it over the current rows.
 /// The V019 history repair: backfills the raw-input index and corrects
 /// stored accounting for databases migrating from V018 or earlier. Only the
 /// migration-specific handling lives here (strict record reads, the
 /// undecodable-record resync policy, the entry point); the repair itself is
-/// `core_history`'s frozen `_v019` functions, which the live per-round
-/// repair shares. Beyond those, this relies only on helpers that must stay
-/// behaviour-stable: the blob codec and its size/width gates (`blob`),
-/// `id32`, `i64_to_u32` and the `WalletStorageError` variants they return.
-/// Do not change its behaviour.
+/// `core_history::repair_record_v019`, which the live per-round repair
+/// shares. `should_pin_v019_repair_of_a_v018_database` guards its output:
+/// a change that breaks it needs a `repair_record_v020` for the live path,
+/// not an edited pin.
 mod history_repair_v019 {
     use dashcore::hashes::Hash;
     use dashcore::Txid;
@@ -442,9 +440,7 @@ mod history_repair_v019 {
     use rusqlite::{params, OptionalExtension, Transaction};
 
     use crate::sqlite::error::WalletStorageError;
-    use crate::sqlite::schema::core_history::{
-        index_record_v019, network_v019, repair_record_v019,
-    };
+    use crate::sqlite::schema::core_history::{index_record, network, repair_record_v019};
     use crate::sqlite::schema::{blob, id32};
     use crate::sqlite::util::safe_cast::i64_to_u32;
 
@@ -572,8 +568,8 @@ mod history_repair_v019 {
         for (wallet_id, txid) in keys {
             match read_record(tx, &wallet_id, &txid) {
                 Ok(Some(record)) => {
-                    index_record_v019(tx, &wallet_id, &record)?;
-                    if !repair_record_v019(tx, &wallet_id, record, network_v019(tx, &wallet_id)?)? {
+                    index_record(tx, &wallet_id, &record)?;
+                    if !repair_record_v019(tx, &wallet_id, record, network(tx, &wallet_id)?)? {
                         unrepaired += 1;
                     }
                 }
@@ -951,6 +947,7 @@ mod history_repair_v019 {
     }
 }
 
+/// Undo V019 so the next [`run`] replays it over the current rows.
 #[cfg(test)]
 pub(crate) fn rewind_to_v018(conn: &rusqlite::Connection) {
     conn.execute_batch(

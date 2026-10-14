@@ -2,12 +2,12 @@
 //! predicate ([`is_owned`]), the direction rule ([`wallet_direction`]) and
 //! the net formula ([`wallet_accounting`]). The live projection
 //! (`fold_same_txid_records`) and the SQLite repair
-//! (`platform-wallet-storage`'s `core_history`) apply the same rule, so a
-//! row cannot change accounting when storage repairs it; they differ only
-//! on an `i64` overflow (live saturates, repair errors). The repair runs a
-//! frozen copy (`repair_record_v019`, shared with the V019 migration) that
-//! storage tests pin to these functions: changing the rule here needs a
-//! `_v020` repair there.
+//! (`platform-wallet-storage`'s `core_history`) both call them, so a row
+//! cannot change accounting when storage repairs it; they differ only on
+//! an `i64` overflow (live saturates, repair errors). The V019 migration
+//! runs the same repair (`repair_record_v019`): if a change here breaks
+//! its pin test (`should_pin_v019_repair_of_a_v018_database`), add a
+//! `repair_record_v020` for the live path instead of editing the pin.
 //!
 //! Upstream `key-wallet` classifies each matched account on its own, and
 //! its account-local views disagree for an asset lock: the funding
@@ -34,8 +34,8 @@ use key_wallet::transaction_checking::transaction_router::TransactionType;
 /// An asset lock is `Internal` whenever nothing leaves the wallet, even
 /// with no change output: its OP_RETURN value becomes the wallet's own
 /// Platform credits. The Swift SDK's
-/// `PersistentTransaction.reconciledAccounting` and the storage repair's
-/// frozen `wallet_direction_v019` apply the same rule; keep them in step. The case table
+/// `PersistentTransaction.reconciledAccounting` applies the same rule;
+/// keep them in step. The case table
 /// shared with Swift lives in `platform-wallet-storage`
 /// (`should_classify_repaired_direction_like_the_swift_sdk`).
 pub fn wallet_direction(

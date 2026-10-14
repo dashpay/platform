@@ -112,7 +112,7 @@ pub fn apply(
                 finalized,
                 payload,
             ])?;
-            core_history::index_record_v019(tx, wallet_id, &record)?;
+            core_history::index_record(tx, wallet_id, &record)?;
         }
     }
     // `addresses_derived` is intentionally NOT persisted here — the pool
@@ -1187,7 +1187,7 @@ pub fn load_state(
             let script = dashcore::ScriptBuf::from_bytes(script_bytes);
             // A contact's watch-only output is never ours to spend, whatever
             // an older build recorded; the fallback would make it spendable.
-            if core_history::contact_only_script_v019(conn, wallet_id, script.as_bytes())? {
+            if core_history::contact_only_script(conn, wallet_id, script.as_bytes())? {
                 continue;
             }
             if let Some(owner) = owning_account_for_script(conn, wallet_id, script.as_bytes())? {
