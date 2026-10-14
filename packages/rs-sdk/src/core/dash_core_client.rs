@@ -10,6 +10,7 @@ use dashcore_rpc::{
     dashcore_rpc_json as json,
     json::{ProTxList, ProTxListType},
     jsonrpc::error::{Error as JsonRpcError, RpcError},
+    jsonrpc::simple_http::Error as HttpError,
     Auth, Client, RpcApi,
 };
 use dpp::dashcore::ProTxHash;
@@ -188,6 +189,21 @@ impl LowLevelDashCoreClient {
 /// Core's JSON-RPC error code for a method it does not have.
 const CORE_RPC_METHOD_NOT_FOUND: i32 = -32601;
 
+/// The HTTP status Core refuses a request with, such as a method missing from the RPC user's
+/// `rpcwhitelist`.
+const HTTP_FORBIDDEN: u16 = 403;
+
+/// Whether Core refused the request with HTTP 403 and no JSON-RPC answer.
+fn is_http_forbidden(error: &dashcore_rpc::Error) -> bool {
+    let dashcore_rpc::Error::JsonRpc(JsonRpcError::Transport(transport)) = error else {
+        return false;
+    };
+    matches!(
+        transport.downcast_ref::<HttpError>(),
+        Some(HttpError::HttpErrorCode(HTTP_FORBIDDEN))
+    )
+}
+
 /// Reads `mn_rr`, the Core deployment that activates Platform.
 fn platform_activation_fork(
     core: &impl RpcApi,
@@ -203,6 +219,16 @@ fn platform_activation_fork(
         }))) => core
             .get_blockchain_info()
             .map(|blockchain_info| blockchain_info.softforks.get("mn_rr").cloned()),
+        // Core refuses a method missing from the RPC user's rpcwhitelist with HTTP 403. Core
+        // before v24 still reports the deployment in softforks. Core v24 started without
+        // -deprecatedrpc=softforks reports none there, so when softforks has no entry for
+        // mn_rr, the refusal is returned rather than `None`.
+        Err(e) if is_http_forbidden(&e) => {
+            match core.get_blockchain_info()?.softforks.get("mn_rr") {
+                Some(fork_info) => Ok(Some(fork_info.clone())),
+                None => Err(e),
+            }
+        }
         Err(e) => Err(e),
     }
 }
@@ -212,6 +238,7 @@ mod tests {
     use super::{platform_activation_fork, CORE_RPC_METHOD_NOT_FOUND};
     use dashcore_rpc::json::{SoftforkInfo, SoftforkType};
     use dashcore_rpc::jsonrpc::error::{Error as JsonRpcError, RpcError};
+    use dashcore_rpc::jsonrpc::simple_http::Error as HttpError;
     use dashcore_rpc::RpcApi;
     use dpp::dashcore_rpc;
     use std::cell::RefCell;
@@ -246,16 +273,45 @@ mod tests {
       "warnings": ""
     }"#;
 
+    /// How Core turns down `getdeploymentinfo`.
+    #[derive(Clone, Copy)]
+    enum Refusal {
+        /// A JSON-RPC error with this code.
+        Rpc(i32),
+        /// This HTTP status and no body, as Core refuses a method missing from the RPC user's
+        /// `rpcwhitelist` with 403.
+        Http(u16),
+    }
+
+    impl Refusal {
+        /// The error the JSON-RPC client returns for this answer.
+        fn error(self) -> dashcore_rpc::Error {
+            dashcore_rpc::Error::JsonRpc(match self {
+                Refusal::Rpc(code) => JsonRpcError::Rpc(RpcError {
+                    code,
+                    message: String::new(),
+                    data: None,
+                }),
+                Refusal::Http(status) => {
+                    JsonRpcError::Transport(Box::new(HttpError::HttpErrorCode(status)))
+                }
+            })
+        }
+    }
+
     /// Answers like one Core version, and records the methods it was asked.
     struct FakeCore {
-        /// The `getdeploymentinfo` result, or the JSON-RPC error code Core answers it with.
-        deployment_info: Result<&'static str, i32>,
+        /// The `getdeploymentinfo` result, or how Core turns it down.
+        deployment_info: Result<&'static str, Refusal>,
         blockchain_info: &'static str,
         asked: RefCell<Vec<String>>,
     }
 
     impl FakeCore {
-        fn new(deployment_info: Result<&'static str, i32>, blockchain_info: &'static str) -> Self {
+        fn new(
+            deployment_info: Result<&'static str, Refusal>,
+            blockchain_info: &'static str,
+        ) -> Self {
             Self {
                 deployment_info,
                 blockchain_info,
@@ -271,17 +327,10 @@ mod tests {
             _args: &[serde_json::Value],
         ) -> dashcore_rpc::Result<T> {
             self.asked.borrow_mut().push(cmd.to_string());
-            let rpc_error = |code| {
-                dashcore_rpc::Error::JsonRpc(JsonRpcError::Rpc(RpcError {
-                    code,
-                    message: String::new(),
-                    data: None,
-                }))
-            };
             let answer = match cmd {
-                "getdeploymentinfo" => self.deployment_info.map_err(rpc_error)?,
+                "getdeploymentinfo" => self.deployment_info.map_err(Refusal::error)?,
                 "getblockchaininfo" => self.blockchain_info,
-                _ => return Err(rpc_error(CORE_RPC_METHOD_NOT_FOUND)),
+                _ => return Err(Refusal::Rpc(CORE_RPC_METHOD_NOT_FOUND).error()),
             };
             Ok(serde_json::from_str(answer)?)
         }
@@ -308,7 +357,10 @@ mod tests {
 
     #[test]
     fn should_read_platform_activation_from_softforks_on_core_v23() {
-        let core = FakeCore::new(Err(CORE_RPC_METHOD_NOT_FOUND), CORE_V23_GETBLOCKCHAININFO);
+        let core = FakeCore::new(
+            Err(Refusal::Rpc(CORE_RPC_METHOD_NOT_FOUND)),
+            CORE_V23_GETBLOCKCHAININFO,
+        );
 
         let fork = platform_activation_fork(&core).expect("Core v23 reports mn_rr");
 
@@ -321,7 +373,7 @@ mod tests {
 
     #[test]
     fn should_not_read_softforks_when_getdeploymentinfo_fails_for_another_reason() {
-        let core = FakeCore::new(Err(-1), CORE_V23_GETBLOCKCHAININFO);
+        let core = FakeCore::new(Err(Refusal::Rpc(-1)), CORE_V23_GETBLOCKCHAININFO);
 
         let fork = platform_activation_fork(&core);
 
@@ -332,6 +384,64 @@ mod tests {
                     code: -1,
                     ..
                 })))
+            ),
+            "expected the getdeploymentinfo error, got {fork:?}"
+        );
+        assert_eq!(*core.asked.borrow(), ["getdeploymentinfo"]);
+    }
+
+    #[test]
+    fn should_read_platform_activation_from_softforks_when_core_v23_refuses_getdeploymentinfo() {
+        let core = FakeCore::new(Err(Refusal::Http(403)), CORE_V23_GETBLOCKCHAININFO);
+
+        let fork = platform_activation_fork(&core).expect("Core v23 reports mn_rr");
+
+        assert_eq!(fork, Some(active_mn_rr()));
+        assert_eq!(
+            *core.asked.borrow(),
+            ["getdeploymentinfo", "getblockchaininfo"]
+        );
+    }
+
+    #[test]
+    fn should_fail_with_the_refusal_when_core_v24_refuses_getdeploymentinfo() {
+        let core = FakeCore::new(Err(Refusal::Http(403)), CORE_V24_GETBLOCKCHAININFO);
+
+        let fork = platform_activation_fork(&core);
+
+        // Core v24 reports no softforks, so their absence must not read as Platform not being
+        // activated.
+        assert!(
+            matches!(
+                &fork,
+                Err(dashcore_rpc::Error::JsonRpc(JsonRpcError::Transport(transport)))
+                    if matches!(
+                        transport.downcast_ref::<HttpError>(),
+                        Some(HttpError::HttpErrorCode(403))
+                    )
+            ),
+            "expected the getdeploymentinfo refusal, got {fork:?}"
+        );
+        assert_eq!(
+            *core.asked.borrow(),
+            ["getdeploymentinfo", "getblockchaininfo"]
+        );
+    }
+
+    #[test]
+    fn should_not_read_softforks_when_core_answers_getdeploymentinfo_with_another_http_status() {
+        let core = FakeCore::new(Err(Refusal::Http(401)), CORE_V23_GETBLOCKCHAININFO);
+
+        let fork = platform_activation_fork(&core);
+
+        assert!(
+            matches!(
+                &fork,
+                Err(dashcore_rpc::Error::JsonRpc(JsonRpcError::Transport(transport)))
+                    if matches!(
+                        transport.downcast_ref::<HttpError>(),
+                        Some(HttpError::HttpErrorCode(401))
+                    )
             ),
             "expected the getdeploymentinfo error, got {fork:?}"
         );
