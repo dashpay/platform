@@ -1,18 +1,28 @@
 //! Wallet accounting repaired from historical owned outputs, independent of live UTXOs.
+//!
+//! Functions suffixed `_v019` are shared by the live per-round repair and
+//! the V019 migration (`migrations::history_repair_v019`), and are frozen:
+//! V019 must keep doing exactly what it did when it shipped, so a `_v019`
+//! function never changes behaviour. A needed change goes into a new `_v020`
+//! copy and the live path switches to it; V019 keeps calling `_v019`. They
+//! rely only on these other helpers, which must stay behaviour-stable: the
+//! blob codec and its size/width gates (`blob`), `wallets::parse_network`,
+//! `i64_to_u64` and the `WalletStorageError` variants they return.
+//! `TransactionRecord`'s encoding is owned upstream (key-wallet) and cannot
+//! be frozen here.
 
 use std::collections::{BTreeMap, HashSet};
 
 use dashcore::hashes::Hash;
 use dashcore::{Address, OutPoint, ScriptBuf, Txid};
 use key_wallet::managed_account::transaction_record::{
-    InputDetail, OutputDetail, OutputRole, TransactionRecord,
+    InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
 };
-use key_wallet::transaction_checking::TransactionContext;
-use platform_wallet::changeset::{is_owned, wallet_accounting, CoreChangeSet};
+use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+use platform_wallet::changeset::{is_owned, CoreChangeSet};
 use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
-use super::accounts::DASHPAY_EXTERNAL_LABEL;
 use super::{blob, core_state, wallets};
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::LoadCtx;
@@ -74,7 +84,9 @@ fn prior_record(
 }
 
 /// Index raw inputs independently of when their ownership becomes known.
-pub(super) fn index_record(
+///
+/// Frozen: shared with the V019 migration (see the module docs).
+pub(crate) fn index_record_v019(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     record: &TransactionRecord,
@@ -117,14 +129,15 @@ pub(super) fn apply(
     if affected.is_empty() {
         return Ok(());
     }
-    let network = network(tx, wallet_id)?;
+    let network = network_v019(tx, wallet_id)?;
     for txid in affected {
         repair_record(tx, wallet_id, &txid, network)?;
     }
     Ok(())
 }
 
-fn network(
+/// Frozen: shared with the V019 migration (see the module docs).
+pub(crate) fn network_v019(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
 ) -> Result<dashcore::Network, WalletStorageError> {
@@ -139,7 +152,8 @@ fn network(
     })
 }
 
-fn owned_output(
+/// Frozen: shared with the V019 migration (see the module docs).
+fn owned_output_v019(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     outpoint: &OutPoint,
@@ -169,7 +183,7 @@ fn owned_output(
              WHERE wallet_id = ?1 AND outpoint = ?2 AND is_sweep_placeholder = 0",
         )?
         .query_row(key, |row| row.get(0))?;
-    if contact_only_script(tx, wallet_id, &script)? {
+    if contact_only_script_v019(tx, wallet_id, &script)? {
         return Ok(None);
     }
     let address = Address::from_script(&ScriptBuf::from_bytes(script), network)?;
@@ -177,7 +191,11 @@ fn owned_output(
 }
 
 /// Whether `script` is tracked only by a contact's watch-only (DashPay external) chain.
-pub(crate) fn contact_only_script(
+///
+/// Frozen: shared with the V019 migration (see the module docs). The label
+/// is spelled out rather than taken from `accounts::DASHPAY_EXTERNAL_LABEL`
+/// so this function cannot change with it.
+pub(crate) fn contact_only_script_v019(
     conn: &Connection,
     wallet_id: &WalletId,
     script: &[u8],
@@ -185,31 +203,58 @@ pub(crate) fn contact_only_script(
     let mut probe = conn.prepare_cached(
         "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) \
          AND NOT EXISTS(SELECT 1 FROM core_address_pool \
-             WHERE wallet_id = ?1 AND script = ?2 AND account_type != ?3)",
+             WHERE wallet_id = ?1 AND script = ?2 AND account_type != 'dashpay_external')",
     )?;
-    let key = params![wallet_id.as_slice(), script, DASHPAY_EXTERNAL_LABEL];
-    Ok(probe.query_row(key, |r| r.get(0))?)
+    Ok(probe.query_row(params![wallet_id.as_slice(), script], |r| r.get(0))?)
 }
 
+/// Repair the stored record of `txid`, if there is one.
 fn repair_record(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     txid: &Txid,
     network: dashcore::Network,
 ) -> Result<(), WalletStorageError> {
-    let Some(mut record) = prior_record(tx, wallet_id, txid)? else {
+    let Some(record) = prior_record(tx, wallet_id, txid)? else {
         return Ok(());
     };
+    // An unconfirmed record whose net does not fit `i64` stays as written;
+    // load sets it aside.
+    repair_record_v019(tx, wallet_id, record, network)?;
+    Ok(())
+}
+
+/// Rewrite a stored record's details, net and direction from the wallet's
+/// historical owned outputs, archiving the original, and mark spent the
+/// owned outputs a non-mempool record spends.
+///
+/// Returns whether the record could be accounted for. An unconfirmed record
+/// with a net past `i64` cannot and stays as stored: nothing authenticates a
+/// mempool transaction, so that is peer-supplied data, and load sets it aside.
+///
+/// Frozen: shared with the V019 migration (see the module docs). Its
+/// accounting equals the live projection's `platform_wallet` rule (pinned by
+/// `should_repair_live_folded_records_without_changing_their_accounting` and
+/// `should_classify_repaired_direction_like_the_swift_sdk`); a rule change
+/// there needs a `_v020` here.
+pub(crate) fn repair_record_v019(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    mut record: TransactionRecord,
+    network: dashcore::Network,
+) -> Result<bool, WalletStorageError> {
+    let record_txid = record.txid;
+    let txid = &record_txid;
     let original = blob::encode(&record)?;
     let mut inputs = BTreeMap::new();
     for detail in record.input_details.drain(..) {
-        if !contact_only_script(tx, wallet_id, detail.address.script_pubkey().as_bytes())? {
+        if !contact_only_script_v019(tx, wallet_id, detail.address.script_pubkey().as_bytes())? {
             inputs.insert(detail.index, detail);
         }
     }
     for (index, input) in record.transaction.input.iter().enumerate() {
         if let Some((value, address)) =
-            owned_output(tx, wallet_id, &input.previous_output, network)?
+            owned_output_v019(tx, wallet_id, &input.previous_output, network)?
         {
             inputs.insert(
                 index as u32,
@@ -224,9 +269,9 @@ fn repair_record(
                 // Record the spender so the mark stays attributable and
                 // reversible; an existing claim by another spender stands.
                 // TODO(release-repair-spends-after-reorg): release rows whose
-                // `spent_in_txid` spender is reorged out and never re-mined;
-                // needs verification of how upstream downgrades a stored
-                // record's context on reorg.
+                // `spent_in_txid` spender is reorged out and never re-mined
+                // (a `_v020` change); needs verification of how upstream
+                // downgrades a stored record's context on reorg.
                 tx.execute(
                     "UPDATE core_utxos SET spent = 1, \
                          spent_in_txid = CASE WHEN spent = 1 AND spent_in_txid IS NOT NULL \
@@ -244,7 +289,7 @@ fn repair_record(
     let mut outputs = BTreeMap::new();
     for mut detail in record.output_details.drain(..) {
         if let Some(address) = &detail.address {
-            if contact_only_script(tx, wallet_id, address.script_pubkey().as_bytes())? {
+            if contact_only_script_v019(tx, wallet_id, address.script_pubkey().as_bytes())? {
                 detail.role = OutputRole::Sent;
             }
         }
@@ -252,7 +297,7 @@ fn repair_record(
     }
     for (index, output) in record.transaction.output.iter().enumerate() {
         let index = index as u32;
-        if let Some((_, address)) = owned_output(
+        if let Some((_, address)) = owned_output_v019(
             tx,
             wallet_id,
             &OutPoint {
@@ -281,18 +326,18 @@ fn repair_record(
     }
     // Empty metadata is not accounting evidence (e.g. confirmation-only placeholders).
     if inputs.is_empty() && outputs.is_empty() {
-        return Ok(());
+        return Ok(true);
     }
-    record.input_details = inputs.into_values().collect();
-    record.output_details = outputs.into_values().collect();
-    // The live projection computes the same accounting, so repair never
-    // flips a row it just wrote; only the overflow policy differs.
-    let (net, direction) = wallet_accounting(&record);
+    let received: i128 = outputs
+        .values()
+        .filter(|d| matches!(d.role, OutputRole::Received | OutputRole::Change))
+        .map(|d| i128::from(d.value))
+        .sum();
+    let spent: i128 = inputs.values().map(|d| i128::from(d.value)).sum();
+    let net = received - spent;
     record.net_amount = match i64::try_from(net) {
         Ok(net) => net,
-        // Nothing authenticates a mempool transaction: this is peer-supplied data,
-        // not corruption. The row stays as written and load sets it aside.
-        Err(_) if matches!(record.context, TransactionContext::Mempool) => return Ok(()),
+        Err(_) if matches!(record.context, TransactionContext::Mempool) => return Ok(false),
         Err(_) => {
             return Err(WalletStorageError::NetAmountOverflow {
                 wallet_id: *wallet_id,
@@ -301,7 +346,31 @@ fn repair_record(
             })
         }
     };
-    record.direction = direction;
+    let has_ours = outputs
+        .values()
+        .any(|d| matches!(d.role, OutputRole::Received | OutputRole::Change));
+    let has_external = record
+        .transaction
+        .output
+        .iter()
+        .enumerate()
+        .any(|(i, output)| {
+            !output.script_pubkey.is_op_return()
+                && !outputs.get(&(i as u32)).is_some_and(|d| {
+                    matches!(
+                        d.role,
+                        OutputRole::Received | OutputRole::Change | OutputRole::Unspendable
+                    )
+                })
+        });
+    record.direction = wallet_direction_v019(
+        record.transaction_type,
+        !inputs.is_empty(),
+        has_ours,
+        has_external,
+    );
+    record.input_details = inputs.into_values().collect();
+    record.output_details = outputs.into_values().collect();
     let repaired = blob::encode(&record)?;
     if repaired != original {
         // Append-only: the first pre-repair blob is kept verbatim and never
@@ -321,7 +390,28 @@ fn repair_record(
             ],
         )?;
     }
-    Ok(())
+    Ok(true)
+}
+
+/// The wallet-level direction of a repaired record. An asset lock is
+/// `Internal` whenever nothing leaves the wallet, even with no change output.
+///
+/// Frozen: shared with the V019 migration (see the module docs).
+fn wallet_direction_v019(
+    transaction_type: TransactionType,
+    spends_ours: bool,
+    has_ours: bool,
+    has_external: bool,
+) -> TransactionDirection {
+    if transaction_type == TransactionType::CoinJoin {
+        TransactionDirection::CoinJoin
+    } else if !spends_ours {
+        TransactionDirection::Incoming
+    } else if !has_external && (has_ours || transaction_type == TransactionType::AssetLock) {
+        TransactionDirection::Internal
+    } else {
+        TransactionDirection::Outgoing
+    }
 }
 
 #[cfg(test)]
@@ -347,7 +437,8 @@ mod tests {
         let (mut conn, outpoint) = oversize_script_db(&WALLET);
         let tx = conn.transaction().unwrap();
 
-        let err = owned_output(&tx, &WALLET, &outpoint, dashcore::Network::Testnet).unwrap_err();
+        let err =
+            owned_output_v019(&tx, &WALLET, &outpoint, dashcore::Network::Testnet).unwrap_err();
 
         assert!(
             matches!(err, WalletStorageError::BlobTooLarge { .. }),
@@ -456,7 +547,7 @@ mod tests {
         let mut conn = wallet_db("moonnet");
         let tx = conn.transaction().unwrap();
 
-        let err = network(&tx, &WALLET_ID).unwrap_err();
+        let err = network_v019(&tx, &WALLET_ID).unwrap_err();
 
         assert!(
             matches!(
@@ -524,7 +615,7 @@ mod tests {
     }
 
     /// Shared with the Swift SDK's `TransactionAccountingTests` direction
-    /// table; pins the rule repair takes from `platform_wallet`.
+    /// table; pins the frozen repair rule to the live `platform_wallet` one.
     #[test]
     fn should_classify_repaired_direction_like_the_swift_sdk() {
         use TransactionDirection::{CoinJoin, Incoming, Internal, Outgoing};
@@ -541,10 +632,18 @@ mod tests {
             (TransactionType::CoinJoin, true, true, false, CoinJoin),
         ];
         for (kind, spends_ours, has_ours, has_external, expected) in cases {
+            let case = format!(
+                "{kind:?} spends_ours={spends_ours} has_ours={has_ours} has_external={has_external}"
+            );
             assert_eq!(
                 wallet_direction(kind, spends_ours, has_ours, has_external),
                 expected,
-                "{kind:?} spends_ours={spends_ours} has_ours={has_ours} has_external={has_external}"
+                "{case}"
+            );
+            assert_eq!(
+                wallet_direction_v019(kind, spends_ours, has_ours, has_external),
+                expected,
+                "frozen repair rule drifted from the live one; add a `_v020`: {case}"
             );
         }
     }
