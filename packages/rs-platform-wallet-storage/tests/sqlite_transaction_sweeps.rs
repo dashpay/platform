@@ -3845,10 +3845,21 @@ fn should_hold_an_unfunded_extra_input_for_its_surviving_spender_until_that_spen
         ));
         record
     };
-    let round = |conn: &mut rusqlite::Connection, cs: CoreChangeSet| {
+    let round = |conn: &mut rusqlite::Connection, records, sweeps| {
+        let cs = CoreChangeSet {
+            records,
+            sweeps,
+            ..Default::default()
+        };
         let tx = conn.transaction().unwrap();
         core_state::apply(&tx, &w, &cs).unwrap();
         tx.commit().unwrap();
+    };
+    let swept = |txid, superseded_by, height, released_outpoints| SweepBatch {
+        txids: vec![txid],
+        superseded_by,
+        winner_mined_height: Some(height),
+        released_outpoints,
     };
     // `(spent, is_sweep_placeholder, winner_mined_height, claimant)` of a row.
     let held = |conn: &rusqlite::Connection, outpoint: &OutPoint| {
@@ -3866,28 +3877,16 @@ fn should_hold_an_unfunded_extra_input_for_its_surviving_spender_until_that_spen
     };
     let claimed_by = |txid: Txid| Some(txid.to_byte_array().to_vec());
 
+    let pending = vec![
+        tx_record(loser, vec![shared, extra], vec![]),
+        tx_record(survivor, vec![extra, other], vec![]),
+    ];
+    round(&mut conn, pending, vec![]);
+    let won = vec![confirmed(winner, vec![shared], WINNER_HEIGHT)];
     round(
         &mut conn,
-        CoreChangeSet {
-            records: vec![
-                tx_record(loser, vec![shared, extra], vec![]),
-                tx_record(survivor, vec![extra, other], vec![]),
-            ],
-            ..Default::default()
-        },
-    );
-    round(
-        &mut conn,
-        CoreChangeSet {
-            records: vec![confirmed(winner, vec![shared], WINNER_HEIGHT)],
-            sweeps: vec![SweepBatch {
-                txids: vec![loser],
-                superseded_by: winner,
-                winner_mined_height: Some(WINNER_HEIGHT),
-                released_outpoints: vec![],
-            }],
-            ..Default::default()
-        },
+        won,
+        vec![swept(loser, winner, WINNER_HEIGHT, vec![])],
     );
     assert_eq!(
         held(&conn, &shared),
@@ -3906,13 +3905,8 @@ fn should_hold_an_unfunded_extra_input_for_its_surviving_spender_until_that_spen
         "the extra input belongs to its surviving spender, unstamped"
     );
 
-    round(
-        &mut conn,
-        CoreChangeSet {
-            records: vec![confirmed(survivor, vec![extra, other], WINNER_HEIGHT + 1)],
-            ..Default::default()
-        },
-    );
+    let survived = vec![confirmed(survivor, vec![extra, other], WINNER_HEIGHT + 1)];
+    round(&mut conn, survived, vec![]);
     apply_heights(&mut conn, &w, WINNER_HEIGHT + 10);
     assert_eq!(
         held(&conn, &shared),
@@ -3925,18 +3919,8 @@ fn should_hold_an_unfunded_extra_input_for_its_surviving_spender_until_that_spen
         "a claim whose spender still spends the coin outlives finality and that spender confirming"
     );
 
-    round(
-        &mut conn,
-        CoreChangeSet {
-            sweeps: vec![SweepBatch {
-                txids: vec![survivor],
-                superseded_by: later_winner,
-                winner_mined_height: Some(WINNER_HEIGHT + 20),
-                released_outpoints: vec![extra],
-            }],
-            ..Default::default()
-        },
-    );
+    let removed = swept(survivor, later_winner, WINNER_HEIGHT + 20, vec![extra]);
+    round(&mut conn, vec![], vec![removed]);
     assert_eq!(
         held(&conn, &extra),
         None,
