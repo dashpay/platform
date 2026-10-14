@@ -20,7 +20,7 @@ use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob::impl_persistable_blob;
 use crate::sqlite::schema::core_history;
 use crate::sqlite::schema::core_pool::{owning_account_for_script, OwningAccount};
-use crate::sqlite::schema::{asset_locks, blob};
+use crate::sqlite::schema::{asset_locks, blob, dashpay};
 
 // PUBLIC material only: core-chain state reaching `record_blob` /
 // `islock_blob` (transaction records + InstantLocks are public chain data).
@@ -585,6 +585,7 @@ pub fn apply_replay_sweeps(
             .retain(|outpoint| !held.contains_key(outpoint));
     }
     asset_locks::remove_swept(tx, wallet_id, &removed)?;
+    dashpay::settle_swept_payments(tx, wallet_id, &removed)?;
     apply(
         tx,
         wallet_id,

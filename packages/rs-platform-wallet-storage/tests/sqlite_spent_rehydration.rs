@@ -3319,3 +3319,222 @@ async fn should_attribute_late_funding_to_replayed_mempool_spend() {
         (4, 1_000 - 50_000 - 14_000, 1_500)
     );
 }
+
+/// How the store reads once a load has settled a conflict that removes a
+/// DashPay payment's transaction.
+struct SettledPayment {
+    /// Stored records of the payment's transaction.
+    loser_rows: i64,
+    /// The payment's status in the state the settling load returned.
+    returned: platform_wallet::wallet::identity::PaymentStatus,
+    /// Overlay rows written for the payment: one per verdict that reached the store.
+    stored_verdicts: i64,
+    /// The payment's status as a later strict load reads it.
+    reopened: platform_wallet::wallet::identity::PaymentStatus,
+    /// An unrelated sent payment of the same identity, on that later load.
+    unrelated: platform_wallet::wallet::identity::PaymentStatus,
+}
+
+/// A DashPay payment whose transaction lost a double-spend. The winner's
+/// record reached the store; the round carrying the sweep, and with it the
+/// payment's verdict, did not. A load under `policy` settles the conflict.
+async fn settle_payment_at_load(
+    mut payment: platform_wallet::wallet::identity::PaymentEntry,
+    status: platform_wallet::wallet::identity::PaymentStatus,
+    policy: platform_wallet_storage::LoadPolicy,
+) -> SettledPayment {
+    use dpp::prelude::Identifier;
+    use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
+    use platform_wallet::wallet::identity::{IdentityStatus, PaymentEntry};
+    use platform_wallet_storage::LoadPolicy;
+
+    let (mut wallet, mut info, address) = wallet_with_receive_address();
+    let pay = |value, address: &Address| TxOut {
+        value,
+        script_pubkey: address.script_pubkey(),
+    };
+    let funding = spend_of(
+        OutPoint::new(Txid::from_byte_array([91; 32]), 0),
+        vec![pay(100_000, &address)],
+    );
+    let mut records = info
+        .check_core_transaction(&funding, block(100), &mut wallet, true, true)
+        .await
+        .new_records;
+    let coin = OutPoint::new(funding.txid(), 0);
+    let loser = spend_of(
+        coin,
+        vec![pay(59_000, &foreign_address(92)), pay(40_000, &address)],
+    );
+    let mempool = TransactionContext::Mempool;
+    records.extend(
+        info.check_core_transaction(&loser, mempool, &mut wallet, true, true)
+            .await
+            .new_records,
+    );
+    let winner = spend_of(coin, vec![pay(99_000, &address)]);
+    let won = info
+        .check_core_transaction(&winner, block(101), &mut wallet, true, true)
+        .await;
+    assert_eq!(won.swept_transactions, vec![loser.txid()]);
+    records.extend(won.new_records);
+
+    let funded = stored_utxo(&funding, 0, address.clone());
+    let (persister, dir) = store_then_reopen(
+        &wallet,
+        CoreChangeSet {
+            records,
+            new_utxos: vec![
+                funded.clone(),
+                stored_utxo(&loser, 1, address.clone()),
+                stored_utxo(&winner, 0, address.clone()),
+            ],
+            spent_utxos: vec![funded],
+            ..Default::default()
+        },
+    );
+    let owner = Identifier::from([0xA7; 32]);
+    let contact = Identifier::from([0xB7; 32]);
+    let (txid, unrelated) = (loser.txid().to_string(), "a".repeat(64));
+    payment.status = status;
+    let payments = [
+        (txid.clone(), payment),
+        (
+            unrelated.clone(),
+            PaymentEntry::new_sent(contact, 1_000, None),
+        ),
+    ];
+    let entry = IdentityEntry {
+        id: owner,
+        balance: 0,
+        revision: 0,
+        identity_index: Some(0),
+        last_updated_balance_block_time: None,
+        last_synced_keys_block_time: None,
+        dpns_names: Vec::new(),
+        contested_dpns_names: Vec::new(),
+        status: IdentityStatus::Unknown,
+        wallet_id: Some(wallet.wallet_id),
+        dashpay_profile: None,
+        dashpay_payments: payments.into(),
+        contact_profiles: Default::default(),
+        ignored_senders: Default::default(),
+    };
+    let mut identities = IdentityChangeSet::default();
+    identities.identities.insert(owner, entry);
+    persister
+        .store(
+            wallet.wallet_id,
+            PlatformWalletChangeSet {
+                identities: Some(identities),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let open = |policy| {
+        let path = dir.path().join("wallet.db");
+        SqlitePersister::open(SqlitePersisterConfig::new(path).with_load_policy(policy)).unwrap()
+    };
+    let status_of = |persister: &SqlitePersister, txid: &str| {
+        let state = persister.load().unwrap();
+        let identities = &state.wallets[&wallet.wallet_id].identity_manager;
+        let managed = &identities.wallet_identities[&wallet.wallet_id][&0];
+        managed.dashpay().payments[txid].status
+    };
+    let count = |persister: &SqlitePersister, sql: &str| -> i64 {
+        let conn = persister.lock_conn_for_test();
+        conn.query_row(sql, [], |row| row.get(0)).unwrap()
+    };
+
+    let settling = open(policy);
+    let returned = status_of(&settling, &txid);
+    let loser_rows = count(
+        &settling,
+        "SELECT count(*) FROM core_transactions WHERE height IS NULL",
+    );
+    let stored_verdicts = count(&settling, "SELECT count(*) FROM dashpay_payments_overlay");
+    drop(settling);
+    let reopened = open(LoadPolicy::Strict);
+    SettledPayment {
+        loser_rows,
+        returned,
+        stored_verdicts,
+        reopened: status_of(&reopened, &txid),
+        unrelated: status_of(&reopened, &unrelated),
+    }
+}
+
+fn sent_payment() -> platform_wallet::wallet::identity::PaymentEntry {
+    use platform_wallet::wallet::identity::PaymentEntry;
+    PaymentEntry::new_sent(dpp::prelude::Identifier::from([0xB7; 32]), 59_000, None)
+}
+
+#[tokio::test]
+async fn should_fail_pending_sent_payment_whose_transaction_load_settlement_removes() {
+    use platform_wallet::wallet::identity::PaymentStatus::{Failed, Pending};
+    use platform_wallet_storage::LoadPolicy;
+
+    let settled = settle_payment_at_load(sent_payment(), Pending, LoadPolicy::Strict).await;
+
+    assert_eq!(settled.loser_rows, 0, "the load removed the losing record");
+    assert_eq!(
+        (settled.returned, settled.reopened),
+        (Failed, Failed),
+        "the payment reads Failed on the settling load and on the next"
+    );
+    assert_eq!(settled.stored_verdicts, 1);
+    assert_eq!(settled.unrelated, Pending, "no other payment moves");
+}
+
+/// An InstantSend-locked payment reads `Confirmed` until a final competitor removes it.
+#[tokio::test]
+async fn should_fail_confirmed_sent_payment_whose_transaction_load_settlement_removes() {
+    use platform_wallet::wallet::identity::PaymentStatus::{Confirmed, Failed};
+    use platform_wallet_storage::LoadPolicy;
+
+    let settled = settle_payment_at_load(sent_payment(), Confirmed, LoadPolicy::Strict).await;
+
+    assert_eq!((settled.returned, settled.reopened), (Failed, Failed));
+}
+
+/// A received payment's status is settled when it is recorded; a sweep of the
+/// transaction it is filed under does not move it.
+#[tokio::test]
+async fn should_leave_received_payment_alone_when_load_settlement_removes_its_transaction() {
+    use platform_wallet::wallet::identity::{PaymentEntry, PaymentStatus::Confirmed};
+    use platform_wallet_storage::LoadPolicy;
+
+    let contact = dpp::prelude::Identifier::from([0xB7; 32]);
+    let received = PaymentEntry::new_received(contact, 59_000, None);
+    let settled = settle_payment_at_load(received, Confirmed, LoadPolicy::Strict).await;
+
+    assert_eq!(settled.loser_rows, 0);
+    assert_eq!((settled.returned, settled.reopened), (Confirmed, Confirmed));
+    assert_eq!(settled.stored_verdicts, 0);
+}
+
+/// A recovery load returns the settled state and writes none of it: the
+/// verdict rolls back with the record removal it follows from.
+#[tokio::test]
+async fn should_roll_back_sent_payment_verdict_with_a_recovery_load() {
+    use platform_wallet::wallet::identity::PaymentStatus::{Failed, Pending};
+    use platform_wallet_storage::LoadPolicy;
+
+    let settled = settle_payment_at_load(sent_payment(), Pending, LoadPolicy::Recovery).await;
+
+    assert_eq!(
+        settled.returned, Failed,
+        "the returned state is the settled one"
+    );
+    assert_eq!(
+        (settled.loser_rows, settled.stored_verdicts),
+        (1, 0),
+        "neither the removal nor the verdict reached the store"
+    );
+    assert_eq!(
+        settled.reopened, Failed,
+        "the next strict load settles again"
+    );
+}
