@@ -96,8 +96,7 @@ impl PlatformWallet {
         if let Some(out_point) = snapshot.out_point {
             // A buffered completion whose own flush failed can be committed by
             // a later, unrelated flush. Durable status then says Completed, but
-            // the live lock and activity cache were never published; re-running
-            // the completion gate republishes both.
+            // the live lock and activity cache were never published.
             let unpublished = snapshot.state == AssetLockOperationState::Completed
                 && self
                     .asset_locks
@@ -109,13 +108,21 @@ impl PlatformWallet {
                             && lock.operation_id == Some(operation_id)
                             && lock.status != AssetLockStatus::DrainCompleted
                     });
-            if snapshot.state == AssetLockOperationState::Pending || unpublished {
+            if snapshot.state == AssetLockOperationState::Pending {
                 self.reconcile_wallet_drain_with_consumption_check(
                     coordinator,
                     out_point,
                     check_consumption,
                 )
                 .await?;
+            } else if unpublished
+                && self
+                    .asset_locks
+                    .durably_completed_drains()?
+                    .contains(&operation_id)
+            {
+                self.republish_durable_drain_completion(coordinator, out_point)
+                    .await?;
             }
         }
         self.asset_locks

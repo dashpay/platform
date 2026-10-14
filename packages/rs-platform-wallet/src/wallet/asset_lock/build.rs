@@ -1613,6 +1613,9 @@ mod tests {
         committed_stores: std::sync::atomic::AtomicUsize,
         fail_lock_store: std::sync::atomic::AtomicBool,
         failed_lock_stores: Mutex<Vec<PlatformWalletChangeSet>>,
+        /// Loads that still return the pre-checkpoint snapshot (no stored
+        /// lock rows), modelling a read that predates a concurrent write.
+        stale_loads: std::sync::atomic::AtomicUsize,
     }
 
     impl CapturingPersistence {
@@ -1729,9 +1732,18 @@ mod tests {
                     },
                 );
             }
-            if self
-                .restore_stored_locks
-                .load(std::sync::atomic::Ordering::SeqCst)
+            let stale = self
+                .stale_loads
+                .fetch_update(
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                    |loads| loads.checked_sub(1),
+                )
+                .is_ok();
+            if !stale
+                && self
+                    .restore_stored_locks
+                    .load(std::sync::atomic::Ordering::SeqCst)
             {
                 let wallet = state.wallets.values_mut().next().unwrap();
                 for cs in self
@@ -4739,6 +4751,30 @@ mod tests {
                         )
                         .await;
                     assert!(blocked.is_err(), "{blocked:?}");
+                    // An absence observed before the cleanup was retained is
+                    // stale: the durable Built row still exists, so status must
+                    // stay Pending and keep the inputs fenced.
+                    persistence
+                        .stale_loads
+                        .store(1, std::sync::atomic::Ordering::SeqCst);
+                    assert_eq!(
+                        manager
+                            .wallet_drain_operation_status([53; 16])
+                            .await
+                            .unwrap()
+                            .state,
+                        super::AssetLockOperationState::Pending
+                    );
+                    let still_blocked = manager
+                        .build_asset_lock_transaction(
+                            1_000_000,
+                            0,
+                            AssetLockFundingType::IdentityRegistration,
+                            0,
+                            &signer,
+                        )
+                        .await;
+                    assert!(still_blocked.is_err(), "{still_blocked:?}");
                     // An unrelated later flush commits a buffered removal; a
                     // removal store that failed outright never reached it.
                     persistence

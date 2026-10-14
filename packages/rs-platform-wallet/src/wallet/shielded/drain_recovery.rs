@@ -492,12 +492,48 @@ impl PlatformWallet {
         Ok(true)
     }
 
+    /// Durable `DrainCompleted` is written only after the full completion gate,
+    /// including the consumption proof. When a later flush committed it without
+    /// live publication, it stands in for that proof while the live lock and
+    /// canonical history are republished.
+    pub(super) async fn republish_durable_drain_completion(
+        &self,
+        coordinator: &NetworkShieldedCoordinator,
+        out_point: OutPoint,
+    ) -> Result<bool, PlatformWalletError> {
+        self.reconcile_wallet_drain_with_consumption_check(coordinator, out_point, |_| async {
+            Ok(StateTransitionProofResult::VerifiedAssetLockConsumed(
+                StoredAssetLockInfo::FullyConsumed,
+            ))
+        })
+        .await
+    }
+
     pub(super) async fn reconcile_wallet_drains(
         &self,
         coordinator: &NetworkShieldedCoordinator,
     ) -> Result<(), PlatformWalletError> {
-        for lock in self.asset_locks.list_tracked_locks().await {
-            if lock.operation_id.is_some() && lock.status != AssetLockStatus::DrainCompleted {
+        let pending: Vec<_> = self
+            .asset_locks
+            .list_tracked_locks()
+            .await
+            .into_iter()
+            .filter(|lock| {
+                lock.operation_id.is_some() && lock.status != AssetLockStatus::DrainCompleted
+            })
+            .collect();
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let completed = self.asset_locks.durably_completed_drains()?;
+        for lock in pending {
+            if lock
+                .operation_id
+                .is_some_and(|operation_id| completed.contains(&operation_id))
+            {
+                self.republish_durable_drain_completion(coordinator, lock.out_point)
+                    .await?;
+            } else {
                 self.reconcile_wallet_drain(coordinator, lock.out_point)
                     .await?;
             }
@@ -2191,10 +2227,20 @@ mod tests {
             wallet.asset_locks.list_tracked_locks().await[0].status,
             AssetLockStatus::DrainCompleted
         );
+        // The stale live lock must not block a new drain meanwhile.
+        let other = Arc::new(AssetLockOperationContext::new([0x44; 16]));
+        let other_registration = wallet.register_wallet_drain_operation(other.clone());
+        assert_eq!(
+            wallet.asset_locks.begin_wallet_drain(&other).await.unwrap(),
+            None
+        );
+        drop(other_registration);
+        // Durable DrainCompleted already proves consumption: republication
+        // must not depend on a fresh, possibly unavailable, network proof.
         let status = wallet
             .shielded_wallet_drain_operation_status_with(&coordinator, [0x33; 16], |_| async {
-                Ok(StateTransitionProofResult::VerifiedAssetLockConsumed(
-                    StoredAssetLockInfo::FullyConsumed,
+                Err(dash_sdk::Error::Generic(
+                    "consumption proof unavailable".into(),
                 ))
             })
             .await

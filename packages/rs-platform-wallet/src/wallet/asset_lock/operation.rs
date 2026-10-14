@@ -119,7 +119,6 @@ impl AssetLockOperationContext {
         }
     }
 
-    #[cfg(any(feature = "shielded", test))]
     fn rejected_cleanup_out_point(&self) -> Option<OutPoint> {
         self.rejected_cleanup
             .lock()
@@ -435,6 +434,46 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         Ok(())
     }
 
+    /// A fresh committed read without this operation's row. An unreadable
+    /// store or a missing wallet snapshot never counts as absence.
+    fn drain_row_durably_absent(&self, operation_id: [u8; 16]) -> bool {
+        self.persister.load().ok().is_some_and(|persisted| {
+            persisted
+                .wallets
+                .get(&self.wallet_id)
+                .is_some_and(|wallet| {
+                    !wallet
+                        .unused_asset_locks
+                        .values()
+                        .flat_map(|locks| locks.values())
+                        .any(|lock| lock.operation_id == Some(operation_id))
+                })
+        })
+    }
+
+    /// Drain operations whose committed row says `DrainCompleted`, which only
+    /// the full completion gate writes.
+    #[cfg(any(feature = "shielded", test))]
+    pub(crate) fn durably_completed_drains(
+        &self,
+    ) -> Result<BTreeSet<[u8; 16]>, PlatformWalletError> {
+        let persisted = self.persister.load().map_err(|error| {
+            PlatformWalletError::Persistence(format!("cannot read drain operations: {error}"))
+        })?;
+        let wallet = persisted.wallets.get(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::Persistence(
+                "cannot read drain operations: wallet missing from durable snapshot".into(),
+            )
+        })?;
+        Ok(wallet
+            .unused_asset_locks
+            .values()
+            .flat_map(|locks| locks.values())
+            .filter(|lock| lock.status == AssetLockStatus::DrainCompleted)
+            .filter_map(|lock| lock.operation_id)
+            .collect())
+    }
+
     /// Only a successful complete durable read can establish NotSent. A live
     /// context wins over an absent row, including during build and failed flush.
     pub async fn wallet_drain_operation_status(
@@ -486,14 +525,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .filter(|context| !ignore_context.is_some_and(|ignored| Arc::ptr_eq(context, ignored)))
             .cloned();
         // A rejected drain whose buffered removal has since been committed by
-        // another flush has no durable or live row left: this complete read
-        // proves nothing can be resumed, so finish its in-memory cleanup.
-        if let Some(context) = context
-            .as_ref()
-            .filter(|_| durable.is_none() && live.is_none())
-        {
-            if let Some(cleanup) = context.take_rejected_cleanup() {
-                self.finish_rejected_drain_cleanup(context, cleanup).await;
+        // another flush has no durable or live row left. The read above may
+        // predate the rejection that retained this cleanup, so confirm durable
+        // absence with a fresh committed read before releasing its inputs.
+        if let Some(context) = context.as_ref().filter(|_| live.is_none()) {
+            if context.rejected_cleanup_out_point().is_some()
+                && self.drain_row_durably_absent(operation_id)
+            {
+                if let Some(cleanup) = context.take_rejected_cleanup() {
+                    self.finish_rejected_drain_cleanup(context, cleanup).await;
+                }
             }
         }
         let context = context.map(|context| context.snapshot());
@@ -711,9 +752,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 lock.operation_id.is_some() && lock.status != AssetLockStatus::DrainCompleted
             });
         let live_locks = self.list_tracked_locks().await;
-        let live_pending = live_locks.iter().any(|lock| {
-            lock.operation_id.is_some() && lock.status != AssetLockStatus::DrainCompleted
-        });
         let completed = live_locks
             .iter()
             .chain(
@@ -727,6 +765,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .filter(|lock| lock.status == AssetLockStatus::DrainCompleted)
             .filter_map(|lock| lock.operation_id)
             .collect::<BTreeSet<_>>();
+        // A durable completion may not have been published to the live lock
+        // yet; its stale live status must not block a new drain.
+        let live_pending = live_locks.iter().any(|lock| {
+            lock.operation_id
+                .is_some_and(|operation_id| !completed.contains(&operation_id))
+                && lock.status != AssetLockStatus::DrainCompleted
+        });
         let context_pending = self
             .drain_operations
             .lock()
