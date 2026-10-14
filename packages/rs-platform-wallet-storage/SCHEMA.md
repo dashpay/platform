@@ -89,7 +89,7 @@ erDiagram
         BLOB script "scriptPubKey bytes"
         INTEGER is_sweep_placeholder "1 until funding arrives"
         INTEGER spent "0 | 1"
-        BLOB spent_in_txid "spender claiming the row: spend writer, apply_sweep hold, runtime or V019 history repair; else NULL"
+        BLOB spent_in_txid "spender claiming the row: spend writer, apply_sweep hold, history repair; else NULL"
         INTEGER winner_mined_height "V007: sweep winner's mined height; NULL when unstamped or materialised"
     }
 
@@ -402,7 +402,7 @@ One row per UTXO, spent or unspent. Owning-account identity is derived from
 `core_address_pool` while loading wallet state, and confirmation height is
 derived from `core_transactions.height`.
 
-`spent_in_txid` names the transaction that claims the row. Four writers set
+`spent_in_txid` names the transaction that claims the row. Three writers set
 it:
 
 - the spend writer (`schema::core_state::apply`), naming the record stored in
@@ -414,14 +414,10 @@ it:
   of several), so that removing that spender can release the coin;
 - the runtime history repair (`schema::core_history`), which marks an owned
   output `spent = 1` for each non-mempool stored record that spends it,
-  including a record stored before the output itself was known;
-- the V019 migration repair (`migrations::history_repair_v019`), which does
-  the same once over every stored record through the same
-  `core_history::repair_record_v019`.
+  including a record stored before the output itself was known.
 
-Both repairs only fill the link: an existing claim (`spent = 1` with a
-non-NULL `spent_in_txid`) stands, so a repair never overwrites another
-spender. It is set to NULL by a trigger
+The repair only fills the link: an existing claim (`spent = 1` with a
+non-NULL `spent_in_txid`) stands, so it never overwrites another spender. It is set to NULL by a trigger
 when its referenced `core_transactions` row is deleted (instead of a native
 `ON DELETE SET NULL`, which would also null the NOT NULL `wallet_id`
 column) — and by a later sweep that releases the same outpoint.
@@ -477,8 +473,9 @@ record, written whether or not the store knows the spent output yet. When an
 owned output is recorded later, the runtime history repair looks up its
 outpoint here to find the stored records that spend it and repairs their
 accounting (`input_details`, direction, the output's spent mark). Rows are
-written with `INSERT OR IGNORE` on each record write; the V019 migration
-backfilled them for records stored before it.
+written with `INSERT OR IGNORE` on each record write. The V019 migration
+drops the history stored before the index existed, so every indexed record
+is one written since; the rescan from birth fills the index again.
 
 - PK: `(wallet_id, txid, outpoint)`.
 - FK: `(wallet_id, txid) → core_transactions(wallet_id, txid) ON DELETE
@@ -488,7 +485,7 @@ backfilled them for records stored before it.
 ### `core_transaction_record_originals`
 
 Append-only archive (V019) of the pre-repair `core_transactions.record_blob`.
-Before a history repair (runtime or V019) first rewrites a record, the blob it
+Before the runtime history repair first rewrites a record, the blob it
 replaces is copied here with `INSERT OR IGNORE`, so the first original is kept
 verbatim and never replaced. It is never loaded; it exists so a wrong repair
 can be undone by hand.
@@ -907,4 +904,4 @@ table-rebuild migration, as V004 does.
 | V016 | `V016__identity_keys_null_scope_requires_existing_identity.rs` | Recreates the `identity_keys` null-scope trigger pair (see Triggers above) to also reject a NULL-scoped key naming an identity that does not exist at all, closing the gap where V008's guard caught only the wallet-owned case. |
 | V017 | `V017__identity_scan_state.rs` | Adds `identity_scan_states` (one row per wallet: the last gap-limit identity-scan verdict — `complete`, `probed_from`/`probed_through`, `unlocated_gap`) and `identity_scan_failed_indices` (indices probed without an answer, cascading from the verdict row via `wallet_id`). Purely additive; an upgraded database reads back "no verdict recorded" for every wallet until the next scan (dashpay/platform#4365). |
 | V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` / `pending_contact_crypto` by the deleted identity id, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner`, `idx_ignored_senders_owner`, and `idx_pending_contact_crypto_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
-| V019 | `V019__core_transaction_accounting.rs` | Adds `core_transaction_inputs` (raw-input index, with `idx_core_transaction_inputs_outpoint`) and `core_transaction_record_originals` (append-only archive of pre-repair record blobs). A data repair (`migrations::history_repair_v019::repair_history`, over the `core_history::repair_record_v019` the live per-round repair shares) then runs once over every stored record: it backfills the input index, rewrites `core_transactions.record_blob` with corrected input details and direction (archiving the original first), and marks spent the owned outputs that non-mempool records spend, recording the spender in `spent_in_txid` unless another claim stands. A confirmed record whose blob cannot be decoded (or exceeds the blob size limit) is dropped along with its index rows and `core_sync_state.synced_height` is lowered to just below the wallet's birth height, so the next SPV start rescans it; an undecodable unconfirmed record fails the migration instead. An unconfirmed record whose net amount does not fit `i64` is indexed but otherwise left as stored, since nothing authenticates a mempool transaction's amounts; a confirmed one fails the migration. |
+| V019 | `V019__core_transaction_accounting.rs` | Adds `core_transaction_inputs` (raw-input index, with `idx_core_transaction_inputs_outpoint`) and `core_transaction_record_originals` (append-only archive of pre-repair record blobs). Records stored before V019 may carry wrong input details, net amounts and directions and have no indexed inputs, so instead of repairing them in place V019 deletes every wallet's Core history (`core_utxos`, `core_instant_locks`, `core_transactions`) and lowers each `core_sync_state.synced_height` to just below the wallet's birth height (never raising it), so the next SPV start rescans from birth and records the history again through the current accounting. `last_processed_height` and the chainlock stay, as chain facts; the SPV header/filter store, address pools, asset locks, identities, DashPay and metadata rows are untouched. Unconfirmed transactions are not re-delivered by a rescan and return only if the network relays them again. |

@@ -482,8 +482,12 @@ fn tc046_v014_purges_legacy_empty_script_spent_utxos() {
         "expected AddressDecode from the empty script, got {err:?}"
     );
 
-    // 4. Upgrade to the latest schema (applies V013's purge).
-    mig::run(&mut conn).expect("migrate to latest");
+    // 4. Upgrade through V018 (applies V013's purge; V019 then drops Core
+    //    history for a rescan).
+    mig::runner()
+        .set_target(refinery::Target::Version(18))
+        .run(&mut conn)
+        .expect("migrate to V018");
 
     // 5. The poisoned row is gone...
     let poisoned_rows: i64 = conn
@@ -631,8 +635,12 @@ fn tc047_v013_drops_orphans_instead_of_aborting_the_rebuild() {
     conn.pragma_update(None, "foreign_keys", true)
         .expect("re-enable foreign keys");
 
-    // 4. The rebuild must complete rather than abort on the orphans.
-    mig::run(&mut conn).expect("migrate to latest despite the orphan rows");
+    // 4. The rebuild must complete rather than abort on the orphans (checked
+    //    at V018: V019 then drops Core history for a rescan).
+    mig::runner()
+        .set_target(refinery::Target::Version(18))
+        .run(&mut conn)
+        .expect("migrate to V018 despite the orphan rows");
 
     // 5. Both orphans are gone — the same outcome the declared cascade would
     //    have produced had enforcement been on when the wallet was deleted.

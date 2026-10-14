@@ -1,12 +1,4 @@
 //! Wallet accounting repaired from historical owned outputs, independent of live UTXOs.
-//!
-//! The live per-round repair and the V019 migration
-//! (`migrations::history_repair_v019`) share this repair. The V019 pin tests
-//! (`should_pin_v019_repair_of_a_v018_*`) and
-//! `should_repair_live_folded_records_without_changing_their_accounting`
-//! guard it: if a change here or in `platform_wallet::wallet_accounting`
-//! breaks a V019 pin, add a `repair_record_v020` for the live path
-//! instead of editing the pin, and keep V019 on `repair_record_v019`.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -82,7 +74,7 @@ fn prior_record(
 }
 
 /// Index raw inputs independently of when their ownership becomes known.
-pub(crate) fn index_record(
+pub(super) fn index_record(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     record: &TransactionRecord,
@@ -132,7 +124,7 @@ pub(super) fn apply(
     Ok(())
 }
 
-pub(crate) fn network(
+fn network(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
 ) -> Result<dashcore::Network, WalletStorageError> {
@@ -199,43 +191,15 @@ pub(crate) fn contact_only_script(
     Ok(probe.query_row(key, |r| r.get(0))?)
 }
 
-/// Repair the stored record of `txid`, if there is one.
 fn repair_record(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     txid: &Txid,
     network: dashcore::Network,
 ) -> Result<(), WalletStorageError> {
-    let Some(record) = prior_record(tx, wallet_id, txid)? else {
+    let Some(mut record) = prior_record(tx, wallet_id, txid)? else {
         return Ok(());
     };
-    // An unconfirmed record whose net does not fit `i64` stays as written;
-    // load sets it aside.
-    repair_record_v019(tx, wallet_id, record, network)?;
-    Ok(())
-}
-
-/// Rewrite a stored record's details, net and direction from the wallet's
-/// historical owned outputs, archiving the original, and mark spent the
-/// owned outputs a non-mempool record spends.
-///
-/// Returns whether the record could be accounted for. An unconfirmed record
-/// with a net past `i64` cannot and stays as stored: nothing authenticates a
-/// mempool transaction, so that is peer-supplied data, and load sets it aside.
-///
-/// Shared by the live repair and the V019 migration, and guarded by the V019
-/// pin tests (`should_pin_v019_repair_of_a_v018_*`) and
-/// `should_repair_live_folded_records_without_changing_their_accounting`.
-/// If a change here or in `wallet_accounting` breaks a V019 pin, add a
-/// `repair_record_v020` for the live path instead of editing the pin.
-pub(crate) fn repair_record_v019(
-    tx: &Transaction<'_>,
-    wallet_id: &WalletId,
-    mut record: TransactionRecord,
-    network: dashcore::Network,
-) -> Result<bool, WalletStorageError> {
-    let record_txid = record.txid;
-    let txid = &record_txid;
     let original = blob::encode(&record)?;
     let mut inputs = BTreeMap::new();
     for detail in record.input_details.drain(..) {
@@ -317,7 +281,7 @@ pub(crate) fn repair_record_v019(
     }
     // Empty metadata is not accounting evidence (e.g. confirmation-only placeholders).
     if inputs.is_empty() && outputs.is_empty() {
-        return Ok(true);
+        return Ok(());
     }
     record.input_details = inputs.into_values().collect();
     record.output_details = outputs.into_values().collect();
@@ -326,7 +290,9 @@ pub(crate) fn repair_record_v019(
     let (net, direction) = wallet_accounting(&record);
     record.net_amount = match i64::try_from(net) {
         Ok(net) => net,
-        Err(_) if matches!(record.context, TransactionContext::Mempool) => return Ok(false),
+        // Nothing authenticates a mempool transaction: this is peer-supplied data,
+        // not corruption. The row stays as written and load sets it aside.
+        Err(_) if matches!(record.context, TransactionContext::Mempool) => return Ok(()),
         Err(_) => {
             return Err(WalletStorageError::NetAmountOverflow {
                 wallet_id: *wallet_id,
@@ -355,7 +321,7 @@ pub(crate) fn repair_record_v019(
             ],
         )?;
     }
-    Ok(true)
+    Ok(())
 }
 
 #[cfg(test)]

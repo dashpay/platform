@@ -1710,128 +1710,137 @@ mod tests {
         assert_eq!(replayed.input_details.len(), 1);
     }
 
-    #[test]
-    fn should_repair_existing_history_during_migration() {
-        let wallet_id = [0xAC; 32];
-        let mut conn = wallet_db(&wallet_id);
-        let funding = sample_utxo(Txid::from_byte_array([0x41; 32]), 100, true);
-        let spending = spend(&[funding.outpoint], TransactionContext::Mempool);
-        let tx = conn.transaction().unwrap();
-        apply(
-            &tx,
-            &wallet_id,
-            &round(vec![spending.clone()], vec![funding.clone()]),
-        )
-        .unwrap();
-        tx.execute(
-            "UPDATE core_transactions SET record_blob = ?1 WHERE wallet_id = ?2 AND txid = ?3",
-            params![
-                blob::encode(&spending).unwrap(),
-                &wallet_id[..],
-                AsRef::<[u8]>::as_ref(&spending.txid)
-            ],
-        )
-        .unwrap();
-        rewind_to_v018(&tx);
-        tx.commit().unwrap();
-        for run in ["first", "repeated"] {
-            migrations::run(&mut conn).unwrap();
-            let repaired = stored_record(&conn, &wallet_id, &spending.txid);
-            assert_eq!(repaired.net_amount, -150_000, "{run} migration");
-            assert_eq!(repaired.input_details.len(), 1, "{run} migration");
-            assert!(
-                !spend_claim(&conn, &wallet_id, &funding.outpoint).0,
-                "{run} migration: a stale mempool attempt cannot undo a released coin"
-            );
-        }
-        assert_eq!(
-            original_blob(&conn, &wallet_id, &spending.txid),
-            blob::encode(&spending).unwrap(),
-            "V019 keeps the record it rewrote"
-        );
-    }
-
-    /// A V018 database whose wallet 0xAD has one corrupt record at `height`.
-    fn v018_with_corrupt_record(height: Option<i64>) -> (Connection, [u8; 32]) {
-        let wallet_id = [0xADu8; 32];
-        let mut conn = Connection::open_in_memory().unwrap();
-        migrations::run(&mut conn).unwrap();
-        rewind_to_v018(&conn);
-        insert_test_wallet(&conn, &wallet_id, 100);
-        conn.execute(
-            "INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) \
-             VALUES (?1, 500, 500)",
-            params![&wallet_id[..]],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) \
-             VALUES (?1, ?2, ?3, 0, ?4)",
-            params![&wallet_id[..], &[0u8; 32][..], height, &[0xffu8][..]],
-        )
-        .unwrap();
-        (conn, wallet_id)
-    }
-
-    #[test]
-    fn should_fail_history_migration_on_corrupt_unconfirmed_record() {
-        let (mut conn, _) = v018_with_corrupt_record(None);
-        assert!(
-            migrations::run(&mut conn).is_err(),
-            "a resync cannot restore an unconfirmed record, so it must not be dropped"
-        );
-        let (tables, version): (i64, i64) = conn
-            .query_row(
-                "SELECT (SELECT count(*) FROM sqlite_master WHERE name = 'core_transaction_inputs'), \
-                        (SELECT max(version) FROM refinery_schema_history)",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+    /// Every row of every table outside Core history, by table.
+    fn non_core_rows(conn: &Connection) -> Vec<(String, Vec<Vec<rusqlite::types::Value>>)> {
+        let tables: Vec<String> = conn
+            .prepare_cached(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' \
+                 AND name NOT IN ('core_transactions', 'core_utxos', 'core_instant_locks', \
+                     'core_sync_state', 'core_transaction_inputs', \
+                     'core_transaction_record_originals', 'refinery_schema_history') \
+                 ORDER BY name",
             )
-            .unwrap();
-        assert_eq!((tables, version), (0, 18));
-    }
-
-    #[test]
-    fn should_drop_corrupt_confirmed_record_and_rescan_its_wallet() {
-        let (mut conn, wallet_id) = v018_with_corrupt_record(Some(150));
-        let kept = transaction_record(
-            Txid::from_byte_array([0x11; 32]),
-            TransactionContext::InBlock(BlockInfo::new(160, BlockHash::all_zeros(), 1)),
-        );
-        conn.execute(
-            "INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) \
-             VALUES (?1, ?2, 160, 1, ?3)",
-            params![
-                &wallet_id[..],
-                AsRef::<[u8]>::as_ref(&kept.txid),
-                blob::encode(&kept).unwrap()
-            ],
-        )
-        .unwrap();
-        migrations::run(&mut conn).expect("a re-deliverable corrupt record must not block opening");
-        let rows: Vec<Vec<u8>> = conn
-            .prepare_cached("SELECT txid FROM core_transactions WHERE wallet_id = ?1")
             .unwrap()
-            .query_map(params![&wallet_id[..]], |r| r.get(0))
+            .query_map([], |r| r.get(0))
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
-        assert_eq!(rows, vec![AsRef::<[u8]>::as_ref(&kept.txid).to_vec()]);
-        let (last_processed, synced): (i64, i64) = conn
-            .query_row(
-                "SELECT last_processed_height, synced_height FROM core_sync_state \
-                 WHERE wallet_id = ?1",
-                params![&wallet_id[..]],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+        tables
+            .into_iter()
+            .map(|table| {
+                let mut stmt = conn
+                    .prepare_cached(&format!("SELECT * FROM {table} ORDER BY 1, 2"))
+                    .unwrap();
+                let width = stmt.column_count();
+                let rows = stmt
+                    .query_map([], |row| (0..width).map(|i| row.get(i)).collect())
+                    .unwrap()
+                    .collect::<Result<_, _>>()
+                    .unwrap();
+                (table, rows)
+            })
+            .collect()
+    }
+
+    /// V019 rebuilds Core history by rescanning it: whatever a V018 database
+    /// stored (an undecodable record or an unconfirmed one included), its Core
+    /// transactions, UTXOs and instant locks go, each wallet's filter
+    /// checkpoint rewinds to just below its birth (never forward), and every
+    /// other row stays, the chain facts in `core_sync_state` included.
+    #[test]
+    fn should_drop_core_history_and_rescan_from_birth_when_migrating_from_v018() {
+        let wallet_id = [0xADu8; 32];
+        let mut conn = wallet_db(&wallet_id);
+        conn.execute("UPDATE wallets SET birth_height = 100", [])
+            .unwrap();
+        let funding = sample_utxo(Txid::from_byte_array([0x61; 32]), 150, true);
+        let mined = TransactionContext::InBlock(BlockInfo::new(160, BlockHash::all_zeros(), 1));
+        let chain_lock = sample_chain_lock(400);
+        let history = CoreChangeSet {
+            last_processed_height: Some(500),
+            synced_height: Some(500),
+            last_applied_chain_lock: Some(chain_lock.clone()),
+            ..round(vec![spend(&[funding.outpoint], mined)], vec![funding])
+        };
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &history).unwrap();
+        tx.commit().unwrap();
+        let w = &wallet_id[..];
+        for (sql, txid) in [
+            ("INSERT INTO core_transactions (wallet_id, txid, height, finalized, record_blob) VALUES (?1, ?2, 170, 0, X'ff')", 1u8),
+            ("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, X'ff')", 2),
+            ("INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) VALUES (?1, ?2, X'00')", 2),
+        ] {
+            conn.execute(sql, params![w, &[txid; 32][..]]).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO meta_wallet (wallet_id, key, value) VALUES (?1, 'label', X'03')",
+            params![w],
+        )
+        .unwrap();
+        insert_contact_script(
+            &conn,
+            &wallet_id,
+            &dashcore::ScriptBuf::from_bytes(vec![0x51]),
+        );
+        // (wallet, birth, synced before, synced after): born at 0, and still
+        // in its initial sync below birth.
+        let others = [([0xAEu8; 32], 0, 300, 0), ([0xAFu8; 32], 100, 50, 50)];
+        for (other, birth, synced, _) in others {
+            insert_test_wallet(&conn, &other, birth);
+            conn.execute(
+                "INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) \
+                 VALUES (?1, 600, ?2)",
+                params![&other[..], synced],
             )
             .unwrap();
+        }
+        let chain_lock_blob: Vec<u8> = conn
+            .query_row(
+                "SELECT last_applied_chain_lock FROM core_sync_state WHERE wallet_id = ?1",
+                params![w],
+                |r| r.get(0),
+            )
+            .unwrap();
+        rewind_to_v018(&conn);
+        let kept = non_core_rows(&conn);
+
+        migrations::run(&mut conn).expect("no stored history can block V019");
+
+        for table in [
+            "core_transactions",
+            "core_utxos",
+            "core_instant_locks",
+            "core_transaction_inputs",
+            "core_transaction_record_originals",
+        ] {
+            let rows: i64 = conn
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(rows, 0, "{table}");
+        }
+        let sync = |id: &[u8; 32]| -> (i64, i64, Option<Vec<u8>>) {
+            conn.query_row(
+                "SELECT synced_height, last_processed_height, last_applied_chain_lock \
+                 FROM core_sync_state WHERE wallet_id = ?1",
+                params![&id[..]],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap()
+        };
+        assert_eq!(sync(&wallet_id), (99, 500, Some(chain_lock_blob)));
+        for (other, _, _, synced) in others {
+            assert_eq!(sync(&other), (synced, 600, None));
+        }
         assert_eq!(
-            (synced, last_processed),
-            (99, 500),
-            "the filter checkpoint rewinds to just below birth, the processed watermark stays"
+            non_core_rows(&conn),
+            kept,
+            "everything outside Core history stays"
         );
-        let (cs, _) = load(&conn, &wallet_id);
-        assert_eq!(cs.synced_height, Some(99), "load hands the rewind to SPV");
+        let (cs, utxos) = load(&conn, &wallet_id);
+        assert!(cs.records.is_empty() && utxos.is_empty());
+        assert_eq!(cs.synced_height, Some(99), "load hands the rescan to SPV");
+        assert_eq!(cs.last_applied_chain_lock, Some(chain_lock));
     }
 
     #[test]
@@ -1965,44 +1974,37 @@ mod tests {
     }
 
     /// A contact-only unspent row (a pre-fix build persisted the contact's coins)
-    /// beside one of our own, optionally carried through the V019 migration:
-    /// the row is kept, yet never loads as spendable.
+    /// beside one of our own: the row is kept, yet never loads as spendable.
     #[test]
     fn should_keep_contact_only_rows_but_never_load_them_as_spendable() {
-        for migrated in [false, true] {
-            let wallet_id = [0xB1u8 + u8::from(migrated); 32];
-            let mut conn = wallet_db(&wallet_id);
-            let contact = sample_utxo(Txid::from_byte_array([0x51; 32]), 100, true);
-            let mut own = sample_utxo(Txid::from_byte_array([0x52; 32]), 100, true);
-            own.address = dashcore::Address::new(
-                dashcore::Network::Testnet,
-                Payload::PubkeyHash(PubkeyHash::from_byte_array([0x24u8; 20])),
+        let wallet_id = [0xB1u8; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let contact = sample_utxo(Txid::from_byte_array([0x51; 32]), 100, true);
+        let mut own = sample_utxo(Txid::from_byte_array([0x52; 32]), 100, true);
+        own.address = dashcore::Address::new(
+            dashcore::Network::Testnet,
+            Payload::PubkeyHash(PubkeyHash::from_byte_array([0x24u8; 20])),
+        );
+        own.txout.script_pubkey = own.address.script_pubkey();
+        insert_contact_script(&conn, &wallet_id, &contact.txout.script_pubkey);
+        let tx = conn.transaction().unwrap();
+        let outpoints = [contact.outpoint, own.outpoint];
+        apply(&tx, &wallet_id, &round(vec![], vec![contact, own])).unwrap();
+        tx.commit().unwrap();
+        for outpoint in &outpoints {
+            assert!(
+                !spend_claim(&conn, &wallet_id, outpoint).0,
+                "stored rows stay unspent, never destroyed"
             );
-            own.txout.script_pubkey = own.address.script_pubkey();
-            insert_contact_script(&conn, &wallet_id, &contact.txout.script_pubkey);
-            let tx = conn.transaction().unwrap();
-            let outpoints = [contact.outpoint, own.outpoint];
-            apply(&tx, &wallet_id, &round(vec![], vec![contact, own])).unwrap();
-            tx.commit().unwrap();
-            if migrated {
-                rewind_to_v018(&conn);
-                migrations::run(&mut conn).unwrap();
-            }
-            for outpoint in &outpoints {
-                assert!(
-                    !spend_claim(&conn, &wallet_id, outpoint).0,
-                    "migrated={migrated}: stored rows stay unspent, never destroyed"
-                );
-            }
-            let (cs, owners) = load(&conn, &wallet_id);
-            let loaded: Vec<_> = cs.new_utxos.iter().map(|u| u.outpoint).collect();
-            assert_eq!(
-                loaded,
-                vec![outpoints[1]],
-                "migrated={migrated}: a contact's coin is not ours to spend"
-            );
-            assert!(!owners.contains(&outpoints[0]), "migrated={migrated}");
         }
+        let (cs, owners) = load(&conn, &wallet_id);
+        let loaded: Vec<_> = cs.new_utxos.iter().map(|u| u.outpoint).collect();
+        assert_eq!(
+            loaded,
+            vec![outpoints[1]],
+            "a contact's coin is not ours to spend"
+        );
+        assert!(!owners.contains(&outpoints[0]));
     }
 
     #[test]

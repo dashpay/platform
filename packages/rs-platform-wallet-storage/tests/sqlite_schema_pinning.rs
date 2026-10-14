@@ -21,7 +21,7 @@ const EXPECTED_ID_FINGERPRINT: &str =
 /// Bump it only when ADDING a migration file; a body change on an already
 /// applied migration is a defect, not a golden to refresh.
 const EXPECTED_SQL_FINGERPRINT: &str =
-    "6023660fb488d9d3a98bb069bcb9950bdf125c3e8a8264f2a3dd3bd36a0844b8";
+    "4b9bf85fd4ac487a88fefbab2a42552fe4d1815c68d1fba7e6fdf45d72a8e400";
 
 /// The migrations merged `v4.2-dev` already ships. Refinery keys
 /// `refinery_schema_history` by version and validates an applied migration's
