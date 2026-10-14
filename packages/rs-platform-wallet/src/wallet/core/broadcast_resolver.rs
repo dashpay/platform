@@ -2173,7 +2173,32 @@ impl Actor {
                         );
                         self.registration_gone(wallet_id);
                     }
-                    Some(None) => self.end_run(wallet_id),
+                    Some(None) => {
+                        // The wallet has no record of any txid this pass
+                        // asked for: they left it with no event naming them.
+                        // Forget them here as `Settled` would, but look their
+                        // echoes up again rather than drop them: another
+                        // wallet may still hold the send.
+                        let Some(run) = entry.run.take() else {
+                            return; // matched by id above
+                        };
+                        let asked: HashSet<Txid> =
+                            run.forced.union(&run.retried).copied().collect();
+                        forget_reported(&mut self.reported, &wallet_id, |txid| {
+                            asked.contains(txid)
+                        });
+                        for txid in &asked {
+                            self.state.schedules.remove(&(wallet_id, *txid));
+                        }
+                        let events = self.state.clear_where(
+                            |wallet, txid| *wallet == wallet_id && asked.contains(txid),
+                            Some(height),
+                            "settled-or-left",
+                        );
+                        deliver(&self.sink, events);
+                        self.relook_echoes(|txid| asked.contains(txid));
+                        self.end_run(wallet_id);
+                    }
                     Some(Some(read)) => {
                         // A request queued before any height was reported
                         // carries 0; the wallet's own synced height is better.
@@ -5969,6 +5994,68 @@ mod tests {
         rig.settle().await;
 
         assert!(rig.sent().is_empty(), "accepted after it was cleared");
+    }
+
+    /// The same when the read that finds the send gone is a forced one that
+    /// reads nothing (`Some(None)`): its verdict is cleared, and the lookup
+    /// from before accepts it only for a wallet that still holds it.
+    #[tokio::test]
+    async fn should_clear_a_send_a_forced_read_found_gone_and_keep_its_echo_for_the_others() {
+        let other: WalletId = [8u8; 32];
+        for other_holds in [false, true] {
+            let probe = Arc::new(ScriptedProbe::new(&[(txid(1), unresolved())]));
+            let mut rig = enabled(probe).await;
+            rig.views(wallet(), vec![send(1, &[outpoint(90, 0)])]);
+            rig.follow(wallet(), 100).await;
+            if other_holds {
+                rig.views(other, vec![send(1, &[outpoint(90, 0)])]);
+                rig.follow(other, 100).await;
+            }
+            rig.send(Command::Uncertain(txid(1))).await;
+            rig.sent();
+
+            rig.handle(Command::Echoed(txid(1)));
+            let echo = rig.actor.jobs.join_next_with_id().await.expect("lookup");
+            assert!(matches!(&echo, Ok((_, JobDone::EchoListed { .. }))));
+            // A new report forces a pass for the wallet still holding the
+            // send; the send leaves it before that pass reads.
+            rig.handle(Command::Uncertain(txid(1)));
+            let report = rig.actor.jobs.join_next_with_id().await.expect("report");
+            rig.views(wallet(), Vec::new());
+            rig.actor.joined(report);
+            rig.settle().await;
+            assert!(
+                rig.actor.wallets[&wallet()].run.is_none(),
+                "{other_holds}: the forced pass ended"
+            );
+
+            rig.actor.joined(echo);
+            rig.settle().await;
+
+            let published = &rig.actor.state.published;
+            assert_eq!(
+                published.get(&(wallet(), txid(1))),
+                None,
+                "{other_holds}: cleared for the wallet it left"
+            );
+            assert!(
+                !rig.actor
+                    .reported
+                    .get(&txid(1))
+                    .is_some_and(|holders| holders.contains(&wallet())),
+                "{other_holds}: no priority for a send the wallet lost"
+            );
+            assert_eq!(
+                published.get(&(other, txid(1))),
+                other_holds.then_some(&ProbeVerdict::Accepted),
+                "{other_holds}: the echo still reaches the wallet holding it"
+            );
+            let events = rig.sent();
+            assert!(
+                events.contains(&ResolverEvent::Cleared(txid(1))),
+                "{other_holds}: got {events:?}"
+            );
+        }
     }
 
     /// An echo's acceptance survives another wallet's registration or removal
