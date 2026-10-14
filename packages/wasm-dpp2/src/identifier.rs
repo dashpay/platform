@@ -2,14 +2,13 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_try_from_options;
 use crate::impl_wasm_type_info;
 use crate::utils::IntoWasm;
-use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;
+use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::prelude::Identifier;
-use js_sys::{Function, Object, Reflect, Uint8Array};
+use js_sys::Uint8Array;
 use serde::de::{self, Error, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
-use std::cell::RefCell;
 use std::fmt;
 use wasm_bindgen::prelude::*;
 
@@ -34,95 +33,6 @@ extern "C" {
 
     #[wasm_bindgen(typescript_type = "IdentifierLikeOrUndefined")]
     pub type IdentifierLikeOrUndefinedJs;
-}
-
-#[derive(Clone)]
-struct IdentifierClass {
-    prototype: Object,
-    to_bytes: Function,
-    is_prototype_of: Function,
-}
-
-thread_local! {
-    static IDENTIFIER_CLASS: RefCell<Option<IdentifierClass>> = const { RefCell::new(None) };
-}
-
-fn identifier_class() -> Option<IdentifierClass> {
-    if let Some(class) = IDENTIFIER_CLASS.with(|cached| cached.borrow().clone()) {
-        return Some(class);
-    }
-
-    let temporary: JsValue = IdentifierWasm::from([0; 32]).into();
-    let free = Reflect::get(&temporary, &JsValue::from_str("free"))
-        .and_then(|value| value.dyn_into::<Function>());
-    let captured = (|| {
-        let prototype = Reflect::get_prototype_of(&temporary)?;
-        let to_bytes =
-            Reflect::get(&prototype, &JsValue::from_str("toBytes"))?.dyn_into::<Function>()?;
-        let object_prototype = Reflect::get_prototype_of(&Object::new())?;
-        let is_prototype_of = Reflect::get(&object_prototype, &JsValue::from_str("isPrototypeOf"))?
-            .dyn_into::<Function>()?;
-        Ok::<_, JsValue>(IdentifierClass {
-            prototype,
-            to_bytes,
-            is_prototype_of,
-        })
-    })();
-    // Free the trusted temporary even when capturing its class fails. Inputs are borrowed.
-    let cleanup = free.and_then(|function| function.call0(&temporary));
-    let class = match (captured, cleanup) {
-        (Ok(class), Ok(_)) => class,
-        _ => return None,
-    };
-    IDENTIFIER_CLASS.with(|cached| *cached.borrow_mut() = Some(class.clone()));
-    Some(class)
-}
-
-/// Copies bytes from a live Identifier of the consuming WASM module.
-///
-/// Returns `None` for foreign classes, non-instance inputs, or extraction failures.
-/// The generated class check is nominal; it does not authenticate allocation
-/// ownership against arbitrary prototype or pointer mutation.
-pub fn local_identifier_bytes(value: &JsValue) -> Option<[u8; 32]> {
-    // Clone cached handles before any JavaScript call, which may reenter the parser.
-    let class = identifier_class()?;
-    if class
-        .is_prototype_of
-        .call1(&class.prototype, value)
-        .ok()?
-        .as_bool()
-        != Some(true)
-    {
-        return None;
-    }
-
-    // This detects freed/moved wrappers without invoking an input's pointer getter.
-    // The class check is nominal, as for generated typed arguments; it does not attest
-    // allocation ownership against arbitrary prototype or pointer mutation.
-    let descriptor = Reflect::get_own_property_descriptor(
-        &Object::from(value.clone()),
-        &JsValue::from_str("__wbg_ptr"),
-    )
-    .ok()?;
-    let pointer = Reflect::get(&descriptor, &JsValue::from_str("value"))
-        .ok()?
-        .as_f64()?;
-    if !pointer.is_finite() || pointer <= 0.0 || pointer > u32::MAX as f64 || pointer.fract() != 0.0
-    {
-        return None;
-    }
-
-    // Use the captured base method, never an override supplied by the query value.
-    let bytes = class
-        .to_bytes
-        .call0(value)
-        .ok()?
-        .dyn_into::<Uint8Array>()
-        .ok()?;
-    if bytes.length() != 32 {
-        return None;
-    }
-    bytes.to_vec().try_into().ok()
 }
 
 impl TryFrom<IdentifierLikeJs> for IdentifierWasm {

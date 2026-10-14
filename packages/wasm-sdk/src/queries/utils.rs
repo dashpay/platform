@@ -10,7 +10,8 @@ use wasm_dpp2::serialization::conversions::{
 
 use crate::WasmSdkError;
 use dash_sdk::platform::Identifier;
-use wasm_dpp2::identifier::{local_identifier_bytes, IdentifierLikeJs};
+use wasm_dpp2::identifier::{IdentifierLikeJs, IdentifierWasm};
+use wasm_dpp2::utils::IntoWasm;
 
 /// The contract a query names, from any `IdentifierLike`.
 pub(crate) fn parse_contract_id(id: IdentifierLikeJs) -> Result<Identifier, WasmSdkError> {
@@ -39,8 +40,8 @@ where
 
 fn normalize_identifier(value: &mut PlatformValue, original: &JsValue) {
     if matches!(value, PlatformValue::Map(_)) {
-        if let Some(bytes) = local_identifier_bytes(original) {
-            *value = PlatformValue::Identifier(bytes);
+        if let Ok(identifier) = original.to_wasm::<IdentifierWasm>("Identifier") {
+            *value = PlatformValue::Identifier(identifier.to_slice());
         }
     }
 }
