@@ -28,7 +28,7 @@
   handling to the version-3 ProRegTx / ProUpServTx types.
 - **Rust dependencies:** on top of that `dev` revision, pin the reworked
   [rust-dashcore#1112](https://github.com/dashpay/rust-dashcore/pull/1112)
-  (`844da0e8`): restored spend claims are held once per wallet and guard every
+  (`9ea53592`): restored spend claims are held once per wallet and guard every
   funding account, including one registered after the wallet is loaded.
 - **platform-wallet:** a chain reorganization reported by key-wallet
   (`WalletEvent::ChainTruncated`) updates the in-memory balance but is not yet
