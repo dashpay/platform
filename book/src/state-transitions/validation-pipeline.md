@@ -311,6 +311,14 @@ version 14 a failure is therefore refused without a fee, like a failed witness, 
 charging the inputs a penalty; check_tx runs this stage for the transition too, so such a
 transition does not reach a block.
 
+For `IdentityCreate` this stage checks that the identity id is the one the asset lock's outpoint
+derives, the structure of the keys, and the proof of possession of each key. The asset lock
+signature covers the keys but neither the identity id nor the key signatures, which are left
+out of the signable bytes. From protocol version 14 an identity id or proof of possession
+failure is therefore refused without a fee instead of charging the asset lock a penalty, and
+the asset lock is left as it was; a key structure failure is still charged. A block holding
+such a transition is refused, as for any unpaid result.
+
 ## Stage 10: State Validation
 
 The final validation stage checks for state-level conflicts. Does a data contract
