@@ -49,6 +49,10 @@ pub struct AssetLockOperationContext {
     started: AtomicBool,
     registrations: AtomicUsize,
     snapshot: Mutex<AssetLockOperationSnapshot>,
+    // An unpublished Built row cannot enter the live manager: generic resume
+    // could dispatch it before durability. Retain it here so explicit retries
+    // can repeat the checkpoint after a rolled-back or uncertain write.
+    checkpoint: Mutex<Option<TrackedAssetLock>>,
 }
 
 impl AssetLockOperationContext {
@@ -62,6 +66,7 @@ impl AssetLockOperationContext {
                 state: AssetLockOperationState::Pending,
                 out_point: None,
             }),
+            checkpoint: Mutex::new(None),
         }
     }
 
@@ -78,6 +83,17 @@ impl AssetLockOperationContext {
             .lock()
             .unwrap_or_else(|error| error.into_inner()) =
             AssetLockOperationSnapshot { state, out_point };
+    }
+
+    pub(super) fn retain_checkpoint(&self, lock: TrackedAssetLock) {
+        *self.checkpoint.lock().unwrap_or_else(|e| e.into_inner()) = Some(lock);
+    }
+
+    pub(super) fn clear_checkpoint(&self) {
+        self.checkpoint
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
     }
 }
 
@@ -221,7 +237,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         Ok(true)
     }
 
-    #[cfg(feature = "shielded")]
+    #[cfg(any(feature = "shielded", test))]
     fn persist_drain_lock_snapshot(
         &self,
         lock: &TrackedAssetLock,
@@ -342,15 +358,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
     }
 
-    /// Repair the gap between a durable checkpoint and live tracking when a
-    /// cancelled call is retried without restarting. Status remains read-only;
-    /// only an explicit retry hydrates the exact operation's missing row.
+    /// Retry an unpublished checkpoint or repair the gap between durability
+    /// and live tracking. Status remains read-only; only an explicit retry
+    /// can make the exact operation's missing row durable and resumable.
     #[cfg(any(feature = "shielded", test))]
     async fn hydrate_wallet_drain(
         &self,
         operation_id: [u8; 16],
         out_point: OutPoint,
     ) -> Result<(), PlatformWalletError> {
+        let _checkpoint_guard = self.build_persist_serial.lock().await;
+        let context = self
+            .drain_operations
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&operation_id)
+            .cloned();
         {
             let manager = self.wallet_manager.read().await;
             if manager
@@ -358,21 +381,50 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .and_then(|info| info.tracked_asset_locks.get(&out_point))
                 .is_some_and(|lock| lock.operation_id == Some(operation_id))
             {
+                if let Some(context) = &context {
+                    context.clear_checkpoint();
+                }
                 return Ok(());
             }
         }
         let persisted = self.persister.load().map_err(|error| {
             PlatformWalletError::Persistence(format!("cannot restore checkpointed drain: {error}"))
         })?;
-        let candidate = persisted
-            .wallets
-            .get(&self.wallet_id)
-            .into_iter()
-            .flat_map(|wallet| wallet.unused_asset_locks.values())
-            .filter_map(|locks| locks.get(&out_point))
-            .find(|lock| lock.operation_id == Some(operation_id))
-            .cloned()
-            .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
+        let wallet = persisted.wallets.get(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::Persistence(
+                "cannot restore checkpointed drain: wallet missing from durable snapshot".into(),
+            )
+        })?;
+        let durable = wallet
+            .unused_asset_locks
+            .values()
+            .find_map(|locks| locks.get(&out_point));
+        let candidate = if let Some(durable) = durable {
+            if durable.operation_id != Some(operation_id) {
+                return Err(PlatformWalletError::Persistence(
+                    "checkpointed drain conflicts with the durable operation UUID".into(),
+                ));
+            }
+            durable.clone()
+        } else {
+            let candidate = context
+                .as_ref()
+                .and_then(|context| {
+                    context
+                        .checkpoint
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .clone()
+                })
+                .filter(|lock| {
+                    lock.out_point == out_point && lock.operation_id == Some(operation_id)
+                })
+                .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
+            // No replacement transaction or funding key is created. Keep the
+            // candidate and spend fence if this retry also fails/cancels.
+            self.persist_drain_lock_snapshot(&candidate)?;
+            candidate
+        };
         let mut manager = self.wallet_manager.write().await;
         let info = manager
             .get_wallet_info_mut(&self.wallet_id)
@@ -387,6 +439,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             return Err(PlatformWalletError::Persistence(
                 "checkpointed drain conflicts with the live operation UUID".into(),
             ));
+        }
+        if let Some(context) = &context {
+            context.clear_checkpoint();
         }
         Ok(())
     }
