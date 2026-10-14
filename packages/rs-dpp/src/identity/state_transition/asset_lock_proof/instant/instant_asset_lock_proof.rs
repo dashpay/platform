@@ -6,9 +6,8 @@ use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use std::convert::{TryFrom, TryInto};
 
-use dashcore::consensus::encode::{self, VarInt};
-use dashcore::consensus::{deserialize, deserialize_partial, Decodable, Encodable};
-use dashcore::transaction::special_transaction::{TransactionPayload, TransactionType};
+use dashcore::consensus::{deserialize, Encodable};
+use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::{InstantLock, OutPoint, Transaction, TxIn, TxOut};
 use platform_value::{BinaryData, Value};
 
@@ -207,40 +206,19 @@ pub struct RawInstantLockProof {
     output_index: u32,
 }
 
-/// Decodes an instant proof's transaction. An asset lock decodes as it always has on every
-/// node: its payload is read after its length prefix, whatever length the prefix announces,
-/// and must end the bytes. Neither the InstantSend lock nor the transition's signature covers
-/// the prefix, so a node that read the payload through it would refuse proofs the other nodes
-/// accept and pay for. Any other transaction decodes as usual.
-fn decode_asset_lock_transaction(bytes: &[u8]) -> Result<Transaction, encode::Error> {
-    let [v0, v1, t0, t1, ..] = *bytes else {
-        return deserialize(bytes);
-    };
-    // A transaction carries a payload only from version 3, read as a signed 16-bit value.
-    if i16::from_le_bytes([v0, v1]) < 3
-        || u16::from_le_bytes([t0, t1]) != TransactionType::AssetLock.to_u16()
-    {
-        return deserialize(bytes);
-    }
-    // Up to the payload, an asset lock decodes as a classic transaction does, with the
-    // same segwit rule, and a classic transaction has no payload section.
-    let mut body = bytes.to_vec();
-    body[2..4].fill(0);
-    let (mut transaction, payload_start) = deserialize_partial::<Transaction>(&body)?;
-    let mut payload = &bytes[payload_start..];
-    VarInt::consensus_decode(&mut payload)?;
-    transaction.special_transaction_payload = Some(TransactionPayload::AssetLockPayloadType(
-        deserialize(payload)?,
-    ));
-    Ok(transaction)
-}
-
 impl TryFrom<RawInstantLockProof> for InstantAssetLockProof {
     type Error = ProtocolError;
 
     fn try_from(raw_instant_lock: RawInstantLockProof) -> Result<Self, Self::Error> {
-        let transaction = decode_asset_lock_transaction(raw_instant_lock.transaction.as_slice())
-            .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
+        // An asset lock decodes as it always has on every node: its payload is read after its
+        // length prefix, a minimally encoded CompactSize whatever length it announces, and must
+        // end the bytes. Neither the InstantSend lock nor the transition's signature covers the
+        // prefix, so a node that read the payload through it would refuse proofs the other nodes
+        // accept and pay for.
+        let transaction = Transaction::deserialize_ignoring_asset_lock_payload_length(
+            raw_instant_lock.transaction.as_slice(),
+        )
+        .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
         let instant_lock = deserialize(raw_instant_lock.instant_lock.as_slice())
             .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
 
@@ -279,6 +257,11 @@ impl TryFrom<&InstantAssetLockProof> for RawInstantLockProof {
 mod tests {
     use super::*;
     use crate::tests::fixtures::raw_instant_asset_lock_proof_fixture;
+    use dashcore::consensus::encode::{self, VarInt};
+    use dashcore::consensus::{deserialize_partial, Decodable};
+    use dashcore::transaction::special_transaction::TransactionType;
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
 
     // ---------------------------------------------------------------
     // Default
@@ -596,7 +579,15 @@ mod tests {
     #[test]
     fn test_raw_instant_lock_proof_reads_an_asset_lock_payload_whatever_its_length_prefix() {
         let canonical = hex::decode(CORE_ASSET_LOCK).unwrap();
-        for prefix in [&[0x23][..], &[0x25], &[0x00], &[0xfc], &[0xfd, 0x00, 0x01]] {
+        for prefix in [
+            &[0x23][..],
+            &[0x25],
+            &[0x00],
+            &[0xfc],
+            &[0xfd, 0x00, 0x01],
+            &[0xfe, 0x00, 0x00, 0x01, 0x00],
+            &[0xff, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00],
+        ] {
             let proof = decode_core_asset_lock(core_asset_lock_with_payload_length_prefix(prefix))
                 .unwrap_or_else(|e| panic!("prefix {prefix:02x?}: {e}"));
             assert_eq!(
@@ -641,6 +632,136 @@ mod tests {
         ] {
             assert!(decode_core_asset_lock(transaction_bytes).is_err(), "{case}");
         }
+    }
+
+    /// A byte-level decoder of proof transactions that nodes have run: an asset lock is decoded
+    /// as a classic transaction up to its payload, then its length prefix is read and ignored,
+    /// and the payload must end the bytes. Anything else goes to `deserialize`.
+    ///
+    /// It decodes inputs, outputs and payloads with the pinned rust-dashcore, as rust-dashcore's
+    /// own decoder does, so comparing the two cannot see a change to those shared decoders; the
+    /// fixed txids and identifiers in the tests above guard them.
+    fn byte_level_asset_lock_decoder(bytes: &[u8]) -> Result<Transaction, encode::Error> {
+        let [v0, v1, t0, t1, ..] = *bytes else {
+            return deserialize(bytes);
+        };
+        if i16::from_le_bytes([v0, v1]) < 3
+            || u16::from_le_bytes([t0, t1]) != TransactionType::AssetLock.to_u16()
+        {
+            return deserialize(bytes);
+        }
+        let mut body = bytes.to_vec();
+        body[2..4].fill(0);
+        let (mut transaction, payload_start) = deserialize_partial::<Transaction>(&body)?;
+        let mut payload = &bytes[payload_start..];
+        VarInt::consensus_decode(&mut payload)?;
+        transaction.special_transaction_payload = Some(TransactionPayload::AssetLockPayloadType(
+            deserialize(payload)?,
+        ));
+        Ok(transaction)
+    }
+
+    /// Nodes that ran the byte-level decoder and nodes that run rust-dashcore's must agree on
+    /// every proof transaction: whether it decodes, to what, and with which error, or they
+    /// would disagree on transitions that are paid for. Seeded mutations of a real asset lock,
+    /// of its witness form and of its form without inputs, many with a rewritten payload
+    /// length prefix, cover both the decoding and the refusal paths.
+    #[test]
+    fn test_raw_instant_lock_proof_decodes_every_transaction_as_the_byte_level_decoder_did() {
+        let canonical = hex::decode(CORE_ASSET_LOCK).unwrap();
+        // Version and type, the input count and its one input, the two outputs and the lock
+        // time, then the payload length prefix and the 36-byte payload.
+        let (header, rest) = canonical.split_at(4);
+        let (inputs, rest) = rest.split_at(148);
+        let (outputs, rest) = rest.split_at(rest.len() - 41);
+        let (lock_time, payload) = rest.split_at(4);
+        assert_eq!(payload[0], 36);
+        let witness_form = [
+            header,
+            &[0, 1],
+            inputs,
+            outputs,
+            &[1, 1, 0xaa],
+            lock_time,
+            payload,
+        ]
+        .concat();
+        let without_inputs = [header, &[0, 1, 0], outputs, lock_time, payload].concat();
+        // Both forms decode, so their mutations reach the decoding path, not only refusals.
+        assert_eq!(
+            Transaction::deserialize_ignoring_asset_lock_payload_length(&witness_form)
+                .expect("the witness form decodes")
+                .txid(),
+            deserialize::<Transaction>(&canonical).unwrap().txid()
+        );
+        Transaction::deserialize_ignoring_asset_lock_payload_length(&without_inputs)
+            .expect("the asset lock without inputs decodes");
+        let seeds = [canonical.clone(), witness_form, without_inputs];
+
+        let mut rng = StdRng::seed_from_u64(0x5ea1_ed00);
+        let mut decoded_from_other_bytes = 0;
+        // Per prefix width (1, 3, 5, 9 bytes): rewritten prefixes that still decoded.
+        let mut decoded_per_prefix_width = [0; 4];
+        for _ in 0..100_000 {
+            let mut bytes = seeds[rng.gen_range(0..seeds.len())].clone();
+            let mut prefix_width = None;
+            if rng.gen_bool(0.5) {
+                let prefix_at = bytes.len() - 37;
+                let width = rng.gen_range(0..4);
+                prefix_width = Some(width);
+                let prefix: Vec<u8> = match width {
+                    0 => vec![rng.gen()],
+                    1 => [&[0xfd][..], &rng.gen::<u16>().to_le_bytes()].concat(),
+                    2 => [&[0xfe][..], &rng.gen::<u32>().to_le_bytes()].concat(),
+                    _ => [&[0xff][..], &rng.gen::<u64>().to_le_bytes()].concat(),
+                };
+                bytes.splice(prefix_at..=prefix_at, prefix);
+            }
+            for _ in 0..rng.gen_range(0..3) {
+                let at = rng.gen_range(0..=bytes.len());
+                match rng.gen_range(0..4) {
+                    0 if at < bytes.len() => bytes[at] = rng.gen(),
+                    1 if at < bytes.len() => {
+                        bytes.remove(at);
+                    }
+                    2 => bytes.truncate(at),
+                    _ => bytes.insert(at, rng.gen()),
+                }
+            }
+
+            let decoded = Transaction::deserialize_ignoring_asset_lock_payload_length(&bytes);
+            match (&decoded, byte_level_asset_lock_decoder(&bytes)) {
+                (Ok(transaction), Ok(expected)) => {
+                    assert_eq!(transaction, &expected, "{}", hex::encode(&bytes));
+                    if dashcore::consensus::serialize(transaction) != bytes {
+                        decoded_from_other_bytes += 1;
+                    }
+                    if let Some(width) = prefix_width {
+                        decoded_per_prefix_width[width] += 1;
+                    }
+                }
+                (Err(error), Err(expected)) => {
+                    assert_eq!(
+                        error.to_string(),
+                        expected.to_string(),
+                        "{}",
+                        hex::encode(&bytes)
+                    )
+                }
+                (_, expected) => panic!(
+                    "{}: {decoded:?}, but the byte-level decoder gives {expected:?}",
+                    hex::encode(&bytes)
+                ),
+            }
+        }
+        assert!(
+            decoded_from_other_bytes > 1_000,
+            "only {decoded_from_other_bytes} non-canonical transactions decoded"
+        );
+        assert!(
+            decoded_per_prefix_width.iter().all(|&count| count > 0),
+            "decoded per prefix width: {decoded_per_prefix_width:?}"
+        );
     }
 }
 
