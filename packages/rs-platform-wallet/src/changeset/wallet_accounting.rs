@@ -5,10 +5,10 @@
 //! (`platform-wallet-storage`'s `core_history`) both call them, so a row
 //! cannot change accounting when storage repairs it; they differ only on
 //! an `i64` overflow (live saturates, repair errors). The V019 migration
-//! runs the same repair (`repair_record_v019`), guarded by
-//! `should_pin_v019_repair_of_a_v018_database` and
+//! runs the same repair (`repair_record_v019`), guarded by the V019 pin
+//! tests (`should_pin_v019_repair_of_a_v018_*`) and
 //! `should_repair_live_folded_records_without_changing_their_accounting`:
-//! if a change here breaks the V019 pin, add a `repair_record_v020` for the
+//! if a change here breaks a V019 pin, add a `repair_record_v020` for the
 //! live path instead of editing the pin.
 //!
 //! Upstream `key-wallet` classifies each matched account on its own, and

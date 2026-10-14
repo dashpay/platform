@@ -429,9 +429,9 @@ pub fn embedded_migrations_sql() -> Vec<String> {
 /// migration-specific handling lives here (strict record reads, the
 /// undecodable-record resync policy, the entry point); the repair itself is
 /// `core_history::repair_record_v019`, which the live per-round repair
-/// shares. `should_pin_v019_repair_of_a_v018_database` guards its output:
-/// a change that breaks it needs a `repair_record_v020` for the live path,
-/// not an edited pin.
+/// shares. The pin tests (`should_pin_v019_repair_of_a_v018_*`) guard its
+/// output: a change that breaks one needs a `repair_record_v020` for the
+/// live path, not an edited pin.
 mod history_repair_v019 {
     use dashcore::hashes::Hash;
     use dashcore::Txid;
@@ -943,6 +943,78 @@ mod history_repair_v019 {
                 )
                 .unwrap();
             assert_eq!(indexed, 1);
+        }
+
+        /// Pins V019's result for an asset lock with no change: it spends a
+        /// wallet coin into an OP_RETURN burn and nothing leaves the wallet,
+        /// so the repaired record is `Internal` with the whole input as its
+        /// net, however the funding account's local view read it.
+        #[test]
+        fn should_pin_v019_repair_of_a_v018_asset_lock_without_change() {
+            let wallet_id = [0xC3u8; 32];
+            let mut conn = wallet_db(&wallet_id);
+            let own = address(1);
+            let funding = OutPoint::new(Txid::from_byte_array([0x72; 32]), 0);
+            let burn = TxOut {
+                value: 99_000,
+                script_pubkey: dashcore::ScriptBuf::new_op_return(&[]),
+            };
+            let body = spend_of(&[funding], vec![burn]);
+            let txid = body.txid();
+            // What an old build stored: the input was not known to be ours,
+            // so the burn read as an account-local outgoing payment.
+            let mut original = bip44_record(
+                body,
+                TransactionContext::InBlock(BlockInfo::new(102, BlockHash::all_zeros(), 3)),
+                vec![OutputDetail {
+                    index: 0,
+                    role: OutputRole::Unspendable,
+                    address: None,
+                    value: 99_000,
+                }],
+                0,
+            );
+            original.transaction_type = TransactionType::AssetLock;
+            original.direction = TransactionDirection::Outgoing;
+            let stored = blob::encode(&original).unwrap();
+            stage_v018(
+                &mut conn,
+                &wallet_id,
+                vec![utxo(funding, 100_000, own.clone())],
+                &stored,
+                true,
+            );
+
+            migrations::run(&mut conn).unwrap();
+
+            let mut expected = original.clone();
+            expected.input_details = vec![InputDetail {
+                index: 0,
+                value: 100_000,
+                address: own,
+            }];
+            expected.net_amount = -100_000;
+            expected.direction = TransactionDirection::Internal;
+            let key = params![&wallet_id[..], txid.as_byte_array().as_slice()];
+            let (repaired, archived): (Vec<u8>, Vec<u8>) = conn
+                .query_row(
+                    "SELECT t.record_blob, o.record_blob FROM core_transactions t \
+                     JOIN core_transaction_record_originals o USING (wallet_id, txid) \
+                     WHERE t.wallet_id = ?1 AND t.txid = ?2",
+                    key,
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(repaired, blob::encode(&expected).unwrap());
+            assert_eq!(archived, stored);
+            let spender: Option<Vec<u8>> = conn
+                .query_row(
+                    "SELECT spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 1",
+                    params![&wallet_id[..], blob::encode_outpoint(&funding).unwrap()],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(spender.as_deref(), Some(txid.as_byte_array().as_slice()));
         }
     }
 }
