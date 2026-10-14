@@ -143,6 +143,15 @@ pub struct DashPayBackfillRecord {
     /// one a retry with no rewind of its own would produce.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub unpersisted_extent: Option<(u32, u32)>,
+    /// In-memory only: the backend permanently refused a record round this
+    /// session (a non-transient store failure). Coverage is then kept for
+    /// the session only, beside the debt, and no further record round is
+    /// attempted: retrying a rejection that will keep failing would only
+    /// leave every later sweep rewinding to the same contacts again. A
+    /// relaunch starts with it clear, and with no durable coverage for those
+    /// contacts re-runs their backfill.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub store_refused: bool,
 }
 
 /// Whether `persister` can hold a durable [`DashPayBackfillRecord`].
@@ -212,6 +221,7 @@ impl DashPayBackfillRecord {
             unpersisted_cursor: None,
             unpersisted_cursor_epoch: None,
             unpersisted_extent: None,
+            store_refused: false,
         }
     }
 
