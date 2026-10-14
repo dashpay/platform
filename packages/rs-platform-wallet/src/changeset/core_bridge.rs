@@ -67,7 +67,9 @@ use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::changeset::traits::PlatformWalletPersistence;
 use crate::wallet::asset_lock::sync::reconstruction;
 use crate::wallet::identity::network::sent_payment_status_for_record;
-use crate::wallet::identity::types::dashpay::payment::{PaymentDirection, PaymentStatus};
+use crate::wallet::identity::types::dashpay::payment::{
+    PaymentDirection, PaymentEntry, PaymentStatus,
+};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Maximum number of `WalletEvent`s folded into a single
@@ -1631,6 +1633,13 @@ fn verdict_for(
     next_sent_payment_status(entry.status, evidence)
 }
 
+/// The status `entry` moves to once its transaction is swept, or `None` if
+/// it does not move: the adapter's verdict, for a store that removes a losing
+/// transaction itself and has no event to hand it.
+pub fn swept_payment_status(entry: &PaymentEntry) -> Option<PaymentStatus> {
+    verdict_for(entry, SentPaymentEvidence::Swept)
+}
+
 /// Rebuild the "addresses marked used" delta plus the post-batch
 /// highest-used watermarks for the accounts touched by `records`.
 ///
@@ -2922,6 +2931,31 @@ mod sent_payment_verdict_tests {
             addresses_derived: Vec::new(),
         };
         assert!(sent_payment_evidence(&event).is_empty());
+    }
+
+    #[test]
+    fn should_expose_the_swept_verdict_of_the_transition_table() {
+        let contact = Identifier::from(CONTACT);
+        let entry = |direction, status| PaymentEntry {
+            direction,
+            status,
+            ..PaymentEntry::new_sent(contact, 50_000, None)
+        };
+        for status in [
+            PaymentStatus::Pending,
+            PaymentStatus::Confirmed,
+            PaymentStatus::Failed,
+        ] {
+            assert_eq!(
+                super::swept_payment_status(&entry(PaymentDirection::Sent, status)),
+                next_sent_payment_status(status, SentPaymentEvidence::Swept)
+            );
+            assert_eq!(
+                super::swept_payment_status(&entry(PaymentDirection::Received, status)),
+                None,
+                "a received payment never moves"
+            );
+        }
     }
 }
 
