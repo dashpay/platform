@@ -351,8 +351,10 @@ RUN --mount=type=secret,id=AWS \
     DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
     # Download and extract the cargo-binstall binary
     curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;  \
-    ./cargo-binstall -y --force cargo-binstall@${BINSTALL_VERSION}; \
-    rm ./cargo-binstall; \
+    # The archive already holds this cargo-binstall version, so install it directly. Letting it
+    # reinstall itself queries the GitHub API and, when that is rate limited, falls back to a
+    # source build that no longer compiles with the current Rust toolchain
+    mv ./cargo-binstall "${CARGO_HOME:-$HOME/.cargo}/bin/cargo-binstall"; \
     cargo binstall -V
 
 RUN --mount=type=secret,id=AWS \
