@@ -13,6 +13,7 @@
 use std::fmt;
 
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
+use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::KeyID;
 use dpp::prelude::{Identifier, UserFeeIncrease};
 use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
@@ -48,6 +49,7 @@ use dpp::state_transition::data_contract_create_transition::accessors::DataContr
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
+use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::{
     StateTransition, StateTransitionOwned, StateTransitionType, STATE_TRANSITION_MAX_ENCODED_BYTES,
@@ -269,11 +271,23 @@ fn summarize(
 ) -> Result<StateTransitionSummary, PlatformWalletError> {
     let mut budget = DetailsBudget::default();
     let kind = match transition {
-        StateTransition::IdentityUpdate(update) => StateTransitionSummaryKind::IdentityUpdate {
-            identity_id: update.identity_id(),
-            add_public_keys: update.public_keys_to_add().to_vec(),
-            disable_public_key_ids: update.public_key_ids_to_disable().to_vec(),
-        },
+        StateTransition::IdentityUpdate(update) => {
+            // A key bound to one document type carries that type's name to the approval
+            // sheet in its own field, like a batch row's document type.
+            for key in update.public_keys_to_add() {
+                if let Some(ContractBounds::SingleContractDocumentType {
+                    document_type_name, ..
+                }) = key.contract_bounds()
+                {
+                    check_document_type_name(document_type_name)?;
+                }
+            }
+            StateTransitionSummaryKind::IdentityUpdate {
+                identity_id: update.identity_id(),
+                add_public_keys: update.public_keys_to_add().to_vec(),
+                disable_public_key_ids: update.public_key_ids_to_disable().to_vec(),
+            }
+        }
         StateTransition::Batch(batch) => StateTransitionSummaryKind::Batch {
             owner_id: batch.owner_id(),
             transitions: summarize_batch(batch, &mut budget)?,
@@ -1432,6 +1446,48 @@ mod tests {
             )]);
             assert!(
                 summarize_state_transition(&transition.serialize_to_bytes().unwrap()).is_err(),
+                "{name:?}"
+            );
+        }
+    }
+
+    /// An added key bound to one document type shows that type's name in its
+    /// own field, so a name outside the consensus pattern is refused like a
+    /// batch row's; a valid one is summarized.
+    #[test]
+    fn invalid_document_type_bounds_of_added_keys_are_refused() {
+        let update = |document_type_name: &str| -> Vec<u8> {
+            let transition: StateTransition = IdentityUpdateTransitionV0 {
+                identity_id: Identifier::from([0x11; 32]),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![IdentityPublicKeyInCreationV1 {
+                    id: 18,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    read_only: false,
+                    data: BinaryData::new(vec![0x03; 33]),
+                    signature: BinaryData::new(vec![0xbb; 65]),
+                    contract_bounds: Some(ContractBounds::SingleContractDocumentType {
+                        id: Identifier::from([0x22; 32]),
+                        document_type_name: document_type_name.to_string(),
+                    }),
+                    total_budget: None,
+                    expires_at: None,
+                }
+                .into()],
+                ..Default::default()
+            }
+            .into();
+            transition.serialize_to_bytes().unwrap()
+        };
+
+        let summary = summarize_state_transition(&update("post")).expect("summarizes");
+        assert!(summary.is_complete());
+        for name in ["post\u{202e}", "a\nb", "", &"x".repeat(65)] {
+            assert!(
+                summarize_state_transition(&update(name)).is_err(),
                 "{name:?}"
             );
         }
