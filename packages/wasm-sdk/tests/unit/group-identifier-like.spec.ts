@@ -266,6 +266,20 @@ describe('group query IdentifierLike inputs', () => {
     }
   }
 
+  for (const proof of [false, true]) {
+    it(`should parse a memberDataContracts Identifier before owner validation and proof ${proof}`, async () => {
+      await checkOutcome({
+        ...cases[5],
+        message: 'Invalid identity groups query: fromObject: serde deserialization error: '
+          + "string decoding error provided string contained invalid character '-' at byte 3",
+      }, proof, {
+        identityId: identifier(0x11, 'bytes'),
+        memberDataContracts: [identifier(0x44, 'instance')],
+        ownerDataContracts: ['not-an-identifier'],
+      });
+    });
+  }
+
   for (const [name, create] of [
     ['fromBytes', () => sdk.Identifier.fromBytes(new Uint8Array(32).fill(0x11))],
     ['fromHex', () => sdk.Identifier.fromHex('11'.repeat(32))],
