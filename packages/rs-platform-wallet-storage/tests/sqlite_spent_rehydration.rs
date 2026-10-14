@@ -80,6 +80,32 @@ fn load_wallet(persister: &SqlitePersister, wallet_id: &[u8; 32]) -> (Wallet, Ma
     (restored.wallet, restored.wallet_info)
 }
 
+/// `(wallet, outpoint, status)` of every `asset_locks` row, sorted.
+fn asset_lock_rows(persister: &SqlitePersister) -> Vec<([u8; 32], OutPoint, String)> {
+    let conn = persister.lock_conn_for_test();
+    let mut stmt = conn
+        .prepare("SELECT wallet_id, outpoint, status FROM asset_locks")
+        .unwrap();
+    let mut rows: Vec<_> = stmt
+        .query_map([], |row| {
+            let wallet: Vec<u8> = row.get(0)?;
+            let outpoint: Vec<u8> = row.get(1)?;
+            Ok((wallet, outpoint, row.get::<_, String>(2)?))
+        })
+        .unwrap()
+        .map(|row| {
+            let (wallet, outpoint, status) = row.unwrap();
+            (
+                wallet.try_into().unwrap(),
+                platform_wallet_storage::sqlite::schema::blob::decode_outpoint(&outpoint).unwrap(),
+                status,
+            )
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
 fn count(persister: &SqlitePersister, sql: &str) -> i64 {
     let conn = persister.lock_conn_for_test();
     conn.query_row(sql, [], |row| row.get(0)).unwrap()
@@ -795,7 +821,24 @@ async fn assert_conflict_restart(case: ConflictCase) {
         );
     }
     let mut other_wallet_id = None;
-    let asset_count = || count(&persister, "SELECT COUNT(*) FROM asset_locks");
+    // The asset-lock rows a load leaves: the loser's non-consumed lifecycle row
+    // goes with the Core repair, in the same transaction, so whatever that row
+    // carries goes with it. Its consumed history and the other wallet's row of
+    // the same outpoint stay.
+    let expected_assets = |swept_removed: bool, other: [u8; 32]| {
+        let row = |wallet, vout, status: &str| {
+            (wallet, OutPoint::new(loser.txid(), vout), status.to_owned())
+        };
+        let mut rows = vec![
+            row(wallet.wallet_id, 1, "consumed"),
+            row(other, 0, "broadcast"),
+        ];
+        if !swept_removed {
+            rows.push(row(wallet.wallet_id, 0, "broadcast"));
+        }
+        rows.sort();
+        rows
+    };
     if assets {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
         use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
@@ -846,8 +889,8 @@ async fn assert_conflict_restart(case: ConflictCase) {
         assert!(persister.load().is_err());
         if assets {
             assert_eq!(
-                asset_count(),
-                3,
+                asset_lock_rows(&persister),
+                expected_assets(false, other_wallet_id.unwrap()),
                 "failed reconciliation must roll back asset lifecycle deletions"
             );
         }
@@ -883,9 +926,9 @@ async fn assert_conflict_restart(case: ConflictCase) {
                 "swept asset locks must not be resumable"
             );
             assert_eq!(
-                count(&persister, "SELECT COUNT(*) FROM asset_locks"),
-                if recovery { 3 } else { 2 },
-                "consumed history is retained and Recovery rolls back removals"
+                asset_lock_rows(&persister),
+                expected_assets(!recovery, other_wallet_id.unwrap()),
+                "only the loser's non-consumed row goes; Recovery rolls the removal back"
             );
         }
         if let Some(other_id) = other_wallet_id {
