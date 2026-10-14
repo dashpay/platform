@@ -1118,17 +1118,13 @@ async fn stage_replay_amounts(
     use platform_wallet_storage::sqlite::schema::blob;
     let fixture = Fixture::build(block(100), context, false).await;
     let conn = fixture.persister.lock_conn_for_test();
-    let bytes: Vec<u8> = conn
-        .query_row(
-            "SELECT record_blob FROM core_transactions WHERE record_blob IS NOT NULL",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
+    let sql = "SELECT record_blob FROM core_transactions WHERE record_blob IS NOT NULL";
+    let bytes: Vec<u8> = conn.query_row(sql, [], |row| row.get(0)).unwrap();
     let mut record: TransactionRecord = blob::decode(&bytes).unwrap();
     let address = record.input_details[0].address.clone();
+    let parent = Txid::from_byte_array([90; 32]);
     let parents: Vec<_> = (0..values.len() as u32)
-        .map(|vout| OutPoint::new(Txid::from_byte_array([90; 32]), vout))
+        .map(|vout| OutPoint::new(parent, vout))
         .collect();
     record.transaction = spend_of(&parents, vec![pay(received, &address)]);
     record.input_details = (0..)
