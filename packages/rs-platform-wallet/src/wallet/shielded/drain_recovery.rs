@@ -339,33 +339,34 @@ impl PlatformWallet {
         coordinator: &NetworkShieldedCoordinator,
         out_point: OutPoint,
     ) -> Result<bool, PlatformWalletError> {
-        self.reconcile_wallet_drain_with_consumption_check(
-            coordinator,
-            out_point,
-            |transition| async move {
-                // Status is read-only and must not inherit the long submission
-                // deadline. Bound the streaming wait as well as each request.
-                let timeout = Duration::from_secs(3);
-                let mut settings = PutSettings::default();
-                settings.request_settings.connect_timeout = Some(timeout);
-                settings.request_settings.timeout = Some(timeout);
-                settings.request_settings.retries = Some(0);
-                settings.wait_timeout = Some(timeout);
-                tokio::time::timeout(
-                    timeout,
-                    transition.wait_for_affected_state::<StateTransitionProofResult>(
-                        &self.sdk,
-                        Some(settings),
-                    ),
-                )
-                .await
-                .map_err(|_| dash_sdk::Error::Generic("drain consumption proof timed out".into()))?
-            },
-        )
+        self.reconcile_wallet_drain_with_consumption_check(coordinator, out_point, |transition| {
+            self.bounded_drain_consumption_proof(transition)
+        })
         .await
     }
 
-    async fn reconcile_wallet_drain_with_consumption_check<F, Fut>(
+    pub(super) async fn bounded_drain_consumption_proof(
+        &self,
+        transition: StateTransition,
+    ) -> Result<StateTransitionProofResult, dash_sdk::Error> {
+        // Status is read-only and must not inherit the long submission
+        // deadline. Bound the streaming wait as well as each request.
+        let timeout = Duration::from_secs(3);
+        let mut settings = PutSettings::default();
+        settings.request_settings.connect_timeout = Some(timeout);
+        settings.request_settings.timeout = Some(timeout);
+        settings.request_settings.retries = Some(0);
+        settings.wait_timeout = Some(timeout);
+        tokio::time::timeout(
+            timeout,
+            transition
+                .wait_for_affected_state::<StateTransitionProofResult>(&self.sdk, Some(settings)),
+        )
+        .await
+        .map_err(|_| dash_sdk::Error::Generic("drain consumption proof timed out".into()))?
+    }
+
+    pub(super) async fn reconcile_wallet_drain_with_consumption_check<F, Fut>(
         &self,
         coordinator: &NetworkShieldedCoordinator,
         out_point: OutPoint,
@@ -2136,6 +2137,74 @@ mod tests {
                 .len(),
             3
         );
+        // A bind snapshot loaded before completion and restored afterwards
+        // must not resurrect the replaced aggregate beside the canonical rows.
+        coordinator
+            .restore_for_wallet(wallet.wallet_id(), &restored.shielded)
+            .await
+            .unwrap();
+        let live = coordinator
+            .store()
+            .read()
+            .await
+            .get_activity(id, 0, 10)
+            .unwrap();
+        assert_eq!(live.len(), 3);
+        assert!(live.iter().all(|row| row.id != aggregate[0].id));
+        assert_eq!(live.iter().map(|row| row.amount).sum::<u64>(), 4_000);
+    }
+
+    #[tokio::test]
+    async fn should_publish_deferred_completion_committed_by_a_later_flush() {
+        let (lock, keys, st) = evidence_fixture();
+        let outputs = attempt_outputs(&lock, &st.serialize_to_bytes().unwrap(), &keys).unwrap();
+        let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+        wallet
+            .persist_drain_shielded_attempt(lock.out_point, &st)
+            .await
+            .unwrap();
+        for (index, (account, cmx)) in outputs.iter().enumerate() {
+            observe(
+                &coordinator,
+                wallet.wallet_id(),
+                *account,
+                *cmx,
+                index as u64,
+            )
+            .await;
+        }
+        // The buffered completion store succeeds but its own flush fails, so
+        // nothing is published live; an unrelated flush then commits it.
+        persistence.fail_flush.store(true, Ordering::SeqCst);
+        assert!(
+            reconcile_fully_consumed(&wallet, &coordinator, lock.out_point)
+                .await
+                .is_err()
+        );
+        persistence.fail_flush.store(false, Ordering::SeqCst);
+        persistence.flush(wallet.wallet_id()).unwrap();
+        assert_eq!(
+            persistence.committed.lock().unwrap()[&lock.out_point].status,
+            AssetLockStatus::DrainCompleted
+        );
+        assert_ne!(
+            wallet.asset_locks.list_tracked_locks().await[0].status,
+            AssetLockStatus::DrainCompleted
+        );
+        let status = wallet
+            .shielded_wallet_drain_operation_status_with(&coordinator, [0x33; 16], |_| async {
+                Ok(StateTransitionProofResult::VerifiedAssetLockConsumed(
+                    StoredAssetLockInfo::FullyConsumed,
+                ))
+            })
+            .await
+            .unwrap();
+        assert_eq!(status.state, AssetLockOperationState::Completed);
+        assert_eq!(
+            wallet.asset_locks.list_tracked_locks().await[0].status,
+            AssetLockStatus::DrainCompleted
+        );
+        assert_exact_drain_history(&wallet, &coordinator, &outputs).await;
     }
 
     #[test]

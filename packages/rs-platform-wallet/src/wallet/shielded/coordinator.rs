@@ -1113,7 +1113,26 @@ impl NetworkShieldedCoordinator {
                 .filter(|record| record.identity_user_abandoned)
                 .map(|record| record.activity_id)
                 .collect();
+            // A note belongs to at most one activity row, and the live cache
+            // is at least as fresh as any snapshot. A snapshot row claiming a
+            // note that a different live row already owns is therefore stale,
+            // e.g. a scan aggregate that a completed drain replaced after this
+            // snapshot was loaded. Restoring it would count that note twice.
+            let mut claimed = BTreeMap::new();
+            for live in store
+                .get_activity(*id, 0, usize::MAX)
+                .map_err(|e| crate::error::PlatformWalletError::ShieldedStoreError(e.to_string()))?
+            {
+                claimed.extend(live.note_cmxs.iter().map(|cmx| (*cmx, live.id)));
+            }
             for entry in &sub.activity {
+                if entry
+                    .note_cmxs
+                    .iter()
+                    .any(|cmx| claimed.get(cmx).is_some_and(|owner| *owner != entry.id))
+                {
+                    continue;
+                }
                 let mut entry = entry.clone();
                 if abandoned.contains(&entry.id)
                     && entry.status != ShieldedActivityStatus::Confirmed
