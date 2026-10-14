@@ -1480,9 +1480,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
         .await
     }
     .await;
-    // A failed spend never leaves its anchor set behind for the retry: if the
-    // anchor it picked was rejected (e.g. pruned since a cached fetch), the
-    // next attempt must select against a fresh set.
+    // The anchor may have been rejected: make the retry fetch a fresh set.
     if result.is_err() {
         anchor_cache.invalidate();
     }
@@ -1687,9 +1685,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         .await
     }
     .await;
-    // A failed spend never leaves its anchor set behind for the retry: if the
-    // anchor it picked was rejected (e.g. pruned since a cached fetch), the
-    // next attempt must select against a fresh set.
+    // The anchor may have been rejected: make the retry fetch a fresh set.
     if result.is_err() {
         anchor_cache.invalidate();
     }
@@ -1874,9 +1870,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
         .await
     }
     .await;
-    // A failed spend never leaves its anchor set behind for the retry: if the
-    // anchor it picked was rejected (e.g. pruned since a cached fetch), the
-    // next attempt must select against a fresh set.
+    // The anchor may have been rejected: make the retry fetch a fresh set.
     if result.is_err() {
         anchor_cache.invalidate();
     }
@@ -2051,9 +2045,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         .await
     }
     .await;
-    // A failed spend never leaves its anchor set behind for the retry: if the
-    // anchor it picked was rejected (e.g. pruned since a cached fetch), the
-    // next attempt must select against a fresh set.
+    // The anchor may have been rejected: make the retry fetch a fresh set.
     if result.is_err() {
         anchor_cache.invalidate();
     }
@@ -2421,9 +2413,7 @@ where
         Ok::<(Identifier, Identity), PlatformWalletError>((identity.id(), identity))
     }
     .await;
-    // A failed spend never leaves its anchor set behind for the retry: if the
-    // anchor it picked was rejected (e.g. pruned since a cached fetch), the
-    // next attempt must select against a fresh set.
+    // The anchor may have been rejected: make the retry fetch a fresh set.
     if result.is_err() {
         anchor_cache.invalidate();
     }

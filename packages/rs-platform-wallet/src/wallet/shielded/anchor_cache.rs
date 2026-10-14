@@ -1,60 +1,36 @@
 //! Short-lived cache of Platform's recorded shielded-anchor set.
 //!
 //! Every shielded spend must be built against a commitment-tree root that
-//! Platform has recorded (`validate_anchor_exists`). The spend path learns
-//! which of the wallet's checkpoint roots qualify by downloading and
-//! proof-verifying the whole recorded set (`ShieldedAnchors`, up to
-//! `shielded_anchor_retention_blocks + shielded_anchor_pruning_interval`
-//! entries) — a network round trip that otherwise sits serially in front of
-//! proving on every send.
-//!
-//! [`RecordedAnchorCache`] keeps the most recently fetched set so a send can
-//! skip that round trip when a fresh one is already in hand (a send-screen
-//! prefetch, a previous send, or the coordinator's reservation-release pass).
+//! Platform has recorded. Finding one means downloading and proof-verifying
+//! the whole recorded set (`ShieldedAnchors`), a round trip that otherwise
+//! sits serially in front of proving on every send. [`RecordedAnchorCache`]
+//! keeps the most recent set so a send can skip it when a send-screen
+//! prefetch, a previous send, or the reservation-release pass just fetched one.
 //!
 //! # Why a cached set is safe to spend against
 //!
-//! Platform records at most one anchor per block and removes anchors only by
-//! age: on every `shielded_anchor_pruning_interval` (100) boundary it drops
-//! those recorded more than `shielded_anchor_retention_blocks` (1000) blocks
-//! earlier, always keeping the newest. An anchor therefore stays accepted for
-//! at least 1000 blocks after it is recorded, and every anchor in a set
-//! fetched a moment ago is still recorded unless it was pruned since. An
-//! anchor chosen from a cached set can only have been pruned if it was already
-//! within the TTL of the retention edge when the set was fetched; an anchor
-//! that close to expiry is at the same risk with a fresh fetch, because
-//! proving takes comparable time between selecting it and broadcasting. Such a
-//! rejected spend invalidates the cache, so the retry selects afresh.
+//! Platform records at most one anchor per block, in the block-end
+//! transaction that appends the block's notes, and prunes only by age (every
+//! `shielded_anchor_pruning_interval` blocks it drops anchors older than
+//! `shielded_anchor_retention_blocks`, always keeping the newest). So every
+//! anchor in a recent set is still accepted unless it was already within the
+//! TTL of the retention edge, a risk a fresh fetch shares because proving
+//! takes comparable time. Two guards keep the cached set from selecting a
+//! different anchor than a fresh fetch would:
 //!
-//! Two guards keep a cached set from ever selecting a different anchor than a
-//! fresh fetch would:
+//! - **TTL** ([`RECORDED_ANCHOR_CACHE_TTL`]), measured from when the request
+//!   was sent, on both the monotonic and the wall clock (the monotonic clock
+//!   stops while a phone sleeps).
+//! - **Tree-size pin**: a set is used only while the local tree still has the
+//!   leaf count `N` read before its request was sent. Holding leaf `N - 1`
+//!   means its block was committed, so every root of a tree of size `<= N`
+//!   that Platform will ever record already was. Any tree growth may add a
+//!   newer checkpoint the set lacks, so it retires the set.
 //!
-//! - **TTL** ([`RECORDED_ANCHOR_CACHE_TTL`]): a set is never used once it is
-//!   older than the TTL, measured from when its request was *sent* on both
-//!   the monotonic and the wall clock (the monotonic clock stops while an
-//!   iOS / Android device sleeps; the wall clock does not).
-//! - **Tree-size pin**: each set is tagged with the local commitment tree's
-//!   leaf count `N` read *before* its request was sent, and is used only while
-//!   the tree still has exactly `N` leaves. Holding leaf `N - 1` means the
-//!   block that appended it was already committed, and Platform records a
-//!   block's anchor in that same block-end transaction — so every root of a
-//!   tree of size `≤ N` that Platform will ever record was already recorded
-//!   when the request was sent. Hence, at size `N`, the cached set contains
-//!   every checkpoint root a fresh fetch could find, except anchors pruned
-//!   since. This rests only on the leaf count, not on when or under which
-//!   lock the wallet created its checkpoints. Once a sync grows the tree, its
-//!   new checkpoint may be recorded after the snapshot; the cached set would
-//!   lack it and the probe would settle for an older checkpoint, so any
-//!   growth retires the set.
-//!
-//! The spend path additionally refetches when the cached set covers none of
-//! the wallet's checkpoints (`ShieldedNoRecordedAnchor`), and drops the cache
-//! after any failed spend so a retry always works from a fresh set.
-//!
-//! The cache is never consulted by the stranded-reservation release pass: its
-//! fund-safety argument needs a set fetched immediately before the note scan,
-//! and an older set would lack anchors armed after it was fetched. That pass
-//! only *populates* the cache.
+//! The spend path also refetches when the cached set covers none of the
+//! wallet's checkpoints, and drops the cache after any failed spend. The
+//! stranded-reservation release pass never reads the cache (its fund-safety
+//! argument needs a set fetched right before its note scan); it only fills it.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -64,21 +40,24 @@ use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 
 /// How long a fetched recorded-anchor set may be reused by the spend path.
 ///
-/// 30 s is a small slice of the retention window at any realistic block rate:
-/// Tenderdash produces a block every 3 min when idle and, under load, no
-/// faster than one consensus round (propose → prevote → precommit, on the
-/// order of a second or more), so 30 s is at most a few percent of the
-/// 1000-block retention. It is also the same order as the time a spend
-/// already takes to prove between choosing its anchor and broadcasting, so it
-/// does not change the class of anchors that can expire mid-send. Long enough
-/// to cover "open the send screen → confirm" and back-to-back sends.
+/// At most a few percent of the 1000-block retention window even at one block
+/// per second, and the same order as a spend's own proving time, so it does
+/// not change which anchors can expire mid-send.
 pub const RECORDED_ANCHOR_CACHE_TTL: Duration = Duration::from_secs(30);
 
 /// Recorded-anchor set shared by the spend path. See the module docs.
 #[derive(Debug)]
 pub struct RecordedAnchorCache {
     ttl: Duration,
-    entry: Mutex<Option<CachedAnchorSet>>,
+    state: Mutex<CacheState>,
+}
+
+#[derive(Debug, Default)]
+struct CacheState {
+    entry: Option<CachedAnchorSet>,
+    /// When [`RecordedAnchorCache::invalidate`] last ran. Requests sent
+    /// before it may carry the set it meant to discard, so they are dropped.
+    invalidated_at: Option<Instant>,
 }
 
 #[derive(Debug, Clone)]
@@ -151,15 +130,16 @@ impl RecordedAnchorCache {
     pub fn with_ttl(ttl: Duration) -> Self {
         Self {
             ttl,
-            entry: Mutex::new(None),
+            state: Mutex::new(CacheState::default()),
         }
     }
 
     /// The cached set, if one is younger than the TTL and was fetched while
     /// the local tree had exactly `tree_size` leaves.
     pub(crate) fn get(&self, tree_size: u64) -> Option<Arc<HashSet<[u8; 32]>>> {
-        let entry = self.entry.lock().unwrap_or_else(PoisonError::into_inner);
-        entry
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state
+            .entry
             .as_ref()
             .filter(|e| e.tree_size == tree_size && e.fetch_started.is_younger_than(self.ttl))
             .map(|e| Arc::clone(&e.anchors))
@@ -167,30 +147,37 @@ impl RecordedAnchorCache {
 
     /// Record a freshly fetched set. `fetch_started` is when its request was
     /// sent and `tree_size` the local tree's leaf count read before that.
-    /// Concurrent fetches resolve to the one sent last.
+    /// Concurrent fetches resolve to the one sent last, and a fetch sent
+    /// before the last [`invalidate`](Self::invalidate) is dropped.
     pub(crate) fn insert(
         &self,
         anchors: Arc<HashSet<[u8; 32]>>,
         fetch_started: FetchStamp,
         tree_size: u64,
     ) {
-        let mut entry = self.entry.lock().unwrap_or_else(PoisonError::into_inner);
-        if entry
-            .as_ref()
-            .is_some_and(|current| current.fetch_started.monotonic > fetch_started.monotonic)
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let sent = fetch_started.monotonic;
+        if state.invalidated_at.is_some_and(|at| sent <= at)
+            || state
+                .entry
+                .as_ref()
+                .is_some_and(|current| current.fetch_started.monotonic > sent)
         {
             return;
         }
-        *entry = Some(CachedAnchorSet {
+        state.entry = Some(CachedAnchorSet {
             anchors,
             fetch_started,
             tree_size,
         });
     }
 
-    /// Drop any cached set; the next spend fetches a fresh one.
+    /// Drop any cached set, and any still in flight; the next spend fetches
+    /// a fresh one.
     pub fn invalidate(&self) {
-        *self.entry.lock().unwrap_or_else(PoisonError::into_inner) = None;
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.entry = None;
+        state.invalidated_at = Some(Instant::now());
     }
 }
 
@@ -302,5 +289,21 @@ mod tests {
         cache.invalidate();
 
         assert!(cache.get(10).is_none());
+    }
+
+    /// A fetch sent before a failed spend invalidated the cache may return
+    /// the very anchor that spend had rejected: it must not refill the cache.
+    #[test]
+    fn should_drop_a_fetch_sent_before_invalidate() {
+        let cache = RecordedAnchorCache::new();
+        let in_flight = FetchStamp::now();
+
+        cache.invalidate();
+        cache.insert(set(&[1]), in_flight, 10);
+        assert!(cache.get(10).is_none(), "stale in-flight fetch dropped");
+
+        std::thread::sleep(Duration::from_millis(1));
+        cache.insert(set(&[2]), FetchStamp::now(), 10);
+        assert!(cache.get(10).is_some(), "a fetch sent afterwards is kept");
     }
 }
