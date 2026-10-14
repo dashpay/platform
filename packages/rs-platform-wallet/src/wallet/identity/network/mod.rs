@@ -108,8 +108,8 @@ pub use identity_handle::{
     IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 pub use state_transition_summary::{
-    decode_state_transition, summarize_state_transition, BatchedTransitionSummary,
-    BatchedTransitionTarget, DataContractSummary, StateTransitionSummary,
+    check_document_type_name, decode_state_transition, summarize_state_transition,
+    BatchedTransitionSummary, BatchedTransitionTarget, DataContractSummary, StateTransitionSummary,
     StateTransitionSummaryKind,
 };
 

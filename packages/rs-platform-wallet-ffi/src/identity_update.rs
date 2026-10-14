@@ -23,7 +23,9 @@ use dpp::state_transition::public_key_in_creation::accessors::{
 };
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::{StateTransition, StateTransitionType};
-use platform_wallet::wallet::identity::network::decode_state_transition;
+use platform_wallet::wallet::identity::network::{
+    check_document_type_name, decode_state_transition,
+};
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -111,8 +113,9 @@ fn parse_identity_update_transition_bytes(
 
 /// Reporting a narrower bound than the transition declares would let the user
 /// approve a broader scope than the one they were shown, so a document type
-/// that cannot cross the FFI as a C string is an error rather than a fallback
-/// to the contract-only bound.
+/// that cannot be shown as is is an error rather than a fallback to the
+/// contract-only bound. The name is the approval sheet's own field, so it must
+/// pass the same consensus-pattern check the state transition summary applies.
 fn encode_contract_bounds(
     bounds: Option<&ContractBounds>,
 ) -> Result<(u8, [u8; 32], *mut c_char), PlatformWalletFFIResult> {
@@ -121,16 +124,22 @@ fn encode_contract_bounds(
         Some(ContractBounds::SingleContractDocumentType {
             id,
             document_type_name,
-        }) => match CString::new(document_type_name.as_str()) {
-            Ok(value) => Ok((2u8, id.to_buffer(), value.into_raw())),
-            Err(error) => Err(PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!(
-                    "Contract-bounds document type name cannot be represented as a C string: \
-                     {error}"
-                ),
-            )),
-        },
+        }) => {
+            // The consensus pattern excludes NUL, so a name that passes it is
+            // always a valid C string.
+            let value = check_document_type_name(document_type_name)
+                .map_err(|error| error.to_string())
+                .and_then(|()| {
+                    CString::new(document_type_name.as_str()).map_err(|error| error.to_string())
+                })
+                .map_err(|error| {
+                    PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                        format!("Contract-bounds document type: {error}"),
+                    )
+                })?;
+            Ok((2u8, id.to_buffer(), value.into_raw()))
+        }
         Some(ContractBounds::ContractGroup { id }) => Ok((3u8, id.to_buffer(), ptr::null_mut())),
         None => Ok((0u8, [0u8; 32], ptr::null_mut())),
     }
@@ -645,6 +654,52 @@ mod tests {
             error.code,
             PlatformWalletFFIResultCode::ErrorInvalidParameter
         );
+    }
+
+    /// The legacy parser shows a document-type bound in its own field, so a
+    /// name outside the consensus pattern is refused through the public entry
+    /// point, as the state transition summary refuses it.
+    #[test]
+    fn rejects_contract_bounds_document_type_outside_the_consensus_pattern() {
+        for name in ["a\nb", "post\u{202e}", "", &"x".repeat(65)] {
+            let transition: StateTransition = IdentityUpdateTransitionV0 {
+                identity_id: Identifier::from([0x11; 32]),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![IdentityPublicKeyInCreationV0 {
+                    id: 17,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    purpose: Purpose::ENCRYPTION,
+                    security_level: SecurityLevel::MEDIUM,
+                    read_only: false,
+                    data: BinaryData::new(vec![0x02; 33]),
+                    signature: BinaryData::new(vec![0xaa; 65]),
+                    contract_bounds: Some(ContractBounds::SingleContractDocumentType {
+                        id: Identifier::from([0x44; 32]),
+                        document_type_name: name.to_string(),
+                    }),
+                }
+                .into()],
+                ..Default::default()
+            }
+            .into();
+            let bytes = transition.serialize_to_bytes().unwrap();
+            let mut out = ParsedIdentityUpdateFFI::default();
+
+            let result = unsafe {
+                platform_wallet_parse_identity_update_transition(
+                    bytes.as_ptr(),
+                    bytes.len(),
+                    &mut out,
+                )
+            };
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "{name:?}"
+            );
+            assert!(out.add_public_keys.is_null(), "{name:?}");
+        }
     }
 
     #[test]

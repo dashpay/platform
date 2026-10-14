@@ -250,8 +250,9 @@ pub fn decode_state_transition(
 }
 
 /// Document type names reach the approval sheet as their own field, unescaped. Consensus only
-/// accepts `^[a-zA-Z0-9-_]{1,64}$`, so anything else is refused here rather than shown.
-fn check_document_type_name(name: &str) -> Result<(), PlatformWalletError> {
+/// accepts `^[a-zA-Z0-9-_]{1,64}$`, so anything else is refused here rather than shown. Every
+/// parser that projects a document type name for approval must apply it.
+pub fn check_document_type_name(name: &str) -> Result<(), PlatformWalletError> {
     let valid = (1..=64).contains(&name.len())
         && name
             .bytes()
