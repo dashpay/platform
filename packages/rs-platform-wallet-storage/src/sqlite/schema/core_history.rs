@@ -2,10 +2,11 @@
 //!
 //! The live per-round repair and the V019 migration
 //! (`migrations::history_repair_v019`) share this repair. The V019 pin test
-//! (`should_pin_v019_repair_of_a_v018_database`) guards what the migration
-//! produces: if a change here or in `platform_wallet::wallet_accounting`
-//! breaks it, add a `repair_record_v020` for the live path instead of
-//! editing the pin, and keep V019 on `repair_record_v019`.
+//! (`should_pin_v019_repair_of_a_v018_database`) and
+//! `should_repair_live_folded_records_without_changing_their_accounting`
+//! guard it: if a change here or in `platform_wallet::wallet_accounting`
+//! breaks the V019 pin, add a `repair_record_v020` for the live path
+//! instead of editing the pin, and keep V019 on `repair_record_v019`.
 
 use std::collections::{BTreeMap, HashSet};
 
@@ -222,9 +223,11 @@ fn repair_record(
 /// with a net past `i64` cannot and stays as stored: nothing authenticates a
 /// mempool transaction, so that is peer-supplied data, and load sets it aside.
 ///
-/// Shared by the live repair and the V019 migration. If a change here or in
-/// `wallet_accounting` breaks `should_pin_v019_repair_of_a_v018_database`,
-/// add a `repair_record_v020` for the live path instead of editing the pin.
+/// Shared by the live repair and the V019 migration, and guarded by
+/// `should_pin_v019_repair_of_a_v018_database` and
+/// `should_repair_live_folded_records_without_changing_their_accounting`.
+/// If a change here or in `wallet_accounting` breaks the V019 pin, add a
+/// `repair_record_v020` for the live path instead of editing the pin.
 pub(crate) fn repair_record_v019(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
