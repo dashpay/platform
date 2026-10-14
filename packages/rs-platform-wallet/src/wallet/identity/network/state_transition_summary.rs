@@ -329,6 +329,9 @@ fn summarize(
 
 /// Whether `transition` carries a non-empty signature or, for the kinds spending platform
 /// addresses, any input witness; [`StateTransition::signature`] alone is `None` for those.
+///
+/// Every kind is listed, so a kind DPP adds later fails to compile here until someone decides
+/// how it is authenticated, rather than reporting it unsigned.
 fn carries_signature(transition: &StateTransition) -> bool {
     let has_witness = match transition {
         StateTransition::IdentityCreateFromAddresses(st) => !st.witnesses().is_empty(),
@@ -337,7 +340,31 @@ fn carries_signature(transition: &StateTransition) -> bool {
         StateTransition::AddressFundingFromAssetLock(st) => !st.witnesses().is_empty(),
         StateTransition::AddressCreditWithdrawal(st) => !st.witnesses().is_empty(),
         StateTransition::Shield(st) => !st.witnesses().is_empty(),
-        _ => false,
+        // Authorized by the top-level signature, or (shielded kinds) by a shielded proof that
+        // `signature()` does not report.
+        StateTransition::DataContractCreate(_)
+        | StateTransition::DataContractUpdate(_)
+        | StateTransition::Batch(_)
+        | StateTransition::IdentityCreate(_)
+        | StateTransition::IdentityTopUp(_)
+        | StateTransition::IdentityCreditWithdrawal(_)
+        | StateTransition::IdentityUpdate(_)
+        | StateTransition::IdentityCreditTransfer(_)
+        | StateTransition::MasternodeVote(_)
+        | StateTransition::IdentityCreditTransferToAddresses(_)
+        | StateTransition::ShieldedTransfer(_)
+        | StateTransition::Unshield(_)
+        | StateTransition::ShieldFromAssetLock(_)
+        | StateTransition::ShieldedWithdrawal(_)
+        | StateTransition::IdentityCreateFromShieldedPool(_)
+        | StateTransition::ShieldFromIdentity(_)
+        | StateTransition::IdentityTopUpFromShieldedPool(_)
+        | StateTransition::IdentityKeyLimitsUpdate(_)
+        | StateTransition::ContractUserModeration(_)
+        | StateTransition::ContractFeeClaim(_)
+        | StateTransition::TokenShieldedTransferWithShieldedFee(_)
+        | StateTransition::TokenUnshieldWithShieldedFee(_)
+        | StateTransition::TokenPurchaseFromShieldedPool(_) => false,
     };
     has_witness || transition.signature().is_some_and(|sig| !sig.is_empty())
 }
