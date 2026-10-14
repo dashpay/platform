@@ -8920,6 +8920,7 @@ dependencies = [
 name = "wasm-sdk"
 version = "5.0.0-rc.1"
 dependencies = [
+ "async-trait",
  "base64 0.22.1",
  "bip39",
  "console_error_panic_hook",

@@ -476,6 +476,10 @@ jobs:
           CARGO_PROFILE_DEV_DEBUG: "0"
           CARGO_PROFILE_DEV_CODEGEN_UNITS: "256"
 
+      - name: Run native WASM SDK regression tests
+        if: steps.coverage-cache.outputs.reuse == 'false'
+        run: cargo test -p wasm-sdk --lib --locked -j 2
+
       # Each phase gets its own lcov file (upload steps below tag each with
       # its codecov flag), so profraw files are dropped between phases to
       # keep the reports disjoint.
