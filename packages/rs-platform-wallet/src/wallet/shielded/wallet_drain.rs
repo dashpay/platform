@@ -1,7 +1,6 @@
 //! Read-only quote for pooled Core → Shielded drains.
 
 use std::collections::HashSet;
-use std::future::Future;
 use std::sync::Arc;
 
 use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
@@ -9,8 +8,6 @@ use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
 use dashcore::hashes::Hash;
 use dashcore::{PubkeyHash, ScriptBuf, TxOut};
 use dpp::balances::credits::CREDITS_PER_DUFF;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::StateTransition;
 use key_wallet::wallet::managed_wallet_info::coin_selection::{SelectionError, SelectionStrategy};
 use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
@@ -20,10 +17,8 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::DEFAULT_FEE_PER_KB;
-use crate::wallet::asset_lock::tracked::AssetLockStatus;
 use crate::wallet::asset_lock::{
     AssetLockOperationContext, AssetLockOperationRegistration, AssetLockOperationSnapshot,
-    AssetLockOperationState,
 };
 use crate::wallet::core::resolved_funding_accounts;
 use crate::wallet::PlatformWallet;
@@ -65,22 +60,6 @@ impl PlatformWallet {
         coordinator: &super::NetworkShieldedCoordinator,
         operation_id: [u8; 16],
     ) -> Result<AssetLockOperationSnapshot, PlatformWalletError> {
-        self.shielded_wallet_drain_operation_status_with(coordinator, operation_id, |transition| {
-            self.bounded_drain_consumption_proof(transition)
-        })
-        .await
-    }
-
-    pub(super) async fn shielded_wallet_drain_operation_status_with<F, Fut>(
-        &self,
-        coordinator: &super::NetworkShieldedCoordinator,
-        operation_id: [u8; 16],
-        check_consumption: F,
-    ) -> Result<AssetLockOperationSnapshot, PlatformWalletError>
-    where
-        F: FnOnce(StateTransition) -> Fut,
-        Fut: Future<Output = Result<StateTransitionProofResult, dash_sdk::Error>>,
-    {
         let Ok(_shield_guard) = self.shield_guard.try_lock() else {
             // A status read must not wait behind a network submission. The
             // active operation's context already provides a fail-closed view.
@@ -93,36 +72,9 @@ impl PlatformWallet {
             .asset_locks
             .wallet_drain_operation_status(operation_id)
             .await?;
-        if let Some(out_point) = snapshot.out_point {
-            // A buffered completion whose own flush failed can be committed by
-            // a later, unrelated flush. Durable status then says Completed, but
-            // the live lock and activity cache were never published.
-            let unpublished = snapshot.state == AssetLockOperationState::Completed
-                && self
-                    .asset_locks
-                    .list_tracked_locks()
-                    .await
-                    .iter()
-                    .any(|lock| {
-                        lock.out_point == out_point
-                            && lock.operation_id == Some(operation_id)
-                            && lock.status != AssetLockStatus::DrainCompleted
-                    });
-            if snapshot.state == AssetLockOperationState::Pending {
-                self.reconcile_wallet_drain_with_consumption_check(
-                    coordinator,
-                    out_point,
-                    check_consumption,
-                )
-                .await?;
-            } else if unpublished
-                && self
-                    .asset_locks
-                    .durably_completed_drains()?
-                    .contains(&operation_id)
-            {
-                self.republish_durable_drain_completion(coordinator, out_point)
-                    .await?;
+        if snapshot.state == crate::wallet::asset_lock::AssetLockOperationState::Pending {
+            if let Some(out_point) = snapshot.out_point {
+                self.reconcile_wallet_drain(coordinator, out_point).await?;
             }
         }
         self.asset_locks

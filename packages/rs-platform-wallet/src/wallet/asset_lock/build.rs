@@ -30,7 +30,6 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::ASSET_LOCK_FUNDING_SOURCES;
 
 use super::manager::{AssetLockManager, DEFAULT_FEE_PER_KB};
-use super::operation::RejectedDrainCleanup;
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
 use super::{AssetLockOperationContext, AssetLockOperationState};
 
@@ -1250,43 +1249,28 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // still-tracked row would be resumable while its inputs are
                 // re-spendable.
                 let removed_built_row = cs_untrack.removed.contains(&out_point);
-                if let Some(operation) = operation.filter(|_| removed_built_row) {
-                    let removal = self
-                        .persister
-                        .store(PlatformWalletChangeSet {
-                            asset_locks: Some(cs_untrack),
-                            ..Default::default()
-                        })
-                        .map(|()| self.persister.flush());
-                    let uncertain = match removal {
-                        Err(error) => Some(error),
-                        Ok(Err(error)) if !self.persister.store_commits_inline() => Some(error),
-                        Ok(Err(error)) => {
-                            // The removal is already committed. A failed host
-                            // notification must not strand its context or inputs.
-                            tracing::warn!(%out_point, %error, "rejected drain removed inline; flush notification failed");
-                            None
-                        }
-                        Ok(Ok(())) => None,
-                    };
-                    if let Some(error) = uncertain {
-                        // The durable removal is unknown; a buffered one may
-                        // still commit with a later flush. Keep the context and
-                        // input fence pending, but do NOT re-expose the row: a
-                        // generic resume must never dispatch a row with
-                        // uncertain durability. Hand the reservation and fence
-                        // to the operation so an explicit retry, or a status
-                        // read proving the row gone, can finish the cleanup.
-                        operation.retain_rejected_cleanup(RejectedDrainCleanup {
-                            out_point,
-                            transaction: tx,
-                            funding_accounts,
-                            reservation_token,
-                            pin: in_broadcast_pin,
-                        });
+                if operation.is_some() && removed_built_row {
+                    if let Err(error) = self.persister.store(PlatformWalletChangeSet {
+                        asset_locks: Some(cs_untrack),
+                        ..Default::default()
+                    }) {
+                        // The durable removal is unknown. Keep the context
+                        // and input fence pending, but do NOT re-expose the row:
+                        // the removal may have committed, and a generic resume
+                        // must never dispatch a row with uncertain durability.
                         return Err(PlatformWalletError::Persistence(format!(
                             "could not durably remove rejected drain asset lock: {error}"
                         )));
+                    }
+                    if let Err(error) = self.persister.flush() {
+                        if !self.persister.store_commits_inline() {
+                            return Err(PlatformWalletError::Persistence(format!(
+                                "could not durably remove rejected drain asset lock: {error}"
+                            )));
+                        }
+                        // The removal is already committed. A failed host
+                        // notification must not strand its context or inputs.
+                        tracing::warn!(%out_point, %error, "rejected drain removed inline; flush notification failed");
                     }
                 } else {
                     self.queue_asset_lock_changeset(cs_untrack);
@@ -1609,13 +1593,10 @@ mod tests {
         before_remove: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
         restore_stored_locks: std::sync::atomic::AtomicBool,
         commits_inline: bool,
-        fail_remove_store: std::sync::atomic::AtomicBool,
+        fail_remove_store: bool,
         committed_stores: std::sync::atomic::AtomicUsize,
         fail_lock_store: std::sync::atomic::AtomicBool,
         failed_lock_stores: Mutex<Vec<PlatformWalletChangeSet>>,
-        /// Loads that still return the pre-checkpoint snapshot (no stored
-        /// lock rows), modelling a read that predates a concurrent write.
-        stale_loads: std::sync::atomic::AtomicUsize,
     }
 
     impl CapturingPersistence {
@@ -1681,10 +1662,7 @@ mod tests {
                 .as_ref()
                 .is_some_and(|locks| !locks.removed.is_empty())
             {
-                if self
-                    .fail_remove_store
-                    .load(std::sync::atomic::Ordering::SeqCst)
-                {
+                if self.fail_remove_store {
                     return Err(PersistenceError::backend("simulated removal store failure"));
                 }
                 if let Some(hook) = self.before_remove.lock().unwrap().as_ref() {
@@ -1732,18 +1710,9 @@ mod tests {
                     },
                 );
             }
-            let stale = self
-                .stale_loads
-                .fetch_update(
-                    std::sync::atomic::Ordering::SeqCst,
-                    std::sync::atomic::Ordering::SeqCst,
-                    |loads| loads.checked_sub(1),
-                )
-                .is_ok();
-            if !stale
-                && self
-                    .restore_stored_locks
-                    .load(std::sync::atomic::Ordering::SeqCst)
+            if self
+                .restore_stored_locks
+                .load(std::sync::atomic::Ordering::SeqCst)
             {
                 let wallet = state.wallets.values_mut().next().unwrap();
                 for cs in self
@@ -4671,9 +4640,8 @@ mod tests {
                     funded_wallet_manager(StandardAccountType::BIP44Account).await;
                 let persistence = Arc::new(CapturingPersistence {
                     commits_inline,
-                    fail_remove_store: std::sync::atomic::AtomicBool::new(fail_remove_store),
-                    // A failed removal store never reaches its flush.
-                    fail_on_flush: (!fail_remove_store).then_some(3),
+                    fail_remove_store,
+                    fail_on_flush: Some(3),
                     restore_stored_locks: std::sync::atomic::AtomicBool::new(true),
                     ..CapturingPersistence::for_wallet(&wallet_manager, wallet_id)
                 });
@@ -4741,81 +4709,6 @@ mod tests {
                 } else {
                     let other = Arc::new(super::AssetLockOperationContext::new([54; 16]));
                     assert!(manager.begin_wallet_drain(&other).await.is_err());
-                    let blocked = manager
-                        .build_asset_lock_transaction(
-                            1_000_000,
-                            0,
-                            AssetLockFundingType::IdentityRegistration,
-                            0,
-                            &signer,
-                        )
-                        .await;
-                    assert!(blocked.is_err(), "{blocked:?}");
-                    // An absence observed before the cleanup was retained is
-                    // stale: the durable Built row still exists, so status must
-                    // stay Pending and keep the inputs fenced.
-                    persistence
-                        .stale_loads
-                        .store(1, std::sync::atomic::Ordering::SeqCst);
-                    assert_eq!(
-                        manager
-                            .wallet_drain_operation_status([53; 16])
-                            .await
-                            .unwrap()
-                            .state,
-                        super::AssetLockOperationState::Pending
-                    );
-                    let still_blocked = manager
-                        .build_asset_lock_transaction(
-                            1_000_000,
-                            0,
-                            AssetLockFundingType::IdentityRegistration,
-                            0,
-                            &signer,
-                        )
-                        .await;
-                    assert!(still_blocked.is_err(), "{still_blocked:?}");
-                    // An unrelated later flush commits a buffered removal; a
-                    // removal store that failed outright never reached it.
-                    persistence
-                        .fail_remove_store
-                        .store(false, std::sync::atomic::Ordering::SeqCst);
-                    persistence.flush(wallet_id).unwrap();
-                    let buffered_removal_committed = !fail_remove_store;
-                    // With the row provably gone, a status read alone finishes
-                    // the in-memory cleanup.
-                    assert_eq!(
-                        manager
-                            .wallet_drain_operation_status([53; 16])
-                            .await
-                            .unwrap()
-                            .state,
-                        if buffered_removal_committed {
-                            super::AssetLockOperationState::NotSent
-                        } else {
-                            super::AssetLockOperationState::Pending
-                        }
-                    );
-                    if !buffered_removal_committed {
-                        // A same-UUID retry re-issues the removal, releases the
-                        // inputs and reports the definite rejection.
-                        let retry = Arc::new(super::AssetLockOperationContext::new([53; 16]));
-                        let _registration = manager.register_wallet_drain_operation(retry.clone());
-                        assert!(matches!(
-                            manager.begin_wallet_drain(&retry).await,
-                            Err(PlatformWalletError::TransactionBroadcast(_))
-                        ));
-                    }
-                    let restored = persistence.load().unwrap();
-                    assert!(restored.wallets[&wallet_id]
-                        .unused_asset_locks
-                        .values()
-                        .all(|locks| locks.is_empty()));
-                    for id in [[53; 16], [54; 16]] {
-                        let retry = Arc::new(super::AssetLockOperationContext::new(id));
-                        let _registration = manager.register_wallet_drain_operation(retry.clone());
-                        assert_eq!(manager.begin_wallet_drain(&retry).await.unwrap(), None);
-                    }
                 }
                 // Test actual input selection too: clearing only the operation
                 // snapshot would still leave the non-expiring spend fence.
@@ -4828,7 +4721,7 @@ mod tests {
                         &signer,
                     )
                     .await;
-                assert!(rebuild.is_ok(), "{rebuild:?}");
+                assert_eq!(rebuild.is_ok(), released, "{rebuild:?}");
             }
         }
     }

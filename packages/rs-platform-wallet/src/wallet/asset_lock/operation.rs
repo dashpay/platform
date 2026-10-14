@@ -8,16 +8,11 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use dashcore::{OutPoint, Transaction};
-use key_wallet::account::AccountType;
+use dashcore::OutPoint;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::changeset::PersistenceCapabilities;
-#[cfg(any(feature = "shielded", test))]
-use crate::changeset::{AssetLockChangeSet, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
-use crate::wallet::core::InBroadcastPin;
-use crate::wallet::reservations::release_reservation_after_rejected_broadcast;
 
 use super::manager::AssetLockManager;
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -56,26 +51,6 @@ pub struct AssetLockOperationContext {
     // could dispatch it before durability. Retain it here so explicit retries
     // can repeat the checkpoint after a rolled-back or uncertain write.
     checkpoint: Mutex<Option<TrackedAssetLock>>,
-    rejected_cleanup: Mutex<Option<RejectedDrainCleanup>>,
-}
-
-/// Cleanup owed by a definitively rejected drain whose row removal was not
-/// confirmed durable. Its inputs stay reserved and fenced until the removal is
-/// known committed; only then is the operation published as NotSent.
-pub(crate) struct RejectedDrainCleanup {
-    pub(crate) out_point: OutPoint,
-    pub(crate) transaction: Transaction,
-    pub(crate) funding_accounts: Vec<AccountType>,
-    pub(crate) reservation_token: Option<key_wallet::ReservationToken>,
-    pub(crate) pin: InBroadcastPin,
-}
-
-impl std::fmt::Debug for RejectedDrainCleanup {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RejectedDrainCleanup")
-            .field("out_point", &self.out_point)
-            .finish_non_exhaustive()
-    }
 }
 
 impl AssetLockOperationContext {
@@ -90,41 +65,7 @@ impl AssetLockOperationContext {
                 out_point: None,
             }),
             checkpoint: Mutex::new(None),
-            rejected_cleanup: Mutex::new(None),
         }
-    }
-
-    pub(crate) fn retain_rejected_cleanup(&self, cleanup: RejectedDrainCleanup) {
-        *self
-            .rejected_cleanup
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(cleanup);
-    }
-
-    fn take_rejected_cleanup(&self) -> Option<RejectedDrainCleanup> {
-        let snapshot = self.snapshot();
-        let mut cleanup = self
-            .rejected_cleanup
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        // Only the operation's own pending outpoint can still owe this cleanup.
-        let owed = cleanup.as_ref().is_some_and(|cleanup| {
-            snapshot.state == AssetLockOperationState::Pending
-                && snapshot.out_point == Some(cleanup.out_point)
-        });
-        if owed {
-            cleanup.take()
-        } else {
-            None
-        }
-    }
-
-    fn rejected_cleanup_out_point(&self) -> Option<OutPoint> {
-        self.rejected_cleanup
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-            .map(|cleanup| cleanup.out_point)
     }
 
     pub fn snapshot(&self) -> AssetLockOperationSnapshot {
@@ -213,97 +154,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 operations.remove(&operation_id);
             }
         }
-    }
-
-    /// The rejected row's removal is durable: nothing was sent and nothing can
-    /// be resumed, so publish NotSent and release the inputs it still holds.
-    async fn finish_rejected_drain_cleanup(
-        &self,
-        context: &AssetLockOperationContext,
-        cleanup: RejectedDrainCleanup,
-    ) {
-        // Publish before the cancellable reservation cleanup; a cancellation
-        // inside it settles the fence released through `settle_released_on_drop`.
-        context.set(AssetLockOperationState::NotSent, None);
-        {
-            // No outpoint is left to retain. Without a live lease, nothing else
-            // would evict the context, and it would block same-UUID retries.
-            let mut operations = self
-                .drain_operations
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            if context.registrations.load(Ordering::SeqCst) == 0
-                && operations
-                    .get(&context.operation_id)
-                    .is_some_and(|current| std::ptr::eq(Arc::as_ptr(current), context))
-            {
-                operations.remove(&context.operation_id);
-            }
-        }
-        let RejectedDrainCleanup {
-            transaction,
-            funding_accounts,
-            reservation_token,
-            mut pin,
-            ..
-        } = cleanup;
-        pin.settle_released_on_drop();
-        release_reservation_after_rejected_broadcast(
-            &self.wallet_manager,
-            &self.wallet_id,
-            &funding_accounts,
-            &transaction,
-            reservation_token,
-        )
-        .await;
-        pin.settle_released();
-    }
-
-    /// Explicit-retry half of the rejected-drain cleanup: re-issue the row
-    /// removal (idempotent, possibly still buffered from the failed attempt),
-    /// then finish the cleanup. Returns true when a cleanup was finished.
-    #[cfg(any(feature = "shielded", test))]
-    async fn settle_rejected_drain(
-        &self,
-        operation_id: [u8; 16],
-    ) -> Result<bool, PlatformWalletError> {
-        let Some(context) = self
-            .drain_operations
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(&operation_id)
-            .cloned()
-        else {
-            return Ok(false);
-        };
-        let Some(out_point) = context.rejected_cleanup_out_point() else {
-            return Ok(false);
-        };
-        let mut changes = AssetLockChangeSet::default();
-        changes.removed.insert(out_point);
-        self.persister
-            .store(PlatformWalletChangeSet {
-                asset_locks: Some(changes),
-                ..Default::default()
-            })
-            .map_err(|error| {
-                PlatformWalletError::Persistence(format!(
-                    "could not durably remove rejected drain asset lock: {error}"
-                ))
-            })?;
-        if let Err(error) = self.persister.flush() {
-            if !self.persister.store_commits_inline() {
-                return Err(PlatformWalletError::Persistence(format!(
-                    "could not durably remove rejected drain asset lock: {error}"
-                )));
-            }
-            tracing::warn!(%out_point, %error, "rejected drain removed inline; flush notification failed");
-        }
-        let Some(cleanup) = context.take_rejected_cleanup() else {
-            return Ok(false);
-        };
-        self.finish_rejected_drain_cleanup(&context, cleanup).await;
-        Ok(true)
     }
 
     /// Retain every exact signed attempt before dispatch. Failed writes retain
@@ -434,46 +284,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         Ok(())
     }
 
-    /// A fresh committed read without this operation's row. An unreadable
-    /// store or a missing wallet snapshot never counts as absence.
-    fn drain_row_durably_absent(&self, operation_id: [u8; 16]) -> bool {
-        self.persister.load().ok().is_some_and(|persisted| {
-            persisted
-                .wallets
-                .get(&self.wallet_id)
-                .is_some_and(|wallet| {
-                    !wallet
-                        .unused_asset_locks
-                        .values()
-                        .flat_map(|locks| locks.values())
-                        .any(|lock| lock.operation_id == Some(operation_id))
-                })
-        })
-    }
-
-    /// Drain operations whose committed row says `DrainCompleted`, which only
-    /// the full completion gate writes.
-    #[cfg(any(feature = "shielded", test))]
-    pub(crate) fn durably_completed_drains(
-        &self,
-    ) -> Result<BTreeSet<[u8; 16]>, PlatformWalletError> {
-        let persisted = self.persister.load().map_err(|error| {
-            PlatformWalletError::Persistence(format!("cannot read drain operations: {error}"))
-        })?;
-        let wallet = persisted.wallets.get(&self.wallet_id).ok_or_else(|| {
-            PlatformWalletError::Persistence(
-                "cannot read drain operations: wallet missing from durable snapshot".into(),
-            )
-        })?;
-        Ok(wallet
-            .unused_asset_locks
-            .values()
-            .flat_map(|locks| locks.values())
-            .filter(|lock| lock.status == AssetLockStatus::DrainCompleted)
-            .filter_map(|lock| lock.operation_id)
-            .collect())
-    }
-
     /// Only a successful complete durable read can establish NotSent. A live
     /// context wins over an absent row, including during build and failed flush.
     pub async fn wallet_drain_operation_status(
@@ -523,21 +333,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .unwrap_or_else(|error| error.into_inner())
             .get(&operation_id)
             .filter(|context| !ignore_context.is_some_and(|ignored| Arc::ptr_eq(context, ignored)))
-            .cloned();
-        // A rejected drain whose buffered removal has since been committed by
-        // another flush has no durable or live row left. The read above may
-        // predate the rejection that retained this cleanup, so confirm durable
-        // absence with a fresh committed read before releasing its inputs.
-        if let Some(context) = context.as_ref().filter(|_| live.is_none()) {
-            if context.rejected_cleanup_out_point().is_some()
-                && self.drain_row_durably_absent(operation_id)
-            {
-                if let Some(cleanup) = context.take_rejected_cleanup() {
-                    self.finish_rejected_drain_cleanup(context, cleanup).await;
-                }
-            }
-        }
-        let context = context.map(|context| context.snapshot());
+            .map(|context| context.snapshot());
         // Terminal evidence always wins, including a generic exact-outpoint
         // resume completing while the original context still says Pending.
         for snapshot in [live, durable, context].into_iter().flatten() {
@@ -677,17 +473,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         &self,
         operation: &Arc<AssetLockOperationContext>,
     ) -> Result<Option<OutPoint>, PlatformWalletError> {
-        // An earlier attempt under this UUID was rejected before broadcast but
-        // could not confirm its row removal. Finish that cleanup first and
-        // report the rejection: nothing was sent and its inputs are free again.
-        if self.settle_rejected_drain(operation.operation_id).await? {
-            operation.set(AssetLockOperationState::NotSent, None);
-            return Err(PlatformWalletError::TransactionBroadcast(
-                "previous drain transaction was rejected before broadcast; its inputs are \
-                 released and nothing was sent"
-                    .into(),
-            ));
-        }
         let first_attempt = !operation.started.swap(true, Ordering::SeqCst);
         let previous = self
             .wallet_drain_operation_status_inner(
@@ -752,6 +537,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 lock.operation_id.is_some() && lock.status != AssetLockStatus::DrainCompleted
             });
         let live_locks = self.list_tracked_locks().await;
+        let live_pending = live_locks.iter().any(|lock| {
+            lock.operation_id.is_some() && lock.status != AssetLockStatus::DrainCompleted
+        });
         let completed = live_locks
             .iter()
             .chain(
@@ -765,13 +553,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .filter(|lock| lock.status == AssetLockStatus::DrainCompleted)
             .filter_map(|lock| lock.operation_id)
             .collect::<BTreeSet<_>>();
-        // A durable completion may not have been published to the live lock
-        // yet; its stale live status must not block a new drain.
-        let live_pending = live_locks.iter().any(|lock| {
-            lock.operation_id
-                .is_some_and(|operation_id| !completed.contains(&operation_id))
-                && lock.status != AssetLockStatus::DrainCompleted
-        });
         let context_pending = self
             .drain_operations
             .lock()
