@@ -176,8 +176,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // only watch a contact's incoming addresses once its receival account
         // exists. Coverage is per account, not per pair: a second receiving
         // account for a relationship derives its own xpub, and a scan that
-        // watched the first never tested the second's scripts.
-        let receival_accounts: Vec<(Identifier, Identifier, u32)> = info
+        // watched the first never tested the second's scripts. A set, because
+        // every coverage entry is checked against it under both locks.
+        let receival_accounts: std::collections::BTreeSet<(Identifier, Identifier, u32)> = info
             .core_wallet
             .accounts
             .dashpay_receival_accounts
@@ -358,9 +359,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //   the pre-record guard.
         let mut staged = info.dashpay_backfill.clone();
         staged.retain(|owner, contact, account_index| {
-            receival_accounts
-                .iter()
-                .any(|(o, c, i)| (o, c, *i) == (owner, contact, account_index))
+            receival_accounts.contains(&(*owner, *contact, account_index))
         });
         // This pass's extent, widened by one a failed earlier round still owes.
         let extent = match (
