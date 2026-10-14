@@ -413,50 +413,27 @@ pub(super) fn repair_history(tx: &Transaction<'_>) -> Result<(), WalletStorageEr
 
 #[cfg(test)]
 mod tests {
-    use dashcore::address::Payload;
-    use dashcore::{BlockHash, PubkeyHash, Transaction as CoreTransaction, TxIn, TxOut};
+    use dashcore::{BlockHash, Transaction as CoreTransaction, TxOut};
     use key_wallet::account::{AccountType, StandardAccountType};
     use key_wallet::transaction_checking::BlockInfo;
     use key_wallet::Utxo;
     use platform_wallet::changeset::CoreChangeSet;
     use rusqlite::Connection;
 
+    use platform_wallet::test_support::core_fixtures::{
+        foreign_address as address, outside, pay, spend_of,
+    };
+
     use super::*;
-    use crate::sqlite::migrations::{self, rewind_to_v018};
+    use crate::sqlite::migrations::{
+        self, insert_test_wallet, oversize_script_db, rewind_to_v018, wallet_db,
+    };
     use crate::sqlite::schema::core_state;
 
     #[test]
     fn should_reject_oversize_owned_output_script_before_reading_it() {
         const WALLET: WalletId = [0xC2u8; 32];
-        let mut conn = Connection::open_in_memory().unwrap();
-        migrations::run(&mut conn).unwrap();
-        conn.execute(
-            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
-            params![&WALLET[..]],
-        )
-        .unwrap();
-
-        use rusqlite::limits::Limit;
-
-        use crate::sqlite::conn::SQLITE_MAX_BLOB_BYTES;
-
-        let outpoint = OutPoint::new(Txid::from_byte_array([0x42; 32]), 0);
-        // Over the connection's length cap, so reading the column itself
-        // fails: only a length-only pre-read reports it as oversize.
-        let script = vec![0u8; SQLITE_MAX_BLOB_BYTES as usize + 1];
-        conn.execute(
-            "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
-             VALUES (?1, ?2, 0, ?3, 0)",
-            params![
-                &WALLET[..],
-                blob::encode_outpoint(&outpoint).unwrap(),
-                script
-            ],
-        )
-        .unwrap();
-        drop(script);
-        conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, SQLITE_MAX_BLOB_BYTES)
-            .unwrap();
+        let (mut conn, outpoint) = oversize_script_db(&WALLET);
         let tx = conn.transaction().unwrap();
 
         let err = owned_output(&tx, &WALLET, &outpoint, dashcore::Network::Testnet).unwrap_err();
@@ -465,13 +442,6 @@ mod tests {
             matches!(err, WalletStorageError::BlobTooLarge { .. }),
             "got {err:?}"
         );
-    }
-
-    fn address(marker: u8) -> Address {
-        Address::new(
-            dashcore::Network::Testnet,
-            Payload::PubkeyHash(PubkeyHash::from_byte_array([marker; 20])),
-        )
     }
 
     fn utxo(outpoint: OutPoint, value: u64, address: Address) -> Utxo {
@@ -491,6 +461,61 @@ mod tests {
         }
     }
 
+    fn bip44_record(
+        body: CoreTransaction,
+        context: TransactionContext,
+        outputs: Vec<OutputDetail>,
+        net: i64,
+    ) -> TransactionRecord {
+        let account = AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        };
+        let (kind, direction) = (TransactionType::Standard, TransactionDirection::Incoming);
+        TransactionRecord::new(
+            body,
+            account,
+            context,
+            kind,
+            direction,
+            vec![],
+            outputs,
+            net,
+        )
+    }
+
+    /// Store `utxos` and then `record` verbatim, as a V018 build left them.
+    fn stage_v018(
+        conn: &mut Connection,
+        wallet_id: &WalletId,
+        utxos: Vec<Utxo>,
+        record: &[u8],
+        finalized: bool,
+    ) {
+        let decoded = blob::decode::<TransactionRecord>(record).unwrap();
+        let height = decoded.block_info().map(|block| i64::from(block.height()));
+        let tx = conn.transaction().unwrap();
+        let new_utxos = CoreChangeSet {
+            new_utxos: utxos,
+            ..Default::default()
+        };
+        core_state::apply(&tx, wallet_id, &new_utxos).unwrap();
+        tx.execute(
+            "INSERT OR REPLACE INTO core_transactions (wallet_id, txid, height, finalized, record_blob) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                &wallet_id[..],
+                decoded.txid.as_byte_array().as_slice(),
+                height,
+                finalized,
+                record
+            ],
+        )
+        .unwrap();
+        rewind_to_v018(&tx);
+        tx.commit().unwrap();
+    }
+
     /// A V018 database holding one oversize confirmed record for a wallet born
     /// at `birth_height`, synced to 900.
     fn seed_oversize_confirmed_record(birth_height: i64) -> (Connection, WalletId) {
@@ -498,11 +523,7 @@ mod tests {
         migrations::run(&mut conn).unwrap();
         let wallet_id = [0xC2u8; 32];
         let txid = Txid::from_byte_array([0x72; 32]);
-        conn.execute(
-            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
-            params![&wallet_id[..], birth_height],
-        )
-        .unwrap();
+        insert_test_wallet(&conn, &wallet_id, birth_height);
         conn.execute(
             "INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) \
              VALUES (?1, 900, 900)",
@@ -535,28 +556,21 @@ mod tests {
     }
 
     /// An oversize confirmed record fails its length gate before its payload
-    /// is read, and is dropped with a rescan from just below the birth height.
+    /// is read, and is dropped with a rescan from just below the birth height,
+    /// or from genesis for a wallet born at zero.
     #[test]
     fn should_drop_oversize_confirmed_record_for_resync() {
-        let (mut conn, wallet_id) = seed_oversize_confirmed_record(50);
+        for (birth_height, rescan_from) in [(50, 49), (0, 0)] {
+            let (mut conn, wallet_id) = seed_oversize_confirmed_record(birth_height);
 
-        migrations::run(&mut conn).unwrap();
+            migrations::run(&mut conn).unwrap();
 
-        let (records, synced) = records_and_synced_height(&conn, &wallet_id);
-        assert_eq!(records, 0, "the oversize record must be dropped");
-        assert_eq!(
-            synced, 49,
-            "the rescan must restart just below the birth height"
-        );
-    }
-
-    #[test]
-    fn should_rescan_from_genesis_when_the_wallet_is_born_at_zero() {
-        let (mut conn, wallet_id) = seed_oversize_confirmed_record(0);
-
-        migrations::run(&mut conn).unwrap();
-
-        assert_eq!(records_and_synced_height(&conn, &wallet_id), (0, 0));
+            assert_eq!(
+                records_and_synced_height(&conn, &wallet_id),
+                (0, rescan_from),
+                "born at {birth_height}: the oversize record is dropped for a rescan"
+            );
+        }
     }
 
     /// A stored birth height outside `u32` fails the migration with a typed
@@ -585,42 +599,15 @@ mod tests {
     fn seed_unrepresentable_net(
         context: TransactionContext,
     ) -> (Connection, WalletId, Txid, Vec<u8>) {
-        let mut conn = Connection::open_in_memory().unwrap();
-        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xC3u8; 32];
-        conn.execute(
-            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
-            params![&wallet_id[..]],
-        )
-        .unwrap();
+        let mut conn = wallet_db(&wallet_id);
         let value = (1_u64 << 62) + 1;
-        let body = CoreTransaction {
-            version: 1,
-            lock_time: 0,
-            input: vec![TxIn {
-                previous_output: OutPoint::new(Txid::from_byte_array([0x73; 32]), 0),
-                ..Default::default()
-            }],
-            output: [address(1), address(2)]
-                .map(|owner| TxOut {
-                    value,
-                    script_pubkey: owner.script_pubkey(),
-                })
-                .to_vec(),
-            special_transaction_payload: None,
-        };
+        let outputs = [address(1), address(2)].map(|owner| pay(value, &owner));
+        let body = spend_of(&[outside(0x73)], outputs.to_vec());
         let txid = body.txid();
-        let height = context.block_info().map(|block| i64::from(block.height()));
-        let original = TransactionRecord::new(
+        let original = bip44_record(
             body,
-            AccountType::Standard {
-                index: 0,
-                standard_account_type: StandardAccountType::BIP44Account,
-            },
             context,
-            TransactionType::Standard,
-            TransactionDirection::Incoming,
-            Vec::new(),
             [address(1), address(2)]
                 .into_iter()
                 .zip(0..)
@@ -635,27 +622,12 @@ mod tests {
             (2 * value) as i64,
         );
         let stored = blob::encode(&original).unwrap();
-        let tx = conn.transaction().unwrap();
-        core_state::apply(
-            &tx,
-            &wallet_id,
-            &CoreChangeSet {
-                new_utxos: vec![
-                    utxo(OutPoint::new(txid, 0), value, address(1)),
-                    utxo(OutPoint::new(txid, 1), value, address(2)),
-                ],
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        tx.execute(
-            "INSERT OR REPLACE INTO core_transactions (wallet_id, txid, height, finalized, record_blob) \
-             VALUES (?1, ?2, ?3, 0, ?4)",
-            params![&wallet_id[..], txid.as_byte_array().as_slice(), height, stored],
-        )
-        .unwrap();
-        rewind_to_v018(&tx);
-        tx.commit().unwrap();
+        let utxos = [address(1), address(2)]
+            .into_iter()
+            .zip(0..)
+            .map(|(owner, vout)| utxo(OutPoint::new(txid, vout), value, owner))
+            .collect();
+        stage_v018(&mut conn, &wallet_id, utxos, &stored, false);
         (conn, wallet_id, txid, stored)
     }
 
@@ -707,14 +679,8 @@ mod tests {
     /// record, the preserved original, the input index and the spent marks.
     #[test]
     fn should_pin_v019_repair_of_a_v018_database() {
-        let mut conn = Connection::open_in_memory().unwrap();
-        migrations::run(&mut conn).unwrap();
         let wallet_id = [0xC1u8; 32];
-        conn.execute(
-            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
-            params![&wallet_id[..]],
-        )
-        .unwrap();
+        let mut conn = wallet_db(&wallet_id);
         let (own, change, contact, external) = (address(1), address(2), address(3), address(4));
         conn.execute(
             "INSERT INTO core_address_pool (wallet_id, account_type, account_index, pool_type, address_index, script) \
@@ -723,42 +689,18 @@ mod tests {
         )
         .unwrap();
         let funding = OutPoint::new(Txid::from_byte_array([0x71; 32]), 0);
-        let body = CoreTransaction {
-            version: 1,
-            lock_time: 0,
-            input: vec![TxIn {
-                previous_output: funding,
-                ..Default::default()
-            }],
-            output: vec![
-                TxOut {
-                    value: 30_000,
-                    script_pubkey: change.script_pubkey(),
-                },
-                TxOut {
-                    value: 50_000,
-                    script_pubkey: contact.script_pubkey(),
-                },
-                TxOut {
-                    value: 15_000,
-                    script_pubkey: external.script_pubkey(),
-                },
-            ],
-            special_transaction_payload: None,
-        };
+        let outputs = vec![
+            pay(30_000, &change),
+            pay(50_000, &contact),
+            pay(15_000, &external),
+        ];
+        let body = spend_of(&[funding], outputs);
         let txid = body.txid();
         // What an old build stored: the input was not known to be ours and
         // the contact's output was credited as received.
-        let original = TransactionRecord::new(
+        let original = bip44_record(
             body,
-            AccountType::Standard {
-                index: 0,
-                standard_account_type: StandardAccountType::BIP44Account,
-            },
             TransactionContext::InBlock(BlockInfo::new(101, BlockHash::all_zeros(), 7)),
-            TransactionType::Standard,
-            TransactionDirection::Incoming,
-            Vec::new(),
             vec![
                 OutputDetail {
                     index: 0,
@@ -775,33 +717,12 @@ mod tests {
             ],
             80_000,
         );
-        {
-            let tx = conn.transaction().unwrap();
-            core_state::apply(
-                &tx,
-                &wallet_id,
-                &CoreChangeSet {
-                    new_utxos: vec![
-                        utxo(funding, 100_000, own.clone()),
-                        utxo(OutPoint::new(txid, 0), 30_000, change.clone()),
-                    ],
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-            tx.execute(
-                "INSERT OR REPLACE INTO core_transactions (wallet_id, txid, height, finalized, record_blob) \
-                 VALUES (?1, ?2, 101, 1, ?3)",
-                params![
-                    &wallet_id[..],
-                    txid.as_byte_array().as_slice(),
-                    blob::encode(&original).unwrap()
-                ],
-            )
-            .unwrap();
-            rewind_to_v018(&tx);
-            tx.commit().unwrap();
-        }
+        let utxos = vec![
+            utxo(funding, 100_000, own.clone()),
+            utxo(OutPoint::new(txid, 0), 30_000, change.clone()),
+        ];
+        let stored = blob::encode(&original).unwrap();
+        stage_v018(&mut conn, &wallet_id, utxos, &stored, true);
 
         migrations::run(&mut conn).unwrap();
 
@@ -811,20 +732,8 @@ mod tests {
             value: 100_000,
             address: own,
         }];
-        expected.output_details = vec![
-            OutputDetail {
-                index: 0,
-                role: OutputRole::Change,
-                address: Some(change),
-                value: 30_000,
-            },
-            OutputDetail {
-                index: 1,
-                role: OutputRole::Sent,
-                address: Some(address(3)),
-                value: 50_000,
-            },
-        ];
+        // The contact's output is no longer credited as ours.
+        expected.output_details[1].role = OutputRole::Sent;
         expected.net_amount = -70_000;
         expected.direction = TransactionDirection::Outgoing;
         let read_blob = |sql: &str| -> Vec<u8> {
