@@ -115,6 +115,13 @@ function freezeContainers(value: unknown): void {
 }
 
 describe('group query IdentifierLike inputs', () => {
+  let subclassByteCalls: number;
+  class CustomIdentifier extends sdk.Identifier {
+    toBytes(): Uint8Array {
+      subclassByteCalls += 1;
+      throw new Error('the input override must not run');
+    }
+  }
   let client: sdk.WasmSdk;
   let otherClient: sdk.WasmSdk;
   let originalFetch: typeof globalThis.fetch;
@@ -134,6 +141,7 @@ describe('group query IdentifierLike inputs', () => {
   });
 
   beforeEach(() => {
+    subclassByteCalls = 0;
     identifiers = [];
     errors = [];
     fetchCalls = 0;
@@ -321,19 +329,12 @@ describe('group query IdentifierLike inputs', () => {
   });
 
   it('should use the local Identifier method for a genuine subclass', async () => {
-    let calls = 0;
-    class CustomIdentifier extends sdk.Identifier {
-      toBytes(): Uint8Array {
-        calls += 1;
-        throw new Error('the input override must not run');
-      }
-    }
     const value = new CustomIdentifier(new Uint8Array(32).fill(0x11));
     identifiers.push(value);
     const testCase = cases[3];
     await checkOutcome(testCase, false, testCase.query(() => value));
     await checkOutcome(testCase, true, testCase.query(() => value));
-    expect(calls).to.equal(0);
+    expect(subclassByteCalls).to.equal(0);
   });
 
   it('should refuse a freed Identifier before invoking its method', async () => {
@@ -384,6 +385,161 @@ describe('group query IdentifierLike inputs', () => {
     const error = await rejection(callQuery(testCase.query(() => value), 'getGroupInfos'));
     expect(error.message).to.match(/^Invalid group infos query:/);
     expect(calls).to.equal(0);
+  });
+
+  it('should reject plain Identifier markers before reading internal pointers', async () => {
+    let pointerReads = 0;
+    const value = { __type: 'Identifier' };
+    Object.defineProperty(value, '__wbg_ptr', {
+      get: () => {
+        pointerReads += 1;
+        throw new Error('plain data must not supply a WASM pointer');
+      },
+    });
+    const testCase = cases[3];
+    for (const method of [testCase.method, testCase.proofMethod]) {
+      const error = await rejection(callQuery(testCase.query(() => value), method));
+      expect(error.message).to.match(/^Invalid group infos query:/);
+    }
+    expect(pointerReads).to.equal(0);
+  });
+
+  for (const [name, localConstructor] of [
+    ['plain marker', false],
+    ['local constructor impostor', true],
+  ] as const) {
+    it(`should reject a ${name} before reading instance metadata`, async () => {
+      let typeReads = 0;
+      let pointerReads = 0;
+      const value = {};
+      if (localConstructor) {
+        Object.defineProperty(value, 'constructor', { value: sdk.Identifier });
+      }
+      Object.defineProperties(value, {
+        __type: {
+          get: () => {
+            typeReads += 1;
+            throw new Error('plain data must not supply instance metadata');
+          },
+        },
+        __wbg_ptr: {
+          get: () => {
+            pointerReads += 1;
+            throw new Error('plain data must not supply a WASM pointer');
+          },
+        },
+      });
+      const testCase = cases[3];
+      for (const method of [testCase.method, testCase.proofMethod]) {
+        const error = await rejection(callQuery(testCase.query(() => value), method));
+        expect(error.message).to.match(/^Invalid group infos query:/);
+      }
+      expect(typeReads).to.equal(0);
+      expect(pointerReads).to.equal(0);
+    });
+  }
+
+  for (const [name, constructor] of [
+    ['object', { __struct: 'Identifier' }],
+    ['string', 'Identifier'],
+    ['null', null],
+  ] as const) {
+    it(`should refuse a JSON Identifier marker with a ${name} constructor`, async () => {
+      const value = { __type: 'Identifier', __wbg_ptr: 0, constructor };
+      const testCase = cases[3];
+      for (const method of [testCase.method, testCase.proofMethod]) {
+        const error = await rejection(callQuery(testCase.query(() => value), method));
+        expect(error.message).to.match(/^Invalid group infos query:/);
+      }
+    });
+  }
+
+  it('should reject a wrapper with a different module identity before reading instance data', async () => {
+    const otherModuleBrand = {};
+    const brandDescriptor = Object.getOwnPropertyDescriptor(CustomIdentifier, '__wasm_dpp_module');
+    Object.defineProperty(CustomIdentifier, '__wasm_dpp_module', {
+      configurable: true,
+      get: () => otherModuleBrand,
+    });
+    const value = new CustomIdentifier(new Uint8Array(32).fill(0x11));
+    identifiers.push(value);
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    expect(descriptors.__wbg_ptr).to.have.property('value');
+    expect(descriptors.__wbg_ptr.configurable).to.equal(true);
+    let typeReads = 0;
+    let pointerReads = 0;
+    Object.defineProperties(value, {
+      __type: {
+        configurable: true,
+        enumerable: false,
+        get: () => {
+          typeReads += 1;
+          throw new Error('a different module must not supply instance metadata');
+        },
+      },
+      __wbg_ptr: {
+        configurable: true,
+        enumerable: false,
+        get: () => {
+          pointerReads += 1;
+          throw new Error('a different module must not supply a WASM pointer');
+        },
+      },
+    });
+    try {
+      const testCase = cases[3];
+      for (const method of [testCase.method, testCase.proofMethod]) {
+        const error = await rejection(callQuery(testCase.query(() => value), method));
+        expect(error.message).to.match(/^Invalid group infos query:/);
+      }
+      expect(typeReads).to.equal(0);
+      expect(pointerReads).to.equal(0);
+    } finally {
+      Object.defineProperty(value, '__wbg_ptr', descriptors.__wbg_ptr);
+      if (descriptors.__type) {
+        Object.defineProperty(value, '__type', descriptors.__type);
+      } else {
+        Reflect.deleteProperty(value, '__type');
+      }
+      if (brandDescriptor) {
+        Object.defineProperty(CustomIdentifier, '__wasm_dpp_module', brandDescriptor);
+      } else {
+        Reflect.deleteProperty(CustomIdentifier, '__wasm_dpp_module');
+      }
+    }
+  });
+
+  it('should refuse an Identifier marker with JSON prototype data', async () => {
+    const value = JSON.parse(
+      '{"__type":"Identifier","__wbg_ptr":0,'
+      + '"__proto__":{"constructor":{"__struct":"Identifier"}}}',
+    );
+    const testCase = cases[3];
+    for (const method of [testCase.method, testCase.proofMethod]) {
+      const error = await rejection(callQuery(testCase.query(() => value), method));
+      expect(error.message).to.match(/^Invalid group infos query:/);
+    }
+  });
+
+  it('should borrow a genuine Identifier without invoking its destruction override', async () => {
+    let calls = 0;
+    const value = identifier(0x11, 'instance') as sdk.Identifier;
+    Object.defineProperty(value, '__destroy_into_raw', {
+      configurable: true,
+      value: () => {
+        calls += 1;
+        throw new Error('borrowing must not consume the caller wrapper');
+      },
+    });
+    try {
+      const testCase = cases[3];
+      await checkOutcome(testCase, false, testCase.query(() => value));
+      await checkOutcome(testCase, true, testCase.query(() => value));
+      expect(calls).to.equal(0);
+      expect(value.toBytes()).to.deep.equal(new Uint8Array(32).fill(0x11));
+    } finally {
+      Reflect.deleteProperty(value, '__destroy_into_raw');
+    }
   });
 
   for (const [name, message, create] of [
