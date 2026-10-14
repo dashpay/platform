@@ -551,18 +551,25 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_derive
         let pubkey = out.public_key_bytes;
         unsafe { platform_wallet_ffi::dash_sdk_derive_connect_key_free(&mut out) };
 
+        let Ok(priv_arr) = env.byte_array_from_slice(&*scalar) else {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 99, "connect key marshalling failed");
+            return ptr::null_mut();
+        };
         let build = (|| -> Result<jni::sys::jobjectArray, jni::errors::Error> {
-            let priv_arr = env.byte_array_from_slice(&*scalar)?;
             let pub_arr = env.byte_array_from_slice(&pubkey)?;
             let byte_array_class = env.find_class("[B")?;
             let result =
                 env.new_object_array(2, byte_array_class, jni::objects::JObject::null())?;
-            env.set_object_array_element(&result, 0, priv_arr)?;
+            env.set_object_array_element(&result, 0, &priv_arr)?;
             env.set_object_array_element(&result, 1, pub_arr)?;
             Ok(result.into_raw())
         })();
         build.unwrap_or_else(|_| {
             let _ = env.exception_clear();
+            // `Zeroizing` only wipes the Rust copy; overwrite the JVM copy of
+            // the private key too, since it never reaches Kotlin's cleanup.
+            let _ = env.set_byte_array_region(&priv_arr, 0, &[0i8; 32]);
             throw_sdk_exception(env, 99, "connect key marshalling failed");
             ptr::null_mut()
         })
