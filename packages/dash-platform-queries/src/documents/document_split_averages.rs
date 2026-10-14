@@ -38,7 +38,7 @@ impl FromProof<DocumentQuery> for DocumentSplitAverages {
         assert_select_is_avg(&request)?;
         let response: Self::Response = response.into();
         let (entries, mtd, proof) =
-            verify_average_query(request, response, platform_version, provider)?;
+            verify_average_query(request, response, false, platform_version, provider)?;
         let split = entries.map(|es| {
             DocumentSplitAverages(
                 es.into_iter()

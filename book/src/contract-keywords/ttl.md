@@ -56,6 +56,8 @@ Everything else combines with a `ttl`: mutable types, `transferable`, `tradeMode
 
 An update may not add, remove or change the `ttl` of an existing document type. Every stored document has the expiry it was written and paid with: adding one would leave stored documents that the cleanup cannot find, removing it would leave entries that delete documents the type says live forever, and changing it would move expiries away from what was paid for. A document type added by an update may declare a `ttl` freely.
 
+Nor may an update raise the `maxItems` of a [typed array an index names](indexes.md#typed-arrays) on a type with a `ttl` (`DocumentTypeUpdateError`, 40212). A document's create prepaid its deletion by the index entries that bound allows, and a replace pays only for the bytes it adds, so a raised bound would let a stored document grow a cleanup it never paid for.
+
 ## See also
 
 - [Document Time To Live](../data-model/document-ttl.md), for the expirations tree, the fee tiers, the payout to epochs and the cleanup

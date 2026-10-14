@@ -158,6 +158,7 @@ fn validate_ranked_index_property_key_length(
     document_type_name: &str,
     index: &Index,
     index_property_name: &str,
+    reported_property_name: &str,
     property_type: &DocumentPropertyType,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
@@ -172,9 +173,12 @@ fn validate_ranked_index_property_key_length(
         return Ok(());
     };
 
-    // A typed array is no index key at all, and its byte bound measures the
-    // whole list: the property-type check right after this one rejects it
-    // with the error that explains the problem.
+    // A typed array an index names is keyed by its elements, and the
+    // index-property check judges it here through the element type, so a
+    // typed array reaching this check whole is the field a derived index
+    // property reads: its byte bound measures the whole list, and the
+    // property-type check right after this one rejects it with the error
+    // that explains the problem.
     if matches!(property_type, DocumentPropertyType::TypedArray(_)) {
         return Ok(());
     }
@@ -241,7 +245,7 @@ fn validate_ranked_index_property_key_length(
         InvalidIndexedPropertyConstraintError::new(
             document_type_name.to_owned(),
             index.name.to_owned(),
-            index_property_name.to_owned(),
+            reported_property_name.to_owned(),
             constraint_name.to_string(),
             reason,
         )
@@ -513,6 +517,9 @@ fn parse_generation_3(
             // DERIVED INDEX PROPERTIES: a value read through a same-contract permanent or
             // moderated reference (`apply_derived_index_properties`).
             admit_derived_index_properties: true,
+            // INDEXED ARRAYS: an index keyed by the elements of a typed array
+            // (`validate_indexed_array_index`).
+            admit_indexed_arrays: true,
         },
         platform_version,
     )?;
@@ -980,6 +987,7 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                             validate_ranked_index_property_key_length(
                                 name,
                                 index,
+                                &index_property.name,
                                 &index_property.name,
                                 &property.property_type,
                                 platform_version,
@@ -1979,6 +1987,8 @@ mod immutable_tests;
 #[cfg(test)]
 mod index_only_tests;
 #[cfg(all(test, feature = "validation"))]
+mod indexed_array_tests;
+#[cfg(all(test, feature = "validation"))]
 mod moderated_preallocation_tests;
 #[cfg(all(test, feature = "validation"))]
 mod outlives_delete_tests;
@@ -2032,11 +2042,15 @@ mod string_find_by_key_tests;
 #[cfg(all(test, feature = "validation"))]
 mod transient_tests;
 #[cfg(all(test, feature = "validation"))]
+mod typed_array_counter_index_tests;
+#[cfg(all(test, feature = "validation"))]
 mod typed_array_reference_tests;
 #[cfg(all(test, feature = "validation"))]
 mod typed_array_test_helpers;
 #[cfg(all(test, feature = "validation", feature = "random-documents"))]
 mod typed_array_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_where_tests;
 
 #[cfg(test)]
 mod tests {

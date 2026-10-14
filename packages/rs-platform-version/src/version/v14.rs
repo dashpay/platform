@@ -277,8 +277,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     v1 judges the fee against the sponsor's balance, refusing an insisting
 ///     batch unpaid when it falls short (`GasSponsorInsufficientBalanceError`,
 ///     40222) and handing a preferring one back to the signer; `execute_event`
-///     v1 charges whoever was admitted. The batch's signer only funds the
-///     principal, and its minimum balance pre-check v1
+///     v1 charges whoever was admitted. The batch's signer funds the principal
+///     and the processing fee its own `user_fee_increase` adds: the sponsor is
+///     judged on and charged the fee without the increase, the signer's balance
+///     and key budget have to cover the increase (refused unpaid with
+///     `IdentityInsufficientBalanceError`, 40210, when the balance does not),
+///     and execution charges it to the signer as a fee of its own. Its minimum
+///     balance pre-check v1
 ///     (`identity_minimum_balance_pre_check`) asks no more of a batch that
 ///     requests sponsorship. A failed batch is never sponsored, so check tx
 ///     validates the state of a sponsored batch whose signer is under the fee
@@ -1311,6 +1316,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     payouts to the block's `apply_drive_operations` instead of converting
 ///     them to a plain grove batch, skips a share whose `payToId` has no
 ///     balance and caps each share at what is left of its masternode's payout.
+///     After paying valid shares, a proposer without a balance returns its
+///     remaining allocation, including any last-proposer rounding remainder, to
+///     the applying block's current epoch processing pool. An existing zero
+///     balance remains a valid recipient; other balance read errors propagate.
+///     `SystemOperationType::AddToCurrentEpochProcessingPool` defers the return
+///     until after ordinary writes and repaid debt, unbilled and in the same
+///     transaction before commit. Estimates and zero returns do not access or
+///     mutate that pool. Generic lowering and older apply generations refuse
+///     this operation instead of silently dropping it.
 ///     An apply that meets one it does not route fails (`CorruptedCodeExecution`)
 ///     instead of dropping it. `apply_drive_operations` 1 also merges every
 ///     credit and debit one batch makes to an identity's balance into one net
@@ -2519,6 +2533,58 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     meta-schemas v0 to v2 refuse both names (no JSON Schema type), and
 ///     parser generations 0 to 2 refuse them as unsupported property types.
 ///
+/// 92. **Indexes on the elements of a typed array**: an index may name a
+///     top-level typed array property, at any position, one per index, and
+///     keys a document once by each distinct element, an element keyed as a
+///     property of the element type is. Parser generation 3 (in place) admits
+///     it and refuses, under full validation: a
+///     unique or contested index, `nullSearchable: false`, a ranking above the
+///     array, a second array (10231); a `maxItems` above
+///     `SYSTEM_LIMITS_V4.max_indexed_array_items` (16), or
+///     `max_windowed_indexed_array_items` (4) on an index with a `timeRange`
+///     or `integerRange`, and elements past the key limits of their type or
+///     byte array elements that may be empty (10205); and a type whose
+///     document can write more than `max_index_entries_per_document` (256)
+///     index entries (10231). On every parse it adds the array to the index's
+///     skip set (`skip_if_absent` keeps the declared keyword) and stamps its
+///     index level with the array's `maxItems`
+///     (`IndexLevel::stamp_indexed_arrays`). `serialize_value_for_key` and
+///     `deserialize_value_for_key` 1 (90, in place) key a typed array
+///     property's value as one element, keyed as a property of the element's
+///     type is, an unsigned element in value order, and
+///     `get_raw_array_elements_for_document_type` 0 (new, `DOCUMENT_VERSIONS_V4`,
+///     `None` before) gives a document's sorted, distinct element keys. The
+///     v2 insert and delete walkers (in place) write and remove one value tree
+///     per element at a stamped level, a document with no element reaching
+///     none of its branches; the v1 update (in place) diffs the old and new
+///     entries of an index naming an array, or bucketing its first property,
+///     inserting and refreshing first and deleting last. The document cost
+///     and the TTL drain budget count an array's `maxItems`, and the document
+///     `ttl` cleanup weight counts the levels from the array on once per
+///     element it allows. Queries read the elements with `contains` (one
+///     element: an equality on its key, cursors allowed when the cursor
+///     document holds it) and `containsAny` (an `in` over several: a page
+///     drops a document's repeats, on the server and in verification, and
+///     takes no cursor); grouping v1 groups them, grouping v0 refuses them,
+///     an index naming an array is read only with its elements bound, and
+///     count, sum and average requests read several elements only grouped
+///     per element. An indexOnly type's index of a typed array is admitted,
+///     on every parse (`apply_index_only`, 10231), when another index keeping
+///     one entry per document (no `$createdAt`, skip, `outlivesDelete` or
+///     typed array) has its whole key inside the array index's key without
+///     the array, the array is top-level, alone in the index and declares
+///     `uniqueItems`, and the index is `preallocated` or a
+///     `summableOffCountIndex` index only as 95 says; such an index is never
+///     the proof index, a counter's source or the only index keeping another
+///     required property. Its row commitment holds the list in order (an empty, null or
+///     absent list alike), its entry probes fan out per element, the create's
+///     state probe skips it, and synthesis rebuilds an entry as a document
+///     listing its one element. Every indexOnly entry insert bills its
+///     commitment's double-SHA256 by its preimage, the dry run by the widest
+///     preimage the type allows. Inert before this version: generations 0 to
+///     2 refuse a typed array in an index, meta-schemas v0 to v2 have none,
+///     and indexOnly types exist from this version only.
+///
 /// 93. **Fee estimates size sum and count trees, and sum items, as they are
 ///     stored**: grovedb's `GROVE_V4`
 ///     (`average_case_propagated_aggregate_kind` 1) estimates a sum, big sum,
@@ -2537,6 +2603,78 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     (`average_case_sum_item_cost_size` 1 and
 ///     `worst_case_sum_item_cost_size` 1). Applied fees are unchanged. Inert
 ///     before this version: `GROVE_V1` to `GROVE_V3` keep the old sizing.
+///
+/// 94. **`where` entries over typed arrays**: a `refersTo` `where` (63) may
+///     compare a referenced typed array as a list. An equality between two
+///     typed arrays (`"tags": "tags"`, kept in `property_agreement`) holds for
+///     the same elements in the same order; `{ "contains": b }`
+///     (`WhereCondition::Contains`, appended) for a list holding an element
+///     equal to `b`, a referring property of the element kind or `"$ownerId"`
+///     (a writer gate on identifier elements, asked about on every replace);
+///     `{ "containsAll": b }` (`WhereCondition::ContainsAll`, appended) for a
+///     list holding every element of the referring typed array `b`. Elements
+///     compare as two single values do (`where_lists_equal`, by
+///     `Value::same_scalar_data`): an identifier equals its 32 bytes and an
+///     integer is the same at any width; a list left out is the
+///     empty one, so two left out are equal and every list holds all of one
+///     left out, while a `contains` value left out is held by no list. Meta-schema
+///     v3 and parser generation 3 (in place) read both keys, refusing them on
+///     `$ownerId`, `$creatorId` and `$id` and a `containsAll` of the writer.
+///     Contract create and update state validation (data contract reference
+///     validation 0, in place) admits a typed array pair, until now refused
+///     with 40126, when both sides are stored typed arrays whose elements share
+///     one value kind other than a float, and refuses with 40126: a typed array
+///     paired with anything else, a `contains` or `containsAll` of a property
+///     that is no typed array, of float elements, bounded by the reference
+///     property itself or by a value of another kind (the writer only among
+///     identifiers), a `moderatedDocument` `contains` of the writer whose list
+///     no removal record keeps. `const`, `in`, `notEqual` and the orderings
+///     still refuse a typed array. Document reference validation 0 (in place)
+///     checks them against the document found or the removal record, refusing
+///     with 40127, and refuses an entry whose referring path is no object on
+///     the way as a mismatch. Before comparing, it bills the list elements
+///     such an entry reads, both lists for an equality and a `containsAll`, the
+///     referenced one for a `contains`, at
+///     `FEE_VERSION3.document_reference.where_list_credits_per_element` (100
+///     credits, a field added in place to `FEE_DOCUMENT_REFERENCE_VERSION1`,
+///     which every schedule carries and only this version reads). A pair of
+///     lists keys a preallocated or `summableOffCountIndex` index only by its
+///     elements, as 95 says. Inert before this version: only parser generation
+///     3 reads a `where`, and this module and that validation are reached from
+///     this version only.
+///
+/// 95. **Preallocated and counter indexes keyed by the elements of a list**:
+///     an indexOnly type's index naming a typed array (92) may be
+///     `preallocated` or a `summableOffCountIndex` index when a `where`
+///     equality (94) makes the array equal to a typed array of the referenced
+///     document. `Index::preallocation_bindings` binds such an index property
+///     through the pair (`PreallocatedKeySource::ReferencedDocumentListElements`,
+///     appended) and `Index::count_index_derivations` derives it; `contains`
+///     and `containsAll` bind nothing. Parser generation 3 (in place,
+///     `apply_index_only`) admits either keyword on an array index only so
+///     bound (10231 otherwise) and asks a `summableOffCountIndex` array index,
+///     which keeps no entries, for no other index keeping its documents apart;
+///     the contract-level rules (55, 68 and the counter's lossless rule) judge
+///     the list as a whole. Contract create and update state validation (data
+///     contract reference validation 0, in place) refuses with 40126 a list
+///     pair keying a preallocated index whose referenced elements can hold more
+///     than 255 bytes. Drive (in place): the v1 document insert preallocates
+///     such an index's trees under each distinct element of the referenced
+///     document's list, keyed as the referring type keys its elements, and
+///     nothing for a list no referring document can hold (empty, absent or no
+///     list; longer than the referring array's `maxItems` or shorter than its
+///     `minItems`; repeating an element where it declares `uniqueItems`; or
+///     holding an element keyed as empty or wider than the referring
+///     elements); the v2 insert and delete walkers move one counter per
+///     element where the counter's own level is the array; the document cost
+///     model follows. The v1 insert's preallocation also inserts a plain tree
+///     (a value tree, a `0` bucket) under a tree the same walk created
+///     without reading whether it exists, and the dry run of a document change
+///     (`estimate_document_change_as_insert_operations` 1) preallocates
+///     nothing, as an applied change never does. Inert before this version: only parser
+///     generation 3 admits `preallocated`, `summableOffCountIndex`, an indexed
+///     typed array and a `where`, and every contract that registers today
+///     binds no typed array.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
@@ -2635,7 +2773,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry; verify_identity_signed_signature 1: a BLS12_381 signature must verify
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys; serialize_value_for_key 1 keys unsigned integers in value order (except a property ending a rangeSummable index)
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys; serialize_value_for_key 1 keys unsigned integers in value order (except a property ending a rangeSummable index); generation 3 indexes the elements of typed arrays, on indexOnly types under the item 92 rules
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
@@ -2649,7 +2787,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     // the shared storage table; it is dead below v14 (the `ttl` grammar
     // does not parse), so no table fork is needed.
     fee_version: FEE_VERSION3, // changed: contested document contribution reduced to 0.1 DASH; masternode vote cost reduced to 0.00002 DASH; moderation election fund of 0.5 DASH; a contender's fund doubles past 250 contenders and for every 50 more; registration surcharge for once-per-identity token distributions
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries; max_rekey_batch_moves (10,000) for the unsigned index value key rewrite; a refersTo chooseFirst reads at most 1,000 competitors
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24) + time-range TTL cap (1 week) and per-write drop cap (32); max_contract_moderators, max_contract_suspension_until, max_contract_moderation_reason_length, max_contract_warnings_per_identity, max_contract_moderation_reason_documents and contract_document_restore_window_ms (a week); max_contenders_per_contest (1,000); historical CREDIT nullifier backfill pages and insert batches are each bounded to 2048 entries; max_rekey_batch_moves (10,000) for the unsigned index value key rewrite; a refersTo chooseFirst reads at most 1,000 competitors; an indexed typed array holds at most 16 elements (4 under a window), and a document writes at most 256 index entries
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

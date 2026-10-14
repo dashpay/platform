@@ -2,6 +2,7 @@
 //!
 //! See [MockDashPlatformSdk] for more details.
 use super::MockResponse;
+use crate::sdk::{verifier_version, ProofResponseMetadata};
 use crate::{
     platform::{
         types::{evonode::EvoNode, identity::IdentityRequest},
@@ -47,6 +48,11 @@ pub struct MockDashPlatformSdk {
 }
 
 impl MockDashPlatformSdk {
+    /// Number of transport executions of this exact request, including failures.
+    pub async fn request_count<R: Mockable>(&self, request: &R) -> usize {
+        self.dapi.lock().await.request_count(request)
+    }
+
     /// Returns true when requests should use proofs.
     ///
     /// ## Panics
@@ -292,6 +298,12 @@ impl MockDashPlatformSdk {
                 "GetGroupActionSignersRequest" => {
                     load_expectation::<proto::GetGroupActionSignersRequest>(&mut dapi, filename)?
                 }
+                "BroadcastStateTransitionRequest" => {
+                    load_expectation::<proto::BroadcastStateTransitionRequest>(&mut dapi, filename)?
+                }
+                "WaitForStateTransitionResultRequest" => load_expectation::<
+                    proto::WaitForStateTransitionResultRequest,
+                >(&mut dapi, filename)?,
                 "EvoNode" => load_expectation::<EvoNode>(&mut dapi, filename)?,
                 "GetTokenDirectPurchasePricesRequest" => load_expectation::<
                     proto::GetTokenDirectPurchasePricesRequest,
@@ -552,9 +564,11 @@ impl MockDashPlatformSdk {
         &self,
         request: O::Request,
         response: O::Response,
+        platform_version: &'static PlatformVersion,
     ) -> Result<(Option<O>, ResponseMetadata, Proof), drive_proof_verifier::Error>
     where
         O::Request: Mockable,
+        O::Response: ProofResponseMetadata,
         Option<O>: MockResponse,
         // O: FromProof<<O as FromProof<I>>::Request>,
     {
@@ -573,7 +587,10 @@ impl MockDashPlatformSdk {
                 Proof::default(),
             ),
             None => {
-                let version = self.version();
+                let platform_version = verifier_version(
+                    platform_version,
+                    response.response_metadata()?.protocol_version,
+                );
                 let provider = self.context_provider()
                     .ok_or(ContextProviderError::InvalidQuorum(
                         "expectation not found and quorum info provider not initialized with sdk.mock().quorum_info_dir()".to_string()
@@ -582,7 +599,7 @@ impl MockDashPlatformSdk {
                     request,
                     response,
                     Network::Regtest,
-                    version,
+                    platform_version,
                     &provider,
                 )?
             }

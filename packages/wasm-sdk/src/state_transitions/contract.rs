@@ -13,6 +13,7 @@ use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::Identity;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
@@ -23,6 +24,7 @@ use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::contract_user_moderation::ModerateContractUser;
 use dash_sdk::platform::transition::put_contract::PutContract;
+use dash_sdk::platform::transition::put_settings::PutSettings;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 use wasm_dpp2::data_contract::document::DocumentWasm;
@@ -194,10 +196,6 @@ impl WasmSdk {
         let data_contract_wasm = DataContractWasm::try_from_options(&options, "dataContract")?;
         let updated_contract: DataContract = data_contract_wasm.into();
 
-        // Get identifiers from the contract
-        let contract_id: Identifier = updated_contract.id();
-        let owner_id: Identifier = updated_contract.owner_id();
-
         // Extract identity key from options
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
         let identity_key: IdentityPublicKey = identity_key_wasm.into();
@@ -208,6 +206,22 @@ impl WasmSdk {
         // Extract settings from options
         let settings =
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
+
+        self.update_contract(updated_contract, identity_key, &signer, settings)
+            .await
+    }
+}
+
+impl WasmSdk {
+    async fn update_contract(
+        &self,
+        updated_contract: DataContract,
+        identity_key: IdentityPublicKey,
+        signer: &impl Signer<IdentityPublicKey>,
+        settings: Option<PutSettings>,
+    ) -> Result<(), WasmSdkError> {
+        let contract_id: Identifier = updated_contract.id();
+        let owner_id: Identifier = updated_contract.owner_id();
 
         // Get identity contract nonce
         let identity_contract_nonce = self
@@ -231,7 +245,7 @@ impl WasmSdk {
             identity_key.id(),
             identity_contract_nonce,
             get_user_fee_increase(settings.as_ref()),
-            &signer,
+            signer,
             self.inner_sdk().version(),
             None,
         )
@@ -241,17 +255,17 @@ impl WasmSdk {
         // Broadcast the transition. A contract update proof authenticates
         // the current contract body — a height-pinned snapshot — and cannot
         // bind this update's execution, so the snapshot wait is required.
-        use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
-        state_transition
-            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
-                self.inner_sdk(),
-                settings,
-            )
+        let verified_contract = state_transition
+            .broadcast_and_wait_for_affected_state::<DataContract>(self.inner_sdk(), settings)
             .await?;
+        self.cache_contract(verified_contract);
 
         Ok(())
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod cache_tests;
 
 // ============================================================================
 // Contract User Moderation

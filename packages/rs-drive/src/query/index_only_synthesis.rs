@@ -16,7 +16,8 @@
 //! Field recovery:
 //! * prefix properties — decoded from the value path segments via
 //!   `deserialize_value_for_key` of the protocol version, the inverse of the
-//!   key encoding the write path used;
+//!   key encoding the write path used; a typed array's segment is one of the
+//!   document's elements, recovered as a list holding that element alone;
 //! * the terminal property — decoded from the member key the same way;
 //! * `$ownerId` / `$createdAt` — from whichever position (prefix or
 //!   terminal) the index carries them.
@@ -855,6 +856,15 @@ impl DriveDocumentQuery<'_> {
                         .to_string(),
                 )));
             }
+            // A typed array is never a terminal component (registration
+            // refuses one).
+            WhereOperator::Contains | WhereOperator::ContainsAny => {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "contains and containsAny read a typed array, which is never a terminal \
+                     component"
+                        .to_string(),
+                )));
+            }
         }
         Ok(query)
     }
@@ -1312,6 +1322,15 @@ pub fn synthesize_index_only_document(
                     document_type
                         .deserialize_value_for_key(name, encoded, platform_version)
                         .map_err(|e| Error::Protocol(Box::new(e)))?
+                };
+                // A typed array's level (protocol version 14) is keyed by one of
+                // the document's elements: the entry stands for that element, so
+                // the projection lists it alone, as a list of the array's type.
+                let value = if matches!(property.property_type, DocumentPropertyType::TypedArray(_))
+                {
+                    Value::Array(vec![value])
+                } else {
+                    value
                 };
                 // A flattened name like `profile.targetId` must come back
                 // as a nested `profile` map, not as a dotted top-level key

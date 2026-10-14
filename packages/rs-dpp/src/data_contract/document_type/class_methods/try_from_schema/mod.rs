@@ -7,7 +7,7 @@ use crate::data_contract::document_type::class_methods::consensus_or_protocol_da
 use crate::data_contract::document_type::class_methods::parse_typed_array::parse_typed_array;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::property::reference_where::{
-    WHERE_CONST, WHERE_IN, WHERE_NOT_EQUAL,
+    WHERE_CONST, WHERE_CONTAINS, WHERE_CONTAINS_ALL, WHERE_IN, WHERE_NOT_EQUAL,
 };
 use crate::data_contract::document_type::property_constraints::{
     either_version_path, parse_delete_constraints, parse_property_constraints, referenced_path,
@@ -35,8 +35,8 @@ use crate::data_contract::document_type::{
     IdentityKeyReferenceRequirements, KeyIdReference, KeyReferenceIdentityProperty,
     ListElementReference, LookupChooseFirst, LookupHashKey, LookupKeySource, PropertyReference,
     ReferenceCombinator, ReferenceOperands, SystemFunction, WhereBoundRead, WhereCondition,
-    WhereLiteral, WhereLiteralKind, WhereNotEqualBound, WhereOrdering, WhereOrderingBound,
-    COMBINABLE_REFERENCE_TARGET_TYPES,
+    WhereContainsBound, WhereLiteral, WhereLiteralKind, WhereNotEqualBound, WhereOrdering,
+    WhereOrderingBound, COMBINABLE_REFERENCE_TARGET_TYPES,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::{TokenConfiguration, TokenContractPosition};
@@ -1291,7 +1291,13 @@ fn parse_reference_target(
         // `moderatorAbilities.deleteKeepsFields`, are left out where the document
         // held none, and the type may be another contract's): a gate on any other
         // property could refuse every later replace, for good on a property that
-        // can not be repointed or cleared, so it may compare only those two
+        // can not be repointed or cleared, so an equality or a `notEqual` with the
+        // writer may compare only those two. A `contains` of the writer is the one
+        // gate admitted here on another property, a typed array, which no system
+        // identifier is: a list the document held none of is read as empty, as
+        // against the document in state, so the gate refuses after a removal what
+        // it refused before; registration, with the referenced type in hand, keeps
+        // the list to one every removal record holds
         "moderatedDocument" => {
             let (contract_id, document_type_name) =
                 parse_document_reference_type(refers_to_map, reference_type)?;
@@ -1482,12 +1488,15 @@ type ParsedWhere = (BTreeMap<String, String>, BTreeMap<String, WhereCondition>);
 /// other entry is an object with one key, a [`WhereCondition`]: `const`, a
 /// literal it must equal; `notEqual`, a referring property, `"$ownerId"` or a
 /// `const` it must differ from; `in`, two or more distinct literals of one
-/// kind it must be one of; or an ordering (`greaterThan`, `greaterThanOrEqual`,
+/// kind it must be one of; an ordering (`greaterThan`, `greaterThanOrEqual`,
 /// `lessThan`, `lessThanOrEqual`) with a referring property, an integer
 /// `const` or a time or height of the referring document as its bound, never
-/// of an identifier. `where` never finds the document and reads neither `"."`
-/// nor a function, which belong to `findBy`. What the names resolve to, and
-/// whether a literal fits the property it is compared with, is checked at
+/// of an identifier; or, of a typed array, `contains`, a referring property or
+/// `"$ownerId"` it must hold, or `containsAll`, a referring typed array whose
+/// every element it must hold. `where` never finds the document and reads
+/// neither `"."` nor a function, which belong to `findBy`. What the names
+/// resolve to, whether a literal fits the property it is compared with, and
+/// whether an equality or a condition compares lists, is checked at
 /// registration.
 fn parse_where(
     refers_to_map: &BTreeMap<String, &Value>,
@@ -1532,8 +1541,8 @@ fn parse_where(
         let referring_property = value.as_text().ok_or_else(|| {
             DataContractError::InvalidContractStructure(
                 "refersTo where values must name a property of the referring document type or \
-                 \"$ownerId\", the writer, or be an object holding const, notEqual, in or an \
-                 ordering"
+                 \"$ownerId\", the writer, or be an object holding const, notEqual, in, an \
+                 ordering, contains or containsAll"
                     .to_string(),
             )
         })?;
@@ -1585,9 +1594,11 @@ fn parse_where_referring_property<'a>(
 }
 
 /// The [`WhereCondition`] a `where` entry keyed by `referenced_property`
-/// declares with `value`, an object with one key: `const`, `notEqual`, `in` or
-/// an ordering. Any other key is refused: a function computes a key that
-/// finds the document, which belongs to `findBy`.
+/// declares with `value`, an object with one key: `const`, `notEqual`, `in`,
+/// an ordering, `contains` or `containsAll`. Any other key is refused: a
+/// function computes a key that finds the document, which belongs to `findBy`.
+/// `contains` and `containsAll` read a list, which `$ownerId`, `$creatorId`
+/// and `$id` are not.
 fn parse_where_condition(
     referenced_property: &str,
     value: &Value,
@@ -1613,7 +1624,7 @@ fn parse_where_condition(
     let [(Value::Text(key), body)] = entries.as_slice() else {
         return Err(invalid(
             "must be an object with one key: const, notEqual, in, greaterThan, \
-             greaterThanOrEqual, lessThan or lessThanOrEqual"
+             greaterThanOrEqual, lessThan, lessThanOrEqual, contains or containsAll"
                 .to_string(),
         ));
     };
@@ -1674,6 +1685,46 @@ fn parse_where_condition(
             }
             Ok(WhereCondition::In(literals))
         }
+        list_key @ (WHERE_CONTAINS | WHERE_CONTAINS_ALL) => {
+            if identifier_side {
+                return Err(invalid(format!(
+                    "reads {list_key} of an identifier, which is one value: {list_key} reads a \
+                     typed array"
+                )));
+            }
+            let Value::Text(path) = body else {
+                return Err(invalid(format!(
+                    "{list_key} must be a property path of the referring document type{}",
+                    if list_key == WHERE_CONTAINS {
+                        ", or \"$ownerId\""
+                    } else {
+                        ""
+                    }
+                )));
+            };
+            if list_key == WHERE_CONTAINS {
+                let bound = if path == OWNER_ID {
+                    WhereContainsBound::Writer
+                } else {
+                    WhereContainsBound::Property(
+                        parse_where_referring_property(referenced_property, path)?.to_string(),
+                    )
+                };
+                return Ok(WhereCondition::Contains(bound));
+            }
+            // The writer is one identifier, not a list of them
+            if path == OWNER_ID {
+                return Err(invalid(
+                    "containsAll reads $ownerId, the writer, which is one identifier: \
+                     containsAll reads a typed array of the referring document type, and \
+                     contains the writer"
+                        .to_string(),
+                ));
+            }
+            Ok(WhereCondition::ContainsAll(
+                parse_where_referring_property(referenced_property, path)?.to_string(),
+            ))
+        }
         ordering_key => {
             let Some(ordering) = WhereOrdering::ALL
                 .into_iter()
@@ -1681,8 +1732,8 @@ fn parse_where_condition(
             else {
                 return Err(invalid(format!(
                     "names \"{ordering_key}\", which is not const, notEqual, in, greaterThan, \
-                     greaterThanOrEqual, lessThan or lessThanOrEqual: a function computes a key \
-                     that finds the document, which belongs in findBy"
+                     greaterThanOrEqual, lessThan, lessThanOrEqual, contains or containsAll: a \
+                     function computes a key that finds the document, which belongs in findBy"
                 )));
             };
             if identifier_side {

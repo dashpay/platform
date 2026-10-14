@@ -12,8 +12,8 @@ use crate::data_contract::document_type::v0::DocumentTypeV0;
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{
-    DocumentPropertyType, DocumentType, DocumentTypeRef, Index, CONTRACT_VERSION_STAMP_MAX_SIZE,
-    DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
+    typed_array_property, DocumentPropertyType, DocumentType, DocumentTypeRef, Index,
+    CONTRACT_VERSION_STAMP_MAX_SIZE, DEFAULT_HASH_SIZE, MAX_INDEX_SIZE,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::document::property_names::{
@@ -791,7 +791,9 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
 
     /// The type of the property an index key names, when it is one whose key
     /// generation 1 changes: a property, or a derived index property, keyed
-    /// as an unsigned integer. `None` for the `$` system fields, which keep
+    /// as an unsigned integer, or a typed array whose elements are (an index
+    /// naming a typed array keys the document by each element, as a property
+    /// of the element's type). `None` for the `$` system fields, which keep
     /// their encoding, for a property that ends a `rangeSummable` index
     /// ([`Index::ends_range_summable_with`]), which keeps generation 0's keys
     /// in every index naming it, and for every other name.
@@ -799,14 +801,18 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     /// The answer can't change for a stored document type after the upgrade
     /// reads it: an update can't change its indexes, and from protocol
     /// version 14 can't change any integer property's width or signedness
-    /// (`validate_integer_encoding_stability`).
+    /// (`validate_integer_encoding_stability`). No index names a typed array
+    /// before protocol version 14, so the upgrade's rewrite meets none.
     fn unsigned_integer_tree_key_property_type(&self, key: &str) -> Option<&DocumentPropertyType> {
         if key.starts_with('$') {
             return None;
         }
         self.flattened_properties()
             .get(key)
-            .map(|property| &property.property_type)
+            .map(|property| match &property.property_type {
+                DocumentPropertyType::TypedArray(typed_array) => typed_array.item_type.as_ref(),
+                property_type => property_type,
+            })
             .or_else(|| self.derived_index_property_type(key))
             .filter(|property_type| property_type.has_unsigned_integer_tree_key())
             .filter(|_| {
@@ -822,9 +828,13 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
     /// ([`DocumentPropertyType::encode_value_for_tree_keys_v1`]), so its keys
     /// sort as its values do, except one that keeps generation 0's keys
     /// because it ends a `rangeSummable` index
-    /// ([`Self::unsigned_integer_tree_key_property_type`]). Every other key is
-    /// generation 0's, the `$` system fields included: the timestamps and
-    /// heights they hold never
+    /// ([`Self::unsigned_integer_tree_key_property_type`]). The key of a typed
+    /// array property is one of its elements, keyed exactly as a property of
+    /// the element's type is: an index naming the array keys the document by
+    /// each element, and a `contains` query keys the element it looks for
+    /// (generation 0 refuses an array key, which no index or query before
+    /// protocol version 14 can name). Every other key is generation 0's, the
+    /// `$` system fields included: the timestamps and heights they hold never
     /// reach the top bit that generation 0 flips, so their keys already sort
     /// as their values do (a query bound past that bit still sorts out of
     /// place, as before).
@@ -833,20 +843,36 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         key: &str,
         value: &Value,
     ) -> Result<Vec<u8>, ProtocolError> {
-        match self.unsigned_integer_tree_key_property_type(key) {
-            Some(property_type) => property_type.encode_value_for_tree_keys_v1(value),
-            None => self.serialize_value_for_key_v0(key, value),
+        if let Some(property_type) = self.unsigned_integer_tree_key_property_type(key) {
+            return property_type.encode_value_for_tree_keys_v1(value);
+        }
+        let Some(typed_array) = typed_array_property(self.flattened_properties(), key) else {
+            return self.serialize_value_for_key_v0(key, value);
+        };
+        let bytes = typed_array.item_type.encode_value_for_tree_keys(value)?;
+        if bytes.len() > MAX_INDEX_SIZE {
+            Err(ProtocolError::DataContractError(
+                DataContractError::FieldRequirementUnmet(
+                    "value must be less than 256 bytes long".to_string(),
+                ),
+            ))
+        } else {
+            Ok(bytes)
         }
     }
 
-    /// Reads a key [`Self::serialize_value_for_key_v1`] wrote.
+    /// Reads a key [`Self::serialize_value_for_key_v1`] wrote, a typed array
+    /// key decoding to one element.
     fn deserialize_value_for_key_v1(
         &self,
         key: &str,
         value: &[u8],
     ) -> Result<Value, ProtocolError> {
-        match self.unsigned_integer_tree_key_property_type(key) {
-            Some(property_type) => property_type.decode_value_for_tree_keys_v1(value),
+        if let Some(property_type) = self.unsigned_integer_tree_key_property_type(key) {
+            return property_type.decode_value_for_tree_keys_v1(value);
+        }
+        match typed_array_property(self.flattened_properties(), key) {
+            Some(typed_array) => typed_array.item_type.decode_value_for_tree_keys(value),
             None => self.deserialize_value_for_key_v0(key, value),
         }
     }

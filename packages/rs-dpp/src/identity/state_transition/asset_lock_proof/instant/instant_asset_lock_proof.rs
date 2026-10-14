@@ -6,8 +6,9 @@ use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use std::convert::{TryFrom, TryInto};
 
-use dashcore::consensus::{deserialize, Encodable};
-use dashcore::transaction::special_transaction::TransactionPayload;
+use dashcore::consensus::encode::{self, VarInt};
+use dashcore::consensus::{deserialize, deserialize_partial, Decodable, Encodable};
+use dashcore::transaction::special_transaction::{TransactionPayload, TransactionType};
 use dashcore::{InstantLock, OutPoint, Transaction, TxIn, TxOut};
 use platform_value::{BinaryData, Value};
 
@@ -206,11 +207,39 @@ pub struct RawInstantLockProof {
     output_index: u32,
 }
 
+/// Decodes an instant proof's transaction. An asset lock decodes as it always has on every
+/// node: its payload is read after its length prefix, whatever length the prefix announces,
+/// and must end the bytes. Neither the InstantSend lock nor the transition's signature covers
+/// the prefix, so a node that read the payload through it would refuse proofs the other nodes
+/// accept and pay for. Any other transaction decodes as usual.
+fn decode_asset_lock_transaction(bytes: &[u8]) -> Result<Transaction, encode::Error> {
+    let [v0, v1, t0, t1, ..] = *bytes else {
+        return deserialize(bytes);
+    };
+    // A transaction carries a payload only from version 3, read as a signed 16-bit value.
+    if i16::from_le_bytes([v0, v1]) < 3
+        || u16::from_le_bytes([t0, t1]) != TransactionType::AssetLock.to_u16()
+    {
+        return deserialize(bytes);
+    }
+    // Up to the payload, an asset lock decodes as a classic transaction does, with the
+    // same segwit rule, and a classic transaction has no payload section.
+    let mut body = bytes.to_vec();
+    body[2..4].fill(0);
+    let (mut transaction, payload_start) = deserialize_partial::<Transaction>(&body)?;
+    let mut payload = &bytes[payload_start..];
+    VarInt::consensus_decode(&mut payload)?;
+    transaction.special_transaction_payload = Some(TransactionPayload::AssetLockPayloadType(
+        deserialize(payload)?,
+    ));
+    Ok(transaction)
+}
+
 impl TryFrom<RawInstantLockProof> for InstantAssetLockProof {
     type Error = ProtocolError;
 
     fn try_from(raw_instant_lock: RawInstantLockProof) -> Result<Self, Self::Error> {
-        let transaction = deserialize(raw_instant_lock.transaction.as_slice())
+        let transaction = decode_asset_lock_transaction(raw_instant_lock.transaction.as_slice())
             .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
         let instant_lock = deserialize(raw_instant_lock.instant_lock.as_slice())
             .map_err(|e| ProtocolError::DecodingError(e.to_string()))?;
@@ -459,6 +488,159 @@ mod tests {
         assert_eq!(proof.output_index, recovered.output_index);
         assert_eq!(proof.instant_lock, recovered.instant_lock);
         assert_eq!(proof.transaction.txid(), recovered.transaction.txid());
+    }
+
+    // ---------------------------------------------------------------
+    // Consensus decoding of a real proof
+    // ---------------------------------------------------------------
+
+    /// An asset lock with one credit output, as Dash Core relayed it.
+    const CORE_ASSET_LOCK: &str = "03000800014d6d36c50d484aa79f7db080f971c3f6845407f652c7d5865756017fa06969c1010000006a47304402200136894a2ebb4967cf2766c10e238d69c53c24bf330758e4432eb4753def03de02202a2afb05475a064a419a6cc1c582e3504fcb36c2e22b610b5d320f7656573f7f0121028fdb0a3f730bb20f477536d98ca830efa56412dd05992c801219ba0ff35ad530ffffffff028801030000000000026a00288d9500000000001976a9148d40dfe30494080a1c1187c74066956043ff13fb88ac0000000024010188010300000000001976a914aa85a9fb4f84bc63046a574ac4f2ce3361f0db0d88ac";
+    /// The InstantSend lock Dash Core signed for it.
+    const CORE_INSTANT_LOCK: &str = "01014d6d36c50d484aa79f7db080f971c3f6845407f652c7d5865756017fa06969c1010000008155cc5d9fe5da3b0508c28d02c88fb6d3d4cf44ef4ffcd77162afa338d1a181ad7300e92255a7a7cf031d6de6bac99df9f1b94735ea603b3f03060c3ebf1f37acc4c1d8ddea77f3d4d816e467571f51ae216715fb3e47d68831adeee6aa1640b26cdf085bb8dd0b4920d15eed83e8c50de8b4b0508db47f08451f7807194d68758a92b367ef6074b516336f689c75c5e22b87aa71d50157875f1018a305a957";
+
+    /// Every node decodes an instant proof's transaction from its bytes, and
+    /// the transition's outcome follows from what it decodes. A rust-dashcore
+    /// upgrade must decode a real asset lock to the same transaction: the
+    /// same bytes back, the txid the InstantSend lock signs, and the same
+    /// credit output.
+    #[test]
+    fn test_raw_instant_lock_proof_decodes_a_core_asset_lock_unchanged() {
+        let transaction_bytes = hex::decode(CORE_ASSET_LOCK).unwrap();
+        let raw = RawInstantLockProof {
+            instant_lock: BinaryData::new(hex::decode(CORE_INSTANT_LOCK).unwrap()),
+            transaction: BinaryData::new(transaction_bytes.clone()),
+            output_index: 0,
+        };
+
+        let proof = InstantAssetLockProof::try_from(raw).expect("a Core asset lock decodes");
+
+        assert_eq!(
+            dashcore::consensus::serialize(proof.transaction()),
+            transaction_bytes
+        );
+        assert_eq!(
+            proof.transaction().txid().to_string(),
+            "81a1d138a3af6271d7fc4fef44cfd4d3b68fc8028dc208053bdae59f5dcc5581"
+        );
+        assert_eq!(proof.instant_lock().txid, proof.transaction().txid());
+        let Some(TransactionPayload::AssetLockPayloadType(payload)) =
+            &proof.transaction().special_transaction_payload
+        else {
+            panic!("an asset lock payload");
+        };
+        assert_eq!(payload.version, 1);
+        assert_eq!(payload.credit_outputs.len(), 1);
+        let output = proof.output().expect("credit output 0");
+        assert_eq!(output.value, 197_000);
+        assert_eq!(
+            hex::encode(output.script_pubkey.as_bytes()),
+            "76a914aa85a9fb4f84bc63046a574ac4f2ce3361f0db0d88ac"
+        );
+        // The identity the proof funds: sha256d of its outpoint.
+        assert_eq!(
+            proof.create_identifier().unwrap(),
+            Identifier::from_string(
+                "HY8jYYsTJxHPcuYreupv4Fb4nvdPRZfV6GoxybLt6vhu",
+                platform_value::string_encoding::Encoding::Base58,
+            )
+            .unwrap()
+        );
+    }
+
+    /// Core reads a special transaction payload only from transaction
+    /// version 3 (a signed 16-bit version), so below it, or negative, the
+    /// asset lock's payload is not part of the transaction. Its bytes, with
+    /// the payload still appended, are not a transaction a proof can carry.
+    #[test]
+    fn test_raw_instant_lock_proof_refuses_an_asset_lock_payload_below_version_3() {
+        for version in [1u16, 2, 0x8000, 0xffff] {
+            let mut transaction_bytes = hex::decode(CORE_ASSET_LOCK).unwrap();
+            transaction_bytes[0..2].copy_from_slice(&version.to_le_bytes());
+            let raw = RawInstantLockProof {
+                instant_lock: BinaryData::new(hex::decode(CORE_INSTANT_LOCK).unwrap()),
+                transaction: BinaryData::new(transaction_bytes),
+                output_index: 0,
+            };
+            assert!(
+                InstantAssetLockProof::try_from(raw).is_err(),
+                "version {version:#06x}"
+            );
+        }
+    }
+
+    /// The real asset lock with its 1-byte payload length prefix replaced by `prefix`.
+    fn core_asset_lock_with_payload_length_prefix(prefix: &[u8]) -> Vec<u8> {
+        let canonical = hex::decode(CORE_ASSET_LOCK).unwrap();
+        // The 36-byte asset-lock payload ends the transaction, right after its length.
+        let prefix_at = canonical.len() - 37;
+        assert_eq!(canonical[prefix_at], 36);
+        [&canonical[..prefix_at], prefix, &canonical[prefix_at + 1..]].concat()
+    }
+
+    fn decode_core_asset_lock(
+        transaction_bytes: Vec<u8>,
+    ) -> Result<InstantAssetLockProof, ProtocolError> {
+        InstantAssetLockProof::try_from(RawInstantLockProof {
+            instant_lock: BinaryData::new(hex::decode(CORE_INSTANT_LOCK).unwrap()),
+            transaction: BinaryData::new(transaction_bytes),
+            output_index: 0,
+        })
+    }
+
+    /// Neither the InstantSend lock nor the transition's signature covers an
+    /// asset lock's payload length prefix, and every node has always read the
+    /// payload whatever length the prefix announces. A proof with another
+    /// prefix funds the same identity from the same transaction, so a node
+    /// that refused it would disagree with the others on a paid transition.
+    #[test]
+    fn test_raw_instant_lock_proof_reads_an_asset_lock_payload_whatever_its_length_prefix() {
+        let canonical = hex::decode(CORE_ASSET_LOCK).unwrap();
+        for prefix in [&[0x23][..], &[0x25], &[0x00], &[0xfc], &[0xfd, 0x00, 0x01]] {
+            let proof = decode_core_asset_lock(core_asset_lock_with_payload_length_prefix(prefix))
+                .unwrap_or_else(|e| panic!("prefix {prefix:02x?}: {e}"));
+            assert_eq!(
+                dashcore::consensus::serialize(proof.transaction()),
+                canonical,
+                "prefix {prefix:02x?}"
+            );
+            assert_eq!(
+                proof.transaction().txid().to_string(),
+                "81a1d138a3af6271d7fc4fef44cfd4d3b68fc8028dc208053bdae59f5dcc5581"
+            );
+            assert_eq!(
+                proof.create_identifier().unwrap(),
+                Identifier::from_string(
+                    "HY8jYYsTJxHPcuYreupv4Fb4nvdPRZfV6GoxybLt6vhu",
+                    platform_value::string_encoding::Encoding::Base58,
+                )
+                .unwrap()
+            );
+        }
+    }
+
+    /// What no node ever decoded stays undecodable: a non-minimal length
+    /// prefix, a byte after the asset-lock payload, whether or not the prefix
+    /// counts it, and the payload after a classic transaction, which has none.
+    #[test]
+    fn test_raw_instant_lock_proof_refuses_an_asset_lock_with_bytes_its_payload_does_not_read() {
+        let mut appended = hex::decode(CORE_ASSET_LOCK).unwrap();
+        appended.push(0);
+        let mut counted = core_asset_lock_with_payload_length_prefix(&[37]);
+        counted.push(0);
+        let mut classic = hex::decode(CORE_ASSET_LOCK).unwrap();
+        classic[2..4].fill(0);
+        for (case, transaction_bytes) in [
+            (
+                "a non-minimal prefix",
+                core_asset_lock_with_payload_length_prefix(&[0xfd, 36, 0]),
+            ),
+            ("a byte after the payload", appended),
+            ("a byte after the payload, counted by the prefix", counted),
+            ("an asset-lock payload after a classic transaction", classic),
+        ] {
+            assert!(decode_core_asset_lock(transaction_bytes).is_err(), "{case}");
+        }
     }
 }
 

@@ -277,6 +277,8 @@ fn parse_where_clause(clause_js: &JsValue) -> Result<WhereClause, JsValue> {
         "BetweenExcludeRight" => WhereOperator::BetweenExcludeRight,
         "In" => WhereOperator::In,
         "StartsWith" => WhereOperator::StartsWith,
+        "Contains" => WhereOperator::Contains,
+        "ContainsAny" => WhereOperator::ContainsAny,
         _ => {
             return Err(format_error_with_context(
                 ErrorCategory::InvalidInput,
