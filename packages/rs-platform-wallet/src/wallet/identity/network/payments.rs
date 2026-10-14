@@ -4976,6 +4976,9 @@ mod tests {
         stale: ReloadPersister,
         current: ReloadPersister,
         loads: std::sync::atomic::AtomicUsize,
+        /// When set, the second `load` (the loader's re-read) reports that
+        /// it has started and waits to be released.
+        reread_gate: Mutex<Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
     }
 
     impl PlatformWalletPersistence for SequencedHost {
@@ -5007,6 +5010,11 @@ mod tests {
             if self.loads.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
                 self.stale.load()
             } else {
+                let gate = self.reread_gate.lock().unwrap().take();
+                if let Some((entered, release)) = gate {
+                    let _ = entered.send(());
+                    let _ = release.recv();
+                }
                 self.current.load()
             }
         }
@@ -5079,6 +5087,7 @@ mod tests {
             stale,
             current,
             loads: std::sync::atomic::AtomicUsize::new(0),
+            reread_gate: Mutex::new(None),
         });
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
@@ -5118,6 +5127,89 @@ mod tests {
             2,
             "the stale snapshot is re-read once, under the lock"
         );
+    }
+
+    /// The re-read is only current while nothing can change the host. A
+    /// same-id wallet can register, rotate an account's xpub and be removed
+    /// without moving the durable cursor entry, so no token can prove the
+    /// read is still current once the lock is released. The loader keeps the
+    /// cursor lock from the re-read through the wallet's publication instead.
+    /// A same-id registration needs that lock, so the first moment one could
+    /// run is after the re-read state is published (dashpay/platform#4302
+    /// review).
+    #[tokio::test]
+    async fn the_loader_holds_the_cursor_lock_from_its_re_read_to_publication() {
+        use std::future::Future;
+
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let (donor, donor_persister, wallet_id) = make_wallet().await;
+        establish_receival_contact(
+            &donor,
+            &donor_persister,
+            wallet_id,
+            owner,
+            contact,
+            200,
+            200,
+        )
+        .await;
+        let stale = reload_snapshot(&donor, wallet_id, owner, 1_000, None).await;
+        let current = reload_snapshot(&donor, wallet_id, owner, 1_000, None).await;
+        drop(donor);
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let host = Arc::new(SequencedHost {
+            stale,
+            current,
+            loads: std::sync::atomic::AtomicUsize::new(0),
+            reread_gate: Mutex::new(Some((entered_tx, release_rx))),
+        });
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(sdk, Arc::clone(&host), handler));
+        // The entry a removed same-id predecessor left.
+        manager
+            .durable_cursors
+            .lock()
+            .await
+            .insert(wallet_id, crate::changeset::DurableCursor::at(1_000));
+
+        let loader = tokio::spawn({
+            let manager = Arc::clone(&manager);
+            async move { manager.load_from_persistor().await }
+        });
+        tokio::task::spawn_blocking(move || entered_rx.recv())
+            .await
+            .expect("join")
+            .expect("the loader re-reads the host");
+
+        // A same-id registration queues for the cursor lock while the
+        // re-read runs.
+        let mut registration = Box::pin(manager.durable_cursors.lock());
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        assert!(
+            registration.as_mut().poll(&mut cx).is_pending(),
+            "the loader holds the cursor lock during its re-read"
+        );
+        release_tx.send(()).expect("release the re-read");
+
+        let guard = registration.await;
+        assert!(
+            manager
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet(&wallet_id)
+                .is_some(),
+            "nothing may take the cursor lock between the re-read and the publication"
+        );
+        drop(guard);
+        loader
+            .await
+            .expect("join")
+            .expect("the re-read state must load");
+        assert_eq!(host.loads.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 
     /// A backend whose `store` only buffers commits at a later `flush` that

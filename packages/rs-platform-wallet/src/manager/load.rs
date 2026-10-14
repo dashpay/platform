@@ -126,26 +126,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Vec::new();
         let mut load_error: Option<PlatformWalletError> = None;
 
-        // Each wallet's start state, with the durable entry it was re-read
-        // under when it is a fresh read (see the publication step below).
-        let mut pending: std::collections::VecDeque<(
-            WalletId,
-            ClientWalletStartState,
-            Option<crate::changeset::DurableCursor>,
-        )> = wallets
-            .into_iter()
-            .map(|(wallet_id, state)| (wallet_id, state, None))
-            .collect();
-        // A start state re-read under the durable-cursor lock, with the cursor
-        // map it was read against, reused for every wallet whose entry has not
-        // moved since.
-        let mut fresh: Option<(
-            BTreeMap<WalletId, ClientWalletStartState>,
-            BTreeMap<WalletId, crate::changeset::DurableCursor>,
-        )> = None;
+        // Each wallet's start state, and whether it was re-read under the
+        // durable-cursor lock that `held` still holds (see the publication
+        // step below).
+        let mut pending: std::collections::VecDeque<(WalletId, ClientWalletStartState, bool)> =
+            wallets
+                .into_iter()
+                .map(|(wallet_id, state)| (wallet_id, state, false))
+                .collect();
+        // The durable-cursor lock, kept from a re-read to the publication of
+        // the wallet processed from it. Nothing between the two takes the
+        // lock, and it is released before the rollback below.
+        let mut held = None;
 
-        'load: while let Some((expected_wallet_id, wallet_state, read_under)) = pending.pop_front()
-        {
+        'load: while let Some((expected_wallet_id, wallet_state, reread)) = pending.pop_front() {
             let ClientWalletStartState {
                 mut wallet,
                 mut wallet_info,
@@ -365,12 +359,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // scripts the host's account does not derive. Coverage carries no
             // xpub to check against, so the snapshot itself is replaced: under
             // the lock, where no publisher or adapter commit can move the
-            // host, the start state is read again and this wallet is
-            // processed from that read instead. A state read under an entry
-            // that has not moved since is current, so this settles in one
-            // re-read (dashpay/platform#4302 review).
+            // host, the start state is read again, and this wallet is
+            // processed from that read and published WITHOUT releasing the
+            // lock in between. A same-id wallet can only appear by being
+            // published, which takes this lock, so nothing can register,
+            // rotate an account and be removed between the read and the
+            // publication. No token stands in for that guarantee: a cursor
+            // entry does not move on account writes or same-id lifecycle
+            // changes, so it cannot prove a read is still current
+            // (dashpay/platform#4302 review).
             {
-                let mut durable_cursors = self.durable_cursors.lock().await;
+                let mut durable_cursors = match held.take() {
+                    Some(guard) => guard,
+                    None => self.durable_cursors.lock().await,
+                };
                 if self
                     .wallet_manager
                     .read()
@@ -380,36 +382,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 {
                     continue 'load;
                 }
-                if let Some(entry) = durable_cursors.get(&wallet_id).copied() {
-                    if read_under != Some(entry) {
-                        let current = fresh
-                            .as_ref()
-                            .is_some_and(|(_, seen)| seen.get(&wallet_id) == Some(&entry));
-                        if !current {
-                            let persister = Arc::clone(&self.persister);
-                            match run_blocking_load(move || persister.load()).await {
-                                Ok(state) => fresh = Some((state.wallets, durable_cursors.clone())),
-                                Err(e) => {
-                                    load_error = Some(PlatformWalletError::from_load_failure(e));
-                                    break 'load;
-                                }
-                            }
+                if !reread && durable_cursors.contains_key(&wallet_id) {
+                    let persister = Arc::clone(&self.persister);
+                    let current = match run_blocking_load(move || persister.load()).await {
+                        Ok(mut state) => state.wallets.remove(&expected_wallet_id),
+                        Err(e) => {
+                            load_error = Some(PlatformWalletError::from_load_failure(e));
+                            break 'load;
                         }
-                        let reread = fresh
-                            .as_mut()
-                            .and_then(|(wallets, _)| wallets.remove(&expected_wallet_id));
-                        match reread {
-                            Some(state) => {
-                                pending.push_front((expected_wallet_id, state, Some(entry)))
-                            }
-                            None => tracing::warn!(
-                                wallet_id = %hex::encode(expected_wallet_id),
-                                "load: the wallet is no longer on the host; not publishing \
-                                 its stale snapshot"
-                            ),
+                    };
+                    match current {
+                        Some(state) => {
+                            pending.push_front((expected_wallet_id, state, true));
+                            held = Some(durable_cursors);
                         }
-                        continue 'load;
+                        None => tracing::warn!(
+                            wallet_id = %hex::encode(expected_wallet_id),
+                            "load: the wallet is no longer on the host; not publishing its \
+                             stale snapshot"
+                        ),
                     }
+                    continue 'load;
                 }
                 // Coverage for a receival account this wallet did not restore
                 // vouches for scripts nothing will watch; it is dropped here,
@@ -581,6 +574,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 }
             }
         }
+        // A `break` between a re-read and its publication leaves the lock
+        // held; the rollback must not run under it.
+        drop(held);
 
         if let Some(err) = load_error {
             // Walk back every wallet committed in this call so the
