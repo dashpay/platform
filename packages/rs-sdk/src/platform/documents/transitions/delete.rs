@@ -5,9 +5,10 @@ use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::action_fees::agreement::DocumentActionFeeAgreement;
-use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
+use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{
-    index_only_row_commits_created_at, DocumentProperty, DocumentPropertyType, DocumentTypeRef,
+    index_only_row_commits_created_at, missing_required_value_path, undeclared_value_path,
+    DocumentTypeRef,
 };
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, INITIAL_REVISION};
@@ -482,9 +483,14 @@ pub fn index_only_delete_document(
     }
     document_type.sanitize_document_properties(&mut values);
     check_index_only_delete(document_type, &values, created_at, platform_version)?;
-    let mut document = document_type
-        .create_document_from_data(values.into(), owner_id, 0, 0, [0u8; 32], platform_version)
-        .map_err(|e| Error::Generic(format!("Failed to build document: {e}")))?;
+    let mut document = document_type.create_document_from_data(
+        values.into(),
+        owner_id,
+        0,
+        0,
+        [0u8; 32],
+        platform_version,
+    )?;
     document.set_id(document_id);
     // `create_document_from_data` stamps the current time on a type that
     // requires one. A delete names the stored entry, so it carries the
@@ -507,10 +513,7 @@ fn check_index_only_delete(
             "Documents of type {name:?} can not be deleted"
         )));
     }
-    if let Some(path) = undeclared_property(
-        &mut values.iter().map(|(name, value)| (name.as_str(), value)),
-        &|name| document_type.properties().get(name),
-    ) {
+    if let Some(path) = undeclared_value_path(document_type, values) {
         return Err(Error::Generic(format!(
             "Document type {name:?} has no property {path:?} to delete by"
         )));
@@ -526,47 +529,13 @@ fn check_index_only_delete(
              document was created with"
         )));
     }
-    let mut carried = values.clone();
-    document_type
-        .regenerate_generated_properties(&mut carried, platform_version)
-        .map_err(|e| Error::Generic(format!("Failed to generate document properties: {e}")))?;
-    let carried = Value::from(carried);
-    if let Some(path) = document_type.required_fields().iter().find(|path| {
-        !path.starts_with('$') && matches!(carried.get_optional_value_at_path(path), Ok(None))
-    }) {
+    if let Some(path) = missing_required_value_path(document_type, values, platform_version)? {
         return Err(Error::Generic(format!(
             "Document type {name:?} requires {path:?}: the delete needs every value the \
              document was created with"
         )));
     }
     Ok(())
-}
-
-/// The path of the first value the schema does not declare, looking inside
-/// declared objects. A `$` name is never declared. A value of the wrong
-/// kind for its property (a map where the schema has no object, or the
-/// other way round) is left for Platform to refuse.
-fn undeclared_property<'a>(
-    values: &mut dyn Iterator<Item = (&'a str, &'a Value)>,
-    declared: &dyn Fn(&str) -> Option<&'a DocumentProperty>,
-) -> Option<String> {
-    for (name, value) in values {
-        let Some(property) = declared(name).filter(|_| !name.starts_with('$')) else {
-            return Some(name.to_string());
-        };
-        let (DocumentPropertyType::Object(members), Value::Map(entries)) =
-            (&property.property_type, value)
-        else {
-            continue;
-        };
-        let mut nested = entries
-            .iter()
-            .filter_map(|(key, value)| key.as_text().map(|key| (key, value)));
-        if let Some(path) = undeclared_property(&mut nested, &|name| members.get(name)) {
-            return Some(format!("{name}.{path}"));
-        }
-    }
-    None
 }
 
 #[cfg(test)]
@@ -673,6 +642,53 @@ mod tests {
         let mut partial = like.properties().clone();
         partial.remove(&required);
         let error = build(partial).expect_err("a missing required property is refused");
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("requires {required:?}")),
+            "{error}"
+        );
+    }
+
+    /// A builder made from a full document runs the same checks before
+    /// `sign()` reaches the nonce cache.
+    #[test]
+    fn should_refuse_an_index_only_document_with_values_a_delete_could_not_carry() {
+        let contract = likes_contract();
+        let mut undeclared = like_document(&contract);
+        undeclared.set("unknown", Value::Bool(true));
+        let builder = DocumentDeleteTransitionBuilder::from_document(
+            Arc::clone(&contract),
+            "like".to_string(),
+            &undeclared,
+        );
+        let error = builder
+            .resolve_document_for_deletion(PlatformVersion::latest())
+            .expect_err("an undeclared value is refused before any nonce work");
+        assert!(
+            error.to_string().contains("has no property \"unknown\""),
+            "{error}"
+        );
+
+        let like_type = contract
+            .document_type_for_name("like")
+            .expect("like doctype exists");
+        let mut partial = like_document(&contract);
+        let required = like_type
+            .required_fields()
+            .iter()
+            .find(|name| !name.starts_with('$') && partial.properties().contains_key(*name))
+            .expect("the like type has a required property")
+            .clone();
+        partial.properties_mut().remove(&required);
+        let builder = DocumentDeleteTransitionBuilder::from_document(
+            Arc::clone(&contract),
+            "like".to_string(),
+            &partial,
+        );
+        let error = builder
+            .resolve_document_for_deletion(PlatformVersion::latest())
+            .expect_err("a missing required property is refused before any nonce work");
         assert!(
             error
                 .to_string()
