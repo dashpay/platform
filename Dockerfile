@@ -342,18 +342,26 @@ RUN --mount=type=secret,id=AWS \
     source /root/env; \
     if [ "$TARGETARCH" = "amd64" ]; then \
     CARGO_BINSTALL_ARCH="x86_64-unknown-linux-musl"; \
+    CARGO_BINSTALL_SHA256="a81e0d53a6e9f45cba974a93a0dd8fe42f3acb4119b5eb99d47d49fe967e90dc"; \
     elif [ "$TARGETARCH" = "arm64" ]; then \
     CARGO_BINSTALL_ARCH="aarch64-unknown-linux-musl"; \
+    CARGO_BINSTALL_SHA256="e37e564e0d2992b1bb282805fa839fc9a1ffde698c35b66af58a0d23f537af30"; \
     else \
     echo "Unsupported architecture: $TARGETARCH"; exit 1; \
     fi; \
     # Construct download URL
     DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
-    # Download and extract the cargo-binstall binary
-    curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;  \
-    ./cargo-binstall -y --force cargo-binstall@${BINSTALL_VERSION}; \
-    rm ./cargo-binstall; \
-    cargo binstall -V
+    # Install the verified prebuilt binary directly. Self-installing it again
+    # adds another download and can fall back to an unlocked source build.
+    BINSTALL_TMP="$(mktemp -d)"; \
+    curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-delay 2 \
+        --connect-timeout 15 --max-time 120 \
+        "$DOWNLOAD_URL" -o "$BINSTALL_TMP/cargo-binstall.tgz"; \
+    echo "$CARGO_BINSTALL_SHA256  $BINSTALL_TMP/cargo-binstall.tgz" | sha256sum -c -; \
+    tar --no-same-owner -xzf "$BINSTALL_TMP/cargo-binstall.tgz" -C "$BINSTALL_TMP" cargo-binstall; \
+    install -m 0755 "$BINSTALL_TMP/cargo-binstall" "${CARGO_HOME}/bin/cargo-binstall"; \
+    rm -rf "$BINSTALL_TMP"; \
+    cargo binstall -V | grep -Fx "${BINSTALL_VERSION}"
 
 RUN --mount=type=secret,id=AWS \
     source /root/env; \
