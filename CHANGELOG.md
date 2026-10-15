@@ -12,6 +12,13 @@
   rust-dashcore API, restoring native SDK builds while preserving canonical bytes.
 - **drive-abci:** preserve the fixed 48-byte quorum-key disk encoding independently
   of the BLS backend, with historical saved-state and checkpoint regression fixtures.
+- **platform-wallet-storage:** the V021 migration rebuilds Core history by
+  rescanning it instead of repairing stored records in place: it deletes every
+  wallet's Core transactions, UTXOs and instant locks and rewinds the filter
+  checkpoint to just below the wallet's birth height, so the next SPV start
+  records the history again with correct input details, net amounts and
+  directions. Asset locks, address pools, identities, DashPay and metadata are
+  kept; unconfirmed transactions return only if the network relays them again.
 
 ### Changed
 
@@ -26,6 +33,14 @@
   ECDSA signatures to `dashcore::sign_message::MessageSignature` (the accepted
   signatures and the encoded bytes are unchanged), and masternode payload
   handling to the version-3 ProRegTx / ProUpServTx types.
+- **Rust dependencies:** on top of that `dev` revision, pin the reworked
+  [rust-dashcore#1112](https://github.com/dashpay/rust-dashcore/pull/1112)
+  (`9ea53592`): restored spend claims are held once per wallet and guard every
+  funding account, including one registered after the wallet is loaded.
+- **platform-wallet-storage (breaking Rust API):** `WalletStorageError` is
+  `#[non_exhaustive]`, so a `match` on it outside the crate needs a wildcard
+  arm. New variants: `TransactionBodyConflict`, `UnknownWalletNetwork` and
+  `NetAmountOverflow`.
 - **platform-wallet:** a chain reorganization reported by key-wallet
   (`WalletEvent::ChainTruncated`) updates the in-memory balance but is not yet
   mirrored to persisted wallet state

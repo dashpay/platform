@@ -2,7 +2,7 @@
 
 //! A sent-payment verdict must survive a process restart.
 //!
-//! The wallet-event adapter is the single writer of DashPay sent-payment
+//! The wallet-event adapter is the live writer of DashPay sent-payment
 //! verdicts: when a sweep proves a broadcast lost a double-spend, the adapter
 //! flips the payment to `Failed` on the same `store()` round that removes the
 //! loser's record. That round is the ONLY chance — upstream selects losers
