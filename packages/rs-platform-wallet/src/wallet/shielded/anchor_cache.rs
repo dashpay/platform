@@ -27,12 +27,18 @@
 //!   that Platform will ever record already was. Any tree growth may add a
 //!   newer checkpoint the set lacks, so it retires the set.
 //!
+//! Both guards compare against a fresh fetch from an equally current node. A
+//! node the SDK still accepts as up to date may lag a block behind and omit
+//! the newest checkpoint; the cache then keeps that older, still recorded
+//! anchor for up to the TTL, where a fresh fetch would retry the node's luck.
+//!
 //! The spend path also refetches when the cached set covers none of the
 //! wallet's checkpoints, and drops the cache after any failed spend. The
 //! stranded-reservation release pass never reads the cache (its fund-safety
 //! argument needs a set fetched right before its note scan); it only fills it.
 
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -50,6 +56,17 @@ pub const RECORDED_ANCHOR_CACHE_TTL: Duration = Duration::from_secs(30);
 pub struct RecordedAnchorCache {
     ttl: Duration,
     state: Mutex<CacheState>,
+    prefetch_in_flight: AtomicBool,
+}
+
+/// Held by the one background prefetch in flight; released on drop, so also
+/// on error and cancellation.
+pub(crate) struct PrefetchGuard<'a>(&'a AtomicBool);
+
+impl Drop for PrefetchGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 
 #[derive(Debug, Default)]
@@ -131,6 +148,7 @@ impl RecordedAnchorCache {
         Self {
             ttl,
             state: Mutex::new(CacheState::default()),
+            prefetch_in_flight: AtomicBool::new(false),
         }
     }
 
@@ -170,6 +188,15 @@ impl RecordedAnchorCache {
             fetch_started,
             tree_size,
         });
+    }
+
+    /// Claim the background prefetch slot, or `None` while another prefetch
+    /// is in flight. Spends and the release pass never take it.
+    pub(crate) fn try_begin_prefetch(&self) -> Option<PrefetchGuard<'_>> {
+        self.prefetch_in_flight
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| PrefetchGuard(&self.prefetch_in_flight))
     }
 
     /// Drop any cached set, and any still in flight; the next spend fetches
@@ -289,6 +316,15 @@ mod tests {
         cache.invalidate();
 
         assert!(cache.get(10).is_none());
+    }
+
+    #[test]
+    fn should_allow_one_prefetch_at_a_time() {
+        let cache = RecordedAnchorCache::new();
+        let first = cache.try_begin_prefetch().expect("slot free");
+        assert!(cache.try_begin_prefetch().is_none(), "overlapping prefetch");
+        drop(first);
+        assert!(cache.try_begin_prefetch().is_some(), "released on drop");
     }
 
     /// A fetch sent before a failed spend invalidated the cache may return

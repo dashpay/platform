@@ -493,7 +493,8 @@ impl NetworkShieldedCoordinator {
     /// screen opens — so the send itself can skip the round trip that
     /// downloads and proof-verifies Platform's recorded anchor set.
     ///
-    /// No-op when the cache already holds a set the next spend could use.
+    /// No-op when the cache already holds a set the next spend could use, or
+    /// while another prefetch is in flight.
     /// The set stays usable for [`RECORDED_ANCHOR_CACHE_TTL`] and only while
     /// no sync appends to the commitment tree; a send after that fetches as
     /// usual. Purely an optimization — an error here just means the send
@@ -510,6 +511,9 @@ impl NetworkShieldedCoordinator {
         if self.anchor_cache.get(tree_size).is_some() {
             return Ok(());
         }
+        let Some(_in_flight) = self.anchor_cache.try_begin_prefetch() else {
+            return Ok(());
+        };
         let fetch_started = FetchStamp::now();
         let recorded = fetch_recorded_anchor_set(&self.sdk).await?;
         self.anchor_cache
@@ -3816,6 +3820,26 @@ mod tests {
             Arc::ptr_eq(&cached, &again),
             "warm prefetch must not refetch"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A prefetch that overlaps one already in flight doesn't fetch again.
+    #[tokio::test]
+    async fn prefetch_recorded_anchors_skips_while_another_is_in_flight() {
+        let dir = temp_dir("prefetch_in_flight");
+        let coordinator =
+            coordinator_with_one_wallet_on(&dir, sdk_with_recorded_anchors(&[[0x5D; 32]]).await)
+                .await;
+        let tree_size = coordinator.store.read().await.tree_size().unwrap();
+
+        let in_flight = coordinator.anchor_cache().try_begin_prefetch().unwrap();
+        coordinator.prefetch_recorded_anchors().await.unwrap();
+        assert!(coordinator.anchor_cache().get(tree_size).is_none());
+
+        drop(in_flight);
+        coordinator.prefetch_recorded_anchors().await.unwrap();
+        assert!(coordinator.anchor_cache().get(tree_size).is_some());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

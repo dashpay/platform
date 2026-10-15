@@ -2619,8 +2619,8 @@ async fn extract_spends_and_anchor<S: ShieldedStore>(
 ///    covers none of the checkpoints) `fetch` a fresh set OUTSIDE the store
 ///    lock, record it in the cache, and probe against it.
 ///
-/// See [`RecordedAnchorCache`] for why a cached set never selects a different
-/// anchor than a fresh fetch would.
+/// See [`RecordedAnchorCache`] for why a cached set selects the same anchor a
+/// fresh fetch from an equally current node would.
 async fn select_spends_with_anchor_cache<S, F, Fut>(
     store: &Arc<RwLock<S>>,
     anchor_cache: &RecordedAnchorCache,
