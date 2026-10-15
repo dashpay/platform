@@ -42,7 +42,7 @@ use crate::contact_request::CONTACT_REQUEST_STORAGE;
 use crate::error::*;
 use crate::established_contact::ESTABLISHED_CONTACT_STORAGE;
 use crate::handle::*;
-use crate::runtime::block_on_worker;
+use crate::runtime::{block_on_worker, runtime};
 use crate::types::*;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
@@ -708,6 +708,285 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_txid.cast::<u8>(), 32);
     }
     PlatformWalletFFIResult::ok()
+}
+
+// ---------------------------------------------------------------------------
+// Prepared (two-step) payment
+// ---------------------------------------------------------------------------
+
+/// A prepared contact payment together with the wallet it was prepared on,
+/// held in `PREPARED_DASHPAY_PAYMENT_STORAGE` between prepare and
+/// send / abandon. Keeping the wallet lets `free` return the address and the
+/// inputs without a wallet handle.
+pub struct FFIPreparedDashPayPayment {
+    pub(crate) wallet: std::sync::Arc<platform_wallet::PlatformWallet>,
+    pub(crate) payment:
+        platform_wallet::PreparedDashPayPayment<platform_wallet::broadcaster::SpvBroadcaster>,
+}
+
+/// Abandon `prepared` through the wallet it was prepared on.
+fn abandon_prepared(prepared: FFIPreparedDashPayPayment) {
+    let FFIPreparedDashPayPayment { wallet, payment } = prepared;
+    block_on_worker(async move {
+        wallet
+            .identity()
+            .dashpay()
+            .abandon_prepared_payment(payment)
+            .await
+    });
+}
+
+/// Sign a Dash payment to an established contact WITHOUT broadcasting it,
+/// so the host can show the exact network fee and total before the user
+/// confirms.
+///
+/// Same funding, signing and seed-binding gate as
+/// [`platform_wallet_send_dashpay_payment`]. On success `*out_payment` holds
+/// a handle the caller must pass to exactly one of
+/// [`platform_wallet_send_prepared_dashpay_payment`],
+/// [`platform_wallet_abandon_prepared_dashpay_payment`] or
+/// [`platform_wallet_prepared_dashpay_payment_free`]; until then the funding
+/// inputs stay reserved and the contact's next address stays claimed.
+///
+/// A handle held while the wallet processes `RESERVATION_MAX_AGE_BLOCKS`
+/// blocks is refused at send time with `ErrorStaleReservationToken` (34),
+/// nothing sent, inputs and address released: prepare again.
+///
+/// # Safety
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle`, pinned by the caller for this call only.
+/// - `out_payment`, `out_fee_duffs` and `out_total_duffs` must be valid
+///   writable pointers; they are written only on success.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_prepare_dashpay_payment(
+    wallet_handle: Handle,
+    from_identity_id: *const u8,
+    to_contact_identity_id: *const u8,
+    amount_duffs: u64,
+    memo: *const c_char,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_payment: *mut Handle,
+    out_fee_duffs: *mut u64,
+    out_total_duffs: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(core_signer_handle);
+    check_ptr!(out_payment);
+    check_ptr!(out_fee_duffs);
+    check_ptr!(out_total_duffs);
+    unsafe { *out_payment = NULL_HANDLE };
+
+    let from_id = unwrap_result_or_return!(unsafe { read_identifier(from_identity_id) });
+    let to_id = unwrap_result_or_return!(unsafe { read_identifier(to_contact_identity_id) });
+    let memo_str: Option<String> = if memo.is_null() {
+        None
+    } else {
+        Some(unwrap_result_or_return!(unsafe { CStr::from_ptr(memo) }.to_str()).to_string())
+    };
+
+    let signer_addr = core_signer_handle as usize;
+    let wallet =
+        unwrap_option_or_return!(PLATFORM_WALLET_STORAGE.with_item(wallet_handle, Clone::clone));
+    let wallet_id = wallet.wallet_id();
+    let network = wallet.network();
+    // SAFETY: as in `platform_wallet_send_dashpay_payment` — the caller pins
+    // the resolver for this call, and both wrappers are dropped when the
+    // worker task completes, before this function returns.
+    let signer = unsafe {
+        MnemonicResolverCoreSigner::new(
+            signer_addr as *mut MnemonicResolverHandle,
+            wallet_id,
+            network,
+        )
+    };
+    let provider = unsafe {
+        resolver_contact_crypto_provider(
+            signer_addr as *mut MnemonicResolverHandle,
+            wallet_id,
+            network,
+        )
+    };
+    let task_wallet = std::sync::Arc::clone(&wallet);
+    let result = block_on_worker(async move {
+        task_wallet
+            .identity()
+            .dashpay()
+            .prepare_payment(
+                task_wallet.core(),
+                &from_id,
+                &to_id,
+                amount_duffs,
+                memo_str,
+                &signer,
+                &provider,
+            )
+            .await
+    });
+    let payment = match result {
+        Ok(payment) => payment,
+        Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                e.to_string(),
+            );
+        }
+        Err(e) => return e.into(),
+    };
+    // The signer ran with no gate held, so the wallet may have been removed
+    // (and its teardown sweep already run) meanwhile. Check liveness and
+    // publish under this generation's gate, as `core_wallet_tx_builder_finalize`
+    // does, so no handle to a removed generation is ever published.
+    let (lifecycle, wallet_is_live) = runtime().block_on(async {
+        let gate = wallet.core().generation_payment_guard().await;
+        let live = wallet.core().is_current_generation().await;
+        (gate, live)
+    });
+    if !wallet_is_live {
+        drop(lifecycle);
+        abandon_prepared(FFIPreparedDashPayPayment {
+            wallet: std::sync::Arc::clone(&wallet),
+            payment,
+        });
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::NotFound,
+            "wallet is no longer registered in the manager (removed or re-created while the \
+             payment was being signed); no payment handle was published"
+                .to_string(),
+        );
+    }
+    let fee = payment.fee_duffs();
+    let total = payment.total_duffs();
+    let handle = PREPARED_DASHPAY_PAYMENT_STORAGE.insert(FFIPreparedDashPayPayment {
+        wallet: std::sync::Arc::clone(&wallet),
+        payment,
+    });
+    drop(lifecycle);
+    unsafe {
+        *out_payment = handle;
+        *out_fee_duffs = fee;
+        *out_total_duffs = total;
+    }
+    PlatformWalletFFIResult::ok()
+}
+
+/// Broadcast a prepared contact payment and record it. Consumes the handle
+/// on every outcome.
+///
+/// A definitive rejection (`ErrorTransactionBroadcastRejected`) or a stale
+/// handle (`ErrorStaleReservationToken`, 34) sent nothing and released the
+/// inputs and the address; an unconfirmed outcome may have reached the
+/// network and keeps both. `wallet_handle` must name the wallet the payment
+/// was prepared on, still registered: otherwise nothing is sent and the
+/// payment is abandoned.
+///
+/// # Safety
+/// - `out_txid` must point to 32 writable bytes; `out_fee_duffs` may be NULL.
+///   Both are written only on success.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_send_prepared_dashpay_payment(
+    wallet_handle: Handle,
+    payment_handle: Handle,
+    out_txid: *mut [u8; 32],
+    out_fee_duffs: *mut u64,
+) -> PlatformWalletFFIResult {
+    // Ownership crosses into this call; every failure below abandons —
+    // including a bad output pointer, so a caller that already dropped its
+    // copy of the handle never strands the payment.
+    let prepared =
+        unwrap_option_or_return!(PREPARED_DASHPAY_PAYMENT_STORAGE.remove(payment_handle));
+    if out_txid.is_null() {
+        abandon_prepared(prepared);
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "out_txid is null; the payment was NOT broadcast and was abandoned".to_string(),
+        );
+    }
+    let Some(wallet) = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, Clone::clone) else {
+        abandon_prepared(prepared);
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            "invalid platform wallet handle".to_string(),
+        );
+    };
+    if !wallet
+        .core()
+        .is_same_generation(prepared.payment.core_wallet())
+    {
+        abandon_prepared(prepared);
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "payment was prepared by a different wallet generation".to_string(),
+        );
+    }
+
+    let FFIPreparedDashPayPayment {
+        wallet: origin,
+        payment,
+    } = prepared;
+    let result = block_on_worker(async move {
+        // Hold the generation's lifecycle gate across the liveness check AND
+        // the send, as `core_wallet_broadcast_signed_transaction` does: a
+        // removed wallet's transaction must never reach the network, and a
+        // teardown cannot interleave between the check and the broadcast.
+        let core = origin.core().clone();
+        let _lifecycle = core.generation_payment_guard().await;
+        if !core.is_current_generation().await {
+            origin
+                .identity()
+                .dashpay()
+                .abandon_prepared_payment(payment)
+                .await;
+            return Err(None);
+        }
+        origin
+            .identity()
+            .dashpay()
+            .send_prepared_payment(payment)
+            .await
+            .map_err(Some)
+    });
+    let (txid, _entry, fee_duffs) = match result {
+        Ok(sent) => sent,
+        Err(None) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::NotFound,
+                "wallet is no longer registered in the manager (removed or re-created); the \
+                 payment was NOT broadcast and was abandoned"
+                    .to_string(),
+            );
+        }
+        Err(Some(e)) => return e.into(),
+    };
+    if !out_fee_duffs.is_null() {
+        unsafe { *out_fee_duffs = fee_duffs };
+    }
+    use dashcore::hashes::Hash;
+    let bytes = txid.to_raw_hash().to_byte_array();
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out_txid.cast::<u8>(), 32);
+    }
+    PlatformWalletFFIResult::ok()
+}
+
+/// Drop a prepared contact payment without broadcasting it: its inputs are
+/// released and its address returns to the pool. Consumes the handle.
+#[no_mangle]
+pub extern "C" fn platform_wallet_abandon_prepared_dashpay_payment(
+    payment_handle: Handle,
+) -> PlatformWalletFFIResult {
+    let prepared =
+        unwrap_option_or_return!(PREPARED_DASHPAY_PAYMENT_STORAGE.remove(payment_handle));
+    abandon_prepared(prepared);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Idempotent cleanup for a prepared-payment handle: abandons it if it is
+/// still held, does nothing otherwise.
+#[no_mangle]
+pub extern "C" fn platform_wallet_prepared_dashpay_payment_free(payment_handle: Handle) {
+    if let Some(prepared) = PREPARED_DASHPAY_PAYMENT_STORAGE.remove(payment_handle) {
+        abandon_prepared(prepared);
+    }
 }
 
 /// Glue adapter implementing platform-wallet's [`ContactCryptoProvider`] over

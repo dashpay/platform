@@ -914,7 +914,7 @@ fn record_received_payment_totals(
 /// sent-payment reconstruction depends on: used indices chain within the gap
 /// limit. Extra lookahead addresses the selection may have generated are
 /// left in place — generated-but-available entries are harmless.
-fn return_contact_payment_address_to_pool(
+pub(super) fn return_contact_payment_address_to_pool(
     account: &mut key_wallet::managed_account::ManagedCoreFundsAccount,
     payment_address: &dashcore::Address,
 ) {
@@ -7657,5 +7657,455 @@ mod tests {
             "Σin − Σout equals the size-based fee for a 1-input, 2-output \
              type-3 tx at 1 duff/byte when change is emitted"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Prepared (two-step) contact payments
+    // -----------------------------------------------------------------------
+
+    /// The same wallet's core handle, re-specialized onto a test broadcaster:
+    /// shares the manager and the generation, so the age guard and the
+    /// in-broadcast fence see the real wallet.
+    fn core_with<Bc: crate::broadcaster::TransactionBroadcaster>(
+        real: &crate::CoreWallet<crate::broadcaster::SpvBroadcaster>,
+        broadcaster: Bc,
+    ) -> crate::CoreWallet<Bc> {
+        crate::CoreWallet::new(
+            Arc::clone(&real.sdk),
+            Arc::clone(&real.wallet_manager),
+            real.wallet_id,
+            Arc::new(broadcaster),
+            Arc::clone(real.generation()),
+        )
+    }
+
+    fn test_signer_and_provider() -> (
+        SeedSigner,
+        crate::wallet::identity::network::contact_requests::SeedCryptoProvider,
+    ) {
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid mnemonic")
+            .to_seed("");
+        (
+            SeedSigner::new(seed, Network::Testnet),
+            crate::wallet::identity::network::contact_requests::SeedCryptoProvider::from_seed(
+                seed,
+                Network::Testnet,
+            ),
+        )
+    }
+
+    async fn external_used_indices<P: PlatformWalletPersistence + 'static>(
+        manager: &Arc<PlatformWalletManager<P>>,
+        wallet_id: WalletId,
+        owner_id: Identifier,
+        contact_id: Identifier,
+    ) -> Vec<u32> {
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let wm = wallet.identity().wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        let account = info
+            .core_wallet
+            .accounts
+            .dashpay_external_accounts
+            .get(&DashpayAccountKey {
+                index: 0,
+                user_identity_id: owner_id.to_buffer(),
+                friend_identity_id: contact_id.to_buffer(),
+            })
+            .expect("external account present");
+        let pools = account.managed_account_type().address_pools();
+        pools
+            .first()
+            .expect("external pool")
+            .used_indices
+            .iter()
+            .copied()
+            .collect()
+    }
+
+    fn persisted_external_pool_snapshots(persister: &RecordingPersister) -> usize {
+        persister
+            .stores
+            .lock()
+            .unwrap()
+            .iter()
+            .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
+            .filter(|entry| {
+                matches!(
+                    entry.account_type,
+                    key_wallet::account::AccountType::DashpayExternalAccount { .. }
+                )
+            })
+            .count()
+    }
+
+    /// Prepare reports the exact fee before anything is sent, and the send
+    /// broadcasts that very transaction and records the payment.
+    #[tokio::test]
+    async fn prepared_payment_sends_the_transaction_whose_fee_it_showed() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xD1, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let core = core_with(wallet_arc.core(), AcceptingBroadcaster);
+
+        persister.stores.lock().unwrap().clear();
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("a funded wallet prepares the payment");
+        let fee = prepared.fee_duffs();
+        let prepared_txid = prepared.txid();
+        assert!(fee > 0, "a signed transaction pays a fee");
+        assert_eq!(prepared.total_duffs(), 50_000 + fee);
+        assert_eq!(
+            persisted_external_pool_snapshots(&persister),
+            0,
+            "nothing is persisted while the payment only waits for confirmation"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0],
+            "the address is claimed in memory, so a second prepare gets another one"
+        );
+
+        let (txid, entry, sent_fee) = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect("the accepting broadcaster takes it");
+        assert_eq!(txid, prepared_txid, "the shown transaction is the sent one");
+        assert_eq!(
+            sent_fee, fee,
+            "the fee cannot move between confirm and send"
+        );
+        assert_eq!(entry.amount_duffs, 50_000);
+        assert!(
+            persisted_external_pool_snapshots(&persister) >= 1,
+            "the used flip is persisted before the broadcast"
+        );
+        let recorded = {
+            let wm = iw.wallet_manager.read().await;
+            wm.get_wallet_info(&wallet_id)
+                .and_then(|info| info.identity_manager.managed_identity(&owner_id))
+                .map(|identity| identity.dashpay().payments.contains_key(&txid.to_string()))
+        };
+        assert_eq!(
+            recorded,
+            Some(true),
+            "the payment is recorded on the sender"
+        );
+    }
+
+    /// Abandoning frees the inputs and the address: the next prepare can
+    /// spend the same coins and pays to the same, never exposed, address.
+    #[tokio::test]
+    async fn abandoned_prepared_payment_frees_its_inputs_and_address() {
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        // One coin: while it is reserved nothing else can fund a payment.
+        fund_bip44_account_0(&manager, wallet_id, 0xD2, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let core = core_with(wallet_arc.core(), AcceptingBroadcaster);
+
+        let first = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("first prepare");
+        let first_output = first.transaction().output[0].script_pubkey.clone();
+
+        let blocked = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await;
+        assert!(
+            blocked.is_err(),
+            "the only coin is reserved by the waiting payment"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0],
+            "the failed prepare returned its own address"
+        );
+
+        iw.dashpay().abandon_prepared_payment(first).await;
+        assert!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .is_empty(),
+            "abandon returns the address"
+        );
+
+        let again = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("abandon released the reservation");
+        assert_eq!(
+            again.transaction().output[0].script_pubkey,
+            first_output,
+            "the never-broadcast address is handed out again"
+        );
+    }
+
+    /// An address the wallet saw paid on-chain while the payment waited —
+    /// another device on the same seed paid the contact there — is not paid a
+    /// second time, and stays used.
+    #[tokio::test]
+    async fn an_address_paid_meanwhile_is_neither_paid_again_nor_returned() {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xD5, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let core = core_with(wallet_arc.core(), AcceptingBroadcaster);
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        let paid_script = prepared.transaction().output[0].script_pubkey.clone();
+        let paid_address = dashcore::Address::from_script(&paid_script, Network::Testnet)
+            .expect("a P2PKH payment output");
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            let account = info
+                .core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .get_mut(&DashpayAccountKey {
+                    index: 0,
+                    user_identity_id: owner_id.to_buffer(),
+                    friend_identity_id: contact_id.to_buffer(),
+                })
+                .expect("external account");
+            let record = tx_record_with_outputs(
+                key_wallet::transaction_checking::TransactionContext::Mempool,
+                vec![(
+                    paid_address,
+                    30_000,
+                    key_wallet::managed_account::transaction_record::OutputRole::Sent,
+                )],
+            );
+            account.transactions_mut().insert(record.txid, record);
+        }
+
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("a second payment to an address already paid must not go out");
+        assert!(
+            matches!(err, PlatformWalletError::TransactionBuild(_)),
+            "got {err:?}"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0],
+            "an address paid on-chain must never be handed out again"
+        );
+        // The refusal released the inputs: the next prepare funds and takes
+        // the next address.
+        let next = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the refused send released its inputs");
+        assert_ne!(
+            next.transaction().output[0].script_pubkey,
+            paid_script,
+            "the next payment goes to a fresh address"
+        );
+    }
+
+    /// A definitive rejection releases the inputs and returns the address,
+    /// persisted — the flip went to disk before the broadcast.
+    #[tokio::test]
+    async fn rejected_prepared_payment_returns_the_address_and_inputs() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xD3, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+
+        let rejecting = core_with(wallet_arc.core(), RejectingBroadcaster);
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &rejecting,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        persister.stores.lock().unwrap().clear();
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("the rejecting broadcaster fails the send");
+        assert!(
+            matches!(err, PlatformWalletError::TransactionBroadcast(_)),
+            "got {err:?}"
+        );
+        assert!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .is_empty()
+        );
+        assert!(
+            persisted_external_pool_snapshots(&persister) >= 2,
+            "both the pre-broadcast flip and the revert are persisted"
+        );
+
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+        let retry = iw
+            .dashpay()
+            .prepare_payment(
+                &accepting,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the rejection released the only coin");
+        iw.dashpay()
+            .send_prepared_payment(retry)
+            .await
+            .expect("the retry goes out");
+    }
+
+    /// A payment held on the confirmation screen past the reservation age
+    /// bound is refused before the broadcaster runs, and gives back both its
+    /// inputs and its address so the host can prepare it again.
+    #[tokio::test]
+    async fn stale_prepared_payment_is_refused_and_released() {
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xD4, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let core = core_with(wallet_arc.core(), RejectingBroadcaster);
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        {
+            use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            let height = info.core_wallet.last_processed_height();
+            info.core_wallet.update_last_processed_height(
+                height + crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS,
+            );
+        }
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("an aged reservation must not be broadcast");
+        // The rejecting broadcaster would have answered TransactionBroadcast:
+        // StaleReservation proves the send stopped before it.
+        assert!(
+            matches!(err, PlatformWalletError::StaleReservation),
+            "got {err:?}"
+        );
+        assert!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .is_empty()
+        );
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+        iw.dashpay()
+            .prepare_payment(
+                &accepting,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the refusal released the coin for a fresh prepare");
     }
 }
