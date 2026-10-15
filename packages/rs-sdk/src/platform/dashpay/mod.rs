@@ -20,7 +20,7 @@ pub use invitation::{
     wif_network_matches, InvitationClaimStatus, InvitationError, InviterInfo, ParsedInvitation,
     MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
 };
-pub use profile::ProfileFields;
+pub use profile::{PaymentAddressUpdate, ProfileFields};
 
 use crate::{Error, Sdk};
 use dpp::prelude::Identifier;
