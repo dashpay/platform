@@ -2,9 +2,9 @@
 
 use super::block_proof::tenderdash_commit_json;
 use super::{
-    MAX_CONCURRENT_GET_BLOCKS, MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
+    BlockSource, MAX_CONCURRENT_GET_BLOCKS, MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
     MAX_EXECUTION_PROOF_REGISTRATIONS, MAX_PENDING_STATE_TRANSITION_WAITS, PlatformServiceImpl,
-    ShieldedProofFailureBudget,
+    ShieldedProofFailureBudget, SubscriptionLimits, SubscriptionService,
 };
 use crate::cache::LruResponseCache;
 use crate::clients::TenderdashClient;
@@ -52,7 +52,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use tower::ServiceBuilder;
@@ -87,6 +87,11 @@ impl PlatformServiceImpl {
         Self {
             drive_client,
             websocket_client: tenderdash_client.websocket_client(),
+            subscriptions: Arc::new(SubscriptionService::new(
+                Arc::new(BlockSource::new(tenderdash_client.clone())),
+                watch::channel(0).1,
+                SubscriptionLimits::default(),
+            )),
             tenderdash_client,
             config: Arc::clone(&config),
             platform_cache: LruResponseCache::with_capacity(

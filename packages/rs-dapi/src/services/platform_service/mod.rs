@@ -9,6 +9,7 @@ mod get_owner_transactions_in_block;
 mod get_recent_state_transition_status;
 mod get_status;
 mod shielded_proof_failure_budget;
+mod subscribe_to_state_transitions;
 mod wait_for_state_transition_result;
 
 #[cfg(test)]
@@ -21,7 +22,8 @@ use dapi_grpc::platform::v0::{
     GetBlocksResponse, GetOwnerTransactionsInBlockRequest, GetOwnerTransactionsInBlockResponse,
     GetPathElementsRequest, GetPathElementsResponse, GetRecentStateTransitionStatusRequest,
     GetRecentStateTransitionStatusResponse, GetStatusRequest, GetStatusResponse,
-    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+    SubscribeToStateTransitionsRequest, WaitForStateTransitionResultRequest,
+    WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dpp::version::PlatformVersion;
@@ -37,6 +39,9 @@ use tracing::{info, trace, warn};
 
 pub use error_mapping::TenderdashStatus;
 pub use shielded_proof_failure_budget::ShieldedProofFailureBudget;
+use subscribe_to_state_transitions::{
+    BlockSource, SubscriptionLimits, SubscriptionService, TenderdashBlocks,
+};
 
 const MAX_PENDING_STATE_TRANSITION_WAITS: usize = 1_024;
 
@@ -208,6 +213,7 @@ pub struct PlatformServiceImpl {
     pub get_blocks_permits: Arc<Semaphore>,
     pub get_owner_transactions_permits: Arc<Semaphore>,
     pub shielded_proof_failure_budget: Arc<ShieldedProofFailureBudget>,
+    pub subscriptions: Arc<SubscriptionService>,
     #[allow(dead_code)]
     // workers - dropping will cancel all spawned tasks
     workers: Workers,
@@ -256,6 +262,23 @@ impl PlatformServiceImpl {
 
         let platform_cache_bytes = config.dapi.platform_cache_bytes;
 
+        // State transition subscriptions read committed blocks from Tenderdash; new-block
+        // events only make the tip tracker look sooner.
+        let blocks = Arc::new(BlockSource::new(
+            tenderdash_client.clone() as Arc<dyn TenderdashBlocks>
+        ));
+        let (tip_sender, tip_receiver) = tokio::sync::watch::channel(0);
+        let subscriptions = Arc::new(SubscriptionService::new(
+            blocks.clone(),
+            tip_receiver,
+            SubscriptionLimits::default(),
+        ));
+        let new_blocks = tenderdash_client.subscribe_to_blocks();
+        workers.spawn(async move {
+            SubscriptionService::track_tip(blocks, tip_sender, new_blocks).await;
+            Ok::<(), DapiError>(())
+        });
+
         Self {
             drive_client,
             tenderdash_client,
@@ -278,6 +301,7 @@ impl PlatformServiceImpl {
                 MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
             )),
             shielded_proof_failure_budget: Arc::new(ShieldedProofFailureBudget::default()),
+            subscriptions,
             workers,
         }
     }
@@ -286,6 +310,29 @@ impl PlatformServiceImpl {
 #[async_trait::async_trait]
 impl Platform for PlatformServiceImpl {
     // Manually implemented methods
+
+    type subscribeToStateTransitionsStream = subscribe_to_state_transitions::SubscriptionStream;
+
+    /// Stream committed state transitions matching the request's filters.
+    ///
+    /// See [`PlatformServiceImpl::subscribe_to_state_transitions_impl`] for the details.
+    async fn subscribe_to_state_transitions(
+        &self,
+        request: Request<SubscribeToStateTransitionsRequest>,
+    ) -> Result<Response<Self::subscribeToStateTransitionsStream>, Status> {
+        let method = type_name_of_val(request.get_ref());
+        trace!(method, "Received subscribe_to_state_transitions request");
+        match self.subscribe_to_state_transitions_impl(request).await {
+            Ok(stream) => {
+                info!(method, "subscription started");
+                Ok(Response::new(stream))
+            }
+            Err(status) => {
+                warn!(method, error = %status, "subscription refused");
+                Err(status)
+            }
+        }
+    }
 
     /// Get the status of the whole system
     ///
