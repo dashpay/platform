@@ -1,3 +1,18 @@
+## [5.0.0-rc.3](https://github.com/dashpay/platform/compare/v5.0.0-rc.2...v5.0.0-rc.3) (2026-10-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive-abci:** refuse IdentityCreate identity id and key proof failures before they consume the asset lock (#5431)
+
+### Bug Fixes
+
+* **dashmate:** move stock 4.x and 5-rc Platform image tags to the release defaults on update ([#5433](https://github.com/dashpay/platform/issues/5433))
+* **dpp:** preserve wasm class mismatch diagnostics ([#5428](https://github.com/dashpay/platform/issues/5428))
+* **drive-abci:** refuse IdentityCreate identity id and key proof failures before they consume the asset lock ([#5431](https://github.com/dashpay/platform/issues/5431))
+* **platform-wallet:** store the InstantSend lock of a send on its record ([#5393](https://github.com/dashpay/platform/issues/5393))
+* **wallet-lib:** keep @yarnpkg/pnpify out of runtime dependencies so npm can install dashmate ([#5435](https://github.com/dashpay/platform/issues/5435))
+
 ## [5.0.0-rc.2](https://github.com/dashpay/platform/compare/v5.0.0-rc.1...v5.0.0-rc.2) (2026-10-14)
 
 
