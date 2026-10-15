@@ -218,16 +218,72 @@ impl SpvChannel for SpvRuntime {
 /// so the wallet sees it immediately without a separate relay step.
 pub struct SpvBroadcaster {
     spv: Arc<dyn SpvChannel>,
+    /// 32500 diagnostic build: when set, a broadcast that ends `Uncertain`
+    /// is also submitted through DAPI, whose Core node answers with the
+    /// reject reason the p2p network never sends. The verdict is only logged.
+    diagnostic_sdk: Option<Arc<dash_sdk::Sdk>>,
 }
 
 impl SpvBroadcaster {
     pub fn new(spv: Arc<SpvRuntime>) -> Self {
-        Self { spv }
+        Self {
+            spv,
+            diagnostic_sdk: None,
+        }
+    }
+
+    /// 32500 diagnostic build: see [`Self::diagnostic_sdk`].
+    pub fn with_diagnostic_sdk(mut self, sdk: Arc<dash_sdk::Sdk>) -> Self {
+        self.diagnostic_sdk = Some(sdk);
+        self
     }
 
     #[cfg(test)]
     fn from_channel(spv: Arc<dyn SpvChannel>) -> Self {
-        Self { spv }
+        Self {
+            spv,
+            diagnostic_sdk: None,
+        }
+    }
+
+    /// 32500 diagnostic build: ask a DAPI Core node for its verdict on a
+    /// transaction the p2p network did not echo. A refusal carries Core's
+    /// reject reason (e.g. `bad-txns-inputs-missingorspent`,
+    /// `mandatory-script-verify-flag-failed`, `min relay fee not met`).
+    /// If the node accepts it, the transaction is simply broadcast — which
+    /// is what the user asked for anyway.
+    async fn log_dapi_verdict(&self, transaction: &Transaction) {
+        use dash_sdk::dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
+        use dash_sdk::dapi_grpc::core::v0::BroadcastTransactionRequest;
+
+        let Some(sdk) = self.diagnostic_sdk.as_ref() else {
+            return;
+        };
+        let txid = transaction.txid();
+        let request = BroadcastTransactionRequest {
+            transaction: dashcore::consensus::serialize(transaction),
+            allow_high_fees: false,
+            bypass_limits: false,
+        };
+        let settings = RequestSettings {
+            retries: Some(2),
+            timeout: Some(Duration::from_secs(20)),
+            ..RequestSettings::default()
+        };
+        tracing::info!(txid = %txid, "32500-diag submitting the uncertain transaction through DAPI for Core's verdict");
+        match sdk.execute(request, settings).await.into_inner() {
+            Ok(response) => tracing::info!(
+                txid = %txid,
+                dapi_txid = %response.transaction_id,
+                "32500-diag DAPI accepted the transaction"
+            ),
+            Err(error) => tracing::warn!(
+                txid = %txid,
+                error = %error,
+                error_debug = ?error,
+                "32500-diag DAPI refused the transaction"
+            ),
+        }
     }
 }
 
@@ -250,11 +306,14 @@ impl TransactionBroadcaster for SpvBroadcaster {
             // must stay ambiguous. dash-spv keeps rebroadcasting it, and a
             // later echo/IS-lock/confirmation or the reservation-TTL
             // backstop reconciles the reservation.
-            Ok(BroadcastResult::Uncertain) => Err(BroadcastError::MaybeSent {
-                reason:
-                    "SPV broadcast saw no acceptance signal before dash-spv's acceptance timeout"
-                        .to_string(),
-            }),
+            Ok(BroadcastResult::Uncertain) => {
+                self.log_dapi_verdict(transaction).await;
+                Err(BroadcastError::MaybeSent {
+                    reason:
+                        "SPV broadcast saw no acceptance signal before dash-spv's acceptance timeout"
+                            .to_string(),
+                })
+            }
             // Provably never sent (per the SpvChannel error contract): no
             // bytes reached the network, so the reservation is safe to
             // release for an immediate retry.

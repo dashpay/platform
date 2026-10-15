@@ -280,9 +280,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
             inserted_in_manager.push(wallet_id);
 
-            let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(
-                &self.spv_manager,
-            )));
+            let broadcaster = Arc::new(
+                crate::broadcaster::SpvBroadcaster::new(Arc::clone(&self.spv_manager))
+                    .with_diagnostic_sdk(Arc::clone(&self.sdk)),
+            );
 
             // Give the replayed sends an owner again on the network side.
             //
