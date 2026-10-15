@@ -10,7 +10,7 @@ on:
 jobs:
   pr-title:
     name: PR title
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.DASH_LIGHT_RUNNER || 'dash-x64-light' }}
     steps:
       - name: Validate conventional PR title
         uses: amannn/action-semantic-pull-request@v5
