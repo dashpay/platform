@@ -3677,20 +3677,24 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 names: entry.dpnsNames
             )
 
-            // Upsert the DashPay profile cache for this identity.
+            // Sync the DashPay profile cache for this identity.
             //
-            // Gated on `entry.dashpayProfile != nil` — a `nil`
-            // snapshot mirrors the FFI's
-            // `dashpay_profile_present == false`, which the Rust
-            // `IdentityChangeSet::merge` policy treats as "no
-            // update" (NOT delete). DashPay doesn't expose a
-            // user-driven "delete profile" today; if it ever does,
-            // the removal must arrive via a separate signal so we
-            // know it's intentional. Match the dpns-name handling
-            // shape: a missing snapshot leaves any existing row
-            // intact.
+            // The snapshot carries Rust's current profile. For a
+            // wallet-owned identity (`identityIndex != nil`) the load
+            // path hydrated this row into Rust, so a `nil` profile is
+            // authoritative (e.g. `sync_profiles` found it deleted on
+            // Platform) and the row plus its address sidecar go.
+            // Out-of-wallet identities are never hydrated, so for them
+            // `nil` only means "not fetched" and leaves the row intact.
             if let profile = entry.dashpayProfile {
                 try upsertDashpayProfile(identityRow: row, profile: profile)
+            } else if entry.identityIndex != nil {
+                if let existing = row.dashpayProfile {
+                    backgroundContext.delete(existing)
+                }
+                try PersistentDashpayPaymentAddresses.replace(in: backgroundContext,
+                    networkRaw: row.networkRaw, ownerIdentityId: row.identityId,
+                    profileIdentityId: row.identityId, core: nil, platform: nil, shielded: nil, fetcher: modelFetcher)
             }
 
             // Upsert the cached contact-profile rows for this identity.
@@ -10246,10 +10250,9 @@ private func persistIdentitiesCallback(
 
             // Walk the optional DashPay profile block. The
             // `dashpay_profile_present` bit is the single source of
-            // truth: `false` means "no update for this flush"
-            // (changeset-`None` semantics, NOT a delete signal), so
-            // we carry `dashpayProfile == nil` through to the
-            // handler. When the bit is set, every `*_present`
+            // truth: `false` (no profile) is carried through as
+            // `dashpayProfile == nil`, and `persistIdentities` decides
+            // what that means. When the bit is set, every `*_present`
             // sub-flag is checked individually because zero-valued
             // payloads (empty strings, all-zero hashes /
             // fingerprints) are valid contract values and the FFI
