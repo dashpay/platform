@@ -74,7 +74,12 @@ impl Value {
             Value::Text(text) => {
                 let len = text.len();
                 if len > 20 {
-                    let first_text = text.split_at(20).0.to_string();
+                    // At most 20 bytes, cut on a character boundary.
+                    let mut end = 20;
+                    while !text.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    let first_text = text.split_at(end).0.to_string();
                     format!("string {}[...({})]", first_text, len)
                 } else {
                     format!("string {}", text)
@@ -126,5 +131,25 @@ impl Value {
             Value::EnumU8(_) => "enum u8".to_string(),
             Value::EnumString(_) => "enum string".to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_truncate_long_text_on_a_character_boundary() {
+        // Byte 20 falls inside the two-byte `é`.
+        let text = format!("{}é", "a".repeat(19));
+        assert_eq!(
+            Value::Text(text).to_string(),
+            format!("string {}[...(21)]", "a".repeat(19))
+        );
+        let ascii = "b".repeat(25);
+        assert_eq!(
+            Value::Text(ascii).to_string(),
+            format!("string {}[...(25)]", "b".repeat(20))
+        );
     }
 }
