@@ -661,6 +661,15 @@ type PlatformgetShieldedNullifiers = {
   readonly responseType: typeof platform_pb.GetShieldedNullifiersResponse;
 };
 
+type PlatformsubscribeToStateTransitions = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: true;
+  readonly requestType: typeof platform_pb.SubscribeToStateTransitionsRequest;
+  readonly responseType: typeof platform_pb.SubscribeToStateTransitionsResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -736,6 +745,7 @@ export class Platform {
   static readonly getShieldedPoolState: PlatformgetShieldedPoolState;
   static readonly getShieldedNotesCount: PlatformgetShieldedNotesCount;
   static readonly getShieldedNullifiers: PlatformgetShieldedNullifiers;
+  static readonly subscribeToStateTransitions: PlatformsubscribeToStateTransitions;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -1427,5 +1437,6 @@ export class PlatformClient {
     requestMessage: platform_pb.GetShieldedNullifiersRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedNullifiersResponse|null) => void
   ): UnaryResponse;
+  subscribeToStateTransitions(requestMessage: platform_pb.SubscribeToStateTransitionsRequest, metadata?: grpc.Metadata): ResponseStream<platform_pb.SubscribeToStateTransitionsResponse>;
 }
 

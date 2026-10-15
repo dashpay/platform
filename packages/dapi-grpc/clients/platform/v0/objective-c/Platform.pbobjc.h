@@ -374,6 +374,15 @@ CF_EXTERN_C_BEGIN
 @class SecurityLevelMap;
 @class SpecificKeys;
 @class StateTransitionBroadcastError;
+@class SubscribeToStateTransitionsRequest_AddressFilter;
+@class SubscribeToStateTransitionsRequest_DocumentFilter;
+@class SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch;
+@class SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause;
+@class SubscribeToStateTransitionsRequest_StateTransitionFilter;
+@class SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0;
+@class SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0;
+@class SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint;
+@class SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch;
 @class WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0;
 @class WaitForStateTransitionResultResponse_SuccessWithOwnerBalance;
 @class WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0;
@@ -874,6 +883,61 @@ GPBEnumDescriptor *GetGroupActionSignersRequest_ActionStatus_EnumDescriptor(void
  * the time this source was generated.
  **/
 BOOL GetGroupActionSignersRequest_ActionStatus_IsValidValue(int32_t value);
+
+#pragma mark - Enum SubscribeToStateTransitionsRequest_Role
+
+/** Which side of a transition a watched address must be on. */
+typedef GPB_ENUM(SubscribeToStateTransitionsRequest_Role) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  SubscribeToStateTransitionsRequest_Role_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  /** Either side. */
+  SubscribeToStateTransitionsRequest_Role_Any = 0,
+
+  /** An address input the transition spends from. */
+  SubscribeToStateTransitionsRequest_Role_Sender = 1,
+
+  /** An address the transition credits: an output or change output. */
+  SubscribeToStateTransitionsRequest_Role_Recipient = 2,
+};
+
+GPBEnumDescriptor *SubscribeToStateTransitionsRequest_Role_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL SubscribeToStateTransitionsRequest_Role_IsValidValue(int32_t value);
+
+#pragma mark - Enum SubscribeToStateTransitionsRequest_DocumentFilter_Action
+
+typedef GPB_ENUM(SubscribeToStateTransitionsRequest_DocumentFilter_Action) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  SubscribeToStateTransitionsRequest_DocumentFilter_Action_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  SubscribeToStateTransitionsRequest_DocumentFilter_Action_Create = 0,
+  SubscribeToStateTransitionsRequest_DocumentFilter_Action_Replace = 1,
+
+  /** Also matches the delete of an indexOnly document. */
+  SubscribeToStateTransitionsRequest_DocumentFilter_Action_Delete = 2,
+  SubscribeToStateTransitionsRequest_DocumentFilter_Action_Transfer = 3,
+  SubscribeToStateTransitionsRequest_DocumentFilter_Action_UpdatePrice = 4,
+  SubscribeToStateTransitionsRequest_DocumentFilter_Action_Purchase = 5,
+};
+
+GPBEnumDescriptor *SubscribeToStateTransitionsRequest_DocumentFilter_Action_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL SubscribeToStateTransitionsRequest_DocumentFilter_Action_IsValidValue(int32_t value);
 
 #pragma mark - PlatformRoot
 
@@ -14176,6 +14240,385 @@ GPB_FINAL @interface GetShieldedNullifiersResponse_GetShieldedNullifiersResponse
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus*> *entriesArray;
 /** The number of items in @c entriesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - SubscribeToStateTransitionsRequest
+
+typedef GPB_ENUM(SubscribeToStateTransitionsRequest_FieldNumber) {
+  SubscribeToStateTransitionsRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(SubscribeToStateTransitionsRequest_Version_OneOfCase) {
+  SubscribeToStateTransitionsRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  SubscribeToStateTransitionsRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * Subscription to committed state transitions.
+ *
+ * A transition is delivered when it executed successfully and ANY of the
+ * filters matches it; within one filter every given constraint must hold.
+ * Matching reads only the transition itself: what it names, not state it
+ * changed. Nothing is known about a document before the transition changed it
+ * beyond its `$id`.
+ **/
+GPB_FINAL @interface SubscribeToStateTransitionsRequest : GPBMessage
+
+@property(nonatomic, readonly) SubscribeToStateTransitionsRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void SubscribeToStateTransitionsRequest_ClearVersionOneOfCase(SubscribeToStateTransitionsRequest *message);
+
+#pragma mark - SubscribeToStateTransitionsRequest_DocumentFilter
+
+typedef GPB_ENUM(SubscribeToStateTransitionsRequest_DocumentFilter_FieldNumber) {
+  SubscribeToStateTransitionsRequest_DocumentFilter_FieldNumber_DataContractId = 1,
+  SubscribeToStateTransitionsRequest_DocumentFilter_FieldNumber_DocumentTypeName = 2,
+  SubscribeToStateTransitionsRequest_DocumentFilter_FieldNumber_ActionsArray = 3,
+  SubscribeToStateTransitionsRequest_DocumentFilter_FieldNumber_BatchOwnerId = 4,
+};
+
+/**
+ * Document transitions, in batch transitions, on one data contract.
+ **/
+GPB_FINAL @interface SubscribeToStateTransitionsRequest_DocumentFilter : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *dataContractId;
+
+/**
+ * Unset: every document type of the contract; `actions` must then carry
+ * no clauses.
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentTypeName;
+/** Test to see if @c documentTypeName has been set. */
+@property(nonatomic, readwrite) BOOL hasDocumentTypeName;
+
+/** Empty: every action. */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch*> *actionsArray;
+/** The number of items in @c actionsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger actionsArray_Count;
+
+/**
+ * The identity that owns (signs) the batch: the document owner for every
+ * action but PURCHASE, where it is the buyer.
+ **/
+@property(nonatomic, readwrite, copy, null_resettable) NSData *batchOwnerId;
+/** Test to see if @c batchOwnerId has been set. */
+@property(nonatomic, readwrite) BOOL hasBatchOwnerId;
+
+@end
+
+#pragma mark - SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause
+
+typedef GPB_ENUM(SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause_FieldNumber) {
+  SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause_FieldNumber_Operator_p = 1,
+  SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause_FieldNumber_Value = 2,
+};
+
+/**
+ * Constraint on the new price of an UPDATE_PRICE.
+ **/
+GPB_FINAL @interface SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause : GPBMessage
+
+@property(nonatomic, readwrite) GetDocumentsRequest_WhereOperator operator_p;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsRequest_DocumentFieldValue *value;
+/** Test to see if @c value has been set. */
+@property(nonatomic, readwrite) BOOL hasValue;
+
+@end
+
+/**
+ * Fetches the raw value of a @c SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause's @c operator_p property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause_Operator_p_RawValue(SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause *message);
+/**
+ * Sets the raw value of an @c SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause's @c operator_p property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetSubscribeToStateTransitionsRequest_DocumentFilter_PriceClause_Operator_p_RawValue(SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause *message, int32_t value);
+
+#pragma mark - SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch
+
+typedef GPB_ENUM(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber) {
+  SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber_Action = 1,
+  SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber_NewDocumentWhereArray = 2,
+  SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber_OriginalDocumentWhereArray = 3,
+  SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber_OwnerIdsArray = 4,
+  SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_FieldNumber_Price = 5,
+};
+
+/**
+ * One action, optionally narrowed by clauses (ANDed together). The clause
+ * values follow the getDocuments typing rules; the document type's schema
+ * decides each field's type.
+ **/
+GPB_FINAL @interface SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch : GPBMessage
+
+/**
+ * Required; `optional` so a missing action is rejected rather than read
+ * as CREATE.
+ **/
+@property(nonatomic, readwrite) SubscribeToStateTransitionsRequest_DocumentFilter_Action action;
+
+@property(nonatomic, readwrite) BOOL hasAction;
+/**
+ * CREATE and REPLACE: clauses on the document data the transition
+ * carries.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_WhereClause*> *newDocumentWhereArray NS_RETURNS_NOT_RETAINED;
+/** The number of items in @c newDocumentWhereArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger newDocumentWhereArray_Count;
+
+/**
+ * Clauses on the document as it was before the transition: only `$id`,
+ * except for DELETE on an indexOnly document type, whose delete carries
+ * the document's values.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsRequest_WhereClause*> *originalDocumentWhereArray;
+/** The number of items in @c originalDocumentWhereArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger originalDocumentWhereArray_Count;
+
+/**
+ * TRANSFER: the recipient, PURCHASE: the buyer, must be one of these
+ * identities.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *ownerIdsArray;
+/** The number of items in @c ownerIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger ownerIdsArray_Count;
+
+/** UPDATE_PRICE only. */
+@property(nonatomic, readwrite, strong, null_resettable) SubscribeToStateTransitionsRequest_DocumentFilter_PriceClause *price;
+/** Test to see if @c price has been set. */
+@property(nonatomic, readwrite) BOOL hasPrice;
+
+@end
+
+/**
+ * Fetches the raw value of a @c SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch's @c action property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_Action_RawValue(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch *message);
+/**
+ * Sets the raw value of an @c SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch's @c action property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetSubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch_Action_RawValue(SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch *message, int32_t value);
+
+#pragma mark - SubscribeToStateTransitionsRequest_AddressFilter
+
+typedef GPB_ENUM(SubscribeToStateTransitionsRequest_AddressFilter_FieldNumber) {
+  SubscribeToStateTransitionsRequest_AddressFilter_FieldNumber_AddressesArray = 1,
+  SubscribeToStateTransitionsRequest_AddressFilter_FieldNumber_Role = 2,
+};
+
+/**
+ * Transitions that name one of these platform addresses.
+ **/
+GPB_FINAL @interface SubscribeToStateTransitionsRequest_AddressFilter : GPBMessage
+
+/**
+ * Platform addresses in their 21-byte form: a type byte (0 for P2PKH, 1 for
+ * P2SH) followed by the 20-byte hash.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *addressesArray;
+/** The number of items in @c addressesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger addressesArray_Count;
+
+@property(nonatomic, readwrite) SubscribeToStateTransitionsRequest_Role role;
+
+@end
+
+/**
+ * Fetches the raw value of a @c SubscribeToStateTransitionsRequest_AddressFilter's @c role property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t SubscribeToStateTransitionsRequest_AddressFilter_Role_RawValue(SubscribeToStateTransitionsRequest_AddressFilter *message);
+/**
+ * Sets the raw value of an @c SubscribeToStateTransitionsRequest_AddressFilter's @c role property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetSubscribeToStateTransitionsRequest_AddressFilter_Role_RawValue(SubscribeToStateTransitionsRequest_AddressFilter *message, int32_t value);
+
+#pragma mark - SubscribeToStateTransitionsRequest_StateTransitionFilter
+
+typedef GPB_ENUM(SubscribeToStateTransitionsRequest_StateTransitionFilter_FieldNumber) {
+  SubscribeToStateTransitionsRequest_StateTransitionFilter_FieldNumber_Documents = 1,
+  SubscribeToStateTransitionsRequest_StateTransitionFilter_FieldNumber_Addresses = 2,
+};
+
+typedef GPB_ENUM(SubscribeToStateTransitionsRequest_StateTransitionFilter_Filter_OneOfCase) {
+  SubscribeToStateTransitionsRequest_StateTransitionFilter_Filter_OneOfCase_GPBUnsetOneOfCase = 0,
+  SubscribeToStateTransitionsRequest_StateTransitionFilter_Filter_OneOfCase_Documents = 1,
+  SubscribeToStateTransitionsRequest_StateTransitionFilter_Filter_OneOfCase_Addresses = 2,
+};
+
+GPB_FINAL @interface SubscribeToStateTransitionsRequest_StateTransitionFilter : GPBMessage
+
+@property(nonatomic, readonly) SubscribeToStateTransitionsRequest_StateTransitionFilter_Filter_OneOfCase filterOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) SubscribeToStateTransitionsRequest_DocumentFilter *documents;
+
+@property(nonatomic, readwrite, strong, null_resettable) SubscribeToStateTransitionsRequest_AddressFilter *addresses;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'filter'.
+ **/
+void SubscribeToStateTransitionsRequest_StateTransitionFilter_ClearFilterOneOfCase(SubscribeToStateTransitionsRequest_StateTransitionFilter *message);
+
+#pragma mark - SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0
+
+typedef GPB_ENUM(SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0_FieldNumber) {
+  SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0_FieldNumber_FiltersArray = 1,
+  SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0_FieldNumber_FromBlockHeight = 2,
+};
+
+GPB_FINAL @interface SubscribeToStateTransitionsRequest_SubscribeToStateTransitionsRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<SubscribeToStateTransitionsRequest_StateTransitionFilter*> *filtersArray;
+/** The number of items in @c filtersArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger filtersArray_Count;
+
+/** First block height to scan. Unset: start after the current tip. */
+@property(nonatomic, readwrite) uint64_t fromBlockHeight;
+
+@property(nonatomic, readwrite) BOOL hasFromBlockHeight;
+@end
+
+#pragma mark - SubscribeToStateTransitionsResponse
+
+typedef GPB_ENUM(SubscribeToStateTransitionsResponse_FieldNumber) {
+  SubscribeToStateTransitionsResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(SubscribeToStateTransitionsResponse_Version_OneOfCase) {
+  SubscribeToStateTransitionsResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  SubscribeToStateTransitionsResponse_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * One message of a state transition subscription stream.
+ *
+ * The first message is a checkpoint at the height before the first scanned
+ * block. Blocks are then scanned in height order: each matching transition is
+ * sent in block order, and every block with a match ends with a checkpoint at
+ * its height. While no block matches, a checkpoint at the last scanned height
+ * is repeated every few seconds. A checkpoint at height `h` asserts that every
+ * match from the first scanned block through `h` has been sent: resume from
+ * `h + 1`. Any end of the stream, including one with status OK (for example
+ * at the gateway's 600-second limit), means the same: resume from the last
+ * checkpoint.
+ *
+ * The server asserts these; it does not prove them. A client can check a
+ * delivered transition (its hash, and that it matches the filters) but not
+ * that nothing was left out.
+ **/
+GPB_FINAL @interface SubscribeToStateTransitionsResponse : GPBMessage
+
+@property(nonatomic, readonly) SubscribeToStateTransitionsResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void SubscribeToStateTransitionsResponse_ClearVersionOneOfCase(SubscribeToStateTransitionsResponse *message);
+
+#pragma mark - SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0
+
+typedef GPB_ENUM(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_FieldNumber) {
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_FieldNumber_StateTransition = 1,
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_FieldNumber_Checkpoint = 2,
+};
+
+typedef GPB_ENUM(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Responses_OneOfCase) {
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Responses_OneOfCase_GPBUnsetOneOfCase = 0,
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Responses_OneOfCase_StateTransition = 1,
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Responses_OneOfCase_Checkpoint = 2,
+};
+
+GPB_FINAL @interface SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Responses_OneOfCase responsesOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch *stateTransition;
+
+@property(nonatomic, readwrite, strong, null_resettable) SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint *checkpoint;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'responses'.
+ **/
+void SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_ClearResponsesOneOfCase(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0 *message);
+
+#pragma mark - SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch
+
+typedef GPB_ENUM(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber) {
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_BlockHeight = 1,
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_BlockTimeMs = 2,
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_ProtocolVersion = 3,
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_StateTransitionHash = 4,
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_StateTransition = 5,
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_MatchedFiltersArray = 6,
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch_FieldNumber_MatchedBatchPositionsArray = 7,
+};
+
+GPB_FINAL @interface SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_StateTransitionMatch : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t blockHeight;
+
+/** Block time, in milliseconds since the Unix epoch. */
+@property(nonatomic, readwrite) uint64_t blockTimeMs;
+
+/** The protocol version the block executed under. */
+@property(nonatomic, readwrite) uint32_t protocolVersion;
+
+/** SHA-256 of `state_transition`, which is also its Tenderdash hash. */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *stateTransitionHash;
+
+/** The serialized state transition, as included in the block. */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *stateTransition;
+
+/** Indexes, in the request's `filters`, of the filters that matched. */
+@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Array *matchedFiltersArray;
+/** The number of items in @c matchedFiltersArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger matchedFiltersArray_Count;
+
+/**
+ * For a batch transition: positions, in its transitions, of the
+ * document transitions that matched.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GPBUInt32Array *matchedBatchPositionsArray;
+/** The number of items in @c matchedBatchPositionsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger matchedBatchPositionsArray_Count;
+
+@end
+
+#pragma mark - SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint
+
+typedef GPB_ENUM(SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint_FieldNumber) {
+  SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint_FieldNumber_BlockHeight = 1,
+};
+
+GPB_FINAL @interface SubscribeToStateTransitionsResponse_SubscribeToStateTransitionsResponseV0_Checkpoint : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t blockHeight;
 
 @end
 
