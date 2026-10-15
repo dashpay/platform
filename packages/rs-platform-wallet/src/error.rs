@@ -1,4 +1,6 @@
 use dpp::address_funds::PlatformAddress;
+use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
 use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
@@ -1055,8 +1057,6 @@ impl PlatformWalletError {
 /// error returned by Drive when the instant lock signature cannot be verified
 /// (typically because the quorum that signed it has rotated out).
 pub fn is_instant_lock_proof_invalid(error: &dash_sdk::Error) -> bool {
-    use dpp::consensus::basic::BasicError;
-
     matches!(
         consensus_error_of(error),
         Some(ConsensusError::BasicError(
@@ -1065,13 +1065,28 @@ pub fn is_instant_lock_proof_invalid(error: &dash_sdk::Error) -> bool {
     )
 }
 
+/// The `StateTransitionMaxSizeExceededError` an SDK error carries, if any:
+/// the transition was larger than the protocol's `max_state_transition_size`.
+///
+/// For an asset-lock-funded transition this is usually the InstantSend proof:
+/// it embeds the whole funding transaction plus its InstantLock, about 184
+/// bytes per funding input, while a ChainLock proof is a fixed ~40 bytes.
+pub fn as_state_transition_max_size_exceeded(
+    error: &dash_sdk::Error,
+) -> Option<&StateTransitionMaxSizeExceededError> {
+    match consensus_error_of(error) {
+        Some(ConsensusError::BasicError(BasicError::StateTransitionMaxSizeExceededError(e))) => {
+            Some(e)
+        }
+        _ => None,
+    }
+}
+
 /// Check whether an SDK error is Platform rejecting a ChainLock asset-lock
 /// proof because the funding transaction is not in a block at or below the
 /// proof's height (`InvalidAssetLockProofTransactionHeightError`) — the proof
 /// named a height the transaction was not mined at.
 pub fn is_asset_lock_proof_transaction_height_invalid(error: &dash_sdk::Error) -> bool {
-    use dpp::consensus::basic::BasicError;
-
     matches!(
         consensus_error_of(error),
         Some(ConsensusError::BasicError(
@@ -1135,8 +1150,6 @@ pub fn is_instant_lock_timeout(error: &PlatformWalletError) -> bool {
 pub fn as_asset_lock_proof_cl_height_too_low(
     error: &dash_sdk::Error,
 ) -> Option<&dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError> {
-    use dpp::consensus::basic::BasicError;
-
     let consensus_error = match error {
         dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
             broadcast_err.cause.as_ref()
@@ -1236,8 +1249,6 @@ pub fn is_asset_lock_already_consumed(
     error: &dash_sdk::Error,
     out_point: &dashcore::OutPoint,
 ) -> bool {
-    use dpp::consensus::basic::BasicError;
-
     matches!(
         consensus_error_of(error),
         Some(ConsensusError::BasicError(
