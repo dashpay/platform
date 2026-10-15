@@ -796,4 +796,332 @@ mod tests {
         assert!(resolved.properties().is_empty());
         assert_eq!(resolved.id(), Identifier::new([1u8; 32]));
     }
+
+    /// `index_only_delete_document` on the App Connect `loginKeyResponse`
+    /// type, and on copies of it changed for the shapes no shipped contract
+    /// has.
+    #[cfg(feature = "app-connect-contract")]
+    mod login_key_response {
+        use super::*;
+        use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+        use dpp::platform_value::platform_value;
+
+        fn app_connect_contract() -> DataContract {
+            load_system_data_contract(SystemDataContract::AppConnect, PlatformVersion::latest())
+                .expect("app-connect contract loads")
+        }
+
+        /// The values a `loginKeyResponse` is created with, byte arrays in
+        /// the hex text form create takes them in.
+        fn login_key_response_values() -> BTreeMap<String, Value> {
+            BTreeMap::from([
+                (
+                    "appEphemeralPubKeyHash".to_string(),
+                    Value::Text(hex::encode([0x11u8; 20])),
+                ),
+                (
+                    "walletEphemeralPubKey".to_string(),
+                    Value::Text(hex::encode([0x02u8; 33])),
+                ),
+                (
+                    "encryptedPayload".to_string(),
+                    Value::Text(hex::encode([0x33u8; 60])),
+                ),
+            ])
+        }
+
+        fn build(
+            contract: &DataContract,
+            values: BTreeMap<String, Value>,
+            created_at: Option<TimestampMillis>,
+        ) -> Result<Document, Error> {
+            index_only_delete_document(
+                contract
+                    .document_type_for_name("loginKeyResponse")
+                    .expect("loginKeyResponse type"),
+                Identifier::default(),
+                Identifier::default(),
+                values,
+                created_at,
+                PlatformVersion::latest(),
+            )
+        }
+
+        /// The App Connect contract with its `loginKeyResponse` schema
+        /// changed by `change`. `validate` is off for a schema that only has
+        /// to show how its required paths are looked up, without placing
+        /// every property in an index the way a registered indexOnly type
+        /// must.
+        fn changed_contract(validate: bool, change: impl FnOnce(&mut Value)) -> DataContract {
+            let mut value = app_connect_contract()
+                .to_value(PlatformVersion::latest())
+                .expect("contract converts");
+            let mut schema = value
+                .remove_value_at_path("documentSchemas.loginKeyResponse")
+                .expect("loginKeyResponse schema");
+            change(&mut schema);
+            value
+                .set_value_at_path("documentSchemas", "loginKeyResponse", schema)
+                .expect("schema is set back");
+            DataContract::from_value(value, validate, PlatformVersion::latest())
+                .expect("changed contract builds")
+        }
+
+        fn require(schema: &mut Value, name: &str) {
+            append(schema, "required", name);
+        }
+
+        fn append(schema: &mut Value, list: &str, name: &str) {
+            let mut names = schema.get_value_at_path(list).expect("list").clone();
+            names
+                .as_array_mut()
+                .expect("an array")
+                .push(Value::Text(name.to_string()));
+            schema.set_value(list, names).expect("list is set");
+        }
+
+        /// On an indexOnly type only indexed values exist.
+        fn index_terminal(schema: &mut Value, names: &[&str]) {
+            let mut indices = schema
+                .get_value_at_path("indices")
+                .expect("indices")
+                .clone();
+            for name in names {
+                append(
+                    &mut indices.as_array_mut().expect("an array")[0],
+                    "terminal",
+                    name,
+                );
+            }
+            schema
+                .set_value("indices", indices)
+                .expect("indices are set");
+        }
+
+        #[test]
+        fn should_convert_the_values_and_carry_a_creation_time_only_when_one_is_given() {
+            let contract = app_connect_contract();
+
+            let document =
+                build(&contract, login_key_response_values(), None).expect("document builds");
+            assert_eq!(
+                document.properties().get("appEphemeralPubKeyHash"),
+                Some(&Value::Bytes20([0x11u8; 20]))
+            );
+            assert_eq!(
+                document
+                    .properties()
+                    .get("walletEphemeralPubKey")
+                    .and_then(|value| value.as_bytes())
+                    .map(Vec::as_slice),
+                Some([0x02u8; 33].as_slice())
+            );
+            assert_eq!(
+                document
+                    .properties()
+                    .get("encryptedPayload")
+                    .and_then(|value| value.as_bytes())
+                    .map(Vec::as_slice),
+                Some([0x33u8; 60].as_slice())
+            );
+            assert_eq!(document.created_at(), None);
+
+            let document = build(
+                &contract,
+                login_key_response_values(),
+                Some(1_700_000_000_000),
+            )
+            .expect("document builds");
+            assert_eq!(document.created_at(), Some(1_700_000_000_000));
+        }
+
+        #[test]
+        fn should_refuse_a_type_whose_documents_can_not_be_deleted() {
+            let contract = changed_contract(true, |schema| {
+                schema
+                    .set_value("canBeDeleted", Value::Bool(false))
+                    .expect("canBeDeleted is set");
+            });
+
+            let error = build(&contract, login_key_response_values(), None).unwrap_err();
+            assert!(error.to_string().contains("can not be deleted"), "{error}");
+        }
+
+        #[test]
+        fn should_refuse_a_missing_creation_time_on_a_type_that_commits_to_it() {
+            let contract = changed_contract(true, |schema| require(schema, "$createdAt"));
+
+            let error = build(&contract, login_key_response_values(), None).unwrap_err();
+            assert!(
+                error.to_string().contains("commits to $createdAt"),
+                "{error}"
+            );
+
+            let document = build(
+                &contract,
+                login_key_response_values(),
+                Some(1_700_000_000_000),
+            )
+            .expect("document builds");
+            assert_eq!(document.created_at(), Some(1_700_000_000_000));
+        }
+
+        #[test]
+        fn should_find_a_required_property_inside_its_object() {
+            let contract = changed_contract(false, |schema| {
+                schema
+                    .set_value_at_path(
+                        "properties",
+                        "device",
+                        platform_value!({
+                            "type": "object",
+                            "position": 3u32,
+                            "properties": {
+                                "name": { "type": "string", "maxLength": 32u32, "position": 0u32 },
+                            },
+                            "required": ["name"],
+                            "additionalProperties": false,
+                        }),
+                    )
+                    .expect("device is set");
+                require(schema, "device");
+                index_terminal(schema, &["device.name"]);
+            });
+            let required = contract
+                .document_type_for_name("loginKeyResponse")
+                .expect("loginKeyResponse type")
+                .required_fields()
+                .clone();
+            assert!(required.contains("device.name"), "{required:?}");
+
+            let mut values = login_key_response_values();
+            values.insert("device".to_string(), platform_value!({ "name": "phone" }));
+            build(&contract, values.clone(), None).expect("nested value is found");
+
+            values.insert("device".to_string(), platform_value!({}));
+            let error = build(&contract, values, None).unwrap_err();
+            assert!(
+                error.to_string().contains("requires \"device.name\""),
+                "{error}"
+            );
+        }
+
+        #[test]
+        fn should_accept_values_that_leave_a_required_generated_property_to_be_generated() {
+            let contract = changed_contract(false, |schema| {
+                for (name, property) in [
+                    (
+                        "name",
+                        platform_value!({ "type": "string", "maxLength": 32u32, "position": 3u32 }),
+                    ),
+                    (
+                        "normalizedName",
+                        platform_value!({
+                            "type": "string",
+                            "maxLength": 32u32,
+                            "position": 4u32,
+                            "generatedFrom": {
+                                "function": "sys.stringTransformations.homographSafeASCII",
+                                "params": ["name"],
+                            },
+                        }),
+                    ),
+                ] {
+                    schema
+                        .set_value_at_path("properties", name, property)
+                        .expect("property is set");
+                }
+                require(schema, "name");
+                require(schema, "normalizedName");
+                index_terminal(schema, &["normalizedName"]);
+                append(schema, "entryPayload", "name");
+            });
+            let required = contract
+                .document_type_for_name("loginKeyResponse")
+                .expect("loginKeyResponse type")
+                .required_fields()
+                .clone();
+            assert!(required.contains("normalizedName"), "{required:?}");
+
+            let mut values = login_key_response_values();
+            values.insert("name".to_string(), Value::Text("Bob".to_string()));
+            let document =
+                build(&contract, values, None).expect("the generated property is not asked for");
+            // The delete builder generates it; the document holds what was given.
+            assert!(!document.properties().contains_key("normalizedName"));
+
+            // The source itself is still asked for.
+            let error = build(&contract, login_key_response_values(), None).unwrap_err();
+            assert!(error.to_string().contains("requires \"name\""), "{error}");
+        }
+
+        #[test]
+        fn should_refuse_an_undeclared_property_inside_a_declared_object() {
+            let contract = changed_contract(false, |schema| {
+                schema
+                    .set_value_at_path(
+                        "properties",
+                        "device",
+                        platform_value!({
+                            "type": "object",
+                            "position": 3u32,
+                            "properties": {
+                                "name": { "type": "string", "maxLength": 32u32, "position": 0u32 },
+                                "screen": {
+                                    "type": "object",
+                                    "position": 1u32,
+                                    "properties": {
+                                        "width": { "type": "integer", "minimum": 0u32, "position": 0u32 },
+                                    },
+                                    "required": ["width"],
+                                    "additionalProperties": false,
+                                },
+                            },
+                            "required": ["name", "screen"],
+                            "additionalProperties": false,
+                        }),
+                    )
+                    .expect("device is set");
+                require(schema, "device");
+                index_terminal(schema, &["device.screen.width", "device.name"]);
+            });
+            let with_device = |device: Value| {
+                let mut values = login_key_response_values();
+                values.insert("device".to_string(), device);
+                build(&contract, values, None)
+            };
+
+            with_device(platform_value!({ "name": "phone", "screen": { "width": 390u32 } }))
+                .expect("declared nested values build");
+
+            for (device, path) in [
+                (
+                    platform_value!({ "name": "phone", "model": "one" }),
+                    "device.model",
+                ),
+                (
+                    platform_value!({ "screen": { "width": 390u32, "height": 844u32 } }),
+                    "device.screen.height",
+                ),
+            ] {
+                let error = with_device(device).unwrap_err();
+                assert!(
+                    error
+                        .to_string()
+                        .contains(&format!("has no property {path:?}")),
+                    "{path}: {error}"
+                );
+            }
+
+            // A value of the wrong kind is not this check's to refuse.
+            let wrong_kind = with_device(platform_value!({
+                "name": { "first": "phone" },
+                "screen": { "width": 390u32 },
+            }));
+            assert!(
+                !matches!(&wrong_kind, Err(error) if error.to_string().contains("has no property")),
+                "{wrong_kind:?}"
+            );
+        }
+    }
 }
