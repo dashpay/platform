@@ -36,7 +36,6 @@ fn entry(op: OutPoint, status: AssetLockStatus) -> AssetLockEntry {
         funding_type: AssetLockFundingType::IdentityTopUp,
         identity_index: 0,
         operation_id: None,
-        shielded_funding_attempts: Vec::new(),
         amount_duffs: 1000,
         status,
         proof: None,
@@ -250,7 +249,6 @@ fn should_migrate_legacy_blob_without_reencoding_and_reject_invalid_operation_id
         asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
             .unwrap();
     assert_eq!(locks[&0][&outpoint].operation_id, None);
-    assert!(locks[&0][&outpoint].shielded_funding_attempts.is_empty());
     assert!(conn
         .execute("UPDATE asset_locks SET operation_id = ?1", [vec![1_u8; 15]])
         .is_err());
@@ -288,7 +286,8 @@ fn should_reject_conflicting_operation_id_before_mutating_any_stored_columns() {
         .unwrap()
     }
 
-    // Exercise the regular upsert and the consumed-row sidecar fallback.
+    // Exercise both the regular upsert and the consumed-row terminal guard:
+    // the conflict check runs before either path touches the row.
     for status in [AssetLockStatus::Broadcast, AssetLockStatus::Consumed] {
         let (persister, _tmp, path) = fresh_persister();
         let wallet_id = wid(0xAA);
@@ -296,7 +295,6 @@ fn should_reject_conflicting_operation_id_before_mutating_any_stored_columns() {
         let outpoint = op(0x34);
         let mut original = entry(outpoint, status);
         original.operation_id = Some([8; 16]);
-        original.shielded_funding_attempts = vec![vec![18, 1, 2, 3]];
         persister
             .store(
                 wallet_id,
@@ -312,8 +310,6 @@ fn should_reject_conflicting_operation_id_before_mutating_any_stored_columns() {
 
         let mut incoming = entry(outpoint, AssetLockStatus::ChainLocked);
         incoming.operation_id = Some([9; 16]);
-        // The empty prefix used to pass the signed-attempt validation.
-        assert!(incoming.shielded_funding_attempts.is_empty());
         incoming.account_index = 7;
         incoming.identity_index = 11;
         incoming.amount_duffs = 2_000;
@@ -343,78 +339,4 @@ fn should_reject_conflicting_operation_id_before_mutating_any_stored_columns() {
             before
         );
     }
-}
-
-#[test]
-fn should_restore_append_only_signed_attempts_and_reject_replacement() {
-    let (persister, _tmp, path) = fresh_persister();
-    let w = wid(0xA9);
-    ensure_wallet_meta(&persister, &w);
-    let outpoint = op(0x33);
-    let first = vec![18, 1, 2, 3];
-    let second = vec![18, 4, 5, 6, 7];
-    let store = |attempts: Vec<Vec<u8>>, status, id| {
-        let mut row = entry(outpoint, status);
-        row.operation_id = id;
-        row.shielded_funding_attempts = attempts;
-        persister.store(
-            w,
-            platform_wallet::changeset::PlatformWalletChangeSet {
-                asset_locks: Some(AssetLockChangeSet {
-                    asset_locks: [(outpoint, row)].into_iter().collect(),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-        )
-    };
-    store(
-        vec![first.clone()],
-        AssetLockStatus::Broadcast,
-        Some([8; 16]),
-    )
-    .unwrap();
-    store(
-        vec![first.clone()],
-        AssetLockStatus::Consumed,
-        Some([8; 16]),
-    )
-    .unwrap();
-    // A delayed evidence snapshot preserves terminal status while appending bytes.
-    store(
-        vec![first.clone(), second.clone()],
-        AssetLockStatus::Broadcast,
-        Some([8; 16]),
-    )
-    .unwrap();
-    assert!(store(vec![vec![18, 9]], AssetLockStatus::Consumed, Some([8; 16])).is_err());
-    // Legacy and stale prefixes cannot erase persisted attempts, even at terminal status.
-    store(Vec::new(), AssetLockStatus::Consumed, None).unwrap();
-    store(
-        vec![first.clone()],
-        AssetLockStatus::Consumed,
-        Some([8; 16]),
-    )
-    .unwrap();
-    persister.flush(w).unwrap();
-    drop(persister);
-    let reopened = reopen(&path);
-    let conn = reopened.lock_conn_for_test();
-    let locks =
-        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
-            .unwrap();
-    assert_eq!(
-        locks[&0][&outpoint].shielded_funding_attempts,
-        vec![first, second]
-    );
-    assert_eq!(locks[&0][&outpoint].status, AssetLockStatus::Consumed);
-    conn.execute(
-        "UPDATE asset_locks SET shielded_funding_attempts_blob = X'00'",
-        [],
-    )
-    .unwrap();
-    assert!(
-        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
-            .is_err()
-    );
 }

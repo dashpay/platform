@@ -357,17 +357,13 @@ impl PlatformWalletInfo {
         if let Some(al_cs) = asset_locks {
             for (out_point, mut entry) in al_cs.asset_locks {
                 if let Some(existing) = self.tracked_asset_locks.get_mut(&out_point) {
-                    if !entry.preserve_recovery_metadata(
-                        existing.operation_id,
-                        &existing.shielded_funding_attempts,
-                    ) {
+                    if !entry.preserve_recovery_metadata(existing.operation_id) {
                         continue;
                     }
                     if existing.status == AssetLockStatus::DrainCompleted
                         || (existing.status.is_consumed() && !entry.status.is_consumed())
                     {
                         existing.operation_id = entry.operation_id;
-                        existing.shielded_funding_attempts = entry.shielded_funding_attempts;
                         continue;
                     }
                 }
@@ -375,7 +371,6 @@ impl PlatformWalletInfo {
                     out_point,
                     TrackedAssetLock {
                         operation_id: entry.operation_id,
-                        shielded_funding_attempts: entry.shielded_funding_attempts,
                         out_point: entry.out_point,
                         transaction: entry.transaction,
                         account_index: entry.account_index,
@@ -749,7 +744,6 @@ mod tests {
             out_point,
             AssetLockEntry {
                 operation_id: None,
-                shielded_funding_attempts: Vec::new(),
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,
@@ -810,11 +804,9 @@ mod tests {
     fn recovery_asset_lock(
         status: AssetLockStatus,
         operation_id: Option<[u8; 16]>,
-        attempts: Vec<Vec<u8>>,
     ) -> AssetLockEntry {
         AssetLockEntry {
             operation_id,
-            shielded_funding_attempts: attempts,
             out_point: OutPoint::default(),
             transaction: dashcore::Transaction {
                 version: 3,
@@ -854,35 +846,27 @@ mod tests {
         let mut wallet = build_test_wallet();
         let mut info = empty_info(&wallet);
         let operation_id = Some([42; 16]);
-        let attempts = vec![vec![18, 1], vec![18, 2]];
         apply_recovery_asset_lock(
             &mut info,
             &mut wallet,
-            recovery_asset_lock(AssetLockStatus::Broadcast, operation_id, attempts.clone()),
+            recovery_asset_lock(AssetLockStatus::Broadcast, operation_id),
         );
 
-        for stale_attempts in [vec![attempts[0].clone()], Vec::new()] {
-            apply_recovery_asset_lock(
-                &mut info,
-                &mut wallet,
-                recovery_asset_lock(AssetLockStatus::RecoveredFromChain, None, stale_attempts),
-            );
-            let restored = &info.tracked_asset_locks[&OutPoint::default()];
-            assert_eq!(restored.operation_id, operation_id);
-            assert_eq!(restored.shielded_funding_attempts, attempts);
-        }
-
-        let all_attempts = vec![vec![18, 1], vec![18, 2], vec![18, 3]];
-        let newest = recovery_asset_lock(
-            AssetLockStatus::ChainLocked,
-            operation_id,
-            all_attempts.clone(),
+        // A stale snapshot without the UUID keeps the association.
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::RecoveredFromChain, None),
         );
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.operation_id, operation_id);
+        assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
+
+        let newest = recovery_asset_lock(AssetLockStatus::ChainLocked, operation_id);
         apply_recovery_asset_lock(&mut info, &mut wallet, newest.clone());
         apply_recovery_asset_lock(&mut info, &mut wallet, newest);
         let restored = &info.tracked_asset_locks[&OutPoint::default()];
         assert_eq!(restored.operation_id, operation_id);
-        assert_eq!(restored.shielded_funding_attempts, all_attempts);
         assert_eq!(restored.status, AssetLockStatus::ChainLocked);
     }
 
@@ -894,13 +878,12 @@ mod tests {
         apply_recovery_asset_lock(
             &mut info,
             &mut wallet,
-            recovery_asset_lock(AssetLockStatus::Consumed, operation_id, vec![vec![18, 1]]),
+            recovery_asset_lock(AssetLockStatus::Consumed, operation_id),
         );
-        let attempts = vec![vec![18, 1], vec![18, 2]];
         apply_recovery_asset_lock(
             &mut info,
             &mut wallet,
-            recovery_asset_lock(AssetLockStatus::Broadcast, None, attempts.clone()),
+            recovery_asset_lock(AssetLockStatus::Broadcast, None),
         );
         let mut removed = AssetLockChangeSet::default();
         removed.removed.insert(OutPoint::default());
@@ -914,7 +897,6 @@ mod tests {
         .expect("apply stale removal");
         let restored = &info.tracked_asset_locks[&OutPoint::default()];
         assert_eq!(restored.operation_id, operation_id);
-        assert_eq!(restored.shielded_funding_attempts, attempts);
         assert_eq!(restored.status, AssetLockStatus::Consumed);
     }
 
@@ -931,7 +913,7 @@ mod tests {
             apply_recovery_asset_lock(
                 &mut info,
                 &mut wallet,
-                recovery_asset_lock(status.clone(), Some([42; 16]), vec![vec![18, 1]]),
+                recovery_asset_lock(status.clone(), Some([42; 16])),
             );
             if status == AssetLockStatus::DrainCompleted {
                 assert_eq!(
@@ -960,16 +942,12 @@ mod tests {
     fn should_ignore_conflicting_asset_lock_operation_snapshots() {
         let mut wallet = build_test_wallet();
         let mut info = empty_info(&wallet);
-        let original = recovery_asset_lock(
-            AssetLockStatus::Broadcast,
-            Some([42; 16]),
-            vec![vec![18, 1]],
-        );
+        let original = recovery_asset_lock(AssetLockStatus::Broadcast, Some([42; 16]));
         apply_recovery_asset_lock(&mut info, &mut wallet, original.clone());
         apply_recovery_asset_lock(
             &mut info,
             &mut wallet,
-            recovery_asset_lock(AssetLockStatus::Consumed, Some([43; 16]), vec![vec![18, 2]]),
+            recovery_asset_lock(AssetLockStatus::Consumed, Some([43; 16])),
         );
         assert_eq!(
             AssetLockEntry::from(&info.tracked_asset_locks[&OutPoint::default()]),

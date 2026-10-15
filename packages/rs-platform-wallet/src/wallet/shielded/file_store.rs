@@ -755,13 +755,6 @@ impl ShieldedStore for FileBackedShieldedStore {
         Ok(())
     }
 
-    fn remove_activity(&mut self, id: SubwalletId, entry_id: &[u8; 32]) -> Result<(), Self::Error> {
-        if let Some(subwallet) = self.subwallets.get_mut(&id) {
-            subwallet.remove_activity(entry_id);
-        }
-        Ok(())
-    }
-
     fn get_activity(
         &self,
         id: SubwalletId,

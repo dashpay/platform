@@ -55,28 +55,12 @@ impl PlatformWallet {
         self.asset_locks.register_wallet_drain_operation(operation)
     }
 
+    /// Durable row, live row and active context only. Never touches the
+    /// network and never waits on the shield guard.
     pub async fn shielded_wallet_drain_operation_status(
         &self,
-        coordinator: &super::NetworkShieldedCoordinator,
         operation_id: [u8; 16],
     ) -> Result<AssetLockOperationSnapshot, PlatformWalletError> {
-        let Ok(_shield_guard) = self.shield_guard.try_lock() else {
-            // A status read must not wait behind a network submission. The
-            // active operation's context already provides a fail-closed view.
-            return self
-                .asset_locks
-                .wallet_drain_operation_status(operation_id)
-                .await;
-        };
-        let snapshot = self
-            .asset_locks
-            .wallet_drain_operation_status(operation_id)
-            .await?;
-        if snapshot.state == crate::wallet::asset_lock::AssetLockOperationState::Pending {
-            if let Some(out_point) = snapshot.out_point {
-                self.reconcile_wallet_drain(coordinator, out_point).await?;
-            }
-        }
         self.asset_locks
             .wallet_drain_operation_status(operation_id)
             .await

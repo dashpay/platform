@@ -1433,9 +1433,6 @@ pub struct AssetLockEntry {
     /// Stable host operation identifier; legacy rows have no identifier.
     #[cfg_attr(feature = "serde", serde(default))]
     pub operation_id: Option<[u8; 16]>,
-    /// Exact signed shielded funding transitions, retained in broadcast order.
-    #[cfg_attr(feature = "serde", serde(default))]
-    pub shielded_funding_attempts: Vec<Vec<u8>>,
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
     /// The full asset lock transaction.
@@ -1463,15 +1460,14 @@ pub struct AssetLockEntry {
 }
 
 impl AssetLockEntry {
-    /// Preserve the immutable operation association and every known signed
-    /// attempt when folding or replaying a possibly stale snapshot. Returns
-    /// false for a conflicting UUID: the caller must discard the whole snapshot
-    /// so its lifecycle or evidence cannot be attached to a different operation.
+    /// Preserve the immutable operation association when folding or replaying
+    /// a possibly stale snapshot. Returns false for a conflicting UUID: the
+    /// caller must discard the whole snapshot so its lifecycle cannot be
+    /// attached to a different operation.
     #[must_use = "a conflicting operation snapshot must not be applied"]
     pub(crate) fn preserve_recovery_metadata(
         &mut self,
         previous_operation_id: Option<[u8; 16]>,
-        previous_attempts: &[Vec<u8>],
     ) -> bool {
         if let Some(previous_id) = previous_operation_id {
             if self
@@ -1483,13 +1479,6 @@ impl AssetLockEntry {
             }
             self.operation_id = Some(previous_id);
         }
-        let mut attempts = previous_attempts.to_vec();
-        for attempt in std::mem::take(&mut self.shielded_funding_attempts) {
-            if !attempts.contains(&attempt) {
-                attempts.push(attempt);
-            }
-        }
-        self.shielded_funding_attempts = attempts;
         true
     }
 }
@@ -1511,19 +1500,15 @@ impl Merge for AssetLockChangeSet {
         // racing snapshots immaterial.
         for (out_point, mut entry) in other.asset_locks {
             if let Some(existing) = self.asset_locks.get_mut(&out_point) {
-                if !entry.preserve_recovery_metadata(
-                    existing.operation_id,
-                    &existing.shielded_funding_attempts,
-                ) {
+                if !entry.preserve_recovery_metadata(existing.operation_id) {
                     continue;
                 }
                 if existing.status == AssetLockStatus::DrainCompleted
                     || (existing.status.is_consumed() && !entry.status.is_consumed())
                 {
-                    // Terminality guards lifecycle state, never discards
-                    // exact signed evidence carried by a delayed snapshot.
+                    // Terminality guards lifecycle state, never the operation
+                    // association carried by a delayed snapshot.
                     existing.operation_id = entry.operation_id;
-                    existing.shielded_funding_attempts = entry.shielded_funding_attempts;
                     continue;
                 }
             }
@@ -2569,7 +2554,6 @@ mod tests {
         };
         let entry_with = |status: AssetLockStatus| AssetLockEntry {
             operation_id: None,
-            shielded_funding_attempts: Vec::new(),
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -2613,52 +2597,19 @@ mod tests {
             "a non-Consumed snapshot must not replace the Consumed terminal"
         );
 
-        // Signed evidence is append-only even when its status snapshot is stale.
-        folded
-            .asset_locks
-            .get_mut(&outpoint)
-            .unwrap()
-            .shielded_funding_attempts = vec![vec![18, 1]];
-        let mut delayed = cs_with(AssetLockStatus::Broadcast);
-        delayed
-            .asset_locks
-            .get_mut(&outpoint)
-            .unwrap()
-            .shielded_funding_attempts = vec![vec![18, 1], vec![18, 2]];
-        folded.merge(delayed);
-        folded.merge(cs_with(AssetLockStatus::Consumed));
-        assert_eq!(
-            folded.asset_locks[&outpoint].shielded_funding_attempts,
-            vec![vec![18, 1], vec![18, 2]]
-        );
-        assert_eq!(
-            folded.asset_locks[&outpoint].status,
-            AssetLockStatus::Consumed
-        );
-
-        // A conflicting operation cannot replace either lifecycle or evidence.
+        // A conflicting operation cannot replace the lifecycle.
         let mut original = cs_with(AssetLockStatus::Broadcast);
         original
             .asset_locks
             .get_mut(&outpoint)
             .unwrap()
             .operation_id = Some([42; 16]);
-        original
-            .asset_locks
-            .get_mut(&outpoint)
-            .unwrap()
-            .shielded_funding_attempts = vec![vec![18, 1]];
         let mut conflicting = cs_with(AssetLockStatus::Consumed);
         conflicting
             .asset_locks
             .get_mut(&outpoint)
             .unwrap()
             .operation_id = Some([43; 16]);
-        conflicting
-            .asset_locks
-            .get_mut(&outpoint)
-            .unwrap()
-            .shielded_funding_attempts = vec![vec![18, 2]];
         let expected = original.clone();
         original.merge(conflicting);
         assert_eq!(original.asset_locks, expected.asset_locks);
@@ -3318,7 +3269,6 @@ mod tests {
                         OutPoint::default(),
                         AssetLockEntry {
                             operation_id: None,
-                            shielded_funding_attempts: Vec::new(),
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,

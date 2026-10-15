@@ -15,7 +15,7 @@
 //!   (already persisted in `ClientPersistentCommitmentTree`'s
 //!   SQLite file at the host-supplied `db_path`).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::changeset::merge::Merge;
 use crate::wallet::shielded::{
@@ -51,10 +51,6 @@ pub struct ShieldedChangeSet {
     /// Defaults empty so every pre-activity flow rides the existing
     /// changeset path unchanged.
     pub activity_entries: BTreeMap<SubwalletId, Vec<ShieldedActivityEntry>>,
-    /// Superseded scan aggregates to remove in the same atomic round as their
-    /// replacement entries. Removal wins over stale upserts folded in the round.
-    #[cfg_attr(feature = "serde", serde(default))]
-    pub activity_removed: BTreeMap<SubwalletId, BTreeSet<[u8; 32]>>,
     /// Per-subwallet Orchard viewing keys to persist, as the raw
     /// 96-byte FVK encoding (stored as `Vec<u8>` — serde-derive only
     /// covers arrays ≤ 32). Emitted once per seed-backed
@@ -73,7 +69,6 @@ impl ShieldedChangeSet {
             && self.outgoing_notes.is_empty()
             && self.synced_indices.is_empty()
             && self.activity_entries.is_empty()
-            && self.activity_removed.is_empty()
             && self.viewing_keys.is_empty()
     }
 
@@ -96,24 +91,7 @@ impl ShieldedChangeSet {
     /// The persister upserts by `entry.id`, so re-recording the same id
     /// with a refined kind / flipped status replaces the prior row.
     pub fn record_activity_entry(&mut self, id: SubwalletId, entry: ShieldedActivityEntry) {
-        if !self
-            .activity_removed
-            .get(&id)
-            .is_some_and(|ids| ids.contains(&entry.id))
-        {
-            self.activity_entries.entry(id).or_default().push(entry);
-        }
-    }
-
-    /// Retire an aggregate whose outputs have been split into exact operations.
-    pub fn remove_activity_entry(&mut self, id: SubwalletId, entry_id: [u8; 32]) {
-        self.activity_removed
-            .entry(id)
-            .or_default()
-            .insert(entry_id);
-        if let Some(entries) = self.activity_entries.get_mut(&id) {
-            entries.retain(|entry| entry.id != entry_id);
-        }
+        self.activity_entries.entry(id).or_default().push(entry);
     }
 
     /// Accumulator helper: advance the per-subwallet sync watermark.
@@ -148,7 +126,6 @@ impl ShieldedChangeSet {
             outgoing_notes,
             synced_indices,
             activity_entries,
-            activity_removed,
             viewing_keys,
         } = self;
         let mut out: BTreeMap<crate::wallet::platform_wallet::WalletId, ShieldedChangeSet> =
@@ -181,12 +158,6 @@ impl ShieldedChangeSet {
             out.entry(id.wallet_id)
                 .or_default()
                 .activity_entries
-                .insert(id, entries);
-        }
-        for (id, entries) in activity_removed {
-            out.entry(id.wallet_id)
-                .or_default()
-                .activity_removed
                 .insert(id, entries);
         }
         for (id, fvk) in viewing_keys {
@@ -226,15 +197,8 @@ impl Merge for ShieldedChangeSet {
         // Activity entries append; the persister upserts by `entry.id`,
         // so a later flip/refinement of the same id (appended after the
         // original) wins at persist time without needing to dedupe here.
-        for (id, entries) in other.activity_removed {
-            for entry in entries {
-                self.remove_activity_entry(id, entry);
-            }
-        }
         for (id, entries) in other.activity_entries {
-            for entry in entries {
-                self.record_activity_entry(id, entry);
-            }
+            self.activity_entries.entry(id).or_default().extend(entries);
         }
         // Viewing keys: last write wins (the FVK for a subwallet is
         // stable on a given network, so any re-emit is identical).
@@ -348,34 +312,5 @@ mod activity_changeset_tests {
         assert!(!split[&wallet_a]
             .activity_entries
             .contains_key(&SubwalletId::new(wallet_b, 0)));
-    }
-    #[test]
-    fn activity_removal_wins_stale_fold_and_stays_wallet_scoped() {
-        let id = SubwalletId::new([1; 32], 0);
-        let other = SubwalletId::new([2; 32], 0);
-        let old = entry(1, ShieldedActivityStatus::Confirmed);
-        let replacement = entry(2, ShieldedActivityStatus::Confirmed);
-        let mut stale = ShieldedChangeSet::default();
-        stale.record_activity_entry(id, old.clone());
-        stale.record_activity_entry(other, old.clone());
-        let mut repaired = ShieldedChangeSet::default();
-        repaired.remove_activity_entry(id, old.id);
-        repaired.record_activity_entry(id, replacement.clone());
-        // Either folding order must retain the removal, including a buffered
-        // scan round that was built before the canonical replacement.
-        for (mut first, second) in [(stale.clone(), repaired.clone()), (repaired, stale)] {
-            first.merge(second);
-            let split = first.split_by_wallet_id();
-            assert_eq!(
-                split[&id.wallet_id].activity_entries[&id],
-                vec![replacement.clone()]
-            );
-            assert!(split[&id.wallet_id].activity_removed[&id].contains(&old.id));
-            assert_eq!(
-                split[&other.wallet_id].activity_entries[&other],
-                vec![old.clone()]
-            );
-            assert!(split[&other.wallet_id].activity_removed.is_empty());
-        }
     }
 }

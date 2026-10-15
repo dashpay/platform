@@ -367,7 +367,6 @@ fn asset_lock_changeset() -> AssetLockChangeSet {
             funding_type: AssetLockFundingType::IdentityTopUp,
             identity_index: 0,
             operation_id: None,
-            shielded_funding_attempts: Vec::new(),
             amount_duffs: 1,
             status: AssetLockStatus::Built,
             proof: None,

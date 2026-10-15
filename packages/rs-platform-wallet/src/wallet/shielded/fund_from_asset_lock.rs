@@ -19,10 +19,14 @@
 //!    `key_wallet::signer::Signer` (the host never sees the raw key).
 //!    IS→CL fallback fires on Platform-side IS rejection
 //!    (`is_instant_lock_proof_invalid`).
-//! 4. **Finalize lock state** — a verified submit consumes the tracked
-//!    outpoint. An unauthenticated "already consumed" rejection is recorded
-//!    only as nonterminal consumption-unknown state after Core ChainLock
-//!    finality; it never creates a terminal `Consumed` tombstone.
+//! 4. **Finalize lock state** — a verified submit completes a wallet drain
+//!    (`DrainCompleted`) or consumes a generic lock. A resumed drain that
+//!    Platform rejects because its exact outpoint was already consumed is
+//!    completed too: only this wallet can spend the lock, so an earlier
+//!    attempt landed. For a generic lock an unauthenticated "already
+//!    consumed" rejection is recorded only as nonterminal
+//!    consumption-unknown state after Core ChainLock finality; it never
+//!    creates a terminal `Consumed` tombstone.
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
@@ -157,9 +161,6 @@ impl PlatformWallet {
             .as_ref()
             .map(|operation| self.register_wallet_drain_operation(operation.clone()));
         let _shield_guard = self.shield_guard.lock().await;
-        if operation.is_some() {
-            self.reconcile_wallet_drains(coordinator).await?;
-        }
         let funding = if let Some(operation) = &operation {
             match self.asset_locks.begin_wallet_drain(operation).await? {
                 Some(out_point) => AssetLockFunding::FromExistingAssetLock {
@@ -171,34 +172,7 @@ impl PlatformWallet {
         } else {
             funding
         };
-        // A generic exact-outpoint resume can resolve the same durable drain.
-        let resumed_outpoint = match &funding {
-            AssetLockFunding::FromExistingAssetLock { out_point, .. } => Some(*out_point),
-            _ => None,
-        };
-        if let Some(out_point) = resumed_outpoint {
-            if self.reconcile_wallet_drain(coordinator, out_point).await? {
-                if let Some(operation) = &operation {
-                    operation.set(AssetLockOperationState::Completed, Some(out_point));
-                }
-                return Ok(());
-            }
-            if self
-                .replay_wallet_drain_attempt(out_point, settings)
-                .await?
-            {
-                if self.reconcile_wallet_drain(coordinator, out_point).await? {
-                    if let Some(operation) = &operation {
-                        operation.set(AssetLockOperationState::Completed, Some(out_point));
-                    }
-                    return Ok(());
-                }
-                return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
-                    "original drain attempt replayed; waiting for authenticated output confirmation".into(),
-                ));
-            }
-        }
-        let mut result = self
+        let result = self
             .shielded_fund_from_asset_lock_inner(
                 coordinator,
                 funding,
@@ -211,17 +185,6 @@ impl PlatformWallet {
                 cl_wait,
             )
             .await;
-        // A scan may have completed during the network wait. Only exact
-        // persisted outputs can upgrade an ambiguous/already-consumed reply.
-        if result.is_err() {
-            let out_point = resumed_outpoint
-                .or_else(|| operation.as_ref().and_then(|op| op.snapshot().out_point));
-            if let Some(out_point) = out_point {
-                if self.reconcile_wallet_drain(coordinator, out_point).await? {
-                    result = Ok(());
-                }
-            }
-        }
         if let Some(operation) = operation {
             let snapshot = operation.snapshot();
             if result.is_ok() {
@@ -322,9 +285,11 @@ impl PlatformWallet {
                 operation,
                 ..
             } => {
-                // A drain requires owned-output evidence for restart recovery.
-                // Refuse missing keys before Core funding while shield_guard
-                // serializes this operation with key binding and removal.
+                // Live history recording and the recoverable `sender_ovk`
+                // ciphertext need bound viewing keys, and Core funds must not
+                // be locked into a pool this wallet cannot see. Refuse before
+                // Core funding while shield_guard serializes this operation
+                // with key binding and removal.
                 if self
                     .shielded_keys
                     .read()
@@ -506,7 +471,6 @@ impl PlatformWallet {
         // them on success.
         let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
             build_and_broadcast_shielded(
-                self,
                 sdk.clone(),
                 recipient,
                 shield_amount,
@@ -545,7 +509,6 @@ impl PlatformWallet {
                 self.asset_locks.queue_asset_lock_changeset(cs);
                 let submit_result = submit_with_cl_height_retry(settings, |s| {
                     build_and_broadcast_shielded(
-                        self,
                         sdk.clone(),
                         recipient,
                         shield_amount,
@@ -575,36 +538,31 @@ impl PlatformWallet {
                 .await;
         }
 
-        let landed_actions: Vec<dpp::shielded::SerializedAction> = self
+        // Platform's verdict settles the lock. For a wallet drain, an
+        // exact-outpoint "already consumed" rejection means an earlier attempt
+        // for the same lock landed: the drain completes with no landed bundle
+        // to record (the scan surfaces the note).
+        let drain_operation_id = self
             .asset_locks
-            .reconcile_asset_lock_submit_result(
+            .tracked_operation_id(&proof_out_point)
+            .await;
+        let Some(landed_actions) = self
+            .asset_locks
+            .settle_asset_lock_submit_result(
                 submit_result,
                 &proof_out_point,
                 &effective_proof,
                 cl_wait,
+                drain_operation_id,
             )
-            .await?;
-
-        // A Type18 affected-state response proves only the asset-lock state,
-        // not execution of this exact Orchard bundle. Drains use the same
-        // dual-evidence gate as restart recovery, including on a fresh submit.
-        if let Some(out_point) = tracked_out_point {
-            if self
-                .asset_locks
-                .list_tracked_locks()
-                .await
-                .iter()
-                .any(|lock| lock.out_point == out_point && lock.operation_id.is_some())
-            {
-                return if self.reconcile_wallet_drain(coordinator, out_point).await? {
-                    Ok(())
-                } else {
-                    Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
-                        "drain awaits authenticated exact outputs and full original-outpoint consumption".into(),
-                    ))
-                };
-            }
-        }
+            .await?
+        else {
+            tracing::info!(
+                outpoint = %proof_out_point,
+                "wallet drain completed: Platform reports its asset lock already consumed by an earlier attempt"
+            );
+            return Ok(());
+        };
 
         // Record a live `ShieldFromAssetLock` activity entry over the
         // landed bundle. One entry per call (= one per seed-pool batch),
@@ -616,38 +574,48 @@ impl PlatformWallet {
         self.record_shield_from_asset_lock_activity(coordinator, &landed_actions, shield_amount)
             .await;
 
-        // Step 5: cleanup. Consume the tracked asset lock. The
-        // shielded note itself arrives via the next sync — there's
-        // no immediate balance changeset to persist (unlike
-        // address-funding, which writes proof-attested balances back
-        // into `ManagedPlatformAccount`).
-        if let Some(out_point) = tracked_out_point {
-            // Platform DID accept the shield ST — propagating an Err
-            // here would misreport the protocol outcome. The lock row
-            // stays non-Consumed and surfaces in the Resumable
-            // Funding list; a user Resume on it would be
-            // deterministically rejected by Platform with "lock
-            // already consumed". Log so it's visible.
-            if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
-                match &e {
-                    PlatformWalletError::WalletNotFound(_) => {
-                        tracing::warn!(
-                            outpoint = %out_point,
-                            error = %e,
-                            "consume_asset_lock: wallet handle vanished after successful shielded submit"
-                        );
-                    }
-                    _ => {
-                        tracing::error!(
-                            outpoint = %out_point,
-                            error = %e,
-                            "consume_asset_lock failed unexpectedly after successful shielded submit; \
-                             the lock row stays non-Consumed and will surface as Resumable. \
-                             A user Resume on it will be rejected by Platform with 'lock already consumed'."
-                        );
+        // Step 5: finalize the tracked asset lock. The shielded note itself
+        // arrives via the next sync — there's no immediate balance changeset
+        // to persist (unlike address-funding, which writes proof-attested
+        // balances back into `ManagedPlatformAccount`).
+        match (drain_operation_id, tracked_out_point) {
+            // A drain writes its durable completion receipt. An error here
+            // keeps the operation Pending; the next resume completes it from
+            // Platform's already-consumed verdict.
+            (Some(operation_id), _) => {
+                self.asset_locks
+                    .complete_wallet_drain(proof_out_point, operation_id)
+                    .await?;
+            }
+            (None, Some(out_point)) => {
+                // Platform DID accept the shield ST — propagating an Err
+                // here would misreport the protocol outcome. The lock row
+                // stays non-Consumed and surfaces in the Resumable
+                // Funding list; a user Resume on it would be
+                // deterministically rejected by Platform with "lock
+                // already consumed". Log so it's visible.
+                if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
+                    match &e {
+                        PlatformWalletError::WalletNotFound(_) => {
+                            tracing::warn!(
+                                outpoint = %out_point,
+                                error = %e,
+                                "consume_asset_lock: wallet handle vanished after successful shielded submit"
+                            );
+                        }
+                        _ => {
+                            tracing::error!(
+                                outpoint = %out_point,
+                                error = %e,
+                                "consume_asset_lock failed unexpectedly after successful shielded submit; \
+                                 the lock row stays non-Consumed and will surface as Resumable. \
+                                 A user Resume on it will be rejected by Platform with 'lock already consumed'."
+                            );
+                        }
                     }
                 }
             }
+            (None, None) => {}
         }
 
         tracing::info!(
@@ -861,7 +829,6 @@ async fn lookup_asset_lock_value_credits(
 /// scan will recover).
 #[allow(clippy::too_many_arguments)]
 async fn build_and_broadcast_shielded<AS, P>(
-    wallet: &PlatformWallet,
     sdk: std::sync::Arc<dash_sdk::Sdk>,
     recipient: OrchardAddress,
     shield_amount: Credits,
@@ -881,7 +848,6 @@ where
     use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
     use dpp::state_transition::StateTransition;
 
-    let out_point = out_point_from_proof(&proof);
     let st = build_shield_from_asset_lock_transition_with_signer(
         &recipient,
         shield_amount,
@@ -902,22 +868,15 @@ where
         _ => Vec::new(),
     };
 
-    // This is the last fallible local step before dispatch. Every rebuilt CL
-    // retry appends its own signed bytes, so a prior successful attempt remains
-    // identifiable after process death or a later unauthenticated rejection.
-    wallet
-        .persist_drain_shielded_attempt(out_point, &st)
-        .await
-        .map_err(|error| dash_sdk::Error::Generic(error.to_string()))?;
-
     // Wait for the verified result rather than relay-ACK. Single-use
     // asset-lock proof: a false-positive on a transition Platform
     // later rejects would strand the L1 outpoint with no in-app
     // signal. A shield-from-asset-lock proof authenticates the consumed
     // outpoint (and surplus-address state) at the committed block but
     // cannot bind this exact Orchard request, so the outcome is an
-    // affected-state snapshot; a consensus rejection still surfaces as
-    // an error on this wait.
+    // affected-state snapshot. Only this wallet can spend the lock, so a
+    // consumed outpoint means one of its own attempts landed; a
+    // consensus rejection still surfaces as an error on this wait.
     st.broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(&sdk, settings)
         .await?;
     Ok(actions)
@@ -993,6 +952,7 @@ mod tests {
     use crate::test_support::{funded_wallet_manager, AlwaysRejectedBroadcaster};
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+    use crate::wallet::asset_lock::{AssetLockOperationContext, AssetLockOperationRegistration};
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
@@ -1050,6 +1010,8 @@ mod tests {
         fail_next_flush: Mutex<Option<PersistenceErrorKind>>,
         store_commits_inline: AtomicBool,
         omit_reconciliation_capabilities: AtomicBool,
+        /// Attest the full wallet-drain contract instead of bare reconciliation.
+        wallet_drain: AtomicBool,
     }
 
     impl PlatformWalletPersistence for RecordingPersistence {
@@ -1060,6 +1022,8 @@ mod tests {
         fn persistence_capabilities(&self) -> PersistenceCapabilities {
             if self.omit_reconciliation_capabilities.load(Ordering::SeqCst) {
                 PersistenceCapabilities::NONE
+            } else if self.wallet_drain.load(Ordering::SeqCst) {
+                PersistenceCapabilities::WALLET_DRAIN
             } else {
                 PersistenceCapabilities::ASSET_LOCK_RECONCILIATION
             }
@@ -1160,7 +1124,6 @@ mod tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
-                    shielded_funding_attempts: Vec::new(),
                     out_point,
                     transaction,
                     account_index: 0,
@@ -1191,6 +1154,299 @@ mod tests {
             )
             .into(),
         )))
+    }
+
+    const DRAIN_OPERATION_ID: [u8; 16] = [0x33; 16];
+
+    /// The consumption-report context with its lock tagged as a wallet drain
+    /// and a registered Pending operation context, as after a dispatched
+    /// drain whose Type18 outcome is still unknown.
+    async fn drain_report_context() -> (
+        ConsumptionReportContext,
+        Arc<AssetLockOperationContext>,
+        AssetLockOperationRegistration,
+    ) {
+        let ctx = consumption_report_context().await;
+        ctx.persistence.wallet_drain.store(true, Ordering::SeqCst);
+        ctx.wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&ctx.wallet_id)
+            .expect("wallet")
+            .tracked_asset_locks
+            .get_mut(&ctx.out_point)
+            .expect("tracked lock")
+            .operation_id = Some(DRAIN_OPERATION_ID);
+        let operation = Arc::new(AssetLockOperationContext::new(DRAIN_OPERATION_ID));
+        operation.set(AssetLockOperationState::Pending, Some(ctx.out_point));
+        let registration = ctx
+            .manager
+            .register_wallet_drain_operation(operation.clone());
+        (ctx, operation, registration)
+    }
+
+    async fn live_lock(ctx: &ConsumptionReportContext) -> TrackedAssetLock {
+        ctx.wallet_manager
+            .read()
+            .await
+            .get_wallet_info(&ctx.wallet_id)
+            .expect("wallet")
+            .tracked_asset_locks
+            .get(&ctx.out_point)
+            .expect("tracked lock")
+            .clone()
+    }
+
+    /// Every asset-lock status written for the context's outpoint, in order.
+    fn persisted_statuses(ctx: &ConsumptionReportContext) -> Vec<AssetLockStatus> {
+        ctx.persistence
+            .stored
+            .lock()
+            .expect("recording persistence mutex")
+            .iter()
+            .filter_map(|cs| cs.asset_locks.as_ref())
+            .filter_map(|asset_locks| asset_locks.asset_locks.get(&ctx.out_point))
+            .map(|entry| entry.status.clone())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn settle_completes_drain_on_exact_outpoint_already_consumed_report() {
+        let (ctx, operation, _registration) = drain_report_context().await;
+        let landed = ctx
+            .manager
+            .settle_asset_lock_submit_result::<()>(
+                Err(already_consumed_error(ctx.out_point)),
+                &ctx.out_point,
+                &ctx.proof,
+                None,
+                Some(DRAIN_OPERATION_ID),
+            )
+            .await
+            .expect("an already-consumed drain lock completes the drain");
+        assert!(landed.is_none(), "nothing landed in this call");
+        let lock = live_lock(&ctx).await;
+        assert_eq!(lock.status, AssetLockStatus::DrainCompleted);
+        assert!(lock.proof.is_none());
+        // Completion is the only write: no consumption-unknown detour.
+        assert_eq!(
+            persisted_statuses(&ctx),
+            vec![AssetLockStatus::DrainCompleted]
+        );
+        assert_eq!(
+            operation.snapshot().state,
+            AssetLockOperationState::Completed
+        );
+        assert_eq!(operation.snapshot().out_point, Some(ctx.out_point));
+    }
+
+    #[tokio::test]
+    async fn settle_defers_to_generic_reconciliation_without_operation_id() {
+        let ctx = consumption_report_context().await;
+        let error = ctx
+            .manager
+            .settle_asset_lock_submit_result::<()>(
+                Err(already_consumed_error(ctx.out_point)),
+                &ctx.out_point,
+                &ctx.proof,
+                None,
+                None,
+            )
+            .await
+            .expect_err("a generic lock keeps the typed host signal");
+        assert!(matches!(
+            error,
+            PlatformWalletError::AssetLockAlreadyConsumed(actual) if actual == ctx.out_point
+        ));
+        let lock = live_lock(&ctx).await;
+        assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
+        assert!(matches!(lock.proof, Some(AssetLockProof::Chain(_))));
+    }
+
+    #[tokio::test]
+    async fn settle_leaves_drain_pending_on_foreign_outpoint_or_unrelated_error() {
+        let (ctx, operation, _registration) = drain_report_context().await;
+        let foreign = OutPoint::new(ctx.out_point.txid, ctx.out_point.vout + 1);
+        for error in [
+            already_consumed_error(foreign),
+            dash_sdk::Error::Generic("unrelated".into()),
+        ] {
+            let result = ctx
+                .manager
+                .settle_asset_lock_submit_result::<()>(
+                    Err(error),
+                    &ctx.out_point,
+                    &ctx.proof,
+                    None,
+                    Some(DRAIN_OPERATION_ID),
+                )
+                .await;
+            assert!(matches!(result, Err(PlatformWalletError::Sdk(_))));
+            let lock = live_lock(&ctx).await;
+            assert_eq!(lock.status, AssetLockStatus::ChainLocked);
+            assert_eq!(lock.proof, Some(ctx.proof.clone()));
+            assert!(persisted_statuses(&ctx).is_empty());
+            assert_eq!(operation.snapshot().state, AssetLockOperationState::Pending);
+        }
+    }
+
+    #[tokio::test]
+    async fn settle_passes_a_landed_result_through_for_a_drain() {
+        let (ctx, operation, _registration) = drain_report_context().await;
+        let landed = ctx
+            .manager
+            .settle_asset_lock_submit_result(
+                Ok::<_, dash_sdk::Error>(42u64),
+                &ctx.out_point,
+                &ctx.proof,
+                None,
+                Some(DRAIN_OPERATION_ID),
+            )
+            .await
+            .expect("a landed submit passes through");
+        assert_eq!(landed, Some(42));
+        // Completion is the caller's step 5, not the settle's.
+        assert_eq!(live_lock(&ctx).await.status, AssetLockStatus::ChainLocked);
+        assert!(persisted_statuses(&ctx).is_empty());
+        assert_eq!(operation.snapshot().state, AssetLockOperationState::Pending);
+    }
+
+    async fn settle_already_consumed(
+        ctx: &ConsumptionReportContext,
+    ) -> Result<Option<()>, PlatformWalletError> {
+        ctx.manager
+            .settle_asset_lock_submit_result::<()>(
+                Err(already_consumed_error(ctx.out_point)),
+                &ctx.out_point,
+                &ctx.proof,
+                None,
+                Some(DRAIN_OPERATION_ID),
+            )
+            .await
+    }
+
+    #[tokio::test]
+    async fn settle_keeps_drain_pending_when_completion_persistence_fails() {
+        let (ctx, operation, _registration) = drain_report_context().await;
+        let settle = settle_already_consumed;
+
+        ctx.persistence
+            .fail_next_store
+            .store(true, Ordering::SeqCst);
+        assert!(matches!(
+            settle(&ctx).await,
+            Err(PlatformWalletError::Persistence(_))
+        ));
+        assert_eq!(live_lock(&ctx).await.status, AssetLockStatus::ChainLocked);
+        assert!(persisted_statuses(&ctx).is_empty());
+        assert_eq!(operation.snapshot().state, AssetLockOperationState::Pending);
+
+        // A buffered backend whose flush fails has not committed: stay Pending.
+        *ctx.persistence
+            .fail_next_flush
+            .lock()
+            .expect("recording persistence mutex") = Some(PersistenceErrorKind::Transient);
+        assert!(matches!(
+            settle(&ctx).await,
+            Err(PlatformWalletError::Persistence(_))
+        ));
+        assert_eq!(live_lock(&ctx).await.status, AssetLockStatus::ChainLocked);
+        assert_eq!(operation.snapshot().state, AssetLockOperationState::Pending);
+
+        // An inline-committing backend already holds the row: a failed flush
+        // notification must not suppress the live publication.
+        ctx.persistence
+            .store_commits_inline
+            .store(true, Ordering::SeqCst);
+        *ctx.persistence
+            .fail_next_flush
+            .lock()
+            .expect("recording persistence mutex") = Some(PersistenceErrorKind::Transient);
+        assert!(settle(&ctx)
+            .await
+            .expect("inline commit completes")
+            .is_none());
+        assert_eq!(
+            live_lock(&ctx).await.status,
+            AssetLockStatus::DrainCompleted
+        );
+        assert_eq!(
+            operation.snapshot().state,
+            AssetLockOperationState::Completed
+        );
+    }
+
+    #[tokio::test]
+    async fn complete_wallet_drain_is_idempotent_and_refuses_a_foreign_operation_id() {
+        let (ctx, _operation, _registration) = drain_report_context().await;
+        assert!(matches!(
+            ctx.manager
+                .complete_wallet_drain(ctx.out_point, [0x44; 16])
+                .await,
+            Err(PlatformWalletError::AssetLockNotTracked(_))
+        ));
+        assert_eq!(live_lock(&ctx).await.status, AssetLockStatus::ChainLocked);
+        ctx.manager
+            .complete_wallet_drain(ctx.out_point, DRAIN_OPERATION_ID)
+            .await
+            .expect("first completion");
+        assert_eq!(
+            persisted_statuses(&ctx),
+            vec![AssetLockStatus::DrainCompleted]
+        );
+        ctx.manager
+            .complete_wallet_drain(ctx.out_point, DRAIN_OPERATION_ID)
+            .await
+            .expect("second completion is a no-op");
+        assert_eq!(
+            persisted_statuses(&ctx),
+            vec![AssetLockStatus::DrainCompleted],
+            "an already completed row is not rewritten"
+        );
+
+        let (ctx, _operation, _registration) = drain_report_context().await;
+        ctx.persistence.wallet_drain.store(false, Ordering::SeqCst);
+        assert!(matches!(
+            ctx.manager
+                .complete_wallet_drain(ctx.out_point, DRAIN_OPERATION_ID)
+                .await,
+            Err(PlatformWalletError::Persistence(_))
+        ));
+        assert_eq!(live_lock(&ctx).await.status, AssetLockStatus::ChainLocked);
+        assert!(persisted_statuses(&ctx).is_empty());
+    }
+
+    #[tokio::test]
+    async fn drain_completed_never_regresses() {
+        let (ctx, _operation, _registration) = drain_report_context().await;
+        ctx.manager
+            .complete_wallet_drain(ctx.out_point, DRAIN_OPERATION_ID)
+            .await
+            .expect("completion");
+        assert!(matches!(
+            ctx.manager
+                .advance_asset_lock_status(
+                    &ctx.out_point,
+                    AssetLockStatus::ChainLocked,
+                    Some(ctx.proof.clone()),
+                )
+                .await,
+            Err(PlatformWalletError::AssetLockAlreadyConsumed(_))
+        ));
+        assert!(matches!(
+            ctx.manager.consume_asset_lock(&ctx.out_point).await,
+            Err(PlatformWalletError::Persistence(_))
+        ));
+        assert!(matches!(
+            ctx.manager
+                .resume_asset_lock(&ctx.out_point, Some(Duration::from_secs(1)))
+                .await,
+            Err(PlatformWalletError::AssetLockAlreadyConsumed(_))
+        ));
+        assert_eq!(
+            live_lock(&ctx).await.status,
+            AssetLockStatus::DrainCompleted
+        );
     }
 
     #[tokio::test]

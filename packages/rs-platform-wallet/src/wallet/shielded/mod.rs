@@ -39,7 +39,6 @@ pub mod balance;
 #[cfg(test)]
 mod balance_tests;
 pub mod coordinator;
-mod drain_recovery;
 pub mod file_store;
 pub mod fund_from_asset_lock;
 pub mod keys;
@@ -51,6 +50,8 @@ pub mod store;
 pub mod sync;
 #[cfg(test)]
 mod viewing_key_bind_tests;
+#[cfg(test)]
+mod wallet_drain_tests;
 
 pub use activity::{
     compute_activity_id, derive_activity_from_scan_data, sort_activity_for_display,

@@ -36,7 +36,6 @@ use platform_wallet::changeset::{
     PlatformWalletChangeSet, PlatformWalletPersistence, ProviderKeyAccountEntry,
     ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
 };
-use platform_wallet::wallet::asset_lock::{MAX_DRAIN_ATTEMPTS, MAX_DRAIN_ATTEMPT_BYTES};
 use platform_wallet::wallet::platform_wallet::WalletId;
 #[cfg(feature = "shielded")]
 use platform_wallet::wallet::shielded::ShieldedActivityStatus;
@@ -157,9 +156,6 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_MASTERNODES: u64 = 1 <<
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_CORE_SWEEP_REMOVAL: u64 = 1 << 11;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DASHPAY_PAYMENTS: u64 = 1 << 12;
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_OPERATION_IDS: u64 = 1 << 13;
-pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_FUNDING_ATTEMPTS: u64 = 1 << 14;
-/// Atomic shielded history replacement and strict scan/history restore.
-pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_ACTIVITY_RECONCILIATION: u64 = 1 << 15;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
 /// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
@@ -302,53 +298,6 @@ pub type LoadAssetLockOperationIdFn = unsafe extern "C" fn(
     out_found: *mut bool,
     out_operation_id: *mut u8,
 ) -> i32;
-
-/// Host-owned exact signed transition bytes. The array order is the attempt index.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct ShieldedFundingAttemptFFI {
-    pub bytes: *const u8,
-    pub bytes_len: usize,
-}
-
-/// Remove exact activity rows. `entry_ids` borrows `count * 32` bytes for
-/// this callback only; host stages deletion in the current atomic round.
-pub type RemoveShieldedActivityFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    account_index: u32,
-    entry_ids: *const u8,
-    count: usize,
-) -> i32;
-
-/// Persist one append-only attempt inside the active atomic changeset. An existing
-/// index must contain exactly these bytes; an absent index must equal the count.
-pub type PersistShieldedFundingAttemptFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    out_point: *const u8,
-    operation_id: *const u8,
-    attempt_index: u32,
-    bytes: *const u8,
-    bytes_len: usize,
-) -> i32;
-
-/// Load all attempts, including consumed tombstones. Missing rows/read errors fail.
-/// Ownership transfers to Rust only on success (return value zero). On failure,
-/// the host retains ownership and must release any buffers it allocated.
-pub type LoadShieldedFundingAttemptsFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    wallet_id: *const u8,
-    out_point: *const u8,
-    out_entries: *mut *mut ShieldedFundingAttemptFFI,
-    out_count: *mut usize,
-) -> i32;
-
-pub type FreeShieldedFundingAttemptsFn = unsafe extern "C" fn(
-    context: *mut c_void,
-    entries: *mut ShieldedFundingAttemptFFI,
-    count: usize,
-);
 
 /// Size- and version-tagged additive persistence callbacks.
 ///
@@ -500,44 +449,6 @@ pub struct PersistenceCallbacksExtension {
             out_operation_id: *mut u8,
         ) -> i32,
     >,
-    pub on_persist_shielded_funding_attempt_fn: Option<
-        unsafe extern "C" fn(
-            context: *mut c_void,
-            wallet_id: *const u8,
-            out_point: *const u8,
-            operation_id: *const u8,
-            attempt_index: u32,
-            bytes: *const u8,
-            bytes_len: usize,
-        ) -> i32,
-    >,
-    pub on_load_shielded_funding_attempts_fn: Option<
-        unsafe extern "C" fn(
-            context: *mut c_void,
-            wallet_id: *const u8,
-            out_point: *const u8,
-            out_entries: *mut *mut ShieldedFundingAttemptFFI,
-            out_count: *mut usize,
-        ) -> i32,
-    >,
-    pub on_load_shielded_funding_attempts_free_fn: Option<
-        unsafe extern "C" fn(
-            context: *mut c_void,
-            entries: *mut ShieldedFundingAttemptFFI,
-            count: usize,
-        ),
-    >,
-    /// Additive removal half of atomic activity replacement; legacy row strides
-    /// remain unchanged. IDs are packed as `count` consecutive 32-byte values.
-    pub on_remove_shielded_activity_fn: Option<
-        unsafe extern "C" fn(
-            context: *mut c_void,
-            wallet_id: *const u8,
-            account_index: u32,
-            entry_ids: *const u8,
-            count: usize,
-        ) -> i32,
-    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -557,10 +468,6 @@ impl Default for PersistenceCallbacksExtension {
             on_load_identity_balance_block_time_fn: None,
             on_persist_asset_lock_operation_id_fn: None,
             on_load_asset_lock_operation_id_fn: None,
-            on_persist_shielded_funding_attempt_fn: None,
-            on_load_shielded_funding_attempts_fn: None,
-            on_load_shielded_funding_attempts_free_fn: None,
-            on_remove_shielded_activity_fn: None,
         }
     }
 }
@@ -581,10 +488,6 @@ pub struct PersistenceExtensionCallbacks {
     pub load_identity_balance_block_time: Option<LoadIdentityBalanceBlockTimeFn>,
     pub persist_asset_lock_operation_id: Option<PersistAssetLockOperationIdFn>,
     pub load_asset_lock_operation_id: Option<LoadAssetLockOperationIdFn>,
-    pub persist_shielded_funding_attempt: Option<PersistShieldedFundingAttemptFn>,
-    pub load_shielded_funding_attempts: Option<LoadShieldedFundingAttemptsFn>,
-    pub load_shielded_funding_attempts_free: Option<FreeShieldedFundingAttemptsFn>,
-    pub remove_shielded_activity: Option<RemoveShieldedActivityFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -1710,59 +1613,6 @@ impl FFIPersister {
             // tombstones and fail-closed loads. Legacy hosts do not set this bit.
             capabilities = capabilities.union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS);
         }
-        if capabilities.contains(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
-            && self
-                .tracked_masternodes_callbacks
-                .persist_shielded_funding_attempt
-                .is_some()
-            && self
-                .tracked_masternodes_callbacks
-                .load_shielded_funding_attempts
-                .is_some()
-            && self
-                .tracked_masternodes_callbacks
-                .load_shielded_funding_attempts_free
-                .is_some()
-        {
-            capabilities = capabilities.union(PersistenceCapabilities::SHIELDED_FUNDING_ATTEMPTS);
-        }
-        #[cfg(feature = "shielded")]
-        if self.callbacks.on_persist_shielded_activity_fn.is_some()
-            && self.callbacks.on_load_shielded_activity_fn.is_some()
-            && self.callbacks.on_load_shielded_activity_free_fn.is_some()
-            && self
-                .tracked_masternodes_callbacks
-                .remove_shielded_activity
-                .is_some()
-            && self.callbacks.on_persist_shielded_notes_fn.is_some()
-            && self
-                .callbacks
-                .on_persist_shielded_nullifiers_spent_fn
-                .is_some()
-            && self.callbacks.on_load_shielded_notes_fn.is_some()
-            && self.callbacks.on_load_shielded_notes_free_fn.is_some()
-            && self
-                .callbacks
-                .on_persist_shielded_outgoing_notes_fn
-                .is_some()
-            && self.callbacks.on_load_shielded_outgoing_notes_fn.is_some()
-            && self
-                .callbacks
-                .on_load_shielded_outgoing_notes_free_fn
-                .is_some()
-            && self
-                .callbacks
-                .on_persist_shielded_synced_indices_fn
-                .is_some()
-            && self.callbacks.on_load_shielded_sync_states_fn.is_some()
-            && self
-                .callbacks
-                .on_load_shielded_sync_states_free_fn
-                .is_some()
-        {
-            capabilities =
-                capabilities.union(PersistenceCapabilities::SHIELDED_ACTIVITY_RECONCILIATION);
-        }
         if self
             .tracked_masternodes_callbacks
             .persist_tracked_masternodes
@@ -2680,42 +2530,6 @@ impl PlatformWalletPersistence for FFIPersister {
                         outcome.record(rc);
                     }
                 }
-                if !entry.shielded_funding_attempts.is_empty() {
-                    let (Some(operation_id), Some(cb)) = (
-                        entry.operation_id,
-                        self.tracked_masternodes_callbacks
-                            .persist_shielded_funding_attempt,
-                    ) else {
-                        outcome.record(1);
-                        continue;
-                    };
-                    let out_point = outpoint_to_bytes(&entry.out_point);
-                    for (index, attempt) in entry.shielded_funding_attempts.iter().enumerate() {
-                        let Ok(index) = u32::try_from(index) else {
-                            outcome.record(1);
-                            break;
-                        };
-                        if attempt.is_empty() {
-                            outcome.record(1);
-                            break;
-                        }
-                        let rc = unsafe {
-                            cb(
-                                self.callbacks.context,
-                                wallet_id.as_ptr(),
-                                out_point.as_ptr(),
-                                operation_id.as_ptr(),
-                                index,
-                                attempt.as_ptr(),
-                                attempt.len(),
-                            )
-                        };
-                        if rc != 0 {
-                            outcome.record(rc);
-                            break;
-                        }
-                    }
-                }
             }
         }
 
@@ -3211,28 +3025,6 @@ impl PlatformWalletPersistence for FFIPersister {
                 }
             }
 
-            // Removals precede upserts in the same host transaction. Missing
-            // support is an error, never an accepted-but-ignored replacement.
-            for (id, ids) in &shielded_cs.activity_removed {
-                if let Some(cb) = self.tracked_masternodes_callbacks.remove_shielded_activity {
-                    let packed: Vec<u8> = ids.iter().flat_map(|id| id.iter().copied()).collect();
-                    let result = unsafe {
-                        cb(
-                            self.callbacks.context,
-                            id.wallet_id.as_ptr(),
-                            id.account_index,
-                            packed.as_ptr(),
-                            ids.len(),
-                        )
-                    };
-                    if result != 0 {
-                        outcome.record(result);
-                    }
-                } else {
-                    outcome.record(-1);
-                }
-            }
-
             // 6) activity entries (derived activity log). The variable-
             //    length fields (counterparty / memo / cmx + nullifier
             //    arrays) borrow into `backing`, a Vec of owned byte
@@ -3353,11 +3145,6 @@ impl PlatformWalletPersistence for FFIPersister {
                     // `rows` and `entries` drop here, after the callback
                     // has copied everything it needs.
                     drop(rows);
-                } else if self
-                    .declared_capabilities
-                    .contains(PersistenceCapabilities::SHIELDED_ACTIVITY_RECONCILIATION)
-                {
-                    outcome.record(-1);
                 }
             }
         }
@@ -3529,24 +3316,6 @@ impl PlatformWalletPersistence for FFIPersister {
                     &mut wallet_state.unused_asset_locks,
                 )?;
             }
-            if let Some(cb) = self
-                .tracked_masternodes_callbacks
-                .load_shielded_funding_attempts
-            {
-                let free = self
-                    .tracked_masternodes_callbacks
-                    .load_shielded_funding_attempts_free
-                    .ok_or_else(|| {
-                        PersistenceError::backend("missing shielded funding attempts free callback")
-                    })?;
-                load_shielded_funding_attempts(
-                    cb,
-                    free,
-                    self.callbacks.context,
-                    &entry.wallet_id,
-                    &mut wallet_state.unused_asset_locks,
-                )?;
-            }
             if let Some(cb) = self.load_identity_balance_block_time_callback {
                 for identities in wallet_state.identity_manager.wallet_identities.values_mut() {
                     for managed in identities.values_mut() {
@@ -3635,10 +3404,6 @@ impl PlatformWalletPersistence for FFIPersister {
                 ));
             }
 
-            let strict_activity = self
-                .declared_capabilities
-                .contains(PersistenceCapabilities::SHIELDED_ACTIVITY_RECONCILIATION);
-
             // 1) notes
             if let Some(load_notes) = self.callbacks.on_load_shielded_notes_fn {
                 let mut notes_ptr: *const ShieldedNoteRestoreFFI = std::ptr::null();
@@ -3676,20 +3441,10 @@ impl PlatformWalletPersistence for FFIPersister {
                     entries: notes_ptr,
                     count: notes_count,
                 };
-                if strict_activity && notes_ptr.is_null() && notes_count > 0 {
-                    return Err(PersistenceError::backend(
-                        "shielded restore returned a null array with nonzero count",
-                    ));
-                }
                 if !notes_ptr.is_null() && notes_count > 0 {
                     let slice = unsafe { slice::from_raw_parts(notes_ptr, notes_count) };
                     for ffi in slice {
                         if ffi.note_data_ptr.is_null() || ffi.note_data_len == 0 {
-                            if strict_activity {
-                                return Err(PersistenceError::backend(
-                                    "missing shielded note bytes",
-                                ));
-                            }
                             continue;
                         }
                         let note_data = unsafe {
@@ -3754,11 +3509,6 @@ impl PlatformWalletPersistence for FFIPersister {
                     entries: out_ptr,
                     count: out_count,
                 };
-                if strict_activity && out_ptr.is_null() && out_count > 0 {
-                    return Err(PersistenceError::backend(
-                        "shielded restore returned a null array with nonzero count",
-                    ));
-                }
                 if !out_ptr.is_null() && out_count > 0 {
                     let slice = unsafe { slice::from_raw_parts(out_ptr, out_count) };
                     for ffi in slice {
@@ -3823,11 +3573,6 @@ impl PlatformWalletPersistence for FFIPersister {
                     entries: states_ptr,
                     count: states_count,
                 };
-                if strict_activity && states_ptr.is_null() && states_count > 0 {
-                    return Err(PersistenceError::backend(
-                        "shielded sync restore returned a null array with nonzero count",
-                    ));
-                }
                 if !states_ptr.is_null() && states_count > 0 {
                     let slice = unsafe { slice::from_raw_parts(states_ptr, states_count) };
                     for ffi in slice {
@@ -3887,34 +3632,9 @@ impl PlatformWalletPersistence for FFIPersister {
                     entries: act_ptr,
                     count: act_count,
                 };
-                if strict_activity && act_ptr.is_null() && act_count > 0 {
-                    return Err(PersistenceError::backend(
-                        "shielded restore returned a null array with nonzero count",
-                    ));
-                }
                 if !act_ptr.is_null() && act_count > 0 {
                     let slice = unsafe { slice::from_raw_parts(act_ptr, act_count) };
                     for ffi in slice {
-                        if strict_activity
-                            && (ffi.kind_tag > 9
-                                || ffi.direction > 2
-                                || ffi.status > 3
-                                || ffi.note_cmxs_count > (isize::MAX as usize) / 32
-                                || ffi.spent_nullifiers_count > (isize::MAX as usize) / 32
-                                || ffi.has_fee > 1
-                                || ffi.has_block_height > 1
-                                || ffi.has_min_note_position > 1
-                                || ffi.has_identity_id > 1
-                                || (ffi.note_cmxs_count > 0 && ffi.note_cmxs_ptr.is_null())
-                                || (ffi.spent_nullifiers_count > 0
-                                    && ffi.spent_nullifiers_ptr.is_null())
-                                || (ffi.counterparty_len > 0 && ffi.counterparty_ptr.is_null())
-                                || (ffi.memo_len > 0 && ffi.memo_ptr.is_null()))
-                        {
-                            return Err(PersistenceError::backend(
-                                "malformed shielded activity row",
-                            ));
-                        }
                         let kind = match ffi.kind_tag {
                             0 => ShieldedActivityKind::Shield,
                             1 => ShieldedActivityKind::ShieldFromAssetLock,
@@ -6313,89 +6033,6 @@ fn load_asset_lock_operation_ids(
     Ok(())
 }
 
-/// Own successfully returned buffers until copying finishes, including decode
-/// failures. A failed host callback retains ownership of its output buffers.
-fn load_shielded_funding_attempts(
-    callback: LoadShieldedFundingAttemptsFn,
-    free: FreeShieldedFundingAttemptsFn,
-    context: *mut c_void,
-    wallet_id: &WalletId,
-    locks: &mut BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>>,
-) -> Result<(), PersistenceError> {
-    struct Guard {
-        free: FreeShieldedFundingAttemptsFn,
-        context: *mut c_void,
-        entries: *mut ShieldedFundingAttemptFFI,
-        count: usize,
-    }
-    impl Drop for Guard {
-        fn drop(&mut self) {
-            unsafe { (self.free)(self.context, self.entries, self.count) };
-        }
-    }
-    for lock in locks.values_mut().flat_map(|locks| locks.values_mut()) {
-        let out_point = outpoint_to_bytes(&lock.out_point);
-        let mut entries = std::ptr::null_mut();
-        let mut count = 0;
-        let rc = unsafe {
-            callback(
-                context,
-                wallet_id.as_ptr(),
-                out_point.as_ptr(),
-                &mut entries,
-                &mut count,
-            )
-        };
-        if rc != 0 {
-            return Err(persist_callback_error(
-                rc,
-                "Loading shielded funding attempts failed",
-            ));
-        }
-        let _guard = Guard {
-            free,
-            context,
-            entries,
-            count,
-        };
-        if count > MAX_DRAIN_ATTEMPTS
-            || (count != 0 && (entries.is_null() || lock.operation_id.is_none()))
-        {
-            return Err(PersistenceError::backend(
-                "invalid shielded funding attempt rows",
-            ));
-        }
-        let rows = if count == 0 {
-            &[]
-        } else {
-            unsafe { slice::from_raw_parts(entries, count) }
-        };
-        let mut total_bytes = 0usize;
-        // Validate all lengths before constructing any payload slice or copying bytes.
-        for row in rows {
-            total_bytes = total_bytes.checked_add(row.bytes_len).ok_or_else(|| {
-                PersistenceError::backend("shielded funding attempt bytes overflow")
-            })?;
-            if total_bytes > MAX_DRAIN_ATTEMPT_BYTES {
-                return Err(PersistenceError::backend(
-                    "shielded funding attempt archive exceeds budget",
-                ));
-            }
-            if row.bytes.is_null() || row.bytes_len == 0 || row.bytes_len > isize::MAX as usize {
-                return Err(PersistenceError::backend(
-                    "invalid signed shielded funding attempt",
-                ));
-            }
-        }
-        let mut attempts = Vec::with_capacity(count);
-        for row in rows {
-            attempts.push(unsafe { slice::from_raw_parts(row.bytes, row.bytes_len) }.to_vec());
-        }
-        lock.shielded_funding_attempts = attempts;
-    }
-    Ok(())
-}
-
 /// Rebuild tracked locks from the host's frozen `AssetLockEntryFFI` rows.
 /// Transactions use consensus encoding, proofs use DPP bincode, and outpoints
 /// are raw txid bytes followed by a little-endian vout. Malformed or duplicate
@@ -6499,7 +6136,6 @@ fn build_unused_asset_locks(
             identity_index: spec.identity_index,
             amount: spec.amount_duffs,
             operation_id: None,
-            shielded_funding_attempts: Vec::new(),
             status,
             proof,
         };
@@ -9033,7 +8669,6 @@ mod tests {
                 status: status.clone(),
                 proof: None,
                 operation_id,
-                shielded_funding_attempts: Vec::new(),
             };
             let (entries, _storage) = build_asset_lock_entries(&[&entry]);
             let wallet = WalletRestoreEntryFFI {
@@ -9183,279 +8818,6 @@ mod tests {
         assert!(!persister(missing_load, required, extensions)
             .persistence_capabilities()
             .contains(required));
-    }
-
-    #[test]
-    fn should_require_complete_shielded_funding_attempt_persistence_attestation() {
-        unsafe extern "C" fn persist_id(
-            _: *mut c_void,
-            _: *const u8,
-            _: *const u8,
-            _: *const u8,
-        ) -> i32 {
-            0
-        }
-        unsafe extern "C" fn load_id(
-            _: *mut c_void,
-            _: *const u8,
-            _: *const u8,
-            _: *mut bool,
-            _: *mut u8,
-        ) -> i32 {
-            0
-        }
-        unsafe extern "C" fn persist(
-            _: *mut c_void,
-            _: *const u8,
-            _: *const u8,
-            _: *const u8,
-            _: u32,
-            _: *const u8,
-            _: usize,
-        ) -> i32 {
-            0
-        }
-        unsafe extern "C" fn load(
-            _: *mut c_void,
-            _: *const u8,
-            _: *const u8,
-            _: *mut *mut ShieldedFundingAttemptFFI,
-            _: *mut usize,
-        ) -> i32 {
-            0
-        }
-        unsafe extern "C" fn free(_: *mut c_void, _: *mut ShieldedFundingAttemptFFI, _: usize) {}
-        let callbacks = || PersistenceCallbacks {
-            on_persist_asset_locks_fn: Some(noop_asset_locks),
-            on_load_wallet_list_fn: Some(noop_load_wallets),
-            on_load_wallet_list_free_fn: Some(noop_free_wallets),
-            ..Default::default()
-        };
-        let extensions = PersistenceExtensionCallbacks {
-            persist_asset_lock_operation_id: Some(persist_id),
-            load_asset_lock_operation_id: Some(load_id),
-            persist_shielded_funding_attempt: Some(persist),
-            load_shielded_funding_attempts: Some(load),
-            load_shielded_funding_attempts_free: Some(free),
-            ..Default::default()
-        };
-        let required = PersistenceCapabilities::SHIELDED_FUNDING_ATTEMPTS;
-        let capabilities = |declaration, extensions| {
-            FFIPersister::new_with_persistence_capabilities_and_extensions(
-                callbacks(),
-                declaration,
-                extensions,
-            )
-            .persistence_capabilities()
-        };
-        assert!(capabilities(required, extensions).contains(required));
-        assert!(!capabilities(PersistenceCapabilities::NONE, extensions).contains(required));
-        for incomplete in [
-            PersistenceExtensionCallbacks {
-                persist_shielded_funding_attempt: None,
-                ..extensions
-            },
-            PersistenceExtensionCallbacks {
-                load_shielded_funding_attempts: None,
-                ..extensions
-            },
-            PersistenceExtensionCallbacks {
-                load_shielded_funding_attempts_free: None,
-                ..extensions
-            },
-            PersistenceExtensionCallbacks {
-                load_asset_lock_operation_id: None,
-                ..extensions
-            },
-        ] {
-            assert!(!capabilities(required, incomplete).contains(required));
-        }
-    }
-
-    #[test]
-    fn should_restore_signed_shielded_funding_attempts_and_free_on_failure() {
-        use dashcore::hashes::Hash;
-        struct Host {
-            rows: Vec<ShieldedFundingAttemptFFI>,
-            freed: bool,
-            fail: bool,
-            persisted: Vec<Vec<u8>>,
-            committed: bool,
-        }
-        unsafe extern "C" fn load(
-            context: *mut c_void,
-            _: *const u8,
-            _: *const u8,
-            entries: *mut *mut ShieldedFundingAttemptFFI,
-            count: *mut usize,
-        ) -> i32 {
-            let host = &mut *context.cast::<Host>();
-            *entries = host.rows.as_mut_ptr();
-            *count = host.rows.len();
-            if host.fail {
-                -1
-            } else {
-                0
-            }
-        }
-        unsafe extern "C" fn free(
-            context: *mut c_void,
-            _: *mut ShieldedFundingAttemptFFI,
-            _: usize,
-        ) {
-            (*context.cast::<Host>()).freed = true;
-        }
-        let attempts = [vec![18, 1, 2, 3], vec![18, 4, 5, 6, 7]];
-        let mut host = Host {
-            rows: attempts
-                .iter()
-                .map(|bytes| ShieldedFundingAttemptFFI {
-                    bytes: bytes.as_ptr(),
-                    bytes_len: bytes.len(),
-                })
-                .collect(),
-            freed: false,
-            fail: false,
-            persisted: Vec::new(),
-            committed: false,
-        };
-        let out_point = dashcore::OutPoint {
-            txid: dashcore::Txid::from_byte_array([3; 32]),
-            vout: 0,
-        };
-        let tracked = platform_wallet::TrackedAssetLock {
-            out_point, transaction: dashcore::Transaction { version: 3, lock_time: 0,
-                input: vec![], output: vec![], special_transaction_payload: None },
-            account_index: 0, funding_type: key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType::AssetLockShieldedAddressTopUp,
-            identity_index: 0, amount: 1000, status: platform_wallet::AssetLockStatus::Consumed,
-            proof: None, operation_id: Some([7; 16]), shielded_funding_attempts: Vec::new(),
-        };
-        let mut locks = [(0, [(out_point, tracked)].into_iter().collect())]
-            .into_iter()
-            .collect();
-        load_shielded_funding_attempts(
-            load,
-            free,
-            std::ptr::addr_of_mut!(host).cast(),
-            &[42; 32],
-            &mut locks,
-        )
-        .unwrap();
-        assert!(host.freed);
-        assert_eq!(locks[&0][&out_point].shielded_funding_attempts, attempts);
-        unsafe extern "C" fn persist_id(
-            _: *mut c_void,
-            _: *const u8,
-            _: *const u8,
-            _: *const u8,
-        ) -> i32 {
-            0
-        }
-        unsafe extern "C" fn persist_attempt(
-            context: *mut c_void,
-            _: *const u8,
-            _: *const u8,
-            operation: *const u8,
-            index: u32,
-            bytes: *const u8,
-            len: usize,
-        ) -> i32 {
-            let host = &mut *context.cast::<Host>();
-            assert_eq!(slice::from_raw_parts(operation, 16), &[7; 16]);
-            if host.fail {
-                return -1;
-            }
-            assert_eq!(index as usize, host.persisted.len());
-            host.persisted
-                .push(slice::from_raw_parts(bytes, len).to_vec());
-            0
-        }
-        unsafe extern "C" fn end(context: *mut c_void, _: *const u8, success: bool) -> i32 {
-            (*context.cast::<Host>()).committed = success;
-            0
-        }
-        let writer = FFIPersister::new_with_persistence_capabilities_and_extensions(
-            PersistenceCallbacks {
-                context: std::ptr::addr_of_mut!(host).cast(),
-                on_persist_asset_locks_fn: Some(noop_asset_locks),
-                on_changeset_end_fn: Some(end),
-                ..Default::default()
-            },
-            PersistenceCapabilities::NONE,
-            PersistenceExtensionCallbacks {
-                persist_asset_lock_operation_id: Some(persist_id),
-                persist_shielded_funding_attempt: Some(persist_attempt),
-                ..Default::default()
-            },
-        );
-        let changeset = platform_wallet::changeset::PlatformWalletChangeSet {
-            asset_locks: Some(platform_wallet::changeset::AssetLockChangeSet {
-                asset_locks: [(
-                    out_point,
-                    platform_wallet::changeset::AssetLockEntry::from(&locks[&0][&out_point]),
-                )]
-                .into_iter()
-                .collect(),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        writer.store([42; 32], changeset.clone()).unwrap();
-        assert_eq!(host.persisted, attempts);
-        assert!(host.committed);
-        host.fail = true;
-        assert!(writer.store([42; 32], changeset).is_err());
-        assert!(!host.committed);
-        host.freed = false;
-        host.fail = true;
-        assert!(load_shielded_funding_attempts(
-            load,
-            free,
-            std::ptr::addr_of_mut!(host).cast(),
-            &[42; 32],
-            &mut locks
-        )
-        .is_err());
-        assert!(!host.freed, "failed callbacks retain buffer ownership");
-        host.freed = false;
-        host.fail = false;
-        host.rows[0].bytes = std::ptr::null();
-        assert!(load_shielded_funding_attempts(
-            load,
-            free,
-            std::ptr::addr_of_mut!(host).cast(),
-            &[42; 32],
-            &mut locks
-        )
-        .is_err());
-        assert!(host.freed);
-        // Invalid addresses are deliberate: budget validation must finish before
-        // a payload pointer is dereferenced, including cumulative overflow.
-        for lengths in [
-            vec![1; MAX_DRAIN_ATTEMPTS + 1],
-            vec![MAX_DRAIN_ATTEMPT_BYTES + 1],
-            vec![MAX_DRAIN_ATTEMPT_BYTES, 1],
-            vec![usize::MAX, 1],
-        ] {
-            host.rows = lengths
-                .into_iter()
-                .map(|bytes_len| ShieldedFundingAttemptFFI {
-                    bytes: std::ptr::dangling(),
-                    bytes_len,
-                })
-                .collect();
-            host.freed = false;
-            assert!(load_shielded_funding_attempts(
-                load,
-                free,
-                std::ptr::addr_of_mut!(host).cast(),
-                &[42; 32],
-                &mut locks
-            )
-            .is_err());
-            assert!(host.freed);
-            assert_eq!(locks[&0][&out_point].shielded_funding_attempts, attempts);
-        }
     }
 
     #[test]
@@ -9750,46 +9112,6 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_asset_lock_operation_id_fn
             ) + std::mem::size_of::<Option<LoadAssetLockOperationIdFn>>(),
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_persist_shielded_funding_attempt_fn
-            )
-        );
-        assert_eq!(
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_persist_shielded_funding_attempt_fn
-            ) + std::mem::size_of::<Option<PersistShieldedFundingAttemptFn>>(),
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_load_shielded_funding_attempts_fn
-            )
-        );
-        assert_eq!(
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_load_shielded_funding_attempts_fn
-            ) + std::mem::size_of::<Option<LoadShieldedFundingAttemptsFn>>(),
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_load_shielded_funding_attempts_free_fn
-            )
-        );
-        assert_eq!(
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_load_shielded_funding_attempts_free_fn
-            ) + std::mem::size_of::<Option<FreeShieldedFundingAttemptsFn>>(),
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_remove_shielded_activity_fn
-            )
-        );
-        assert_eq!(
-            std::mem::offset_of!(
-                PersistenceCallbacksExtension,
-                on_remove_shielded_activity_fn
-            ) + std::mem::size_of::<Option<RemoveShieldedActivityFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
@@ -9851,14 +9173,6 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_OPERATION_IDS,
             PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS.bits()
-        );
-        assert_eq!(
-            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_FUNDING_ATTEMPTS,
-            PersistenceCapabilities::SHIELDED_FUNDING_ATTEMPTS.bits()
-        );
-        assert_eq!(
-            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_ACTIVITY_RECONCILIATION,
-            PersistenceCapabilities::SHIELDED_ACTIVITY_RECONCILIATION.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,
@@ -10032,328 +9346,6 @@ mod tests {
             .store([1u8; 32], PlatformWalletChangeSet::default())
             .expect("empty round must succeed");
         assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
-    }
-
-    #[cfg(feature = "shielded")]
-    #[test]
-    fn should_require_every_activity_reconciliation_callback() {
-        unsafe extern "C" fn persist<T>(
-            _: *mut c_void,
-            _: *const u8,
-            _: *const T,
-            _: usize,
-        ) -> i32 {
-            0
-        }
-        unsafe extern "C" fn load<T>(_: *mut c_void, _: *mut *const T, _: *mut usize) -> i32 {
-            0
-        }
-        unsafe extern "C" fn free<T>(_: *mut c_void, _: *const T, _: usize) {}
-        unsafe extern "C" fn remove(
-            _: *mut c_void,
-            _: *const u8,
-            _: u32,
-            _: *const u8,
-            _: usize,
-        ) -> i32 {
-            0
-        }
-        let callbacks = || PersistenceCallbacks {
-            on_persist_shielded_activity_fn: Some(persist),
-            on_load_shielded_activity_fn: Some(load),
-            on_load_shielded_activity_free_fn: Some(free),
-            on_persist_shielded_notes_fn: Some(persist),
-            on_persist_shielded_nullifiers_spent_fn: Some(persist),
-            on_load_shielded_notes_fn: Some(load),
-            on_load_shielded_notes_free_fn: Some(free),
-            on_persist_shielded_outgoing_notes_fn: Some(persist),
-            on_load_shielded_outgoing_notes_fn: Some(load),
-            on_load_shielded_outgoing_notes_free_fn: Some(free),
-            on_persist_shielded_synced_indices_fn: Some(persist),
-            on_load_shielded_sync_states_fn: Some(load),
-            on_load_shielded_sync_states_free_fn: Some(free),
-            ..Default::default()
-        };
-        let extension = PersistenceExtensionCallbacks {
-            remove_shielded_activity: Some(remove),
-            ..Default::default()
-        };
-        let bit = PersistenceCapabilities::SHIELDED_ACTIVITY_RECONCILIATION;
-        let capability = |cb, ext, declaration| {
-            FFIPersister::new_with_persistence_capabilities_and_extensions(cb, declaration, ext)
-                .persistence_capabilities()
-        };
-        assert!(capability(callbacks(), extension, bit).contains(bit));
-        assert!(!capability(callbacks(), extension, PersistenceCapabilities::NONE).contains(bit));
-        assert!(
-            !capability(callbacks(), PersistenceExtensionCallbacks::default(), bit).contains(bit)
-        );
-        macro_rules! missing {
-            ($field:ident) => {{
-                let mut cb = callbacks();
-                cb.$field = None;
-                assert!(
-                    !capability(cb, extension, bit).contains(bit),
-                    stringify!($field)
-                );
-            }};
-        }
-        missing!(on_persist_shielded_activity_fn);
-        missing!(on_load_shielded_activity_fn);
-        missing!(on_load_shielded_activity_free_fn);
-        missing!(on_persist_shielded_notes_fn);
-        missing!(on_persist_shielded_nullifiers_spent_fn);
-        missing!(on_load_shielded_notes_fn);
-        missing!(on_load_shielded_notes_free_fn);
-        missing!(on_persist_shielded_outgoing_notes_fn);
-        missing!(on_load_shielded_outgoing_notes_fn);
-        missing!(on_load_shielded_outgoing_notes_free_fn);
-        missing!(on_persist_shielded_synced_indices_fn);
-        missing!(on_load_shielded_sync_states_fn);
-        missing!(on_load_shielded_sync_states_free_fn);
-    }
-
-    #[cfg(feature = "shielded")]
-    #[test]
-    fn should_abort_activity_replacement_round_on_either_callback_failure() {
-        use crate::shielded_persistence::ShieldedActivityFFI;
-        use platform_wallet::wallet::shielded::{
-            ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
-            SubwalletId,
-        };
-        #[derive(Default)]
-        struct Host {
-            calls: Vec<&'static str>,
-            failure: u8,
-            committed: bool,
-        }
-        unsafe extern "C" fn remove(
-            ctx: *mut c_void,
-            wallet: *const u8,
-            account: u32,
-            ids: *const u8,
-            count: usize,
-        ) -> i32 {
-            assert_eq!(slice::from_raw_parts(wallet, 32), &[1; 32]);
-            assert_eq!(account, 7);
-            assert_eq!(count, 1);
-            assert_eq!(slice::from_raw_parts(ids, 32), &[2; 32]);
-            let host = &mut *ctx.cast::<Host>();
-            host.calls.push("remove");
-            if host.failure == 1 {
-                -1
-            } else {
-                0
-            }
-        }
-        unsafe extern "C" fn persist(
-            ctx: *mut c_void,
-            _: *const u8,
-            entries: *const ShieldedActivityFFI,
-            count: usize,
-        ) -> i32 {
-            assert_eq!(count, 1);
-            assert_eq!((*entries).entry_id, [3; 32]);
-            let host = &mut *ctx.cast::<Host>();
-            host.calls.push("upsert");
-            if host.failure == 2 {
-                -1
-            } else {
-                0
-            }
-        }
-        unsafe extern "C" fn end(ctx: *mut c_void, _: *const u8, success: bool) -> i32 {
-            let host = &mut *ctx.cast::<Host>();
-            host.calls.push("end");
-            host.committed = success;
-            0
-        }
-        let id = SubwalletId::new([1; 32], 7);
-        let mut cs = platform_wallet::changeset::ShieldedChangeSet::default();
-        cs.remove_activity_entry(id, [2; 32]);
-        cs.record_activity_entry(
-            id,
-            ShieldedActivityEntry {
-                id: [3; 32],
-                kind: ShieldedActivityKind::ShieldFromAssetLock,
-                status: ShieldedActivityStatus::Confirmed,
-                direction: ShieldedDirection::In,
-                amount: 1,
-                fee: None,
-                counterparty: None,
-                memo: None,
-                block_height: None,
-                created_at_ms: 0,
-                min_note_position: None,
-                note_cmxs: vec![[4; 32]],
-                spent_nullifiers: vec![],
-            },
-        );
-        for failure in [0, 1, 2, 3] {
-            let mut host = Host {
-                failure,
-                ..Default::default()
-            };
-            let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
-                PersistenceCallbacks {
-                    context: (&mut host as *mut Host).cast(),
-                    on_changeset_begin_fn: Some(noop_begin),
-                    on_changeset_end_fn: Some(end),
-                    on_persist_shielded_activity_fn: Some(persist),
-                    ..Default::default()
-                },
-                PersistenceCapabilities::NONE,
-                PersistenceExtensionCallbacks {
-                    remove_shielded_activity: (failure != 3).then_some(remove),
-                    ..Default::default()
-                },
-            );
-            let result = persister.store(
-                [1; 32],
-                PlatformWalletChangeSet {
-                    shielded: Some(cs.clone()),
-                    ..Default::default()
-                },
-            );
-            assert_eq!(result.is_ok(), failure == 0);
-            assert_eq!(host.committed, failure == 0);
-            assert_eq!(
-                host.calls,
-                if failure == 3 {
-                    vec!["upsert", "end"]
-                } else {
-                    vec!["remove", "upsert", "end"]
-                }
-            );
-        }
-    }
-
-    #[cfg(feature = "shielded")]
-    #[test]
-    fn should_keep_legacy_activity_upsert_best_effort_without_attestation() {
-        use platform_wallet::wallet::shielded::{
-            ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
-            SubwalletId,
-        };
-        let mut cs = platform_wallet::changeset::ShieldedChangeSet::default();
-        cs.record_activity_entry(
-            SubwalletId::new([1; 32], 0),
-            ShieldedActivityEntry {
-                id: [3; 32],
-                kind: ShieldedActivityKind::Received,
-                status: ShieldedActivityStatus::Confirmed,
-                direction: ShieldedDirection::In,
-                amount: 1,
-                fee: None,
-                counterparty: None,
-                memo: None,
-                block_height: None,
-                created_at_ms: 0,
-                min_note_position: None,
-                note_cmxs: vec![[4; 32]],
-                spent_nullifiers: vec![],
-            },
-        );
-        for (capability, success) in [
-            (PersistenceCapabilities::NONE, true),
-            (
-                PersistenceCapabilities::SHIELDED_ACTIVITY_RECONCILIATION,
-                false,
-            ),
-        ] {
-            let persister = declared_persister(PersistenceCallbacks::default(), capability);
-            assert_eq!(
-                persister
-                    .store(
-                        [1; 32],
-                        PlatformWalletChangeSet {
-                            shielded: Some(cs.clone()),
-                            ..Default::default()
-                        }
-                    )
-                    .is_ok(),
-                success
-            );
-        }
-    }
-
-    #[cfg(feature = "shielded")]
-    #[test]
-    fn should_reject_malformed_activity_restore_for_attesting_hosts_and_free_rows() {
-        use crate::shielded_persistence::ShieldedActivityRestoreFFI;
-        struct Host {
-            mode: u8,
-            freed: bool,
-        }
-        unsafe extern "C" fn wallets(
-            _: *mut c_void,
-            entries: *mut *const WalletRestoreEntryFFI,
-            count: *mut usize,
-        ) -> i32 {
-            *entries = Box::into_raw(Box::new(WalletRestoreEntryFFI {
-                wallet_id: [1; 32],
-                ..Default::default()
-            }));
-            *count = 1;
-            0
-        }
-        unsafe extern "C" fn free_wallet(
-            _: *mut c_void,
-            entries: *const WalletRestoreEntryFFI,
-            _: usize,
-        ) {
-            drop(Box::from_raw(entries.cast_mut()));
-        }
-        unsafe extern "C" fn load(
-            ctx: *mut c_void,
-            entries: *mut *const ShieldedActivityRestoreFFI,
-            count: *mut usize,
-        ) -> i32 {
-            let host = &mut *ctx.cast::<Host>();
-            // The wire row is entirely integer/array/raw-pointer fields.
-            let mut row: ShieldedActivityRestoreFFI = std::mem::zeroed();
-            row.wallet_id = [1; 32];
-            row.direction = if host.mode == 1 { 9 } else { 0 };
-            if host.mode == 2 {
-                row.note_cmxs_count = usize::MAX;
-            }
-            if host.mode == 3 {
-                row.note_cmxs_count = 1;
-            }
-            *entries = if host.mode == 4 {
-                std::ptr::null()
-            } else {
-                Box::into_raw(Box::new(row))
-            };
-            *count = 1;
-            0
-        }
-        unsafe extern "C" fn free(
-            ctx: *mut c_void,
-            entries: *const ShieldedActivityRestoreFFI,
-            _: usize,
-        ) {
-            if !entries.is_null() {
-                drop(Box::from_raw(entries.cast_mut()));
-            }
-            (*ctx.cast::<Host>()).freed = true;
-        }
-        for mode in 1..=4 {
-            let mut host = Host { mode, freed: false };
-            let persister = FFIPersister::new_with_persistence_capabilities(
-                PersistenceCallbacks {
-                    context: (&mut host as *mut Host).cast(),
-                    on_load_wallet_list_fn: Some(wallets),
-                    on_load_wallet_list_free_fn: Some(free_wallet),
-                    on_load_shielded_activity_fn: Some(load),
-                    on_load_shielded_activity_free_fn: Some(free),
-                    ..Default::default()
-                },
-                PersistenceCapabilities::SHIELDED_ACTIVITY_RECONCILIATION,
-            );
-            assert!(persister.load().is_err(), "corruption mode {mode}");
-            assert!(host.freed);
-        }
     }
 
     #[cfg(feature = "shielded")]
@@ -12062,7 +11054,6 @@ mod tests {
             status: platform_wallet::AssetLockStatus::Consumed,
             proof: None,
             operation_id: None,
-            shielded_funding_attempts: Vec::new(),
         };
         let out_point = entry.out_point;
         let host = Arc::new(Host {

@@ -53,7 +53,6 @@ fn entry(op: OutPoint, status: AssetLockStatus, proof: Option<AssetLockProof>) -
         funding_type: AssetLockFundingType::IdentityRegistration,
         identity_index: 0,
         operation_id: None,
-        shielded_funding_attempts: Vec::new(),
         amount_duffs: 1000,
         status,
         proof,

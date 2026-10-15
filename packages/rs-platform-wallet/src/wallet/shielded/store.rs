@@ -370,9 +370,6 @@ pub trait ShieldedStore: Send + Sync {
         entry: &super::activity::ShieldedActivityEntry,
     ) -> Result<(), Self::Error>;
 
-    /// Remove a superseded scan aggregate after its durable replacement commits.
-    fn remove_activity(&mut self, id: SubwalletId, entry_id: &[u8; 32]) -> Result<(), Self::Error>;
-
     /// Return a page of derived activity for `id`, sorted for display
     /// (pendings first, then by `block_height` desc, tiebreak by
     /// `created_at_ms` then `id`), sliced by `[offset, offset+limit)`.
@@ -798,10 +795,6 @@ impl SubwalletState {
         self.activity.insert(entry.id, entry.clone());
     }
 
-    pub(super) fn remove_activity(&mut self, entry_id: &[u8; 32]) {
-        self.activity.remove(entry_id);
-    }
-
     /// Display-sorted page of activity entries.
     pub(super) fn activity_page(
         &self,
@@ -1048,13 +1041,6 @@ impl ShieldedStore for InMemoryShieldedStore {
             .get(&id)
             .map(|sw| sw.activity_page(offset, limit))
             .unwrap_or_default())
-    }
-
-    fn remove_activity(&mut self, id: SubwalletId, entry_id: &[u8; 32]) -> Result<(), Self::Error> {
-        if let Some(subwallet) = self.subwallets.get_mut(&id) {
-            subwallet.remove_activity(entry_id);
-        }
-        Ok(())
     }
 
     fn get_activity_by_entry_id(

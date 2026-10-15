@@ -1157,7 +1157,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
         let tracked = TrackedAssetLock {
             operation_id: operation.map(|context| context.operation_id),
-            shielded_funding_attempts: Vec::new(),
             out_point,
             transaction: tx.clone(),
             account_index: source_index,
@@ -1735,9 +1734,6 @@ mod tests {
                                 entry.out_point,
                                 TrackedAssetLock {
                                     operation_id: entry.operation_id,
-                                    shielded_funding_attempts: entry
-                                        .shielded_funding_attempts
-                                        .clone(),
                                     out_point: entry.out_point,
                                     transaction: entry.transaction.clone(),
                                     account_index: entry.account_index,
@@ -4866,104 +4862,6 @@ mod tests {
                 1,
                 "retry must not allocate a second funding key or rebuild"
             );
-        }
-    }
-
-    #[cfg(feature = "shielded")]
-    #[tokio::test]
-    async fn should_bound_drain_attempt_archive_without_discarding_evidence() {
-        use super::super::operation::{MAX_DRAIN_ATTEMPTS, MAX_DRAIN_ATTEMPT_BYTES};
-
-        // Count boundary, cumulative byte boundary, and one oversized attempt.
-        for mode in 0..3 {
-            let (wallet_manager, wallet_id, _, signer) =
-                funded_wallet_manager(StandardAccountType::BIP44Account).await;
-            let (manager, persistence) = asset_lock_manager_over(
-                wallet_manager,
-                wallet_id,
-                Arc::new(CountingOkBroadcaster::default()),
-            );
-            persistence
-                .restore_stored_locks
-                .store(true, std::sync::atomic::Ordering::SeqCst);
-            let operation = Arc::new(super::AssetLockOperationContext::new([55; 16]));
-            let _registration = manager.register_wallet_drain_operation(operation.clone());
-            manager.begin_wallet_drain(&operation).await.unwrap();
-            manager
-                .broadcast_funded_asset_lock_with_operation(
-                    super::AssetLockBuildAmount::DrainAll {
-                        minimum_lock_duffs: Some(1),
-                    },
-                    &crate::ASSET_LOCK_FUNDING_SOURCES,
-                    0,
-                    AssetLockFundingType::AssetLockShieldedAddressTopUp,
-                    0,
-                    &signer,
-                    Some(&operation),
-                )
-                .await
-                .unwrap();
-            let point = operation.snapshot().out_point.unwrap();
-            let attempts: Vec<Vec<u8>> = match mode {
-                0 => (0..MAX_DRAIN_ATTEMPTS)
-                    .map(|i| i.to_le_bytes().to_vec())
-                    .collect(),
-                1 => vec![
-                    vec![1; MAX_DRAIN_ATTEMPT_BYTES / 2],
-                    vec![2; MAX_DRAIN_ATTEMPT_BYTES / 2],
-                ],
-                _ => vec![],
-            };
-            for attempt in &attempts {
-                manager
-                    .persist_wallet_drain_attempt(point, attempt.clone())
-                    .await
-                    .unwrap();
-            }
-            let rejected = if mode == 2 {
-                vec![3; MAX_DRAIN_ATTEMPT_BYTES + 1]
-            } else {
-                vec![3]
-            };
-            let stores_before = persistence.stored.lock().unwrap().len();
-            let error = manager
-                .persist_wallet_drain_attempt(point, rejected)
-                .await
-                .unwrap_err();
-            assert!(error.to_string().contains("recovery budget exhausted"));
-            assert_eq!(persistence.stored.lock().unwrap().len(), stores_before);
-            assert_eq!(
-                manager.list_tracked_locks().await[0].shielded_funding_attempts,
-                attempts
-            );
-            let restored = persistence.load().unwrap();
-            let durable = restored.wallets[&wallet_id]
-                .unused_asset_locks
-                .values()
-                .find_map(|locks| locks.get(&point))
-                .unwrap();
-            assert_eq!(durable.shielded_funding_attempts, attempts);
-            assert_eq!(
-                manager
-                    .wallet_drain_operation_status([55; 16])
-                    .await
-                    .unwrap()
-                    .state,
-                super::AssetLockOperationState::Pending
-            );
-            // Byte-identical replay/persistence retries remain possible at the
-            // limit, without appending or throwing away older recovery evidence.
-            if let Some(first) = attempts.first() {
-                manager
-                    .persist_wallet_drain_attempt(point, first.clone())
-                    .await
-                    .unwrap();
-                assert_eq!(
-                    manager.list_tracked_locks().await[0].shielded_funding_attempts,
-                    attempts
-                );
-            }
-            assert_eq!(manager.broadcaster.calls(), 1);
         }
     }
 

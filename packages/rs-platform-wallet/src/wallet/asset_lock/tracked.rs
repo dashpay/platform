@@ -107,10 +107,11 @@ pub enum AssetLockStatus {
     /// Platform is the arbiter and rejects an already-spent outpoint
     /// with a typed error.
     RecoveredFromChain,
-    /// A wallet drain completed only after authenticated exact owned outputs
-    /// and proof-verified full consumption of the original outpoint. Committed
-    /// atomically with canonical shielded history by `complete_wallet_drain`.
-    /// Unlike generic `Consumed`, this is a durable drain-completion receipt.
+    /// A wallet drain whose Type18 Platform executed, or whose resumed Type18
+    /// Platform rejected because this exact outpoint was already consumed by
+    /// an earlier attempt. Written only by `complete_wallet_drain`; terminal
+    /// and never regressed. Unlike generic `Consumed`, this is a durable
+    /// drain-completion receipt.
     DrainCompleted,
 }
 
@@ -128,8 +129,6 @@ impl AssetLockStatus {
 pub struct TrackedAssetLock {
     /// Stable host operation identifier, retained through consumption and restart.
     pub operation_id: Option<[u8; 16]>,
-    /// Exact signed Type18 attempts, persisted before dispatch and retained on completion.
-    pub shielded_funding_attempts: Vec<Vec<u8>>,
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
     pub transaction: Transaction,
@@ -152,7 +151,6 @@ impl From<&TrackedAssetLock> for AssetLockEntry {
     fn from(lock: &TrackedAssetLock) -> Self {
         Self {
             operation_id: lock.operation_id,
-            shielded_funding_attempts: lock.shielded_funding_attempts.clone(),
             out_point: lock.out_point,
             transaction: lock.transaction.clone(),
             account_index: lock.account_index,

@@ -111,22 +111,13 @@ impl PersistenceCapabilities {
     /// empty result. Required before a wallet drain can treat absence as not sent.
     pub const ASSET_LOCK_OPERATION_IDS: Self = Self(1 << 13);
 
-    /// Exact signed shielded funding attempts are append-only, atomically persisted
-    /// before dispatch and restored losslessly, including consumed tombstones.
-    pub const SHIELDED_FUNDING_ATTEMPTS: Self = Self(1 << 14);
-
-    /// Shielded activity upserts, removals and strict restore are durable and
-    /// atomic with asset-lock completion. Authenticated scan notes, outgoing
-    /// notes and sync watermarks also survive restart without silent loss.
-    pub const SHIELDED_ACTIVITY_RECONCILIATION: Self = Self(1 << 15);
-
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
     /// — and `every_declared_bit_has_a_stable_name` walks up to it, so a new
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 15;
+    const HIGHEST_DECLARED_BIT: u32 = 13;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -149,9 +140,7 @@ impl PersistenceCapabilities {
     pub const WALLET_DRAIN: Self = Self(
         Self::ASSET_LOCK_RECONCILIATION.0
             | Self::ASSET_LOCK_FUNDING_INDICES.0
-            | Self::ASSET_LOCK_OPERATION_IDS.0
-            | Self::SHIELDED_FUNDING_ATTEMPTS.0
-            | Self::SHIELDED_ACTIVITY_RECONCILIATION.0,
+            | Self::ASSET_LOCK_OPERATION_IDS.0,
     );
 
     pub const fn from_bits_retain(bits: u64) -> Self {
@@ -232,14 +221,6 @@ impl PersistenceCapabilities {
                 PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS,
                 "asset_lock_operation_ids",
             ),
-            (
-                PersistenceCapabilities::SHIELDED_FUNDING_ATTEMPTS,
-                "shielded_funding_attempts",
-            ),
-            (
-                PersistenceCapabilities::SHIELDED_ACTIVITY_RECONCILIATION,
-                "shielded_activity_reconciliation",
-            ),
         ];
 
         KNOWN
@@ -257,7 +238,7 @@ impl PersistenceCapabilities {
 /// failure the test exists to catch. Written as a module-level `const _` so
 /// it is evaluated in every build, test or not.
 const _: () = assert!(
-    PersistenceCapabilities::SHIELDED_ACTIVITY_RECONCILIATION.bits()
+    PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS.bits()
         == 1u64 << PersistenceCapabilities::HIGHEST_DECLARED_BIT,
     "HIGHEST_DECLARED_BIT must name the highest declared capability bit"
 );
@@ -289,15 +270,7 @@ mod tests {
             PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS.bits(),
             0x2000
         );
-        assert_eq!(
-            PersistenceCapabilities::SHIELDED_FUNDING_ATTEMPTS.bits(),
-            0x4000
-        );
-        assert_eq!(
-            PersistenceCapabilities::SHIELDED_ACTIVITY_RECONCILIATION.bits(),
-            0x8000
-        );
-        assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0xe285);
+        assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),
             0x281

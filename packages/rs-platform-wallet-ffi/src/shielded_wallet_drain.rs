@@ -254,8 +254,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_wallet_drain
     result
 }
 
-/// Reconcile authenticated exact outputs and full consumption of their asset
-/// lock. May read proof-verified network state; never broadcasts.
+/// Read-only: the durable row, the live row and the active context. Never
+/// touches the network.
 ///
 /// # Safety
 /// IDs point to 32 and 16 readable bytes. `out_outcome` is writable.
@@ -275,13 +275,13 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_wallet_drain_status(
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
     std::ptr::copy_nonoverlapping(operation_id_bytes, operation_id.as_mut_ptr(), 16);
     catch_wallet_drain_read_panic("shielded wallet drain status", || {
-        let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        let (wallet, _) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
             Ok(value) => value,
             Err(error) => return error,
         };
         match block_on_worker(async move {
             wallet
-                .shielded_wallet_drain_operation_status(&coordinator, operation_id)
+                .shielded_wallet_drain_operation_status(operation_id)
                 .await
         }) {
             Ok(snapshot) => {

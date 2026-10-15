@@ -121,6 +121,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .map(|lock| (lock.funding_type, lock.identity_index, lock.status.clone()))
     }
 
+    /// The wallet-drain operation a tracked lock belongs to, if any.
+    #[cfg(any(feature = "shielded", test))]
+    pub(crate) async fn tracked_operation_id(&self, out_point: &OutPoint) -> Option<[u8; 16]> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(&self.wallet_id)
+            .and_then(|info| info.tracked_asset_locks.get(out_point))
+            .and_then(|lock| lock.operation_id)
+    }
+
     /// Track a new asset lock in memory, returning a changeset describing
     /// the inserted entry.
     ///

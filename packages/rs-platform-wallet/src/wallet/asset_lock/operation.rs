@@ -12,17 +12,12 @@ use dashcore::OutPoint;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::changeset::PersistenceCapabilities;
+#[cfg(any(feature = "shielded", test))]
+use crate::changeset::{AssetLockChangeSet, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
 
 use super::manager::AssetLockManager;
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
-
-// Local recovery resource budgets, not protocol validity limits. Keep every
-// admitted attempt as evidence; exhaustion stops new dispatches, never recovery
-// or replay of an already recorded attempt. 64 attempts allow repeated freshness
-// retries, while 4 MiB bounds the archive even if individual transitions grow.
-pub const MAX_DRAIN_ATTEMPTS: usize = 64;
-pub const MAX_DRAIN_ATTEMPT_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetLockOperationState {
@@ -156,102 +151,56 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
     }
 
-    /// Retain every exact signed attempt before dispatch. Failed writes retain
-    /// the candidate in memory too: a backend may have committed before its
-    /// flush failed, so the next attempt must never reuse its append index.
-    #[cfg(feature = "shielded")]
-    pub(crate) async fn persist_wallet_drain_attempt(
+    /// Durable drain-completion receipt, then live publication. Called once
+    /// Platform has executed this drain's Type18, or rejected a resumed Type18
+    /// because this exact outpoint was already consumed by an earlier attempt.
+    /// Durable BEFORE visible: a failed store or flush leaves the live row and
+    /// the context Pending, and the next resume re-derives completion from
+    /// Platform's verdict. Idempotent on an already completed row.
+    #[cfg(any(feature = "shielded", test))]
+    pub(crate) async fn complete_wallet_drain(
         &self,
         out_point: OutPoint,
-        signed_attempt: Vec<u8>,
+        operation_id: [u8; 16],
     ) -> Result<(), PlatformWalletError> {
         self.require_wallet_drain_persistence()?;
-        let candidate = {
+        {
             let mut manager = self.wallet_manager.write().await;
             let lock = manager
                 .get_wallet_info_mut(&self.wallet_id)
                 .and_then(|info| info.tracked_asset_locks.get_mut(&out_point))
+                .filter(|lock| lock.operation_id == Some(operation_id))
                 .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
-            if lock.operation_id.is_none() {
-                return Err(PlatformWalletError::Persistence(
-                    "drain attempt has no operation UUID".into(),
-                ));
-            }
-            if lock.status.is_consumed() {
-                return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
-            }
-            if !lock.shielded_funding_attempts.contains(&signed_attempt) {
-                let total_bytes = lock
-                    .shielded_funding_attempts
-                    .iter()
-                    .try_fold(signed_attempt.len(), |total, attempt| {
-                        total.checked_add(attempt.len())
-                    });
-                if lock.shielded_funding_attempts.len() >= MAX_DRAIN_ATTEMPTS
-                    || total_bytes.is_none_or(|total| total > MAX_DRAIN_ATTEMPT_BYTES)
-                {
-                    return Err(PlatformWalletError::Persistence(
-                        "drain signed-attempt recovery budget exhausted; operation remains pending"
-                            .into(),
-                    ));
+            if lock.status != AssetLockStatus::DrainCompleted {
+                let mut candidate = lock.clone();
+                candidate.status = AssetLockStatus::DrainCompleted;
+                candidate.proof = None;
+                let mut changes = AssetLockChangeSet::default();
+                changes.asset_locks.insert(out_point, (&candidate).into());
+                self.persister
+                    .store(PlatformWalletChangeSet {
+                        asset_locks: Some(changes),
+                        ..Default::default()
+                    })
+                    .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+                if let Err(error) = self.persister.flush() {
+                    if !self.persister.store_commits_inline() {
+                        return Err(PlatformWalletError::Persistence(error.to_string()));
+                    }
+                    // The row is already committed. A failed notification must
+                    // not suppress its live publication.
+                    tracing::warn!(%out_point, %error, "drain completion committed inline; flush notification failed");
                 }
-                lock.shielded_funding_attempts.push(signed_attempt);
+                lock.status = AssetLockStatus::DrainCompleted;
+                lock.proof = None;
             }
-            lock.clone()
-        };
-        self.persist_drain_lock_snapshot(&candidate)
-    }
-
-    /// Commit the tombstone before publishing completion. The caller owns the
-    /// activity-store guard and must publish history synchronously afterwards.
-    /// Refuse a busy manager without waiting: no cancellation or lock-order
-    /// inversion may separate durable completion from its memory publication.
-    #[cfg(feature = "shielded")]
-    pub(crate) fn complete_wallet_drain(
-        &self,
-        out_point: OutPoint,
-        operation_id: [u8; 16],
-        history: crate::changeset::ShieldedChangeSet,
-    ) -> Result<bool, PlatformWalletError> {
-        self.require_wallet_drain_persistence()?;
-        let Ok(mut manager) = self.wallet_manager.try_write() else {
-            return Ok(false);
-        };
-        let lock = manager
-            .get_wallet_info_mut(&self.wallet_id)
-            .and_then(|info| info.tracked_asset_locks.get_mut(&out_point))
-            .filter(|lock| lock.operation_id == Some(operation_id))
-            .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
-        let mut candidate = lock.clone();
-        candidate.status = AssetLockStatus::DrainCompleted;
-        candidate.proof = None;
-        let mut changes = crate::changeset::AssetLockChangeSet::default();
-        changes
-            .asset_locks
-            .insert(candidate.out_point, (&candidate).into());
-        self.persister
-            .store(crate::changeset::PlatformWalletChangeSet {
-                asset_locks: Some(changes),
-                shielded: Some(history),
-                ..Default::default()
-            })
-            .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
-        if let Err(error) = self.persister.flush() {
-            if !self.persister.store_commits_inline() {
-                return Err(PlatformWalletError::Persistence(error.to_string()));
-            }
-            // store already committed history and the tombstone. A failed
-            // notification must not suppress their live publication.
-            tracing::warn!(%out_point, %error, "wallet drain committed inline; flush notification failed");
         }
-        lock.status = AssetLockStatus::DrainCompleted;
-        lock.proof = None;
         self.publish_completed_operation(operation_id, out_point);
         self.resume_dispatch_claims
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .remove(&out_point);
-        Ok(true)
+        Ok(())
     }
 
     #[cfg(any(feature = "shielded", test))]
@@ -259,10 +208,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         &self,
         lock: &TrackedAssetLock,
     ) -> Result<(), PlatformWalletError> {
-        let mut changes = crate::changeset::AssetLockChangeSet::default();
+        let mut changes = AssetLockChangeSet::default();
         changes.asset_locks.insert(lock.out_point, lock.into());
         self.persister
-            .store(crate::changeset::PlatformWalletChangeSet {
+            .store(PlatformWalletChangeSet {
                 asset_locks: Some(changes),
                 ..Default::default()
             })
@@ -450,7 +399,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .get_wallet_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
         // A live advance wins over the loaded snapshot. In particular, never
-        // replace a newer proof, consumption state or signed recovery attempt.
+        // replace a newer proof or consumption state.
         let current = info
             .tracked_asset_locks
             .entry(out_point)

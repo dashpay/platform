@@ -1312,9 +1312,7 @@ impl PlatformWalletPersistence for SqlitePersister {
         // token balances and the DashPay overlay have no load readers, so a
         // full restore remains lossy. Shielded viewing keys are native when
         // compiled in; notes, nullifiers, and sync state use ShieldedStore.
-        // Do not attest SHIELDED_ACTIVITY_RECONCILIATION either: this backend
-        // does not store/remove/restore activity rows. Wallet drains require
-        // that history checkpoint before marking the asset lock consumed.
+        // WALLET_DRAIN folds in WALLET_RESTORE, so it stays unattested too.
         let capabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::INVITATIONS)
             .union(PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES)
@@ -1323,7 +1321,6 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
             .union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
-            .union(PersistenceCapabilities::SHIELDED_FUNDING_ATTEMPTS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
             .union(PersistenceCapabilities::DASHPAY_PAYMENTS);

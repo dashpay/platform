@@ -8,14 +8,13 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeShieldedFundingAttemptsFn, FreeTrackedMasternodesFn,
-    LoadAssetLockOperationIdFn, LoadIdentityBalanceBlockTimeFn, LoadShieldedFundingAttemptsFn,
-    LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn, PersistDpnsNameStatesFn,
-    PersistIdentityBalanceBlockTimeFn, PersistShieldedFundingAttemptFn,
-    PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
-    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn, PersistenceCallbacks,
-    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
-    RemoveShieldedActivityFn, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+    FFIPersister, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
+    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
+    PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
+    PersistWalletChangesetUtxoVerdictsFn, PersistenceCallbacks, PersistenceCallbacksExtension,
+    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
@@ -287,19 +286,6 @@ unsafe fn persistence_extension_callbacks(
             on_load_asset_lock_operation_id_fn,
             LoadAssetLockOperationIdFn
         ),
-        persist_shielded_funding_attempt: slot!(
-            on_persist_shielded_funding_attempt_fn,
-            PersistShieldedFundingAttemptFn
-        ),
-        load_shielded_funding_attempts: slot!(
-            on_load_shielded_funding_attempts_fn,
-            LoadShieldedFundingAttemptsFn
-        ),
-        load_shielded_funding_attempts_free: slot!(
-            on_load_shielded_funding_attempts_free_fn,
-            FreeShieldedFundingAttemptsFn
-        ),
-        remove_shielded_activity: slot!(on_remove_shielded_activity_fn, RemoveShieldedActivityFn),
     }
 }
 
@@ -1370,107 +1356,6 @@ mod tests {
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
         assert!(parsed.persist_asset_lock_operation_id.is_none());
         assert!(parsed.load_asset_lock_operation_id.is_none());
-    }
-
-    #[test]
-    fn should_size_gate_shielded_funding_attempt_slots_independently() {
-        unsafe extern "C" fn persist(
-            _: *mut c_void,
-            _: *const u8,
-            _: *const u8,
-            _: *const u8,
-            _: u32,
-            _: *const u8,
-            _: usize,
-        ) -> i32 {
-            0
-        }
-        unsafe extern "C" fn load(
-            _: *mut c_void,
-            _: *const u8,
-            _: *const u8,
-            _: *mut *mut crate::persistence::ShieldedFundingAttemptFFI,
-            _: *mut usize,
-        ) -> i32 {
-            0
-        }
-        unsafe extern "C" fn free(
-            _: *mut c_void,
-            _: *mut crate::persistence::ShieldedFundingAttemptFFI,
-            _: usize,
-        ) {
-        }
-        let mut ext = PersistenceCallbacksExtension {
-            on_persist_shielded_funding_attempt_fn: Some(persist),
-            on_load_shielded_funding_attempts_fn: Some(load),
-            on_load_shielded_funding_attempts_free_fn: Some(free),
-            ..Default::default()
-        };
-        for (size, expected) in [
-            (
-                std::mem::size_of::<PersistenceCallbacksExtension>(),
-                [true, true, true],
-            ),
-            (
-                std::mem::offset_of!(
-                    PersistenceCallbacksExtension,
-                    on_load_shielded_funding_attempts_free_fn
-                ),
-                [true, true, false],
-            ),
-            (
-                std::mem::offset_of!(
-                    PersistenceCallbacksExtension,
-                    on_load_shielded_funding_attempts_fn
-                ),
-                [true, false, false],
-            ),
-            (
-                std::mem::offset_of!(
-                    PersistenceCallbacksExtension,
-                    on_persist_shielded_funding_attempt_fn
-                ),
-                [false, false, false],
-            ),
-        ] {
-            ext.struct_size = size;
-            let parsed = unsafe { persistence_extension_callbacks(&ext) };
-            assert_eq!(
-                [
-                    parsed.persist_shielded_funding_attempt.is_some(),
-                    parsed.load_shielded_funding_attempts.is_some(),
-                    parsed.load_shielded_funding_attempts_free.is_some()
-                ],
-                expected
-            );
-        }
-    }
-
-    #[test]
-    fn should_size_gate_shielded_activity_removal_slot() {
-        unsafe extern "C" fn remove(
-            _: *mut c_void,
-            _: *const u8,
-            _: u32,
-            _: *const u8,
-            _: usize,
-        ) -> i32 {
-            0
-        }
-        let mut ext = PersistenceCallbacksExtension {
-            on_remove_shielded_activity_fn: Some(remove),
-            ..Default::default()
-        };
-        assert!(unsafe { persistence_extension_callbacks(&ext) }
-            .remove_shielded_activity
-            .is_some());
-        ext.struct_size = std::mem::offset_of!(
-            PersistenceCallbacksExtension,
-            on_remove_shielded_activity_fn
-        );
-        assert!(unsafe { persistence_extension_callbacks(&ext) }
-            .remove_shielded_activity
-            .is_none());
     }
 
     /// A host whose `struct_size` stops right after the chainlock-height
