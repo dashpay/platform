@@ -31,6 +31,7 @@
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
+use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::fee::Credits;
 use dpp::prelude::AssetLockProof;
@@ -468,7 +469,7 @@ impl PlatformWallet {
         // the live activity recorder below. Each retry re-randomizes the
         // bundle, so only the landed attempt's actions are the ones a
         // later scan will recover; `build_and_broadcast_shielded` returns
-        // them on success.
+        // them on success, with the proof's verdict on the lock.
         let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
             build_and_broadcast_shielded(
                 sdk.clone(),
@@ -486,7 +487,7 @@ impl PlatformWallet {
         })
         .await
         {
-            Ok(actions) => (Ok(actions), proof.clone()),
+            Ok(landed) => (Ok(landed), proof.clone()),
             Err(e) if is_instant_lock_proof_invalid(&e) => {
                 let out_point = proof_out_point;
                 tracing::warn!(
@@ -546,7 +547,7 @@ impl PlatformWallet {
             .asset_locks
             .tracked_operation_id(&proof_out_point)
             .await;
-        let Some(landed_actions) = self
+        let Some(landed) = self
             .asset_locks
             .settle_asset_lock_submit_result(
                 submit_result,
@@ -571,7 +572,7 @@ impl PlatformWallet {
         // by construction). Recorded Confirmed directly — `broadcast_and_
         // _wait` already proved inclusion. Best-effort: a recording miss
         // (no bound keyset, no recoverable output) just omits the row.
-        self.record_shield_from_asset_lock_activity(coordinator, &landed_actions, shield_amount)
+        self.record_shield_from_asset_lock_activity(coordinator, &landed.actions, shield_amount)
             .await;
 
         // Step 5: finalize the tracked asset lock. The shielded note itself
@@ -579,10 +580,23 @@ impl PlatformWallet {
         // to persist (unlike address-funding, which writes proof-attested
         // balances back into `ManagedPlatformAccount`).
         match (drain_operation_id, tracked_out_point) {
-            // A drain writes its durable completion receipt. An error here
-            // keeps the operation Pending; the next resume completes it from
-            // Platform's already-consumed verdict.
+            // A drain writes its durable completion receipt only when the
+            // verified proof attests the lock was consumed in full. An error
+            // here keeps the operation Pending with its outpoint; the next
+            // resume completes it from Platform's verdict.
             (Some(operation_id), _) => {
+                if !landed.fully_consumed {
+                    tracing::warn!(
+                        outpoint = %proof_out_point,
+                        "wallet drain left pending: the landed shield's proof does not attest \
+                         full consumption of its asset lock"
+                    );
+                    return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                        "drain shield landed but its proof does not attest full consumption of \
+                         the asset lock; the operation stays pending"
+                            .into(),
+                    ));
+                }
                 self.asset_locks
                     .complete_wallet_drain(proof_out_point, operation_id)
                     .await?;
@@ -817,16 +831,45 @@ async fn lookup_asset_lock_value_credits(
     })
 }
 
+/// What a landed Type 18 submit returns to the orchestrator.
+struct LandedShield {
+    /// The **landed** bundle's serialized Orchard actions, so the
+    /// orchestrator can record a live `ShieldFromAssetLock` activity entry
+    /// over the exact bundle that committed (each retry re-randomizes the
+    /// bundle, so only the landed attempt's cmxs are the ones a later scan
+    /// will recover).
+    actions: Vec<dpp::shielded::SerializedAction>,
+    /// Whether the verified proof result attests the asset lock was
+    /// consumed in full (see [`proof_attests_full_consumption`]).
+    fully_consumed: bool,
+}
+
+/// Whether a landed Type 18's verified proof result attests that its asset
+/// lock was consumed **in full**.
+///
+/// Drive consumes a `ShieldFromAssetLock` lock in full, and the verifier
+/// returns the lock's stored state at the committed block, so a drain
+/// expects `FullyConsumed`. A `PartiallyConsumed` (or unexpected) result
+/// must not write a drain's terminal completion: the operation stays
+/// pending with its outpoint instead.
+fn proof_attests_full_consumption(result: &StateTransitionProofResult) -> bool {
+    matches!(
+        result,
+        StateTransitionProofResult::VerifiedAssetLockConsumed(StoredAssetLockInfo::FullyConsumed)
+            | StateTransitionProofResult::VerifiedAssetLockConsumedWithAddressInfos(
+                StoredAssetLockInfo::FullyConsumed,
+                _
+            )
+    )
+}
+
 /// Build the Type 18 transition and broadcast-and-wait.
 ///
 /// Extracted so `submit_with_cl_height_retry`'s closure stays compact
 /// and the IS→CL fallback path can re-call it with the upgraded proof.
 ///
-/// On success returns the **landed** bundle's serialized Orchard actions
-/// so the orchestrator can record a live `ShieldFromAssetLock` activity
-/// entry over the exact bundle that committed (each retry re-randomizes
-/// the bundle, so only the landed attempt's cmxs are the ones a later
-/// scan will recover).
+/// On success returns the landed bundle's actions together with what the
+/// verified proof result attests about the asset lock's consumption.
 #[allow(clippy::too_many_arguments)]
 async fn build_and_broadcast_shielded<AS, P>(
     sdk: std::sync::Arc<dash_sdk::Sdk>,
@@ -840,7 +883,7 @@ async fn build_and_broadcast_shielded<AS, P>(
     surplus_output: Option<PlatformAddress>,
     dummy_outputs: usize,
     settings: Option<PutSettings>,
-) -> Result<Vec<dpp::shielded::SerializedAction>, dash_sdk::Error>
+) -> Result<LandedShield, dash_sdk::Error>
 where
     AS: ::key_wallet::signer::Signer,
     P: OrchardProver,
@@ -877,9 +920,13 @@ where
     // affected-state snapshot. Only this wallet can spend the lock, so a
     // consumed outpoint means one of its own attempts landed; a
     // consensus rejection still surfaces as an error on this wait.
-    st.broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(&sdk, settings)
+    let result = st
+        .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(&sdk, settings)
         .await?;
-    Ok(actions)
+    Ok(LandedShield {
+        actions,
+        fully_consumed: proof_attests_full_consumption(&result),
+    })
 }
 
 /// Pre-flight check for the recipient list.
@@ -961,6 +1008,46 @@ mod tests {
     // `u8` as the placeholder type avoids needing to construct a
     // curve-valid `OrchardAddress` (which requires the Orchard
     // crate's spend-key plumbing) inside this crate.
+
+    #[test]
+    fn drain_completion_requires_a_fully_consumed_lock_in_the_proof_result() {
+        use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+        use dpp::platform_value::Bytes32;
+        use dpp::version::PlatformVersion;
+        use std::collections::BTreeMap;
+
+        let partial = AssetLockValue::new(
+            1_000_000,
+            vec![0xaa, 0xbb],
+            500_000,
+            vec![Bytes32::new([0x42; 32])],
+            PlatformVersion::latest(),
+        )
+        .expect("fixture");
+
+        assert!(proof_attests_full_consumption(
+            &StateTransitionProofResult::VerifiedAssetLockConsumed(
+                StoredAssetLockInfo::FullyConsumed
+            )
+        ));
+        assert!(proof_attests_full_consumption(
+            &StateTransitionProofResult::VerifiedAssetLockConsumedWithAddressInfos(
+                StoredAssetLockInfo::FullyConsumed,
+                BTreeMap::new()
+            )
+        ));
+        assert!(!proof_attests_full_consumption(
+            &StateTransitionProofResult::VerifiedAssetLockConsumed(
+                StoredAssetLockInfo::PartiallyConsumed(partial)
+            )
+        ));
+        assert!(!proof_attests_full_consumption(
+            &StateTransitionProofResult::VerifiedAssetLockConsumed(StoredAssetLockInfo::NotPresent)
+        ));
+        assert!(!proof_attests_full_consumption(
+            &StateTransitionProofResult::VerifiedShieldedNullifiers(Vec::new())
+        ));
+    }
 
     #[test]
     fn validate_rejects_empty_recipients() {

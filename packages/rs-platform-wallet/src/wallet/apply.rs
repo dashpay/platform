@@ -12,8 +12,8 @@
 //!   same state as applying it once. Callers may re-run apply on
 //!   startup or after a partial write without additional bookkeeping.
 //! - **Monotonic asset-lock recovery.** A stale snapshot cannot erase an
-//!   operation UUID, shorten signed-attempt history or regress a consumed
-//!   tombstone. A conflicting UUID cannot rebind the existing operation.
+//!   operation UUID or regress a consumed tombstone. A conflicting UUID
+//!   cannot rebind the existing operation.
 //! - **No re-emission.** `apply_changeset` returns `Result<(), _>`, not
 //!   a new changeset. Mutation bookkeeping that internally produces
 //!   changesets (e.g. `update_balance`) discards them.
