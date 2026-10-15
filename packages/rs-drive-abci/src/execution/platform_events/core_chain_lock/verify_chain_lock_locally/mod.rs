@@ -16,7 +16,9 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Verify the chain lock against the chain lock quorums held in the platform state
+    /// Verify the chain lock against the chain lock quorums held in the platform state. From
+    /// version 1, a chain lock Platform cannot verify that way has its signature checked by
+    /// Core's `verifychainlock`.
     ///
     /// # Parameters
     ///
@@ -28,11 +30,14 @@ where
     /// # Returns
     ///
     /// * `Ok(Some(true))` - The chain lock is signed by a quorum Platform holds
-    /// * `Ok(Some(false))` - The chain lock is invalid. From version 1 this is returned only when
-    ///   Platform holds exactly the quorums active at the signing height; version 0 also returns
-    ///   it when Platform might not hold the quorum the chain lock was signed with
-    /// * `Ok(None)` - Platform cannot tell on its own, so Core has to decide
+    /// * `Ok(Some(false))` - The chain lock is invalid. From version 1 this is returned when
+    ///   Platform holds exactly the quorums active at the signing height, or when Core's
+    ///   `verifychainlock` fails the signature; version 0 also returns it when Platform might not
+    ///   hold the quorum the chain lock was signed with
+    /// * `Ok(None)` - Platform cannot tell on its own, so Core has to decide. From version 1,
+    ///   Core's `verifychainlock` has already accepted the signature
     /// * `Err(Error::BLSError)` - The signature could not be deserialized
+    /// * `Err(Error::CoreRpc)` - From version 1, the `verifychainlock` call failed
     /// * `Err(Error::Execution)` - An unknown method version, or no quorums to verify against
     pub fn verify_chain_lock_locally(
         &self,
@@ -71,22 +76,35 @@ where
 #[cfg(test)]
 mod tests {
     use crate::platform_types::platform_state::PlatformState;
+    use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::chain_lock_quorums::{
         chain_lock_test_platform, core_signer, llmq_test_chain_lock_config, quorums,
         sign_chain_lock, state_with_chain_lock_quorums, QuorumChange, QuorumMinedAfterCoreHeight,
         TestQuorum,
     };
     use dpp::version::PlatformVersion;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     #[test]
     fn should_stop_rejecting_chain_lock_signed_by_newly_mined_quorum_from_protocol_version_14() {
         // Platform committed core height 1106 holding the llmq_test quorums {a, b}; Core mined
         // quorum n at 1114 and signed the next chain lock with it. Protocol versions up to 13
-        // keep rejecting such a chain lock locally; 14 and later leave it to Core.
-        let platform = chain_lock_test_platform();
+        // keep rejecting such a chain lock locally; 14 and later leave it to Core, which
+        // verifies its signature.
+        let mut platform = chain_lock_test_platform();
         let scenario = QuorumMinedAfterCoreHeight::default();
         let state = scenario.platform_state(&platform.platform.state.load());
         let chain_lock = scenario.chain_lock_signed_by_new_quorum();
+
+        let mut core_rpc = MockCoreRPCLike::new();
+        let asked = chain_lock.clone();
+        core_rpc
+            .expect_verify_chain_lock()
+            .withf(move |chain_lock| *chain_lock == asked)
+            .times(2)
+            .returning(|_| Ok(true));
+        platform.core_rpc = core_rpc;
 
         let verify = |platform_version: &PlatformVersion| {
             platform
@@ -159,10 +177,22 @@ mod tests {
 
     #[test]
     fn should_only_turn_wrong_local_rejections_into_core_checks() {
-        // Version 1 may only leave to Core what version 0 rejected; everything version 0
-        // accepted or left to Core must stay the same, so no block version 0 accepted is
-        // rejected. Valid chain locks must never be rejected locally by version 1.
-        let platform = chain_lock_test_platform();
+        // Version 1's check against the quorums Platform holds may only leave to Core what
+        // version 0 rejected; everything version 0 accepted or left to Core must stay the same,
+        // so no block with a valid chain lock that version 0 accepted is rejected. Valid chain
+        // locks must never be rejected by that check. Version 1 then has Core's verifychainlock
+        // check exactly the chain locks that check leaves to Core.
+        let mut platform = chain_lock_test_platform();
+        // This Core fails every chain lock it is asked about, so version 1's answer and the
+        // number of calls show which chain locks it asked about.
+        let core_checks = Arc::new(AtomicUsize::new(0));
+        let counter = Arc::clone(&core_checks);
+        let mut core_rpc = MockCoreRPCLike::new();
+        core_rpc.expect_verify_chain_lock().returning(move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            Ok(false)
+        });
+        platform.core_rpc = core_rpc;
         let base = platform.platform.state.load();
         let mined = MinedQuorums::new();
         let unrelated = TestQuorum::new(99, 0);
@@ -197,7 +227,7 @@ mod tests {
             (&[1110, 1116], false),
         ];
 
-        let mut rejected_by_v1 = 0;
+        let mut rejected_by_held_quorums = 0;
         for (history, v0_wrongly_rejects) in histories {
             let state = mined.state_after(&base, history);
             let core_height = *history.last().expect("non empty");
@@ -211,24 +241,32 @@ mod tests {
                         .platform
                         .verify_chain_lock_locally_v0(0, &state, &chain_lock, v0_version)
                         .expect("v0 runs");
+                    let held = platform
+                        .platform
+                        .verify_chain_lock_with_held_quorums(0, &state, &chain_lock)
+                        .expect("the check against the held quorums runs");
+                    let core_checks_before = core_checks.load(Ordering::SeqCst);
                     let v1 = platform
                         .platform
-                        .verify_chain_lock_locally_v1(0, &state, &chain_lock, v1_version)
+                        .verify_chain_lock_locally(0, &state, &chain_lock, v1_version)
                         .expect("v1 runs");
+                    let core_checked = core_checks.load(Ordering::SeqCst) - core_checks_before;
                     let case = format!(
-                        "history {history:?}, chain lock height {chain_lock_height}, valid {is_valid}: v0 {v0:?}, v1 {v1:?}"
+                        "history {history:?}, chain lock height {chain_lock_height}, valid {is_valid}: v0 {v0:?}, held quorums {held:?}, v1 {v1:?}"
                     );
 
                     match v0 {
-                        Some(true) => assert_eq!(v1, Some(true), "{case}"),
-                        None => assert_eq!(v1, None, "{case}"),
-                        Some(false) => assert_ne!(v1, Some(true), "{case}"),
+                        Some(true) => assert_eq!(held, Some(true), "{case}"),
+                        None => assert_eq!(held, None, "{case}"),
+                        Some(false) => assert_ne!(held, Some(true), "{case}"),
                     }
                     if is_valid {
-                        assert_ne!(v1, Some(false), "{case}");
+                        assert_ne!(held, Some(false), "{case}");
                         wrongly_rejected_by_v0 += usize::from(v0 == Some(false));
                     }
-                    rejected_by_v1 += usize::from(v1 == Some(false));
+                    assert_eq!(v1, held.or(Some(false)), "{case}");
+                    assert_eq!(core_checked, usize::from(held.is_none()), "{case}");
+                    rejected_by_held_quorums += usize::from(held == Some(false));
                 }
             }
             assert_eq!(
@@ -239,7 +277,7 @@ mod tests {
         }
 
         assert!(
-            rejected_by_v1 > 0,
+            rejected_by_held_quorums > 0,
             "the histories must reach version 1's local rejections"
         );
     }

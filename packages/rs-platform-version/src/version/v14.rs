@@ -2678,11 +2678,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     verify or one signed past the DKG interval. `verify_chain_lock_locally`
 ///     1 (`DRIVE_ABCI_METHOD_VERSIONS_V10`) rejects locally only when Platform
 ///     holds exactly the quorums active at the signing height, using Dash
-///     Core's DKG mining schedule, and leaves the other chain locks to Core.
-///     Version 1 answers differently from 0 only where 0 answers
-///     `Some(false)`, which refuses the proposal, so every block 0 accepted
-///     at this version is accepted the same way by 1. The reverse does not
-///     hold: a node running 0 refuses the proposals 1 accepts this way.
+///     Core's DKG mining schedule, and leaves the other chain locks to Core
+///     after Core's `verifychainlock` accepts their signature:
+///     `submitchainlock` skips the signature check for a height Core already
+///     has a chain lock at or above. So 1 accepts valid chain locks that 0
+///     rejected, and rejects forged ones that 0 left to that early return.
+///     A block committed at this version with a genuine chain lock, which an
+///     honest proposer always proposes, replays the same way under 1. A block
+///     whose forged chain lock 0 accepted through that early return cannot be
+///     applied by 1. A node running 0 refuses the proposals 1 accepts this way.
 ///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
