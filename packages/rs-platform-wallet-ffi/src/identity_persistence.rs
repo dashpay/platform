@@ -98,10 +98,11 @@ pub struct IdentityEntryFFI {
     pub dpns_names_acquired_at: *const u64,
     /// `true` iff the underlying [`IdentityEntry::dashpay_profile`]
     /// is `Some(_)`. When `false`, all `dashpay_profile_*` pointer
-    /// fields are null and the byte-array fields are zeroed — Swift
-    /// must skip the profile upsert entirely (changeset semantics:
-    /// `dashpay_profile: None` means "no update" rather than
-    /// "delete", matching the merge policy on the Rust side).
+    /// fields are null and the byte-array fields are zeroed. The
+    /// snapshot carries the identity's current profile, so for a
+    /// wallet-owned identity (hydrated on load) `false` means it has
+    /// none and hosts delete the cached row; an out-of-wallet identity
+    /// is never hydrated, so hosts leave its row alone.
     pub dashpay_profile_present: bool,
     /// Heap-allocated NUL-terminated UTF-8 C string for the DashPay
     /// profile's display name. `null` when the source field was

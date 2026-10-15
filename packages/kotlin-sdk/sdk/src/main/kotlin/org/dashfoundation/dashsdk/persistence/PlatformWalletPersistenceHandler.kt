@@ -1771,9 +1771,14 @@ class PlatformWalletPersistenceHandler(
                 )
             }
 
-            // DashPay profile: present == "update the whole document";
-            // absent == "no update" (never a delete).
-            if (dashpayProfilePresent) {
+            // DashPay profile: present == "update the whole document".
+            // Absent deletes the row for a wallet-owned identity (the load
+            // path hydrated it, so absent means Platform has none); for an
+            // out-of-wallet identity, which is never hydrated, it is "no
+            // update". Mirrors Swift `persistIdentities`.
+            if (!dashpayProfilePresent) {
+                if (identityIndexIsSome) db.dashpayDao().deleteProfilesByIdentity(identityId)
+            } else {
                 db.dashpayDao().upsertProfile(
                     DashpayProfileEntity(
                         networkRaw = networkRaw,
