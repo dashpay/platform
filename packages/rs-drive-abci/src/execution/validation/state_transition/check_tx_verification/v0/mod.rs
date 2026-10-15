@@ -210,13 +210,12 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
             }
 
-            // An identity create carries its identity id outside the bytes the asset lock key
-            // signs, and the id is the transition's mempool sender. One whose id is not the one
-            // its asset lock's outpoint derives can never create an identity, and as a sender it
-            // could take the place of the identity another asset lock creates, so it is refused
-            // here, before the asset lock proof is verified. Basic structure has checked that
-            // the outpoint exists. Admission is not consensus, so every protocol version gets
-            // this.
+            // An identity create's identity id must be the one its asset lock's outpoint
+            // derives, and a block refuses one whose id is not. The id is outside the bytes the
+            // asset lock key signs, so it is compared here, before the asset lock proof is
+            // verified, and such a transition is refused without that verification. Basic
+            // structure has checked that the outpoint exists. Admission is not consensus, so
+            // every protocol version gets this.
             if let StateTransition::IdentityCreate(identity_create) = state_transition {
                 if identity_create.asset_lock_proof().create_identifier()?
                     != identity_create.identity_id()
@@ -451,11 +450,17 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     );
                 }
                 result.data
-            } else {
-                // The action built for advanced structure validation is kept, so the transition
-                // is not transformed again: for an asset lock that would verify the proof and
-                // its signature a second time
+            } else if matches!(state_transition, StateTransition::IdentityCreate(_)) {
+                // An identity create keeps the action built for its advanced structure
+                // validation, so its asset lock proof and signature are verified once. Every
+                // other transition is transformed again below: keeping its action would change
+                // its check_tx fee estimate, which counts the operations of both transforms (a
+                // batch's transform adds the fees of the contracts and tokens it reads). Block
+                // execution never runs this function, so this decides mempool admission only
+                // and is inert for consensus at every protocol version.
                 action
+            } else {
+                None
             };
 
             let action = if let Some(action) = action {

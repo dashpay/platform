@@ -134,17 +134,15 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
     /// This means we should transform into the action before validation of the advanced structure,
     /// and that we must even do this on check_tx
     ///
-    /// An identity create from addresses is checked here so that one whose key proofs of
-    /// possession fail never enters the mempool: the address witnesses do not sign those proofs,
-    /// so their owners should not be charged for them. Admission is not consensus, so every
-    /// protocol version gets this.
+    /// An identity create from addresses is checked here because a block refuses one whose key
+    /// proofs of possession fail, unpaid from protocol version 14, as the address witnesses do
+    /// not sign those proofs. Admission is not consensus, so every protocol version gets this.
     ///
-    /// An identity create is checked here so that one whose identity id is not the one its
-    /// asset lock derives, or whose key proofs of possession fail, never enters the mempool: the
-    /// asset lock signature covers neither the identity id nor the key signatures, so the asset
-    /// lock owner should not be charged for them, and from protocol version 14 a block refuses
-    /// them unpaid. A key structure failure, which a block charges, is refused here too.
-    /// Admission is not consensus, so every protocol version gets this.
+    /// An identity create is checked here because a block refuses one whose identity id is not
+    /// the one its asset lock derives, or whose key structure or key proofs of possession fail.
+    /// From protocol version 14 the identity id and proof of possession failures are refused
+    /// unpaid, as the asset lock signature covers neither field. Admission is not consensus, so
+    /// every protocol version gets this.
     ///
     /// A masternode vote is checked here for the same reason: a block refuses a vote with the
     /// wrong voting key unpaid. Its state validation, which check_tx also runs, needs the action.

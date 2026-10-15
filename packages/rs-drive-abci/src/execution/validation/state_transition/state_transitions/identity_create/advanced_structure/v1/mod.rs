@@ -34,8 +34,8 @@ impl IdentityCreateStateTransitionAdvancedStructureValidationV1 for IdentityCrea
     /// whose proof of possession fails are refused unpaid.
     ///
     /// The asset lock signature covers the transition's signable bytes, which leave out the
-    /// identity id and the key signatures, so a failure of either check can come from a field
-    /// the asset lock owner did not sign. Such a failure is not charged to the asset lock: the
+    /// identity id and the key signatures, so a failure of either check is in a field the asset
+    /// lock signature does not cover. Such a failure is not charged to the asset lock: the
     /// transition is refused like one whose asset lock signature fails, and the asset lock is
     /// left as it was. A key structure failure is still charged, because the keys are part of
     /// the signed bytes.
