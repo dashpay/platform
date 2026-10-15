@@ -9,8 +9,6 @@
     "invitations",
     "pending_contact_crypto",
     "provider_transactions",
-    "shielded_activity_reconciliation",
-    "shielded_funding_attempts",
     "shielded_viewing_keys",
     "tracked_asset_locks",
     "unsigned_token_storage",
@@ -1614,7 +1612,7 @@
     },
     {
       "id": "shielded.core_wallet_drain",
-      "title": "Pooled Core-to-shielded Max with authenticated restart recovery",
+      "title": "Pooled Core-to-shielded Max with restart-safe recovery",
       "area": "recovery",
       "shared_apis": [
         "platform_wallet_manager_shielded_wallet_drain_preview",
@@ -1625,8 +1623,6 @@
         "asset_lock_funding_indices",
         "asset_lock_operation_ids",
         "atomic_changesets",
-        "shielded_activity_reconciliation",
-        "shielded_funding_attempts",
         "tracked_asset_locks",
         "wallet_restore"
       ],
@@ -1635,13 +1631,13 @@
           "sdk": "supported",
           "example_app": "unsupported",
           "restart": "tested",
-          "reason": "Swift exposes preview, execution, and status with durable operation UUIDs and append-only signed funding attempts. Restart recovery verifies exact signed outputs against authenticated shielded scan data before durably completing the operation. Unit tests cover store reopen, failed persistence, foreign or partial evidence, and earlier randomized retries. An iOS wallet testnet process-death test confirmed recovery after dispatch and enabled a subsequent Max transfer. Legacy test operations without saved attempts remain pending. SwiftExampleApp does not yet expose this flow."
+          "reason": "Swift exposes preview, execution, and status with durable operation UUIDs. Restart recovery resumes the exact asset-lock outpoint: a fresh Type18 that Platform executes, or that Platform rejects because the outpoint was already consumed by an earlier attempt, durably completes the operation. Unit tests cover store reopen, failed persistence and the terminal DrainCompleted rule. An iOS wallet testnet process-death test confirmed recovery after dispatch and enabled a subsequent Max transfer. SwiftExampleApp does not yet expose this flow."
         },
         "kotlin": {
           "sdk": "unsupported",
           "example_app": "unsupported",
           "restart": "not_applicable",
-          "reason": "The typed input-limit error is mapped, but JNI drain wrappers, operation-ID callbacks, and signed-attempt persistence callbacks are not implemented."
+          "reason": "The typed input-limit error is mapped, but JNI drain wrappers and operation-ID callbacks are not implemented."
         }
       },
       "verification": [
@@ -1672,25 +1668,17 @@
         {
           "host": "shared",
           "kind": "unit",
-          "file": "packages/rs-platform-wallet/src/wallet/shielded/drain_recovery.rs",
-          "id": "should_reconcile_drain_after_dispatch_crash_using_an_earlier_exact_attempt",
-          "command": "cargo test -p platform-wallet --features shielded --lib drain_recovery::tests",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/fund_from_asset_lock.rs",
+          "id": "settle_completes_drain_on_exact_outpoint_already_consumed_report",
+          "command": "cargo test -p platform-wallet --features shielded --lib settle_completes_drain_on_exact_outpoint_already_consumed_report",
           "covers_restart": true
         },
         {
-          "host": "swift",
+          "host": "shared",
           "kind": "unit",
-          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/AssetLockOperationPersistenceTests.swift",
-          "id": "testSignedFundingAttemptsAreAppendOnlyAndSurviveConsumedReopen",
-          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/AssetLockOperationPersistenceTests",
-          "covers_restart": true
-        },
-        {
-          "host": "swift",
-          "kind": "unit",
-          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ShieldedActivityReconciliationTests.swift",
-          "id": "testReplacementAndCompletionSurviveReopenWithoutTouchingOtherAccountsOrWallets",
-          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -sdk iphonesimulator -destination \"platform=iOS Simulator,name=iPhone 17\" ARCHS=arm64 -only-testing:SwiftDashSDKTests/ShieldedActivityReconciliationTests",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/wallet_drain_tests.rs",
+          "id": "should_resume_the_same_lock_for_a_reused_uuid_without_a_second_core_lock",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet_drain_tests",
           "covers_restart": true
         }
       ]
