@@ -51,3 +51,6 @@ pub use persister::{prune_backups_in, PruneReport, RetentionPolicy, SqlitePersis
 pub use reports::{CommitReport, DeleteWalletReport};
 #[doc(inline)]
 pub use schema::core_pool::OwningAccount;
+
+// Versioned blob readers are useful to hosts inspecting pre-migration backups.
+pub use schema::{dashpay::decode_profile, identities::decode_identity};
