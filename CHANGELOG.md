@@ -15,9 +15,10 @@
 
 ### Changed
 
-- **Rust dependencies:** pin rust-dashcore to `12e4bd4c` (`dev` at `afbe5515` plus a
-  fix that keeps the stored serde variant index of every transaction payload, so
-  wallet rows written before the new payload types decode again), which includes
+- **Rust dependencies:** pin rust-dashcore to `dev` at `626c91d1`, which includes
+  [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
+  every transaction payload keeps its stored serde variant index, so wallet rows
+  written before the new payload types decode again;
   [rust-dashcore#1149](https://github.com/dashpay/rust-dashcore/pull/1149):
   legacy BLS public-key and canonical PlatformNodeId serialization are restored
   and the pre-v4 coinbase payload Serde layout is preserved;
