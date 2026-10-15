@@ -25,9 +25,11 @@ where
     C: CoreRPCLike,
 {
     /// Returning None here means Platform cannot tell on its own whether the chain lock is
-    /// valid, because it might not hold the quorums Core signed it with, so Core has to decide.
-    /// `Some(false)` is only returned when Platform holds exactly the quorums active at the
-    /// signing height.
+    /// valid, because it might not hold the quorums Core signed it with, and Core's
+    /// `verifychainlock` accepted its signature; submitting it to Core then decides whether Core
+    /// is synced to it. `Some(false)` is returned when the signature fails against exactly the
+    /// quorums active at the signing height, which Platform holds, or when `verifychainlock`
+    /// fails it.
     #[inline(always)]
     pub(super) fn verify_chain_lock_locally_v1(
         &self,
@@ -35,6 +37,43 @@ where
         platform_state: &PlatformState,
         chain_lock: &ChainLock,
         _platform_version: &PlatformVersion,
+    ) -> Result<Option<bool>, Error> {
+        if let Some(valid) =
+            self.verify_chain_lock_with_held_quorums(round, platform_state, chain_lock)?
+        {
+            return Ok(Some(valid));
+        }
+
+        // `submitchainlock` returns Core's best chain lock height without checking the signature
+        // when that height is at or above the chain lock's, so the signature is checked with
+        // `verifychainlock` first.
+        //
+        // `verifychainlock` also fails a valid chain lock while Core does not have the block at
+        // the signing height, where `submitchainlock` fails too.
+        if self.core_rpc.verify_chain_lock(chain_lock)? {
+            Ok(None)
+        } else {
+            tracing::warn!(
+                ?chain_lock,
+                "h:{} r:{} Core's verifychainlock rejected the chain lock at core height {}: its signature is invalid, or Core does not have the block at core height {} yet",
+                platform_state.last_committed_block_height() + 1,
+                round,
+                chain_lock.block_height,
+                chain_lock.block_height.saturating_sub(SIGN_OFFSET),
+            );
+            Ok(Some(false))
+        }
+    }
+
+    /// Verify the chain lock against the chain lock quorums Platform holds, without Core.
+    /// Returning None here means Platform cannot tell on its own whether the chain lock is
+    /// valid, because it might not hold the quorums Core signed it with. `Some(false)` is only
+    /// returned when Platform holds exactly the quorums active at the signing height.
+    pub(super) fn verify_chain_lock_with_held_quorums(
+        &self,
+        round: u32,
+        platform_state: &PlatformState,
+        chain_lock: &ChainLock,
     ) -> Result<Option<bool>, Error> {
         let quorum_set = platform_state.chain_lock_validating_quorums();
         let quorum_config = quorum_set.config();
@@ -330,7 +369,6 @@ mod tests {
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock, QuorumHash};
     use dpp::dashcore_rpc::json::QuorumType;
-    use dpp::version::PlatformVersion;
     use std::str::FromStr;
 
     fn verify(
@@ -340,7 +378,7 @@ mod tests {
     ) -> Option<bool> {
         platform
             .platform
-            .verify_chain_lock_locally_v1(0, state, chain_lock, PlatformVersion::latest())
+            .verify_chain_lock_with_held_quorums(0, state, chain_lock)
             .expect("verification runs")
     }
 

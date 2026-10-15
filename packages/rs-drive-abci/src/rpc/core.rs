@@ -730,7 +730,7 @@ mod tests {
 
         /// How the mock Core answers a method it knows.
         #[derive(Clone, Copy)]
-        enum Answer {
+        pub(super) enum Answer {
             /// HTTP 200 with this JSON-RPC `result`.
             Result(&'static str),
             /// This HTTP status with this JSON-RPC `error`.
@@ -742,15 +742,15 @@ mod tests {
 
         /// A Core JSON-RPC endpoint on a local port. A method it is not given an answer for gets
         /// what Core answers a method it does not have: HTTP 404 with error -32601.
-        struct MockCore {
+        pub(super) struct MockCore {
             url: String,
-            asked: Arc<Mutex<Vec<String>>>,
+            asked: Arc<Mutex<Vec<(String, Value)>>>,
         }
 
         impl MockCore {
             /// Answers a method with its first entry in `answers`, and with the method's next entry,
             /// if it has one, from the next request on.
-            fn start(answers: Vec<(&'static str, Answer)>) -> Self {
+            pub(super) fn start(answers: Vec<(&'static str, Answer)>) -> Self {
                 let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock core");
                 let url = format!(
                     "http://{}",
@@ -770,14 +770,30 @@ mod tests {
                 MockCore { url, asked }
             }
 
-            fn rpc(&self) -> DefaultCoreRPC {
+            pub(super) fn rpc(&self) -> DefaultCoreRPC {
                 DefaultCoreRPC::open(&self.url, "user".to_string(), "password".to_string())
                     .expect("open Core RPC")
             }
 
             /// The methods asked so far, in order.
             fn asked(&self) -> Vec<String> {
-                self.asked.lock().expect("asked lock").clone()
+                self.asked
+                    .lock()
+                    .expect("asked lock")
+                    .iter()
+                    .map(|(method, _)| method.clone())
+                    .collect()
+            }
+
+            /// The params of every request for `method` so far, in order.
+            pub(super) fn params(&self, method: &str) -> Vec<Value> {
+                self.asked
+                    .lock()
+                    .expect("asked lock")
+                    .iter()
+                    .filter(|(asked, _)| asked == method)
+                    .map(|(_, params)| params.clone())
+                    .collect()
             }
         }
 
@@ -803,7 +819,7 @@ mod tests {
         fn serve(
             stream: TcpStream,
             answers: &Mutex<Vec<(&'static str, Answer)>>,
-            asked: &Mutex<Vec<String>>,
+            asked: &Mutex<Vec<(String, Value)>>,
         ) {
             let mut writer = stream.try_clone().expect("clone mock core stream");
             let mut reader = BufReader::new(stream);
@@ -833,7 +849,10 @@ mod tests {
                     .as_str()
                     .expect("request method")
                     .to_string();
-                asked.lock().expect("asked lock").push(method.clone());
+                asked
+                    .lock()
+                    .expect("asked lock")
+                    .push((method.clone(), request["params"].clone()));
 
                 let json =
                     |text: &str| serde_json::from_str::<Value>(text).expect("answer is JSON");
@@ -1009,6 +1028,40 @@ mod tests {
 
             assert_eq!(fork.expect("Core v24 answers"), None);
             assert_eq!(core.asked(), ["getdeploymentinfo"]);
+        }
+    }
+
+    /// Asking Core's `verifychainlock` over a real JSON-RPC connection.
+    mod verify_chain_lock {
+        use super::fork_info::{Answer, MockCore};
+        use crate::rpc::core::CoreRPCLike;
+        use dpp::dashcore::{BlockHash, ChainLock};
+        use serde_json::json;
+        use std::str::FromStr;
+
+        #[test]
+        fn should_send_the_block_hash_in_the_byte_order_core_displays_it() {
+            // Mainnet chain lock 2555653. Core parses the block hash as it displays it, so a
+            // hash sent in internal byte order would make Core check the signature over another
+            // block.
+            let display_hash = "0000000000000001a26bc13523d40ae79f5680207c0d8486c4939ce2ef01c6c8";
+            let signature = "83fae388eb55f8e8d9fd89623b5018a1294550f6032b96d5c89de71bf7d567d19cced4023eefcbf9898d77744a2c90860614854ae35d32c0d9268ef06c4859effaf3b9e5f132af58aae0f760cd94ab8b987a6663f01f660d61dbe2ea0856b197";
+            let chain_lock = ChainLock {
+                block_height: 2555653,
+                block_hash: BlockHash::from_str(display_hash).expect("block hash"),
+                signature: <[u8; 96]>::try_from(hex::decode(signature).expect("hex"))
+                    .expect("96 bytes")
+                    .into(),
+            };
+            let core = MockCore::start(vec![("verifychainlock", Answer::Result("true"))]);
+
+            let verified = core.rpc().verify_chain_lock(&chain_lock);
+
+            assert!(verified.expect("Core answers"));
+            assert_eq!(
+                core.params("verifychainlock"),
+                [json!([display_hash, signature, 2555653])]
+            );
         }
     }
 }

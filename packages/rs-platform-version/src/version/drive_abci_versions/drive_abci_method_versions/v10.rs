@@ -38,7 +38,9 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
 /// `verify_chain_lock_locally` 1 leaves a chain lock to Core instead of rejecting it when a quorum
 /// may have been mined after the last committed core height, or when the signing height lies
 /// between the two stored chain lock quorum sets, so a chain lock signed by quorums Platform does
-/// not hold is no longer rejected.
+/// not hold is no longer rejected. Core's `verifychainlock` checks the signature of every chain
+/// lock it leaves to Core, since `submitchainlock` skips that check for a height Core already has
+/// a chain lock at or above.
 /// Everything else matches `DRIVE_ABCI_METHOD_VERSIONS_V9`.
 pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
@@ -89,7 +91,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V10: DriveAbciMethodVersions = DriveAbciMet
     core_chain_lock: DriveAbciCoreChainLockMethodVersionsAndConstants {
         choose_quorum: 0,
         verify_chain_lock: 0,
-        verify_chain_lock_locally: 1, // changed: rejects a chain lock locally only when Platform holds the quorums active at its signing height
+        verify_chain_lock_locally: 1, // changed: rejects a chain lock locally only when Platform holds the quorums active at its signing height, and has Core's verifychainlock check the others
         verify_chain_lock_through_core: 0,
         make_sure_core_is_synced_to_chain_lock: 0,
         recent_block_count_amount: 2,
