@@ -15,6 +15,7 @@ use common::{
     ensure_identity, ensure_wallet_meta, fresh_persister, fresh_persister_with_mode, wid,
 };
 
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
     IdentityChangeSet, IdentityEntry, PersistenceError, PersistenceErrorKind,
@@ -556,6 +557,35 @@ fn a_buffered_removal_frees_its_slot_for_a_later_store() {
     p.flush(w).expect("the merged changeset is consistent");
     assert_eq!(live_occupant(&p, &w, 1), Some([0x02; 32]));
     assert!(!row_exists(&p, &iid(0x01)));
+}
+
+/// Discovery re-slots an identity restored at a placeholder index into the
+/// index its key derivation proved, and the new snapshot carries only the
+/// changed `identity_index`. Buffered behind the old-slot snapshot, the
+/// merged write must take the new index: otherwise the flush writes the
+/// stale slot back and the freed slot refuses its rightful owner.
+#[test]
+fn a_buffered_reslot_moves_the_identity_and_frees_its_old_slot() {
+    let (p, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0xBA);
+    ensure_wallet_meta(&p, &w);
+    p.store(w, identity_cs([identity_entry(0x01, Some(0))], []))
+        .expect("placeholder snapshot at slot 0");
+    p.store(w, identity_cs([identity_entry(0x01, Some(5))], []))
+        .expect("adoption into the verified slot");
+    p.store(w, identity_cs([identity_entry(0x02, Some(0))], []))
+        .expect("the freed slot admits its rightful owner");
+
+    p.flush(w).expect("the merged changeset is consistent");
+    assert_eq!(live_occupant(&p, &w, 5), Some([0x01; 32]));
+    assert_eq!(live_occupant(&p, &w, 0), Some([0x02; 32]));
+
+    // A reopened persister reads the same placement back.
+    let state = p.load().expect("reload");
+    let bucket = &state.wallets[&w].identity_manager.wallet_identities[&w];
+    assert_eq!(bucket[&5].identity.id(), iid(0x01));
+    assert_eq!(bucket[&5].identity_index, Some(5));
+    assert_eq!(bucket[&0].identity.id(), iid(0x02));
 }
 
 /// One wallet's rejected flush is one wallet's problem: `commit_writes`

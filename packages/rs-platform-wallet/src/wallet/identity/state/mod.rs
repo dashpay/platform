@@ -12,3 +12,4 @@ pub use managed_identity::{BlockTime, DashPayState, ManagedIdentity, PrivateCont
 pub use manager::IdentityLocation;
 pub use manager::IdentityManager;
 pub use manager::RegistrationIndex;
+pub use manager::VerifiedPlacement;

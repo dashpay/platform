@@ -11,7 +11,7 @@ import SwiftData
 /// without re-fetching on every launch. The cache is
 /// relationship-independent — it serves established contacts, pending
 /// incoming-request senders, and (later) ignored senders from one table,
-/// matching the Rust map. It holds **only the five public profile
+/// matching the Rust map. It holds **only the public profile
 /// fields** parsed from the on-chain `profile` document; it must never
 /// receive anything derived from the encrypted `contactInfo` path.
 ///
@@ -175,4 +175,17 @@ extension PersistentDashpayContactProfile {
                 && row.contactIdentityId == contact
         }
     }
+}
+
+// Address metadata is stored separately so released profile/identity relationships
+// retain their SwiftData schema identity across upgrades.
+extension PersistentDashpayContactProfile {
+    private var paymentAddresses: PersistentDashpayPaymentAddresses? {
+        guard let modelContext else { return nil }
+        return try? PersistentDashpayPaymentAddresses.fetch(in: modelContext, networkRaw: networkRaw,
+            ownerIdentityId: ownerIdentityId, profileIdentityId: contactIdentityId)
+    }
+    public var corePaymentAddress: Data? { paymentAddresses?.corePaymentAddress }
+    public var platformPaymentAddress: Data? { paymentAddresses?.platformPaymentAddress }
+    public var shieldedAddress: Data? { paymentAddresses?.shieldedAddress }
 }

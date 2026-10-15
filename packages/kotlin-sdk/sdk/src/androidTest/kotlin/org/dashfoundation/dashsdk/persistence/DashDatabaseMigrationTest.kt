@@ -28,6 +28,65 @@ class DashDatabaseMigrationTest {
 
     private val dbName = "migration-test.db"
 
+    @Test
+    fun migrate16To17PreservesProfilesAndSweepState() {
+        migrateProfilesAndSweepState(16)
+    }
+
+    @Test
+    fun migrate10To17PreservesProfilesThroughEveryMigration() {
+        migrateProfilesAndSweepState(10)
+    }
+
+    private fun migrateProfilesAndSweepState(fromVersion: Int) {
+        helper.createDatabase(dbName, fromVersion).apply {
+            execSQL("INSERT INTO identities (identityId, balance, revision, isLocal, identityType, createdAt, lastUpdated, networkRaw, identityIndex) VALUES (x'0A', 0, 0, 1, 'User', 0, 0, 1, 0)")
+            execSQL("INSERT INTO dashpay_profiles (networkRaw, identityId, displayName, createdAt, lastUpdated) VALUES (1, x'0A', 'Alice', 0, 0)")
+            execSQL("INSERT INTO dashpay_contact_profiles (networkRaw, ownerIdentityId, contactIdentityId, displayName, checkedAtMs, createdAt, lastUpdated) VALUES (1, x'0A', x'0B', 'Bob', 123, 0, 0)")
+            execSQL("INSERT INTO wallets (walletId, walletGroupId, networkRaw, name, birthHeight, syncedHeight, lastSynced, isImported, createdAt, lastUpdated) VALUES (x'01', x'02', 1, 'w', 0, 0, 0, 0, 0, 0)")
+            execSQL("INSERT INTO pending_inputs (outpoint, inputIndex, spendingTxid, walletId, createdAt) VALUES (x'0301', 0, x'02', x'01', 0)")
+            if (fromVersion >= 11) {
+                execSQL("UPDATE wallets SET lastAppliedChainLockHeight = 4321")
+                execSQL("UPDATE pending_inputs SET isSweptTombstone = 1, winnerMinedHeight = 1234")
+            }
+            close()
+        }
+        val db = helper.runMigrationsAndValidate(
+            dbName,
+            17,
+            true,
+            DashDatabase.MIGRATION_10_11,
+            DashDatabase.MIGRATION_11_12,
+            DashDatabase.MIGRATION_12_13,
+            DashDatabase.MIGRATION_13_14,
+            DashDatabase.MIGRATION_14_15,
+            DashDatabase.MIGRATION_15_16,
+            DashDatabase.MIGRATION_16_17,
+        )
+        for ((table, name) in listOf("dashpay_profiles" to "Alice", "dashpay_contact_profiles" to "Bob")) {
+            db.query("SELECT displayName, corePaymentAddress, platformPaymentAddress, shieldedAddress FROM $table").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(name, cursor.getString(0))
+                assertTrue(cursor.isNull(1) && cursor.isNull(2) && cursor.isNull(3))
+            }
+            db.execSQL("UPDATE $table SET shieldedAddress = ?", arrayOf(ByteArray(43) { 0x45 }))
+            db.query("SELECT shieldedAddress FROM $table").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                org.junit.Assert.assertArrayEquals(ByteArray(43) { 0x45 }, cursor.getBlob(0))
+            }
+        }
+        db.query("SELECT isSweptTombstone, winnerMinedHeight FROM pending_inputs").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(if (fromVersion >= 11) 1 else 0, cursor.getInt(0))
+            if (fromVersion >= 11) assertEquals(1234, cursor.getInt(1)) else assertTrue(cursor.isNull(1))
+        }
+        db.query("SELECT lastAppliedChainLockHeight FROM wallets").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            if (fromVersion >= 11) assertEquals(4321, cursor.getInt(0)) else assertTrue(cursor.isNull(0))
+        }
+        db.close()
+    }
+
     /**
      * v2 → v3 adds the `dashpay_contact_profiles` and `dashpay_payments`
      * tables (additive — no reshapes). Pre-existing v2 data must survive
@@ -746,7 +805,7 @@ class DashDatabaseMigrationTest {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            16,
+            17,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -760,16 +819,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
             DashDatabase.MIGRATION_15_16,
+            DashDatabase.MIGRATION_16_17,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v16 schema. */
+    /** The full chain from v1 must also land on a valid v17 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            16,
+            17,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -786,6 +846,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
             DashDatabase.MIGRATION_15_16,
+            DashDatabase.MIGRATION_16_17,
         ).close()
     }
 }

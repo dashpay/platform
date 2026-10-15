@@ -242,8 +242,9 @@ class DashDatabaseTest {
         // 12 → 13 the contract bounds kind, 13 → 14 the token
         // once-per-identity distribution block, 14 → 15 the DashPay
         // backfill record columns on `wallets`, and 15 → 16 the private
-        // contact request scan state tables.
-        assertEquals(16, db.openHelper.readableDatabase.version)
+        // contact request scan state tables. 16 → 17 adds profile
+        // payment addresses.
+        assertEquals(17, db.openHelper.readableDatabase.version)
         val indexes = mutableSetOf<String>()
         db.openHelper.readableDatabase.query("PRAGMA index_list('pending_inputs')").use { c ->
             val nameColumn = c.getColumnIndexOrThrow("name")

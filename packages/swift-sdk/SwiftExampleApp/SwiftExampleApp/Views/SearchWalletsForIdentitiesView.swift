@@ -21,6 +21,7 @@ import SwiftData
 struct SearchWalletsForIdentitiesView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
+    @EnvironmentObject private var shieldedService: ShieldedService
     @Environment(\.dismiss) private var dismiss
 
     /// Every persisted wallet, across all networks. Sorted by
@@ -60,6 +61,7 @@ struct SearchWalletsForIdentitiesView: View {
         /// Rendered in full (no truncation) so path-derivation
         /// failures and similar long messages aren't cut off.
         let error: String?
+        var bindingWarning: String? = nil
     }
 
     /// Resolved runtime wallet for the current selection, or `nil`
@@ -180,6 +182,9 @@ struct SearchWalletsForIdentitiesView: View {
                 Text("+\(finding.foundCount)")
                     .fontWeight(.semibold)
                     .foregroundColor(finding.foundCount > 0 ? .green : .secondary)
+            }
+            if let warning = finding.bindingWarning {
+                Text(warning).font(.caption).foregroundColor(.orange)
             }
             if let err = finding.error {
                 // No `.lineLimit` — identity-derivation errors can
@@ -361,15 +366,19 @@ struct SearchWalletsForIdentitiesView: View {
                 startIndex: nil, // resume from cache
                 gapLimit: nil    // Rust default (IDENTITY_GAP_LIMIT)
             )
+            // Newly discovered identities introduce deterministic tip accounts.
+            // Rebind before scanning so historical tips are included.
+            let bound = shieldedService.rebindAfterIdentityDiscovery(
+                walletManager: walletManager, walletId: walletId,
+                network: platformState.currentNetwork, resolver: MnemonicResolver())
             result = WalletFinding(
                 walletId: walletId,
                 label: label,
                 foundCount: found.count,
-                error: nil
+                error: nil,
+                bindingWarning: bound ? nil : "Identities were discovered successfully. Shielded wallet binding could not complete; retry from the Sync tab."
             )
 
-            // Zero hits → ask Rust for the preview keypairs the
-            // scan walked so the user can eyeball / copy them.
             if found.isEmpty {
                 await loadPreviewKeys(on: managed)
             }

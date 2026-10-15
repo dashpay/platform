@@ -4,7 +4,7 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::ptr;
 
-use platform_wallet::{DashPayProfile, ProfileUpdate};
+use platform_wallet::{DashPayProfile, PaymentAddressUpdate, ProfileUpdate};
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -13,6 +13,35 @@ use crate::handle::*;
 use crate::runtime::block_on_worker;
 use crate::types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
+
+/// Payment address update: action 0 keeps, 1 sets, and 2 removes the property.
+/// For action 1, `bytes` must point to `len` readable bytes for the call duration.
+#[repr(C)]
+pub struct PaymentAddressUpdateFFI {
+    pub action: u32,
+    pub bytes: *const u8,
+    pub len: usize,
+}
+
+unsafe fn decode_address_update(
+    input: *const PaymentAddressUpdateFFI,
+) -> Result<PaymentAddressUpdate, PlatformWalletFFIResult> {
+    if input.is_null() {
+        return Ok(PaymentAddressUpdate::Keep);
+    }
+    let input = &*input;
+    match input.action {
+        0 => Ok(PaymentAddressUpdate::Keep),
+        2 => Ok(PaymentAddressUpdate::Remove),
+        1 if !input.bytes.is_null() && matches!(input.len, 21 | 43) => Ok(
+            PaymentAddressUpdate::Set(std::slice::from_raw_parts(input.bytes, input.len).to_vec()),
+        ),
+        _ => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "Invalid payment address update".to_string(),
+        )),
+    }
+}
 
 /// Flat FFI view of a [`DashPayProfile`].
 #[repr(C)]
@@ -24,6 +53,12 @@ pub struct DashPayProfileFFI {
     pub avatar_hash: [u8; 32],
     pub avatar_fingerprint_is_some: bool,
     pub avatar_fingerprint: [u8; 8],
+    pub core_payment_address_is_some: bool,
+    pub core_payment_address: [u8; 21],
+    pub platform_payment_address_is_some: bool,
+    pub platform_payment_address: [u8; 21],
+    pub shielded_address_is_some: bool,
+    pub shielded_address: [u8; 43],
 }
 
 impl DashPayProfileFFI {
@@ -36,6 +71,12 @@ impl DashPayProfileFFI {
             avatar_hash: [0u8; 32],
             avatar_fingerprint_is_some: false,
             avatar_fingerprint: [0u8; 8],
+            core_payment_address_is_some: false,
+            core_payment_address: [0; 21],
+            platform_payment_address_is_some: false,
+            platform_payment_address: [0; 21],
+            shielded_address_is_some: false,
+            shielded_address: [0; 43],
         }
     }
 
@@ -61,6 +102,33 @@ impl DashPayProfileFFI {
             avatar_hash,
             avatar_fingerprint_is_some,
             avatar_fingerprint,
+            core_payment_address_is_some: profile
+                .core_payment_address
+                .as_ref()
+                .is_some_and(|a| a.len() == 21),
+            core_payment_address: profile
+                .core_payment_address
+                .as_deref()
+                .and_then(|a| a.try_into().ok())
+                .unwrap_or([0; 21]),
+            platform_payment_address_is_some: profile
+                .platform_payment_address
+                .as_ref()
+                .is_some_and(|a| a.len() == 21),
+            platform_payment_address: profile
+                .platform_payment_address
+                .as_deref()
+                .and_then(|a| a.try_into().ok())
+                .unwrap_or([0; 21]),
+            shielded_address_is_some: profile
+                .shielded_address
+                .as_ref()
+                .is_some_and(|a| a.len() == 43),
+            shielded_address: profile
+                .shielded_address
+                .as_deref()
+                .and_then(|a| a.try_into().ok())
+                .unwrap_or([0; 43]),
         }
     }
 }
@@ -332,13 +400,48 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_s
     signer_handle: *mut SignerHandle,
     out_profile: *mut DashPayProfileFFI,
 ) -> PlatformWalletFFIResult {
+    platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer(
+        wallet_handle,
+        identity_id,
+        display_name,
+        public_message,
+        avatar_url,
+        avatar_bytes,
+        avatar_bytes_len,
+        ptr::null(),
+        ptr::null(),
+        ptr::null(),
+        do_create,
+        signer_handle,
+        out_profile,
+    )
+}
+
+/// Create or update a profile with explicit keep/set/remove payment address operations.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer(
+    wallet_handle: Handle,
+    identity_id: *const u8,
+    display_name: *const c_char,
+    public_message: *const c_char,
+    avatar_url: *const c_char,
+    avatar_bytes: *const u8,
+    avatar_bytes_len: usize,
+    core_payment_address: *const PaymentAddressUpdateFFI,
+    platform_payment_address: *const PaymentAddressUpdateFFI,
+    shielded_address: *const PaymentAddressUpdateFFI,
+    do_create: bool,
+    signer_handle: *mut SignerHandle,
+    out_profile: *mut DashPayProfileFFI,
+) -> PlatformWalletFFIResult {
     check_ptr!(out_profile);
-    check_ptr!(signer_handle);
     // `DashPayProfileFFI` owns heap C-string pointer fields freed by
     // `dashpay_profile_ffi_free`; publish the empty sentinel before any
     // fallible work so an error path never leaves uninitialized stack bytes
     // in those pointer fields. Matches the read-side helpers in this file.
     *out_profile = DashPayProfileFFI::empty();
+    check_ptr!(signer_handle);
 
     let id = unwrap_result_or_return!(read_identifier(identity_id));
 
@@ -352,6 +455,12 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_s
         Some(std::slice::from_raw_parts(avatar_bytes, avatar_bytes_len).to_vec())
     };
 
+    let core_payment_address =
+        unwrap_result_or_return!(decode_address_update(core_payment_address));
+    let platform_payment_address =
+        unwrap_result_or_return!(decode_address_update(platform_payment_address));
+    let shielded_address = unwrap_result_or_return!(decode_address_update(shielded_address));
+
     let signer_addr = signer_handle as usize;
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, move |wallet| {
@@ -361,6 +470,9 @@ pub unsafe extern "C" fn platform_wallet_create_or_update_dashpay_profile_with_s
             public_message,
             avatar_url,
             avatar_bytes: avatar_bytes_vec,
+            core_payment_address,
+            platform_payment_address,
+            shielded_address,
         };
 
         block_on_worker(async move {
@@ -402,6 +514,79 @@ mod tests {
     }
 
     #[test]
+    fn null_signer_leaves_profile_safe_to_free() {
+        unsafe {
+            let mut out = std::mem::MaybeUninit::<DashPayProfileFFI>::uninit();
+            let result = platform_wallet_create_or_update_dashpay_profile_with_signer(
+                0,
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                0,
+                false,
+                ptr::null_mut(),
+                out.as_mut_ptr(),
+            );
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+            let mut out = out.assume_init();
+            assert!(out.display_name.is_null());
+            assert!(!out.shielded_address_is_some);
+            dashpay_profile_ffi_free(&mut out);
+        }
+    }
+
+    #[test]
+    fn payment_address_updates_preserve_distinct_operations() {
+        unsafe {
+            assert!(matches!(
+                decode_address_update(ptr::null()).unwrap(),
+                PaymentAddressUpdate::Keep
+            ));
+            let mut update = PaymentAddressUpdateFFI {
+                action: 2,
+                bytes: ptr::null(),
+                len: 0,
+            };
+            assert!(matches!(
+                decode_address_update(&update).unwrap(),
+                PaymentAddressUpdate::Remove
+            ));
+            update.action = 1;
+            assert!(decode_address_update(&update).is_err());
+            let address = [7u8; 43];
+            update.bytes = address.as_ptr();
+            update.len = address.len();
+            match decode_address_update(&update).unwrap() {
+                PaymentAddressUpdate::Set(bytes) => assert_eq!(bytes, address),
+                _ => panic!("expected set operation"),
+            }
+            update.action = 3;
+            assert!(decode_address_update(&update).is_err());
+        }
+    }
+
+    #[test]
+    fn profile_addresses_copy_to_owned_fixed_buffers() {
+        let profile = DashPayProfile {
+            core_payment_address: Some(vec![1; 21]),
+            platform_payment_address: Some(vec![2; 21]),
+            shielded_address: Some(vec![3; 43]),
+            ..Default::default()
+        };
+        let mut ffi = DashPayProfileFFI::from_profile(&profile);
+        assert!(ffi.core_payment_address_is_some);
+        assert!(ffi.platform_payment_address_is_some);
+        assert!(ffi.shielded_address_is_some);
+        drop(profile);
+        assert_eq!(ffi.core_payment_address, [1; 21]);
+        assert_eq!(ffi.platform_payment_address, [2; 21]);
+        assert_eq!(ffi.shielded_address, [3; 43]);
+        unsafe { dashpay_profile_ffi_free(&mut ffi) };
+    }
+
+    #[test]
     fn test_get_profile_absent_returns_false_flag() {
         unsafe {
             let managed = platform_wallet::ManagedIdentity::new(make_test_identity(), 0);
@@ -437,6 +622,7 @@ mod tests {
                 avatar_hash: Some(hash),
                 avatar_fingerprint: Some([1, 2, 3, 4, 5, 6, 7, 8]),
                 public_message: Some("Hello world".to_string()),
+                ..Default::default()
             });
             let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
