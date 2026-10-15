@@ -4,9 +4,11 @@
 //! to fetch network state, data contracts, and quorum public keys.
 
 pub mod error;
+pub mod local;
 pub mod provider;
 
 pub use error::ContextProviderError;
+pub use local::LocalContextProvider;
 pub use provider::{ContextProvider, DataContractProvider, QuorumKeyFuture};
 
 #[cfg(feature = "mocks")]

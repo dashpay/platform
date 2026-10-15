@@ -38,7 +38,7 @@ pub mod types;
 pub use dapi_grpc::platform::v0 as proto;
 #[cfg(feature = "mocks")]
 pub use dash_context_provider::MockContextProvider;
-pub use dash_context_provider::{ContextProvider, QuorumKeyFuture};
+pub use dash_context_provider::{ContextProvider, LocalContextProvider, QuorumKeyFuture};
 pub use documents::chained_document_query::ChainedDocumentQuery;
 pub use documents::composite_document_query::{
     CompositeBinding, CompositeBindingSource, CompositeSubQuery, CompositeSubQueryKind,
