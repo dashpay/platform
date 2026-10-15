@@ -13,6 +13,7 @@ pub mod document_split_averages;
 pub mod document_split_counts;
 pub mod document_split_sums;
 pub mod document_sum;
+pub mod from_proto;
 pub(crate) mod having_proof_helpers;
 pub(crate) mod ranked_proof_helpers;
 pub(crate) mod sum_proof_helpers;

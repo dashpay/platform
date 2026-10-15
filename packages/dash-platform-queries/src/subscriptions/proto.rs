@@ -1,0 +1,278 @@
+//! Conversion between [`StateTransitionFilter`] and its wire message.
+
+use super::{
+    check_filter_count, missing_action, DocumentAction, DocumentActionMatch, DocumentFilter, Role,
+    StateTransitionFilter, SubscriptionFilterError,
+};
+use crate::documents::document_query::{
+    value_to_proto, where_clause_to_proto, where_operator_to_proto,
+};
+use crate::documents::from_proto::{
+    value_from_proto, where_clauses_from_proto, where_operator_from_proto,
+};
+use crate::error::Error;
+use dapi_grpc::platform::v0::get_documents_request::{
+    WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
+};
+use dapi_grpc::platform::v0::subscribe_to_state_transitions_request::{
+    self as proto, document_filter, state_transition_filter, SubscribeToStateTransitionsRequestV0,
+    Version,
+};
+use dapi_grpc::platform::v0::SubscribeToStateTransitionsRequest;
+use dpp::address_funds::PlatformAddress;
+use dpp::platform_value::Value;
+use dpp::prelude::Identifier;
+use drive::query::{ValueClause, WhereClause};
+
+/// Build a subscription request for `filters`, scanning from `from_block_height` (inclusive),
+/// or from after the current tip when `None`.
+pub fn subscribe_request(
+    filters: &[StateTransitionFilter],
+    from_block_height: Option<u64>,
+) -> Result<SubscribeToStateTransitionsRequest, Error> {
+    check_filter_count(filters.len()).map_err(|e| Error::Config(e.to_string()))?;
+    Ok(SubscribeToStateTransitionsRequest {
+        version: Some(Version::V0(SubscribeToStateTransitionsRequestV0 {
+            filters: filters
+                .iter()
+                .map(StateTransitionFilter::to_proto)
+                .collect::<Result<_, _>>()?,
+            from_block_height,
+        })),
+    })
+}
+
+impl StateTransitionFilter {
+    /// The filter's wire message.
+    pub fn to_proto(&self) -> Result<proto::StateTransitionFilter, Error> {
+        let filter = match self {
+            StateTransitionFilter::Documents(filter) => {
+                state_transition_filter::Filter::Documents(document_filter_to_proto(filter)?)
+            }
+            StateTransitionFilter::Addresses { addresses, role } => {
+                state_transition_filter::Filter::Addresses(proto::AddressFilter {
+                    addresses: addresses.iter().map(PlatformAddress::to_bytes).collect(),
+                    role: role_to_proto(*role) as i32,
+                })
+            }
+        };
+        Ok(proto::StateTransitionFilter {
+            filter: Some(filter),
+        })
+    }
+
+    /// Decode the filter at position `index` of a request.
+    pub fn from_proto(
+        index: usize,
+        filter: proto::StateTransitionFilter,
+    ) -> Result<Self, SubscriptionFilterError> {
+        let invalid = |message: String| SubscriptionFilterError::filter(index, message);
+        let filter = filter
+            .filter
+            .ok_or_else(|| invalid("no filter kind is set".to_string()))?;
+        Ok(match filter {
+            state_transition_filter::Filter::Documents(filter) => StateTransitionFilter::Documents(
+                document_filter_from_proto(filter).map_err(invalid)?,
+            ),
+            state_transition_filter::Filter::Addresses(filter) => {
+                StateTransitionFilter::Addresses {
+                    addresses: filter
+                        .addresses
+                        .iter()
+                        .map(|bytes| {
+                            PlatformAddress::from_bytes(bytes)
+                                .map_err(|e| invalid(format!("invalid platform address: {e}")))
+                        })
+                        .collect::<Result<_, _>>()?,
+                    role: role_from_proto(filter.role).map_err(invalid)?,
+                }
+            }
+        })
+    }
+}
+
+fn document_filter_to_proto(filter: &DocumentFilter) -> Result<proto::DocumentFilter, Error> {
+    Ok(proto::DocumentFilter {
+        data_contract_id: filter.data_contract_id.to_vec(),
+        document_type_name: filter.document_type_name.clone(),
+        actions: filter
+            .actions
+            .iter()
+            .map(action_match_to_proto)
+            .collect::<Result<_, _>>()?,
+        batch_owner_id: filter.batch_owner_id.map(|id| id.to_vec()),
+    })
+}
+
+/// A clause operand as sent: 128-bit integers become 64-bit, since the shared encoder sends
+/// 128-bit integers as text, which the node reads as text. One that does not fit has no wire form.
+fn narrowed(value: &Value) -> Result<Value, Error> {
+    let too_wide = || {
+        Error::Config(format!(
+            "the clause value {value:?} does not fit 64 bits, so it cannot be sent"
+        ))
+    };
+    match value {
+        Value::U128(n) => u64::try_from(*n).map(Value::U64).map_err(|_| too_wide()),
+        Value::I128(n) => i64::try_from(*n)
+            .map(Value::I64)
+            .or_else(|_| u64::try_from(*n).map(Value::U64))
+            .map_err(|_| too_wide()),
+        Value::Array(values) => values
+            .iter()
+            .map(narrowed)
+            .collect::<Result<_, _>>()
+            .map(Value::Array),
+        _ => Ok(value.clone()),
+    }
+}
+
+fn where_clauses_to_proto(clauses: &[WhereClause]) -> Result<Vec<ProtoWhereClause>, Error> {
+    clauses
+        .iter()
+        .map(|clause| {
+            where_clause_to_proto(WhereClause {
+                field: clause.field.clone(),
+                operator: clause.operator,
+                value: narrowed(&clause.value)?,
+            })
+        })
+        .collect()
+}
+
+fn action_match_to_proto(
+    action: &DocumentActionMatch,
+) -> Result<document_filter::ActionMatch, Error> {
+    let action_kind = action
+        .action
+        .ok_or_else(|| Error::Config("a document action match must name its action".to_string()))?;
+    Ok(document_filter::ActionMatch {
+        action: Some(action_to_proto(action_kind) as i32),
+        new_document_where: where_clauses_to_proto(&action.new_document_where)?,
+        original_document_where: where_clauses_to_proto(&action.original_document_where)?,
+        owner_ids: action.owner_ids.iter().map(Identifier::to_vec).collect(),
+        price: action
+            .price
+            .as_ref()
+            .map(|price| {
+                Ok::<_, Error>(document_filter::PriceClause {
+                    operator: where_operator_to_proto(price.operator) as i32,
+                    value: Some(value_to_proto(narrowed(&price.value)?)?),
+                })
+            })
+            .transpose()?,
+    })
+}
+
+fn document_filter_from_proto(filter: proto::DocumentFilter) -> Result<DocumentFilter, String> {
+    Ok(DocumentFilter {
+        data_contract_id: identifier(&filter.data_contract_id)?,
+        document_type_name: filter.document_type_name,
+        actions: filter
+            .actions
+            .into_iter()
+            .map(action_match_from_proto)
+            .collect::<Result<_, _>>()?,
+        batch_owner_id: filter
+            .batch_owner_id
+            .as_deref()
+            .map(identifier)
+            .transpose()?,
+    })
+}
+
+fn action_match_from_proto(
+    action: document_filter::ActionMatch,
+) -> Result<DocumentActionMatch, String> {
+    let value = action.action.ok_or_else(missing_action)?;
+    let action_kind = document_filter::Action::try_from(value)
+        .map_err(|_| format!("unknown document action {value}"))?;
+    let where_clauses = |clauses: Vec<ProtoWhereClause>| {
+        clauses
+            .iter()
+            .try_for_each(|clause| refuse_window_selection(clause.operator))?;
+        where_clauses_from_proto(clauses)
+    };
+    Ok(DocumentActionMatch {
+        action: Some(action_from_proto(action_kind)),
+        new_document_where: where_clauses(action.new_document_where)?,
+        original_document_where: where_clauses(action.original_document_where)?,
+        owner_ids: action
+            .owner_ids
+            .iter()
+            .map(|bytes| identifier(bytes))
+            .collect::<Result<_, _>>()?,
+        price: action
+            .price
+            .map(|price| {
+                refuse_window_selection(price.operator)?;
+                Ok::<_, String>(ValueClause {
+                    operator: where_operator_from_proto(price.operator)?,
+                    value: value_from_proto(
+                        price
+                            .value
+                            .ok_or_else(|| "the price clause has no value".to_string())?,
+                    )?,
+                })
+            })
+            .transpose()?,
+    })
+}
+
+/// Time and integer window selections resolve against the documents a query reads; a
+/// transition has no window to be in.
+fn refuse_window_selection(operator: i32) -> Result<(), String> {
+    if operator == ProtoWhereOperator::InTimeRange as i32
+        || operator == ProtoWhereOperator::InIntegerRange as i32
+    {
+        return Err(
+            "time and integer range selections are not supported in subscriptions".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn identifier(bytes: &[u8]) -> Result<Identifier, String> {
+    Identifier::from_bytes(bytes)
+        .map_err(|_| format!("expected a 32-byte identifier, got {} bytes", bytes.len()))
+}
+
+fn role_to_proto(role: Role) -> proto::Role {
+    match role {
+        Role::Any => proto::Role::Any,
+        Role::Sender => proto::Role::Sender,
+        Role::Recipient => proto::Role::Recipient,
+    }
+}
+
+fn role_from_proto(role: i32) -> Result<Role, String> {
+    Ok(
+        match proto::Role::try_from(role).map_err(|_| format!("unknown role {role}"))? {
+            proto::Role::Any => Role::Any,
+            proto::Role::Sender => Role::Sender,
+            proto::Role::Recipient => Role::Recipient,
+        },
+    )
+}
+
+fn action_to_proto(action: DocumentAction) -> document_filter::Action {
+    match action {
+        DocumentAction::Create => document_filter::Action::Create,
+        DocumentAction::Replace => document_filter::Action::Replace,
+        DocumentAction::Delete => document_filter::Action::Delete,
+        DocumentAction::Transfer => document_filter::Action::Transfer,
+        DocumentAction::UpdatePrice => document_filter::Action::UpdatePrice,
+        DocumentAction::Purchase => document_filter::Action::Purchase,
+    }
+}
+
+fn action_from_proto(action: document_filter::Action) -> DocumentAction {
+    match action {
+        document_filter::Action::Create => DocumentAction::Create,
+        document_filter::Action::Replace => DocumentAction::Replace,
+        document_filter::Action::Delete => DocumentAction::Delete,
+        document_filter::Action::Transfer => DocumentAction::Transfer,
+        document_filter::Action::UpdatePrice => DocumentAction::UpdatePrice,
+        document_filter::Action::Purchase => DocumentAction::Purchase,
+    }
+}
