@@ -816,7 +816,7 @@ mod tests {
 
     /// A network SDK that verifies proofs with `provider`. It never connects:
     /// the tests hand it recorded responses.
-    fn network_sdk(provider: Arc<Counting>) -> Sdk {
+    fn network_sdk<P: ContextProvider + 'static>(provider: Arc<P>) -> Sdk {
         SdkBuilder::new(AddressList::new())
             .with_network(Network::Regtest)
             .with_time_tolerance(None)
@@ -1555,5 +1555,178 @@ mod tests {
         assert!(matches!(error, Error::StaleNode(_)), "got {error:?}");
         assert_eq!(provider.fetches.load(Ordering::SeqCst), 1);
         service.join().expect("quorum service");
+    }
+
+    /// Proofs verified against a [`LocalContextProvider`], whose quorum keys
+    /// and ChainLock height the embedder pushes.
+    mod local_provider {
+        use super::*;
+        use crate::platform::{Fetch, LocalContextProvider};
+        use dpp::dashcore::sml::llmq_type::network::NetworkLLMQExt;
+
+        const MAX_LAG: u32 = 8;
+
+        fn signing_quorum() -> ([u8; 32], [u8; 48]) {
+            let hash = hex::decode(SIGNING_QUORUM_HASH)
+                .expect("hex")
+                .try_into()
+                .expect("32 bytes");
+            let key = hex::decode(signing_quorum_key())
+                .expect("hex")
+                .try_into()
+                .expect("48 bytes");
+            (hash, key)
+        }
+
+        fn recorded_metadata(response: &GetEpochsInfoResponse) -> ResponseMetadata {
+            match response.version.as_ref() {
+                Some(EpochsVersion::V0(v0)) => v0.metadata.clone().expect("recorded metadata"),
+                None => panic!("recorded response is v0"),
+            }
+        }
+
+        /// What the embedder pushed before the response was verified: the
+        /// signing quorum's key, under a ChainLock floor.
+        fn provider_holding_the_signing_quorum() -> Arc<LocalContextProvider> {
+            let provider = LocalContextProvider::new(Network::Regtest.platform_type())
+                .with_chain_lock_floor(MAX_LAG);
+            provider.set_quorum_keys([signing_quorum()]);
+            Arc::new(provider)
+        }
+
+        #[derive(Clone, Copy, Debug)]
+        enum Anchor {
+            Missing,
+            Current,
+            AheadByMoreThanTheFloor,
+        }
+
+        /// Until the embedder pushes a ChainLock height the provider cannot
+        /// judge a proof, so the node that sent it is not banned. A proof the
+        /// pushed height makes stale is the node's fault and bans it, and a
+        /// proof within the floor verifies.
+        #[test_case::test_case(Anchor::Missing; "missing_anchor_does_not_ban")]
+        #[test_case::test_case(Anchor::AheadByMoreThanTheFloor; "stale_proof_bans")]
+        #[test_case::test_case(Anchor::Current; "anchored_proof_verifies")]
+        #[tokio::test]
+        async fn should_ban_a_node_only_for_a_proof_the_local_anchors_refuse(anchor: Anchor) {
+            let (request, response) = recorded_epoch_fetch();
+            let metadata = recorded_metadata(&response);
+            let provider = provider_holding_the_signing_quorum();
+            match anchor {
+                Anchor::Missing => {}
+                Anchor::Current => {
+                    provider.set_chain_locked_height(metadata.core_chain_locked_height)
+                }
+                Anchor::AheadByMoreThanTheFloor => provider
+                    .set_chain_locked_height(metadata.core_chain_locked_height + MAX_LAG + 1),
+            }
+            let mut sdk = SdkBuilder::new_mock()
+                .with_network(Network::Regtest)
+                .with_version(
+                    PlatformVersion::get(metadata.protocol_version).expect("recorded version"),
+                )
+                .with_time_tolerance(None)
+                .with_height_tolerance(Some(1))
+                .with_trusted_initial_height(metadata.height)
+                .with_context_provider(Arc::clone(&provider))
+                .build()
+                .expect("build mock SDK");
+            let SdkInstance::Mock {
+                dapi, address_list, ..
+            } = &mut sdk.inner
+            else {
+                panic!("mock SDK");
+            };
+            // MockDapiClient answers from this address whatever the list holds.
+            let address: Address = "http://127.0.0.1:9000".parse().expect("address");
+            *address_list = address.to_string().parse().expect("address list");
+            dapi.lock()
+                .await
+                .expect(
+                    &request,
+                    &Ok(ExecutionResponse {
+                        inner: response,
+                        address: address.clone(),
+                        retries: 0,
+                    }),
+                )
+                .expect("expectation");
+            let settings = RequestSettings {
+                ban_failed_address: Some(true),
+                retries: Some(0),
+                ..Default::default()
+            };
+
+            let result = ExtendedEpochInfo::fetch_with_settings(&sdk, request, settings).await;
+
+            let banned = sdk.address_list().is_banned(&address);
+            match anchor {
+                Anchor::Missing => {
+                    let error = result.expect_err("no anchor, no verification");
+                    assert!(
+                        matches!(
+                            error,
+                            Error::ContextProviderError(
+                                ContextProviderError::QuorumSourceUnavailable(_)
+                            )
+                        ),
+                        "got {error:?}"
+                    );
+                    assert!(!error.can_retry());
+                    assert!(!banned, "the node is not blamed for our missing anchor");
+                }
+                Anchor::AheadByMoreThanTheFloor => {
+                    let error = result.expect_err("a stale proof never verifies");
+                    assert!(
+                        matches!(
+                            &error,
+                            Error::Proof(drive_proof_verifier::Error::QuorumKeyUnavailable {
+                                error: ContextProviderError::InvalidQuorum(_),
+                                ..
+                            })
+                        ),
+                        "got {error:?}"
+                    );
+                    assert!(error.can_retry());
+                    assert!(banned, "a stale proof is the node's fault");
+                }
+                Anchor::Current => {
+                    let epoch = result.expect("the proof verifies against the pushed key");
+                    assert!(epoch.is_some(), "the recorded epoch is proved to exist");
+                    assert!(!banned);
+                }
+            }
+        }
+
+        /// An embedder that rebuilds its SDK passes the same provider to the
+        /// new one, which verifies with the anchors pushed before it existed.
+        /// This runs the network SDK's own verification path
+        /// ([`Sdk::verify_fetching_quorum_key`]), which the mock fetch above
+        /// does not reach.
+        #[tokio::test]
+        async fn should_keep_pushed_anchors_for_an_sdk_rebuilt_over_the_same_provider() {
+            let provider = provider_holding_the_signing_quorum();
+            let (request, response) = recorded_epoch_fetch();
+            let signed_height = recorded_metadata(&response).core_chain_locked_height;
+
+            let first = network_sdk(Arc::clone(&provider));
+            let error = verify(&first, request, response.clone())
+                .await
+                .expect_err("no ChainLock height pushed yet");
+            assert!(error.is_quorum_source_unavailable(), "got {error:?}");
+            provider.set_chain_locked_height(signed_height);
+            verify(&first, request, response.clone())
+                .await
+                .expect("verifies once anchored")
+                .expect("the recorded epoch");
+            drop(first);
+
+            let rebuilt = network_sdk(Arc::clone(&provider));
+            verify(&rebuilt, request, response)
+                .await
+                .expect("the rebuilt SDK verifies without pushing again")
+                .expect("the recorded epoch");
+        }
     }
 }
