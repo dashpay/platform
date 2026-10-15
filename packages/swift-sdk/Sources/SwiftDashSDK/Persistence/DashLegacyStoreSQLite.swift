@@ -215,16 +215,50 @@ enum DashLegacyStoreSQLite {
         }
         for (name, table) in before.tables {
             guard let next = after.tables[name] else { throw Failure.unsupported("Migration removed table \(name)") }
-            let names = table.columns.keys.sorted()
-            for name in names {
-                guard let nextColumn = next.columns[name], nextColumn.declaredType == table.columns[name]?.declaredType else {
+            // Compare columns by entity name, not ordinal: adding an entity
+            // renumbers the ones sorted after it, which renames generated
+            // columns such as `Z13TOKENBALANCES` to `Z14TOKENBALANCES`.
+            let oldColumns = try ordinalKeyedColumns(table, entities: before.entities)
+            let newColumns = try ordinalKeyedColumns(next, entities: after.entities)
+            let keys = oldColumns.keys.sorted()
+            for key in keys {
+                guard let nextColumn = newColumns[key], nextColumn.declaredType == oldColumns[key]?.declaredType else {
                     throw Failure.unsupported("Migration removed or converted a column in \(table.actual)")
                 }
             }
-            let oldDigest = try rowsDigest(old, table: table, names: names, entities: before.entities)
-            let newDigest = try rowsDigest(new, table: next, names: names, entities: after.entities)
+            let oldDigest = try rowsDigest(old, table: table, names: keys.compactMap { oldColumns[$0]?.normalized },
+                                           entities: before.entities)
+            let newDigest = try rowsDigest(new, table: next, names: keys.compactMap { newColumns[$0]?.normalized },
+                                           entities: after.entities)
             guard oldDigest == newDigest else { throw Failure.unsupported("Migration changed existing data in \(name)") }
         }
+    }
+
+    /// Re-key a table's columns so the entity ordinal Core Data embeds in a
+    /// generated column name (`Z<ordinal><NAME>`, e.g. a to-many inverse's
+    /// foreign key) is replaced by the entity's name. Attribute columns are
+    /// `Z` plus a property name, which cannot start with a digit, so only
+    /// generated columns match. Used for cross-store comparison only: the
+    /// persisted recovery evidence keeps `layout`'s keys unchanged so journals
+    /// written by earlier builds still verify.
+    private static func ordinalKeyedColumns(_ table: Table, entities: [Int64: String]) throws -> [String: Column] {
+        var keyed: [String: Column] = [:]
+        for (name, column) in table.columns {
+            var key = name
+            if name.hasPrefix("Z"), !name.hasPrefix("Z_") {
+                let suffix = name.dropFirst()
+                let digits = suffix.prefix(while: { $0.isNumber })
+                if !digits.isEmpty {
+                    guard let number = Int64(digits), let entity = entities[number] else {
+                        throw Failure.unsupported("Unknown entity ordinal in column \(table.actual)")
+                    }
+                    key = "Z{" + entity + "}" + suffix.dropFirst(digits.count)
+                }
+            }
+            guard keyed[key] == nil else { throw Failure.unsupported("Ambiguous Core Data column name") }
+            keyed[key] = column
+        }
+        return keyed
     }
 
     private static func layout(_ connection: Connection) throws -> Layout {
