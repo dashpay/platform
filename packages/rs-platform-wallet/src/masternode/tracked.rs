@@ -34,7 +34,6 @@ use dashcore::hashes::Hash;
 use dashcore::transaction::special_transaction::provider_registration::ProviderMasternodeType;
 use dashcore::transaction::TransactionPayload;
 use dashcore::{Address as DashAddress, Network};
-use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose};
@@ -42,7 +41,9 @@ use dpp::prelude::Identifier;
 use serde_json::{json, Value};
 
 use super::list::MasternodeListSummary;
-use super::locator::{p2pkh_script_hash, MasternodeKeyReference, MasternodeKeyRole};
+use super::locator::{
+    operator_identity_ids, p2pkh_script_hash, MasternodeKeyReference, MasternodeKeyRole,
+};
 use super::record::{
     owner_payout_script, platform_http_port, ListMembership, MasternodeRecord, MasternodeSource,
     MasternodeStatus,
@@ -869,23 +870,28 @@ impl TrackedMasternodes {
                 .as_ref()
                 .map(|r| r.operator_public_key));
         if let Some(operator_key) = operator_key {
-            let operator_id = Identifier::create_operator_identifier(&display, &operator_key);
-            match Identity::fetch(self.sdk.as_ref(), operator_id).await {
-                Ok(Some(identity)) => {
-                    let mut platform = snapshot.platform.clone().unwrap_or_default();
-                    platform.operator_payout_key_hash = identity
-                        .public_keys()
-                        .values()
-                        .find(|k| k.purpose() == Purpose::TRANSFER)
-                        .and_then(|k| k.data().as_slice().try_into().ok())
-                        .or(platform.operator_payout_key_hash);
-                    snapshot.platform = Some(platform);
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    first_error.get_or_insert(PlatformWalletError::InvalidIdentityData(format!(
-                        "failed to fetch the masternode's operator identity: {e}"
-                    )));
+            for operator_id in operator_identity_ids(&display, &operator_key) {
+                match Identity::fetch(self.sdk.as_ref(), operator_id).await {
+                    Ok(Some(identity)) => {
+                        let mut platform = snapshot.platform.clone().unwrap_or_default();
+                        platform.operator_payout_key_hash = identity
+                            .public_keys()
+                            .values()
+                            .find(|k| k.purpose() == Purpose::TRANSFER)
+                            .and_then(|k| k.data().as_slice().try_into().ok())
+                            .or(platform.operator_payout_key_hash);
+                        snapshot.platform = Some(platform);
+                        break;
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        // Stop rather than try the next id: it may find an
+                        // older identity while the current one was unreadable.
+                        first_error.get_or_insert(PlatformWalletError::InvalidIdentityData(
+                            format!("failed to fetch the masternode's operator identity: {e}"),
+                        ));
+                        break;
+                    }
                 }
             }
         }
