@@ -15,6 +15,7 @@
 
 use crate::error::ContextProviderError;
 use crate::provider::ContextProvider;
+use dpp::bls::PublicKey;
 use dpp::dashcore::sml::llmq_type::LLMQType;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
@@ -149,9 +150,22 @@ impl LocalContextProvider {
     /// verifies any proof, so rotated-out quorums stop being trusted. With a
     /// ChainLock floor, include every quorum that was active at some height in
     /// the floor's window, since a proof signed that far back may still use it.
-    pub fn set_quorum_keys(&self, keys: impl IntoIterator<Item = ([u8; 32], [u8; 48])>) {
-        let keys = keys.into_iter().collect();
+    ///
+    /// Every key must be a usable BLS public key: one that parses and is not
+    /// the identity point. A key that fails would be returned as trusted, and
+    /// the proof's signature check would then blame the node that sent it. If
+    /// any key fails, this returns [`ContextProviderError::InvalidQuorum`]
+    /// naming its quorum, and the previous set stays in place.
+    pub fn set_quorum_keys(
+        &self,
+        keys: impl IntoIterator<Item = ([u8; 32], [u8; 48])>,
+    ) -> Result<(), ContextProviderError> {
+        let keys = keys
+            .into_iter()
+            .map(|(hash, key)| validate_quorum_key(&hash, &key).map(|()| (hash, key)))
+            .collect::<Result<_, _>>()?;
         *write(&self.quorum_keys) = Some(keys);
+        Ok(())
     }
 
     /// Records the embedder's best ChainLock height. A height below the one
@@ -290,6 +304,18 @@ impl ContextProvider for LocalContextProvider {
     }
 }
 
+fn validate_quorum_key(hash: &[u8; 32], key: &[u8; 48]) -> Result<(), ContextProviderError> {
+    let reason = match PublicKey::try_from(key.as_slice()) {
+        Ok(public_key) if public_key.is_identity() => "it is the identity point".to_string(),
+        Ok(_) => return Ok(()),
+        Err(error) => error.to_string(),
+    };
+    Err(ContextProviderError::InvalidQuorum(format!(
+        "quorum {} has an unusable BLS public key: {reason}",
+        hex::encode(hash)
+    )))
+}
+
 // Every write replaces or inserts a whole value, so a panic while a lock is
 // held cannot leave a half-updated map behind.
 fn read<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
@@ -308,11 +334,17 @@ mod tests {
     const PLATFORM_TYPE: LLMQType = LLMQType::LlmqtypeTestnetPlatform;
     const PLATFORM: u32 = 106;
     const QUORUM: [u8; 32] = [1; 32];
-    const KEY: [u8; 48] = [7; 48];
+    /// A usable BLS public key, distinct for each seed.
+    fn key(seed: u8) -> [u8; 48] {
+        dpp::bls::SecretKey::from_ikm(&[seed; 32])
+            .expect("32 bytes of keying material")
+            .public_key()
+            .to_bytes()
+    }
 
     fn anchored(max_lag: CoreBlockHeight, local: CoreBlockHeight) -> LocalContextProvider {
         let provider = LocalContextProvider::new(PLATFORM_TYPE).with_chain_lock_floor(max_lag);
-        provider.set_quorum_keys([(QUORUM, KEY)]);
+        provider.set_quorum_keys([(QUORUM, key(7))]).unwrap();
         provider.set_chain_locked_height(local);
         provider
     }
@@ -323,13 +355,13 @@ mod tests {
         proof_order[0] = 0xaa;
         proof_order[31] = 0xbb;
         let provider = LocalContextProvider::new(PLATFORM_TYPE);
-        provider.set_quorum_keys([(proof_order, KEY)]);
+        provider.set_quorum_keys([(proof_order, key(7))]).unwrap();
 
         assert_eq!(
             provider
                 .get_quorum_public_key(PLATFORM, proof_order, 1)
                 .expect("the pushed key"),
-            KEY
+            key(7)
         );
         let mut reversed = proof_order;
         reversed.reverse();
@@ -349,7 +381,7 @@ mod tests {
             unanchored.get_quorum_public_key(PLATFORM + 1, QUORUM, 5000),
             Err(ContextProviderError::InvalidQuorum(_))
         ));
-        unanchored.set_quorum_keys([(QUORUM, KEY)]);
+        unanchored.set_quorum_keys([(QUORUM, key(7))]).unwrap();
         // Wrong type beats the missing anchor.
         assert!(matches!(
             unanchored.get_quorum_public_key(PLATFORM + 1, QUORUM, 5000),
@@ -409,7 +441,7 @@ mod tests {
                 provider.get_quorum_public_key(PLATFORM, QUORUM, 5000),
                 Err(ContextProviderError::QuorumSourceUnavailable(_))
             ));
-            provider.set_quorum_keys([]);
+            provider.set_quorum_keys([]).unwrap();
             assert!(matches!(
                 provider.get_quorum_public_key(PLATFORM, QUORUM, 5000),
                 Err(ContextProviderError::InvalidQuorum(_))
@@ -434,7 +466,7 @@ mod tests {
 
         // Without a floor there is no local height to compare against.
         let unfloored = LocalContextProvider::new(PLATFORM_TYPE);
-        unfloored.set_quorum_keys([(QUORUM, KEY)]);
+        unfloored.set_quorum_keys([(QUORUM, key(7))]).unwrap();
         unfloored.set_chain_locked_height(5000);
         assert!(matches!(
             unfloored.get_quorum_public_key(PLATFORM, [9; 32], 5001),
@@ -447,12 +479,12 @@ mod tests {
         let provider = anchored(288, 5000);
         let lookup = |signed| provider.get_quorum_public_key(PLATFORM, QUORUM, signed);
 
-        assert_eq!(lookup(5000 - 288).expect("at the floor"), KEY);
+        assert_eq!(lookup(5000 - 288).expect("at the floor"), key(7));
         assert!(matches!(
             lookup(5000 - 289),
             Err(ContextProviderError::InvalidQuorum(_))
         ));
-        assert_eq!(lookup(6000).expect("a node ahead of us is honest"), KEY);
+        assert_eq!(lookup(6000).expect("a node ahead of us is honest"), key(7));
     }
 
     #[test]
@@ -482,23 +514,52 @@ mod tests {
     #[test]
     fn should_ignore_chain_lock_heights_without_a_floor() {
         let provider = LocalContextProvider::new(PLATFORM_TYPE);
-        provider.set_quorum_keys([(QUORUM, KEY)]);
+        provider.set_quorum_keys([(QUORUM, key(7))]).unwrap();
         assert_eq!(provider.chain_locked_height(), None);
         assert_eq!(
             provider.get_quorum_public_key(PLATFORM, QUORUM, 1).unwrap(),
-            KEY
+            key(7)
         );
         provider.set_chain_locked_height(1_000_000);
         assert_eq!(
             provider.get_quorum_public_key(PLATFORM, QUORUM, 1).unwrap(),
-            KEY
+            key(7)
         );
+    }
+
+    /// An unusable key is refused with its quorum named, and the whole batch
+    /// is refused with it: the previous keys keep verifying.
+    #[test]
+    fn should_refuse_a_batch_with_an_unusable_key_and_keep_the_previous_set() {
+        let mut identity = [0u8; 48];
+        identity[0] = 0xc0;
+        let provider = anchored(10, 1);
+        for unusable in [[0u8; 48], identity] {
+            for batch in [
+                vec![([2; 32], unusable)],
+                vec![([3; 32], key(9)), ([2; 32], unusable)],
+            ] {
+                let error = provider.set_quorum_keys(batch).unwrap_err();
+                assert!(
+                    matches!(&error, ContextProviderError::InvalidQuorum(m) if m.contains(&hex::encode([2u8; 32]))),
+                    "got {error:?}"
+                );
+                assert_eq!(
+                    provider.get_quorum_public_key(PLATFORM, QUORUM, 1).unwrap(),
+                    key(7),
+                    "the previous set is untouched"
+                );
+                assert!(provider
+                    .get_quorum_public_key(PLATFORM, [3; 32], 1)
+                    .is_err());
+            }
+        }
     }
 
     #[test]
     fn should_forget_rotated_out_quorums_when_keys_are_replaced() {
         let provider = anchored(10, 1);
-        provider.set_quorum_keys([([2; 32], [9; 48])]);
+        provider.set_quorum_keys([([2; 32], key(9))]).unwrap();
         assert!(matches!(
             provider.get_quorum_public_key(PLATFORM, QUORUM, 1),
             Err(ContextProviderError::InvalidQuorum(_))
@@ -507,7 +568,7 @@ mod tests {
             provider
                 .get_quorum_public_key(PLATFORM, [2; 32], 1)
                 .expect("the replacement key"),
-            [9; 48]
+            key(9)
         );
     }
 

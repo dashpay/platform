@@ -1590,7 +1590,9 @@ mod tests {
         fn provider_holding_the_signing_quorum() -> Arc<LocalContextProvider> {
             let provider = LocalContextProvider::new(Network::Regtest.platform_type())
                 .with_chain_lock_floor(MAX_LAG);
-            provider.set_quorum_keys([signing_quorum()]);
+            provider
+                .set_quorum_keys([signing_quorum()])
+                .expect("a usable key");
             Arc::new(provider)
         }
 
@@ -1599,15 +1601,21 @@ mod tests {
             Missing,
             Current,
             AheadByMoreThanTheFloor,
+            /// Anchored, then the embedder tries to replace the signing
+            /// quorum's key with an unusable one.
+            UnusableReplacementRefused,
         }
 
         /// Until the embedder pushes a ChainLock height the provider cannot
         /// judge a proof, so the node that sent it is not banned. A proof the
         /// pushed height makes stale is the node's fault and bans it, and a
-        /// proof within the floor verifies.
+        /// proof within the floor verifies. A key set with an unusable key is
+        /// refused, so the previous key keeps verifying and no node is banned
+        /// for the embedder's bad input.
         #[test_case::test_case(Anchor::Missing; "missing_anchor_does_not_ban")]
         #[test_case::test_case(Anchor::AheadByMoreThanTheFloor; "stale_proof_bans")]
         #[test_case::test_case(Anchor::Current; "anchored_proof_verifies")]
+        #[test_case::test_case(Anchor::UnusableReplacementRefused; "unusable_replacement_keeps_the_previous_key")]
         #[tokio::test]
         async fn should_ban_a_node_only_for_a_proof_the_local_anchors_refuse(anchor: Anchor) {
             let (request, response) = recorded_epoch_fetch();
@@ -1620,6 +1628,13 @@ mod tests {
                 }
                 Anchor::AheadByMoreThanTheFloor => provider
                     .set_chain_locked_height(metadata.core_chain_locked_height + MAX_LAG + 1),
+                Anchor::UnusableReplacementRefused => {
+                    provider.set_chain_locked_height(metadata.core_chain_locked_height);
+                    let (signing_hash, signing_key) = signing_quorum();
+                    provider
+                        .set_quorum_keys([([0x99; 32], signing_key), (signing_hash, [0; 48])])
+                        .expect_err("an all-zero key is not a BLS public key");
+                }
             }
             let mut sdk = SdkBuilder::new_mock()
                 .with_network(Network::Regtest)
@@ -1691,7 +1706,7 @@ mod tests {
                     assert!(error.can_retry());
                     assert!(banned, "a stale proof is the node's fault");
                 }
-                Anchor::Current => {
+                Anchor::Current | Anchor::UnusableReplacementRefused => {
                     let epoch = result.expect("the proof verifies against the pushed key");
                     assert!(epoch.is_some(), "the recorded epoch is proved to exist");
                     assert!(!banned);

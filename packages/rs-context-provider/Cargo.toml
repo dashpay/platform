@@ -8,7 +8,9 @@ description = "Context provider traits for Dash Platform SDK"
 
 [dependencies]
 dash-async = { path = "../rs-dash-async" }
-dpp = { path = "../rs-dpp", default-features = false }
+dpp = { path = "../rs-dpp", default-features = false, features = [
+    "bls-signatures",
+] }
 drive = { path = "../rs-drive", default-features = false, features = [
     "verify",
 ] }
