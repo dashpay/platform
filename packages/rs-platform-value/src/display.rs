@@ -74,12 +74,7 @@ impl Value {
             Value::Text(text) => {
                 let len = text.len();
                 if len > 20 {
-                    // At most 20 bytes, cut on a character boundary.
-                    let mut end = 20;
-                    while !text.is_char_boundary(end) {
-                        end -= 1;
-                    }
-                    let first_text = text.split_at(end).0.to_string();
+                    let first_text = &text[..text.floor_char_boundary(20)];
                     format!("string {}[...({})]", first_text, len)
                 } else {
                     format!("string {}", text)
