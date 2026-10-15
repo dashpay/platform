@@ -226,6 +226,41 @@ final class DashPayContactPersistenceTests: XCTestCase {
         XCTAssertEqual(Swift.withUnsafeBytes(of: restored.shielded_address) { Data($0) }, Data(repeating: 3, count: 43))
     }
 
+    func testOwnedProfileAbsentFromWalletIdentitySnapshotIsNotRestored() throws {
+        // `sync_profiles` clears a profile deleted on Platform; the cached
+        // row must not be hydrated back on the next cold start.
+        let context = ModelContext(container)
+        let wallet = PersistentWallet(walletId: walletId, network: .testnet)
+        context.insert(wallet)
+        let account = PersistentAccount(wallet: wallet, accountType: 0, accountIndex: 0, accountTypeName: "standard")
+        account.accountExtendedPubKeyBytes = Data(repeating: 0xEE, count: 78)
+        context.insert(account)
+        try context.save()
+
+        func persist(_ profile: PlatformWalletPersistenceHandler.DashpayProfileSnapshot?) {
+            handler.beginChangeset(walletId: walletId)
+            let success = handler.persistIdentities(walletId: walletId, upserts: [.init(
+                identityId: ownerId, balance: 0, revision: 0, identityIndex: 0, label: nil, status: 0,
+                walletId: walletId, dpnsNames: [], dashpayProfile: profile, contactProfiles: [])],
+                removed: [])
+            XCTAssertTrue(handler.endChangeset(walletId: walletId, success: success))
+        }
+        persist(.init(displayName: "Tip recipient", bio: nil, publicMessage: nil, avatarUrl: nil,
+            avatarHash: nil, avatarFingerprint: nil, shieldedAddress: Data(repeating: 3, count: 43)))
+        XCTAssertEqual(try ModelContext(container).fetchCount(FetchDescriptor<PersistentDashpayPaymentAddresses>()), 1)
+        persist(nil)
+
+        let reader = ModelContext(container)
+        XCTAssertEqual(try reader.fetchCount(FetchDescriptor<PersistentDashpayProfile>()), 0)
+        XCTAssertEqual(try reader.fetchCount(FetchDescriptor<PersistentDashpayPaymentAddresses>()), 0)
+        let (entries, count, errored) = handler.loadWalletList()
+        XCTAssertFalse(errored)
+        XCTAssertEqual(count, 1)
+        let buffer = try XCTUnwrap(entries)
+        defer { handler.loadWalletListFree(entries: UnsafeRawPointer(buffer)) }
+        XCTAssertNil(try XCTUnwrap(buffer[0].identities)[0].dashpay_profile)
+    }
+
     func testTipConfirmationHistoryPersistsAndDoesNotOverwriteOnChangeCheck() throws {
         let suite = "tip-history-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

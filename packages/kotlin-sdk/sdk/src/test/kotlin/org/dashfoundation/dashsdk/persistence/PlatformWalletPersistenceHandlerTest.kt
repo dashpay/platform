@@ -935,6 +935,35 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun shouldDeleteOwnedProfileWhenWalletIdentitySnapshotHasNone() = runTest {
+        // `sync_profiles` clears a profile deleted on Platform; the cached
+        // row must not be hydrated back on the next cold start.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 30 },
+        )
+        val identityId = ByteArray(32) { 13 }
+
+        fun persistSnapshot(profilePresent: Boolean) {
+            handler.onChangesetBegin(walletId)
+            handler.onPersistIdentityUpsert(
+                walletId, identityId, 1, 0, true, 0, 0, true, walletId,
+                emptyArray(), LongArray(0), profilePresent, "Alice", null, null,
+                ByteArray(32), false, ByteArray(8), false, null,
+                dashpayShieldedAddress = if (profilePresent) ByteArray(43) { 3 } else null,
+            )
+            handler.onChangesetEnd(walletId, success = true)
+        }
+
+        persistSnapshot(profilePresent = true)
+        assertNotNull(db.dashpayDao().getProfile(testnet, identityId))
+
+        persistSnapshot(profilePresent = false)
+        assertNull(db.dashpayDao().getProfile(testnet, identityId))
+        assertNull(handler.onLoadWalletList().single().identities.single().dashpayProfile)
+    }
+
+    @Test
     fun identityDpnsSnapshotRemovesStaleOwnedLabels() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val identityId = ByteArray(32) { 12 }
