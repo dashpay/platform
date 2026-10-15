@@ -70,7 +70,7 @@ The Gateway routes requests to different backend services based on URL path:
 
 - Core streaming endpoints (`/org.dash.platform.dapi.v0.Core/subscribeTo*`): routed to `rs_dapi`
 - Other Core endpoints (`/org.dash.platform.dapi.v0.Core*`): routed to `rs_dapi`
-- Platform streaming endpoints (`/org.dash.platform.dapi.v0.Platform/subscribePlatformEvents`): routed to `rs_dapi` with extended timeout
+- Platform streaming endpoints (`/org.dash.platform.dapi.v0.Platform/subscribeToStateTransitions`): routed to `rs_dapi` with extended timeout
 - Platform waitForStateTransitionResult (`/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult`): routed to `rs_dapi` with extended timeout
 - Other Platform endpoints (`/org.dash.platform.dapi.v0.Platform*`): routed to `rs_dapi`
 - JSON-RPC endpoints (`/`): routed to `rs_dapi_json_rpc`
