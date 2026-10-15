@@ -149,10 +149,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// variant did — so ranked secondaries keep ranking correctly over
 /// shared-prefix shapes.
 ///
-/// Until a contract uses the ranked or time-range grammar, the only v14
-/// behavior changes are the shared-prefix fix, the contested-index
-/// cross-check, the index-reorder schema-compatibility fix and the relative
-/// daily withdrawal limit; everything else matches v13:
+/// Until a contract uses the ranked or time-range grammar, those features
+/// change nothing. Every other change these notes describe applies
+/// regardless, including the table changes below, some of which touch no
+/// contract (identity creation, for one):
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
 ///   meta-schema, which hosts the ranked index keywords

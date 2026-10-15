@@ -2581,9 +2581,11 @@ mod tests {
         use dpp::version::ProtocolVersion;
         use platform_version::version::LATEST_VERSION;
 
-        /// check_tx refuses these transitions at every protocol version. Protocol versions 1 to
-        /// 13 validate an identity create the same way, and 14 changes only its advanced
-        /// structure, so the first, the last before 14 and the latest stand for all of them.
+        /// The protocol versions the check_tx tests run at: 1 (the first), 13 (the last whose
+        /// identity create advanced structure charges these faults) and the latest (which
+        /// refuses them unpaid). This is a sample, not every version: protocol version 11 raises
+        /// an identity create's minimum asset lock balance and 14 also changes its state
+        /// validation, and the transitions these tests build meet both versions of each.
         const CHECK_TX_PROTOCOL_VERSIONS: [ProtocolVersion; 3] = [1, 13, LATEST_VERSION];
 
         #[derive(Clone, Copy, Debug)]
