@@ -957,9 +957,17 @@ class PlatformWalletPersistenceHandlerTest {
 
         persistSnapshot(profilePresent = true)
         assertNotNull(db.dashpayDao().getProfile(testnet, identityId))
+        // The same id's row on another network is not this snapshot's to clear.
+        val otherNetwork = testnet + 1
+        db.dashpayDao().upsertProfile(
+            org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity(
+                networkRaw = otherNetwork, identityId = identityId,
+            ),
+        )
 
         persistSnapshot(profilePresent = false)
         assertNull(db.dashpayDao().getProfile(testnet, identityId))
+        assertNotNull(db.dashpayDao().getProfile(otherNetwork, identityId))
         assertNull(handler.onLoadWalletList().single().identities.single().dashpayProfile)
     }
 
