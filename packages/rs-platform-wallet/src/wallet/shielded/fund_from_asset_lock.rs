@@ -565,6 +565,24 @@ impl PlatformWallet {
             return Ok(());
         };
 
+        // A drain completes only when the verified proof attests the lock
+        // was consumed in full. Checked before any history is written: a
+        // drain left pending must not carry a Confirmed row for a bundle a
+        // later resume may replace. The next resume completes it from
+        // Platform's verdict.
+        if drain_operation_id.is_some() && !landed.fully_consumed {
+            tracing::warn!(
+                outpoint = %proof_out_point,
+                "wallet drain left pending: the landed shield's proof does not attest \
+                 full consumption of its asset lock"
+            );
+            return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+                "drain shield landed but its proof does not attest full consumption of \
+                 the asset lock; the operation stays pending"
+                    .into(),
+            ));
+        }
+
         // Record a live `ShieldFromAssetLock` activity entry over the
         // landed bundle. One entry per call (= one per seed-pool batch),
         // `direction in`, amount = the real shielded note value (dummy
@@ -580,23 +598,9 @@ impl PlatformWallet {
         // to persist (unlike address-funding, which writes proof-attested
         // balances back into `ManagedPlatformAccount`).
         match (drain_operation_id, tracked_out_point) {
-            // A drain writes its durable completion receipt only when the
-            // verified proof attests the lock was consumed in full. An error
-            // here keeps the operation Pending with its outpoint; the next
-            // resume completes it from Platform's verdict.
+            // A drain writes its durable completion receipt. An error here
+            // keeps the operation Pending with its outpoint.
             (Some(operation_id), _) => {
-                if !landed.fully_consumed {
-                    tracing::warn!(
-                        outpoint = %proof_out_point,
-                        "wallet drain left pending: the landed shield's proof does not attest \
-                         full consumption of its asset lock"
-                    );
-                    return Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
-                        "drain shield landed but its proof does not attest full consumption of \
-                         the asset lock; the operation stays pending"
-                            .into(),
-                    ));
-                }
                 self.asset_locks
                     .complete_wallet_drain(proof_out_point, operation_id)
                     .await?;
