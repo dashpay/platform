@@ -118,7 +118,7 @@ impl TimeoutLayer {
             "/org.dash.platform.dapi.v0.Core/subscribeToTransactionsWithProofs",
             "/org.dash.platform.dapi.v0.Core/subscribeToMasternodeList",
             "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult",
-            "/org.dash.platform.dapi.v0.Platform/subscribePlatformEvents",
+            "/org.dash.platform.dapi.v0.Platform/subscribeToStateTransitions",
         ];
 
         // Check if this is a known streaming method
