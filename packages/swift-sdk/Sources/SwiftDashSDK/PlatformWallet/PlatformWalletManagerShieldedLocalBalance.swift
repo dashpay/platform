@@ -114,11 +114,11 @@ extension PlatformWalletManager {
     /// Reads one coherent local balance snapshot after shielded binding.
     /// This performs no network requests. Call it before starting network
     /// sync during launch. Native lock waits have a 100 ms deadline. A scan
-    /// holds the store write lock throughout its streamed download, which
-    /// may take minutes; reads can return `PlatformWalletError.walletOperation`
-    /// (busy) for that entire period. Repeated immediate reads do not bypass
-    /// the scan. Retain the last usable balance, allow network sync to continue,
-    /// and consume its completion event or request a fresh read after it ends.
+    /// does not hold the store lock across its network I/O, so reads normally
+    /// succeed while it runs; they can still return
+    /// `PlatformWalletError.walletOperation` (busy) if they contend with a
+    /// scan's tree appends or final commit, a restore, or Clear. On busy,
+    /// retain the last usable balance and request a fresh read later.
     ///
     /// Each invocation performs one native read. A successful bind overlapping
     /// delivery throws `ShieldedLocalBalanceReadError.bindingChanged`; the host
