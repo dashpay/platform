@@ -206,11 +206,6 @@ public final class PersistentAssetLock {
     /// completed transfer from an operation that never reached broadcast.
     public var operationId: Data?
 
-    /// Versioned binary property list of exact signed Type18 transitions. Rust
-    /// owns construction and recovery; this append-only sidecar stores bytes.
-    /// Nil on published V3 rows upgraded to the current, unshipped V4 schema.
-    public var shieldedFundingAttemptsBlob: Data?
-
     /// Record timestamps.
     public var createdAt: Date
     public var updatedAt: Date

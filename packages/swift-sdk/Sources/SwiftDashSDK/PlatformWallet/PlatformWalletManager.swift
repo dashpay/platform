@@ -109,9 +109,6 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     public static let dashpayPayments: UInt64 = 1 << 12
     /// Durable operation UUIDs, including consumed asset-lock tombstones.
     public static let assetLockOperationIds: UInt64 = 1 << 13
-    public static let shieldedFundingAttempts: UInt64 = 1 << 14
-    /// Atomic activity replacement and strict durable restoration.
-    public static let shieldedActivityReconciliation: UInt64 = 1 << 15
 
     public let version: UInt32
     public let bits: UInt64

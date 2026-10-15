@@ -68,8 +68,6 @@ final class InvitationPersistenceTests: XCTestCase {
             // may ride this store's rounds — genuinely attested.
             | PlatformWalletPersistenceCapabilities.dashpayPayments
             | PlatformWalletPersistenceCapabilities.assetLockOperationIds
-            | PlatformWalletPersistenceCapabilities.shieldedFundingAttempts
-            | PlatformWalletPersistenceCapabilities.shieldedActivityReconciliation
 
         XCTAssertEqual(
             capabilities.version,

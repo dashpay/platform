@@ -85,7 +85,6 @@ final class AssetLockOperationPersistenceTests: XCTestCase {
         let rows = try ModelContext(migrated).fetch(FetchDescriptor<PersistentAssetLock>())
         XCTAssertEqual(rows.count, 1)
         XCTAssertNil(rows.first?.operationId)
-        XCTAssertNil(rows.first?.shieldedFundingAttemptsBlob)
         XCTAssertEqual(rows.first?.amountDuffs, 1000)
         XCTAssertEqual(DashModelContainer.schema.version, Schema.Version(4, 0, 0))
     }
@@ -99,82 +98,6 @@ final class AssetLockOperationPersistenceTests: XCTestCase {
         try context.save()
         let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
         XCTAssertThrowsError(try handler.loadCachedAssetLocks(walletId: walletId))
-    }
-
-    func testSignedFundingAttemptsAreAppendOnlyAndSurviveConsumedReopen() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let url = directory.appendingPathComponent("attempts.store")
-        let first = Data([18, 1, 2, 3])
-        let second = Data([18, 4, 5, 6, 7])
-        try autoreleasepool {
-            let container = try DashModelContainer.create(url: url)
-            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
-            XCTAssertThrowsError(try handler.loadShieldedFundingAttempts(walletId: walletId, outPoint: rawOutPoint))
-            try persist(handler, status: 1, operationId: operationId)
-            handler.beginChangeset(walletId: walletId)
-            for (index, bytes) in [first, second].enumerated() {
-                try handler.persistShieldedFundingAttempt(walletId: walletId, outPoint: rawOutPoint,
-                    operationId: operationId, attemptIndex: UInt32(index), bytes: bytes)
-            }
-            XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
-            handler.beginChangeset(walletId: walletId)
-            try handler.persistShieldedFundingAttempt(walletId: walletId, outPoint: rawOutPoint,
-                operationId: operationId, attemptIndex: 0, bytes: first)
-            XCTAssertThrowsError(try handler.persistShieldedFundingAttempt(walletId: walletId, outPoint: rawOutPoint,
-                operationId: operationId, attemptIndex: 0, bytes: second))
-            XCTAssertThrowsError(try handler.persistShieldedFundingAttempt(walletId: walletId, outPoint: rawOutPoint,
-                operationId: operationId, attemptIndex: 3, bytes: second))
-            XCTAssertFalse(handler.endChangeset(walletId: walletId, success: false))
-            try persist(handler, status: 4, operationId: nil)
-        }
-        let reopened = try DashModelContainer.create(url: url)
-        let handler = PlatformWalletPersistenceHandler(modelContainer: reopened, network: .testnet)
-        XCTAssertEqual(try handler.loadShieldedFundingAttempts(walletId: walletId, outPoint: rawOutPoint), [first, second])
-        XCTAssertEqual(try handler.loadCachedAssetLocks(walletId: walletId).first?.statusRaw, 4)
-    }
-
-    func testMalformedAttemptArchiveFailsRecoveryRead() throws {
-        let container = try DashModelContainer.createInMemory()
-        let context = ModelContext(container)
-        let record = PersistentAssetLock(outPointHex: outPointHex, walletId: walletId,
-            transactionBytes: Data([1]), fundingTypeRaw: 5, identityIndexRaw: 0,
-            amountDuffs: 1000, statusRaw: 4, operationId: operationId)
-        record.shieldedFundingAttemptsBlob = Data([0])
-        context.insert(record)
-        try context.save()
-        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
-        XCTAssertThrowsError(try handler.loadShieldedFundingAttempts(walletId: walletId, outPoint: rawOutPoint))
-    }
-
-    func testShouldBoundAttemptArchivesBeforeRecovery() throws {
-        struct Archive: Encodable { let version = 1; let attempts: [Data] }
-        let limit = 4 * 1024 * 1024
-        for (attempts, valid) in [
-            (Array(repeating: Data([1]), count: 64), true),
-            ([Data(repeating: 1, count: limit)], true),
-            (Array(repeating: Data([1]), count: 65), false),
-            ([Data(repeating: 1, count: limit), Data([2])], false),
-            ([Data(repeating: 1, count: limit + 1)], false)
-        ] {
-            let container = try DashModelContainer.createInMemory()
-            let context = ModelContext(container)
-            let record = PersistentAssetLock(outPointHex: outPointHex, walletId: walletId,
-                transactionBytes: Data([1]), fundingTypeRaw: 5, identityIndexRaw: 0,
-                amountDuffs: 1000, statusRaw: 4, operationId: operationId)
-            let encoder = PropertyListEncoder()
-            encoder.outputFormat = .binary
-            record.shieldedFundingAttemptsBlob = try encoder.encode(Archive(attempts: attempts))
-            context.insert(record)
-            try context.save()
-            let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
-            if valid {
-                XCTAssertEqual(try handler.loadShieldedFundingAttempts(walletId: walletId, outPoint: rawOutPoint), attempts)
-            } else {
-                XCTAssertThrowsError(try handler.loadShieldedFundingAttempts(walletId: walletId, outPoint: rawOutPoint))
-            }
-        }
     }
 
     func testShouldPreserveProvenDrainCompletionAfterReopenAndStaleSnapshot() throws {
