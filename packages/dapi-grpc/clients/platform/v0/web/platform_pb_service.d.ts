@@ -715,6 +715,15 @@ type PlatformgetBlocks = {
   readonly responseType: typeof platform_pb.GetBlocksResponse;
 };
 
+type PlatformsubscribeToStateTransitions = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: true;
+  readonly requestType: typeof platform_pb.SubscribeToStateTransitionsRequest;
+  readonly responseType: typeof platform_pb.SubscribeToStateTransitionsResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -796,6 +805,7 @@ export class Platform {
   static readonly getPrivateDocumentEntries: PlatformgetPrivateDocumentEntries;
   static readonly getOwnerTransactionsInBlock: PlatformgetOwnerTransactionsInBlock;
   static readonly getBlocks: PlatformgetBlocks;
+  static readonly subscribeToStateTransitions: PlatformsubscribeToStateTransitions;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -1541,5 +1551,6 @@ export class PlatformClient {
     requestMessage: platform_pb.GetBlocksRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetBlocksResponse|null) => void
   ): UnaryResponse;
+  subscribeToStateTransitions(requestMessage: platform_pb.SubscribeToStateTransitionsRequest, metadata?: grpc.Metadata): ResponseStream<platform_pb.SubscribeToStateTransitionsResponse>;
 }
 
