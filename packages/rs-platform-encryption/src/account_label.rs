@@ -30,7 +30,7 @@ const ACCOUNT_LABEL_MAX_BYTES: usize = 63;
 fn fit_account_label(label: &str) -> String {
     // Floor: pad short labels to ≥16 chars.
     let deficit = ACCOUNT_LABEL_MIN_CHARS.saturating_sub(label.chars().count());
-    let padded = if deficit == 0 {
+    let mut padded = if deficit == 0 {
         label.to_string()
     } else {
         let mut s = String::with_capacity(label.len() + deficit);
@@ -42,14 +42,8 @@ fn fit_account_label(label: &str) -> String {
     // Ceiling: truncate long labels to ≤63 bytes on a char boundary. (Padding
     // only ever reaches 16 chars ≤ 63 bytes, so truncation only fires on a
     // genuinely long input, and the truncated prefix is still ≥16 bytes.)
-    if padded.len() <= ACCOUNT_LABEL_MAX_BYTES {
-        return padded;
-    }
-    let mut end = ACCOUNT_LABEL_MAX_BYTES;
-    while !padded.is_char_boundary(end) {
-        end -= 1;
-    }
-    padded[..end].to_string()
+    padded.truncate(padded.floor_char_boundary(ACCOUNT_LABEL_MAX_BYTES));
+    padded
 }
 
 /// Encrypt an account label for DashPay (DIP-15)
