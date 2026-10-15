@@ -26,14 +26,7 @@ The weakest key security level that may sign a transition on documents of the ty
   "canBeDeleted": false,
   "signatureSecurityLevelRequirement": 1,
   "properties": {
-    "recipient": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 32,
-      "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
-      "position": 0
-    },
+    "recipient": { "type": "identifier", "position": 0 },
     "amount": { "type": "integer", "minimum": 1, "position": 1 }
   },
   "required": ["recipient", "amount"],

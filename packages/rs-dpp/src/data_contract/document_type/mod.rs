@@ -146,6 +146,11 @@ pub(crate) mod property_names {
     /// document must meet. Meta-schema v3+ (protocol version 14). See
     /// `parse_property_constraints` in `property_constraints`.
     pub const PROPERTY_CONSTRAINTS: &str = "propertyConstraints";
+    /// Doctype-level object of named rules, in the grammar of
+    /// [`PROPERTY_CONSTRAINTS`], that the stored document must meet for its
+    /// owner to delete it. Meta-schema v3+ (protocol version 14). See
+    /// `parse_delete_constraints` in `property_constraints`.
+    pub const DELETE_CONSTRAINTS: &str = "deleteConstraints";
     pub const DISTINCT_FROM: &str = "distinctFrom";
     pub const CONTRACT_ID: &str = "contractId";
     pub const DOCUMENT_TYPE: &str = "documentType";
@@ -165,13 +170,20 @@ pub(crate) mod property_names {
     /// the referring-side value each must equal. Meta-schema v3+ (protocol
     /// version 14).
     pub const WHERE: &str = "where";
-    /// `refersTo` beside a `findBy` with a computed key: how many blocks
-    /// before the referring document's create the document the key finds
-    /// must have been created.
+    /// `refersTo` beside `findBy`: what the document `findBy` finds must meet
+    /// when the referring document is created, `minimumAgeBlocks` and
+    /// `chooseFirst`. Meta-schema v3+ (protocol version 14).
+    pub const CONSTRAINTS: &str = "constraints";
+    /// In a `refersTo`'s `constraints`: how many blocks before the referring
+    /// document's create the document `findBy` finds must have been created.
     pub const MINIMUM_AGE_BLOCKS: &str = "minimumAgeBlocks";
     /// `refersTo` beside a `findBy` with a computed key: whether the create
     /// deletes the document the key finds.
     pub const CONSUME: &str = "consume";
+    /// In a `refersTo`'s `constraints`: the document `findBy` finds must be the
+    /// first valid commitment, in a declared order, among those holding the
+    /// same value. Meta-schema v3+ (protocol version 14).
+    pub const CHOOSE_FIRST: &str = "chooseFirst";
     /// `refersTo: permanentDocument` found by its `$id` from a property: the
     /// typed array of identifiers, on the referenced document, the value must
     /// be an element of. Meta-schema v3+ (protocol version 14).

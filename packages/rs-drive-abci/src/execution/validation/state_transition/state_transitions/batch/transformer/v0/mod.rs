@@ -29,7 +29,7 @@ mod retraction;
 
 use contract_moderation_gate::{BatchTransitionContractModerationGate, ContractModerationRefusal};
 use moderator_fields::judge_moderator_field_write;
-use property_constraint_aggregates::attach_property_constraint_aggregates;
+use property_constraint_aggregates::attach_property_constraint_reads;
 use retraction::judge_barred_replace;
 use std::borrow::Cow;
 use std::collections::btree_map::Entry;
@@ -967,8 +967,9 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     );
                 }
 
-                // The `countOf` and `sumOf` totals the rules judging the write read
-                attach_property_constraint_aggregates(
+                // The `countOf` and `sumOf` totals the rules judging the write read, and the
+                // stored version they read through `$old.`
+                attach_property_constraint_reads(
                     drive,
                     &data_contract_fetch_info.contract,
                     &mut document_create_action,
@@ -1058,6 +1059,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     if let Some(error) = judge_barred_replace(
                         &data_contract_fetch_info.contract,
                         &document_replace_action,
+                        original_document,
                         owner_id,
                         bar,
                     ) {
@@ -1090,8 +1092,9 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     );
                 }
 
-                // The `countOf` and `sumOf` totals the rules judging the write read
-                attach_property_constraint_aggregates(
+                // The `countOf` and `sumOf` totals the rules judging the write read, and the
+                // stored version they read through `$old.`
+                attach_property_constraint_reads(
                     drive,
                     &data_contract_fetch_info.contract,
                     &mut document_replace_action,
@@ -1207,8 +1210,9 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                // The `countOf` and `sumOf` totals the rules judging the write read
-                attach_property_constraint_aggregates(
+                // The `countOf` and `sumOf` totals the rules judging the write read, and the
+                // stored version they read through `$old.`
+                attach_property_constraint_reads(
                     drive,
                     &data_contract_fetch_info.contract,
                     &mut document_transfer_action,
@@ -1285,8 +1289,9 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                // The `countOf` and `sumOf` totals the rules judging the write read
-                attach_property_constraint_aggregates(
+                // The `countOf` and `sumOf` totals the rules judging the write read, and the
+                // stored version they read through `$old.`
+                attach_property_constraint_reads(
                     drive,
                     &data_contract_fetch_info.contract,
                     &mut document_update_price_action,
@@ -1401,8 +1406,9 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 execution_context
                     .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
 
-                // The `countOf` and `sumOf` totals the rules judging the write read
-                attach_property_constraint_aggregates(
+                // The `countOf` and `sumOf` totals the rules judging the write read, and the
+                // stored version they read through `$old.`
+                attach_property_constraint_reads(
                     drive,
                     &data_contract_fetch_info.contract,
                     &mut document_purchase_action,

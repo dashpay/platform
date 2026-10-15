@@ -1785,7 +1785,7 @@ __metadata:
     "@dashevo/wasm-sdk": "workspace:*"
     "@types/chai": "npm:^4.3.11"
     "@types/mocha": "npm:^10.0.6"
-    "@types/node": "npm:^20.10.0"
+    "@types/node": "npm:^22.0.0"
     "@types/sinon": "npm:^9.0.4"
     "@types/sinon-chai": "npm:^3.2.4"
     assert: "npm:^2.0.0"
@@ -2087,7 +2087,7 @@ __metadata:
   dependencies:
     "@types/chai": "npm:^4.3.11"
     "@types/mocha": "npm:^10.0.6"
-    "@types/node": "npm:^20.10.0"
+    "@types/node": "npm:^22.0.0"
     assert: "npm:^2.0.0"
     bs58: "npm:^4.0.1"
     buffer: "npm:^6.0.3"
@@ -2129,7 +2129,7 @@ __metadata:
     "@dashevo/dashcore-lib": "npm:~0.22.0"
     "@dashevo/dpns-contract": "workspace:*"
     "@types/bs58": "npm:^4.0.1"
-    "@types/node": "npm:^20.10.0"
+    "@types/node": "npm:^22.0.0"
     "@yarnpkg/pnpify": "npm:^4.0.0-rc.42"
     ajv: "npm:^8.18.0"
     assert: "npm:^2.0.0"
@@ -2180,7 +2180,7 @@ __metadata:
   dependencies:
     "@types/chai": "npm:^4.3.11"
     "@types/mocha": "npm:^10.0.6"
-    "@types/node": "npm:^20.10.0"
+    "@types/node": "npm:^22.0.0"
     assert: "npm:^2.0.0"
     buffer: "npm:^6.0.3"
     chai: "npm:^4.3.10"
@@ -3937,12 +3937,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:^20.10.0":
-  version: 20.19.30
-  resolution: "@types/node@npm:20.19.30"
+"@types/node@npm:^22.0.0":
+  version: 22.20.5
+  resolution: "@types/node@npm:22.20.5"
   dependencies:
     undici-types: "npm:~6.21.0"
-  checksum: 10/4a25e5cbcdfc61b9bf45ebbbd199a6ce26efed34bd67c45c3472654a1cf988f7b58ec7c1574ffb5b83c6a772e7eaf1ca9de94fdafc3a36ae6efb852c1f0b6fb0
+  checksum: 10/a223a73e00e948b751b00144523674ecc73e7a3f14f48a0f3a6fca40745ff548a8b0ff5baca090d45ae8b61481cc56c1158db4df312970baeb6fc1b81fc511a1
   languageName: node
   linkType: hard
 
@@ -7282,7 +7282,7 @@ __metadata:
     "@types/chai": "npm:^4.3.11"
     "@types/dirty-chai": "npm:^2.0.2"
     "@types/mocha": "npm:^10.0.6"
-    "@types/node": "npm:^20.10.0"
+    "@types/node": "npm:^22.0.0"
     "@types/sinon": "npm:^9.0.4"
     "@types/sinon-chai": "npm:^3.2.4"
     "@yarnpkg/pnpify": "npm:^4.0.0-rc.42"

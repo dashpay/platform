@@ -41,7 +41,7 @@ use dash_sdk::dpp::data_contract::document_type::methods::{
     DocumentTypeBasicMethods, DocumentTypeV0Methods,
 };
 use dash_sdk::dpp::data_contract::document_type::property_constraints::{
-    AggregateKind, AggregateRead, DocumentSystemValues, PropertyRead,
+    AggregateKind, AggregateRead, DocumentSystemValues, PropertyRead, StoredVersion,
 };
 use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
@@ -63,22 +63,31 @@ const PROPERTY_CONSTRAINTS_KEYWORD: &str = "propertyConstraints";
 /// Get the `propertyConstraints` rules of a document type as a JSON array
 ///
 /// Each element is
-/// `{ "name": string, "rule": object, "reads": [{ "path": string, "kind": string }], "readsOwner": bool, "readsSystem": [string], "readsTotals": [{ "kind": string, "documentType": string, "property"?: string, "filter": [string] }] }`:
+/// `{ "name": string, "rule": object, "reads": [{ "path": string, "kind": string }], "readsOwner": bool, "readsSystem": [string], "readsStored": bool, "readsTotals": [{ "kind": string, "documentType": string, "property"?: string, "filter": [string] }], "readsReferenced": [{ "reference": string, "path": string, "kind": string }] }`:
 /// the rule's name (its key in `propertyConstraints`), the rule exactly as the
 /// document type's schema declares it, every property it reads in declared
 /// order (`kind` is `"value"` for an integer operand, `"presence"` for
 /// `present` / `absent`, `"text"` for a string comparison, `"identifier"` for
 /// an identifier comparison, `"length"` for a `length` or `byteLength` operand,
-/// `"count"` for a `count` operand and `"elements"` for the array a `contains`
-/// looks in; `$ownerId` is no property and is not listed), whether it reads `$ownerId` (or a
+/// `"count"` for a `count` operand, `"elements"` for the array a `contains`
+/// looks in and `"bytes"` for a byte array a `byteAt` operand reads a byte of,
+/// or a `startsWith` or `endsWith` tests; a property of the stored version is listed
+/// under its `$old.` path; `$ownerId` and `$old.$ownerId` are no properties and are not
+/// listed), whether it reads `$ownerId` or `$old.$ownerId` (or a
 /// total that depends on the owner), which makes a transfer or a purchase answer to it too,
-/// the system times and heights it reads (`"$createdAt"`, ...), which make a price update
-/// answer to a rule reading the update's and a transfer or purchase one reading the
-/// transfer's, and the `countOf` and `sumOf` totals it reads in declared order (`kind`
+/// the system values it reads (`"$createdAt"`, `"$revision"`, `"$old.$updatedAt"`, ...),
+/// which make a price update answer to a rule reading the update's, a transfer or purchase
+/// one reading the transfer's and each one reading `$revision`, whether it reads the stored
+/// version of the document through `$old.` (`readsStored`: absent on a create, which the
+/// pre-check judges), and the `countOf` and `sumOf` totals it reads in declared order (`kind`
 /// `"countOf"` or `"sumOf"`, the type of the contract it totals, the summed `property` of
 /// a `sumOf` only, and the keys its `filter` matches documents by; a total the platform
-/// reads from state when the document is sent, which the pre-check does not). Rules
-/// are listed in name order, the order
+/// reads from state when the document is sent, which the pre-check does not), and the
+/// values it reads of the documents the type's references point at in declared order
+/// (`{ "referenced": [reference, path] }`: the reference property of the type, the field
+/// of the referenced document and the `kind` it is read as, which `reads` leaves out; the
+/// platform reads the referenced document when it checks the reference, and the pre-check
+/// does not judge such a rule). Rules are listed in name order, the order
 /// consensus checks them in. A document type declaring none gives `[]`, and so
 /// does every document type when the SDK's protocol version is below 14.
 ///
@@ -141,11 +150,17 @@ pub unsafe extern "C" fn dash_sdk_data_contract_get_property_constraints(
 /// value is typed as it would be sent; the document is then judged by DPP's
 /// `validate_property_constraints`, the check consensus runs on a create:
 /// every rule, in name order, evaluated by `PropertyConstraint::violation`.
+/// A create has no stored version, so a path through `$old.` reads absent, as
+/// consensus reads it (a stored time, height or revision reads 0), and
+/// `$revision` is the document's first.
 /// The device clock stands in for the block time the create records
 /// (`$createdAt`, `$updatedAt`, `$transferredAt`), and a rule reading a block
-/// height is not judged, since the height is unknown until the block, and
+/// height the create records (`$createdAtBlockHeight` and the rest, without
+/// `$old.`) is not judged, since the height is unknown until the block, and
 /// neither is a rule reading a `countOf` or `sumOf` total (`"readsTotals"`),
-/// which the platform reads from state when the document is sent.
+/// which the platform reads from state when the document is sent, nor one
+/// reading a value of a document a reference points at (`"readsReferenced"`),
+/// which the platform reads when it checks the reference.
 /// Nothing but the rules is checked: not the JSON schema, not the state.
 ///
 /// The result is the first rule broken, as
@@ -318,9 +333,16 @@ fn property_constraints_json(
             )
         })?;
         let reads: Vec<serde_json::Value> = constraint
-            .property_reads()
+            .own_property_reads()
             .into_iter()
             .map(|(path, read)| json!({ "path": path, "kind": read_kind_name(read) }))
+            .collect();
+        let reads_referenced: Vec<serde_json::Value> = constraint
+            .referenced_reads()
+            .into_iter()
+            .map(|(reference, path, read)| {
+                json!({ "reference": reference, "path": path, "kind": read_kind_name(read) })
+            })
             .collect();
         rules.push(json!({
             "name": name,
@@ -330,13 +352,15 @@ fn property_constraints_json(
             "readsSystem": constraint
                 .system_reads()
                 .into_iter()
-                .map(|property| property.name())
+                .map(|read| read.name())
                 .collect::<Vec<_>>(),
+            "readsStored": constraint.reads_stored(),
             "readsTotals": constraint
                 .aggregate_reads()
                 .into_iter()
                 .map(total_read_json)
                 .collect::<Vec<_>>(),
+            "readsReferenced": reads_referenced,
         }));
     }
     Ok(serde_json::Value::Array(rules))
@@ -357,12 +381,14 @@ fn total_read_json(read: &AggregateRead) -> serde_json::Value {
     entry
 }
 
-/// The system values a create of a document owned by `owner_id` will have, as
-/// far as a client can tell before its block: the device clock stands in for
-/// the block time it records as its creation, update and transfer, and the
-/// block heights are unknown until the block, so a rule reading one is not
-/// judged.
-fn system_values_for_create(owner_id: Identifier) -> DocumentSystemValues {
+/// The system values the create of `document` will have, as far as a client
+/// can tell before its block: its owner and its revision, the device clock in
+/// place of the block time it records as its creation, update and transfer,
+/// and no stored version, so a path through `$old.` reads absent, as consensus
+/// reads it on a create, and a stored time, height or revision 0. The block
+/// heights the create records are unknown until the block, so a rule reading
+/// one is not judged; a stored height through `$old.` is.
+fn system_values_for_create(document: &Document) -> DocumentSystemValues {
     // A clock before the epoch reads as the epoch; milliseconds fit a `u64`
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -372,7 +398,9 @@ fn system_values_for_create(owner_id: Identifier) -> DocumentSystemValues {
         created_at: Some(now),
         updated_at: Some(now),
         transferred_at: Some(now),
-        ..DocumentSystemValues::owned_by(owner_id)
+        revision: document.revision(),
+        stored: Some(StoredVersion::Absent),
+        ..DocumentSystemValues::owned_by(document.owner_id())
     }
 }
 
@@ -398,7 +426,7 @@ fn property_constraint_violation_json(
             )
         })?;
     let data = Value::from(properties);
-    let system = system_values_for_create(document.owner_id());
+    let system = system_values_for_create(document);
     let result = document_type
         .validate_property_constraints(&data, &system, platform_version)
         .map_err(|e| {
@@ -436,6 +464,7 @@ fn read_kind_name(read: PropertyRead) -> &'static str {
         PropertyRead::Length => "length",
         PropertyRead::Count => "count",
         PropertyRead::Elements(_) => "elements",
+        PropertyRead::Bytes { .. } => "bytes",
     }
 }
 
@@ -657,7 +686,9 @@ mod tests {
                     ],
                     "readsOwner": false,
                     "readsSystem": [],
-                    "readsTotals": []
+                    "readsStored": false,
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "discountBelowPrice",
@@ -668,7 +699,9 @@ mod tests {
                     ],
                     "readsOwner": false,
                     "readsSystem": [],
-                    "readsTotals": []
+                    "readsStored": false,
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "perUnitFee",
@@ -679,7 +712,9 @@ mod tests {
                     ],
                     "readsOwner": false,
                     "readsSystem": [],
-                    "readsTotals": []
+                    "readsStored": false,
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "sellerIsOwner",
@@ -690,7 +725,9 @@ mod tests {
                     ],
                     "readsOwner": true,
                     "readsSystem": [],
-                    "readsTotals": []
+                    "readsStored": false,
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "tieredFee",
@@ -698,7 +735,9 @@ mod tests {
                     "reads": [{ "path": "fee", "kind": "value" }],
                     "readsOwner": false,
                     "readsSystem": [],
-                    "readsTotals": []
+                    "readsStored": false,
+                    "readsTotals": [],
+                    "readsReferenced": []
                 }
             ])
         );
@@ -1005,6 +1044,79 @@ mod tests {
         assert_eq!(open.expect("checked"), serde_json::Value::Null);
     }
 
+    /// A mutable `listing` type whose rules read its revision and its stored
+    /// version: `createdUnrevised` (`$old.$revision` is 0, as on a create, and
+    /// `$revision` at most 1) and `priceNeverRises` (the price is at most the
+    /// stored one).
+    fn stored_contract_bytes() -> Vec<u8> {
+        let platform_version = PlatformVersion::latest();
+        let documents = platform_value!({
+            "listing": {
+                "type": "object",
+                "documentsMutable": true,
+                "properties": {
+                    "price": { "type": "integer", "minimum": 0, "position": 0 }
+                },
+                "required": ["price"],
+                "additionalProperties": false,
+                "propertyConstraints": {
+                    "createdUnrevised": {
+                        "allOf": [
+                            { "equal": ["$old.$revision", 0] },
+                            { "lessThanOrEqual": ["$revision", 1] }
+                        ]
+                    },
+                    "priceNeverRises": { "lessThanOrEqual": ["price", "$old.price"] }
+                }
+            }
+        });
+        DataContractFactory::new(platform_version.protocol_version)
+            .expect("factory for the protocol version")
+            .create_with_value_config(Identifier::new(OWNER), 1, documents, None, None)
+            .expect("listing contract")
+            .data_contract()
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("serialized contract")
+    }
+
+    /// The listing reports the rules reading the stored version, and the
+    /// pre-check, which checks a create, judges them as consensus judges a
+    /// create: with nothing under `$old.`, and the first revision.
+    #[test]
+    fn should_judge_stored_reads_as_a_create_has_none() {
+        let sdk = sdk_handle(PlatformVersion::latest());
+        let contract = stored_contract_bytes();
+
+        let rules = rules_of(sdk, &contract, "listing");
+        // A create's stored price reads 0, which a price above it breaks
+        let priced = check(sdk, &contract, "listing", json!({ "price": 5 }), OWNER);
+        let free = check(sdk, &contract, "listing", json!({ "price": 0 }), OWNER);
+        destroy_mock_sdk_handle(sdk);
+
+        let rules = rules.expect("rules of listing");
+        assert_eq!(rules[0]["name"], "createdUnrevised");
+        assert_eq!(
+            rules[0]["readsSystem"],
+            json!(["$old.$revision", "$revision"])
+        );
+        assert_eq!(rules[0]["readsStored"], json!(true));
+        assert_eq!(rules[1]["name"], "priceNeverRises");
+        assert_eq!(
+            rules[1]["reads"],
+            json!([
+                { "path": "price", "kind": "value" },
+                { "path": "$old.price", "kind": "value" }
+            ])
+        );
+        assert_eq!(rules[1]["readsSystem"], json!([]));
+        assert_eq!(rules[1]["readsStored"], json!(true));
+
+        let priced = priced.expect("checked");
+        assert_eq!(priced["rule"], "priceNeverRises");
+        assert_eq!(priced["violation"], "NotMet");
+        assert_eq!(free.expect("checked"), serde_json::Value::Null);
+    }
+
     /// A `deal` type with two `ifThenElse` rules: `feePerPrice` (with a fee, the
     /// price is at least ten times it; without one, at most 100) and
     /// `openEndedSoldByOwner` (a deal without an end is sold by its owner, one
@@ -1108,7 +1220,9 @@ mod tests {
                     ],
                     "readsOwner": false,
                     "readsSystem": [],
-                    "readsTotals": []
+                    "readsStored": false,
+                    "readsTotals": [],
+                    "readsReferenced": []
                 },
                 {
                     "name": "openEndedSoldByOwner",
@@ -1126,7 +1240,9 @@ mod tests {
                     ],
                     "readsOwner": true,
                     "readsSystem": ["$createdAt"],
-                    "readsTotals": []
+                    "readsStored": false,
+                    "readsTotals": [],
+                    "readsReferenced": []
                 }
             ])
         );
@@ -1208,6 +1324,131 @@ mod tests {
         }
         assert_eq!(other.expect("checked"), serde_json::Value::Null);
     }
+    /// A `profile` type with an optional DIP-33 `corePaymentAddress` of 21 bytes
+    /// and an optional `payload` of at most 8, and two rules on their bytes:
+    /// `addressType` (the address's type byte is 0 or 1) and `taggedPayload` (a
+    /// payload, when given, starts with 0xcafe).
+    fn payment_contract_bytes() -> Vec<u8> {
+        let platform_version = PlatformVersion::latest();
+        let documents = platform_value!({
+            "profile": {
+                "type": "object",
+                "properties": {
+                    "corePaymentAddress": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 21,
+                        "maxItems": 21,
+                        "position": 0
+                    },
+                    "payload": {
+                        "type": "array",
+                        "byteArray": true,
+                        "maxItems": 8,
+                        "position": 1
+                    }
+                },
+                "additionalProperties": false,
+                "propertyConstraints": {
+                    "addressType": { "in": [{ "byteAt": ["corePaymentAddress", 0] }, [0, 1]] },
+                    "taggedPayload": {
+                        "anyOf": [
+                            { "absent": "payload" },
+                            { "startsWith": ["payload", { "const": "cafe" }] }
+                        ]
+                    }
+                }
+            }
+        });
+        DataContractFactory::new(platform_version.protocol_version)
+            .expect("factory for the protocol version")
+            .create_with_value_config(Identifier::new(OWNER), 1, documents, None, None)
+            .expect("profile contract")
+            .data_contract()
+            .serialize_to_bytes_with_platform_version(platform_version)
+            .expect("serialized contract")
+    }
+
+    /// The pre-check reads the bytes of a byte array as consensus does, given
+    /// as hex, the form documents take in JSON here, or as an array of
+    /// integers: an address of an unknown type, and an untagged payload, are
+    /// each reported with the rule they break.
+    #[test]
+    fn should_read_and_check_the_bytes_of_byte_arrays() {
+        let sdk = sdk_handle(PlatformVersion::latest());
+        let contract = payment_contract_bytes();
+        let address = |type_byte: &str| format!("{type_byte}{}", "5a".repeat(20));
+
+        let rules = rules_of(sdk, &contract, "profile");
+        let p2sh = check(
+            sdk,
+            &contract,
+            "profile",
+            json!({ "corePaymentAddress": address("01") }),
+            OWNER,
+        );
+        let unknown = check(
+            sdk,
+            &contract,
+            "profile",
+            json!({ "corePaymentAddress": address("02") }),
+            OWNER,
+        );
+        let mut listed = vec![3u8];
+        listed.extend([0x5a; 20]);
+        let unknown_listed = check(
+            sdk,
+            &contract,
+            "profile",
+            json!({ "corePaymentAddress": listed }),
+            OWNER,
+        );
+        // No address: its type byte reads as 0
+        let left_out = check(sdk, &contract, "profile", json!({}), OWNER);
+        let tagged = check(
+            sdk,
+            &contract,
+            "profile",
+            json!({ "payload": "cafe01" }),
+            OWNER,
+        );
+        let untagged = check(
+            sdk,
+            &contract,
+            "profile",
+            json!({ "payload": [0xbe, 0xef] }),
+            OWNER,
+        );
+        destroy_mock_sdk_handle(sdk);
+
+        let rules = rules.expect("rules of profile");
+        assert_eq!(rules[0]["name"], "addressType");
+        assert_eq!(
+            rules[0]["reads"],
+            json!([{ "path": "corePaymentAddress", "kind": "bytes" }])
+        );
+        assert_eq!(rules[1]["name"], "taggedPayload");
+        assert_eq!(
+            rules[1]["reads"],
+            json!([
+                { "path": "payload", "kind": "presence" },
+                { "path": "payload", "kind": "bytes" }
+            ])
+        );
+
+        for result in [p2sh, left_out, tagged] {
+            assert_eq!(result.expect("checked"), serde_json::Value::Null);
+        }
+        for result in [unknown, unknown_listed] {
+            let result = result.expect("checked");
+            assert_eq!(result["rule"], "addressType");
+            assert_eq!(result["violation"], "NotMet");
+        }
+        let untagged = untagged.expect("checked");
+        assert_eq!(untagged["rule"], "taggedPayload");
+        assert_eq!(untagged["violation"], "NotMet");
+    }
+
     /// A `listing` type whose trees keep its count, each owner's count and each
     /// category's total price, with three rules reading those totals and one,
     /// `priceCap`, reading only the price.

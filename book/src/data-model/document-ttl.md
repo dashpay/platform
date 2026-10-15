@@ -67,11 +67,17 @@ contract read back), when:
 
 When a contract is registered or updated, a `ttl` below `min_document_ttl_seconds` (one hour at
 protocol version 14) or above `max_document_ttl_seconds` (one year) is refused too. The floor
-keeps a document in state well past the moment its writer fetches the proof of its create,
-which proves the document present; a document the cleanup had already deleted would fail that
-proof although the create succeeded. A contract update may not add, remove or change the `ttl`
-of an existing document type: every stored document carries the expiry it was written and paid
-with. A document type added by an update declares it freely.
+keeps a document in state well past the moment its writer fetches the proof of its create, which
+proves the document present; a document the cleanup had already deleted would fail that proof
+although the create succeeded. A summed property that admits values below 0 is refused there
+too, unless its `minimum` and `maximum` lie within ±2^27
+(`max_expiring_signed_summed_value_magnitude`): the cleanup takes a document's value out of the
+type's sums with no transition to refuse, and removing a negative value raises them, so the
+values must keep every sum in the signed 64-bit range. Removing values that are never negative
+only lowers the sums, and values within ±2^27 keep them in range short of 2^36 documents. A
+contract update may not add, remove or change the `ttl` of an existing document type: every
+stored document carries the expiry it was written and paid with. A document type added by an
+update declares it freely.
 
 The same holds for any write close to a document's expiry: a replace, transfer, purchase or price
 update accepted in the last block before the expiry proves the document present, and a proof
@@ -159,9 +165,11 @@ document of such a type:
 - **Deletion.** Creating the document prepays, as processing, what its deletion will cost:
   `cleanup_base_processing_cost` (1,200,000), plus `cleanup_processing_cost_per_index_level`
   (400,000) per index level of the type, where an index counts its properties, times the
-  overlapping windows of a `timeRange` index, plus `cleanup_processing_cost_per_document_byte`
-  (420, what removing and reading a byte costs) per byte of the stored document. The cleanup
-  itself bills nobody.
+  overlapping windows of a `timeRange` or `integerRange` index, and an index naming a
+  [typed array](../contract-keywords/typed-arrays.md) counts the levels above the array once
+  and the array's level and those below it once per element its `maxItems` allows, plus
+  `cleanup_processing_cost_per_document_byte` (420, what removing and reading a byte costs)
+  per byte of the stored document. The cleanup itself bills nobody.
 - **Changes.** A replace, transfer, purchase or price update prices the bytes it adds by the
   lifetime left at that block, and prepays the deletion of the document bytes it adds at
   `cleanup_processing_cost_per_document_byte`. A deletion by the owner or a moderator pays its

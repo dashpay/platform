@@ -5802,6 +5802,8 @@ export namespace GetDocumentsRequest {
     STARTS_WITH: 10;
     IN_TIME_RANGE: 11;
     IN_INTEGER_RANGE: 12;
+    CONTAINS: 13;
+    CONTAINS_ANY: 14;
   }
 
   export const WhereOperator: WhereOperatorMap;
@@ -6972,8 +6974,8 @@ export namespace GetIdentityByNonUniquePublicKeyHashResponse {
 
     hasProof(): boolean;
     clearProof(): void;
-    getProof(): GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse | undefined;
-    setProof(value?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
 
     hasMetadata(): boolean;
     clearMetadata(): void;
@@ -6994,7 +6996,7 @@ export namespace GetIdentityByNonUniquePublicKeyHashResponse {
   export namespace GetIdentityByNonUniquePublicKeyHashResponseV0 {
     export type AsObject = {
       identity?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityResponse.AsObject,
-      proof?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.AsObject,
+      proof?: Proof.AsObject,
       metadata?: ResponseMetadata.AsObject,
     }
 
@@ -7022,40 +7024,10 @@ export namespace GetIdentityByNonUniquePublicKeyHashResponse {
       }
     }
 
-    export class IdentityProvedResponse extends jspb.Message {
-      hasGrovedbIdentityPublicKeyHashProof(): boolean;
-      clearGrovedbIdentityPublicKeyHashProof(): void;
-      getGrovedbIdentityPublicKeyHashProof(): Proof | undefined;
-      setGrovedbIdentityPublicKeyHashProof(value?: Proof): void;
-
-      hasIdentityProofBytes(): boolean;
-      clearIdentityProofBytes(): void;
-      getIdentityProofBytes(): Uint8Array | string;
-      getIdentityProofBytes_asU8(): Uint8Array;
-      getIdentityProofBytes_asB64(): string;
-      setIdentityProofBytes(value: Uint8Array | string): void;
-
-      serializeBinary(): Uint8Array;
-      toObject(includeInstance?: boolean): IdentityProvedResponse.AsObject;
-      static toObject(includeInstance: boolean, msg: IdentityProvedResponse): IdentityProvedResponse.AsObject;
-      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-      static serializeBinaryToWriter(message: IdentityProvedResponse, writer: jspb.BinaryWriter): void;
-      static deserializeBinary(bytes: Uint8Array): IdentityProvedResponse;
-      static deserializeBinaryFromReader(message: IdentityProvedResponse, reader: jspb.BinaryReader): IdentityProvedResponse;
-    }
-
-    export namespace IdentityProvedResponse {
-      export type AsObject = {
-        grovedbIdentityPublicKeyHashProof?: Proof.AsObject,
-        identityProofBytes: Uint8Array | string,
-      }
-    }
-
     export enum ResultCase {
       RESULT_NOT_SET = 0,
       IDENTITY = 1,
-      PROOF = 2,
+      PROOF = 4,
     }
   }
 

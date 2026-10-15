@@ -1,17 +1,26 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
-use dpp::data_contract::document_type::{
-    is_referenced_system_agreement_property, is_referring_system_agreement_property, is_transient,
-    DocumentProperty, DocumentPropertyReferenceTarget, DocumentPropertyType,
-    DocumentReferenceDeclaration, DocumentTypeRef, KeyReferenceIdentityProperty,
-    PreallocatedKeySource, PropertyReference, ReferenceHolder, MAX_INDEX_SIZE,
+use dpp::data_contract::document_type::array::TypedArrayProperty;
+use dpp::data_contract::document_type::class_methods::{
+    referenced_peer_kind_mismatch, referenced_reads_error, where_condition_literal_error,
 };
+use dpp::data_contract::document_type::property_constraints::referenced_fields;
+use dpp::data_contract::document_type::{
+    is_path_listed, is_referenced_system_agreement_property,
+    is_referring_system_agreement_property, is_transient, typed_array_property, DocumentProperty,
+    DocumentPropertyReferenceTarget, DocumentPropertyType, DocumentReferenceDeclaration,
+    DocumentReferenceKind, DocumentTypeRef, KeyReferenceIdentityProperty, PreallocatedKeySource,
+    PropertyReference, ReferenceHolder, WhereCondition, WhereContainsBound, WhereLiteralKind,
+    WhereNotEqualBound, WhereOrderingBound, MAX_INDEX_SIZE,
+};
+use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
-use dpp::document::property_names::CREATOR_ID;
+use dpp::document::property_names::{CREATOR_ID, ID, OWNER_ID};
 use dpp::errors::consensus::state::document::referenced_document_list_invalid_error::ReferencedDocumentListInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_lookup_invalid_error::ReferencedDocumentLookupInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_property_agreement_invalid_error::ReferencedDocumentPropertyAgreementInvalidError;
+use dpp::errors::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
 use dpp::errors::consensus::state::document::referenced_document_type_index_only_error::ReferencedDocumentTypeIndexOnlyError;
 use dpp::errors::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
 use dpp::errors::consensus::state::document::referenced_key_id_property_invalid_error::ReferencedKeyIdPropertyInvalidError;
@@ -40,6 +49,69 @@ fn same_value_kind(a: &DocumentPropertyType, b: &DocumentPropertyType) -> bool {
     a.value_kind() == b.value_kind()
 }
 
+/// Why the referenced side `referenced_property` of a `where` entry holds no
+/// value to compare on a document of `referenced_document_type`, of
+/// `referenced_contract`, `None` when it does: `$creatorId` on a type that
+/// records none, a property the type does not define, or one no stored
+/// document carries. `$ownerId` and `$id` always hold one. Inert before
+/// protocol version 14, which alone reaches this module (contract create and
+/// update state validation 1).
+fn referenced_side_error(
+    referenced_contract: &DataContract,
+    referenced_document_type: DocumentTypeRef,
+    referenced_property: &str,
+    platform_version: &PlatformVersion,
+) -> Result<Option<&'static str>, Error> {
+    if is_referenced_system_agreement_property(referenced_property) {
+        let recorded = referenced_property != CREATOR_ID
+            || referenced_document_type
+                .should_use_creator_id(
+                    referenced_contract.system_version_type(),
+                    referenced_contract.config().version(),
+                    platform_version,
+                )
+                .map_err(Error::Protocol)?;
+        return Ok((!recorded).then_some(
+            "the referenced document type does not record $creatorId: only transferable or \
+             tradeable document types of a format-1 contract do",
+        ));
+    }
+    if referenced_document_type
+        .flattened_properties()
+        .get(referenced_property)
+        .is_none()
+    {
+        return Ok(Some(
+            "the referenced document type does not define the referenced property",
+        ));
+    }
+    // No stored document carries a transient value, so a referring document
+    // could only agree by omitting its own side. The referring side may be
+    // transient: it is judged on the transition, a write gate like the
+    // writer's `$ownerId`
+    if is_transient(referenced_document_type, referenced_property) {
+        return Ok(Some(
+            "the referenced property is transient or inside a transient object: no stored \
+             document carries its value, so none could be compared with",
+        ));
+    }
+    Ok(None)
+}
+
+/// Whether every removal record of a document of `referenced_document_type`
+/// holds `referenced_property`: its `$id`, its `$ownerId`, or a field its type
+/// lists under `deleteKeepsFields` (or inside a kept object).
+fn kept_by_every_record(
+    referenced_document_type: DocumentTypeRef,
+    referenced_property: &str,
+) -> bool {
+    matches!(referenced_property, ID | OWNER_ID)
+        || is_path_listed(
+            referenced_document_type.moderator_deletion_kept_fields(),
+            referenced_property,
+        )
+}
+
 /// Whether a key reference pairing the key id at `key_id_path` with the
 /// identity at `identity_path` of `document_type` would store the key id
 /// without its identity: the identity transient (or inside a transient
@@ -57,7 +129,8 @@ fn stores_key_id_without_identity(
 /// by the referenced document's `referenced_property` through the agreement
 /// pair naming it from `referring_property`, on the reference carried by
 /// `reference_property`: creating a referenced document then writes that
-/// property's value as a tree key of the index. `None` when no preallocated
+/// property's value as a tree key of the index, or each element of it when
+/// the pair is of two typed arrays. `None` when no preallocated
 /// index is keyed through the pair, or only through a `moderatedDocument`
 /// binding the referenced type's removal record would not keep, which the
 /// referenced document's insert never preallocates through
@@ -88,15 +161,168 @@ fn preallocated_index_keyed_by(
                         && index.properties.iter().zip(&binding.key_sources).any(
                             |(index_property, key_source)| {
                                 index_property.name == referring_property
-                                    && *key_source
-                                        == PreallocatedKeySource::ReferencedDocumentProperty(
-                                            referenced_property,
+                                    && matches!(
+                                        *key_source,
+                                        PreallocatedKeySource::ReferencedDocumentProperty(
+                                            referenced,
                                         )
+                                        | PreallocatedKeySource::ReferencedDocumentListElements(
+                                            referenced,
+                                        ) if referenced == referenced_property
+                                    )
                             },
                         )
                 })
         })
         .map(|index| index.name.clone())
+}
+
+/// Why a preallocated index of `document_type` keyed through the agreement
+/// pair of `referring_property` and `referenced_property`, on the reference
+/// carried by `reference_property` ([`preallocated_index_keyed_by`]), can not
+/// key its trees by `keyed`, the values of `key_type` that `holder` holds (the
+/// referenced property, or each element of a referenced list): such a value
+/// may be wider than a tree key holds, at most `MAX_INDEX_SIZE` bytes. `None`
+/// when it fits, or when no preallocated index is keyed through the pair.
+#[allow(clippy::too_many_arguments)]
+fn preallocated_key_width_error(
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    reference_property: Option<&str>,
+    referring_property: &str,
+    referenced_property: &str,
+    key_type: &DocumentPropertyType,
+    keyed: &str,
+    holder: &str,
+    platform_version: &PlatformVersion,
+) -> Option<String> {
+    let index_name = preallocated_index_keyed_by(
+        contract,
+        document_type,
+        reference_property?,
+        referring_property,
+        referenced_property,
+    )?;
+    let max_width = key_type
+        .saturating_max_byte_size(platform_version)
+        .ok()
+        .flatten();
+    max_width
+        .is_none_or(|width| usize::from(width) > MAX_INDEX_SIZE)
+        .then(|| {
+            format!(
+                "the preallocated index {index_name} keys its trees by {keyed}, and a tree key \
+                 holds at most {MAX_INDEX_SIZE} bytes, but {holder} can hold values of up to {} \
+                 bytes",
+                max_width.unwrap_or(u16::MAX)
+            )
+        })
+}
+
+/// Why the elements of the referenced typed array `referenced` hold no value a
+/// `where` entry over lists compares, `None` when they do: an integer, a
+/// boolean, a string, an identifier or a byte array, the kinds a literal reads
+/// as ([`WhereLiteralKind::of`]). A float element is refused, as a float is
+/// for every other entry that is not an equality.
+fn list_element_error(referenced: &TypedArrayProperty) -> Option<&'static str> {
+    WhereLiteralKind::of(&referenced.item_type)
+        .is_none()
+        .then_some("the referenced typed array holds floats, which a where entry does not compare")
+}
+
+/// Why the typed array `referring_property` of the declaring `document_type`,
+/// `referring`, can not be compared as a list with the referenced typed array
+/// `referenced` (an equality, or the bound of a `containsAll`), `None` when it
+/// can: it is stored, as the referenced one is (a list is compared with a list
+/// the referring document keeps), and its elements are of the referenced
+/// list's value kind, one a `where` entry compares.
+fn list_pair_error(
+    document_type: DocumentTypeRef,
+    referring_property: &str,
+    referring: &TypedArrayProperty,
+    referenced: &TypedArrayProperty,
+) -> Option<&'static str> {
+    if is_transient(document_type, referring_property) {
+        return Some(
+            "the referring typed array is transient or inside a transient object: a list is \
+             compared with a list the referring document stores",
+        );
+    }
+    if let Some(reason) = list_element_error(referenced) {
+        return Some(reason);
+    }
+    (!same_value_kind(&referring.item_type, &referenced.item_type)).then_some(
+        "the elements of the two typed arrays must share one value kind: lists of different \
+         kinds would never compare equal",
+    )
+}
+
+/// Why a `contains` or a `containsAll` keyed by `referenced_property` of
+/// `referenced_document_type`, on the reference carried by
+/// `reference_property` of the declaring `document_type`, can not hold, `None`
+/// when it can (and for every other condition). The referenced side is a typed
+/// array whose elements a `where` entry compares ([`list_element_error`]). A
+/// `contains` is bounded by a property of the declaring type holding one value
+/// of the element kind, or by the writer among identifier elements; a
+/// `containsAll` by a typed array of the declaring type it can be compared
+/// with ([`list_pair_error`]). Neither is bounded by the reference's own
+/// value, which found the document.
+fn list_condition_error(
+    document_type: DocumentTypeRef,
+    reference_property: Option<&str>,
+    referenced_document_type: DocumentTypeRef,
+    referenced_property: &str,
+    condition: &WhereCondition,
+) -> Option<&'static str> {
+    let Some(referenced) = typed_array_property(
+        referenced_document_type.flattened_properties(),
+        referenced_property,
+    ) else {
+        return Some(
+            "contains and containsAll read the elements of a typed array, and the referenced \
+             property is none",
+        );
+    };
+    if let Some(reason) = list_element_error(referenced) {
+        return Some(reason);
+    }
+    let referring_property = match condition {
+        WhereCondition::Contains(WhereContainsBound::Writer) => {
+            return (WhereLiteralKind::of(&referenced.item_type)
+                != Some(WhereLiteralKind::Identifier))
+            .then_some(
+                "$ownerId, the writer, is an identifier, so the referenced typed array must hold \
+                 identifiers",
+            );
+        }
+        WhereCondition::Contains(WhereContainsBound::Property(path))
+        | WhereCondition::ContainsAll(path) => path,
+        _ => return None,
+    };
+    if Some(referring_property.as_str()) == reference_property {
+        return Some("the referring property cannot be the reference property itself");
+    }
+    let Some(referring) = document_type.flattened_properties().get(referring_property) else {
+        return Some("the declaring document type does not define the referring property");
+    };
+    match (condition, &referring.property_type) {
+        (WhereCondition::ContainsAll(_), DocumentPropertyType::TypedArray(referring_list)) => {
+            list_pair_error(
+                document_type,
+                referring_property,
+                referring_list,
+                referenced,
+            )
+        }
+        (WhereCondition::ContainsAll(_), _) => Some(
+            "containsAll reads a typed array of the declaring document type, whose every \
+             element the referenced typed array must hold",
+        ),
+        (_, referring_type) => (!same_value_kind(referring_type, &referenced.item_type)).then_some(
+            "contains reads one value of the kind the referenced typed array's elements \
+                 are",
+        ),
+    }
 }
 
 /// Checks every reference declaration of the given contract that carries
@@ -339,6 +565,52 @@ pub(super) fn validate_data_contract_references_v0(
         }
     }
 
+    // Two fields of documents different references point at, compared with
+    // each other by a rule, hold one kind of value; the contract parse checked
+    // the pairs whose types are both the contract's, and another contract's
+    // type is in hand only here, fetched above. Inert before protocol version
+    // 14, the only one whose parse reads such a rule
+    for (declaring_type_name, document_type) in contract.document_types() {
+        let document_type = document_type.as_ref();
+        let kind_of = |reference: &str, field: &str| -> Option<WhereLiteralKind> {
+            let declaration = document_type
+                .reference_declarations()
+                .find_map(|(holder, property_reference)| {
+                    (holder.path() == reference).then_some(property_reference)
+                })?
+                .target()?
+                .as_any_document_reference()?;
+            let referenced_contract = match declaration.contract_id {
+                Some(referenced_contract_id) if referenced_contract_id != contract.id() => {
+                    &fetched_contracts
+                        .get(&referenced_contract_id)?
+                        .as_ref()?
+                        .contract
+                }
+                _ => contract,
+            };
+            let referenced = referenced_contract
+                .document_type_for_name(declaration.document_type_name)
+                .ok()?;
+            WhereLiteralKind::of_referenced(referenced, field)
+        };
+        for (rule, constraint) in document_type.property_constraints() {
+            if let Some((reference, reason)) =
+                referenced_peer_kind_mismatch(constraint, &format!("rule \"{rule}\""), &kind_of)
+            {
+                return Ok(SimpleConsensusValidationResult::new_with_error(
+                    ReferencedDocumentRuleReadInvalidError::new(
+                        declaring_type_name.clone(),
+                        rule.clone(),
+                        reference.to_string(),
+                        reason,
+                    )
+                    .into(),
+                ));
+            }
+        }
+    }
+
     Ok(SimpleConsensusValidationResult::new())
 }
 
@@ -434,6 +706,7 @@ fn validate_reference_target_declaration_v0(
         contract_id,
         document_type_name,
         property_agreement,
+        where_conditions,
         kind,
         lookup,
         in_list,
@@ -567,9 +840,11 @@ fn validate_reference_target_declaration_v0(
                     .into(),
                 ));
             }
-            if let Some(reason) =
-                lookup.referenced_side_error(document_type, referenced_document_type)
-            {
+            if let Some(reason) = lookup.referenced_side_error(
+                document_type,
+                reference_property,
+                referenced_document_type,
+            ) {
                 return Ok(SimpleConsensusValidationResult::new_with_error(
                     ReferencedDocumentLookupInvalidError::new(
                         declaration_path,
@@ -578,6 +853,47 @@ fn validate_reference_target_declaration_v0(
                     )
                     .into(),
                 ));
+            }
+        }
+    }
+
+    // What the declaring type's `propertyConstraints` rules read through this
+    // reference of a document type of another contract (protocol version 14):
+    // the contract parse checks a rule reading a type of the declaring contract,
+    // and only here is another contract's in hand. The parse let a rule read
+    // only through a property holding a single reference to one document, so a
+    // leaf of an expression or the elements of a typed array carry no reads
+    if effective_contract_id != contract.id() {
+        if let Some(reference_property) = reference_property {
+            let records_creator_id = referenced_document_type
+                .should_use_creator_id(
+                    referenced_contract.system_version_type(),
+                    referenced_contract.config().version(),
+                    platform_version,
+                )
+                .map_err(Error::Protocol)?;
+            for (rule, constraint) in document_type.property_constraints() {
+                let reason = referenced_reads_error(
+                    constraint,
+                    &format!("rule \"{rule}\""),
+                    reference_property,
+                    kind,
+                    referenced_document_type,
+                    referenced_contract.schema_defs(),
+                    records_creator_id,
+                )
+                .map_err(|error| Error::Protocol(error.into()))?;
+                if let Some(reason) = reason {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        ReferencedDocumentRuleReadInvalidError::new(
+                            document_type.name().clone(),
+                            rule.clone(),
+                            reference_property.to_string(),
+                            reason,
+                        )
+                        .into(),
+                    ));
+                }
             }
         }
     }
@@ -607,7 +923,9 @@ fn validate_reference_target_declaration_v0(
     // `where` declarations: both sides must exist, be
     // plain values (not containers), and share one value kind — a
     // cross-kind equality could never be satisfied and would brick
-    // every create of the declaring document type. The referenced
+    // every create of the declaring document type. Two stored typed
+    // arrays of one element kind, not floats, may instead be paired, and
+    // are equal as lists; a typed array pairs with nothing else. The referenced
     // side may instead be one of the referenced document's
     // `$ownerId` and `$creatorId` system identifiers, which then
     // must face an identifier on the referring side; `$creatorId`
@@ -673,22 +991,23 @@ fn validate_reference_target_declaration_v0(
                      property must be an identifier",
                 ));
             }
-            if referenced_property == CREATOR_ID
-                && !referenced_document_type
-                    .should_use_creator_id(
-                        referenced_contract.system_version_type(),
-                        referenced_contract.config().version(),
-                        platform_version,
-                    )
-                    .map_err(Error::Protocol)?
-            {
-                return Ok(invalid(
-                    "the referenced document type does not record $creatorId: only \
-                     transferable or tradeable document types of a format-1 contract \
-                     do",
-                ));
+            if let Some(reason) = referenced_side_error(
+                referenced_contract,
+                referenced_document_type,
+                referenced_property,
+                platform_version,
+            )? {
+                return Ok(invalid(reason));
             }
             continue;
+        }
+        if let Some(reason) = referenced_side_error(
+            referenced_contract,
+            referenced_document_type,
+            referenced_property,
+            platform_version,
+        )? {
+            return Ok(invalid(reason));
         }
         let Some(referenced) = referenced_document_type
             .flattened_properties()
@@ -698,18 +1017,6 @@ fn validate_reference_target_declaration_v0(
                 "the referenced document type does not define the referenced property",
             ));
         };
-        // No stored document carries a transient value, so a referring
-        // document could only agree by omitting its own side. The referring
-        // side may be transient: it is judged on the transition, a write
-        // gate like the writer's `$ownerId`. In place: inert before protocol
-        // version 14, which alone reaches this module (contract create and
-        // update state validation 1).
-        if is_transient(referenced_document_type, referenced_property) {
-            return Ok(invalid(
-                "the referenced property is transient or inside a transient object: no \
-                 stored document carries its value, so none could be agreed with",
-            ));
-        }
         if matches!(referring_type, DocumentPropertyType::Object(_))
             || matches!(referenced.property_type, DocumentPropertyType::Object(_))
         {
@@ -717,17 +1024,47 @@ fn validate_reference_target_declaration_v0(
                 "agreement properties must be plain values, not object containers",
             ));
         }
-        // The write-time check compares single values, which a list is
-        // not, so an agreement on one would never hold
-        if matches!(referring_type, DocumentPropertyType::TypedArray(_))
-            || matches!(
-                referenced.property_type,
-                DocumentPropertyType::TypedArray(_)
-            )
-        {
-            return Ok(invalid(
-                "agreement properties must be single values, not typed arrays",
-            ));
+        // Two typed arrays are equal as lists, element by element, which no
+        // single value is. A preallocated index keyed through the pair writes
+        // each element of the referenced document's list as a tree key when
+        // that document is created, so every element the referenced list can
+        // hold must fit one, as a single value must below. In place: inert
+        // before protocol version 14, which alone reaches this module
+        match (referring_type, &referenced.property_type) {
+            (
+                DocumentPropertyType::TypedArray(referring_list),
+                DocumentPropertyType::TypedArray(referenced_list),
+            ) => {
+                if let Some(reason) = list_pair_error(
+                    document_type,
+                    referring_property,
+                    referring_list,
+                    referenced_list,
+                ) {
+                    return Ok(invalid(reason));
+                }
+                if let Some(reason) = preallocated_key_width_error(
+                    contract,
+                    document_type,
+                    reference_property,
+                    referring_property,
+                    referenced_property,
+                    &referenced_list.item_type,
+                    "each element of the referenced typed array",
+                    "an element of the referenced typed array",
+                    platform_version,
+                ) {
+                    return Ok(invalid(&reason));
+                }
+                continue;
+            }
+            (DocumentPropertyType::TypedArray(_), _) | (_, DocumentPropertyType::TypedArray(_)) => {
+                return Ok(invalid(
+                    "a typed array is equal only to a typed array, compared as a list: a \
+                     single value never is one",
+                ));
+            }
+            _ => {}
         }
         if !same_value_kind(referring_type, &referenced.property_type) {
             return Ok(invalid(
@@ -741,29 +1078,223 @@ fn validate_reference_target_declaration_v0(
         // referring side is an index property, bounded by the index rules. In
         // place: inert before protocol version 14, which alone reaches this
         // module (contract create and update state validation 1).
-        let keyed_index = reference_property.and_then(|reference_property| {
-            preallocated_index_keyed_by(
-                contract,
+        if let Some(reason) = preallocated_key_width_error(
+            contract,
+            document_type,
+            reference_property,
+            referring_property,
+            referenced_property,
+            &referenced.property_type,
+            "the referenced property's value",
+            "the referenced property",
+            platform_version,
+        ) {
+            return Ok(invalid(&reason));
+        }
+    }
+
+    // The other `where` entries (protocol version 14): a literal the referenced
+    // side must equal or be one of, or a bound it must differ from or compare
+    // with. Each must be able to hold: the referenced side exists, is stored and
+    // holds a single value; a literal reads as its kind (a base58 identifier for
+    // an identifier, hex for a byte array) and is a value the referenced
+    // property can hold; a `notEqual` compares two values of one kind, never
+    // the reference's own value, the writer an identifier; an ordering compares
+    // two integers, its bound an integer property of the declaring type, an
+    // integer some value of the referenced property is on the right side of, or
+    // a time or height that type records. A `contains` or a `containsAll`
+    // compares the elements of a typed array instead ([`list_condition_error`]),
+    // and the `const`, `in`, `notEqual` and orderings read no list. Through a
+    // `moderatedDocument` reference, an entry asked about on every replace
+    // compares only what every removal record holds, as a writer gate does: a
+    // time or height bound or the writer changes without a write, and once a
+    // moderator removes the document only its record is left. Inert before
+    // protocol version 14, which alone reaches this module (contract create and
+    // update state validation 1), and the only one whose parse reads such an
+    // entry
+    let unkept_on_removal = |condition: &WhereCondition, referenced_property: &str| {
+        (kind == DocumentReferenceKind::Moderated
+            && condition.is_rechecked_on_every_replace()
+            && !kept_by_every_record(referenced_document_type, referenced_property))
+        .then_some(
+            "the entry is checked on every replace, and once a moderator removes the document \
+             only its record is left, which keeps its $id, its $ownerId and the fields its type \
+             lists under deleteKeepsFields: compare one of those",
+        )
+    };
+    for (referenced_property, condition) in where_conditions {
+        let invalid = |reason: &str| {
+            SimpleConsensusValidationResult::new_with_error(
+                ReferencedDocumentPropertyAgreementInvalidError::new(
+                    declaration_path.clone(),
+                    condition.to_string(),
+                    referenced_property.clone(),
+                    reason.to_string(),
+                )
+                .into(),
+            )
+        };
+        if let Some(reason) = referenced_side_error(
+            referenced_contract,
+            referenced_document_type,
+            referenced_property,
+            platform_version,
+        )? {
+            return Ok(invalid(reason));
+        }
+        if condition.reads_a_list() {
+            let reason = list_condition_error(
                 document_type,
                 reference_property,
-                referring_property,
+                referenced_document_type,
                 referenced_property,
+                condition,
             )
-        });
-        if let Some(index_name) = keyed_index {
-            let max_width = referenced
-                .property_type
-                .saturating_max_byte_size(platform_version)
-                .ok()
-                .flatten();
-            if max_width.is_none_or(|width| usize::from(width) > MAX_INDEX_SIZE) {
-                return Ok(invalid(&format!(
-                    "the preallocated index {index_name} keys its trees by the referenced \
-                     property's value, and a tree key holds at most {MAX_INDEX_SIZE} bytes, but \
-                     the referenced property can hold values of up to {} bytes",
-                    max_width.unwrap_or(u16::MAX)
+            .or_else(|| unkept_on_removal(condition, referenced_property));
+            if let Some(reason) = reason {
+                return Ok(invalid(reason));
+            }
+            continue;
+        }
+        let referenced_type = referenced_document_type
+            .flattened_properties()
+            .get(referenced_property)
+            .map(|referenced| &referenced.property_type);
+        let Some(literal_kind) =
+            WhereLiteralKind::of_referenced(referenced_document_type, referenced_property)
+        else {
+            return Ok(invalid(
+                "the referenced property holds no single value a where entry compares: a \
+                 float, an object or an array",
+            ));
+        };
+        if let Some(reason) = where_condition_literal_error(
+            referenced_document_type,
+            referenced_contract.schema_defs(),
+            referenced_property,
+            literal_kind,
+            condition,
+        )
+        .map_err(|error| Error::Protocol(error.into()))?
+        {
+            return Ok(invalid(&reason));
+        }
+        match condition {
+            WhereCondition::Constant(_)
+            | WhereCondition::In(_)
+            | WhereCondition::NotEqual(WhereNotEqualBound::Constant(_)) => {}
+            WhereCondition::NotEqual(WhereNotEqualBound::Writer) => {
+                if literal_kind != WhereLiteralKind::Identifier {
+                    return Ok(invalid(
+                        "$ownerId, the writer, is an identifier, so the referenced side must be \
+                         one",
+                    ));
+                }
+            }
+            WhereCondition::NotEqual(WhereNotEqualBound::Property(referring_property)) => {
+                // The reference's own value is what found the document, so it
+                // can not differ from it, as an equality with it always holds
+                if Some(referring_property.as_str()) == reference_property {
+                    return Ok(invalid(
+                        "the referring property cannot be the reference property itself",
+                    ));
+                }
+                let Some(referring) = document_type.flattened_properties().get(referring_property)
+                else {
+                    return Ok(invalid(
+                        "the declaring document type does not define the referring property",
+                    ));
+                };
+                let same_kind = match referenced_type {
+                    Some(referenced_type) => {
+                        same_value_kind(&referring.property_type, referenced_type)
+                    }
+                    None => matches!(
+                        referring.property_type,
+                        DocumentPropertyType::Identifier
+                            | DocumentPropertyType::IdentifierWithReference(_)
+                    ),
+                };
+                if !same_kind {
+                    return Ok(invalid(
+                        "the two properties must share one value kind: a cross-kind comparison \
+                         would always differ",
+                    ));
+                }
+            }
+            WhereCondition::Ordering { bound, .. } => {
+                if literal_kind != WhereLiteralKind::Integer {
+                    return Ok(invalid(
+                        "an ordering compares integers, and the referenced property is no \
+                         integer",
+                    ));
+                }
+                match bound {
+                    WhereOrderingBound::Property(referring_property) => {
+                        let is_integer = document_type
+                            .flattened_properties()
+                            .get(referring_property)
+                            .and_then(|referring| WhereLiteralKind::of(&referring.property_type))
+                            == Some(WhereLiteralKind::Integer);
+                        if !is_integer {
+                            return Ok(invalid(
+                                "an ordering is bounded by an integer property of the declaring \
+                                 document type",
+                            ));
+                        }
+                    }
+                    WhereOrderingBound::System(system) => {
+                        if !document_type.required_fields().contains(system.name()) {
+                            return Ok(invalid(&format!(
+                                "the declaring document type does not record {}: list it in \
+                                 required",
+                                system.name()
+                            )));
+                        }
+                    }
+                    WhereOrderingBound::Constant(_) => {}
+                }
+            }
+            WhereCondition::Contains(_) | WhereCondition::ContainsAll(_) => {
+                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "a contains or a containsAll is checked against the elements of its list \
+                     before the conditions comparing one value",
                 )));
             }
+        }
+        if let Some(reason) = unkept_on_removal(condition, referenced_property) {
+            return Ok(invalid(reason));
+        }
+    }
+
+    // A rule reading the document through a `moderatedDocument` reference has
+    // the reference checked, its `where` whole, on every replace, which once a
+    // moderator removes the document reads its record: every entry compares
+    // what the record keeps, as every value the rule reads does
+    let read_by_a_rule = reference_property.is_some_and(|reference_property| {
+        referenced_fields(document_type.property_constraints()).contains_key(reference_property)
+    });
+    if kind == DocumentReferenceKind::Moderated && read_by_a_rule {
+        let unkept = property_agreement
+            .values()
+            .chain(where_conditions.keys())
+            .find(|referenced_property| {
+                !kept_by_every_record(referenced_document_type, referenced_property)
+            });
+        if let Some(referenced_property) = unkept {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                ReferencedDocumentPropertyAgreementInvalidError::new(
+                    declaration_path.clone(),
+                    reference_property.unwrap_or_default().to_string(),
+                    referenced_property.clone(),
+                    "a rule reads the document through this moderatedDocument reference, so \
+                     every replace checks its where whole, which once a moderator removes the \
+                     document reads its record: compare its $id, its $ownerId or a field its \
+                     type lists under deleteKeepsFields"
+                        .to_string(),
+                )
+                .into(),
+            ));
         }
     }
 

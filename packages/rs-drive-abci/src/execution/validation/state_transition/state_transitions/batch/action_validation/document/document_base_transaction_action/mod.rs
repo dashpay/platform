@@ -9,10 +9,12 @@ use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_base_transaction_action::state_v0::DocumentBaseTransitionActionStateValidationV0;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_base_transaction_action::state_v1::DocumentBaseTransitionActionStateValidationV1;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_base_transaction_action::state_v2::DocumentBaseTransitionActionStateValidationV2;
 use crate::platform_types::platform::PlatformStateRef;
 
 mod state_v0;
 mod state_v1;
+mod state_v2;
 
 pub trait DocumentBaseTransitionActionValidation {
     #[allow(clippy::too_many_arguments)]
@@ -64,9 +66,18 @@ impl DocumentBaseTransitionActionValidation for DocumentBaseTransitionAction {
                 transaction,
                 platform_version,
             ),
+            2 => self.validate_state_v2(
+                platform,
+                owner_id,
+                block_info,
+                transition_type,
+                execution_context,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "DocumentBaseTransitionAction::validate_state".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
