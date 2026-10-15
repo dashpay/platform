@@ -1,0 +1,28 @@
+{
+  "baseHeight": 400,
+  "blockHeight": 401,
+  "addedMNs": [],
+  "removedMNs": [],
+  "updatedMNs": [
+    {
+      "f18c25367cd4f2ba6e8cdf86d0ffcf2694b6206b75597fe1ab5b80b966dbdf4b": {
+        "version": 3,
+        "service": "127.0.0.1:30001",
+        "lastPaidHeight": 401,
+        "payouts": [
+          {
+            "address": "yXkZa7p2ne58x2XQYdNthAxfXy9cHiWxF5",
+            "script": "76a9147d6964fc3445684608bd81ab3772baebae46735d88ac",
+            "reward": 10000
+          }
+        ],
+        "pubKeyOperator": "86ebb5ebd9079d73577e0900c9c10139d7d7213247e32b9b8823cd80e6a18e16a497ac57508e23b4a0e0510bfc880ad9",
+        "addresses": {
+          "core_p2p": [
+            "127.0.0.1:30001"
+          ]
+        }
+      }
+    }
+  ]
+}
