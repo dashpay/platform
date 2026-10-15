@@ -619,10 +619,14 @@ mod tests {
         // of each DKG interval (`llmq/params.h`).
         let schedules = [
             (QuorumType::LlmqTest, 24, 10, 18),
+            (QuorumType::LlmqTestInstantsend, 24, 10, 18),
+            (QuorumType::LlmqTestV17, 24, 10, 18),
+            (QuorumType::LlmqTestPlatform, 24, 10, 18),
             (QuorumType::LlmqDevnetPlatform, 24, 10, 18),
             (QuorumType::LlmqDevnet, 24, 10, 18),
             (QuorumType::Llmq50_60, 24, 10, 18),
             (QuorumType::Llmq100_67, 24, 10, 18),
+            (QuorumType::Llmq25_67, 24, 10, 18),
             (QuorumType::Llmq400_60, 288, 20, 28),
             (QuorumType::Llmq400_85, 576, 20, 48),
         ];
@@ -661,6 +665,7 @@ mod tests {
         for quorum_type in [
             QuorumType::Llmq60_75,
             QuorumType::LlmqTestDip0024,
+            QuorumType::LlmqDevnetDip0024,
             QuorumType::LlmqSingleNode,
         ] {
             assert_eq!(first_possible_quorum_change_after(quorum_type, 1110), 1111);

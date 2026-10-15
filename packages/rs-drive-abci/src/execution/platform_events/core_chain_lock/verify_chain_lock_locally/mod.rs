@@ -79,10 +79,10 @@ mod tests {
     use dpp::version::PlatformVersion;
 
     #[test]
-    fn should_stop_rejecting_chain_lock_signed_by_newly_mined_quorum_after_protocol_version_14() {
+    fn should_stop_rejecting_chain_lock_signed_by_newly_mined_quorum_from_protocol_version_14() {
         // Platform committed core height 1106 holding the llmq_test quorums {a, b}; Core mined
-        // quorum n at 1114 and signed the next chain lock with it. Protocol versions up to 14
-        // keep rejecting such a chain lock locally; later ones leave it to Core.
+        // quorum n at 1114 and signed the next chain lock with it. Protocol versions up to 13
+        // keep rejecting such a chain lock locally; 14 and later leave it to Core.
         let platform = chain_lock_test_platform();
         let scenario = QuorumMinedAfterCoreHeight::default();
         let state = scenario.platform_state(&platform.platform.state.load());
@@ -95,13 +95,15 @@ mod tests {
                 .expect("verification runs")
         };
 
-        for protocol_version in [13, 14] {
-            assert_eq!(
-                verify(PlatformVersion::get(protocol_version).expect("known version")),
-                Some(false),
-                "protocol version {protocol_version} must keep its verdict"
-            );
-        }
+        assert_eq!(
+            verify(PlatformVersion::get(13).expect("protocol version 13 exists")),
+            Some(false),
+            "protocol version 13 must keep its verdict"
+        );
+        assert_eq!(
+            verify(PlatformVersion::get(14).expect("protocol version 14 exists")),
+            None
+        );
         assert_eq!(verify(PlatformVersion::latest()), None);
     }
 
@@ -164,7 +166,7 @@ mod tests {
         let base = platform.platform.state.load();
         let mined = MinedQuorums::new();
         let unrelated = TestQuorum::new(99, 0);
-        let v0_version = PlatformVersion::get(14).expect("protocol version 14 exists");
+        let v0_version = PlatformVersion::get(13).expect("protocol version 13 exists");
         let v1_version = PlatformVersion::latest();
 
         // Each history ends at Platform's last committed core height. The flag says whether
