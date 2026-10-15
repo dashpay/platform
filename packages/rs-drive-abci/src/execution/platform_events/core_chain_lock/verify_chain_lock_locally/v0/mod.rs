@@ -337,7 +337,7 @@ mod tests {
             .set_initial_state_structure();
 
         let platform_state = platform.platform.state.load();
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
 
         // An all-zero compressed BLS signature is not a valid G2 point; the
         // G2 decoder expects a flag bit, so this must fail deserialization.

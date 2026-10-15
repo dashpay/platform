@@ -166,10 +166,68 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::chain_lock_quorums::{
+        chain_lock_test_platform, sign_chain_lock, QuorumMinedAfterCoreHeight, TestQuorum,
+    };
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_accept_through_core_chain_lock_signed_by_quorum_mined_after_last_committed_core_height(
+    ) {
+        // Core mined quorum n at 1114 and signed the proposed chain lock with it. Platform does
+        // not hold n, so it hands the chain lock to Core, which already has it.
+        let mut platform = chain_lock_test_platform();
+        let scenario = QuorumMinedAfterCoreHeight::default();
+        let state = scenario.platform_state(&platform.platform.state.load());
+        let chain_lock = scenario.chain_lock_signed_by_new_quorum();
+        let chain_lock_height = chain_lock.block_height;
+
+        let mut core_rpc = MockCoreRPCLike::new();
+        core_rpc
+            .expect_submit_chain_lock()
+            .times(1)
+            .returning(move |_| Ok(chain_lock_height));
+        platform.core_rpc = core_rpc;
+
+        let result = platform
+            .platform
+            .verify_chain_lock_v0(0, &state, &chain_lock, true, PlatformVersion::latest())
+            .expect("verification runs");
+
+        assert!(result.chain_lock_signature_is_deserializable);
+        assert_eq!(result.found_valid_locally, None);
+        assert_eq!(result.found_valid_by_core, None);
+        assert_eq!(result.core_is_synced, Some(true));
+    }
+
+    #[test]
+    fn should_reject_forged_chain_lock_without_asking_core_when_signing_height_quorums_are_known() {
+        // The signing height is within what Platform holds the exact quorums for, so a chain
+        // lock none of them signed is rejected locally; Core's answer, which skips the
+        // signature check for heights it already has a chain lock for, is never asked.
+        let mut platform = chain_lock_test_platform();
+        let scenario = QuorumMinedAfterCoreHeight::default();
+        let state = scenario.platform_state(&platform.platform.state.load());
+        let chain_lock = sign_chain_lock(&TestQuorum::new(9, 0), 1113 + 8);
+
+        let mut core_rpc = MockCoreRPCLike::new();
+        core_rpc.expect_submit_chain_lock().times(0);
+        platform.core_rpc = core_rpc;
+
+        let result = platform
+            .platform
+            .verify_chain_lock_v0(0, &state, &chain_lock, true, PlatformVersion::latest())
+            .expect("verification runs");
+
+        assert!(result.chain_lock_signature_is_deserializable);
+        assert_eq!(result.found_valid_locally, Some(false));
+        assert_eq!(result.found_valid_by_core, None);
+        assert_eq!(result.core_is_synced, None);
+    }
 
     /// Exercises the `Err(Error::BLSError(_))` branch of `verify_chain_lock_v0`:
     /// when the inner `verify_chain_lock_locally` returns a BLS deserialization
