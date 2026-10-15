@@ -1777,7 +1777,7 @@ class PlatformWalletPersistenceHandler(
             // out-of-wallet identity, which is never hydrated, it is "no
             // update". Mirrors Swift `persistIdentities`.
             if (!dashpayProfilePresent) {
-                if (identityIndexIsSome) db.dashpayDao().deleteProfilesByIdentity(identityId)
+                if (identityIndexIsSome) db.dashpayDao().deleteProfile(networkRaw, identityId)
             } else {
                 db.dashpayDao().upsertProfile(
                     DashpayProfileEntity(
