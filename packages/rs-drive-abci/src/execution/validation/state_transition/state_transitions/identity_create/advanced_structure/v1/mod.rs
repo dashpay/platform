@@ -34,11 +34,15 @@ impl IdentityCreateStateTransitionAdvancedStructureValidationV1 for IdentityCrea
     /// whose proof of possession fails are refused unpaid.
     ///
     /// The asset lock signature covers the transition's signable bytes, which leave out the
-    /// identity id and the key signatures, so a failure of either check is in a field the asset
-    /// lock signature does not cover. Such a failure is not charged to the asset lock: the
-    /// transition is refused like one whose asset lock signature fails, and the asset lock is
-    /// left as it was. A key structure failure is still charged, because the keys are part of
-    /// the signed bytes.
+    /// identity id and the key signatures, so an identity id that is not the derived one, or a
+    /// key signature that does not verify, is in a field the asset lock signature does not
+    /// cover. Such a failure is not charged to the asset lock: the transition is refused like
+    /// one whose asset lock signature fails, and the asset lock is left as it was.
+    ///
+    /// The data of a key that carries a proof of possession is signed, yet a key whose data
+    /// does not parse fails that proof too, and is refused unpaid like any other proof failure.
+    /// Only the holder of the asset lock key can sign such data, and check_tx refuses it. A key
+    /// structure failure is still charged, because the keys are part of the signed bytes.
     fn validate_advanced_structure_from_state_v1(
         &self,
         action: &IdentityCreateTransitionAction,
