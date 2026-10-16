@@ -111,7 +111,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 69] = [
+    const VERSIONED_REQUESTS: [&str; 70] = [
         "GetContractModerationStatusRequest",
         "GetContractModerationEntriesRequest",
         "GetContractDocumentRemovalsRequest",
@@ -181,6 +181,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetShieldedPoolStateRequest",
         "GetShieldedNotesCountRequest",
         "GetShieldedNullifiersRequest",
+        "SubscribeToStateTransitionsRequest",
     ];
 
     const PROOF_ONLY_VERSIONED_REQUESTS: [&str; 1] = ["GetAddressesTrunkStateRequest"];
@@ -401,6 +402,9 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         .field_attribute("ResponseMetadata.height", SERDE_WITH_STRING)
         .field_attribute("ResponseMetadata.time_ms", SERDE_WITH_STRING)
         .field_attribute("start_at_ms", SERDE_WITH_STRING)
+        .field_attribute("StateTransitionMatch.block_height", SERDE_WITH_STRING)
+        .field_attribute("StateTransitionMatch.block_time_ms", SERDE_WITH_STRING)
+        .field_attribute("Checkpoint.block_height", SERDE_WITH_STRING)
         .field_attribute("public_key_hash", SERDE_WITH_BYTES)
         .field_attribute("public_key_hashes", SERDE_WITH_BASE64)
         .field_attribute("nullifiers", SERDE_WITH_BASE64)
@@ -415,7 +419,9 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         .field_attribute("Proof.grovedb_proof", SERDE_WITH_BYTES)
         .field_attribute("Proof.quorum_hash", SERDE_WITH_BYTES)
         .field_attribute("Proof.signature", SERDE_WITH_BYTES)
-        .field_attribute("Proof.block_id_hash", SERDE_WITH_BYTES);
+        .field_attribute("Proof.block_id_hash", SERDE_WITH_BYTES)
+        // A shared buffer, so DAPI sends one block's transaction to every subscriber uncopied.
+        .bytes(".org.dash.platform.dapi.v0.SubscribeToStateTransitionsResponse.SubscribeToStateTransitionsResponseV0.StateTransitionMatch.state_transition");
 
     #[allow(clippy::let_and_return)]
     platform
@@ -576,6 +582,12 @@ impl MappingConfig {
     #[allow(unused)]
     fn enum_attribute(mut self, path: &str, attribute: &str) -> Self {
         self.builder = self.builder.enum_attribute(path, attribute);
+        self
+    }
+
+    #[allow(unused)]
+    fn bytes(mut self, path: &str) -> Self {
+        self.builder = self.builder.bytes(path);
         self
     }
 

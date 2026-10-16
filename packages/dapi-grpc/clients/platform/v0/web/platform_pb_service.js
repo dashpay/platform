@@ -667,6 +667,15 @@ Platform.getShieldedNullifiers = {
   responseType: platform_pb.GetShieldedNullifiersResponse
 };
 
+Platform.subscribeToStateTransitions = {
+  methodName: "subscribeToStateTransitions",
+  service: Platform,
+  requestStream: false,
+  responseStream: true,
+  requestType: platform_pb.SubscribeToStateTransitionsRequest,
+  responseType: platform_pb.SubscribeToStateTransitionsResponse
+};
+
 exports.Platform = Platform;
 
 function PlatformClient(serviceHost, options) {
@@ -2932,6 +2941,45 @@ PlatformClient.prototype.getShieldedNullifiers = function getShieldedNullifiers(
   return {
     cancel: function () {
       callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.subscribeToStateTransitions = function subscribeToStateTransitions(requestMessage, metadata) {
+  var listeners = {
+    data: [],
+    end: [],
+    status: []
+  };
+  var client = grpc.invoke(Platform.subscribeToStateTransitions, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onMessage: function (responseMessage) {
+      listeners.data.forEach(function (handler) {
+        handler(responseMessage);
+      });
+    },
+    onEnd: function (status, statusMessage, trailers) {
+      listeners.status.forEach(function (handler) {
+        handler({ code: status, details: statusMessage, metadata: trailers });
+      });
+      listeners.end.forEach(function (handler) {
+        handler({ code: status, details: statusMessage, metadata: trailers });
+      });
+      listeners = null;
+    }
+  });
+  return {
+    on: function (type, handler) {
+      listeners[type].push(handler);
+      return this;
+    },
+    cancel: function () {
+      listeners = null;
       client.close();
     }
   };

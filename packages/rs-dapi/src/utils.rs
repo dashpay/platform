@@ -162,6 +162,15 @@ where
     }
 }
 
+/// Deserialize `null` as the type's default; Tenderdash serializes empty lists as `null`.
+pub fn deserialize_null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
