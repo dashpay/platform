@@ -2599,6 +2599,13 @@ fn build_wallet_restore_entry(
         // inert here, exactly as it was before the field existed.
         unconfirmed_outgoing_tx_records: ptr::null(),
         unconfirmed_outgoing_tx_records_count: 0,
+        // TODO(android-core-history-restore): the Kotlin host does not hand
+        // back its stored transaction history yet, so confirmed-spend guards
+        // are not rebuilt on Android load (the persister does not attest
+        // CORE_HISTORY_RESTORE and load warns). Null/0 keeps the
+        // pre-history behaviour.
+        recorded_transactions: ptr::null(),
+        recorded_transactions_count: 0,
         core_address_pools: ptr::null(),
         core_address_pools_count: 0,
         last_applied_chain_lock_bytes: ptr::null(),

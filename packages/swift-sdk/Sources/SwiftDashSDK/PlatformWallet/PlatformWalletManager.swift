@@ -107,6 +107,13 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// Rust only honours the declaration when the payments callback is
     /// actually wired.
     public static let dashpayPayments: UInt64 = 1 << 12
+    /// Wallet load hands back every stored transaction
+    /// (`WalletRestoreEntryFFI.recorded_transactions`), so Rust's shared load
+    /// replay rebuilds the spend guards of confirmed spends and a redelivered
+    /// funding transaction cannot resurrect a spent output. Mirrors
+    /// `PersistenceCapabilities::CORE_HISTORY_RESTORE`; Rust only honours the
+    /// declaration when the wallet-list load callbacks are wired.
+    public static let coreHistoryRestore: UInt64 = 1 << 13
 
     public let version: UInt32
     public let bits: UInt64

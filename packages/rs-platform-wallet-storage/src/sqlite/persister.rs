@@ -1323,7 +1323,9 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
-            .union(PersistenceCapabilities::DASHPAY_PAYMENTS);
+            .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
+            // `load` replays every stored record itself, inside its transaction.
+            .union(PersistenceCapabilities::CORE_HISTORY_RESTORE);
         #[cfg(feature = "shielded")]
         {
             capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
@@ -1917,6 +1919,10 @@ fn load_wallet_snapshot(
             // replay inert here, which is the behaviour this path had before the
             // field existed.
             unconfirmed_outgoing_txs: Vec::new(),
+            // Replayed above, inside the load transaction that applies its
+            // conflict repairs; empty keeps the shared load from replaying
+            // the same records a second time.
+            recorded_history: Default::default(),
         },
         sweeps,
     ))
