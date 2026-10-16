@@ -919,7 +919,7 @@ fn record_received_payment_totals(
 /// used: another device on the same seed paid the contact there while this
 /// payment was in flight, and re-handing it would link the two on-chain.
 /// Returns whether the address was returned.
-pub(super) fn return_contact_payment_address_to_pool(
+fn return_contact_payment_address_to_pool(
     account: &mut key_wallet::managed_account::ManagedCoreFundsAccount,
     payment_address: &dashcore::Address,
 ) -> bool {
@@ -1698,6 +1698,8 @@ mod tests {
         stores: Mutex<Vec<(WalletId, PlatformWalletChangeSet)>>,
         /// When set, every store fails (and records nothing).
         fail_stores: std::sync::atomic::AtomicBool,
+        /// How many flushes the wallet asked for.
+        flushes: std::sync::atomic::AtomicUsize,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
@@ -1714,6 +1716,8 @@ mod tests {
         }
 
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            self.flushes
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(())
         }
 
@@ -7929,8 +7933,8 @@ mod tests {
         );
         assert_eq!(
             persisted_external_pool_snapshots(&persister),
-            1,
-            "the used flip is persisted before the broadcast"
+            2,
+            "the reservation is stored before the broadcast, the used flag after it"
         );
         let recorded = {
             let wm = iw.wallet_manager.read().await;
@@ -8355,7 +8359,7 @@ mod tests {
         assert_eq!(
             persisted_external_pool_snapshots(&persister),
             2,
-            "the pre-broadcast flip and its revert are both persisted"
+            "the reservation and its release are both persisted"
         );
 
         let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
@@ -8426,8 +8430,8 @@ mod tests {
         );
         assert_eq!(
             persisted_external_pool_snapshots(&persister),
-            1,
-            "only the pre-broadcast flip is persisted, no rollback"
+            2,
+            "the reservation, then the used flag — no rollback"
         );
         let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
         let again = iw
@@ -8454,10 +8458,10 @@ mod tests {
         );
     }
 
-    /// A send whose used flip cannot be stored sends nothing, releases its
+    /// A send whose reservation cannot be stored sends nothing, releases its
     /// inputs and returns its address, so the retry pays the same address.
     #[tokio::test]
-    async fn prepared_payment_whose_flip_cannot_be_stored_returns_its_address() {
+    async fn prepared_payment_whose_reservation_cannot_be_stored_returns_its_address() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -8488,12 +8492,12 @@ mod tests {
             .dashpay()
             .send_prepared_payment(prepared)
             .await
-            .expect_err("an unstored flip must not be broadcast");
+            .expect_err("an unstored reservation must not be broadcast");
         persister
             .fail_stores
             .store(false, std::sync::atomic::Ordering::SeqCst);
         assert!(
-            matches!(err, PlatformWalletError::Persistence(_)),
+            matches!(err, PlatformWalletError::PersisterStore(_)),
             "got {err:?}"
         );
         assert!(
@@ -8586,5 +8590,253 @@ mod tests {
             .await
             .expect("the refusal released the coin for a fresh prepare");
         iw.dashpay().abandon_prepared_payment(again).await;
+    }
+
+    /// Rejects every transaction, after letting the wallet observe — and
+    /// evict — another device's payment to the contact address the
+    /// transaction pays: the observation lands while the send is in flight.
+    struct ForeignPaymentThenRejectBroadcaster {
+        manager: Arc<PlatformWalletManager<RecordingPersister>>,
+        wallet_id: WalletId,
+        owner_id: Identifier,
+        contact_id: Identifier,
+        address: dashcore::Address,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for ForeignPaymentThenRejectBroadcaster {
+        async fn broadcast(
+            &self,
+            _transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, crate::broadcaster::BroadcastError> {
+            observe_foreign_payment_then_evict(
+                &self.manager,
+                self.wallet_id,
+                self.owner_id,
+                self.contact_id,
+                &self.address,
+                0xE3,
+            )
+            .await;
+            Err(crate::broadcaster::BroadcastError::Rejected {
+                reason: "test rejection".to_string(),
+            })
+        }
+    }
+
+    /// Accepts every transaction, recording what was durable when it ran: the
+    /// flush count and whether the last stored contact pool had the payment's
+    /// address reserved.
+    struct DurabilityProbeBroadcaster {
+        persister: Arc<RecordingPersister>,
+        seen: Mutex<Option<(usize, bool)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for DurabilityProbeBroadcaster {
+        async fn broadcast(
+            &self,
+            transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, crate::broadcaster::BroadcastError> {
+            use key_wallet::managed_account::address_pool::AddressState;
+
+            let flushes = self
+                .persister
+                .flushes
+                .load(std::sync::atomic::Ordering::SeqCst);
+            let reserved = self
+                .persister
+                .stores
+                .lock()
+                .unwrap()
+                .iter()
+                .rev()
+                .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
+                .find(|entry| {
+                    matches!(
+                        entry.account_type,
+                        key_wallet::account::AccountType::DashpayExternalAccount { .. }
+                    )
+                })
+                .is_some_and(|entry| {
+                    entry.addresses.iter().any(|info| {
+                        matches!(info.state, AddressState::Reserved { .. })
+                            && transaction
+                                .output
+                                .iter()
+                                .any(|output| output.script_pubkey == info.script_pubkey)
+                    })
+                });
+            *self.seen.lock().unwrap() = Some((flushes, reserved));
+            Ok(transaction.txid())
+        }
+    }
+
+    /// The reservation is stored, and flushed on a backend that buffers,
+    /// before the broadcaster runs.
+    #[tokio::test]
+    async fn prepared_payment_is_durably_reserved_before_the_broadcast() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xDC, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let probe = Arc::new(DurabilityProbeBroadcaster {
+            persister: Arc::clone(&persister),
+            seen: Mutex::new(None),
+        });
+        let core = crate::CoreWallet::new(
+            Arc::clone(&wallet_arc.core().sdk),
+            Arc::clone(&wallet_arc.core().wallet_manager),
+            wallet_arc.core().wallet_id,
+            Arc::clone(&probe),
+            Arc::clone(wallet_arc.core().generation()),
+        );
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        let flushes_before = persister.flushes.load(std::sync::atomic::Ordering::SeqCst);
+        iw.dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect("send");
+        let (flushes_at_broadcast, reserved_at_broadcast) =
+            probe.seen.lock().unwrap().expect("the broadcaster ran");
+        assert!(
+            flushes_at_broadcast > flushes_before,
+            "a buffering backend is flushed before the network sees the transaction"
+        );
+        assert!(
+            reserved_at_broadcast,
+            "the stored pool holds the address reserved when the broadcaster runs"
+        );
+    }
+
+    /// Another device pays the contact at this payment's address while the
+    /// send is in flight, and the ChainLock evicts that record before the
+    /// network rejects this send. Releasing the reservation must not erase
+    /// the observed payment: the address stays used.
+    #[tokio::test]
+    async fn a_payment_observed_during_the_send_keeps_the_address_after_a_rejection() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xDD, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+
+        // Learn the address the payment will take, then prepare it for real
+        // on a core whose broadcaster stages the foreign payment.
+        let probe = iw
+            .dashpay()
+            .prepare_payment(
+                &accepting,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("probe prepare");
+        let address = dashcore::Address::from_script(
+            &payment_script(probe.transaction(), 50_000),
+            Network::Testnet,
+        )
+        .expect("a P2PKH payment output");
+        iw.dashpay().abandon_prepared_payment(probe).await;
+
+        let racing = core_with(
+            wallet_arc.core(),
+            ForeignPaymentThenRejectBroadcaster {
+                manager: Arc::clone(&manager),
+                wallet_id,
+                owner_id,
+                contact_id,
+                address: address.clone(),
+            },
+        );
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &racing,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("the broadcaster rejects");
+        assert!(
+            matches!(err, PlatformWalletError::TransactionBroadcast(_)),
+            "got {err:?}"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0],
+            "the release only drops the claim; the observed payment keeps the address used"
+        );
+        // The observation stores no contact pool, so settle must: the last
+        // stored snapshot shows the address used.
+        let stored_used = persister
+            .stores
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .flat_map(|(_, changeset)| changeset.account_address_pools.iter())
+            .find(|entry| {
+                matches!(
+                    entry.account_type,
+                    key_wallet::account::AccountType::DashpayExternalAccount { .. }
+                )
+            })
+            .is_some_and(|entry| {
+                entry
+                    .addresses
+                    .iter()
+                    .any(|info| info.script_pubkey == address.script_pubkey() && info.is_used())
+            });
+        assert!(stored_used, "the observed payment's used flag reaches disk");
+        let next = iw
+            .dashpay()
+            .prepare_payment(
+                &accepting,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the rejection released the inputs");
+        assert_ne!(
+            payment_script(next.transaction(), 50_000),
+            address.script_pubkey(),
+            "the paid address is not handed out again"
+        );
+        iw.dashpay().abandon_prepared_payment(next).await;
     }
 }

@@ -1656,6 +1656,109 @@ mod tests {
         );
     }
 
+    /// Prepare rejects each null required pointer with `ErrorNullPointer`
+    /// before any wallet lookup, and publishes no payment handle.
+    #[test]
+    fn prepare_dashpay_payment_null_pointers_are_rejected() {
+        let id = [0u8; 32];
+        let dummy_signer = std::ptr::dangling_mut::<MnemonicResolverHandle>();
+        let mut payment: Handle = 0x5EED;
+        let mut fee: u64 = 0;
+        let mut total: u64 = 0;
+        let cases: [(*mut MnemonicResolverHandle, *mut Handle, *mut u64, *mut u64); 4] = [
+            (std::ptr::null_mut(), &mut payment, &mut fee, &mut total),
+            (dummy_signer, std::ptr::null_mut(), &mut fee, &mut total),
+            (dummy_signer, &mut payment, std::ptr::null_mut(), &mut total),
+            (dummy_signer, &mut payment, &mut fee, std::ptr::null_mut()),
+        ];
+        for (signer, out_payment, out_fee, out_total) in cases {
+            let r = unsafe {
+                platform_wallet_prepare_dashpay_payment(
+                    1,
+                    id.as_ptr(),
+                    id.as_ptr(),
+                    1_000,
+                    std::ptr::null(),
+                    signer,
+                    out_payment,
+                    out_fee,
+                    out_total,
+                )
+            };
+            assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        }
+        assert_eq!(payment, 0x5EED, "no handle is written on a pointer failure");
+    }
+
+    /// An unknown wallet fails the prepare and leaves `*out_payment` at the
+    /// null handle, so a caller can never mistake a failure for a payment.
+    #[test]
+    fn prepare_dashpay_payment_unknown_wallet_publishes_no_handle() {
+        let id = [0u8; 32];
+        let dummy_signer = std::ptr::dangling_mut::<MnemonicResolverHandle>();
+        let mut payment: Handle = 0x5EED;
+        let mut fee: u64 = 7;
+        let mut total: u64 = 7;
+        let r = unsafe {
+            platform_wallet_prepare_dashpay_payment(
+                0xDEAD_BEEF,
+                id.as_ptr(),
+                id.as_ptr(),
+                1_000,
+                std::ptr::null(),
+                dummy_signer,
+                &mut payment,
+                &mut fee,
+                &mut total,
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
+        assert_eq!(payment, NULL_HANDLE);
+        assert_eq!(
+            (fee, total),
+            (7, 7),
+            "fee and total are written only on success"
+        );
+    }
+
+    /// Send, abandon and free with a payment handle that is not (or no
+    /// longer) held: send and abandon report `NotFound` without touching the
+    /// outputs, and free stays a no-op however often it is called.
+    #[test]
+    fn prepared_payment_unknown_handle_is_consumed_nowhere() {
+        let mut txid = [0xAAu8; 32];
+        let mut fee: u64 = 7;
+        let r = unsafe {
+            platform_wallet_send_prepared_dashpay_payment(
+                0xDEAD_BEEF,
+                0xDEAD_BEEF,
+                &mut txid,
+                &mut fee,
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
+        assert_eq!(txid, [0xAAu8; 32]);
+        assert_eq!(fee, 7);
+
+        // A null `out_txid` with a handle that is not held is still a lookup
+        // miss: nothing to abandon, nothing written.
+        let r = unsafe {
+            platform_wallet_send_prepared_dashpay_payment(
+                0xDEAD_BEEF,
+                0xDEAD_BEEF,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
+
+        for _ in 0..2 {
+            let r = platform_wallet_abandon_prepared_dashpay_payment(0xDEAD_BEEF);
+            assert_eq!(r.code, PlatformWalletFFIResultCode::NotFound);
+            platform_wallet_prepared_dashpay_payment_free(0xDEAD_BEEF);
+        }
+    }
+
     /// A null `out_count` is rejected with `ErrorNullPointer` (the `check_ptr!`
     /// contract) before any wallet lookup.
     #[test]
