@@ -56,6 +56,60 @@ fn hash_double(data: Vec<u8>) -> [u8; 32] {
     hash.to_byte_array()
 }
 
+/// The `domain` document registering `label` under `dash` for `owner_id`, tied to its
+/// preorder by `salt`. Its id is a placeholder: the id of a new document commits to the
+/// identity contract nonce of its create transition.
+fn dpns_domain_document(label: &str, owner_id: Identifier, salt: [u8; 32]) -> Document {
+    Document::V0(DocumentV0 {
+        contract_version: None,
+        id: Identifier::default(),
+        owner_id,
+        properties: BTreeMap::from([
+            (
+                "parentDomainName".to_string(),
+                Value::Text("dash".to_string()),
+            ),
+            (
+                "normalizedParentDomainName".to_string(),
+                Value::Text("dash".to_string()),
+            ),
+            ("label".to_string(), Value::Text(label.to_string())),
+            (
+                "normalizedLabel".to_string(),
+                Value::Text(convert_to_homograph_safe_chars(label)),
+            ),
+            ("preorderSalt".to_string(), Value::Bytes32(salt)),
+            (
+                "records".to_string(),
+                Value::Map(vec![(
+                    Value::Text("identity".to_string()),
+                    Value::Identifier(owner_id.to_buffer()),
+                )]),
+            ),
+            (
+                "subdomainRules".to_string(),
+                Value::Map(vec![(
+                    Value::Text("allowSubdomains".to_string()),
+                    Value::Bool(false),
+                )]),
+            ),
+        ]),
+        revision: None,
+        created_at: None,
+        updated_at: None,
+        transferred_at: None,
+        created_at_block_height: None,
+        updated_at_block_height: None,
+        transferred_at_block_height: None,
+        created_at_core_block_height: None,
+        updated_at_core_block_height: None,
+        transferred_at_core_block_height: None,
+        creator_id: None,
+        moderated_at: None,
+        moderated_by: None,
+    })
+}
+
 /// Callback type for preorder document
 pub type PreorderCallback = Box<dyn FnOnce(&Document) + Send>;
 
@@ -165,7 +219,6 @@ impl Sdk {
         // ids up front: the domain is tied to its preorder by the salt.
         let identity_id = input.identity.id().to_owned();
         let preorder_id = Identifier::default();
-        let domain_id = Identifier::default();
 
         // Create salted domain hash for preorder
         let normalized_label = convert_to_homograph_safe_chars(&input.label);
@@ -198,55 +251,7 @@ impl Sdk {
             moderated_by: None,
         });
 
-        // Create domain document
-        let domain_document = Document::V0(DocumentV0 {
-            contract_version: None,
-            id: domain_id,
-            owner_id: identity_id,
-            properties: BTreeMap::from([
-                (
-                    "parentDomainName".to_string(),
-                    Value::Text("dash".to_string()),
-                ),
-                (
-                    "normalizedParentDomainName".to_string(),
-                    Value::Text("dash".to_string()),
-                ),
-                ("label".to_string(), Value::Text(input.label.clone())),
-                (
-                    "normalizedLabel".to_string(),
-                    Value::Text(normalized_label.clone()),
-                ),
-                ("preorderSalt".to_string(), Value::Bytes32(salt)),
-                (
-                    "records".to_string(),
-                    Value::Map(vec![(
-                        Value::Text("identity".to_string()),
-                        Value::Identifier(identity_id.to_buffer()),
-                    )]),
-                ),
-                (
-                    "subdomainRules".to_string(),
-                    Value::Map(vec![(
-                        Value::Text("allowSubdomains".to_string()),
-                        Value::Bool(false),
-                    )]),
-                ),
-            ]),
-            revision: None,
-            created_at: None,
-            updated_at: None,
-            transferred_at: None,
-            created_at_block_height: None,
-            updated_at_block_height: None,
-            transferred_at_block_height: None,
-            created_at_core_block_height: None,
-            updated_at_core_block_height: None,
-            transferred_at_core_block_height: None,
-            creator_id: None,
-            moderated_at: None,
-            moderated_by: None,
-        });
+        let domain_document = dpns_domain_document(&input.label, identity_id, salt);
 
         // Submit preorder document first
         debug!(%identity_id, stage = "preorder", "DPNS registration: submitting document");
@@ -301,6 +306,27 @@ impl Sdk {
             domain_document: platform_domain_document,
             full_domain_name: format!("{}.dash", normalized_label),
         })
+    }
+
+    /// The fund registering `label` pays now to join the contest its name joins, or `None` when
+    /// the name is not contested: [`Self::contest_fund_to_join`] for the `domain` document
+    /// [`Self::register_dpns_name`] submits for `label`, a bare label as it takes.
+    ///
+    /// The fund can rise before a registration is submitted, and a registration stating less
+    /// than the fund to join is refused while the fees of its preorder and domain transitions
+    /// are still charged. Use this, plus those fees, to size the identity balance a contested
+    /// registration needs; to cap what the registration pays, quote again just before it and
+    /// pass that as [`RegisterDpnsNameInput::contest_fund`], or pass `None` to pay the fund
+    /// read just before the domain is submitted.
+    pub async fn dpns_contest_fund_to_join(&self, label: &str) -> Result<Option<Credits>, Error> {
+        let dpns_contract = self.fetch_dpns_contract().await?;
+        let domain_document_type = dpns_contract
+            .document_type_for_name("domain")
+            .map_err(|_| Error::Generic("DPNS domain document type not found".to_string()))?;
+        // The contest is chosen by the label alone, so any owner and salt quote it
+        let domain_document = dpns_domain_document(label, Identifier::default(), [0; 32]);
+        self.contest_fund_to_join(domain_document_type, &domain_document)
+            .await
     }
 
     /// Check if a DPNS name is available

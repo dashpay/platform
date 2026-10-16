@@ -123,18 +123,45 @@ pub(crate) async fn with_contest_fund_to_join(
 mod tests {
     use super::*;
     use crate::SdkBuilder;
-    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::dashcore::Network;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::DataContract;
     use dpp::document::DocumentV0;
+    use dpp::platform_value::string_encoding::Encoding;
     use dpp::platform_value::{Identifier, Value};
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::version::PlatformVersion;
     use dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
     use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
     use drive_proof_verifier::types::Contenders;
+    use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
     use std::collections::BTreeMap;
+    use std::num::NonZeroUsize;
 
-    fn dpns_contract() -> dpp::data_contract::DataContract {
-        get_dpns_data_contract_fixture(Some(Identifier::new([7; 32])), 0, 14).data_contract_owned()
+    /// The DPNS contract, under the id DPNS registrations read it by
+    fn dpns_contract() -> DataContract {
+        let mut contract = get_dpns_data_contract_fixture(Some(Identifier::new([7; 32])), 0, 14)
+            .data_contract_owned();
+        contract.set_id(
+            Identifier::from_string(
+                "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
+                Encoding::Base58,
+            )
+            .expect("expected the DPNS contract id"),
+        );
+        contract
+    }
+
+    /// A context provider serving `contract`, so a mock SDK reads it without the network
+    fn serving(contract: &DataContract) -> TrustedHttpContextProvider {
+        TrustedHttpContextProvider::new_with_url(
+            Network::Regtest,
+            "http://127.0.0.1:1".to_string(),
+            NonZeroUsize::new(1).expect("expected a non-zero cache size"),
+        )
+        .expect("expected a context provider")
+        .with_refetch_if_not_found(false)
+        .with_known_contracts(vec![contract.clone()])
     }
 
     /// A DPNS domain document for `label`, which contests the name
@@ -208,14 +235,16 @@ mod tests {
     }
 
     /// The fund to join a contest of 250 contenders is twice the contest's fund, read page by
-    /// page, and it is what a create naming no maximum states, on the contested index
+    /// page, and it is what a create naming no maximum states, on the contested index, and what
+    /// `dpns_contest_fund_to_join` quotes for the label
     #[tokio::test]
     async fn should_state_the_fund_to_join_a_contest_read_page_by_page() {
+        let contract = dpns_contract();
         let mut sdk = SdkBuilder::new_mock()
             .with_version(PlatformVersion::latest())
+            .with_context_provider(serving(&contract))
             .build()
             .expect("expected a mock sdk");
-        let contract = dpns_contract();
         let document_type = contract
             .document_type_for_name("domain")
             .expect("expected the domain document type");
@@ -252,14 +281,24 @@ mod tests {
                 .expect("expected to read the prefunded voting balance to join"),
             Some(("parentNameAndLabel".to_string(), 2 * fund))
         );
+        // The registration normalizes the label, so "Quantum" joins the contest for "quantum"
+        assert_eq!(
+            sdk.dpns_contest_fund_to_join("Quantum")
+                .await
+                .expect("expected to quote the registration"),
+            Some(2 * fund)
+        );
     }
 
     /// Nothing is read for a create joining no contest (its type has no contested index, or its
     /// values match none), or one naming the most it pays
     #[tokio::test]
     async fn should_read_nothing_when_the_create_joins_no_contest_or_names_its_maximum() {
-        let sdk = SdkBuilder::new_mock().build().expect("expected a mock sdk");
         let contract = dpns_contract();
+        let sdk = SdkBuilder::new_mock()
+            .with_context_provider(serving(&contract))
+            .build()
+            .expect("expected a mock sdk");
         let domain_type = contract
             .document_type_for_name("domain")
             .expect("expected the domain document type");
@@ -288,6 +327,12 @@ mod tests {
         for label in ["quantumexplorerdashx", "quantum2"] {
             assert_eq!(
                 sdk.prefunded_voting_balance_to_join(domain_type, &domain(label))
+                    .await
+                    .expect("expected no read"),
+                None
+            );
+            assert_eq!(
+                sdk.dpns_contest_fund_to_join(label)
                     .await
                     .expect("expected no read"),
                 None
