@@ -716,8 +716,8 @@ pub unsafe extern "C" fn platform_wallet_send_dashpay_payment(
 
 /// A prepared contact payment together with the wallet it was prepared on,
 /// held in `PREPARED_DASHPAY_PAYMENT_STORAGE` between prepare and
-/// send / abandon. Keeping the wallet lets `free` return the address and the
-/// inputs without a wallet handle.
+/// send / abandon. Keeping the wallet lets `free` release the inputs without
+/// a wallet handle.
 pub struct FFIPreparedDashPayPayment {
     pub(crate) wallet: std::sync::Arc<platform_wallet::PlatformWallet>,
     pub(crate) payment:
@@ -746,11 +746,12 @@ fn abandon_prepared(prepared: FFIPreparedDashPayPayment) {
 /// [`platform_wallet_send_prepared_dashpay_payment`],
 /// [`platform_wallet_abandon_prepared_dashpay_payment`] or
 /// [`platform_wallet_prepared_dashpay_payment_free`]; until then the funding
-/// inputs stay reserved and the contact's next address stays claimed.
+/// inputs stay reserved. The contact's address is not claimed until the send,
+/// so dropping the payment leaves no address state to undo.
 ///
 /// A handle held while the wallet processes `RESERVATION_MAX_AGE_BLOCKS`
 /// blocks is refused at send time with `ErrorStaleReservationToken` (34),
-/// nothing sent, inputs and address released: prepare again.
+/// nothing sent, inputs released: prepare again.
 ///
 /// # Safety
 /// - `core_signer_handle` must be a valid, non-destroyed
@@ -873,9 +874,12 @@ pub unsafe extern "C" fn platform_wallet_prepare_dashpay_payment(
 /// on every outcome.
 ///
 /// A definitive rejection (`ErrorTransactionBroadcastRejected`) or a stale
-/// handle (`ErrorStaleReservationToken`, 34) sent nothing and released the
-/// inputs and the address; an unconfirmed outcome may have reached the
-/// network and keeps both. `wallet_handle` must name the wallet the payment
+/// handle (`ErrorStaleReservationToken`, 34) sent nothing: the inputs are
+/// released, and the contact address is left or returned available unless
+/// the wallet has since seen it paid. An unconfirmed outcome may have
+/// reached the network and keeps both. A payment whose contact address
+/// another payment took while it waited is refused, nothing sent, inputs
+/// released: prepare again. `wallet_handle` must name the wallet the payment
 /// was prepared on, still registered: otherwise nothing is sent and the
 /// payment is abandoned.
 ///
@@ -969,7 +973,7 @@ pub unsafe extern "C" fn platform_wallet_send_prepared_dashpay_payment(
 }
 
 /// Drop a prepared contact payment without broadcasting it: its inputs are
-/// released and its address returns to the pool. Consumes the handle.
+/// released. Nothing is persisted. Consumes the handle.
 #[no_mangle]
 pub extern "C" fn platform_wallet_abandon_prepared_dashpay_payment(
     payment_handle: Handle,

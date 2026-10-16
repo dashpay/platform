@@ -7,26 +7,41 @@
 //! plain send already takes ([`CoreWallet::finalize_transaction`] →
 //! [`CoreWallet::broadcast_finalized_transaction`] /
 //! [`CoreWallet::abandon_transaction`]): [`DashPayView::prepare_payment`]
-//! claims the contact's next DIP-15 address, funds, reserves and signs, and
+//! picks the contact's next DIP-15 address, funds, reserves and signs, and
 //! returns a [`PreparedDashPayPayment`] that carries the exact fee;
-//! [`DashPayView::send_prepared_payment`] broadcasts it and records the
-//! payment; [`DashPayView::abandon_prepared_payment`] releases both the
-//! inputs and the address.
+//! [`DashPayView::send_prepared_payment`] takes the address, broadcasts and
+//! records the payment; [`DashPayView::abandon_prepared_payment`] releases
+//! the inputs.
 //!
 //! Between the two steps the inputs are held by the finalized transaction's
 //! owner-guarded reservation, under the same age bound the L1 path enforces —
 //! a payment held past it is refused at send time with
 //! [`PlatformWalletError::StaleReservation`] and must be prepared again.
-//! The contact address is marked used in memory while the payment is
-//! prepared; the flip is persisted just before the broadcast, as
-//! [`DashPayView::send_payment`] does. Every way out short of a broadcast —
-//! a failed build, an abandon, a rejection — returns the address and persists
-//! the revert, because another payment to the contact may have stored a pool
-//! snapshot showing it used meanwhile.
 //!
-//! Every address change is bound to the wallet generation the payment was
-//! funded from: a payment that outlives its wallet (removed, or re-created
-//! under the same id) never touches the new generation's pool.
+//! The contact address is NOT claimed while the payment waits. Prepare only
+//! reads the contact's next available DIP-15 address; send re-checks it under
+//! the manager lock and marks it used — persisted before the broadcast, as
+//! [`DashPayView::send_payment`] does. A preview therefore never writes the
+//! address pool, and nothing has to be rolled back when it is abandoned, when
+//! its build fails, or when the future preparing it is dropped. The used flag
+//! the send checks is the one key-wallet also sets when it observes a payment
+//! to the address (and that survives the finalized-record eviction), so an
+//! address another payment took while this one waited — on this device or
+//! another on the same seed — is refused rather than paid twice. A resident
+//! transaction record paying the address is checked as well.
+//!
+//! When the send provably put nothing on the wire after the mark — its store
+//! failed, the network rejected it, or it was refused as stale at dispatch —
+//! the address is returned and the revert persisted, as
+//! [`DashPayView::send_payment`] does, under the generation gate the host
+//! holds across the send. A backend that only ever raises a
+//! used flag keeps that one index used, a gap the next payment does not
+//! widen: in-process retries normally take the same address. An ambiguous outcome
+//! keeps the address used, since the transaction may have propagated.
+//!
+//! The mark is bound to the wallet generation the payment was funded from: a
+//! payment that outlives its wallet (removed, or re-created under the same
+//! id) never touches the new generation's pool.
 
 use dashcore::Address;
 use dpp::prelude::Identifier;
@@ -36,10 +51,11 @@ use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::ManagedCoreFundsAccount;
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use std::sync::Arc;
 
 use super::contact_requests::ContactCryptoProvider;
-use super::payments::return_contact_payment_address_to_pool;
+use super::payments::{contact_address_paid_on_chain, return_contact_payment_address_to_pool};
 use super::DashPayView;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::changeset::{account_address_pool_entries, PlatformWalletChangeSet};
@@ -47,6 +63,7 @@ use crate::error::PlatformWalletError;
 use crate::wallet::core::{CoreWallet, SignedCoreTransaction, WalletGeneration};
 use crate::wallet::identity::types::dashpay::payment::PaymentEntry;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
+use crate::wallet::reservations::reservation_expired;
 use crate::SEND_FUNDING_SOURCES;
 
 /// The DashPay contact account index every contact payment uses, the same one
@@ -55,12 +72,13 @@ const CONTACT_ACCOUNT_INDEX: u32 = 0;
 
 /// A signed DashPay contact payment that has not been broadcast yet.
 ///
-/// Its funding inputs stay reserved and its contact address stays claimed
-/// until it is handed to [`DashPayView::send_prepared_payment`] or
+/// Its funding inputs stay reserved until it is handed to
+/// [`DashPayView::send_prepared_payment`] or
 /// [`DashPayView::abandon_prepared_payment`]. Deliberately not `Clone`: one
 /// prepare yields one payment that can be sent or abandoned exactly once.
-/// Dropping it without either leaves the reservation to key-wallet's TTL and
-/// the address claimed until the process ends; hosts abandon instead.
+/// Dropping it without either leaves the reservation to key-wallet's TTL;
+/// hosts abandon instead.
+#[must_use = "a prepared payment holds its funding inputs until it is sent or abandoned"]
 pub struct PreparedDashPayPayment<B: TransactionBroadcaster + ?Sized> {
     core: CoreWallet<B>,
     signed: SignedCoreTransaction,
@@ -118,17 +136,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Sign a Core payment to a DashPay contact without broadcasting it.
     ///
     /// Runs the first half of [`Self::send_payment`]: drains any deferred
-    /// contact-crypto build behind the seed-binding gate, claims the contact's
-    /// next unused DIP-15 address, and funds, reserves and signs the
+    /// contact-crypto build behind the seed-binding gate, reads the contact's
+    /// next available DIP-15 address, and funds, reserves and signs the
     /// transaction from the same pooled sources a plain send uses
     /// ([`SEND_FUNDING_SOURCES`]: BIP44 first, so change keeps returning to
     /// BIP44). `core` must be this wallet's core handle; it funds the payment
     /// and later broadcasts it.
     ///
-    /// A failed build returns the address to the pool, exactly like
-    /// [`Self::send_payment`]: nothing was signed or exposed, and leaving it
-    /// claimed would let every failed attempt push the next payment further
-    /// past the gap limit a restore walks.
+    /// The address pool is left as it was: the address is only marked used by
+    /// [`Self::send_prepared_payment`]. Two payments prepared to one contact at
+    /// the same time therefore pay the same address, and the second one sent is
+    /// refused (see there).
     #[allow(clippy::too_many_arguments)]
     pub async fn prepare_payment<Bc, S, C>(
         &self,
@@ -154,38 +172,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         self.drain_pending_contact_crypto_verified(provider, None)
             .await?;
 
-        let generation = core.generation();
         let payment_address = self
-            .claim_contact_payment_address(generation, from_identity_id, to_contact_id)
+            .next_contact_payment_address(core.generation(), from_identity_id, to_contact_id)
             .await?;
 
         let builder = TransactionBuilder::new()
             .set_selection_strategy(SelectionStrategy::LargestFirst)
             .add_output(&payment_address, amount_duffs);
-        let signed = match core
+        let signed = core
             .finalize_transaction(
                 builder,
                 &SEND_FUNDING_SOURCES,
                 CONTACT_ACCOUNT_INDEX,
                 signer,
             )
-            .await
-        {
-            Ok(signed) => signed,
-            Err(e) => {
-                // Never exposed. Persisted, because the signer ran with no
-                // lock held and another payment may have stored the pool
-                // with this address used meanwhile.
-                self.release_contact_payment_address(
-                    generation,
-                    from_identity_id,
-                    to_contact_id,
-                    &payment_address,
-                )
-                .await;
-                return Err(e);
-            }
-        };
+            .await?;
 
         Ok(PreparedDashPayPayment {
             core: core.clone(),
@@ -200,16 +201,23 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
     /// Broadcast a prepared contact payment and record it on the sender.
     ///
-    /// The second half of [`Self::send_payment`], with the same guarantees:
-    /// the address's used flip is persisted before anything reaches the
-    /// network (a relaunch must never re-hand an address that is on-chain);
-    /// a definitive rejection — or a payment held past the reservation age
-    /// bound, refused before the broadcaster is touched — releases the inputs
-    /// and returns the address to the pool, persisted; an ambiguous outcome
-    /// keeps both, since the transaction may have propagated.
+    /// The second half of [`Self::send_payment`]: under the manager lock the
+    /// payment's address is checked to be still available and its funding
+    /// reservation still fresh, then marked used; the mark is persisted before
+    /// anything reaches the network (a relaunch must never re-hand an address
+    /// that is on-chain). An address another payment took meanwhile, a stale
+    /// reservation, or a failed persist sends nothing and releases the inputs.
+    /// A definitive rejection releases the inputs too; an ambiguous outcome
+    /// keeps them fenced, since the transaction may have propagated. A send
+    /// that provably put nothing on the wire returns its address (see the
+    /// module docs); an ambiguous one keeps it used.
     ///
-    /// Returns the txid, the recorded [`PaymentEntry`] and the fee — the same
-    /// fee [`PreparedDashPayPayment::fee_duffs`] showed.
+    /// Returns the txid, the payment's [`PaymentEntry`] and the fee — the same
+    /// fee [`PreparedDashPayPayment::fee_duffs`] showed. Once the broadcast
+    /// succeeded the call succeeds even if the entry could not be recorded on
+    /// the sender (that failure is logged): the entry is then not in the
+    /// wallet's payment map until the reconstruction from transaction history
+    /// rebuilds it, without the memo.
     pub async fn send_prepared_payment<Bc>(
         &self,
         prepared: PreparedDashPayPayment<Bc>,
@@ -218,8 +226,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Bc: TransactionBroadcaster + ?Sized,
     {
         if let Err(e) = self.ensure_same_wallet(&prepared.core) {
-            // Not this wallet's payment: its address lives in another wallet's
-            // pool this view cannot reach, but the inputs can still be freed.
+            // Not this wallet's payment: free its inputs and send nothing.
             prepared.core.abandon_transaction(&prepared.signed).await;
             return Err(e);
         }
@@ -233,15 +240,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             memo,
         } = prepared;
 
-        // Snapshot the pool with the address used, under the write guard;
-        // store it after the guard drops — a host persistence callback must
-        // never run under the manager lock. The mark is re-applied rather
-        // than assumed: it is idempotent, and it is what the snapshot must
-        // show whatever touched the pool while the payment waited.
-        let generation = core.generation();
+        // Mark and snapshot under the write guard; store after it drops — a
+        // host persistence callback must never run under the manager lock.
         let used_flip = match self
             .commit_contact_payment_address(
-                generation,
+                core.generation(),
+                &signed,
                 &from_identity_id,
                 &to_contact_id,
                 &payment_address,
@@ -249,29 +253,31 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .await
         {
             Ok(changeset) => changeset,
-            Err(e) => {
+            Err(refusal) => {
+                if let Some(found_paid) = refusal.found_paid {
+                    if let Err(e) = self.persister.store(*found_paid) {
+                        tracing::warn!(
+                            error = %e,
+                            "failed to persist a contact address found paid on-chain"
+                        );
+                    }
+                }
                 core.abandon_transaction(&signed).await;
-                self.release_contact_payment_address(
-                    generation,
-                    &from_identity_id,
-                    &to_contact_id,
-                    &payment_address,
-                )
-                .await;
-                return Err(e);
+                return Err(refusal.error);
             }
         };
         if let Err(e) = self.persister.store(used_flip) {
-            // Pre-send: nothing is on the wire, so both the inputs and the
-            // address are free to hand out again.
-            core.abandon_transaction(&signed).await;
-            self.release_contact_payment_address(
-                generation,
+            // Nothing is on the wire, so the address and the inputs are free
+            // to hand out again — the address first, so a build that takes the
+            // freed inputs never sees it still used.
+            self.unmark_unsent_payment_address(
+                core.generation(),
                 &from_identity_id,
                 &to_contact_id,
                 &payment_address,
             )
             .await;
+            core.abandon_transaction(&signed).await;
             return Err(PlatformWalletError::Persistence(format!(
                 "failed to persist payment-address used flip: {e}"
             )));
@@ -282,17 +288,15 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let txid = match core.broadcast_finalized_transaction(&signed).await {
             Ok(txid) => txid,
             Err(e) => {
-                // Rejected, or refused as stale before the send: provably not
-                // on the wire, and the flip above was persisted, so the revert
-                // must be persisted too or a relaunch would undo it. An
-                // ambiguous outcome keeps the address consumed.
+                // Rejected, or refused as stale at dispatch: provably not on
+                // the wire. An ambiguous outcome keeps the address used.
                 if matches!(
                     e,
                     PlatformWalletError::TransactionBroadcast(_)
                         | PlatformWalletError::StaleReservation
                 ) {
-                    self.release_contact_payment_address(
-                        generation,
+                    self.unmark_unsent_payment_address(
+                        core.generation(),
                         &from_identity_id,
                         &to_contact_id,
                         &payment_address,
@@ -321,14 +325,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let entry = PaymentEntry::new_sent(to_contact_id, amount_duffs, memo);
         {
             let mut wm = self.wallet_manager.write().await;
-            let recorded = match wm.get_wallet_info_mut(&self.wallet_id).and_then(|info| {
-                info.identity_manager
-                    .managed_identity_mut(&from_identity_id)
-            }) {
+            // Bound to the funding generation like every other write here: a
+            // wallet re-created meanwhile must not receive this payment.
+            let recorded = match self
+                .generation_info_mut(&mut wm, core.generation())
+                .ok()
+                .and_then(|info| {
+                    info.identity_manager
+                        .managed_identity_mut(&from_identity_id)
+                }) {
                 Some(managed) => managed
                     .record_dashpay_payment(txid.to_string(), entry.clone(), &self.persister)
                     .map_err(|e| e.to_string()),
-                None => Err("sender identity not found".to_string()),
+                None => Err(
+                    "sender identity not found, or the wallet was removed or re-created"
+                        .to_string(),
+                ),
             };
             if let Err(e) = recorded {
                 tracing::error!(
@@ -343,24 +355,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 
     /// Drop a prepared contact payment: release its inputs (owner-guarded, so
-    /// inputs a TTL sweep has since handed to another build stay with it) and
-    /// return its address to the pool. Nothing was broadcast, so the address
-    /// was never exposed and the next payment may take it.
+    /// inputs a TTL sweep has since handed to another build stay with it).
+    /// The address pool was never touched, so there is nothing else to undo
+    /// and nothing is persisted.
     pub async fn abandon_prepared_payment<Bc>(&self, prepared: PreparedDashPayPayment<Bc>)
     where
         Bc: TransactionBroadcaster + ?Sized,
     {
         prepared.core.abandon_transaction(&prepared.signed).await;
-        if self.ensure_same_wallet(&prepared.core).is_err() {
-            return;
-        }
-        self.release_contact_payment_address(
-            prepared.core.generation(),
-            &prepared.from_identity_id,
-            &prepared.to_contact_id,
-            &prepared.payment_address,
-        )
-        .await;
     }
 
     fn ensure_same_wallet<Bc>(&self, core: &CoreWallet<Bc>) -> Result<(), PlatformWalletError>
@@ -378,9 +380,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
     }
 
-    /// Take the contact's next unused payment address and mark it used in
-    /// memory, so a second payment prepared meanwhile gets a different one.
-    async fn claim_contact_payment_address(
+    /// The contact's next available payment address. Marks nothing: the only
+    /// change it may make is deriving lookahead addresses into the in-memory
+    /// pool, which `send_payment`'s selection does as well.
+    async fn next_contact_payment_address(
         &self,
         generation: &Arc<WalletGeneration>,
         from_identity_id: &Identifier,
@@ -402,8 +405,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                      register_external_contact_account first"
                 ))
             })?;
-        let external_account = self
-            .generation_info_mut(&mut wm, generation)?
+        self.generation_info_mut(&mut wm, generation)?
             .core_wallet
             .accounts
             .dashpay_external_accounts
@@ -412,34 +414,36 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "No managed DashpayExternalAccount found for contact {to_contact_id}"
                 ))
-            })?;
-        let payment_address = external_account
+            })?
             .next_address(Some(&contact_xpub), true)
-            .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-        // `next_address` only selects; the used flag is what keeps DIP-15
-        // rotation from handing the same address to the next payment.
-        if !external_account.mark_address_used(&payment_address) {
-            return Err(PlatformWalletError::TransactionBuild(
-                "the derived payment address is not in the contact's address pool — cannot mark \
-                 it used"
-                    .to_string(),
-            ));
-        }
-        Ok(payment_address)
+            .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))
     }
 
-    /// Mark the claimed address used (again) and snapshot the pool for the
-    /// pre-broadcast persist.
+    /// Check that the payment can still go out — its address still available
+    /// and its funding reservation still fresh — then mark the address used and
+    /// snapshot the pool for the pre-broadcast persist. Nothing is changed on
+    /// an error.
     async fn commit_contact_payment_address(
         &self,
         generation: &Arc<WalletGeneration>,
+        signed: &SignedCoreTransaction,
         from_identity_id: &Identifier,
         to_contact_id: &Identifier,
         payment_address: &Address,
-    ) -> Result<PlatformWalletChangeSet, PlatformWalletError> {
+    ) -> Result<PlatformWalletChangeSet, CommitRefusal> {
         let mut wm = self.wallet_manager.write().await;
-        let external_account = self
-            .generation_info_mut(&mut wm, generation)?
+        let info = self.generation_info_mut(&mut wm, generation)?;
+        // Checked here as well as at dispatch: a payment held past the bound
+        // is the common way a confirmation screen goes stale, and refusing it
+        // before the mark keeps its address available. The dispatch check stays
+        // the authoritative one.
+        if reservation_expired(
+            signed.reservation_height(),
+            Some(info.core_wallet.last_processed_height()),
+        ) {
+            return Err(PlatformWalletError::StaleReservation.into());
+        }
+        let external_account = info
             .core_wallet
             .accounts
             .dashpay_external_accounts
@@ -452,32 +456,52 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                      payment waited; nothing was sent"
                 ))
             })?;
-        // `mark_address_used` answers `false` for an address that is already
-        // used as well as for one that is missing, so presence is checked on
-        // its own.
-        let in_pool = external_account
+        let state = external_account
             .managed_account_type()
             .address_pools()
             .iter()
-            .any(|pool| pool.address_index.contains_key(payment_address));
-        if !in_pool {
-            return Err(PlatformWalletError::TransactionBuild(
-                "the payment's address is no longer in the contact's address pool; nothing \
-                 was sent — please try again"
-                    .to_string(),
-            ));
-        }
-        // Another device on the same seed may have paid the contact at this
-        // very address while the payment waited; a second payment there would
-        // link the two on-chain. Refused: the caller abandons the inputs, and
-        // the address stays used (`release_contact_payment_address` sees the
-        // same record), so the next prepare takes a fresh one.
-        if paid_on_chain(external_account, &payment_address.script_pubkey()) {
-            return Err(PlatformWalletError::TransactionBuild(
-                "another payment to this contact used the same address while this one waited; \
-                 nothing was sent — please try again"
-                    .to_string(),
-            ));
+            .find_map(|pool| pool.address_info(payment_address))
+            .map(|info| info.is_available());
+        match state {
+            None => {
+                return Err(PlatformWalletError::TransactionBuild(
+                    "the payment's address is no longer in the contact's address pool; nothing \
+                     was sent — please try again"
+                        .to_string(),
+                )
+                .into())
+            }
+            // Available, and no resident record pays it. Otherwise another
+            // payment to the contact went to this address while this one
+            // waited — sent from here, or seen on-chain from another device
+            // on the same seed — or another hand-out reserved it. A second
+            // payment there would link the two on-chain.
+            Some(true)
+                if !contact_address_paid_on_chain(
+                    external_account,
+                    &payment_address.script_pubkey(),
+                ) => {}
+            Some(available) => {
+                // Paid on-chain but not yet marked: record that, persisted,
+                // or the next prepare would pick this address again and be
+                // refused the same way.
+                let found_paid = (available && external_account.mark_address_used(payment_address))
+                    .then(|| {
+                        Box::new(pool_changeset(
+                            from_identity_id,
+                            to_contact_id,
+                            external_account,
+                        ))
+                    });
+                return Err(CommitRefusal {
+                    error: PlatformWalletError::TransactionBuild(
+                        "another payment to this contact took the same address while this one \
+                         waited; nothing was sent — please try again"
+                            .to_string(),
+                    ),
+                    found_paid,
+                });
+            }
         }
         external_account.mark_address_used(payment_address);
         Ok(pool_changeset(
@@ -485,6 +509,58 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             to_contact_id,
             external_account,
         ))
+    }
+
+    /// Return the address a send marked used but provably did not put on the
+    /// wire, and store the reverted pool after the guard drops — also when
+    /// the flip's own store failed, since a host may have applied part of it.
+    /// A failed store is logged: the index then stays used on disk, one
+    /// skipped address.
+    ///
+    /// Skipped for a wallet that is no longer `generation`, and for an address
+    /// a resident transaction record shows paid — the one evidence the used
+    /// flag itself cannot carry once it was set here.
+    async fn unmark_unsent_payment_address(
+        &self,
+        generation: &Arc<WalletGeneration>,
+        from_identity_id: &Identifier,
+        to_contact_id: &Identifier,
+        payment_address: &Address,
+    ) {
+        let revert = {
+            let mut wm = self.wallet_manager.write().await;
+            let Ok(info) = self.generation_info_mut(&mut wm, generation) else {
+                return;
+            };
+            let Some(external_account) = info
+                .core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .get_mut(&contact_key(from_identity_id, to_contact_id))
+            else {
+                tracing::warn!(
+                    to_contact = %to_contact_id,
+                    "external account not found while returning an unsent contact payment's \
+                     address; it stays used"
+                );
+                return;
+            };
+            if !return_contact_payment_address_to_pool(external_account, payment_address) {
+                tracing::info!(
+                    to_contact = %to_contact_id,
+                    payment_address = %payment_address,
+                    "an unsent contact payment's address was paid meanwhile; it stays used"
+                );
+                return;
+            }
+            pool_changeset(from_identity_id, to_contact_id, external_account)
+        };
+        if let Err(e) = self.persister.store(revert) {
+            tracing::warn!(
+                error = %e,
+                "failed to persist the payment-address revert of an unsent contact payment"
+            );
+        }
     }
 
     /// The wallet info of `generation`, or `WalletNotFound` when the wallet
@@ -498,65 +574,23 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .filter(|info| Arc::ptr_eq(&info.generation, generation))
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
     }
-
-    /// Return a claimed address to the pool and persist the reverted pool
-    /// after the guard drops. A failed store is logged, not fatal: the address
-    /// then stays consumed on disk, a one-address gap the pool's gap window
-    /// absorbs.
-    ///
-    /// Skipped for a wallet that is no longer `generation`, and for an address
-    /// the wallet has since seen paid on-chain — another device on the same
-    /// seed may have paid the contact there while this payment waited, and
-    /// that address must never be handed out again.
-    async fn release_contact_payment_address(
-        &self,
-        generation: &Arc<WalletGeneration>,
-        from_identity_id: &Identifier,
-        to_contact_id: &Identifier,
-        payment_address: &Address,
-    ) {
-        let script = payment_address.script_pubkey();
-        let revert = {
-            let mut wm = self.wallet_manager.write().await;
-            let Ok(info) = self.generation_info_mut(&mut wm, generation) else {
-                return;
-            };
-            let Some(external_account) = info
-                .core_wallet
-                .accounts
-                .dashpay_external_accounts
-                .get_mut(&contact_key(from_identity_id, to_contact_id))
-            else {
-                tracing::warn!(
-                    "external account not found while returning an unsent contact payment's address"
-                );
-                return;
-            };
-            if paid_on_chain(external_account, &script) {
-                return;
-            }
-            return_contact_payment_address_to_pool(external_account, payment_address);
-            pool_changeset(from_identity_id, to_contact_id, external_account)
-        };
-        if let Err(e) = self.persister.store(revert) {
-            tracing::warn!(
-                error = %e,
-                "failed to persist the payment-address revert of an unsent contact payment"
-            );
-        }
-    }
 }
 
-/// Whether the wallet holds a transaction paying `script` in this contact
-/// account — a payment made there, by this device or another on the seed.
-fn paid_on_chain(external_account: &ManagedCoreFundsAccount, script: &dashcore::ScriptBuf) -> bool {
-    external_account.transactions().values().any(|record| {
-        record
-            .transaction
-            .output
-            .iter()
-            .any(|output| &output.script_pubkey == script)
-    })
+/// Why [`DashPayView::commit_contact_payment_address`] refused a send, and —
+/// when it found the address paid on-chain but not yet marked — the pool
+/// snapshot recording that, to store after the guard drops.
+struct CommitRefusal {
+    error: PlatformWalletError,
+    found_paid: Option<Box<PlatformWalletChangeSet>>,
+}
+
+impl From<PlatformWalletError> for CommitRefusal {
+    fn from(error: PlatformWalletError) -> Self {
+        Self {
+            error,
+            found_paid: None,
+        }
+    }
 }
 
 fn contact_key(from_identity_id: &Identifier, to_contact_id: &Identifier) -> DashpayAccountKey {

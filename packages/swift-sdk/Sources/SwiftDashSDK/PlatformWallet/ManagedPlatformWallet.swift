@@ -2711,6 +2711,9 @@ extension ManagedPlatformWallet {
     /// Broadcast a prepared contact payment and record it. Consumes
     /// `payment` whatever the outcome. Returns the 32-byte txid and the
     /// fee, which is the one the prepared payment showed.
+    ///
+    /// Throws, nothing sent, when another payment to the same contact took
+    /// this payment's address while it waited: prepare it again.
     @discardableResult
     public func sendPreparedDashPayPayment(
         _ payment: PreparedDashPayPayment
@@ -2735,7 +2738,7 @@ extension ManagedPlatformWallet {
     }
 
     /// Drop a prepared contact payment without sending it: its inputs are
-    /// released and its address returns to the pool.
+    /// released.
     public func abandonPreparedDashPayPayment(_ payment: PreparedDashPayPayment) async throws {
         let paymentHandle = try payment.take()
         try await Task.detached(priority: .userInitiated) {

@@ -3,8 +3,7 @@ import DashSDKFFI
 
 /// A DashPay contact payment signed in Rust and not broadcast yet.
 ///
-/// Its funding inputs stay reserved and the contact's next payment address
-/// stays claimed until it is passed to exactly one of
+/// Its funding inputs stay reserved until it is passed to exactly one of
 /// `ManagedPlatformWallet.sendPreparedDashPayPayment(_:)` or
 /// `ManagedPlatformWallet.abandonPreparedDashPayPayment(_:)`. Releasing the
 /// object without either abandons it.
@@ -30,9 +29,9 @@ public final class PreparedDashPayPayment: @unchecked Sendable {
 
     deinit {
         guard nativeHandle != 0 else { return }
-        // Abandoning takes the wallet-manager lock and runs the host
-        // persister; the last reference is often dropped on the main thread,
-        // which must not wait on either.
+        // Abandoning takes the wallet-manager lock to release the inputs;
+        // the last reference is often dropped on the main thread, which must
+        // not wait on it.
         let handle = nativeHandle
         DispatchQueue.global(qos: .utility).async {
             platform_wallet_prepared_dashpay_payment_free(handle)

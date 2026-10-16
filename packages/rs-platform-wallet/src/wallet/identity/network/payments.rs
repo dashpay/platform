@@ -914,12 +914,20 @@ fn record_received_payment_totals(
 /// sent-payment reconstruction depends on: used indices chain within the gap
 /// limit. Extra lookahead addresses the selection may have generated are
 /// left in place — generated-but-available entries are harmless.
+///
+/// An address a resident transaction record of the account pays is left
+/// used: another device on the same seed paid the contact there while this
+/// payment was in flight, and re-handing it would link the two on-chain.
+/// Returns whether the address was returned.
 pub(super) fn return_contact_payment_address_to_pool(
     account: &mut key_wallet::managed_account::ManagedCoreFundsAccount,
     payment_address: &dashcore::Address,
-) {
+) -> bool {
     use key_wallet::managed_account::address_pool::AddressState;
 
+    if contact_address_paid_on_chain(account, &payment_address.script_pubkey()) {
+        return false;
+    }
     for pool in account.managed_account_type_mut().address_pools_mut() {
         let Some(&index) = pool.address_index.get(payment_address) else {
             continue;
@@ -930,6 +938,23 @@ pub(super) fn return_contact_payment_address_to_pool(
         }
         pool.highest_used = pool.used_indices.iter().max().copied();
     }
+    true
+}
+
+/// Whether a resident transaction record of this contact account pays
+/// `script`. Records can be evicted once final, so this is a second check
+/// next to the address's used flag, never the only one.
+pub(super) fn contact_address_paid_on_chain(
+    account: &key_wallet::managed_account::ManagedCoreFundsAccount,
+    script: &dashcore::ScriptBuf,
+) -> bool {
+    account.transactions().values().any(|record| {
+        record
+            .transaction
+            .output
+            .iter()
+            .any(|output| &output.script_pubkey == script)
+    })
 }
 
 /// Order-independent digest of an enumerated wallet transaction table:
@@ -1671,6 +1696,8 @@ mod tests {
     #[derive(Default)]
     struct RecordingPersister {
         stores: Mutex<Vec<(WalletId, PlatformWalletChangeSet)>>,
+        /// When set, every store fails (and records nothing).
+        fail_stores: std::sync::atomic::AtomicBool,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
@@ -1679,6 +1706,9 @@ mod tests {
             wallet_id: WalletId,
             changeset: PlatformWalletChangeSet,
         ) -> Result<(), PersistenceError> {
+            if self.fail_stores.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(PersistenceError::backend("store armed to fail"));
+            }
             self.stores.lock().unwrap().push((wallet_id, changeset));
             Ok(())
         }
@@ -7740,8 +7770,108 @@ mod tests {
             .count()
     }
 
-    /// Prepare reports the exact fee before anything is sent, and the send
-    /// broadcasts that very transaction and records the payment.
+    /// The script the payment output of `tx` pays — found by its amount, since
+    /// the builder does not keep the payment output first.
+    fn payment_script(tx: &dashcore::Transaction, amount_duffs: u64) -> dashcore::ScriptBuf {
+        let mut paying = tx
+            .output
+            .iter()
+            .filter(|output| output.value == amount_duffs);
+        let output = paying.next().expect("the payment output");
+        assert!(paying.next().is_none(), "the amount picks one output");
+        output.script_pubkey.clone()
+    }
+
+    /// Broadcaster stub whose outcome is unknown: the transaction may have
+    /// reached the network.
+    struct MaybeSentBroadcaster;
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for MaybeSentBroadcaster {
+        async fn broadcast(
+            &self,
+            _transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, crate::broadcaster::BroadcastError> {
+            Err(crate::broadcaster::BroadcastError::MaybeSent {
+                reason: "test timeout".to_string(),
+            })
+        }
+    }
+
+    /// Let the wallet observe, chain-locked, a payment to `address` made from
+    /// coins it does not hold — another device on the same seed paying the
+    /// contact — through key-wallet's own transaction checking. Then drop the
+    /// account's records, as the ChainLock eviction does without
+    /// `keep-finalized-transactions`, so only the address state is left as
+    /// evidence of the payment.
+    async fn observe_foreign_payment_then_evict<P: PlatformWalletPersistence + 'static>(
+        manager: &Arc<PlatformWalletManager<P>>,
+        wallet_id: WalletId,
+        owner_id: Identifier,
+        contact_id: Identifier,
+        address: &dashcore::Address,
+        txid_byte: u8,
+    ) {
+        use dashcore::hashes::Hash;
+        use key_wallet::transaction_checking::{
+            BlockInfo, TransactionContext, WalletTransactionChecker,
+        };
+
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let mut wm = wallet.identity().wallet_manager.write().await;
+        let (core_wallet, info) = wm
+            .get_wallet_mut_and_info_mut(&wallet_id)
+            .expect("wallet and info");
+        let tx = dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![dashcore::TxIn {
+                previous_output: dashcore::OutPoint::new(
+                    dashcore::Txid::from_slice(&[txid_byte; 32]).expect("txid"),
+                    0,
+                ),
+                ..Default::default()
+            }],
+            output: vec![dashcore::TxOut {
+                value: 30_000,
+                script_pubkey: address.script_pubkey(),
+            }],
+            special_transaction_payload: None,
+        };
+        let result = info
+            .core_wallet
+            .check_core_transaction(
+                &tx,
+                TransactionContext::InChainLockedBlock(BlockInfo::new(
+                    200,
+                    dashcore::BlockHash::all_zeros(),
+                    1_700_000_000,
+                )),
+                core_wallet,
+                true,
+                true,
+            )
+            .await;
+        assert!(
+            result.is_relevant,
+            "a payment to a contact address is ours to see"
+        );
+        let account = info
+            .core_wallet
+            .accounts
+            .dashpay_external_accounts
+            .get_mut(&DashpayAccountKey {
+                index: 0,
+                user_identity_id: owner_id.to_buffer(),
+                friend_identity_id: contact_id.to_buffer(),
+            })
+            .expect("external account");
+        account.transactions_mut().clear();
+    }
+
+    /// Prepare reports the exact fee before anything is sent and leaves the
+    /// address pool alone; the send broadcasts that very transaction, marks
+    /// the address used and records the payment.
     #[tokio::test]
     async fn prepared_payment_sends_the_transaction_whose_fee_it_showed() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
@@ -7775,10 +7905,11 @@ mod tests {
             0,
             "nothing is persisted while the payment only waits for confirmation"
         );
-        assert_eq!(
-            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
-            vec![0],
-            "the address is claimed in memory, so a second prepare gets another one"
+        assert!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .is_empty(),
+            "a prepared payment does not claim its address"
         );
 
         let (txid, entry, sent_fee) = iw
@@ -7792,8 +7923,13 @@ mod tests {
             "the fee cannot move between confirm and send"
         );
         assert_eq!(entry.amount_duffs, 50_000);
-        assert!(
-            persisted_external_pool_snapshots(&persister) >= 1,
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0]
+        );
+        assert_eq!(
+            persisted_external_pool_snapshots(&persister),
+            1,
             "the used flip is persisted before the broadcast"
         );
         let recorded = {
@@ -7809,11 +7945,13 @@ mod tests {
         );
     }
 
-    /// Abandoning frees the inputs and the address: the next prepare can
-    /// spend the same coins and pays to the same, never exposed, address.
+    /// Abandoning frees the inputs and persists nothing — neither does a
+    /// prepare that cannot be funded — so no backend ever holds a used flag
+    /// for an address that was never paid. The next prepare spends the same
+    /// coin to the same, never exposed, address.
     #[tokio::test]
-    async fn abandoned_prepared_payment_frees_its_inputs_and_address() {
-        let (manager, _persister, wallet_id, owner_id, contact_id) =
+    async fn abandoned_prepared_payment_frees_its_inputs_and_persists_nothing() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = wallet_arc.identity();
@@ -7822,6 +7960,7 @@ mod tests {
         let (signer, provider) = test_signer_and_provider();
         let core = core_with(wallet_arc.core(), AcceptingBroadcaster);
 
+        persister.stores.lock().unwrap().clear();
         let first = iw
             .dashpay()
             .prepare_payment(
@@ -7835,7 +7974,7 @@ mod tests {
             )
             .await
             .expect("first prepare");
-        let first_output = first.transaction().output[0].script_pubkey.clone();
+        let first_output = payment_script(first.transaction(), 100_000);
 
         let blocked = iw
             .dashpay()
@@ -7853,18 +7992,17 @@ mod tests {
             blocked.is_err(),
             "the only coin is reserved by the waiting payment"
         );
-        assert_eq!(
-            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
-            vec![0],
-            "the failed prepare returned its own address"
-        );
 
         iw.dashpay().abandon_prepared_payment(first).await;
         assert!(
             external_used_indices(&manager, wallet_id, owner_id, contact_id)
                 .await
-                .is_empty(),
-            "abandon returns the address"
+                .is_empty()
+        );
+        assert_eq!(
+            persisted_external_pool_snapshots(&persister),
+            0,
+            "a preview, a failed prepare and an abandon write no address state"
         );
 
         let again = iw
@@ -7881,24 +8019,217 @@ mod tests {
             .await
             .expect("abandon released the reservation");
         assert_eq!(
-            again.transaction().output[0].script_pubkey,
+            payment_script(again.transaction(), 100_000),
             first_output,
             "the never-broadcast address is handed out again"
         );
+        iw.dashpay().abandon_prepared_payment(again).await;
     }
 
-    /// An address the wallet saw paid on-chain while the payment waited —
-    /// another device on the same seed paid the contact there — is not paid a
-    /// second time, and stays used.
+    /// Two payments prepared to one contact at once pay the same address; the
+    /// first one sent takes it, and the second is refused with its inputs
+    /// released instead of paying that address twice.
     #[tokio::test]
-    async fn an_address_paid_meanwhile_is_neither_paid_again_nor_returned() {
+    async fn second_payment_prepared_to_the_same_address_is_refused() {
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xD6, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let core = core_with(wallet_arc.core(), AcceptingBroadcaster);
+
+        let first = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                30_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("first prepare");
+        iw.dashpay()
+            .send_prepared_payment(first)
+            .await
+            .expect("first send");
+        // The first payment's change is still unconfirmed and its input is
+        // spent, so the second needs a coin of its own.
+        fund_bip44_account_0(&manager, wallet_id, 0xD7, 120_000).await;
+        let second = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                30_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("second prepare");
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0],
+            "the first send took the first address"
+        );
+
+        // A third prepared before the second is sent targets the same address
+        // as the second.
+        fund_bip44_account_0(&manager, wallet_id, 0xD8, 120_000).await;
+        let third = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                30_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("third prepare");
+        assert_eq!(
+            payment_script(second.transaction(), 30_000),
+            payment_script(third.transaction(), 30_000),
+            "nothing claims the address before the send"
+        );
+        iw.dashpay()
+            .send_prepared_payment(second)
+            .await
+            .expect("second send");
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(third)
+            .await
+            .expect_err("the address the second payment took must not be paid again");
+        assert!(
+            matches!(err, PlatformWalletError::TransactionBuild(_)),
+            "got {err:?}"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .len(),
+            2,
+            "the refused payment marked nothing"
+        );
+        let retry = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                30_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the refusal released its inputs");
+        iw.dashpay().abandon_prepared_payment(retry).await;
+    }
+
+    /// Another device on the same seed pays the contact at the waiting
+    /// payment's address, and the ChainLock then evicts that record. The
+    /// address state key-wallet set when it saw the payment is what is left,
+    /// and it is enough: the send is refused, and an abandon leaves the
+    /// address used.
+    #[tokio::test]
+    async fn an_address_paid_meanwhile_stays_used_after_the_record_is_evicted() {
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xD5, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let core = core_with(wallet_arc.core(), AcceptingBroadcaster);
+        let address_of = |prepared: &crate::PreparedDashPayPayment<AcceptingBroadcaster>| {
+            dashcore::Address::from_script(
+                &payment_script(prepared.transaction(), 50_000),
+                Network::Testnet,
+            )
+            .expect("a P2PKH payment output")
+        };
+
+        // Send refused.
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        let paid = address_of(&prepared);
+        observe_foreign_payment_then_evict(&manager, wallet_id, owner_id, contact_id, &paid, 0xE1)
+            .await;
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("a second payment to an address already paid must not go out");
+        assert!(
+            matches!(err, PlatformWalletError::TransactionBuild(_)),
+            "got {err:?}"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0]
+        );
+
+        // Abandon leaves it used.
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the refused send released its inputs");
+        let paid_next = address_of(&prepared);
+        assert_ne!(paid_next, paid, "the next payment goes to a fresh address");
+        observe_foreign_payment_then_evict(
+            &manager, wallet_id, owner_id, contact_id, &paid_next, 0xE2,
+        )
+        .await;
+        iw.dashpay().abandon_prepared_payment(prepared).await;
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .len(),
+            2,
+            "an address paid on-chain is never handed out again"
+        );
+    }
+
+    /// A resident record pays the waiting payment's address while the pool
+    /// still shows it available. The send is refused and marks it used, so
+    /// the next prepare moves on instead of being refused the same way.
+    #[tokio::test]
+    async fn an_available_address_a_record_pays_is_refused_and_marked() {
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
         let (manager, _persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = wallet_arc.identity();
-        fund_bip44_account_0(&manager, wallet_id, 0xD5, 120_000).await;
+        fund_bip44_account_0(&manager, wallet_id, 0xDB, 120_000).await;
         let (signer, provider) = test_signer_and_provider();
         let core = core_with(wallet_arc.core(), AcceptingBroadcaster);
 
@@ -7915,7 +8246,7 @@ mod tests {
             )
             .await
             .expect("prepare");
-        let paid_script = prepared.transaction().output[0].script_pubkey.clone();
+        let paid_script = payment_script(prepared.transaction(), 50_000);
         let paid_address = dashcore::Address::from_script(&paid_script, Network::Testnet)
             .expect("a P2PKH payment output");
         {
@@ -7931,6 +8262,8 @@ mod tests {
                     friend_identity_id: contact_id.to_buffer(),
                 })
                 .expect("external account");
+            // A record only, the address left available — the state a revert
+            // without the record check used to leave behind.
             let record = tx_record_with_outputs(
                 key_wallet::transaction_checking::TransactionContext::Mempool,
                 vec![(
@@ -7946,7 +8279,7 @@ mod tests {
             .dashpay()
             .send_prepared_payment(prepared)
             .await
-            .expect_err("a second payment to an address already paid must not go out");
+            .expect_err("an address a record pays must not be paid again");
         assert!(
             matches!(err, PlatformWalletError::TransactionBuild(_)),
             "got {err:?}"
@@ -7954,10 +8287,8 @@ mod tests {
         assert_eq!(
             external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
             vec![0],
-            "an address paid on-chain must never be handed out again"
+            "the refusal records the payment it found"
         );
-        // The refusal released the inputs: the next prepare funds and takes
-        // the next address.
         let next = iw
             .dashpay()
             .prepare_payment(
@@ -7970,18 +8301,19 @@ mod tests {
                 &provider,
             )
             .await
-            .expect("the refused send released its inputs");
+            .expect("the refusal released its inputs");
         assert_ne!(
-            next.transaction().output[0].script_pubkey,
+            payment_script(next.transaction(), 50_000),
             paid_script,
             "the next payment goes to a fresh address"
         );
+        iw.dashpay().abandon_prepared_payment(next).await;
     }
 
     /// A definitive rejection releases the inputs and returns the address,
-    /// persisted — the flip went to disk before the broadcast.
+    /// persisted; the retry takes the same address.
     #[tokio::test]
-    async fn rejected_prepared_payment_returns_the_address_and_inputs() {
+    async fn rejected_prepared_payment_returns_its_inputs_and_address() {
         let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
@@ -8003,6 +8335,7 @@ mod tests {
             )
             .await
             .expect("prepare");
+        let rejected_output = payment_script(prepared.transaction(), 100_000);
         persister.stores.lock().unwrap().clear();
         let err = iw
             .dashpay()
@@ -8016,11 +8349,13 @@ mod tests {
         assert!(
             external_used_indices(&manager, wallet_id, owner_id, contact_id)
                 .await
-                .is_empty()
+                .is_empty(),
+            "nothing reached the network, so the address is free again"
         );
-        assert!(
-            persisted_external_pool_snapshots(&persister) >= 2,
-            "both the pre-broadcast flip and the revert are persisted"
+        assert_eq!(
+            persisted_external_pool_snapshots(&persister),
+            2,
+            "the pre-broadcast flip and its revert are both persisted"
         );
 
         let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
@@ -8037,18 +8372,158 @@ mod tests {
             )
             .await
             .expect("the rejection released the only coin");
+        assert_eq!(
+            payment_script(retry.transaction(), 100_000),
+            rejected_output,
+            "the retry reuses the address, so failed attempts open no gap"
+        );
         iw.dashpay()
             .send_prepared_payment(retry)
             .await
             .expect("the retry goes out");
     }
 
-    /// A payment held on the confirmation screen past the reservation age
-    /// bound is refused before the broadcaster runs, and gives back both its
-    /// inputs and its address so the host can prepare it again.
+    /// An ambiguous broadcast keeps both the address and the input fence: the
+    /// transaction may be on the network.
     #[tokio::test]
-    async fn stale_prepared_payment_is_refused_and_released() {
-        let (manager, _persister, wallet_id, owner_id, contact_id) =
+    async fn maybe_sent_prepared_payment_keeps_the_address_and_the_inputs() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        // One coin, so a second prepare can only succeed by reselecting it.
+        fund_bip44_account_0(&manager, wallet_id, 0xD9, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let core = core_with(wallet_arc.core(), MaybeSentBroadcaster);
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        persister.stores.lock().unwrap().clear();
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("an unknown outcome is not a success");
+        assert!(
+            matches!(err, PlatformWalletError::TransactionBroadcastUnconfirmed(_)),
+            "got {err:?}"
+        );
+        assert_eq!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id).await,
+            vec![0],
+            "the address may already be paid"
+        );
+        assert_eq!(
+            persisted_external_pool_snapshots(&persister),
+            1,
+            "only the pre-broadcast flip is persisted, no rollback"
+        );
+        let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
+        let again = iw
+            .dashpay()
+            .prepare_payment(
+                &accepting,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await;
+        assert!(
+            matches!(
+                again,
+                Err(PlatformWalletError::CorePooledInsufficientFunds {
+                    available: Some(0),
+                    ..
+                })
+            ),
+            "the possibly-sent transaction's only input stays fenced"
+        );
+    }
+
+    /// A send whose used flip cannot be stored sends nothing, releases its
+    /// inputs and returns its address, so the retry pays the same address.
+    #[tokio::test]
+    async fn prepared_payment_whose_flip_cannot_be_stored_returns_its_address() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        // One coin, so the retry proves the inputs were released.
+        fund_bip44_account_0(&manager, wallet_id, 0xDA, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let core = core_with(wallet_arc.core(), AcceptingBroadcaster);
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        let first_output = payment_script(prepared.transaction(), 100_000);
+        persister
+            .fail_stores
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let err = iw
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("an unstored flip must not be broadcast");
+        persister
+            .fail_stores
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        assert!(
+            matches!(err, PlatformWalletError::Persistence(_)),
+            "got {err:?}"
+        );
+        assert!(
+            external_used_indices(&manager, wallet_id, owner_id, contact_id)
+                .await
+                .is_empty()
+        );
+        let retry = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                100_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("the failed send released the only coin");
+        assert_eq!(payment_script(retry.transaction(), 100_000), first_output);
+        iw.dashpay().abandon_prepared_payment(retry).await;
+    }
+
+    /// A payment held on the confirmation screen past the reservation age
+    /// bound is refused before its address is marked, and gives back its
+    /// inputs so the host can prepare it again.
+    #[tokio::test]
+    async fn stale_prepared_payment_is_refused_before_the_mark() {
+        let (manager, persister, wallet_id, owner_id, contact_id) =
             register_sender_and_external_account().await;
         let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
         let iw = wallet_arc.identity();
@@ -8078,6 +8553,7 @@ mod tests {
                 height + crate::wallet::reservations::RESERVATION_MAX_AGE_BLOCKS,
             );
         }
+        persister.stores.lock().unwrap().clear();
         let err = iw
             .dashpay()
             .send_prepared_payment(prepared)
@@ -8094,8 +8570,10 @@ mod tests {
                 .await
                 .is_empty()
         );
+        assert_eq!(persisted_external_pool_snapshots(&persister), 0);
         let accepting = core_with(wallet_arc.core(), AcceptingBroadcaster);
-        iw.dashpay()
+        let again = iw
+            .dashpay()
             .prepare_payment(
                 &accepting,
                 &owner_id,
@@ -8107,5 +8585,6 @@ mod tests {
             )
             .await
             .expect("the refusal released the coin for a fresh prepare");
+        iw.dashpay().abandon_prepared_payment(again).await;
     }
 }
