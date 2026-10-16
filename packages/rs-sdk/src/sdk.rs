@@ -270,7 +270,8 @@ pub struct Sdk {
     inner: SdkInstance,
     /// Use proofs when retrieving data from Platform.
     ///
-    /// This is set to `true` by default. `false` is not implemented yet.
+    /// Enabled by default. Unsupported proof modes return a configuration error;
+    /// some query paths always request proofs regardless of this setting.
     proofs: bool,
 
     /// Nonce cache managed exclusively by the SDK.
@@ -1030,6 +1031,8 @@ impl SdkBuilder {
     ///
     /// In mock/offline testing with recorded vectors, set to false to match dumps
     /// that were captured without proofs.
+    /// Proof-only query builders return [`Error::Config`] when proofs are disabled.
+    /// Queries that force proofs and explicit unproved APIs keep their own proof mode.
     pub fn with_proofs(mut self, proofs: bool) -> Self {
         self.proofs = proofs;
         self

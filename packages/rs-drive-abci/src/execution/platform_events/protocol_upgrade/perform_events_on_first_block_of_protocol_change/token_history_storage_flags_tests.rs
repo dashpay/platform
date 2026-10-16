@@ -177,24 +177,27 @@ fn should_attribute_unflagged_replacement_cost_mismatch_to_token_history_version
         7
     );
     let id = SystemDataContract::TokenHistory.id().to_buffer();
-    let op = QualifiedGroveDbOp::insert_or_replace_op(
-        contract_other_path(&id)
-            .iter()
-            .map(|p| p.to_vec())
-            .collect(),
-        vec![CONTRACT_VERSION_KEY],
-        new,
-    );
-    let error = platform
-        .drive
-        .grove_apply_batch(
+    let replace = |drive_version| {
+        let op = QualifiedGroveDbOp::insert_or_replace_op(
+            contract_other_path(&id)
+                .iter()
+                .map(|p| p.to_vec())
+                .collect(),
+            vec![CONTRACT_VERSION_KEY],
+            new.clone(),
+        );
+        platform.drive.grove_apply_batch(
             LowLevelDriveOperation::grovedb_operations_batch_consume(vec![
                 LowLevelDriveOperation::GroveOperation(op),
             ]),
             false,
             Some(&tx),
-            &pv.drive,
+            drive_version,
         )
+    };
+    // GROVE_V3 (protocol version 13) measures the replacement with the old
+    // flags and fails the commit.
+    let error = replace(&PlatformVersion::get(13).expect("PV13").drive)
         .expect_err("unflagged replacement must expose the accounting mismatch");
     assert!(
         error
@@ -206,6 +209,9 @@ fn should_attribute_unflagged_replacement_cost_mismatch_to_token_history_version
         "attributed path=[64,{},2]/64 old={old:?} error={error}",
         hex::encode(id)
     );
+    // GROVE_V4 measures it from the bytes it stores, so it applies.
+    replace(&pv.drive).expect("GROVE_V4 charges the unflagged replacement for its own bytes");
+    assert_eq!(version_item(&platform, Some(&tx)), new);
 }
 
 fn contract_element(platform: &TempPlatform<MockCoreRPCLike>, tx: TransactionArg) -> Element {

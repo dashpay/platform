@@ -68,7 +68,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V10: DriveAbciValidationVersions =
             max_asset_lock_usage_attempts: 16,
             identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
-                advanced_structure: Some(0),
+                advanced_structure: Some(1), // identity id and key proof failures are refused unpaid
                 identity_signatures: Some(0),
                 nonce: None,
                 state: 1,
