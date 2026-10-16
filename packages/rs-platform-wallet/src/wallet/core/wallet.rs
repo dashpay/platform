@@ -397,8 +397,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// observation.
     pub async fn is_current_generation(&self) -> bool {
         let wm = self.wallet_manager.read().await;
-        wm.get_wallet_info(&self.wallet_id)
-            .is_some_and(|info| Arc::ptr_eq(&info.generation, self.generation()))
+        self.generation().is_registered_in(&wm, &self.wallet_id)
     }
 }
 

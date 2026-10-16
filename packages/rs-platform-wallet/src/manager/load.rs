@@ -270,7 +270,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 if wm.get_wallet(&wallet_id).is_some() {
                     continue 'load;
                 }
-                if let Err(e) = wm.insert_wallet(wallet, platform_info) {
+                if let Err(e) = self.insert_into_inner(&mut wm, wallet, platform_info) {
                     load_error = Some(PlatformWalletError::WalletCreation(format!(
                         "Failed to register persisted wallet in WalletManager: {}",
                         e
@@ -465,7 +465,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         }
                         continue;
                     }
-                    if let Err(e) = wm.remove_wallet(id) {
+                    if let Err(e) = self.remove_from_inner(&mut wm, id) {
                         tracing::warn!(
                             wallet_id = %hex::encode(id),
                             error = %e,
@@ -603,11 +603,7 @@ pub(super) async fn resend_one(
     tx: &dashcore::Transaction,
 ) -> ResendOutcome {
     let _payment = generation.payment_guard().await;
-    let still_live = {
-        let wm = wallet_manager.read().await;
-        wm.get_wallet_info(wallet_id)
-            .is_some_and(|info| Arc::ptr_eq(&info.generation, generation))
-    };
+    let still_live = generation.is_registered_in(&*wallet_manager.read().await, wallet_id);
     if !still_live {
         tracing::info!(
             wallet_id = %hex::encode(wallet_id),

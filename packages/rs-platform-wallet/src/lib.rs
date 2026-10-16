@@ -14,6 +14,7 @@
 
 pub mod address_paths;
 pub(crate) mod broadcast_outcome;
+pub mod broadcast_probe;
 pub mod broadcaster;
 pub mod changeset;
 pub mod error;
