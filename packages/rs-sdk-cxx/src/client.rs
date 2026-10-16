@@ -17,6 +17,7 @@ use dash_sdk::dpp::consensus::codes::ErrorWithCode;
 use dash_sdk::dpp::dashcore::hashes::Hash;
 use dash_sdk::dpp::dashcore::secp256k1::{PublicKey, SecretKey};
 use dash_sdk::dpp::dashcore::Network;
+use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -24,6 +25,7 @@ use dash_sdk::dpp::identity::v0::IdentityV0;
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey};
 use dash_sdk::dpp::key_wallet::bip32::DerivationPath;
 use dash_sdk::dpp::prelude::Identifier;
+use dash_sdk::dpp::system_data_contracts::SystemDataContract;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::dashpay::{
@@ -154,6 +156,10 @@ result_from!(VoteStateResult {
 result_from!(ContestsResult { contests: Vec<ffi::Contest> = Vec::new() });
 result_from!(ContactRequestsResult { requests: Vec<ffi::ContactRequest> = Vec::new() });
 result_from!(NameVotesResult { votes: Vec<ffi::NameVote> = Vec::new() });
+result_from!(ProfileResult {
+    profile: ffi::Profile = Default::default()
+});
+result_from!(ProfilesResult { profiles: Vec<ffi::Profile> = Vec::new() });
 
 impl From<Result<(Vec<ffi::DpnsName>, bool), Status>> for ffi::NamesResult {
     fn from(outcome: Result<(Vec<ffi::DpnsName>, bool), Status>) -> Self {
@@ -422,6 +428,22 @@ impl PlatformClient {
         .into()
     }
 
+    pub fn get_profiles(&self, owners: &[[u8; 32]]) -> ffi::ProfilesResult {
+        self.call("get_profiles", |sdk| {
+            let owners: Vec<Identifier> = owners.iter().copied().map(Identifier::from).collect();
+            async move {
+                let contract = dashpay_contract(&sdk).await?;
+                sdk.get_profiles(&contract, &owners)
+                    .await?
+                    .values()
+                    .map(marshal::profile)
+                    .collect::<Result<_, _>>()
+                    .map_err(|e| Status::new(StatusKind::Rejected, e))
+            }
+        })
+        .into()
+    }
+
     pub fn register_identity(
         &self,
         keys: &[ffi::IdentityKey],
@@ -587,6 +609,56 @@ impl PlatformClient {
         .into()
     }
 
+    pub fn create_profile(
+        &self,
+        owner: &[u8; 32],
+        key_id: u32,
+        fields: &ffi::ProfileFields,
+        signer: cxx::UniquePtr<ffi::WalletSigner>,
+    ) -> ffi::ProfileResult {
+        self.put_profile("create_profile", false, owner, key_id, fields, signer)
+    }
+
+    pub fn update_profile(
+        &self,
+        owner: &[u8; 32],
+        key_id: u32,
+        fields: &ffi::ProfileFields,
+        signer: cxx::UniquePtr<ffi::WalletSigner>,
+    ) -> ffi::ProfileResult {
+        self.put_profile("update_profile", true, owner, key_id, fields, signer)
+    }
+
+    fn put_profile(
+        &self,
+        what: &str,
+        update: bool,
+        owner: &[u8; 32],
+        key_id: u32,
+        fields: &ffi::ProfileFields,
+        signer: cxx::UniquePtr<ffi::WalletSigner>,
+    ) -> ffi::ProfileResult {
+        self.call(what, |sdk| {
+            let owner = Identifier::from(*owner);
+            let fields = marshal::profile_fields(fields);
+            async move {
+                let signer = WalletSigner::new(signer)?;
+                let fields = fields?;
+                let contract = dashpay_contract(&sdk).await?;
+                let (_, key) = identity_and_key(&sdk, owner, key_id).await?;
+                let document = if update {
+                    sdk.update_profile(&contract, owner, fields, &key, &signer)
+                        .await?
+                } else {
+                    sdk.create_profile(&contract, owner, fields, &key, &signer)
+                        .await?
+                };
+                marshal::profile(&document).map_err(|e| Status::new(StatusKind::Rejected, e))
+            }
+        })
+        .into()
+    }
+
     pub fn cast_masternode_vote(
         &self,
         pro_tx_hash: &[u8; 32],
@@ -670,6 +742,13 @@ async fn identity_and_key(
         .cloned()
         .ok_or_else(|| Status::internal(format!("identity {id} has no key {key_id}")))?;
     Ok((identity, key))
+}
+
+/// The DashPay contract, which the context provider serves locally.
+async fn dashpay_contract(sdk: &Sdk) -> Result<Arc<DataContract>, Status> {
+    sdk.fetch_system_data_contract(SystemDataContract::Dashpay.id())
+        .await?
+        .ok_or_else(|| Status::internal("no DashPay contract"))
 }
 
 /// The embedder's proxy setting. Anything malformed is an error, so a

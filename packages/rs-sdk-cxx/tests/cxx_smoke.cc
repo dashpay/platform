@@ -148,6 +148,8 @@ int main()
     check(unreachable(client->current_contests().status), "current_contests");
     check(unreachable(client->identity_votes(id).status), "identity_votes");
     check(unproved(client->contact_requests(id, ContactDirection::Received, 0).status), "contact_requests");
+    const std::vector<std::array<uint8_t, 32>> owners{id};
+    check(unreachable(client->get_profiles({owners.data(), owners.size()}).status), "get_profiles");
     check(client->contact_requests(id, static_cast<ContactDirection>(9), 0).status.kind == StatusKind::Internal,
           "unknown contact direction accepted");
 
@@ -208,6 +210,13 @@ int main()
         nullptr);
     check(unproved(client->send_contact_request(request, signer(false), std::move(contact_keys)).status),
           "send_contact_request");
+    ProfileFields fields{};
+    fields.display_name = "Alice";
+    check(unreachable(client->create_profile(id, 1, fields, signer(false)).status), "create_profile");
+    check(unreachable(client->update_profile(id, 1, fields, signer(false)).status), "update_profile");
+    fields.avatar_hash.push_back(0x01);
+    check(client->update_profile(id, 1, fields, signer(false)).status.kind == StatusKind::Internal,
+          "a 1-byte avatar hash accepted");
     const std::array<uint8_t, 20> voting_key{3};
     check(unreachable(client->cast_masternode_vote(id, voting_key, "alice", VoteChoice::Abstain, id, signer(false))),
           "cast_masternode_vote");

@@ -279,6 +279,46 @@ pub mod ffi {
         account_label: String,
     }
 
+    /// DashPay profile fields to set: an empty one is left as it is by
+    /// `update_profile` and omitted by `create_profile`. The embedder
+    /// computes `avatar_hash` (SHA-256 of the image, 32 bytes) and
+    /// `avatar_fingerprint` (its dHash, 8 bytes) and sets them with a new
+    /// `avatar_url`.
+    #[derive(Debug, Clone)]
+    struct ProfileFields {
+        display_name: String,
+        public_message: String,
+        avatar_url: String,
+        avatar_hash: Vec<u8>,
+        avatar_fingerprint: Vec<u8>,
+    }
+
+    /// A DashPay `profile` document; an empty field is absent.
+    #[derive(Debug, Clone, Default)]
+    struct Profile {
+        document_id: [u8; 32],
+        owner: [u8; 32],
+        revision: u64,
+        display_name: String,
+        public_message: String,
+        avatar_url: String,
+        avatar_hash: Vec<u8>,
+        avatar_fingerprint: Vec<u8>,
+        updated_at_ms: u64,
+    }
+
+    #[derive(Debug, Clone)]
+    struct ProfileResult {
+        status: Status,
+        profile: Profile,
+    }
+
+    #[derive(Debug, Clone)]
+    struct ProfilesResult {
+        status: Status,
+        profiles: Vec<Profile>,
+    }
+
     /// The DIP-15 compact extended public key, unvalidated beyond its
     /// length: the embedder checks `public_key` is a valid point.
     #[derive(Debug, Clone)]
@@ -388,6 +428,9 @@ pub mod ffi {
         /// the next page. Platform records votes by proTxHash, not by voter
         /// identity. Hash in the embedder's internal byte order.
         fn identity_votes(self: &PlatformClient, pro_tx_hash: &[u8; 32]) -> NameVotesResult;
+        /// The DashPay profiles of `owners` (unique, at most 100); an owner
+        /// without one is missing from the result.
+        fn get_profiles(self: &PlatformClient, owners: &[[u8; 32]]) -> ProfilesResult;
         /// Every request sent by or to `identity`, created after `since_ms`
         /// (0 = all).
         fn contact_requests(
@@ -433,6 +476,25 @@ pub mod ffi {
             signer: UniquePtr<WalletSigner>,
             keys: UniquePtr<ContactKeys>,
         ) -> IdResult;
+        /// Creates `owner`'s DashPay profile, signed with its key `key_id`
+        /// (a HIGH or CRITICAL authentication key); the profile as Platform
+        /// confirmed it.
+        fn create_profile(
+            self: &PlatformClient,
+            owner: &[u8; 32],
+            key_id: u32,
+            fields: &ProfileFields,
+            signer: UniquePtr<WalletSigner>,
+        ) -> ProfileResult;
+        /// Sets `fields` on `owner`'s existing profile, keeping the others,
+        /// as `create_profile` signs; fails if it has none.
+        fn update_profile(
+            self: &PlatformClient,
+            owner: &[u8; 32],
+            key_id: u32,
+            fields: &ProfileFields,
+            signer: UniquePtr<WalletSigner>,
+        ) -> ProfileResult;
         /// Votes on the contest for `label` (normalized here) as the
         /// masternode `pro_tx_hash` (internal byte order), signing with its
         /// voting key, whose HASH160 (CKeyID bytes, not reversed) is

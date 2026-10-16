@@ -27,6 +27,7 @@ use dash_sdk::dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGett
 use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::dpp::voting::votes::Vote;
+use dash_sdk::platform::dashpay::ProfileFields;
 use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, DpnsUsername};
 use dash_sdk::query_types::Contenders;
 
@@ -206,6 +207,64 @@ pub fn name_vote(vote: &ResourceVote) -> Option<ffi::NameVote> {
     })
 }
 
+/// A document's optional property, `T::default()` when absent.
+fn optional_property<T: Default, E: std::fmt::Display>(
+    document: &Document,
+    kind: &str,
+    name: &str,
+    read: impl FnOnce(&Value) -> Result<T, E>,
+) -> Result<T, String> {
+    document
+        .properties()
+        .get(name)
+        .map(read)
+        .transpose()
+        .map(Option::unwrap_or_default)
+        .map_err(|e| format!("{kind} {name}: {e}"))
+}
+
+/// An embedder string where empty means absent.
+fn non_empty(value: &str) -> Option<String> {
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
+/// An optional fixed-size field: empty is `None`, any other length an error.
+fn optional_array<const N: usize>(bytes: &[u8], name: &str) -> Result<Option<[u8; N]>, String> {
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    bytes
+        .try_into()
+        .map(Some)
+        .map_err(|_| format!("{name} must be {N} bytes, not {}", bytes.len()))
+}
+
+pub fn profile_fields(fields: &ffi::ProfileFields) -> Result<ProfileFields, String> {
+    Ok(ProfileFields {
+        display_name: non_empty(&fields.display_name),
+        public_message: non_empty(&fields.public_message),
+        avatar_url: non_empty(&fields.avatar_url),
+        avatar_hash: optional_array(&fields.avatar_hash, "avatar_hash")?,
+        avatar_fingerprint: optional_array(&fields.avatar_fingerprint, "avatar_fingerprint")?,
+    })
+}
+
+pub fn profile(document: &Document) -> Result<ffi::Profile, String> {
+    let text = |name| optional_property(document, "profile", name, Value::to_text);
+    let bytes = |name| optional_property(document, "profile", name, Value::to_binary_bytes);
+    Ok(ffi::Profile {
+        document_id: document.id().to_buffer(),
+        owner: document.owner_id().to_buffer(),
+        revision: document.revision().unwrap_or(0),
+        display_name: text("displayName")?,
+        public_message: text("publicMessage")?,
+        avatar_url: text("avatarUrl")?,
+        avatar_hash: bytes("avatarHash")?,
+        avatar_fingerprint: bytes("avatarFingerprint")?,
+        updated_at_ms: document.updated_at().unwrap_or(0),
+    })
+}
+
 pub fn contact_request(document: &Document) -> Result<ffi::ContactRequest, String> {
     let properties: &BTreeMap<String, Value> = document.properties();
     let field = |name: &str| {
@@ -218,14 +277,8 @@ pub fn contact_request(document: &Document) -> Result<ffi::ContactRequest, Strin
             .to_integer::<u32>()
             .map_err(|e| format!("contactRequest {name}: {e}"))
     };
-    let optional_bytes = |name: &str| {
-        properties
-            .get(name)
-            .map(|value| value.to_binary_bytes())
-            .transpose()
-            .map(Option::unwrap_or_default)
-            .map_err(|e| format!("contactRequest {name}: {e}"))
-    };
+    let optional_bytes =
+        |name| optional_property(document, "contactRequest", name, Value::to_binary_bytes);
     Ok(ffi::ContactRequest {
         document_id: document.id().to_buffer(),
         owner: document.owner_id().to_buffer(),
@@ -295,6 +348,45 @@ mod tests {
 
         properties.remove("toUserId");
         assert!(contact_request(&document(properties)).is_err());
+    }
+
+    #[test]
+    fn a_profile_document_is_marshalled_and_its_fields_convert() {
+        let document: Document = DocumentV0 {
+            id: [1; 32].into(),
+            owner_id: [2; 32].into(),
+            properties: BTreeMap::from([
+                ("displayName".to_string(), Value::Text("Alice".into())),
+                ("avatarHash".to_string(), Value::Bytes32([3; 32])),
+                ("avatarFingerprint".to_string(), Value::Bytes(vec![4; 8])),
+            ]),
+            revision: Some(5),
+            updated_at: Some(6),
+            ..Default::default()
+        }
+        .into();
+        let profile = profile(&document).expect("marshals");
+        assert_eq!((profile.document_id, profile.owner), ([1; 32], [2; 32]));
+        assert_eq!((profile.revision, profile.updated_at_ms), (5, 6));
+        assert_eq!(profile.display_name, "Alice");
+        assert!(profile.public_message.is_empty() && profile.avatar_url.is_empty());
+        assert_eq!(profile.avatar_hash, vec![3; 32]);
+        assert_eq!(profile.avatar_fingerprint, vec![4; 8]);
+
+        let mut fields = ffi::ProfileFields {
+            display_name: "Alice".into(),
+            public_message: String::new(),
+            avatar_url: "https://a.example/a.png".into(),
+            avatar_hash: vec![3; 32],
+            avatar_fingerprint: Vec::new(),
+        };
+        let converted = profile_fields(&fields).expect("converts");
+        assert_eq!(converted.display_name.as_deref(), Some("Alice"));
+        assert_eq!(converted.public_message, None);
+        assert_eq!(converted.avatar_hash, Some([3; 32]));
+        assert_eq!(converted.avatar_fingerprint, None);
+        fields.avatar_fingerprint = vec![4; 7];
+        assert!(profile_fields(&fields).is_err());
     }
 
     /// Core hands over a proTxHash in its internal `uint256` order; the
