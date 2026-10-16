@@ -978,6 +978,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 account_index = lock.account_index,
                 "resume_asset_lock: lock looked up"
             );
+            // A drain's lock is settled under the drain persistence contract
+            // whichever path resumes it (same-UUID resume, the generic
+            // exact-outpoint resume behind "Finish now", a readiness-deferred
+            // retry), so the admission policy applies here, before any
+            // dispatch or lifecycle write. Untagged legacy locks are unaffected.
+            if lock.operation_id.is_some() {
+                self.require_wallet_drain_persistence()?;
+            }
             // Only the two proof-less statuses are candidates. A lock
             // carrying an IS/Chain proof, a `RecoveredFromChain` entry
             // (reconstructed from a record the chain itself accepted), and

@@ -661,6 +661,31 @@ async fn should_refuse_drain_on_a_buffered_persistence_backend() {
         .register_wallet_drain_operation(fresh.clone());
     refused(wallet.asset_locks.begin_wallet_drain(&fresh).await);
     assert!(fresh.snapshot().out_point.is_none());
+    // The generic exact-outpoint resume of a drain's lock applies the same
+    // admission policy before anything is built or submitted.
+    let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
+    refused(
+        wallet
+            .asset_locks
+            .resolve_funding_with_is_timeout_fallback(
+                AssetLockFunding::FromExistingAssetLock {
+                    out_point: lock.out_point,
+                    consume_invitation_voucher: false,
+                },
+                lock.funding_type,
+                0,
+                &signer,
+            )
+            .await
+            .map(|_| ()),
+    );
+    refused(
+        wallet
+            .asset_locks
+            .resume_asset_lock(&lock.out_point, None)
+            .await
+            .map(|_| ()),
+    );
 
     assert_ne!(
         persistence.committed_status(&lock.out_point),
