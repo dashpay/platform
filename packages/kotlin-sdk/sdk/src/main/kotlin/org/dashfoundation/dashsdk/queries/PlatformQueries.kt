@@ -267,7 +267,11 @@ class Voting internal constructor(private val sdk: Sdk) {
         }
     }
 
-    /** All contested-resource votes cast by an identity, as JSON, or null. */
+    /**
+     * All contested-resource votes cast by an identity, as JSON, or null. Each vote
+     * carries `vote_poll_id`, `resource_vote_choice` and `vote_count`, the number of
+     * times the identity has voted on that vote poll.
+     */
     suspend fun contestedResourceIdentityVotes(
         identityId: String,
         limit: Int = 0,
