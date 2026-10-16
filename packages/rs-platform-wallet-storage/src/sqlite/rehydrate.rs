@@ -290,6 +290,10 @@ pub fn apply_persisted_core_state(
         wallet_info.metadata.last_processed_height =
             wallet_info.metadata.last_processed_height.max(h);
     }
+    // The max against the seeded `birth_height - 1` never undoes a stored
+    // DashPay backfill rewind: the rescan clamps its floor to the wallet's
+    // birth floor (`update_synced_height` in `reconcile_dashpay_rescan`), so
+    // a rewound cursor is never below the seed.
     if let Some(h) = core.synced_height {
         wallet_info.metadata.synced_height = wallet_info.metadata.synced_height.max(h);
     }

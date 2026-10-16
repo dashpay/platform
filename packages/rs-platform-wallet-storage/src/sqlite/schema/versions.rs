@@ -38,6 +38,7 @@ pub enum Domain {
     Invitations,
     DpnsNameStates,
     IdentityScanState,
+    DashPayBackfill,
     #[cfg(feature = "shielded")]
     ShieldedViewingKeys,
 }
@@ -63,6 +64,7 @@ impl Domain {
             Domain::Invitations => "invitations",
             Domain::DpnsNameStates => "dpns_name_states",
             Domain::IdentityScanState => "identity_scan_states",
+            Domain::DashPayBackfill => "dashpay_backfill",
             #[cfg(feature = "shielded")]
             Domain::ShieldedViewingKeys => "shielded_viewing_keys",
         }
@@ -71,6 +73,29 @@ impl Domain {
     /// Every domain, for coverage tests.
     #[cfg(any(test, feature = "__test-helpers"))]
     #[cfg(feature = "shielded")]
+    pub const ALL: [Domain; 18] = [
+        Domain::Core,
+        Domain::Identities,
+        Domain::IdentityKeys,
+        Domain::Contacts,
+        Domain::PlatformAddresses,
+        Domain::AssetLocks,
+        Domain::TokenBalances,
+        Domain::DashpayProfiles,
+        Domain::DashpayPaymentsOverlay,
+        Domain::Wallets,
+        Domain::AccountRegistrations,
+        Domain::CoreAddressPool,
+        Domain::PendingContactCrypto,
+        Domain::Invitations,
+        Domain::DpnsNameStates,
+        Domain::IdentityScanState,
+        Domain::DashPayBackfill,
+        Domain::ShieldedViewingKeys,
+    ];
+
+    /// Every domain, for coverage tests without shielded persistence.
+    #[cfg(all(any(test, feature = "__test-helpers"), not(feature = "shielded")))]
     pub const ALL: [Domain; 17] = [
         Domain::Core,
         Domain::Identities,
@@ -88,28 +113,7 @@ impl Domain {
         Domain::Invitations,
         Domain::DpnsNameStates,
         Domain::IdentityScanState,
-        Domain::ShieldedViewingKeys,
-    ];
-
-    /// Every domain, for coverage tests without shielded persistence.
-    #[cfg(all(any(test, feature = "__test-helpers"), not(feature = "shielded")))]
-    pub const ALL: [Domain; 16] = [
-        Domain::Core,
-        Domain::Identities,
-        Domain::IdentityKeys,
-        Domain::Contacts,
-        Domain::PlatformAddresses,
-        Domain::AssetLocks,
-        Domain::TokenBalances,
-        Domain::DashpayProfiles,
-        Domain::DashpayPaymentsOverlay,
-        Domain::Wallets,
-        Domain::AccountRegistrations,
-        Domain::CoreAddressPool,
-        Domain::PendingContactCrypto,
-        Domain::Invitations,
-        Domain::DpnsNameStates,
-        Domain::IdentityScanState,
+        Domain::DashPayBackfill,
     ];
 }
 
@@ -144,10 +148,7 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
         invitations,
         dpns_name_states,
         identity_scan_state,
-        // Not persisted by this backend yet (see `ClientWalletStartState::
-        // dashpay_backfill` on the load side): the record rides the FFI
-        // hosts' wallet row only, so it touches no domain here.
-        dashpay_backfill: _,
+        dashpay_backfill,
         #[cfg(feature = "shielded")]
         shielded,
         #[cfg(not(feature = "shielded"))]
@@ -213,6 +214,11 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     // collection, so presence is the whole test.
     if identity_scan_state.is_some() {
         out.push(Domain::IdentityScanState);
+    }
+    // Every write is the whole record and an empty one clears the stored
+    // record, so presence alone is a change, the same as the scan verdict.
+    if dashpay_backfill.is_some() {
+        out.push(Domain::DashPayBackfill);
     }
     #[cfg(feature = "shielded")]
     if shielded
