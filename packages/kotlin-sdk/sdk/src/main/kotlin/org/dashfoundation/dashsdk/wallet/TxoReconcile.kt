@@ -142,6 +142,16 @@ internal class TxoReconcileCoordinator(private val cadenceMs: Long = TxoReconcil
             }
         }
 
+    /**
+     * SPV stopped: arm the next rising edge. The poll publishes no progress
+     * read while SPV is down, so without this a client that restarts
+     * straight into steady state would never leave it as far as
+     * [walletsDue] can tell, and every wallet would wait out the cadence.
+     */
+    fun spvStopped() {
+        synchronized(lock) { wasSteady = false }
+    }
+
     /** Claim the wallet for one run; false when a run is already in flight. */
     fun tryBegin(walletKey: String): Boolean = synchronized(lock) { inFlight.add(walletKey) }
 

@@ -129,6 +129,31 @@ class TxoReconcileTest {
     }
 
     @Test
+    fun stoppingSpvArmsTheNextRisingEdgeWithoutASyncingRead() {
+        // SPV stops and restarts straight into steady state: the poll feeds
+        // no progress while SPV is down and the first read after the
+        // restart is already steady, so no syncing read ever lowers the
+        // edge. The stop itself must, or every wallet waits out the cadence.
+        val coordinator = TxoReconcileCoordinator(cadenceMs = 1_000_000)
+        val wallets = listOf("a", "b")
+        assertEquals(wallets, coordinator.walletsDue(steady, wallets, nowMs = 0))
+        assertEquals(emptyList<String>(), coordinator.walletsDue(steady, wallets, nowMs = 10))
+
+        coordinator.spvStopped()
+
+        assertEquals(
+            "the first steady read after the restart is a new steady state",
+            wallets,
+            coordinator.walletsDue(steady, wallets, nowMs = 20),
+        )
+        assertEquals(
+            "and only the first",
+            emptyList<String>(),
+            coordinator.walletsDue(steady, wallets, nowMs = 30),
+        )
+    }
+
+    @Test
     fun closeAndDeletionStaleTheEpochAndDeletionForgetsTheCadence() {
         val coordinator = TxoReconcileCoordinator(cadenceMs = 1_000)
         val before = coordinator.currentEpoch

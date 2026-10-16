@@ -2209,6 +2209,10 @@ class PlatformWalletManager(
 
     suspend fun stopSpv() = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.spvStop(managerHandle) }
+        // Arm the reconcile's next steady-state edge here as well as on the
+        // poll's next stopped read: a restart inside one poll interval
+        // would otherwise never be seen as a stop.
+        txoReconcile.spvStopped()
     }
 
     /** Clear all persisted SPV storage (headers, filters, state). */
@@ -2302,9 +2306,14 @@ class PlatformWalletManager(
                     runCatching { spvTipUnixSeconds() }.getOrNull()?.let { tip ->
                         if (tip != _spvTipUnixSeconds.value) _spvTipUnixSeconds.value = tip
                     }
-                } else if (_spvProgress.value != SpvSyncProgressData.EMPTY) {
-                    // SPV stopped — reset so the overlay clears.
-                    _spvProgress.value = SpvSyncProgressData.EMPTY
+                } else {
+                    // SPV stopped — the next steady read after a restart is
+                    // a new steady state for the reconcile.
+                    txoReconcile.spvStopped()
+                    if (_spvProgress.value != SpvSyncProgressData.EMPTY) {
+                        // Reset so the overlay clears.
+                        _spvProgress.value = SpvSyncProgressData.EMPTY
+                    }
                 }
                 delay(POLL_INTERVAL_MS)
             }
