@@ -9,18 +9,18 @@ use crate::common;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use common::{mine, persist_events, registration};
+use common::{chain_lock, mine, persist_events, registration};
 use dashcore::hashes::Hash;
 use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::{Address, Network, OutPoint, ScriptBuf, Transaction, TxOut};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::transaction_record::{TransactionDirection, TransactionRecord};
-use key_wallet::transaction_checking::TransactionType;
+use key_wallet::transaction_checking::{TransactionContext, TransactionType};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use platform_wallet::changeset::{
-    AssetLockChangeSet, AssetLockEntry, ClientStartState, PlatformWalletChangeSet,
+    AssetLockChangeSet, AssetLockEntry, ClientStartState, CoreChangeSet, PlatformWalletChangeSet,
     PlatformWalletPersistence,
 };
 use platform_wallet::key_wallet_manager::WalletManager;
@@ -155,6 +155,127 @@ async fn should_rebuild_accounting_when_a_wiped_wallet_rescans_from_birth() {
 
     let state = rescan(&path, wallet_id, &chain.blocks()).await;
 
+    assert_rebuilt(&path, &wallet_id, &chain, &address, &state);
+    let replayed = state.wallets[&wallet_id]
+        .wallet_info
+        .accounts
+        .standard_bip44_accounts[&0]
+        .transactions();
+    for tx in [&chain.funding, &chain.spend, &chain.lock] {
+        assert!(
+            replayed.contains_key(&tx.txid()),
+            "the load replays {}",
+            tx.txid()
+        );
+    }
+}
+
+/// R3: a wallet upgraded from V018. V021 drops its Core history but keeps
+/// `last_processed_height` and the ChainLock, both above that history, so the
+/// rescan replays every historical block below a ChainLock the loaded wallet
+/// already holds: key-wallet's ChainLocked path, not the ordinary block one.
+/// It stores the same accounting as R1, and another reload keeps it. The
+/// loaded account holds each transaction as finalized: without
+/// `keep-finalized-transactions` key-wallet drops a ChainLocked record from
+/// memory, and the stored row stays the record of it.
+#[tokio::test]
+async fn should_rebuild_accounting_when_an_upgraded_wallet_rescans_below_its_chain_lock() {
+    let (persister, _dir, path) = common::fresh_persister();
+    let (wallet_id, address) = wiped_wallet(&persister);
+    drop(persister);
+    let chain = Chain::new(&address);
+    // The history and checkpoint a synced V018 store holds.
+    rescan(&path, wallet_id, &chain.blocks()).await;
+    let checkpoint = CoreChangeSet {
+        last_processed_height: Some(500),
+        synced_height: Some(500),
+        last_applied_chain_lock: Some(chain_lock(400, 40)),
+        ..Default::default()
+    };
+    SqlitePersister::open(SqlitePersisterConfig::new(&path))
+        .unwrap()
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(checkpoint),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let sync_state = || {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.query_row(
+            "SELECT last_processed_height, synced_height, chainlock_height FROM core_sync_state \
+             WHERE wallet_id = ?1",
+            [wallet_id.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap()
+    };
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
+             DELETE FROM refinery_schema_history WHERE version >= 21;",
+        )
+        .unwrap();
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM core_transactions", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(rows, 3, "the V018 store holds the history");
+    }
+    assert_eq!(sync_state(), (Some(500), Some(500), Some(400)));
+
+    // `rescan` opens through `SqlitePersister::open`, so V021 runs first.
+    let state = rescan(&path, wallet_id, &chain.blocks()).await;
+
+    assert_eq!(
+        sync_state(),
+        (Some(500), Some(0), Some(400)),
+        "V021 rewinds only the filter checkpoint"
+    );
+    for tx in [&chain.funding, &chain.spend, &chain.lock] {
+        assert!(
+            matches!(
+                stored(&path, &wallet_id, tx).context,
+                TransactionContext::InChainLockedBlock(_)
+            ),
+            "the rescan finds {} below the ChainLock",
+            tx.txid()
+        );
+    }
+    let reloaded = SqlitePersister::open(SqlitePersisterConfig::new(&path))
+        .unwrap()
+        .load()
+        .unwrap();
+    for state in [&state, &reloaded] {
+        assert_rebuilt(&path, &wallet_id, &chain, &address, state);
+        let account = &state.wallets[&wallet_id]
+            .wallet_info
+            .accounts
+            .standard_bip44_accounts[&0];
+        for tx in [&chain.funding, &chain.spend, &chain.lock] {
+            assert!(
+                account.transaction_is_finalized(&tx.txid()),
+                "the load holds {} as finalized",
+                tx.txid()
+            );
+        }
+    }
+}
+
+/// What a rescan of `chain` from birth must leave: the stored accounting of
+/// each transaction, the spendable coins and balance of the loaded `state`,
+/// and its replay of every transaction.
+fn assert_rebuilt(
+    path: &std::path::Path,
+    wallet_id: &WalletId,
+    chain: &Chain,
+    address: &Address,
+    state: &ClientStartState,
+) {
     let input = |value| (0, value, address.clone());
     // (case, transaction, input details as (index, value, address), net, direction)
     let cases = [
@@ -181,7 +302,7 @@ async fn should_rebuild_accounting_when_a_wiped_wallet_rescans_from_birth() {
         ),
     ];
     for (case, tx, inputs, net, direction) in cases {
-        let record = stored(&path, &wallet_id, tx);
+        let record = stored(path, wallet_id, tx);
         let details: Vec<_> = record
             .input_details
             .iter()
@@ -195,10 +316,10 @@ async fn should_rebuild_accounting_when_a_wiped_wallet_rescans_from_birth() {
         );
     }
     assert_eq!(
-        stored(&path, &wallet_id, &chain.lock).transaction_type,
+        stored(path, wallet_id, &chain.lock).transaction_type,
         TransactionType::AssetLock
     );
-    let info = &state.wallets[&wallet_id].wallet_info;
+    let info = &state.wallets[wallet_id].wallet_info;
     let coins: Vec<_> = info.accounts.standard_bip44_accounts[&0]
         .utxos
         .keys()
@@ -210,14 +331,6 @@ async fn should_rebuild_accounting_when_a_wiped_wallet_rescans_from_birth() {
         "only the change is spendable"
     );
     assert_eq!(info.balance.total(), 39_000);
-    let replayed = info.accounts.standard_bip44_accounts[&0].transactions();
-    for tx in [&chain.funding, &chain.spend, &chain.lock] {
-        assert!(
-            replayed.contains_key(&tx.txid()),
-            "the load replays {}",
-            tx.txid()
-        );
-    }
 }
 
 fn asset_lock_rows(path: &std::path::Path) -> Vec<Vec<rusqlite::types::Value>> {

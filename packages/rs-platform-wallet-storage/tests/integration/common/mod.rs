@@ -293,6 +293,16 @@ pub fn registration(
     }
 }
 
+/// A ChainLock for `height` over a block hash of `[hash; 32]`, unsigned.
+pub fn chain_lock(height: u32, hash: u8) -> dashcore::ephemerealdata::chain_lock::ChainLock {
+    use dashcore::hashes::Hash;
+    dashcore::ephemerealdata::chain_lock::ChainLock {
+        block_height: height,
+        block_hash: dashcore::BlockHash::from_byte_array([hash; 32]),
+        signature: dashcore::bls_sig_utils::BLSSignature::from([0; 96]),
+    }
+}
+
 /// A shared wallet manager, as the live event adapter holds it.
 pub type Manager = std::sync::Arc<
     tokio::sync::RwLock<

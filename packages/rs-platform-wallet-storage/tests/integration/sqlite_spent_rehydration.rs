@@ -4,11 +4,8 @@ use crate::common;
 
 use std::collections::BTreeMap;
 
-use common::{registration, Case};
-use dashcore::{
-    bls_sig_utils::BLSSignature, ephemerealdata::chain_lock::ChainLock, hashes::Hash, Address,
-    BlockHash, Network, OutPoint, ScriptBuf, Transaction, TxOut, Txid,
-};
+use common::{chain_lock, registration, Case};
+use dashcore::{hashes::Hash, Address, Network, OutPoint, ScriptBuf, Transaction, TxOut, Txid};
 use key_wallet::{
     managed_account::{
         managed_account_trait::ManagedAccountTrait, transaction_record::TransactionRecord,
@@ -40,14 +37,6 @@ const MEMPOOL: TransactionContext = TransactionContext::Mempool;
 
 /// One past half of `i64::MAX`: two owned outputs of it cannot be summed as `i64`.
 const UNREPRESENTABLE_HALF: u64 = (1 << 62) + 1;
-
-fn chain_lock(height: u32, hash: u8) -> ChainLock {
-    ChainLock {
-        block_height: height,
-        block_hash: BlockHash::from_byte_array([hash; 32]),
-        signature: BLSSignature::from([0; 96]),
-    }
-}
 
 /// An output burning `value` to an empty script.
 fn burn(value: u64) -> TxOut {
