@@ -13,6 +13,8 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
+use dash_sdk::platform::dashpay::{ProfileFields, MAX_PROFILE_OWNERS_PER_QUERY};
+
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
@@ -45,7 +47,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Fetch DashPay profile documents from Platform for all managed
     /// identities and cache them on [`ManagedIdentity`].
     ///
-    /// Fetches in `In`-chunks (one query per ≤`CONTACT_PROFILE_IN_CAP` ids, not
+    /// Fetches in `In`-chunks (one query per ≤`MAX_PROFILE_OWNERS_PER_QUERY` ids, not
     /// N+1) with per-chunk failure isolation, and persists only when the
     /// fetched profile differs from the cached one — a `None` result clears the
     /// cache only when a profile is currently stored (both arms guarded so a
@@ -78,7 +80,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //    chunk but absent from the result is confirmed-absent (`None`).
         let mut fetched: std::collections::BTreeMap<Identifier, Option<DashPayProfile>> =
             std::collections::BTreeMap::new();
-        for chunk in identity_ids.chunks(CONTACT_PROFILE_IN_CAP) {
+        for chunk in identity_ids.chunks(MAX_PROFILE_OWNERS_PER_QUERY) {
             match self
                 .fetch_contact_profiles_chunk(&dashpay_contract, chunk)
                 .await
@@ -147,41 +149,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
-        use dpp::document::Document;
-        use dpp::document::DocumentV0;
 
         // 1. The DashPay data contract (process-wide cache).
         let dashpay_contract = super::dashpay_contract()?;
 
-        // 2. Compute avatar hashes when raw bytes are provided.
-        let (avatar_hash, avatar_fingerprint) = if let Some(ref bytes) = input.avatar_bytes {
-            let hash = crate::wallet::identity::calculate_avatar_hash(bytes);
-            let fingerprint = crate::wallet::identity::calculate_dhash_fingerprint(bytes)
-                .map_err(PlatformWalletError::InvalidIdentityData)?;
-            (Some(hash), Some(fingerprint))
-        } else {
-            (None, None)
-        };
+        // 2. The profile fields, with avatar hashes computed from any raw bytes.
+        let fields = profile_fields(input)?;
 
-        // 3. Build the document property map.
-        let mut properties = std::collections::BTreeMap::new();
-        if let Some(ref name) = input.display_name {
-            properties.insert("displayName".to_string(), Value::Text(name.clone()));
-        }
-        if let Some(ref msg) = input.public_message {
-            properties.insert("publicMessage".to_string(), Value::Text(msg.clone()));
-        }
-        if let Some(ref url) = input.avatar_url {
-            properties.insert("avatarUrl".to_string(), Value::Text(url.clone()));
-        }
-        if let Some(hash) = avatar_hash {
-            properties.insert("avatarHash".to_string(), Value::Bytes32(hash));
-        }
-        if let Some(fp) = avatar_fingerprint {
-            properties.insert("avatarFingerprint".to_string(), Value::Bytes(fp.to_vec()));
-        }
-
-        // 4. Look up identity + signing key. The identity_index is not
+        // 3. Look up identity + signing key. The identity_index is not
         // needed here — the signer is supplied externally.
         let signing_key = {
             let wm = self.wallet_manager.read().await;
@@ -205,53 +180,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 })?
         };
 
-        let stub_document = Document::V0(DocumentV0 {
-            contract_version: None,
-            id: Identifier::from([0u8; 32]),
-            owner_id: *identity_id,
-            properties,
-            revision: None,
-            created_at: None,
-            updated_at: None,
-            transferred_at: None,
-            created_at_block_height: None,
-            updated_at_block_height: None,
-            transferred_at_block_height: None,
-            created_at_core_block_height: None,
-            updated_at_core_block_height: None,
-            transferred_at_core_block_height: None,
-            creator_id: None,
-            moderated_at: None,
-            moderated_by: None,
-        });
-
-        let profile_document_type = dashpay_contract
-            .document_type_for_name("profile")
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to get profile document type: {e}"
-                ))
-            })?
-            .to_owned_document_type();
-
-        let _result_doc = self
-            .sdk_writer
-            .put_document(super::sdk_writer::PutDocumentParams {
-                document: stub_document,
-                document_type: profile_document_type,
-                signing_public_key: signing_key,
-                signer: signer as &(dyn Signer<IdentityPublicKey> + Send + Sync),
-            })
-            .await?;
-
-        let profile = crate::wallet::identity::DashPayProfile {
-            display_name: input.display_name,
-            bio: input.public_message.clone(),
-            avatar_url: input.avatar_url,
-            avatar_hash,
-            avatar_fingerprint,
-            public_message: input.public_message,
-        };
+        let created = self
+            .sdk
+            .create_profile(
+                &dashpay_contract,
+                *identity_id,
+                fields,
+                &signing_key,
+                signer,
+            )
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
+        let profile = profile_from_properties(created.properties());
 
         {
             let mut wm = self.wallet_manager.write().await;
@@ -280,62 +220,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
-        use dpp::document::Document;
-        use dpp::document::DocumentV0;
-        use dpp::document::INITIAL_REVISION;
 
         // 1. The DashPay contract (process-wide cache).
         let dashpay_contract = super::dashpay_contract()?;
 
-        // 2. Fetch existing profile document for ID + revision + its
-        //    current property map (seed for the read-modify-write merge).
-        let (existing_doc_id, current_revision, existing_properties) = {
-            use dash_sdk::platform::FetchMany;
+        // 2. The profile fields; avatar hashes are computed only when new
+        //    bytes are provided. The SDK merges them onto the on-platform
+        //    document, so unset fields (avatar included) are retained.
+        let fields = profile_fields(input)?;
 
-            let query = single_profile_query(&dashpay_contract, identity_id);
-
-            let docs = Document::fetch_many(&self.sdk, query)
-                .await
-                .map_err(PlatformWalletError::Sdk)?;
-
-            match docs.into_values().next() {
-                Some(Some(doc)) => {
-                    let id = doc.id();
-                    let rev = doc.revision().unwrap_or(INITIAL_REVISION);
-                    (id, rev, doc.properties().clone())
-                }
-                _ => {
-                    return Err(PlatformWalletError::InvalidIdentityData(
-                        "No existing profile document found to update".to_string(),
-                    ));
-                }
-            }
-        };
-
-        // 3. Compute avatar hashes only when new bytes are provided.
-        //    Without new bytes the existing avatar fields are retained by
-        //    the read-modify-write merge below (seeded from the on-platform
-        //    document), so no local-cache fallback is needed.
-        let (avatar_hash, avatar_fingerprint) = if let Some(ref bytes) = input.avatar_bytes {
-            let hash = crate::wallet::identity::calculate_avatar_hash(bytes);
-            let fingerprint = crate::wallet::identity::calculate_dhash_fingerprint(bytes)
-                .map_err(PlatformWalletError::InvalidIdentityData)?;
-            (Some(hash), Some(fingerprint))
-        } else {
-            (None, None)
-        };
-
-        // 4. Read-modify-write: seed from the existing document's
-        //    properties so a partial update preserves sibling fields,
-        //    then overlay only the caller-provided fields.
-        let properties =
-            merge_profile_properties(existing_properties, &input, avatar_hash, avatar_fingerprint);
-
-        // The returned profile overwrites the local cache, so it must
-        // reflect the merged on-platform state, not the partial input.
-        let returned_profile = profile_from_properties(&properties);
-
-        // 5. Look up signing key.
+        // 3. Look up signing key.
         let signing_key = {
             let wm = self.wallet_manager.read().await;
             let info = wm
@@ -358,46 +252,20 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 })?
         };
 
-        let updated_document = Document::V0(DocumentV0 {
-            contract_version: None,
-            id: existing_doc_id,
-            owner_id: *identity_id,
-            properties,
-            revision: Some(current_revision + 1),
-            created_at: None,
-            updated_at: None,
-            transferred_at: None,
-            created_at_block_height: None,
-            updated_at_block_height: None,
-            transferred_at_block_height: None,
-            created_at_core_block_height: None,
-            updated_at_core_block_height: None,
-            transferred_at_core_block_height: None,
-            creator_id: None,
-            moderated_at: None,
-            moderated_by: None,
-        });
-
-        let profile_document_type = dashpay_contract
-            .document_type_for_name("profile")
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to get profile document type: {e}"
-                ))
-            })?
-            .to_owned_document_type();
-
-        let _result_doc = self
-            .sdk_writer
-            .put_document(super::sdk_writer::PutDocumentParams {
-                document: updated_document,
-                document_type: profile_document_type,
-                signing_public_key: signing_key,
-                signer: signer as &(dyn Signer<IdentityPublicKey> + Send + Sync),
-            })
-            .await?;
-
-        let profile = returned_profile;
+        // The returned profile overwrites the local cache, so it must
+        // reflect the merged on-platform state, not the partial input.
+        let merged = self
+            .sdk
+            .update_profile(
+                &dashpay_contract,
+                *identity_id,
+                fields,
+                &signing_key,
+                signer,
+            )
+            .await
+            .map_err(PlatformWalletError::Sdk)?;
+        let profile = profile_from_properties(merged.properties());
 
         {
             let mut wm = self.wallet_manager.write().await;
@@ -413,41 +281,29 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 }
 
 // ---------------------------------------------------------------------------
-// Property-map helpers (read-modify-write merge + parse)
+// Profile-field helpers
 // ---------------------------------------------------------------------------
 
-/// Read-modify-write merge of a [`ProfileUpdate`] onto the property map of
-/// the existing on-platform profile document.
-///
-/// A profile update is **partial**: only the fields the caller set change.
-/// Seeding from `existing` and overlaying just the provided fields
-/// preserves sibling fields (publicMessage, avatarUrl, …) that a
-/// fresh-map build would silently drop — the on-platform data loss this
-/// guards against. Avatar hash/fingerprint are overlaid only when the
-/// caller supplied new avatar bytes (`avatar_hash`/`avatar_fingerprint`
-/// are `Some`); otherwise the existing avatar fields are retained.
-fn merge_profile_properties(
-    mut existing: std::collections::BTreeMap<String, Value>,
-    input: &crate::wallet::identity::ProfileUpdate,
-    avatar_hash: Option<[u8; 32]>,
-    avatar_fingerprint: Option<[u8; 8]>,
-) -> std::collections::BTreeMap<String, Value> {
-    if let Some(name) = &input.display_name {
-        existing.insert("displayName".to_string(), Value::Text(name.clone()));
-    }
-    if let Some(msg) = &input.public_message {
-        existing.insert("publicMessage".to_string(), Value::Text(msg.clone()));
-    }
-    if let Some(url) = &input.avatar_url {
-        existing.insert("avatarUrl".to_string(), Value::Text(url.clone()));
-    }
-    if let Some(hash) = avatar_hash {
-        existing.insert("avatarHash".to_string(), Value::Bytes32(hash));
-    }
-    if let Some(fp) = avatar_fingerprint {
-        existing.insert("avatarFingerprint".to_string(), Value::Bytes(fp.to_vec()));
-    }
-    existing
+/// The SDK profile fields for a [`ProfileUpdate`]. The avatar hash and dHash
+/// fingerprint are computed only when new avatar bytes are provided.
+fn profile_fields(
+    input: crate::wallet::identity::ProfileUpdate,
+) -> Result<ProfileFields, PlatformWalletError> {
+    let (avatar_hash, avatar_fingerprint) = if let Some(bytes) = &input.avatar_bytes {
+        let hash = crate::wallet::identity::calculate_avatar_hash(bytes);
+        let fingerprint = crate::wallet::identity::calculate_dhash_fingerprint(bytes)
+            .map_err(PlatformWalletError::InvalidIdentityData)?;
+        (Some(hash), Some(fingerprint))
+    } else {
+        (None, None)
+    };
+    Ok(ProfileFields {
+        display_name: input.display_name,
+        public_message: input.public_message,
+        avatar_url: input.avatar_url,
+        avatar_hash,
+        avatar_fingerprint,
+    })
 }
 
 /// Parse a profile document's property map into a [`DashPayProfile`].
@@ -490,8 +346,6 @@ fn profile_from_properties(
 
 /// Max length of a DashPay `avatarUrl` (DIP-15). Longer is rejected.
 const MAX_AVATAR_URL_LEN: usize = 2048;
-/// Platform `In`-clause cardinality cap; also the profile-fetch chunk size.
-const CONTACT_PROFILE_IN_CAP: usize = 100;
 /// Re-fetch / re-check window for a cached contact profile. A present profile
 /// is refreshed and a confirmed-absent one re-checked at most once per window,
 /// bounding sync cost without the (unprovable-as-a-batch) `$updatedAt`
@@ -625,7 +479,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let mut results: Vec<(Identifier, OwnerContactProfiles)> = Vec::new();
         for (owner_id, to_fetch) in plan {
             let mut owner_results: OwnerContactProfiles = Vec::new();
-            for chunk in to_fetch.chunks(CONTACT_PROFILE_IN_CAP) {
+            for chunk in to_fetch.chunks(MAX_PROFILE_OWNERS_PER_QUERY) {
                 match self
                     .fetch_contact_profiles_chunk(&dashpay_contract, chunk)
                     .await
@@ -693,33 +547,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Ok(written)
     }
 
-    /// Run one `$ownerId In [chunk]` profile query, returning the present
-    /// profiles keyed by owner id (absent ids are simply missing). The
-    /// `profile` `ownerId` index is unique, so the set lookup needs no
-    /// pagination (≤1 profile per owner). The query is built by
-    /// [`contact_profiles_chunk_query`].
+    /// Fetch one chunk of profiles through [`Sdk::get_profiles`](dash_sdk::Sdk::get_profiles),
+    /// returning the present profiles keyed by owner id (absent ids are simply
+    /// missing). The `profile` `ownerId` index is unique, so the set lookup
+    /// needs no pagination (≤1 profile per owner).
     async fn fetch_contact_profiles_chunk(
         &self,
         dashpay_contract: &Arc<dpp::data_contract::DataContract>,
         chunk: &[Identifier],
     ) -> Result<std::collections::BTreeMap<Identifier, Option<DashPayProfile>>, PlatformWalletError>
     {
-        use dash_sdk::platform::FetchMany;
-        use dpp::document::Document;
-
-        if chunk.is_empty() {
-            return Ok(Default::default());
-        }
-        let query = contact_profiles_chunk_query(dashpay_contract, chunk);
-
-        let docs = Document::fetch_many(&self.sdk, query)
+        let docs = self
+            .sdk
+            .get_profiles(dashpay_contract, chunk)
             .await
             .map_err(PlatformWalletError::Sdk)?;
 
         let mut out = std::collections::BTreeMap::new();
-        for (_doc_id, maybe_doc) in docs {
-            let Some(doc) = maybe_doc else { continue };
-            let owner = doc.owner_id();
+        for (owner, doc) in docs {
             let mut profile = profile_from_properties(doc.properties());
             // Drop an untrusted avatar URL rather than caching it.
             if profile
@@ -739,82 +584,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 }
 
-/// Build the single-owner `profile` fetch query WHERE `$ownerId = identity_id`
-/// (`limit 1` — profile is unique per owner). Used by the external-signer
-/// update's read-modify-write seed to fetch the current document's
-/// id/revision/properties.
-fn single_profile_query(
-    dashpay_contract: &Arc<dpp::data_contract::DataContract>,
-    identity_id: &Identifier,
-) -> dash_sdk::platform::DocumentQuery {
-    use dash_sdk::drive::query::{WhereClause, WhereOperator};
-    use dpp::platform_value::platform_value;
-
-    dash_sdk::platform::DocumentQuery {
-        select: dash_sdk::drive::query::SelectProjection::documents(),
-        data_contract: Arc::clone(dashpay_contract),
-        document_type_name: "profile".to_string(),
-        where_clauses: vec![WhereClause {
-            field: "$ownerId".to_string(),
-            operator: WhereOperator::Equal,
-            value: platform_value!(identity_id),
-        }],
-        time_range_clauses: vec![],
-        integer_range_clauses: vec![],
-        sub_queries: vec![],
-        group_by: vec![],
-        having: vec![],
-        order_by_clauses: vec![],
-        limit: 1,
-        offset: None,
-        start: None,
-    }
-}
-
-/// Build the `$ownerId In [chunk]` profile fetch query for one chunk.
-///
-/// `In` is a range operator, so DAPI requires a matching `orderBy` on the
-/// range field or it rejects the query with "missing order by for range".
-/// The `$ownerId` index is unique, so ordering does not change the result
-/// set (≤1 profile per owner) — the `orderBy` is only there to satisfy that
-/// range-orderBy rule.
-fn contact_profiles_chunk_query(
-    dashpay_contract: &Arc<dpp::data_contract::DataContract>,
-    chunk: &[Identifier],
-) -> dash_sdk::platform::DocumentQuery {
-    use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
-    use dpp::platform_value::{platform_value, Value};
-
-    let in_values = Value::Array(chunk.iter().map(|id| platform_value!(id)).collect());
-    dash_sdk::platform::DocumentQuery {
-        select: dash_sdk::drive::query::SelectProjection::documents(),
-        data_contract: Arc::clone(dashpay_contract),
-        document_type_name: "profile".to_string(),
-        where_clauses: vec![WhereClause {
-            field: "$ownerId".to_string(),
-            operator: WhereOperator::In,
-            value: in_values,
-        }],
-        time_range_clauses: vec![],
-        integer_range_clauses: vec![],
-        sub_queries: vec![],
-        group_by: vec![],
-        having: vec![],
-        order_by_clauses: vec![OrderClause {
-            field: "$ownerId".to_string(),
-            ascending: true,
-        }],
-        limit: CONTACT_PROFILE_IN_CAP as u32,
-        offset: None,
-        start: None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::signing_key::tests::KeyFilter;
     use super::*;
-    use crate::wallet::identity::ProfileUpdate;
     use std::collections::BTreeMap;
 
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -913,102 +686,31 @@ mod tests {
         assert_eq!(pick(&identity), identity.public_keys().get(&1));
     }
 
-    fn existing_full() -> BTreeMap<String, Value> {
-        let mut m = BTreeMap::new();
-        m.insert("displayName".to_string(), Value::Text("Alice".into()));
-        m.insert(
-            "publicMessage".to_string(),
-            Value::Text("hello world".into()),
-        );
-        m.insert(
+    /// The parsed profile reflects every field of a full property map; the
+    /// `publicMessage` is both the bio and the public message, and an
+    /// `avatarHash` stored as the sized `Bytes32` round-trips.
+    #[test]
+    fn profile_from_properties_reads_every_field() {
+        let mut props = BTreeMap::new();
+        props.insert("displayName".to_string(), Value::Text("Alice".into()));
+        props.insert("publicMessage".to_string(), Value::Text("hello".into()));
+        props.insert(
             "avatarUrl".to_string(),
             Value::Text("https://x/a.png".into()),
         );
-        m.insert("avatarHash".to_string(), Value::Bytes32([7u8; 32]));
-        m.insert(
+        props.insert("avatarHash".to_string(), Value::Bytes32([7u8; 32]));
+        props.insert(
             "avatarFingerprint".to_string(),
             Value::Bytes(vec![1, 2, 3, 4, 5, 6, 7, 8]),
         );
-        m
-    }
 
-    /// A partial update (only `displayName`) must NOT wipe sibling fields.
-    /// Contrasts the fixed read-modify-write (seed from existing) against
-    /// the old fresh-map build (empty seed), which dropped them — so the
-    /// test would fail against the pre-fix behavior.
-    #[test]
-    fn partial_update_preserves_sibling_fields() {
-        let input = ProfileUpdate {
-            display_name: Some("Alice 2".to_string()),
-            ..Default::default()
-        };
-
-        // Fixed: seed from the existing on-platform properties.
-        let merged = merge_profile_properties(existing_full(), &input, None, None);
-        assert_eq!(
-            merged.get("displayName").and_then(|v| v.as_str()),
-            Some("Alice 2")
-        );
-        assert_eq!(
-            merged.get("publicMessage").and_then(|v| v.as_str()),
-            Some("hello world"),
-        );
-        assert_eq!(
-            merged.get("avatarUrl").and_then(|v| v.as_str()),
-            Some("https://x/a.png"),
-        );
-        assert!(merged.contains_key("avatarHash"));
-        assert!(merged.contains_key("avatarFingerprint"));
-
-        // The old behavior — building a fresh/empty map — is exactly what
-        // caused the data loss: the same overlay drops every field the
-        // caller didn't set.
-        let buggy = merge_profile_properties(BTreeMap::new(), &input, None, None);
-        assert!(
-            !buggy.contains_key("publicMessage"),
-            "regression guard: a fresh/empty seed wipes sibling fields"
-        );
-        assert!(!buggy.contains_key("avatarUrl"));
-    }
-
-    /// Avatar fields are overlaid only when new bytes are supplied;
-    /// otherwise the existing avatar is retained through the merge.
-    #[test]
-    fn avatar_overlaid_only_when_new_bytes_present() {
-        let input = ProfileUpdate {
-            display_name: Some("x".into()),
-            ..Default::default()
-        };
-
-        // No new avatar bytes => existing avatar retained.
-        let merged = merge_profile_properties(existing_full(), &input, None, None);
-        let prof = profile_from_properties(&merged);
+        let prof = profile_from_properties(&props);
+        assert_eq!(prof.display_name.as_deref(), Some("Alice"));
+        assert_eq!(prof.public_message.as_deref(), Some("hello"));
+        assert_eq!(prof.bio.as_deref(), Some("hello"));
+        assert_eq!(prof.avatar_url.as_deref(), Some("https://x/a.png"));
         assert_eq!(prof.avatar_hash, Some([7u8; 32]));
         assert_eq!(prof.avatar_fingerprint, Some([1, 2, 3, 4, 5, 6, 7, 8]));
-
-        // New avatar bytes => overlaid.
-        let merged2 =
-            merge_profile_properties(existing_full(), &input, Some([9u8; 32]), Some([9u8; 8]));
-        let prof2 = profile_from_properties(&merged2);
-        assert_eq!(prof2.avatar_hash, Some([9u8; 32]));
-        assert_eq!(prof2.avatar_fingerprint, Some([9u8; 8]));
-    }
-
-    /// The returned profile (which overwrites the local cache) reflects
-    /// the merged state, not the partial input — so a partial update does
-    /// not wipe the local mirror either.
-    #[test]
-    fn returned_profile_reflects_merge_not_input() {
-        let input = ProfileUpdate {
-            display_name: Some("Alice 2".into()),
-            ..Default::default()
-        };
-        let merged = merge_profile_properties(existing_full(), &input, None, None);
-        let prof = profile_from_properties(&merged);
-        assert_eq!(prof.display_name.as_deref(), Some("Alice 2"));
-        assert_eq!(prof.public_message.as_deref(), Some("hello world"));
-        assert_eq!(prof.bio.as_deref(), Some("hello world"));
-        assert_eq!(prof.avatar_url.as_deref(), Some("https://x/a.png"));
     }
 
     // --- contact-profile sync helpers ---
@@ -1098,37 +800,5 @@ mod tests {
         // Present -> confirmed-absent is a change and caches the negative.
         assert!(apply_fetched_profile(&mut cache, id, None, 400));
         assert!(cache[&id].profile.is_none());
-    }
-
-    /// DAPI rejects any query that uses a range where-operator without a
-    /// matching `orderBy` on the range field ("missing order by for range").
-    /// The profile chunk query filters by `$ownerId In [...]` — a range op —
-    /// so every range clause it builds must carry an `orderBy` on its field.
-    /// Guarded against vacuous truth: the query must actually contain a range
-    /// clause, otherwise the invariant would pass trivially.
-    #[test]
-    fn contact_profiles_chunk_query_orders_by_every_range_field() {
-        let contract = crate::wallet::identity::network::dashpay_contract()
-            .expect("DashPay system contract loads");
-        let chunk = vec![Identifier::new([1u8; 32]), Identifier::new([2u8; 32])];
-
-        let query = contact_profiles_chunk_query(&contract, &chunk);
-
-        // Non-vacuous: there is at least one range where-clause to satisfy.
-        assert!(
-            query.where_clauses.iter().any(|wc| wc.operator.is_range()),
-            "expected a range where-clause (e.g. $ownerId In [...])"
-        );
-
-        for wc in &query.where_clauses {
-            if wc.operator.is_range() {
-                assert!(
-                    query.order_by_clauses.iter().any(|oc| oc.field == wc.field),
-                    "range clause on `{}` has no matching orderBy; DAPI rejects \
-                     this with \"missing order by for range\"",
-                    wc.field
-                );
-            }
-        }
     }
 }
