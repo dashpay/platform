@@ -12,10 +12,18 @@
   rust-dashcore API, restoring native SDK builds while preserving canonical bytes.
 - **drive-abci:** preserve the fixed 48-byte quorum-key disk encoding independently
   of the BLS backend, with historical saved-state and checkpoint regression fixtures.
+- **platform-wallet-storage:** the V021 migration rebuilds Core history by
+  rescanning it instead of repairing stored records in place: it deletes every
+  wallet's Core transactions, UTXOs and instant locks and rewinds the filter
+  checkpoint to just below the wallet's birth height, so the next SPV start
+  records the history again with correct input details, net amounts and
+  directions. Asset locks, address pools, identities, DashPay and metadata are
+  kept; unconfirmed transactions return only if the network relays them again.
 
 ### Changed
 
-- **Rust dependencies:** pin rust-dashcore to `dev` at `626c91d1`, which includes
+- **Rust dependencies:** rust-dashcore `dev` at `626c91d1` (included in the pin
+  below) brings
   [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
   every transaction payload keeps its stored serde variant index, so wallet rows
   written before the new payload types decode again;
@@ -31,6 +39,25 @@
   ECDSA signatures to `dashcore::sign_message::MessageSignature` (the accepted
   signatures and the encoded bytes are unchanged), and masternode payload
   handling to the version-3 ProRegTx / ProUpServTx types.
+- **Rust dependencies:** pin rust-dashcore to the head of the reworked
+  [rust-dashcore#1112](https://github.com/dashpay/rust-dashcore/pull/1112)
+  (`214f7d3e`, with `dev` merged in): restored spend claims are held once per
+  wallet and guard every funding account, including one registered after the
+  wallet is loaded, and a claimed coin stays claimed across a fork. It also
+  brings
+  [rust-dashcore#1106](https://github.com/dashpay/rust-dashcore/pull/1106)
+  (late inputs found during an InstantSend backfill rebuild the owning
+  account's record),
+  [rust-dashcore#1177](https://github.com/dashpay/rust-dashcore/pull/1177)
+  (`DashSpvClient::is_running` is synchronous, so `SpvRuntime::is_running`
+  reads it directly instead of polling the future once) and
+  [rust-dashcore#1179](https://github.com/dashpay/rust-dashcore/pull/1179)
+  (masternode list diffs decode `operatorPayoutAddress` and keep
+  `PoSeRevivedHeight`).
+- **platform-wallet-storage (breaking Rust API):** `WalletStorageError` is
+  `#[non_exhaustive]`, so a `match` on it outside the crate needs a wildcard
+  arm. New variants: `TransactionBodyConflict`, `UnknownWalletNetwork` and
+  `NetAmountOverflow`.
 - **platform-wallet:** a chain reorganization reported by key-wallet
   (`WalletEvent::ChainTruncated`) updates the in-memory balance but is not yet
   mirrored to persisted wallet state

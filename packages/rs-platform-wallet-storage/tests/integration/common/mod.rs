@@ -257,3 +257,115 @@ pub fn store_and_flush(
     persister.store(wallet_id, cs).expect("store");
     persister.flush(wallet_id).expect("flush");
 }
+
+/// Names a table case in the output of an assertion that fails under it.
+pub struct Case(pub String);
+
+impl Drop for Case {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            eprintln!("failed case: {}", self.0);
+        }
+    }
+}
+
+/// A wallet's first round: testnet metadata, its account manifest, and `core`.
+pub fn registration(
+    wallet: &key_wallet::Wallet,
+    core: Option<platform_wallet::changeset::CoreChangeSet>,
+) -> platform_wallet::changeset::PlatformWalletChangeSet {
+    use platform_wallet::changeset::{AccountRegistrationEntry, WalletMetadataEntry};
+    let accounts = wallet.accounts.all_accounts().into_iter();
+    platform_wallet::changeset::PlatformWalletChangeSet {
+        wallet_metadata: Some(WalletMetadataEntry {
+            network: dashcore::Network::Testnet,
+            wallet_group_id: [0; 32],
+            birth_height: 0,
+        }),
+        account_registrations: accounts
+            .map(|account| AccountRegistrationEntry {
+                account_type: account.account_type,
+                account_xpub: account.account_xpub,
+            })
+            .collect(),
+        core,
+        ..Default::default()
+    }
+}
+
+/// A ChainLock for `height` over a block hash of `[hash; 32]`, unsigned.
+pub fn chain_lock(height: u32, hash: u8) -> dashcore::ephemerealdata::chain_lock::ChainLock {
+    use dashcore::hashes::Hash;
+    dashcore::ephemerealdata::chain_lock::ChainLock {
+        block_height: height,
+        block_hash: dashcore::BlockHash::from_byte_array([hash; 32]),
+        signature: dashcore::bls_sig_utils::BLSSignature::from([0; 96]),
+    }
+}
+
+/// A shared wallet manager, as the live event adapter holds it.
+pub type Manager = std::sync::Arc<
+    tokio::sync::RwLock<
+        platform_wallet::key_wallet_manager::WalletManager<
+            platform_wallet::wallet::platform_wallet::PlatformWalletInfo,
+        >,
+    >,
+>;
+
+/// Process `tx` alone in a block at `height` for `wallet_id`, as SPV would.
+pub async fn mine(manager: &Manager, wallet_id: [u8; 32], tx: dashcore::Transaction, height: u32) {
+    use dashcore::block::{Header, Version};
+    use dashcore::hashes::Hash;
+    use dashcore::{Block, BlockHash, CompactTarget, TxMerkleNode};
+    use platform_wallet::key_wallet_manager::WalletInterface;
+    let block = Block {
+        header: Header {
+            version: Version::default(),
+            prev_blockhash: BlockHash::from_byte_array([height as u8; 32]),
+            merkle_root: TxMerkleNode::all_zeros(),
+            time: height,
+            bits: CompactTarget::from_consensus(0x1d00ffff),
+            nonce: 0,
+        },
+        txdata: vec![tx],
+    };
+    manager
+        .write()
+        .await
+        .process_block_for_wallets(
+            &block,
+            block.block_hash(),
+            height,
+            &std::collections::BTreeSet::from([wallet_id]),
+        )
+        .await;
+}
+
+/// Store every event `events` holds through the real wallet event adapter.
+pub async fn persist_events(
+    manager: &Manager,
+    persister: &std::sync::Arc<SqlitePersister>,
+    events: &mut tokio::sync::mpsc::UnboundedReceiver<
+        platform_wallet::key_wallet_manager::WalletEvent,
+    >,
+) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    // Close one finite batch so completion proves every real manager event was stored.
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+    while let Ok(event) = events.try_recv() {
+        sender.send(event).unwrap();
+    }
+    drop(sender);
+    let fault = Arc::new(AtomicBool::new(false));
+    platform_wallet::changeset::spawn_wallet_event_adapter(
+        Arc::clone(manager),
+        Arc::downgrade(persister),
+        receiver,
+        Arc::clone(&fault),
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert!(!fault.load(Ordering::Relaxed));
+}
