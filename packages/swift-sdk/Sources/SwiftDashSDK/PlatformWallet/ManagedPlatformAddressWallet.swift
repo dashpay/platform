@@ -688,7 +688,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     ///     wallet's `MnemonicResolver` (constructed internally) signs
     ///     the asset-lock proof's outer signature.
     ///   - onAssetLockBuilt: Called at most once, with the new asset
-    ///     lock's outpoint (`PersistentAssetLock.outPointHex` form), before
+    ///     lock's outpoint (`AssetLockBuiltOutPoint`), before
     ///     the lock's row is persisted or the lock is broadcast. See
     ///     `AssetLockBuiltHandler`.
     ///
@@ -853,7 +853,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     ///     right call.
     ///   - signer: `KeychainSigner` — see [`fundFromAssetLock`].
     ///   - onAssetLockBuilt: Called at most once, with the new asset
-    ///     lock's outpoint (`PersistentAssetLock.outPointHex` form), before
+    ///     lock's outpoint (`AssetLockBuiltOutPoint`), before
     ///     the lock's row is persisted or the lock is broadcast. See
     ///     `AssetLockBuiltHandler`.
     ///

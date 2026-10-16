@@ -129,7 +129,7 @@ extension PlatformWalletManager {
     ///     parameter is exposed for parity with the Rust builder and
     ///     forward-compatibility with multi-output bundles.
     ///   - onAssetLockBuilt: Called at most once, with the new asset
-    ///     lock's outpoint (`PersistentAssetLock.outPointHex` form), before
+    ///     lock's outpoint (`AssetLockBuiltOutPoint`), before
     ///     the lock's row is persisted or the lock is broadcast. See
     ///     `AssetLockBuiltHandler`.
     public func shieldedFundFromAssetLock(
@@ -218,7 +218,7 @@ extension PlatformWalletManager {
     ///     explicit credits — same single-recipient remainder contract as
     ///     `shieldedFundFromAssetLock`).
     ///   - onAssetLockBuilt: Called at most once, with the new asset
-    ///     lock's outpoint (`PersistentAssetLock.outPointHex` form), before
+    ///     lock's outpoint (`AssetLockBuiltOutPoint`), before
     ///     the lock's row is persisted or the lock is broadcast. See
     ///     `AssetLockBuiltHandler`.
     public func shieldedFundFromCoinJoinDrain(

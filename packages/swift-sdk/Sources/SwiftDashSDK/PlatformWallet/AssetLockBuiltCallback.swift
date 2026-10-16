@@ -1,9 +1,35 @@
 import Foundation
 import DashSDKFFI
 
+/// Outpoint of an asset lock a fresh-build funding call has just built.
+public struct AssetLockBuiltOutPoint: Hashable, Sendable {
+    /// 32-byte txid in wire (little-endian) order — the order the resume
+    /// calls take.
+    public let txid: Data
+    /// Output index of the credit output.
+    public let vout: UInt32
+    /// The same outpoint as `PersistentAssetLock.outPointHex`
+    /// (`<txid display hex>:<vout>`), the key of the lock's persisted row.
+    public let outPointHex: String
+
+    /// Decodes the 36-byte raw outpoint (`txid_le || vout_le`) the FFI
+    /// reports.
+    init(rawBytes: Data) {
+        precondition(rawBytes.count == 36, "outpoint must be 36 bytes")
+        txid = Data(rawBytes.prefix(32))
+        // Byte-copy into an aligned local: `Data` does not guarantee
+        // `UInt32` alignment (see `PersistentAssetLock.encodeOutPoint`).
+        var value: UInt32 = 0
+        withUnsafeMutableBytes(of: &value) { dst in
+            dst.copyBytes(from: rawBytes.suffix(4))
+        }
+        vout = UInt32(littleEndian: value)
+        outPointHex = PersistentAssetLock.encodeOutPoint(rawBytes: rawBytes)
+    }
+}
+
 /// Handler a fresh-build funding call invokes with the new asset lock's
-/// outpoint, in `PersistentAssetLock.outPointHex` form
-/// (`<txid display hex>:<vout>`).
+/// outpoint.
 ///
 /// It runs at most once per call, on the FFI worker thread, after the lock
 /// transaction is signed and before the lock's row is persisted or the lock
@@ -14,7 +40,7 @@ import DashSDKFFI
 /// its outpoint. Record the outpoint in thread-safe state before returning —
 /// a hop to another actor would let the row arrive first. Keep it short and
 /// do not call back into the wallet from it.
-public typealias AssetLockBuiltHandler = @Sendable (String) -> Void
+public typealias AssetLockBuiltHandler = @Sendable (AssetLockBuiltOutPoint) -> Void
 
 /// Box that carries an `AssetLockBuiltHandler` across the C ABI as an
 /// opaque context pointer.
@@ -35,7 +61,7 @@ private func assetLockBuiltTrampoline(
 ) {
     guard let context, let outPoint36 else { return }
     let box = Unmanaged<AssetLockBuiltBox>.fromOpaque(context).takeUnretainedValue()
-    box.handler(PersistentAssetLock.encodeOutPoint(rawBytes: Data(bytes: outPoint36, count: 36)))
+    box.handler(AssetLockBuiltOutPoint(rawBytes: Data(bytes: outPoint36, count: 36)))
 }
 
 /// Runs `body` with the C callback and context for `handler` (both `nil`
