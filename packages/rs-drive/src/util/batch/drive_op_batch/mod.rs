@@ -360,7 +360,7 @@ impl Drive {
     /// (`max_transitions_in_documents_batch`) and only transitions write
     /// indexOnly documents, so no consensus batch moves a counter twice; this
     /// keeps it so for every caller of the batch methods, estimation
-    /// included. Only protocol version 14's batch methods call it.
+    /// included. The batch methods call it from protocol version 14.
     pub(crate) fn refuse_repeated_counter_moves(
         &self,
         operations: &[DriveOperation],
