@@ -208,10 +208,8 @@ extension PlatformWalletManager {
         let handle = self.handle
         let callIdentity = WalletDrainCallIdentity(
             manager: handle, walletId: walletId, operationId: operationId)
-        if Self.walletDrainCalls[callIdentity] != nil {
-            return WalletDrainOutcome(state: .pending, outpoint: nil)
-        }
-        return try await withWalletDrainNativeOperation("shieldedWalletDrainStatus") { handle in
+        let callActive = Self.walletDrainCalls[callIdentity] != nil
+        let native = try await withWalletDrainNativeOperation("shieldedWalletDrainStatus") { handle in
             try Self.withWalletDrainIDs(walletId, operationId: operationId) { walletPtr, operationPtr in
                 var outcome = WalletDrainOutcomeFFI()
                 outcome.state = WalletDrainOutcome.State.pending.rawValue
@@ -221,6 +219,17 @@ extension PlatformWalletManager {
                 return WalletDrainOutcome(ffi: outcome)
             }
         }
+        return callActive ? Self.walletDrainStatusDuringActiveCall(native: native) : native
+    }
+
+    /// Rust owns the operation lifecycle, so the native snapshot is the answer
+    /// as soon as a detached execution has entered the Rust registry: an exact
+    /// outpoint, a durable completion of a repeated UUID and a read failure all
+    /// pass through. Only the interval before that, where Rust still reports
+    /// `notSent`, is reported as pending without an outpoint, so an in-flight
+    /// dispatch is never mistaken for "never sent".
+    nonisolated static func walletDrainStatusDuringActiveCall(native: WalletDrainOutcome) -> WalletDrainOutcome {
+        native.state == .notSent ? WalletDrainOutcome(state: .pending, outpoint: nil) : native
     }
 
     /// Retain admission through detached native execution and result conversion.

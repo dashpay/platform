@@ -79,4 +79,24 @@ final class WalletDrainTests: XCTestCase {
             }
         }
     }
+
+    func testShouldKeepNativeStatusAuthoritativeWhileACallIsActive() {
+        // Rust already registered or finished the operation: pass through.
+        let outpoint = WalletDrainOutpoint(txidWire: Data(repeating: 7, count: 32), vout: 3)
+        let pending = WalletDrainOutcome(state: .pending, outpoint: outpoint)
+        XCTAssertEqual(
+            PlatformWalletManager.walletDrainStatusDuringActiveCall(native: pending).outpoint,
+            outpoint
+        )
+        let completed = WalletDrainOutcome(state: .completed, outpoint: outpoint)
+        XCTAssertEqual(
+            PlatformWalletManager.walletDrainStatusDuringActiveCall(native: completed).state,
+            .completed
+        )
+        // Not yet in the Rust registry: an in-flight dispatch is pending, never "never sent".
+        let notSent = WalletDrainOutcome(state: .notSent, outpoint: nil)
+        let masked = PlatformWalletManager.walletDrainStatusDuringActiveCall(native: notSent)
+        XCTAssertEqual(masked.state, .pending)
+        XCTAssertNil(masked.outpoint)
+    }
 }
