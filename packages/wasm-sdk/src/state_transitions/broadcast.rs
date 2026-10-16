@@ -329,7 +329,7 @@ fn with_owner_balance(
 
 #[cfg(test)]
 mod tests {
-    use dash_sdk::dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dash_sdk::dpp::bls::SecretKey;
     use super::*;
     use crate::context_provider::WasmTrustedContext;
     use crate::sdk::WasmSdkBuilder;
@@ -370,9 +370,10 @@ mod tests {
     }
 
     fn rotated_quorum_key() -> [u8; 48] {
-        let key = SecretKey::<Bls12381G2Impl>::from_hash(b"rotated-quorum-fixture").public_key();
-        let bytes: Vec<u8> = (&key).into();
-        bytes.try_into().expect("BLS public key is 48 bytes")
+        SecretKey::from_ikm(b"rotated-quorum-fixture-keying-material")
+            .expect("at least 32 bytes of keying material")
+            .public_key()
+            .to_bytes()
     }
 
     fn spawn_rotated_quorum_endpoint() -> (String, thread::JoinHandle<()>) {

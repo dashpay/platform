@@ -3,7 +3,7 @@
 //! Implements [`WalletInfoInterface`], [`WalletTransactionChecker`], and
 //! [`ManagedAccountOperations`] by delegating to the inner `ManagedWalletInfo`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use async_trait::async_trait;
 use dashcore::ephemerealdata::chain_lock::ChainLock;
@@ -19,7 +19,7 @@ use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::transaction_checking::WalletTransactionChecker;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::{
-    ApplyChainLockOutcome, WalletInfoInterface,
+    ApplyChainLockOutcome, Truncation, WalletInfoInterface,
 };
 use key_wallet::wallet::managed_wallet_info::TransactionRecord;
 use key_wallet::{Network, Utxo, Wallet, WalletCoreBalance};
@@ -136,6 +136,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.accounts()
     }
 
+    fn unrecorded_spend_heights(&self, tx: &Transaction) -> BTreeSet<u32> {
+        self.core_wallet.unrecorded_spend_heights(tx)
+    }
+
     fn immature_transactions(&self) -> Vec<Transaction> {
         self.core_wallet.immature_transactions()
     }
@@ -157,6 +161,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.update_synced_height(current_height);
     }
 
+    fn truncate_above(&mut self, height: CoreBlockHeight) -> Result<Truncation, key_wallet::Error> {
+        self.core_wallet.truncate_above(height)
+    }
+
     fn matured_coinbase_records(
         &self,
         old_height: CoreBlockHeight,
@@ -167,7 +175,42 @@ impl WalletInfoInterface for PlatformWalletInfo {
     }
 
     fn mark_instant_send_utxos(&mut self, txid: &Txid, lock: &InstantLock) -> bool {
-        self.core_wallet.mark_instant_send_utxos(txid, lock)
+        // key-wallet at the pinned revision rewrites the record's context to
+        // `InstantSend` even when the transaction is already in a block. That
+        // context carries no block, so a chain lock no longer promotes the
+        // record and the persister would store a mined send as unconfirmed.
+        // A lock can reach a mined transaction: dash-spv applies one for as
+        // long as its mempool manager tracks the transaction, which ends
+        // only when that manager handles the block's event. Keep each
+        // confirmed slice's own context across the call: the slices of one
+        // transaction share the block but not always the finality, so one
+        // slice's context must not stand in for another's. As upstream, the
+        // mined record then does not carry the lock: an asset lock mined
+        // before its lock is proven by the chain lock, not by the
+        // InstantSend lock. Fixed upstream in dashpay/rust-dashcore#1037;
+        // drop this once the pin carries it (tracked in #5430).
+        let confirmed: BTreeMap<_, _> = self
+            .core_wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .filter_map(|account| account.transactions().get(txid))
+            .filter(|record| record.is_confirmed())
+            .map(|record| (record.account_type, record.context.clone()))
+            .collect();
+        let changed = self.core_wallet.mark_instant_send_utxos(txid, lock);
+        if confirmed.is_empty() {
+            return changed;
+        }
+        for mut account in self.core_wallet.accounts.all_accounts_mut() {
+            let Some(record) = account.transactions_mut().get_mut(txid) else {
+                continue;
+            };
+            if let Some(context) = confirmed.get(&record.account_type) {
+                record.update_context(context.clone());
+            }
+        }
+        changed
     }
 
     fn monitor_revision(&self) -> u64 {
@@ -201,6 +244,12 @@ impl WalletInfoInterface for PlatformWalletInfo {
             "apply_chain_lock delegated"
         );
         outcome
+    }
+
+    // The trait default is a no-op, which would keep every observed spend
+    // until the first chain lock is applied.
+    fn note_chain_lock_height(&mut self, height: CoreBlockHeight) {
+        self.core_wallet.note_chain_lock_height(height);
     }
 }
 
@@ -298,5 +347,64 @@ impl std::fmt::Debug for PlatformWalletInfo {
             .field("wallet_id", &hex::encode(self.core_wallet.wallet_id()))
             .field("identity_count", &self.identity_manager.identity_count())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dashcore::{BlockHash, OutPoint, TxIn};
+    use key_wallet::transaction_checking::BlockInfo;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+    use super::*;
+
+    fn spending(outpoint: OutPoint) -> Transaction {
+        Transaction {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: outpoint,
+                ..Default::default()
+            }],
+            output: Vec::new(),
+            special_transaction_payload: None,
+        }
+    }
+
+    /// dash-spv notes a chain-lock height during the initial sync, before a
+    /// chain lock is applied. Spends observed at or below the synced height
+    /// are final from then on and are forgotten.
+    #[tokio::test]
+    async fn should_prune_final_observed_spends_when_a_chain_lock_height_is_noted() {
+        let mut wallet = Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
+            .expect("test wallet");
+        let mut info = PlatformWalletInfo::from_wallet(&wallet, 0);
+        let final_spend = OutPoint::new(Txid::from([0x01; 32]), 0);
+        let open_spend = OutPoint::new(Txid::from([0x03; 32]), 0);
+        for (outpoint, height) in [(final_spend, 50), (open_spend, 150)] {
+            let block = BlockInfo::new(height, BlockHash::from([0x07; 32]), 1_735_689_600);
+            info.check_core_transaction(
+                &spending(outpoint),
+                TransactionContext::InBlock(block),
+                &mut wallet,
+                true,
+                false,
+            )
+            .await;
+        }
+        info.update_synced_height(100);
+        assert_eq!(info.core_wallet.observed_spent_outpoints().len(), 2);
+
+        info.note_chain_lock_height(200);
+
+        let observed = info.core_wallet.observed_spent_outpoints();
+        assert!(
+            !observed.contains_key(&final_spend),
+            "a spend at height 50 is final below synced height 100"
+        );
+        assert!(
+            observed.contains_key(&open_spend),
+            "a spend at height 150 is above synced height 100"
+        );
     }
 }

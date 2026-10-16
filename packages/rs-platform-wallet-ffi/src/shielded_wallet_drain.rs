@@ -377,7 +377,7 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
         );
-        assert_eq!(result.code as i32, 59);
+        assert_eq!(result.code as i32, 60);
         unsafe { crate::error::platform_wallet_ffi_result_free(&mut result) };
     }
 }

@@ -53,7 +53,7 @@ final class WalletDrainTests: XCTestCase {
             return XCTFail("input-cap refusal lost its typed case")
         }
         XCTAssertEqual(detail, "501 exceeds 500")
-        XCTAssertEqual(PlatformWalletResultCode.errorAssetLockTooManyInputs.rawValue, 59)
+        XCTAssertEqual(PlatformWalletResultCode.errorAssetLockTooManyInputs.rawValue, 60)
     }
 
     @MainActor

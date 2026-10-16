@@ -839,7 +839,6 @@ impl From<dashcore_rpc::Error> for DapiError {
             dashcore_rpc::Error::Json(e) => DapiError::InvalidData(e.to_string()),
             dashcore_rpc::Error::Io(e) => DapiError::Io(e),
             dashcore_rpc::Error::InvalidAmount(e) => DapiError::InvalidData(e.to_string()),
-            dashcore_rpc::Error::Secp256k1(e) => DapiError::InvalidData(e.to_string()),
             dashcore_rpc::Error::InvalidCookieFile => {
                 DapiError::Unavailable("invalid cookie file".to_string())
             }

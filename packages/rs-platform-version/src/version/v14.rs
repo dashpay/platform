@@ -149,10 +149,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// variant did — so ranked secondaries keep ranking correctly over
 /// shared-prefix shapes.
 ///
-/// Until a contract uses the ranked or time-range grammar, the only v14
-/// behavior changes are the shared-prefix fix, the contested-index
-/// cross-check, the index-reorder schema-compatibility fix and the relative
-/// daily withdrawal limit; everything else matches v13:
+/// Until a contract uses the ranked or time-range grammar, those features
+/// change nothing. Every other change these notes describe applies
+/// regardless, including the table changes below, some of which touch no
+/// contract (identity creation, for one):
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
 ///   meta-schema, which hosts the ranked index keywords
@@ -211,6 +211,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   addresses `advanced_structure` 0 → 1: a key whose proof of possession fails
 ///   is refused unpaid instead of charging the inputs a penalty, since the
 ///   address witnesses do not sign those proofs. v13 keeps the paid refusal of v0.
+/// * `DRIVE_ABCI_VALIDATION_VERSIONS_V10` also bumps the identity create
+///   `advanced_structure` 0 → 1: an identity id other than the one the asset lock
+///   derives and a key whose proof of possession fails are refused unpaid instead of
+///   charging the asset lock a penalty, since the asset lock signature covers
+///   neither the identity id nor the key signatures. A key structure failure is
+///   still charged. v13 keeps the paid refusals of v0.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
 ///   default 3: documents are stamped with the contract version their bytes
 ///   conform to (a varint after the format prefix), enabling the
@@ -2761,7 +2767,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit; record_token_shielded_pool_anchors records and prunes the anchors of the token pools a block touched; decode_raw_state_transitions, execute_event, validate_fees_of_event and add_distribute_storage_fee_to_epochs_operations each move to 1 — the table's own per-slot comments carry the full list
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more; the three shielded-fee token pool transitions gain basic structure validation and document_base_transition_state_validation 2 admits a document token cost paid from a token pool and enforces pause and the issuer's frozen-recipient policy on transparent payments; the ShieldFromAssetLock transform_into_action 1 checks its bundle against the bound preimage
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more; the three shielded-fee token pool transitions gain basic structure validation and document_base_transition_state_validation 2 admits a document token cost paid from a token pool and enforces pause and the issuer's frozen-recipient policy on transparent payments; the ShieldFromAssetLock transform_into_action 1 checks its bundle against the bound preimage; identity create and identity create from addresses advanced_structure 1 refuse unpaid a failure in a field the funding signature does not cover
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,

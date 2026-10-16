@@ -214,6 +214,8 @@ pub enum PlatformWalletFFIResultCode {
     /// in-flight sync pass was still running when a Clear / reset /
     /// sync-stop needed it provably drained. The operation failed closed
     /// (no state was wiped) and the host should retry once sync is idle.
+    /// Also returned by SPV start, stop and storage clear while an SPV
+    /// teardown is still running: call SPV stop again.
     /// NOT returned by `platform_wallet_manager_destroy` — with owned
     /// callback contexts (`release_fn`) a straggling worker keeps its
     /// context alive and releases it on exit, so destroy logs a non-clean
@@ -602,9 +604,14 @@ pub enum PlatformWalletFFIResultCode {
     /// is safe; this does not imply missing ownership or require registration.
     ErrorIdentityBalanceUnavailable = 58,
 
+    /// Maps `PlatformWalletError::SpvProcessRestartRequired`: SPV startup or
+    /// teardown panicked. Not retryable, unlike
+    /// [`Self::ErrorShutdownIncomplete`]: restart the host process.
+    ErrorSpvProcessRestartRequired = 59,
+
     /// An all-input asset lock exceeds the builder's input cap. Nothing was
     /// broadcast; the host must not silently substitute a partial drain.
-    ErrorAssetLockTooManyInputs = 59,
+    ErrorAssetLockTooManyInputs = 60,
 
     /// The named thing does not exist.
     ///
@@ -983,6 +990,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockNotTracked(..) => {
                 PlatformWalletFFIResultCode::ErrorAssetLockNotTracked
             }
+            // A DashPay invitation link for the other network: definitive, so
+            // hosts can say so instead of treating it as undetermined.
+            PlatformWalletError::InvitationNetworkMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidNetwork
+            }
             PlatformWalletError::AssetLockAlreadyConsumed(..) => {
                 PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
             }
@@ -1020,6 +1032,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // callback context alive and skip any paired persistence wipe.
             PlatformWalletError::ShutdownIncomplete(..) => {
                 PlatformWalletFFIResultCode::ErrorShutdownIncomplete
+            }
+            PlatformWalletError::SpvProcessRestartRequired(..) => {
+                PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired
             }
             // A signer failure can also reach this blanket impl wrapped as
             // `PlatformWalletError::Sdk(dash_sdk::Error::Protocol(..))` (any
@@ -2142,6 +2157,31 @@ mod tests {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorContestedNameNotTradable as i32,
             40
+        );
+    }
+
+    /// Hosts tell "stop again" (27) from "restart the process" (59) by code
+    /// alone, so neither SPV teardown error may flatten to `ErrorUnknown`.
+    #[test]
+    fn spv_teardown_errors_keep_distinct_pinned_codes() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired as i32,
+            59
+        );
+
+        let restart: PlatformWalletFFIResult =
+            PlatformWalletError::SpvProcessRestartRequired("teardown task 1 panicked".into())
+                .into();
+        assert_eq!(
+            restart.code,
+            PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired
+        );
+
+        let retry: PlatformWalletFFIResult =
+            PlatformWalletError::ShutdownIncomplete("SPV teardown timed out".into()).into();
+        assert_eq!(
+            retry.code,
+            PlatformWalletFFIResultCode::ErrorShutdownIncomplete
         );
     }
 

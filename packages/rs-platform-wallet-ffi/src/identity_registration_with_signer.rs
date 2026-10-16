@@ -704,7 +704,7 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
                 public_key: pub_ptr,
                 public_key_len: pub_len,
                 private_key_wif: wif_cstring.into_raw(),
-                private_key_bytes: ext_priv.private_key.secret_bytes(),
+                private_key_bytes: ext_priv.private_key.to_secret_bytes(),
             });
         }
         Ok(rows)

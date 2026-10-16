@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "5.0.0-rc.1",
+  "version": "5.0.0-rc.3",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
@@ -48,7 +48,7 @@
     }
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "license": "MIT",
   "bugs": {

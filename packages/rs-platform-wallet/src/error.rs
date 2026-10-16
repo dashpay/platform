@@ -67,6 +67,15 @@ pub enum PlatformWalletError {
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
 
+    /// A DashPay invitation link's voucher key is for the other network (a
+    /// testnet link opened in a mainnet wallet, or the reverse). Definitive:
+    /// the claim refuses the link before any network work.
+    #[error("invitation is for the {invitation:?} network but this wallet is on {wallet:?}")]
+    InvitationNetworkMismatch {
+        invitation: Network,
+        wallet: Network,
+    },
+
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
     /// user-initiated writes whose loss leaves a silent, non-self-healing
@@ -807,6 +816,15 @@ pub enum PlatformWalletError {
     #[error("SPV error: {0}")]
     SpvError(String),
 
+    /// SPV startup or teardown panicked and may have left background work
+    /// running. Not retryable: restart the process.
+    /// FFI mirror: `PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired`.
+    #[error(
+        "SPV startup or teardown panicked and may have left background work \
+         running; restart the process before using SPV again: {0}"
+    )]
+    SpvProcessRestartRequired(String),
+
     #[error("Token operation failed: {0}")]
     TokenError(String),
 
@@ -947,6 +965,8 @@ pub enum PlatformWalletError {
     /// fail-closed. The wedged pass may still fire persistence / event
     /// callbacks; the host must keep its callback context alive and must
     /// not commit any wipe it was about to pair with this call.
+    /// Also returned by SPV start, stop and storage clear while an SPV
+    /// teardown is still running: stop SPV again.
     /// FFI mirror: `PlatformWalletFFIResultCode::ErrorShutdownIncomplete`.
     #[error("Background sync did not quiesce: {0}")]
     ShutdownIncomplete(String),
