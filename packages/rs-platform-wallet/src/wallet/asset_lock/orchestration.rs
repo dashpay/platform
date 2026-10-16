@@ -29,6 +29,7 @@
 //! every flow so register / top-up / address-fund can't drift apart
 //! on their CL fallback or retry-budget windows.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use dashcore::OutPoint;
@@ -43,6 +44,7 @@ use crate::error::{
     as_asset_lock_proof_cl_height_too_low, is_asset_lock_already_consumed, PlatformWalletError,
 };
 use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::asset_lock::AssetLockOperationContext;
 
 // ---------------------------------------------------------------------------
 // Timeout policy
@@ -190,6 +192,14 @@ pub enum AssetLockFunding {
         /// pooled source set. DashPay contact-receiving accounts span
         /// their own indices and are pooled in regardless.
         account_index: u32,
+    },
+
+    /// Drain all ordinary pooled funding sources without creating change.
+    /// The operation context preserves the exact outpoint on errors and panics.
+    DrainWalletBalance {
+        account_index: u32,
+        minimum_lock_duffs: Option<u64>,
+        operation: Arc<AssetLockOperationContext>,
     },
 
     /// Build an asset lock that drains a funding account's whole balance:
@@ -444,7 +454,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// so it cannot prove that the requested operation completed. Promote the
     /// lock to an SPV-backed ChainLock proof, durably retain it as
     /// consumption-unknown, and preserve the typed host signal. Successful and
-    /// unrelated results pass through unchanged.
+    /// unrelated results pass through unchanged. Wallet drains settle through
+    /// [`Self::settle_asset_lock_submit_result`] instead.
     ///
     /// `chain_lock_timeout` bounds the IS→CL promotion. `None` does **not**
     /// mean "wait forever" here: it selects
@@ -526,6 +537,40 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
 
         Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point))
+    }
+
+    /// Drain-aware form of [`Self::reconcile_asset_lock_submit_result`].
+    ///
+    /// A drain's lock is single-use and only this wallet holds its key, so
+    /// Platform's exact-outpoint "already consumed" verdict on an
+    /// operation-tagged lock means an earlier Type18 for the same lock landed:
+    /// the drain is completed and `Ok(None)` is returned (nothing landed in
+    /// THIS call, so the caller records no history; the scan surfaces the
+    /// note). Every other outcome, and every lock without an operation,
+    /// defers to the generic reconciliation unchanged.
+    #[cfg(any(feature = "shielded", test))]
+    pub(crate) async fn settle_asset_lock_submit_result<T>(
+        &self,
+        result: Result<T, dash_sdk::Error>,
+        out_point: &OutPoint,
+        effective_proof: &AssetLockProof,
+        chain_lock_timeout: Option<Duration>,
+        drain_operation_id: Option<[u8; 16]>,
+    ) -> Result<Option<T>, PlatformWalletError> {
+        if let (Err(error), Some(operation_id)) = (&result, drain_operation_id) {
+            if is_asset_lock_already_consumed(error, out_point) {
+                self.complete_wallet_drain(*out_point, operation_id).await?;
+                return Ok(None);
+            }
+        }
+        self.reconcile_asset_lock_submit_result(
+            result,
+            out_point,
+            effective_proof,
+            chain_lock_timeout,
+        )
+        .await
+        .map(Some)
     }
 
     /// Rebuild a ChainLock proof for a lock whose IS-lock never propagated,
@@ -633,6 +678,40 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     Err(e) => Err(e),
                 }
             }
+            AssetLockFunding::DrainWalletBalance {
+                account_index,
+                minimum_lock_duffs,
+                operation,
+            } => {
+                if funding_type != AssetLockFundingType::AssetLockShieldedAddressTopUp {
+                    return Err(PlatformWalletError::AssetLockTransaction(
+                        "pooled wallet drain is available only for shielded funding".into(),
+                    ));
+                }
+                match self
+                    .create_wallet_drain_asset_lock_proof(
+                        account_index,
+                        minimum_lock_duffs,
+                        funding_type,
+                        destination_index,
+                        asset_lock_signer,
+                        &operation,
+                    )
+                    .await
+                {
+                    Ok((proof, path, out_point)) => {
+                        Ok(FundingResolution::Resolved(ResolvedFunding {
+                            proof,
+                            path,
+                            tracked_out_point: Some(out_point),
+                        }))
+                    }
+                    Err(PlatformWalletError::FinalityTimeout(out_point)) => {
+                        Ok(FundingResolution::IsTimeout { out_point })
+                    }
+                    Err(error) => Err(error),
+                }
+            }
             AssetLockFunding::DrainAccountBalance {
                 account,
                 minimum_lock_duffs,
@@ -670,7 +749,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .tracked_resume_metadata(&out_point)
                     .await
                     .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
-                if status == crate::wallet::asset_lock::tracked::AssetLockStatus::Consumed {
+                if status.is_consumed() {
                     return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
                 }
                 // Invitation vouchers are bearer instruments: the credit
@@ -1102,6 +1181,7 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
                         out_point,
                         transaction: transaction.clone(),
                         account_index: 0,
