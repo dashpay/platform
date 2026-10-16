@@ -22,13 +22,18 @@
 
 ### Changed
 
-- **Rust dependencies:** pin rust-dashcore to `dev` at `90359ed5`, which includes
+- **Rust dependencies:** pin rust-dashcore to `dev` at `626c91d1`, which includes
+  [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
+  every transaction payload keeps its stored serde variant index, so wallet rows
+  written before the new payload types decode again;
   [rust-dashcore#1149](https://github.com/dashpay/rust-dashcore/pull/1149):
   legacy BLS public-key and canonical PlatformNodeId serialization are restored
-  and the pre-v4 coinbase payload Serde layout is preserved; and
+  and the pre-v4 coinbase payload Serde layout is preserved;
   [rust-dashcore#1155](https://github.com/dashpay/rust-dashcore/pull/1155):
   a special transaction payload is decoded only from transaction version 3,
-  as Core does. Adapt WASM
+  as Core does; and
+  [rust-dashcore#1167](https://github.com/dashpay/rust-dashcore/pull/1167):
+  the legacy asset lock decoder that instant asset lock proofs are read with. Adapt WASM
   private-key hex decoding to the removal of `dashcore_hashes::hex`, compact
   ECDSA signatures to `dashcore::sign_message::MessageSignature` (the accepted
   signatures and the encoded bytes are unchanged), and masternode payload
@@ -58,6 +63,76 @@
   `Option`, and Basic `sign(message)` / `Signature::from_compressed()`. The
   `serialization::dashcore::bls_pubkey` Serde adapter remains a deprecated alias.
   Serialized encodings and consensus rules are unchanged. See [#5320](https://github.com/dashpay/platform/pull/5320).
+
+## [5.0.0-rc.3](https://github.com/dashpay/platform/compare/v5.0.0-rc.2...v5.0.0-rc.3) (2026-10-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive-abci:** refuse IdentityCreate identity id and key proof failures before they consume the asset lock (#5431)
+
+### Bug Fixes
+
+* **dashmate:** move stock 4.x and 5-rc Platform image tags to the release defaults on update ([#5433](https://github.com/dashpay/platform/issues/5433))
+* **dpp:** preserve wasm class mismatch diagnostics ([#5428](https://github.com/dashpay/platform/issues/5428))
+* **drive-abci:** refuse IdentityCreate identity id and key proof failures before they consume the asset lock ([#5431](https://github.com/dashpay/platform/issues/5431))
+* **platform-wallet:** store the InstantSend lock of a send on its record ([#5393](https://github.com/dashpay/platform/issues/5393))
+* **wallet-lib:** keep @yarnpkg/pnpify out of runtime dependencies so npm can install dashmate ([#5435](https://github.com/dashpay/platform/issues/5435))
+
+## [5.0.0-rc.2](https://github.com/dashpay/platform/compare/v5.0.0-rc.1...v5.0.0-rc.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* **drive-abci:** guard accepted token pool nullifiers within batches ([#5411](https://github.com/dashpay/platform/issues/5411))
+* **platform:** start on Dash Core v24, which no longer reports softforks in getblockchaininfo ([#5422](https://github.com/dashpay/platform/issues/5422))
+* **wasm-sdk:** accept Identifier instances in group queries ([#5405](https://github.com/dashpay/platform/issues/5405))
+* **wasm-sdk:** cache verified contract updates without regressing versions ([#5391](https://github.com/dashpay/platform/issues/5391))
+
+
+### Build System
+
+* install the downloaded cargo-binstall instead of reinstalling it ([#5424](https://github.com/dashpay/platform/issues/5424))
+
+
+### Code Refactoring
+
+* **dpp:** decode instant asset lock proofs with rust-dashcore's legacy asset lock decoder ([#5423](https://github.com/dashpay/platform/issues/5423))
+
+## [5.0.0-rc.1](https://github.com/dashpay/platform/compare/v5.0.0-beta.6...v5.0.0-rc.1) (2026-10-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** keep unknown Core payload layouts decodable (#5403)
+* bump grovedb to 6.1.0 (#5414)
+* **drive-abci:** return missing proposer payouts to processing pool (#5399)
+* **platform:** decode Core v24 blocks and transactions (#5392)
+
+### Bug Fixes
+
+* **drive-abci:** return missing proposer payouts to processing pool ([#5399](https://github.com/dashpay/platform/issues/5399))
+* **platform:** decode Core v24 blocks and transactions ([#5392](https://github.com/dashpay/platform/issues/5392))
+* **platform:** keep unknown Core payload layouts decodable ([#5403](https://github.com/dashpay/platform/issues/5403))
+* **sdk:** accept a contains pin in the ranked query type ([#5402](https://github.com/dashpay/platform/issues/5402))
+* **sdk:** return errors for unsupported proof modes ([#5387](https://github.com/dashpay/platform/issues/5387))
+* **wasm-sdk:** strip the default wasm URL from the sanitized glue ([#5389](https://github.com/dashpay/platform/issues/5389))
+
+
+### Miscellaneous Chores
+
+* **swift-sdk:** freeze App Store schema 3.0.0 ([#5368](https://github.com/dashpay/platform/issues/5368))
+
+
+### Tests
+
+* **platform-wallet-storage:** build the integration tests as one binary ([#5397](https://github.com/dashpay/platform/issues/5397))
+* **platform-wallet-storage:** move the Core transaction rows test into the integration binary ([#5415](https://github.com/dashpay/platform/issues/5415))
+
+
+### Build System
+
+* bump grovedb to 6.1.0 ([#5414](https://github.com/dashpay/platform/issues/5414))
 
 ## [5.0.0-beta.6](https://github.com/dashpay/platform/compare/v5.0.0-beta.5...v5.0.0-beta.6) (2026-10-13)
 

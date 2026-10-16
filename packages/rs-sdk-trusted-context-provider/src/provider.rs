@@ -318,6 +318,21 @@ impl TrustedHttpContextProvider {
         known.insert(id, Arc::new(contract));
     }
 
+    /// Insert a contract only when its version is strictly newer, returning
+    /// the retained entry. Equal versions preserve the existing body.
+    pub fn add_known_contract_if_newer(&self, contract: DataContract) -> Arc<DataContract> {
+        let id = contract.id();
+        let mut known = self.known_contracts.lock().unwrap();
+        if let Some(existing) = known.get(&id) {
+            if existing.version() >= contract.version() {
+                return existing.clone();
+            }
+        }
+        let contract = Arc::new(contract);
+        known.insert(id, contract.clone());
+        contract
+    }
+
     /// Get a data contract from the known contracts cache
     /// Returns None if the contract is not in the cache
     pub fn get_known_contract(&self, id: &Identifier) -> Option<Arc<DataContract>> {

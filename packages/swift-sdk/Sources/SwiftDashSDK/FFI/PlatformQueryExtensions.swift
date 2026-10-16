@@ -1988,6 +1988,30 @@ extension SDK {
         return try processJSONResult(result)
     }
 
+    /// The stored information of a contract group, read with a proof.
+    ///
+    /// The result holds `ownerId` (base58), `adminIds` (base58, empty for a
+    /// single owner) and, when the group has them, `name` and `description`.
+    /// Throws `SDKError.notFound("Contract group not found")` when the proof
+    /// shows no such group; a failed fetch throws the FFI's error instead.
+    ///
+    /// `nonisolated`: the fetch blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func getContractGroupInfo(
+        contractGroupId: String
+    ) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            let result = dash_sdk_contract_group_get_info(handle, contractGroupId)
+            // No data and no error is the FFI's proved absence.
+            if result.error == nil && result.data == nil {
+                throw SDKError.notFound("Contract group not found")
+            }
+            return try Self.consumeStringResult(result)
+        }
+        return try Self.parseJSONObject(json)
+    }
+
     /// Get group infos
     public func getGroupInfos(
         contractId: String,

@@ -1217,7 +1217,7 @@ impl SqlitePersister {
     /// every subsequent `store()` call on this persister until overwritten
     /// or cleared. A test that wants it to fire exactly once (the common
     /// case) needs its own latch — see `release_at_store_seam` in
-    /// `tests/common` for the pattern.
+    /// `tests/integration/common` for the pattern.
     #[doc(hidden)]
     #[cfg(any(test, feature = "__test-helpers"))]
     pub fn set_store_flush_seam_for_test(&self, seam: Arc<dyn Fn() + Send + Sync>) {
