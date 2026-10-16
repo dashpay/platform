@@ -2,6 +2,7 @@ import { Listr } from 'listr2';
 
 import chalk from 'chalk';
 import fs from 'fs';
+import path from 'path';
 import lodash from 'lodash';
 import promptOrThrow from '../../../../util/promptOrThrow.js';
 import wait from '../../../../util/wait.js';
@@ -53,6 +54,43 @@ export default function obtainZeroSSLCertificateTaskFactory(
       || config.get('platform.gateway.ssl.provider') !== 'zerossl';
 
     const tasks = new Listr([
+      {
+        title: 'Initialize configuration',
+        task: async (ctx) => {
+          // Always load configuration and paths, even under --force.
+          // The existing-certificate check below is the only step --force should
+          // skip. Skipping this init left ctx.externalIp/ctx.apiKey undefined,
+          // which propagated into generateCsr and crashed node-forge with
+          // "Attribute value not specified." See dashpay/platform#3803 / #4249.
+          ctx.apiKey = config.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey');
+
+          ctx.externalIp = config.get('externalIp');
+
+          if (ctx.force && !ctx.apiKey) {
+            throw new Error('ZeroSSL API key is not set. Please set it in the config file');
+          }
+
+          if (ctx.force && !ctx.externalIp) {
+            throw new Error('External IP is not set. Please set it in the config file');
+          }
+
+          ctx.sslConfigDir = homeDir.joinPath(config.getName(), 'platform', 'gateway', 'ssl');
+          ctx.csrFilePath = path.join(ctx.sslConfigDir, 'csr.pem');
+          ctx.privateKeyFilePath = path.join(ctx.sslConfigDir, 'private.key');
+          ctx.bundleFilePath = path.join(ctx.sslConfigDir, 'bundle.crt');
+
+          fs.mkdirSync(ctx.sslConfigDir, { recursive: true });
+
+          if (ctx.force) {
+            // Force a clean regeneration: ignore any existing keypair, CSR, bundle,
+            // or certificate state so the generate/create/save tasks all run.
+            ctx.isCsrFilePresent = false;
+            ctx.isPrivateKeyFilePresent = false;
+            ctx.isBundleFilePresent = false;
+            ctx.certificate = null;
+          }
+        },
+      },
       {
         title: 'Check if certificate already exists and not expiring soon',
         // Skips the check if force flag is set

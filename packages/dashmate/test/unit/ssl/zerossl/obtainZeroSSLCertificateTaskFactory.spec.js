@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import obtainZeroSSLCertificateTaskFactory from '../../../../src/listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory.js';
 import HomeDir from '../../../../src/config/HomeDir.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
@@ -18,6 +19,10 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       get: this.sinon.stub(),
       getName: this.sinon.stub().returns('local'),
     };
+    config.get
+      .withArgs('platform.gateway.ssl.providerConfigs.zerossl.apiKey')
+      .returns('test-api-key');
+    config.get.withArgs('externalIp').returns('1.2.3.4');
 
     verificationServer = {
       setup: this.sinon.stub().resolves(),
@@ -42,7 +47,7 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
       this.sinon.stub(), // listCertificates
       this.sinon.stub(), // saveCertificateTask
       verificationServer,
-      { joinPath: this.sinon.stub() }, // homeDir
+      { joinPath: this.sinon.stub().callsFake((...parts) => path.join('/tmp', ...parts)) }, // homeDir
       validateZeroSslCertificate,
     );
   });
@@ -67,6 +72,53 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
     // even though the "Stop verification server" task never ran.
     expect(verificationServer.stop).to.have.been.called();
     expect(verificationServer.destroy).to.have.been.called();
+  });
+
+  it('should initialize configuration before forced regeneration', async function it() {
+    const generateKeyPair = this.sinon.stub().resolves({ privateKey: 'private-key' });
+    const generateCsr = this.sinon.stub().resolves('certificate-request');
+    const sentinel = new Error('stop after certificate request');
+    const createCertificate = this.sinon.stub().rejects(sentinel);
+    const validate = this.sinon.stub().rejects(new Error('validation must be skipped'));
+    const homeDir = {
+      joinPath: this.sinon.stub().callsFake((...parts) => path.join('/tmp', ...parts)),
+    };
+    const task = obtainZeroSSLCertificateTaskFactory(
+      generateCsr,
+      generateKeyPair,
+      createCertificate,
+      this.sinon.stub(),
+      this.sinon.stub(),
+      this.sinon.stub(),
+      this.sinon.stub(),
+      this.sinon.stub(),
+      verificationServer,
+      homeDir,
+      validate,
+    )(config, {
+      onCertificateCreated: this.sinon.stub(),
+    });
+
+    await expect(task.run({
+      expirationDays: 30,
+      force: true,
+      isCsrFilePresent: true,
+      isPrivateKeyFilePresent: true,
+      isBundleFilePresent: true,
+      certificate: { id: 'old-certificate' },
+    })).to.be.rejectedWith(sentinel);
+
+    expect(validate).to.not.have.been.called();
+    expect(generateKeyPair).to.have.been.calledOnce();
+    expect(generateCsr).to.have.been.calledOnceWithExactly(
+      { privateKey: 'private-key' },
+      '1.2.3.4',
+    );
+    expect(createCertificate).to.have.been.calledOnceWithExactly(
+      'certificate-request',
+      '1.2.3.4',
+      'test-api-key',
+    );
   });
 
   it('should defer SSL persistence until command finalization', async function it() {
