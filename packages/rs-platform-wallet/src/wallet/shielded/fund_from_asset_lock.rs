@@ -41,8 +41,8 @@ use std::time::Duration;
 
 use crate::error::is_instant_lock_proof_invalid;
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
-    ResolvedFunding,
+    out_point_from_proof, submit_with_cl_height_retry, AssetLockBuiltObserver, AssetLockFunding,
+    FundingResolution, ResolvedFunding,
 };
 use crate::wallet::PlatformWallet;
 use crate::PlatformWalletError;
@@ -127,6 +127,9 @@ impl PlatformWallet {
     ///   shielded seed pool passes `Some(CL_FALLBACK_TIMEOUT)` so a
     ///   `FinalityTimeout` surfaces as its unconfirmed-ancestor pacing
     ///   signal (see `seed_pool.rs`).
+    /// * `on_asset_lock_built` — Receives the outpoint of a newly built
+    ///   asset lock before its row is persisted or it is broadcast; see
+    ///   [`AssetLockBuiltObserver`]. Not called on resume.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_fund_from_asset_lock<AS, P>(
@@ -140,6 +143,7 @@ impl PlatformWallet {
         dummy_outputs: usize,
         settings: Option<PutSettings>,
         cl_wait: Option<Duration>,
+        on_asset_lock_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(), PlatformWalletError>
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
@@ -238,6 +242,7 @@ impl PlatformWallet {
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 /* destination_index */ 0,
                 asset_lock_signer,
+                on_asset_lock_built,
             )
             .await?
         {

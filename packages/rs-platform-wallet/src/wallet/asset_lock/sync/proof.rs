@@ -3176,6 +3176,7 @@ mod chain_lock_wait_tests {
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
                 &ctx.signer,
+                None,
             ),
         )
         .await

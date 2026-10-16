@@ -687,6 +687,10 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     ///     signatures on the address-funding transition. The same
     ///     wallet's `MnemonicResolver` (constructed internally) signs
     ///     the asset-lock proof's outer signature.
+    ///   - onAssetLockBuilt: Called at most once, with the new asset
+    ///     lock's outpoint (`PersistentAssetLock.outPointHex` form), before
+    ///     the lock's row is persisted or the lock is broadcast. See
+    ///     `AssetLockBuiltHandler`.
     ///
     /// Returns the list of `UpdatedBalance`s for each recipient, with
     /// the new proof-attested credit balance.
@@ -696,7 +700,8 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         fundingAccountIndex: UInt32,
         platformAccountIndex: UInt32,
         recipients: [FundFromAssetLockRecipient],
-        signer: KeychainSigner
+        signer: KeychainSigner,
+        onAssetLockBuilt: AssetLockBuiltHandler? = nil
     ) async throws -> [UpdatedBalance] {
         try Self.fundFromAssetLockPreflight(recipients: recipients)
         let handle = self.handle
@@ -715,22 +720,26 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             let ffiAddresses = Self.marshalRecipients(recipientRows)
             var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
             let result = withExtendedLifetime((signer, coreSigner)) {
-                ffiAddresses.withUnsafeBufferPointer { addrBp in
-                    platform_address_wallet_fund_from_asset_lock_signer(
-                        handle,
-                        amountDuffs,
-                        fundingAccountIndex,
-                        platformAccountIndex,
-                        addrBp.baseAddress,
-                        UInt(addrBp.count),
-                        // Fee strategy is derived Rust-side from the
-                        // recipient map; these parameters are ignored.
-                        nil,
-                        0,
-                        signerHandle,
-                        coreSigner.handle,
-                        &changeset
-                    )
+                withAssetLockBuiltCallback(onAssetLockBuilt) { builtFn, builtContext in
+                    ffiAddresses.withUnsafeBufferPointer { addrBp in
+                        platform_address_wallet_fund_from_asset_lock_signer(
+                            handle,
+                            amountDuffs,
+                            fundingAccountIndex,
+                            platformAccountIndex,
+                            addrBp.baseAddress,
+                            UInt(addrBp.count),
+                            // Fee strategy is derived Rust-side from the
+                            // recipient map; these parameters are ignored.
+                            nil,
+                            0,
+                            signerHandle,
+                            coreSigner.handle,
+                            &changeset,
+                            builtFn,
+                            builtContext
+                        )
+                    }
                 }
             }
             try result.check()
@@ -843,6 +852,10 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     ///     no external payment to make and [`fundFromAssetLock`] is the
     ///     right call.
     ///   - signer: `KeychainSigner` — see [`fundFromAssetLock`].
+    ///   - onAssetLockBuilt: Called at most once, with the new asset
+    ///     lock's outpoint (`PersistentAssetLock.outPointHex` form), before
+    ///     the lock's row is persisted or the lock is broadcast. See
+    ///     `AssetLockBuiltHandler`.
     ///
     /// Returns `[UpdatedBalance]` for the recipients that resolved to
     /// this wallet — in practice just the remainder/change address. The
@@ -855,7 +868,8 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         fundingAccountIndex: UInt32,
         platformAccountIndex: UInt32,
         recipients: [FundFromAssetLockRecipient],
-        signer: KeychainSigner
+        signer: KeychainSigner,
+        onAssetLockBuilt: AssetLockBuiltHandler? = nil
     ) async throws -> [UpdatedBalance] {
         try Self.fundFromAssetLockExternalPreflight(recipients: recipients)
         let handle = self.handle
@@ -871,22 +885,26 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             let ffiAddresses = Self.marshalRecipients(recipientRows)
             var changeset = PlatformAddressChangeSetFFI(updated: nil, updated_count: 0)
             let result = withExtendedLifetime((signer, coreSigner)) {
-                ffiAddresses.withUnsafeBufferPointer { addrBp in
-                    platform_address_wallet_fund_from_asset_lock_external_signer(
-                        handle,
-                        amountDuffs,
-                        fundingAccountIndex,
-                        platformAccountIndex,
-                        addrBp.baseAddress,
-                        UInt(addrBp.count),
-                        // Fee strategy is derived Rust-side from the
-                        // recipient map; these parameters are ignored.
-                        nil,
-                        0,
-                        signerHandle,
-                        coreSigner.handle,
-                        &changeset
-                    )
+                withAssetLockBuiltCallback(onAssetLockBuilt) { builtFn, builtContext in
+                    ffiAddresses.withUnsafeBufferPointer { addrBp in
+                        platform_address_wallet_fund_from_asset_lock_external_signer(
+                            handle,
+                            amountDuffs,
+                            fundingAccountIndex,
+                            platformAccountIndex,
+                            addrBp.baseAddress,
+                            UInt(addrBp.count),
+                            // Fee strategy is derived Rust-side from the
+                            // recipient map; these parameters are ignored.
+                            nil,
+                            0,
+                            signerHandle,
+                            coreSigner.handle,
+                            &changeset,
+                            builtFn,
+                            builtContext
+                        )
+                    }
                 }
             }
             try result.check()
