@@ -1,3 +1,4 @@
+use dash_sdk::platform::dashpay::InvitationError;
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
 use dpp::consensus::ConsensusError;
@@ -999,6 +1000,22 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
+}
+
+/// The SDK's invitation errors map onto the variants the wallet used before
+/// the invitation codec and claim moved into `dash-sdk`, so hosts see the same
+/// error codes and messages.
+impl From<InvitationError> for PlatformWalletError {
+    fn from(error: InvitationError) -> Self {
+        match error {
+            InvitationError::Invalid(message) => Self::InvalidIdentityData(message),
+            InvitationError::NetworkMismatch { invitation, wallet } => {
+                Self::InvitationNetworkMismatch { invitation, wallet }
+            }
+            InvitationError::NotChainLocked(message) => Self::AssetLockNotChainLocked(message),
+            InvitationError::Sdk(error) => Self::Sdk(error),
+        }
+    }
 }
 
 impl PlatformWalletError {
