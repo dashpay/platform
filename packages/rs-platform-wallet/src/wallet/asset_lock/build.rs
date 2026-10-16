@@ -3949,19 +3949,29 @@ mod tests {
             wallet_id,
             Arc::new(Notify::new()),
             broadcaster.clone(),
-            WalletPersister::new(wallet_id, Arc::new(CapturingPersistence::default())),
+            // Admitted backend (inline commit) with no restored wallet, so
+            // the refusal below comes from the durable read, not preflight.
+            WalletPersister::new(
+                wallet_id,
+                Arc::new(CapturingPersistence {
+                    commits_inline: true,
+                    ..Default::default()
+                }),
+            ),
         );
         // A globally successful load that omits this wallet must never be
         // interpreted as a definitive NotSent for an old persisted host UUID.
         assert!(matches!(
             manager.wallet_drain_operation_status([81; 16]).await,
-            Err(PlatformWalletError::Persistence(_))
+            Err(PlatformWalletError::Persistence(message))
+                if message.contains("wallet missing from durable snapshot")
         ));
         let operation = Arc::new(super::AssetLockOperationContext::new([81; 16]));
         let _registration = manager.register_wallet_drain_operation(operation.clone());
         assert!(matches!(
             manager.begin_wallet_drain(&operation).await,
-            Err(PlatformWalletError::Persistence(_))
+            Err(PlatformWalletError::Persistence(message))
+                if message.contains("wallet missing from durable snapshot")
         ));
         assert_eq!(
             operation.snapshot().state,
