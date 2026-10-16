@@ -281,6 +281,9 @@ mod tests {
         _out_buf: *mut c_char,
         _out_capacity: usize,
         _out_len: *mut usize,
+        _out_passphrase: *mut c_char,
+        _out_passphrase_capacity: usize,
+        _out_passphrase_len: *mut usize,
     ) -> i32 {
         unreachable!("rejected before any mnemonic is resolved");
     }
