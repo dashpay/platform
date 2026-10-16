@@ -272,6 +272,21 @@ fn single_domain_changeset(domain: Domain) -> PlatformWalletChangeSet {
             use platform_wallet::changeset::IdentityScanStateEntry;
             cs.identity_scan_state = Some(IdentityScanStateEntry::incomplete(0, 5, vec![1]));
         }
+        Domain::DashPayBackfill => {
+            use platform_wallet::changeset::{
+                DashPayBackfillCoveredContact, DashPayBackfillRecord,
+            };
+            cs.dashpay_backfill = Some(DashPayBackfillRecord::from_entries(
+                10,
+                20,
+                vec![DashPayBackfillCoveredContact {
+                    owner: Identifier::from([0x11; 32]),
+                    contact: Identifier::from([0x12; 32]),
+                    account_index: 0,
+                    covered_from: 10,
+                }],
+            ));
+        }
         #[cfg(feature = "shielded")]
         Domain::ShieldedViewingKeys => {
             let mut shielded = ShieldedChangeSet::default();
@@ -383,7 +398,7 @@ fn every_domain_maps_and_isolates() {
     use std::collections::BTreeSet;
     assert_eq!(
         Domain::ALL.len(),
-        if cfg!(feature = "shielded") { 17 } else { 16 },
+        if cfg!(feature = "shielded") { 18 } else { 17 },
         "every compiled persistence domain must be covered"
     );
     let mut covered = BTreeSet::new();
