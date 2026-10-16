@@ -715,6 +715,16 @@ where
     (manager, wallet_id)
 }
 
+/// Encrypt a contact's 69-byte DIP-15 compact receiving xpub under
+/// `shared_key` into the 96-byte `encryptedPublicKey` wire form of a contact
+/// request (fixed IV), so tests in crates without a `platform-encryption`
+/// dependency can drive
+/// [`DashPayView::register_external_contact_account`](crate::wallet::identity::DashPayView::register_external_contact_account)
+/// offline. Test scaffolding only: the fixed IV is not fit for real use.
+pub fn encrypt_contact_xpub_for_test(shared_key: &[u8; 32], compact_xpub: &[u8]) -> Vec<u8> {
+    platform_encryption::encrypt_extended_public_key(shared_key, &[0x11u8; 16], compact_xpub)
+}
+
 /// Canonical all-`abandon` BIP-39 test vector. Fixed (not
 /// `TestWalletContext::new_random`) so every key it derives is a stable golden —
 /// which is what lets the signed-message tests pin an RFC6979-deterministic
