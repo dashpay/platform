@@ -22,7 +22,8 @@
 
 ### Changed
 
-- **Rust dependencies:** pin rust-dashcore to `dev` at `626c91d1`, which includes
+- **Rust dependencies:** rust-dashcore `dev` at `626c91d1` (included in the pin
+  below) brings
   [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
   every transaction payload keeps its stored serde variant index, so wallet rows
   written before the new payload types decode again;
@@ -38,10 +39,21 @@
   ECDSA signatures to `dashcore::sign_message::MessageSignature` (the accepted
   signatures and the encoded bytes are unchanged), and masternode payload
   handling to the version-3 ProRegTx / ProUpServTx types.
-- **Rust dependencies:** on top of that `dev` revision, pin the reworked
+- **Rust dependencies:** pin rust-dashcore to the head of the reworked
   [rust-dashcore#1112](https://github.com/dashpay/rust-dashcore/pull/1112)
-  (`9ea53592`): restored spend claims are held once per wallet and guard every
-  funding account, including one registered after the wallet is loaded.
+  (`214f7d3e`, with `dev` merged in): restored spend claims are held once per
+  wallet and guard every funding account, including one registered after the
+  wallet is loaded, and a claimed coin stays claimed across a fork. It also
+  brings
+  [rust-dashcore#1106](https://github.com/dashpay/rust-dashcore/pull/1106)
+  (late inputs found during an InstantSend backfill rebuild the owning
+  account's record),
+  [rust-dashcore#1177](https://github.com/dashpay/rust-dashcore/pull/1177)
+  (`DashSpvClient::is_running` is synchronous, so `SpvRuntime::is_running`
+  reads it directly instead of polling the future once) and
+  [rust-dashcore#1179](https://github.com/dashpay/rust-dashcore/pull/1179)
+  (masternode list diffs decode `operatorPayoutAddress` and keep
+  `PoSeRevivedHeight`).
 - **platform-wallet-storage (breaking Rust API):** `WalletStorageError` is
   `#[non_exhaustive]`, so a `match` on it outside the crate needs a wildcard
   arm. New variants: `TransactionBodyConflict`, `UnknownWalletNetwork` and

@@ -1,9 +1,7 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
 use std::future::Future;
-use std::pin::pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use tokio::sync::RwLock;
@@ -246,19 +244,7 @@ impl SpvRuntime {
             .task_slot()
             .as_ref()
             .is_some_and(|task| !task.is_finished());
-        if starting {
-            return true;
-        }
-        let mut running = pin!(tokio::task::unconstrained(client.is_running()));
-        match running
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop()))
-        {
-            Poll::Ready(running) => running,
-            // Upstream holds this lock while it cleans up after a failed sync
-            // and, briefly, while it recovers from a fork.
-            Poll::Pending => false,
-        }
+        starting || client.is_running()
     }
 
     /// Whether a broadcast issued right now could reach the network: the

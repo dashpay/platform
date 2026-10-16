@@ -1928,7 +1928,9 @@ async fn should_settle_two_account_mempool_receipt_against_final_winner_after_re
 }
 
 /// Each account holds the receipt without the amounts that are unsafe to
-/// sum, so reading balances and attributing a late funding stay in range.
+/// sum, so reading balances stays in range. A late funding rebuilds the owning
+/// account's complete slice (rust-dashcore#1106): its net is its own coin less
+/// the funded input, which stays in range, and the balance is unchanged.
 #[tokio::test]
 async fn should_recompute_unrepresentable_two_account_receipt_when_its_funding_arrives_after_restart(
 ) {
@@ -1964,7 +1966,7 @@ async fn should_recompute_unrepresentable_two_account_receipt_when_its_funding_a
     let (first, second) = copies(&info);
     assert_eq!(
         (first.input_details.len(), first.net_amount),
-        (1, -20_000),
+        (1, UNREPRESENTABLE_HALF as i64 - 20_000),
         "the late funding is attributed in the account that owns it"
     );
     assert!(second.input_details.is_empty());
