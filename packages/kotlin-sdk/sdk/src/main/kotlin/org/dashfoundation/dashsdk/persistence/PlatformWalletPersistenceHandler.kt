@@ -481,8 +481,9 @@ class PlatformWalletPersistenceHandler(
      * page and asks the engine about that page OUTSIDE [callbackExclusion];
      * a round that commits in that gap may have re-credited one of the
      * page's coins (a reorg of its spender hands it back in `utxos_added`),
-     * so the verdicts are applied only while the count is unchanged — see
-     * [classifyStoreRows]. Read and written only under [callbackExclusion].
+     * so the verdicts are applied only while the count is unchanged and no
+     * round is open for the wallet — see [classifyStoreRows]. Read and
+     * written only under [callbackExclusion].
      */
     private var committedRoundGeneration = 0L
 
@@ -1475,7 +1476,7 @@ class PlatformWalletPersistenceHandler(
         val unresolvedAccount: Int = 0,
         // Run shape.
         /** Pages classified again because a persistence round committed
-         *  between their read and their apply. */
+         *  between their read and their apply, or was still open at it. */
         val staleRetries: Int = 0,
         /** Engine reads that failed (an inventory page, the first one
          *  included, or a classification batch); the run stops at the first. */
@@ -1581,8 +1582,9 @@ class PlatformWalletPersistenceHandler(
         /** Rows that changed under the walk (already spent, or gone). */
         var stale = 0
 
-        /** A round committed between the read and the apply: nothing was
-         *  written and the page is classified again. */
+        /** A round committed between the read and the apply, or one is
+         *  open at the apply: nothing was written and the page is
+         *  classified again. */
         var staleGeneration = false
         val flippedOutpoints = ArrayList<ByteArray>()
     }
@@ -1890,11 +1892,15 @@ class PlatformWalletPersistenceHandler(
      * Each page is read under [callbackExclusion] together with
      * [committedRoundGeneration], the engine is asked OUTSIDE the lock, and
      * the verdicts are applied back under it in one Room transaction — only
-     * if no round committed in between. A round that did may have
-     * re-credited one of the page's coins, so then nothing is written and
-     * the same page is read and classified again, at most
-     * [TXO_RECONCILE_MAX_STALE_RETRIES] times in a row before the run stops
-     * incomplete.
+     * if no round committed in between and none is open for the wallet. A
+     * round that did may have re-credited one of the page's coins, so then
+     * nothing is written and the same page is read and classified again, at
+     * most [TXO_RECONCILE_MAX_STALE_RETRIES] times in a row before the run
+     * stops incomplete. An open round counts too: it has not moved
+     * [committedRoundGeneration] yet, but it may already have staged that
+     * re-credit, and a flip landing first would survive it — a credited
+     * re-delivery keeps the flag of a row with a spender link (see
+     * [upsertUtxoRow]), and no later run looks at a spent row again.
      *
      * The walk is keyed by outpoint (`outpoint > after`, the primary-key
      * order), not by offset, so the flips themselves never disturb it: a
@@ -1937,7 +1943,7 @@ class PlatformWalletPersistenceHandler(
                     return
                 }
                 val counts = reconcileStoreStep(tally, walletRef, "flip", isCancelled) {
-                    if (committedRoundGeneration != page.generation) {
+                    if (committedRoundGeneration != page.generation || openRound(walletId) != null) {
                         FlipCounts().apply { staleGeneration = true }
                     } else {
                         database.withTransaction { applyEngineClasses(page.rows, verdicts) }

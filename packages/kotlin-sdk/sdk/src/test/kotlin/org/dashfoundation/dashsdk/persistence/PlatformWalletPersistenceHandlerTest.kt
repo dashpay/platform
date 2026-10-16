@@ -7060,6 +7060,84 @@ class PlatformWalletPersistenceHandlerTest {
         assertFalse(db.txoDao().getByOutpoint(makeOutpoint(txid, 0))!!.isSpent)
     }
 
+    @Test
+    fun aVerdictIsNotAppliedWhileARoundIsOpenEvenBeforeItCommits() = runTest {
+        // A round that has BEGUN but not yet committed in the gap between
+        // the engine read and the apply has not moved the commit count, yet
+        // it may already have staged the re-credit of the very coins the
+        // verdict condemns. A flip landing first would outlive the round on
+        // a row with a mempool spender link: the credited re-delivery keeps
+        // a linked row's flag, the restore drops it while the engine holds
+        // the coin, and no later run looks at a spent row again. The apply
+        // refuses while the round is open; the run stops incomplete and the
+        // rows are classified again once it has closed.
+        seedReconcileWallet()
+        val plain = ByteArray(32) { 0x74 }
+        val linked = ByteArray(32) { 0x75 }
+        val spender = ByteArray(32) { 0x76 }
+        seedUnspentTxo(plain)
+        seedUnspentTxo(linked)
+        recordMempoolSpend(spender, makeOutpoint(linked, 0))
+        val linkedBefore = db.txoDao().getByOutpoint(makeOutpoint(linked, 0))!!
+        assertTrue("sanity: the mempool spender is linked", spender.contentEquals(linkedBefore.spendingTxid))
+        assertFalse("sanity: a mempool spender does not mark the coin spent", linkedBefore.isSpent)
+        assertEquals(2, restoredUtxoCount())
+        var classifyCalls = 0
+
+        val report = handler.reconcileTxos(
+            walletId = walletId,
+            tipHeight = reconcileTip,
+            engineUtxoPage = { _, _ -> emptyEnginePage },
+            classifyOutpoints = {
+                classifyCalls++
+                if (classifyCalls == 1) {
+                    // A reorg of the spenders hands both coins back: the
+                    // round opens and stages the credited re-delivery, and
+                    // stays open past the apply.
+                    handler.onChangesetBegin(walletId)
+                    for (txid in listOf(plain, linked)) {
+                        handler.onWalletChangesetUtxoAdded(
+                            walletId, txid, 0, 19_549L, reconcileAddress, reconcileScript, 2_391_743,
+                            false, true, false, false,
+                        )
+                    }
+                }
+                ByteArray(2) { PlatformWalletPersistenceHandler.OUTPOINT_CLASS_KNOWN_UNCREDITED }
+            },
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        for (txid in listOf(plain, linked)) {
+            assertFalse(
+                "a coin re-credited by the open round stays unspent",
+                db.txoDao().getByOutpoint(makeOutpoint(txid, 0))!!.isSpent,
+            )
+        }
+        assertTrue(
+            "the mempool spender link is untouched",
+            spender.contentEquals(db.txoDao().getByOutpoint(makeOutpoint(linked, 0))!!.spendingTxid),
+        )
+        assertEquals("both coins are still handed back at the next load", 2, restoredUtxoCount())
+        val limit = PlatformWalletPersistenceHandler.TXO_RECONCILE_MAX_STALE_RETRIES + 1
+        assertFalse("the run stops rather than apply under an open round", report.completed)
+        assertEquals(limit, report.staleRetries)
+        assertEquals(0, report.flipped)
+
+        // Once the round has closed, the next run classifies both rows
+        // again against the engine as it is now.
+        val after = handler.reconcileTxos(
+            walletId = walletId,
+            tipHeight = reconcileTip,
+            engineUtxoPage = { _, _ -> emptyEnginePage },
+            classifyOutpoints = { ByteArray(2) { PlatformWalletPersistenceHandler.OUTPOINT_CLASS_UNSPENT } },
+        )
+        assertTrue(after.completed)
+        assertEquals(0, after.staleRetries)
+        assertEquals(2, after.unspent)
+        assertEquals(0, after.flipped)
+        assertEquals(2, restoredUtxoCount())
+    }
+
     // ── 2. Absence and no-opinion verdicts change nothing ─────────────
 
     @Test
