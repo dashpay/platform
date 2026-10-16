@@ -154,7 +154,7 @@ pub type AddressInfos = RetrievedObjects<PlatformAddress, AddressInfo>;
 ///
 /// Mapping between the contenders identity IDs and their info.
 /// If a contender is not found, it is represented as `None`.
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 #[cfg_attr(
     feature = "mocks",
     derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
