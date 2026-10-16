@@ -134,6 +134,9 @@ dash-platform-queries:
 dash-sdk:
   - packages/rs-sdk/**
 
+dash-sdk-cxx:
+  - packages/rs-sdk-cxx/**
+
 rs-sdk-ffi:
   - packages/rs-sdk-ffi/**
 
