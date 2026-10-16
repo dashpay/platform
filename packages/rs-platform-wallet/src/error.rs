@@ -53,6 +53,19 @@ pub enum PlatformWalletError {
     #[error("Identity already exists: {0}")]
     IdentityAlreadyExists(Identifier),
 
+    /// A key derivation proved `identity_id` at `identity_index`, but this
+    /// wallet already holds a different identity in that slot. One of the two
+    /// records is stale; nothing was moved or persisted.
+    #[error(
+        "Identity {identity_id} is verified at index {identity_index}, but that slot holds \
+         identity {occupant}"
+    )]
+    IdentityIndexOccupied {
+        identity_id: Identifier,
+        identity_index: u32,
+        occupant: Identifier,
+    },
+
     #[error("Identity not found: {0}")]
     IdentityNotFound(Identifier),
 

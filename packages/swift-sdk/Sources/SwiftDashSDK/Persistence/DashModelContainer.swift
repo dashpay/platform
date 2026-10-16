@@ -54,9 +54,10 @@ public enum DashModelContainer {
         frozenModelGraph(assetLock: DashSchemaV1.PersistentAssetLock.self)
     }
 
-    /// Live models for the next App Store schema. A release snapshot does not
-    /// replace these types until a subsequent shape change introduces a new live
-    /// version; callers must continue fetching the top-level model types.
+    /// Live models for the next App Store schema (V4). Published V3 is bound to
+    /// its generated release snapshot (`DashSchemaSnapshotV3`), so changing these
+    /// types never changes a released version in place; callers must continue
+    /// fetching the top-level model types.
     public static var modelTypes: [any PersistentModel.Type] {
         [
             PersistentIdentity.self,
@@ -94,13 +95,14 @@ public enum DashModelContainer {
             PersistentInvitation.self,
             PersistentMasternode.self,
             PersistentTrackedMasternode.self,
-            PersistentIdentityBalanceMetadata.self
+            PersistentIdentityBalanceMetadata.self,
+            PersistentDashpayPaymentAddresses.self
         ]
     }
 
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(versionedSchema: DashSchemaV3.self)
+        Schema(versionedSchema: DashSchemaV4.self)
     }
 
     /// Create a persistent model container for storing data.
@@ -172,7 +174,7 @@ public enum DashModelContainer {
         bridgeLegacyStore: Bool = true
     ) throws -> ModelContainer {
         SDKLogger.event("store_open_started", category: .persistence,
-                        fields: ["target_version": .publicText("3.0.0")])
+                        fields: ["target_version": .publicText(liveVersionLabel)])
         do {
             let container: ModelContainer
             if bridgeLegacyStore {
@@ -185,7 +187,7 @@ public enum DashModelContainer {
                     configurations: [configuration])
             }
             SDKLogger.event("store_open_succeeded", category: .persistence,
-                            fields: ["target_version": .publicText("3.0.0")])
+                            fields: ["target_version": .publicText(liveVersionLabel)])
             return container
         } catch {
             logMigrationFailure(error)
@@ -201,8 +203,11 @@ public enum DashModelContainer {
         let domain = systemDomains.contains(nsError.domain) ? nsError.domain : String(reflecting: type(of: error))
         SDKLogger.event("store_open_failed", category: .persistence, severity: .error,
                         fields: ["error_domain": .publicText(domain), "error_code": .integer(Int64(nsError.code)),
-                                 "target_version": .publicText("3.0.0")])
+                                 "target_version": .publicText(liveVersionLabel)])
     }
+
+    /// The live schema's version, as logged in `target_version`.
+    static let liveVersionLabel = "4.0.0"
 
     /// Select by the complete stored model identity, after journal recovery.
     /// Accepted V1 contains fields absent from the real historical V2; sending
@@ -218,7 +223,7 @@ public enum DashModelContainer {
         guard ObjectIdentifier(defaultPlan) == ObjectIdentifier(DashMigrationPlan.self) else { return defaultPlan }
         guard FileManager.default.fileExists(atPath: url.path) else {
             SDKLogger.event("store_migration_route", category: .persistence, fields: [
-                "route": .publicText("new-store"), "target_version": .publicText("3.0.0")])
+                "route": .publicText("new-store"), "target_version": .publicText(liveVersionLabel)])
             return defaultPlan
         }
         let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(type: .sqlite, at: url)
@@ -236,7 +241,7 @@ public enum DashModelContainer {
         func logRoute(_ route: String) {
             SDKLogger.event("store_migration_route", category: .persistence, fields: [
                 "source_version": .publicText(safeVersions), "source_checksum": .publicText(safeChecksum),
-                "route": .publicText(route), "target_version": .publicText("3.0.0")])
+                "route": .publicText(route), "target_version": .publicText(liveVersionLabel)])
         }
         func matches(_ type: any VersionedSchema.Type) throws -> Bool {
             let expected = try identity(type)
@@ -263,10 +268,14 @@ public enum DashModelContainer {
             }
             logRoute(historical ? "historical-v2-to-v3" : "previous-live-v2-current-shape")
         } else if versions == ["3.0.0"] {
+            // Published V3 is registered from its release snapshot, so the
+            // default plan identifies it by hash; no probe is needed either.
+            logRoute("released-v3-to-v4")
+        } else if versions == [liveVersionLabel] {
             // Same plan either way. Opening a current store must neither wait
             // on nor fail with a schema probe that could only refine this line;
             // `source_checksum` above already identifies the exact graph.
-            logRoute("labelled-current-v3")
+            logRoute("labelled-current-v4")
         } else {
             logRoute("ordinary-current-plan")
         }
@@ -287,12 +296,13 @@ public enum DashModelContainer {
 /// SwiftData migration plan for Dash Platform model updates
 public enum DashMigrationPlan: SchemaMigrationPlan {
     public static var schemas: [any VersionedSchema.Type] {
-        [DashSchemaV2.self, DashSchemaV3.self]
+        [DashSchemaV2.self, DashSchemaV3.self, DashSchemaV4.self]
     }
 
     public static var stages: [MigrationStage] {
         [
-            .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self)
+            .lightweight(fromVersion: DashSchemaV2.self, toVersion: DashSchemaV3.self),
+            .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)
         ]
     }
 }
@@ -300,9 +310,10 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 /// Separate compatibility route: V1 has fields missing from historical V2.
 /// Never insert V2 between this baseline and the current schema.
 enum DashAcceptedV1MigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self] }
+    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self, DashSchemaV4.self] }
     static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self)]
+        [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self),
+         .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)]
     }
 }
 
@@ -372,9 +383,22 @@ public enum DashSchemaV2: VersionedSchema {
     }
 }
 
-/// Current working schema. A later shape change must preserve this graph as
-/// the fixed legacy-bridge target before introducing another live version.
+/// App Store schema 3.0.0, bound to its generated release snapshot
+/// (`FrozenSchemas/DashSchemaSnapshotV3+*.swift`, `schema-releases.json`). It
+/// is also the fixed legacy-bridge target: installations that skip the V3 app
+/// still reach exactly this graph before the V3 -> V4 stage.
 public enum DashSchemaV3: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
+    public static var models: [any PersistentModel.Type] { DashSchemaSnapshotV3.models }
+}
+
+/// Current working schema. V4 adds `PersistentDashpayPaymentAddresses`: the
+/// DashPay payment addresses (Core, Platform, shielded) of an owned or cached
+/// contact profile, keyed by `(network, owner identity, profile identity)`. They
+/// live in their own entity rather than as columns on the profile entities, so
+/// no V3 entity changes shape and V3 -> V4 is a purely additive lightweight stage.
+/// Until V4 is published, later shape changes may still edit it in place.
+public enum DashSchemaV4: VersionedSchema {
+    public static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }
 }

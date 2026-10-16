@@ -4,8 +4,11 @@ SwiftData schemas become supported history when a build reaches App Store
 distribution. TestFlight uploads capture provenance and a synthetic SQLite
 fixture, but do not by themselves register a released schema. The accepted frozen V1 remains unchanged. Historical V2 is now reconstructed
 from `52e8d4ec68f0c772313fa1bbef223fb1eabbf1cc`; all 35 entity hashes and the
-model checksum match the observed App Store 9.0.2 database. Active models are
-V3. Other intermediate development shapes remain unsupported.
+model checksum match the observed App Store 9.0.2 database. App Store schema
+3.0.0 is published and `DashSchemaV3` is bound to its release snapshot
+(`DashSchemaSnapshotV3`). Active models are V4, which adds the
+`PersistentDashpayPaymentAddresses` entity. Other intermediate development
+shapes remain unsupported.
 
 The old V2 fixture was generated from September 8 sources containing 13
 properties added on August 28, after the August 27 App Store release. The
@@ -15,26 +18,24 @@ separate from archive-captured releases. This identifies a matching model
 source, not the confirmed build commit of Apple's binary. V2 is reserved:
 automated release capture must not register another shape under that number.
 
-The main migration plan is historical V2 → V3. Accepted V1 has a separate
-V1 → V3 plan: V1 already contains the 13 properties missing from historical
+The main migration plan is historical V2 → V3 → V4. Accepted V1 has a separate
+V1 → V3 → V4 plan: V1 already contains the 13 properties missing from historical
 V2, so a V1 → V2 → V3 chain could discard values. Routing uses model metadata
 and runs after recovery; a version label alone never selects an unknown beta
 schema. The former live V2 is accepted only when its complete graph matches
-current V3 exactly, entity hashes and checksum alike. That alias therefore
-lasts only until the next live-graph change: after it, every store still
-labelled `2.0.0` with the former live shape becomes `unsupported-v2` and fails
-closed. Check internal devices still carrying that label before the next
-shape change and migrate or deliberately reset them then, rather than
-discovering them afterwards as failed opens.
+the published V3 snapshot exactly, entity hashes and checksum alike; any other
+store labelled `2.0.0` is `unsupported-v2` and fails closed.
 
 The route decision is logged as `store_migration_route` with the validated
 `source_version`, `source_checksum` and one of `new-store`,
 `accepted-v1-to-v3`, `historical-v2-to-v3`, `previous-live-v2-current-shape`,
-`unsupported-v2`, `labelled-current-v3`, `ordinary-current-plan` or, from the
-bridge, `legacy-v1-bridge-to-v3`. Resolving a frozen schema's identity builds
-a temporary store, so it is memoized per process and consulted only where a
-label is undecidable without it (`1.0.0`, `2.0.0`); a `3.0.0` label takes the
-default plan without any probe, and a probe failure on the undecidable labels
+`unsupported-v2`, `released-v3-to-v4`, `labelled-current-v4`,
+`ordinary-current-plan` or, from the bridge, `legacy-v1-bridge-to-v3` (each
+route continues through the registered stages to the live version). Resolving
+a frozen schema's identity builds a temporary store, so it is memoized per
+process and consulted only where a label is undecidable without it (`1.0.0`,
+`2.0.0`); `3.0.0` and `4.0.0` labels take the default plan without any probe,
+and a probe failure on the undecidable labels
 refuses the open with the probe's own error while leaving the store untouched.
 
 ## Legacy stores before the release registry
@@ -137,9 +138,9 @@ The run failed before upload, so this provenance establishes a tested source
 layout rather than proof of publication. Regression tests exercise the public
 factory, data/default preservation, writes, reopen, and failure recovery.
 
-Keep the bridge for installations that skip the V3 app release. When advancing
-to V4, bind `DashSchemaV3` to its released snapshot and retain the legacy-to-V3
-step before the normal V3-to-current plan. The bridge must never automatically
+Keep the bridge for installations that skip the V3 app release. `DashSchemaV3`
+is bound to its released snapshot, and the bridge keeps it as its fixed target
+before the normal V3-to-current plan. The bridge must never automatically
 follow the latest live model graph. The release observer's one-time `bootstrap`
 only records its observation baseline; it neither runs this migration nor
 proves V1's App Store provenance.

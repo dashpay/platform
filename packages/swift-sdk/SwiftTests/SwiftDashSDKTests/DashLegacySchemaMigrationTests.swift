@@ -11,15 +11,20 @@ private final class BridgeFutureMarker {
     var value: String = "future"
     init() {}
 }
-private enum BridgeFutureV4: VersionedSchema {
-    static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
-    static var models: [any PersistentModel.Type] { DashSchemaV3.models + [BridgeFutureMarker.self] }
+// A version after the live one. Its custom stage starts from live V4, whose
+// registered types are the live models the transformation fetches.
+private enum BridgeFutureV5: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
+    static var models: [any PersistentModel.Type] { DashSchemaV4.models + [BridgeFutureMarker.self] }
 }
 private enum BridgeFuturePlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self, BridgeFutureV4.self] }
+    static var schemas: [any VersionedSchema.Type] {
+        [DashSchemaV1.self, DashSchemaV3.self, DashSchemaV4.self, BridgeFutureV5.self]
+    }
     static var stages: [MigrationStage] {
         [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self),
-         .custom(fromVersion: DashSchemaV3.self, toVersion: BridgeFutureV4.self,
+         .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self),
+         .custom(fromVersion: DashSchemaV4.self, toVersion: BridgeFutureV5.self,
                  willMigrate: { context in
                      for wallet in try context.fetch(FetchDescriptor<PersistentWallet>()) {
                          wallet.name = "explicit future transformation"
@@ -29,8 +34,9 @@ private enum BridgeFuturePlan: SchemaMigrationPlan {
     }
 }
 
-// The candidate immediately before restoring historical V2 used today's
-// complete graph with a V2 version label. This is one exact supported alias.
+// The candidate immediately before restoring historical V2 used the graph that
+// was later published as V3, with a V2 version label. This is one exact
+// supported alias; its types are the V3 release snapshot, not the live models.
 private enum PreviousLiveV2: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
     static var models: [any PersistentModel.Type] { DashSchemaV3.models }
@@ -770,7 +776,7 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
 
     func testSkippingV3UsesFixedBridgeThenRegisteredCustomFutureStage() throws {
         try withStore { url in
-            let schema = Schema(versionedSchema: BridgeFutureV4.self)
+            let schema = Schema(versionedSchema: BridgeFutureV5.self)
             var checkedV3 = false
             let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
             XCTAssertThrowsError(try DashLegacySchemaBridge.open(
@@ -787,6 +793,60 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
                 configuration: configuration, schema: schema, plan: BridgeFuturePlan.self)
             try verifyRows(recovered.mainContext, walletName: "explicit future transformation")
             XCTAssertEqual(try recovered.mainContext.fetchCount(FetchDescriptor<BridgeFutureMarker>()), 0)
+        }
+    }
+
+    /// Adding an entity renumbers every entity sorted after it, and Core Data
+    /// embeds the ordinal in generated column names (`Z13TOKENBALANCES` on the
+    /// token-balance table becomes `Z14TOKENBALANCES` once V4 adds
+    /// `PersistentDashpayPaymentAddresses` ahead of `PersistentIdentity`). The
+    /// validator must follow the entity name, while a dropped or converted
+    /// column is still rejected.
+    func testValidatorFollowsEntityRenumberingInGeneratedColumnNames() throws {
+        let fixture = try XCTUnwrap(Bundle.module.url(
+            forResource: "dash-v1", withExtension: "store", subdirectory: "Fixtures/SchemaStores"))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let before = directory.appendingPathComponent("before.store")
+        try FileManager.default.copyItem(at: fixture, to: before)
+
+        func renumbered(_ name: String, tail: String) throws -> URL {
+            let url = directory.appendingPathComponent(name)
+            try FileManager.default.copyItem(at: fixture, to: url)
+            let connection = try DashLegacyStoreSQLite.Connection(url, writable: true)
+            var tables: [String] = []
+            try connection.query("""
+                SELECT m.name FROM sqlite_master m WHERE m.type='table' AND m.name <> 'Z_PRIMARYKEY'
+                AND EXISTS (SELECT 1 FROM pragma_table_info(m.name) WHERE name='Z_ENT')
+                """) { tables.append(String(cString: sqlite3_column_text($0, 0))) }
+            var sql = """
+                BEGIN;
+                UPDATE Z_PRIMARYKEY SET Z_ENT = Z_ENT + 1000 WHERE Z_ENT >= 8;
+                UPDATE Z_PRIMARYKEY SET Z_ENT = Z_ENT - 999 WHERE Z_ENT >= 1000;
+                INSERT INTO Z_PRIMARYKEY (Z_ENT, Z_NAME, Z_SUPER, Z_MAX)
+                    VALUES (8, 'PersistentDashpayPaymentAddresses', 0, 0);
+                ALTER TABLE Z_1INVOLVEDTRANSACTIONS RENAME COLUMN Z_31INVOLVEDTRANSACTIONS TO Z_32INVOLVEDTRANSACTIONS;
+                """
+            for table in tables { sql += "UPDATE \(table) SET Z_ENT = Z_ENT + 1 WHERE Z_ENT >= 8;\n" }
+            sql += tail + "\nCOMMIT;"
+            try connection.execute(sql)
+            return url
+        }
+
+        XCTAssertNoThrow(try DashLegacyStoreSQLite.validatePreservation(from: before, to: try renumbered(
+            "renamed.store",
+            tail: "ALTER TABLE ZPERSISTENTTOKENBALANCE RENAME COLUMN Z13TOKENBALANCES TO Z14TOKENBALANCES;")))
+        let dropIndex = "DROP INDEX IF EXISTS ZPERSISTENTTOKENBALANCE_Z13TOKENBALANCES_INDEX;"
+        let drop = "ALTER TABLE ZPERSISTENTTOKENBALANCE DROP COLUMN Z13TOKENBALANCES;"
+        for (name, tail) in [
+            ("dropped.store", dropIndex + drop),
+            ("converted.store", dropIndex + drop
+                + "ALTER TABLE ZPERSISTENTTOKENBALANCE ADD COLUMN Z14TOKENBALANCES VARCHAR;"),
+        ] {
+            XCTAssertThrowsError(
+                try DashLegacyStoreSQLite.validatePreservation(from: before, to: try renumbered(name, tail: tail)),
+                name)
         }
     }
 
@@ -887,7 +947,9 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
                 let container = try ModelContainer(for: schema, configurations: [
                     ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
                 ])
-                try verifyRows(container.mainContext)
+                // This container registers the V3 snapshot types, not the live ones.
+                XCTAssertEqual(try container.mainContext.fetchCount(
+                    FetchDescriptor<DashSchemaSnapshotV3.PersistentWallet>()), 1)
             }
             XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["2.0.0"])
             let container = try open(url, hooks: .init(visit: { _, _ in
