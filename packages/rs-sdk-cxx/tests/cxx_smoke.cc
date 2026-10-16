@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -223,6 +224,44 @@ int main()
     check(client->cast_masternode_vote(id, voting_key, "alice", static_cast<VoteChoice>(9), id, signer(false)).kind ==
               StatusKind::Internal,
           "unknown vote choice accepted");
+
+    // Invitations: a link round-trips through the codec, and the claim
+    // calls cross with the parsed handle; its voucher key never leaves Rust.
+    {
+        AssetLockProof funding{};
+        funding.kind = AssetLockProofKind::Chain;
+        funding.core_chain_locked_height = 1;
+        // txid 00 01 .. 1f in consensus order, which displays reversed.
+        std::string display_txid;
+        for (int i = 31; i >= 0; --i) {
+            funding.out_point[i] = static_cast<uint8_t>(i);
+            display_txid += "0123456789abcdef"[i >> 4];
+            display_txid += "0123456789abcdef"[i & 15];
+        }
+        std::array<uint8_t, 32> voucher{};
+        voucher.fill(0x01);
+        InviterInfo inviter{};
+        inviter.username = "alice";
+        auto invitation = parse_invitation(encode_invitation(voucher, Network::Testnet, funding, inviter));
+        const auto details = invitation->details();
+        check(details.has_inviter && details.inviter.username == "alice" && details.inviter.display_name.empty() &&
+                  !details.instant_lock && std::string(details.funding_txid) == display_txid,
+              "an invitation did not round-trip");
+        check(unreachable(client->invitation_claim_status(*invitation).status), "invitation_claim_status");
+        check(unreachable(client->claim_invitation(*invitation, key_slice, signer(false)).status), "claim_invitation");
+
+        auto mainnet = parse_invitation(encode_invitation(voucher, Network::Mainnet, funding, InviterInfo{}));
+        check(!mainnet->details().has_inviter, "an empty inviter was linked");
+        check(client->invitation_claim_status(*mainnet).status.kind == StatusKind::Rejected,
+              "a mainnet invitation was not refused by a testnet client");
+        bool refused = false;
+        try {
+            parse_invitation("dashpay://invite?assetlocktx=11");
+        } catch (const rust::Error&) {
+            refused = true;
+        }
+        check(refused, "a link without a voucher key was parsed");
+    }
 
     // No network.
     check(is_valid_username("alice") && !is_valid_username("-"), "is_valid_username");

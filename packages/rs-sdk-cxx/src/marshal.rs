@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use dash_sdk::dpp::dashcore::consensus::Decodable;
 use dash_sdk::dpp::dashcore::hashes::Hash;
-use dash_sdk::dpp::dashcore::{InstantLock, OutPoint, ProTxHash, Transaction};
+use dash_sdk::dpp::dashcore::{InstantLock, Network, OutPoint, ProTxHash, Transaction};
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -27,7 +27,7 @@ use dash_sdk::dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGett
 use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::dpp::voting::votes::Vote;
-use dash_sdk::platform::dashpay::ProfileFields;
+use dash_sdk::platform::dashpay::{InviterInfo, ParsedInvitation, ProfileFields};
 use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, DpnsUsername};
 use dash_sdk::query_types::Contenders;
 
@@ -45,6 +45,16 @@ pub fn reversed(hash: &[u8; 32]) -> [u8; 32] {
 /// (Core's RPC hex order) the SDK's voting calls take.
 pub fn pro_tx_hash(internal_order: &[u8; 32]) -> ProTxHash {
     ProTxHash::from_byte_array(reversed(internal_order))
+}
+
+pub fn network(network: ffi::Network) -> Result<Network, String> {
+    match network {
+        ffi::Network::Mainnet => Ok(Network::Mainnet),
+        ffi::Network::Testnet => Ok(Network::Testnet),
+        ffi::Network::Devnet => Ok(Network::Devnet),
+        ffi::Network::Regtest => Ok(Network::Regtest),
+        other => Err(format!("unknown network {}", other.repr)),
+    }
 }
 
 pub fn identity(identity: &Identity) -> ffi::Identity {
@@ -85,6 +95,19 @@ pub fn new_identity_key(key: &ffi::IdentityKey) -> Result<IdentityPublicKey, Str
         disabled_at: None,
     }
     .into())
+}
+
+/// The keys of a new identity, each enabled and with a unique id.
+pub fn new_identity_keys(
+    keys: &[ffi::IdentityKey],
+) -> Result<BTreeMap<u32, IdentityPublicKey>, String> {
+    let public_keys = keys
+        .iter()
+        .map(|key| new_identity_key(key).map(|key| (key.id(), key)))
+        .collect::<Result<BTreeMap<_, _>, String>>()?;
+    (public_keys.len() == keys.len())
+        .then_some(public_keys)
+        .ok_or_else(|| "duplicate identity key ids".to_string())
 }
 
 pub fn asset_lock_proof(proof: &ffi::AssetLockProof) -> Result<AssetLockProof, String> {
@@ -152,6 +175,34 @@ pub fn empty_vote_state() -> ffi::VoteState {
         lock: 0,
         winner_kind: ffi::WinnerKind::None,
         winner: [0; 32],
+    }
+}
+
+/// `None` when every field is empty.
+pub fn inviter(inviter: &ffi::InviterInfo) -> Option<InviterInfo> {
+    let info = InviterInfo {
+        username: non_empty(&inviter.username),
+        display_name: non_empty(&inviter.display_name),
+        avatar_url: non_empty(&inviter.avatar_url),
+    };
+    (info.username.is_some() || info.display_name.is_some() || info.avatar_url.is_some())
+        .then_some(info)
+}
+
+pub fn invitation_details(invitation: &ParsedInvitation) -> ffi::InvitationDetails {
+    ffi::InvitationDetails {
+        funding_txid: invitation.funding_txid.clone(),
+        instant_lock: invitation.islock_hex.is_some(),
+        has_inviter: invitation.inviter.is_some(),
+        inviter: invitation
+            .inviter
+            .as_ref()
+            .map(|inviter| ffi::InviterInfo {
+                username: inviter.username.clone().unwrap_or_default(),
+                display_name: inviter.display_name.clone().unwrap_or_default(),
+                avatar_url: inviter.avatar_url.clone().unwrap_or_default(),
+            })
+            .unwrap_or_default(),
     }
 }
 

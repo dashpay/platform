@@ -19,6 +19,8 @@ mod signer;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use client::PlatformClient;
+use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
+use dash_sdk::platform::dashpay::{encode_invitation_uri, parse_invitation_uri, ParsedInvitation};
 
 #[cxx::bridge(namespace = "dash_sdk")]
 pub mod ffi {
@@ -319,6 +321,46 @@ pub mod ffi {
         profiles: Vec<Profile>,
     }
 
+    /// An invitation's inviter; empty fields are absent.
+    #[derive(Debug, Clone, Default)]
+    struct InviterInfo {
+        username: String,
+        display_name: String,
+        avatar_url: String,
+    }
+
+    /// What a link says, without its voucher key. `instant_lock`: it carries
+    /// an InstantSend lock, else the claim waits for a ChainLock.
+    /// `has_inviter` false: a funding voucher with no inviter.
+    /// `funding_txid` identifies the voucher: do not log it.
+    #[derive(Debug, Clone, Default)]
+    struct InvitationDetails {
+        funding_txid: String,
+        instant_lock: bool,
+        has_inviter: bool,
+        inviter: InviterInfo,
+    }
+
+    /// The invitee's pre-claim view. `already_claimed` true is proved;
+    /// false does not prove the voucher unspent: a reclaim top-up spends it
+    /// without creating `prospective_identity`. `amount_duffs` is bound to
+    /// the link's txid, but `chain_locked` is the DAPI node's unproved word
+    /// and `instant` says only that the link carries an InstantSend lock.
+    #[derive(Debug, Clone, Default)]
+    struct InvitationClaim {
+        prospective_identity: [u8; 32],
+        amount_duffs: u64,
+        instant: bool,
+        chain_locked: bool,
+        already_claimed: bool,
+    }
+
+    #[derive(Debug, Clone)]
+    struct InvitationClaimResult {
+        status: Status,
+        claim: InvitationClaim,
+    }
+
     /// The DIP-15 compact extended public key, unvalidated beyond its
     /// length: the embedder checks `public_key` is a valid point.
     #[derive(Debug, Clone)]
@@ -377,6 +419,11 @@ pub mod ffi {
         /// One SDK instance, its runtime and its `CoreContext`. Thread-safe:
         /// calls may run concurrently, each blocking its calling thread.
         type PlatformClient;
+
+        /// A parsed DashPay invitation link. Its voucher key, a bearer
+        /// secret, stays in Rust and is wiped when this is destroyed.
+        type Invitation;
+        fn details(self: &Invitation) -> InvitationDetails;
 
         /// A rust::Error for a config it cannot honour: never a direct fallback.
         fn new_platform_client(
@@ -476,6 +523,29 @@ pub mod ffi {
             signer: UniquePtr<WalletSigner>,
             keys: UniquePtr<ContactKeys>,
         ) -> IdResult;
+        /// Refetches the invitation's funding transaction and looks up the
+        /// identity a claim would create. A link for another network, or a
+        /// funding transaction the SDK refuses or cannot find yet, is
+        /// `Rejected`.
+        fn invitation_claim_status(
+            self: &PlatformClient,
+            invitation: &Invitation,
+        ) -> InvitationClaimResult;
+        /// Claims the invitation into a new identity holding `keys` (key 0
+        /// a MASTER authentication key, each enabled). The signer signs
+        /// those keys; the voucher key signs the asset lock, in Rust. The
+        /// same `invitation` may be claimed again after a failure. Statuses
+        /// as `invitation_claim_status`, plus `Unavailable` when Platform
+        /// refused the link's InstantSend lock as stale and the funding
+        /// transaction is not ChainLocked yet. A link without an InstantSend
+        /// lock whose funding is not ChainLocked yet is `Rejected` by the
+        /// SDK, though it too only needs a later retry.
+        fn claim_invitation(
+            self: &PlatformClient,
+            invitation: &Invitation,
+            keys: &[IdentityKey],
+            signer: UniquePtr<WalletSigner>,
+        ) -> IdentityResult;
         /// Creates `owner`'s DashPay profile, signed with its key `key_id`
         /// (a HIGH or CRITICAL authentication key); the profile as Platform
         /// confirmed it.
@@ -515,6 +585,18 @@ pub mod ffi {
         // No network. A panic answers the safe value: not valid, contested.
         fn is_valid_username(label: &str) -> bool;
         fn is_contested_username(label: &str) -> bool;
+        /// The `dashpay://invite` link for an invitation funded by `funding`,
+        /// whose credit output pays `voucher_key`. The link holds the voucher
+        /// key in plain text: show it, never log or store it. An all-empty
+        /// `inviter` links no inviter.
+        fn encode_invitation(
+            voucher_key: &[u8; 32],
+            network: Network,
+            funding: &AssetLockProof,
+            inviter: &InviterInfo,
+        ) -> Result<String>;
+        /// A rust::Error for a link that is not an invitation.
+        fn parse_invitation(uri: &str) -> Result<Box<Invitation>>;
         /// Decrypts `encryptedPublicKey` with the wallet's ECDH secret.
         fn decrypt_contact_xpub(
             shared_secret: &[u8; 32],
@@ -569,6 +651,66 @@ fn is_contested_username(label: &str) -> bool {
 /// Fails closed: a contested answer keeps Core off the ordinary-name path.
 fn contested(check: fn(&str) -> bool, label: &str) -> bool {
     guarded("is_contested_username", || check(label), |_| true)
+}
+
+pub struct Invitation(ParsedInvitation);
+
+impl Invitation {
+    /// A copy for one call's future, which must own what it uses (and the
+    /// SDK's claim takes the invitation by value); each copy wipes its key
+    /// when dropped.
+    pub(crate) fn copy(&self) -> ParsedInvitation {
+        ParsedInvitation {
+            voucher_key: self.0.voucher_key,
+            voucher_key_network: self.0.voucher_key_network,
+            funding_txid: self.0.funding_txid.clone(),
+            islock_hex: self.0.islock_hex.clone(),
+            inviter: self.0.inviter.clone(),
+        }
+    }
+
+    fn details(&self) -> ffi::InvitationDetails {
+        guarded(
+            "Invitation::details",
+            || marshal::invitation_details(&self.0),
+            |_| Default::default(),
+        )
+    }
+}
+
+fn encode_invitation(
+    voucher_key: &[u8; 32],
+    network: ffi::Network,
+    funding: &ffi::AssetLockProof,
+    inviter: &ffi::InviterInfo,
+) -> Result<String, String> {
+    guarded(
+        "encode_invitation",
+        || {
+            let network = marshal::network(network)?;
+            let funding = marshal::asset_lock_proof(funding)?;
+            let mut key = SecretKey::from_secret_bytes(*voucher_key)
+                .map_err(|e| format!("bad voucher key: {e}"))?;
+            let encoded =
+                encode_invitation_uri(&key, network, &funding, marshal::inviter(inviter).as_ref())
+                    .map_err(|e| e.to_string());
+            key.non_secure_erase();
+            encoded
+        },
+        Err,
+    )
+}
+
+fn parse_invitation(uri: &str) -> Result<Box<Invitation>, String> {
+    guarded(
+        "parse_invitation",
+        || {
+            parse_invitation_uri(uri)
+                .map(|parsed| Box::new(Invitation(parsed)))
+                .map_err(|e| e.to_string())
+        },
+        Err,
+    )
 }
 
 fn decrypt_contact_xpub(

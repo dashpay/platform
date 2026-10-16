@@ -16,11 +16,9 @@ use dash_sdk::dapi_client::transport::{ProxyEndpoint, Socks5Auth, Socks5Proxy};
 use dash_sdk::dpp::consensus::codes::ErrorWithCode;
 use dash_sdk::dpp::dashcore::hashes::Hash;
 use dash_sdk::dpp::dashcore::secp256k1::{PublicKey, SecretKey};
-use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
-use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::v0::IdentityV0;
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey};
 use dash_sdk::dpp::key_wallet::bip32::DerivationPath;
@@ -29,7 +27,7 @@ use dash_sdk::dpp::system_data_contracts::SystemDataContract;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::dashpay::{
-    ContactRequestInput, EcdhProvider, RecipientIdentity, SendContactRequestInput,
+    ContactRequestInput, EcdhProvider, InvitationError, RecipientIdentity, SendContactRequestInput,
 };
 use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, RegisterDpnsNameInput};
 use dash_sdk::platform::transition::masternode_vote_keys::{
@@ -47,7 +45,7 @@ use crate::context::CoreContextProvider;
 use crate::ffi::{self, Status, StatusKind};
 use crate::runtime::{blocking, lock, RunError, Runtime};
 use crate::signer::WalletSigner;
-use crate::{guarded, marshal};
+use crate::{guarded, marshal, Invitation};
 
 pub struct PlatformClient {
     runtime: Runtime,
@@ -88,6 +86,21 @@ impl From<String> for Status {
 impl From<Error> for Status {
     fn from(error: Error) -> Self {
         classify(&error)
+    }
+}
+
+/// ... and an invitation error: a refused link or funding transaction is
+/// `Rejected`, a ChainLock still to come `Unavailable`.
+impl From<InvitationError> for Status {
+    fn from(error: InvitationError) -> Self {
+        let kind = match &error {
+            InvitationError::Sdk(error) => return classify(error),
+            InvitationError::NotChainLocked(_) => StatusKind::Unavailable,
+            InvitationError::Invalid(_) | InvitationError::NetworkMismatch { .. } => {
+                StatusKind::Rejected
+            }
+        };
+        Status::new(kind, error.to_string())
     }
 }
 
@@ -160,6 +173,9 @@ result_from!(ProfileResult {
     profile: ffi::Profile = Default::default()
 });
 result_from!(ProfilesResult { profiles: Vec<ffi::Profile> = Vec::new() });
+result_from!(InvitationClaimResult {
+    claim: ffi::InvitationClaim = Default::default()
+});
 
 impl From<Result<(Vec<ffi::DpnsName>, bool), Status>> for ffi::NamesResult {
     fn from(outcome: Result<(Vec<ffi::DpnsName>, bool), Status>) -> Self {
@@ -180,13 +196,7 @@ impl PlatformClient {
         config: &ffi::Config,
         context: cxx::UniquePtr<ffi::CoreContext>,
     ) -> Result<Self, String> {
-        let network = match config.network {
-            ffi::Network::Mainnet => Network::Mainnet,
-            ffi::Network::Testnet => Network::Testnet,
-            ffi::Network::Devnet => Network::Devnet,
-            ffi::Network::Regtest => Network::Regtest,
-            other => return Err(format!("unknown network {}", other.repr)),
-        };
+        let network = marshal::network(config.network)?;
         let proxy = proxy(&config.proxy)?;
         let addresses = config
             .endpoints
@@ -452,15 +462,7 @@ impl PlatformClient {
         signer: cxx::UniquePtr<ffi::WalletSigner>,
     ) -> ffi::IdentityResult {
         self.call("register_identity", |sdk| {
-            let public_keys = keys
-                .iter()
-                .map(|key| marshal::new_identity_key(key).map(|key| (key.id(), key)))
-                .collect::<Result<BTreeMap<_, _>, String>>()
-                .and_then(|public_keys| {
-                    (public_keys.len() == keys.len())
-                        .then_some(public_keys)
-                        .ok_or_else(|| "duplicate identity key ids".to_string())
-                });
+            let public_keys = marshal::new_identity_keys(keys);
             let proof = marshal::asset_lock_proof(proof);
             async move {
                 // The id is derived from the asset lock when the transition is built.
@@ -604,6 +606,43 @@ impl PlatformClient {
                     )
                     .await?;
                 Ok(sent.document.id().to_buffer())
+            }
+        })
+        .into()
+    }
+
+    pub fn invitation_claim_status(&self, invitation: &Invitation) -> ffi::InvitationClaimResult {
+        self.call("invitation_claim_status", |sdk| {
+            let invitation = invitation.copy();
+            async move {
+                let claim = sdk.invitation_claim_status(&invitation).await?;
+                Ok(ffi::InvitationClaim {
+                    prospective_identity: claim.prospective_identity_id.to_buffer(),
+                    amount_duffs: claim.amount_duffs,
+                    instant: claim.is_instant,
+                    chain_locked: claim.is_chain_locked,
+                    already_claimed: claim.already_claimed,
+                })
+            }
+        })
+        .into()
+    }
+
+    pub fn claim_invitation(
+        &self,
+        invitation: &Invitation,
+        keys: &[ffi::IdentityKey],
+        signer: cxx::UniquePtr<ffi::WalletSigner>,
+    ) -> ffi::IdentityResult {
+        self.call("claim_invitation", |sdk| {
+            let invitation = invitation.copy();
+            let keys = marshal::new_identity_keys(keys);
+            async move {
+                let signer = WalletSigner::new(signer)?;
+                let identity = sdk
+                    .claim_invitation(invitation, keys?, &signer, None)
+                    .await?;
+                Ok(marshal::identity(&identity))
             }
         })
         .into()
@@ -806,6 +845,7 @@ mod tests {
     use super::*;
     use dash_sdk::dapi_client::DapiClientError;
     use dash_sdk::dpp::consensus::ConsensusError;
+    use dash_sdk::dpp::dashcore::Network;
     use dash_sdk::error::{ContextProviderError, StateTransitionBroadcastError};
 
     /// Only a proof yields `Ok` or `NotFound`; consensus refusals keep
@@ -855,6 +895,29 @@ mod tests {
             (Error::Generic("x".into()), StatusKind::Internal),
         ] {
             assert_eq!(classify(&error).kind, kind, "{error}");
+        }
+        for (error, kind) in [
+            (InvitationError::Invalid("x".into()), StatusKind::Rejected),
+            (
+                InvitationError::NetworkMismatch {
+                    invitation: Network::Mainnet,
+                    wallet: Network::Testnet,
+                },
+                StatusKind::Rejected,
+            ),
+            (
+                InvitationError::NotChainLocked("x".into()),
+                StatusKind::Unavailable,
+            ),
+            (
+                InvitationError::Sdk(Error::TimeoutReached(
+                    std::time::Duration::from_secs(1),
+                    "t".into(),
+                )),
+                StatusKind::Unavailable,
+            ),
+        ] {
+            assert_eq!(Status::from(error).kind, kind);
         }
     }
 
