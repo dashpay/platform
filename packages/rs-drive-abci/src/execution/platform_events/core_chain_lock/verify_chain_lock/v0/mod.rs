@@ -262,6 +262,7 @@ mod tests {
                 .returning(|_| Ok(false));
             core_rpc
                 .expect_submit_chain_lock()
+                .times(0)
                 .returning(|_| Ok(CORE_BEST_CHAIN_LOCK_HEIGHT));
             platform.core_rpc = core_rpc;
 
