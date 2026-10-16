@@ -46,7 +46,9 @@ bool Guard(Fn&& body) noexcept
 //! SignIdentityKey: `key_id`, `key_type` and `key_data` describe the
 //! identity key the SDK signs with, as Platform records it (key_data is the
 //! 33-byte public key for ECDSA_SECP256K1 = 0, the 20-byte key hash for
-//! ECDSA_HASH160 = 2). The wallet signs
+//! ECDSA_HASH160 = 2). ECDSA_HASH160 is a masternode voting key
+//! (cast_masternode_vote): key_id is 0, the id on the voter identity, and
+//! key_data is the voting key's HASH160. The wallet signs
 //! SHA256d(signable) and answers a 65-byte compact recoverable signature.
 //!
 //! SignAssetLock: signs the 32-byte digest with the private key of the asset

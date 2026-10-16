@@ -40,6 +40,12 @@ bool unproved(const Status& status)
     return status.kind != StatusKind::Ok && status.kind != StatusKind::NotFound;
 }
 
+//! The input converted and the call reached the closed port.
+bool unreachable(const Status& status)
+{
+    return status.kind == StatusKind::Unavailable;
+}
+
 //! Flags its destruction, so a test can see when the CoreContext holding it
 //! is destroyed.
 struct Sentinel {
@@ -83,6 +89,7 @@ int main()
     static_assert(static_cast<uint8_t>(StatusKind::NotFound) == 1);
     static_assert(static_cast<uint8_t>(StatusKind::Consensus) == 4);
     static_assert(static_cast<uint8_t>(AssetLockProofKind::Chain) == 1);
+    static_assert(sizeof(VoteChoice) == 1 && static_cast<uint8_t>(VoteChoice::Lock) == 2);
 
     // Configs the client cannot honour are errors, never a direct fallback.
     {
@@ -138,6 +145,8 @@ int main()
     check(client->search_names("ali", 0).status.kind == StatusKind::Internal, "search limit 0 accepted");
     check(unproved(client->pending_contests_for_identity(id).status), "pending_contests_for_identity");
     check(unproved(client->contested_vote_state("a11ce").status), "contested_vote_state");
+    check(unreachable(client->current_contests().status), "current_contests");
+    check(unreachable(client->identity_votes(id).status), "identity_votes");
     check(unproved(client->contact_requests(id, ContactDirection::Received, 0).status), "contact_requests");
     check(client->contact_requests(id, static_cast<ContactDirection>(9), 0).status.kind == StatusKind::Internal,
           "unknown contact direction accepted");
@@ -199,6 +208,12 @@ int main()
         nullptr);
     check(unproved(client->send_contact_request(request, signer(false), std::move(contact_keys)).status),
           "send_contact_request");
+    const std::array<uint8_t, 20> voting_key{3};
+    check(unreachable(client->cast_masternode_vote(id, voting_key, "alice", VoteChoice::Abstain, id, signer(false))),
+          "cast_masternode_vote");
+    check(client->cast_masternode_vote(id, voting_key, "alice", static_cast<VoteChoice>(9), id, signer(false)).kind ==
+              StatusKind::Internal,
+          "unknown vote choice accepted");
 
     // No network.
     check(is_valid_username("alice") && !is_valid_username("-"), "is_valid_username");

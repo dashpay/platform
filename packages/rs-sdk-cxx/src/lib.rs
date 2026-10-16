@@ -178,6 +178,7 @@ pub mod ffi {
     }
 
     /// A contested DPNS name: its normalized label, end time and state.
+    /// `state` is left empty by `current_contests`.
     #[derive(Debug, Clone)]
     struct Contest {
         name: String,
@@ -189,6 +190,29 @@ pub mod ffi {
     struct ContestsResult {
         status: Status,
         contests: Vec<Contest>,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[repr(u8)]
+    enum VoteChoice {
+        TowardsIdentity = 0,
+        Abstain = 1,
+        Lock = 2,
+    }
+
+    /// A masternode's vote on a DPNS name; `towards` is all zero unless
+    /// `choice` is `TowardsIdentity`.
+    #[derive(Debug, Clone)]
+    struct NameVote {
+        normalized_label: String,
+        choice: VoteChoice,
+        towards: [u8; 32],
+    }
+
+    #[derive(Debug, Clone)]
+    struct NameVotesResult {
+        status: Status,
+        votes: Vec<NameVote>,
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -356,6 +380,14 @@ pub mod ffi {
         ) -> ContestsResult;
         /// The contest for a DPNS label (normalized here).
         fn contested_vote_state(self: &PlatformClient, label: &str) -> VoteStateResult;
+        /// DPNS names whose contest is open, with their end times. Best
+        /// effort: the SDK may stop after its first page of 100 polls.
+        fn current_contests(self: &PlatformClient) -> ContestsResult;
+        /// One proved page (up to 100) of the DPNS votes the masternode
+        /// `pro_tx_hash` has cast, possibly not all: the SDK cannot ask for
+        /// the next page. Platform records votes by proTxHash, not by voter
+        /// identity. Hash in the embedder's internal byte order.
+        fn identity_votes(self: &PlatformClient, pro_tx_hash: &[u8; 32]) -> NameVotesResult;
         /// Every request sent by or to `identity`, created after `since_ms`
         /// (0 = all).
         fn contact_requests(
@@ -401,6 +433,22 @@ pub mod ffi {
             signer: UniquePtr<WalletSigner>,
             keys: UniquePtr<ContactKeys>,
         ) -> IdResult;
+        /// Votes on the contest for `label` (normalized here) as the
+        /// masternode `pro_tx_hash` (internal byte order), signing with its
+        /// voting key, whose HASH160 (CKeyID bytes, not reversed) is
+        /// `voting_key_hash`. `towards` is read only for `TowardsIdentity`.
+        /// A refused voting key gets the SDK's diagnosis appended to the
+        /// message. `Ok` when the SDK reports the vote stored; on a duplicate
+        /// broadcast it reports whatever vote Platform holds for the poll.
+        fn cast_masternode_vote(
+            self: &PlatformClient,
+            pro_tx_hash: &[u8; 32],
+            voting_key_hash: &[u8; 20],
+            label: &str,
+            choice: VoteChoice,
+            towards: &[u8; 32],
+            signer: UniquePtr<WalletSigner>,
+        ) -> Status;
 
         // No network. A panic answers the safe value: not valid, contested.
         fn is_valid_username(label: &str) -> bool;

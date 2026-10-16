@@ -7,7 +7,8 @@
 use std::collections::BTreeMap;
 
 use dash_sdk::dpp::dashcore::consensus::Decodable;
-use dash_sdk::dpp::dashcore::{InstantLock, OutPoint, Transaction};
+use dash_sdk::dpp::dashcore::hashes::Hash;
+use dash_sdk::dpp::dashcore::{InstantLock, OutPoint, ProTxHash, Transaction};
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -16,19 +17,33 @@ use dash_sdk::dpp::identity::state_transition::asset_lock_proof::chain::ChainAss
 use dash_sdk::dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dash_sdk::dpp::platform_value::Value;
-use dash_sdk::dpp::prelude::AssetLockProof;
+use dash_sdk::dpp::prelude::{AssetLockProof, Identifier};
+use dash_sdk::dpp::system_data_contracts::SystemDataContract;
+use dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dash_sdk::dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
-use dash_sdk::platform::dpns_usernames::DpnsUsername;
+use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use dash_sdk::dpp::voting::vote_polls::VotePoll;
+use dash_sdk::dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
+use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
+use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
+use dash_sdk::dpp::voting::votes::Vote;
+use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, DpnsUsername};
 use dash_sdk::query_types::Contenders;
 
 use crate::ffi;
 
-/// A quorum hash between the embedder's internal `uint256` byte order and
-/// the order Platform uses: reversed.
+/// A 32-byte chain hash (quorum hash, proTxHash) between the embedder's
+/// internal `uint256` byte order and the order Platform uses: reversed.
 pub fn reversed(hash: &[u8; 32]) -> [u8; 32] {
     let mut out = *hash;
     out.reverse();
     out
+}
+
+/// A proTxHash in the embedder's internal order, as the typed `ProTxHash`
+/// (Core's RPC hex order) the SDK's voting calls take.
+pub fn pro_tx_hash(internal_order: &[u8; 32]) -> ProTxHash {
+    ProTxHash::from_byte_array(reversed(internal_order))
 }
 
 pub fn identity(identity: &Identity) -> ffi::Identity {
@@ -139,6 +154,58 @@ pub fn empty_vote_state() -> ffi::VoteState {
     }
 }
 
+/// The DPNS poll a vote on `label` goes to, as the SDK's DPNS contest
+/// queries build it, with the label normalized the same way.
+fn dpns_vote_poll(label: &str) -> ContestedDocumentResourceVotePoll {
+    ContestedDocumentResourceVotePoll {
+        contract_id: SystemDataContract::DPNS.id(),
+        document_type_name: "domain".to_string(),
+        index_name: "parentNameAndLabel".to_string(),
+        index_values: vec![
+            Value::Text("dash".to_string()),
+            Value::Text(convert_to_homograph_safe_chars(label)),
+        ],
+    }
+}
+
+pub fn dpns_vote(label: &str, choice: ffi::VoteChoice, towards: &[u8; 32]) -> Result<Vote, String> {
+    let resource_vote_choice = match choice {
+        ffi::VoteChoice::TowardsIdentity => {
+            ResourceVoteChoice::TowardsIdentity(Identifier::from(*towards))
+        }
+        ffi::VoteChoice::Abstain => ResourceVoteChoice::Abstain,
+        ffi::VoteChoice::Lock => ResourceVoteChoice::Lock,
+        other => return Err(format!("unknown vote choice {}", other.repr)),
+    };
+    Ok(Vote::ResourceVote(ResourceVote::V0(ResourceVoteV0 {
+        vote_poll: VotePoll::ContestedDocumentResourceVotePoll(dpns_vote_poll(label)),
+        resource_vote_choice,
+    })))
+}
+
+/// A DPNS vote, `None` for a vote on any other poll.
+pub fn name_vote(vote: &ResourceVote) -> Option<ffi::NameVote> {
+    let VotePoll::ContestedDocumentResourceVotePoll(poll) = vote.vote_poll();
+    if poll.contract_id != SystemDataContract::DPNS.id() || poll.document_type_name != "domain" {
+        return None;
+    }
+    let Some(Value::Text(label)) = poll.index_values.get(1) else {
+        return None;
+    };
+    let (choice, towards) = match vote.resource_vote_choice() {
+        ResourceVoteChoice::TowardsIdentity(id) => {
+            (ffi::VoteChoice::TowardsIdentity, id.to_buffer())
+        }
+        ResourceVoteChoice::Abstain => (ffi::VoteChoice::Abstain, [0; 32]),
+        ResourceVoteChoice::Lock => (ffi::VoteChoice::Lock, [0; 32]),
+    };
+    Some(ffi::NameVote {
+        normalized_label: label.clone(),
+        choice,
+        towards,
+    })
+}
+
 pub fn contact_request(document: &Document) -> Result<ffi::ContactRequest, String> {
     let properties: &BTreeMap<String, Value> = document.properties();
     let field = |name: &str| {
@@ -228,5 +295,64 @@ mod tests {
 
         properties.remove("toUserId");
         assert!(contact_request(&document(properties)).is_err());
+    }
+
+    /// Core hands over a proTxHash in its internal `uint256` order; the
+    /// SDK's `ProTxHash` reads as Core's RPC hex.
+    #[test]
+    fn a_core_pro_tx_hash_becomes_the_rpc_order_pro_tx_hash() {
+        use std::str::FromStr;
+
+        let rpc_hex = "74e26f433328be4b833b8958c04c51615e03853378e0d56fbe5ecf24977f884b";
+        let mut core_internal: [u8; 32] =
+            std::array::from_fn(|i| u8::from_str_radix(&rpc_hex[2 * i..2 * i + 2], 16).unwrap());
+        core_internal.reverse();
+        assert_eq!(
+            pro_tx_hash(&core_internal),
+            ProTxHash::from_str(rpc_hex).unwrap()
+        );
+    }
+
+    /// A vote built for a label reads back as the same DPNS name vote; a
+    /// vote on another contract's poll is not a name vote.
+    #[test]
+    fn a_dpns_vote_round_trips_and_other_polls_are_skipped() {
+        let Vote::ResourceVote(vote) =
+            dpns_vote("Alice", ffi::VoteChoice::TowardsIdentity, &[4; 32]).expect("builds");
+        let marshalled = name_vote(&vote).expect("a DPNS vote");
+        assert_eq!(marshalled.normalized_label, "a11ce");
+        assert_eq!(marshalled.choice, ffi::VoteChoice::TowardsIdentity);
+        assert_eq!(marshalled.towards, [4; 32]);
+
+        // The poll names DPNS's contested index, its values in the index's
+        // property order.
+        use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dash_sdk::dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use dash_sdk::dpp::system_data_contracts::load_system_data_contract;
+        use dash_sdk::dpp::version::PlatformVersion;
+        let mut poll = dpns_vote_poll("alice");
+        let dpns =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest()).unwrap();
+        let domain = dpns
+            .document_type_for_name(&poll.document_type_name)
+            .unwrap();
+        let index = &domain.indexes()[&poll.index_name];
+        assert!(index.contested_index.is_some());
+        assert_eq!(
+            index
+                .properties
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>(),
+            ["normalizedParentDomainName", "normalizedLabel"]
+        );
+
+        poll.contract_id = [9; 32].into();
+        let other = ResourceVote::V0(ResourceVoteV0 {
+            vote_poll: VotePoll::ContestedDocumentResourceVotePoll(poll),
+            resource_vote_choice: ResourceVoteChoice::Lock,
+        });
+        assert!(name_vote(&other).is_none());
+        assert!(dpns_vote("alice", ffi::VoteChoice { repr: 9 }, &[0; 32]).is_err());
     }
 }

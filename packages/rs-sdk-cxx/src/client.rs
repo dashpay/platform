@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use dash_sdk::dapi_client::transport::{ProxyEndpoint, Socks5Auth, Socks5Proxy};
 use dash_sdk::dpp::consensus::codes::ErrorWithCode;
+use dash_sdk::dpp::dashcore::hashes::Hash;
 use dash_sdk::dpp::dashcore::secp256k1::{PublicKey, SecretKey};
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::document::DocumentV0Getters;
@@ -23,15 +24,20 @@ use dash_sdk::dpp::identity::v0::IdentityV0;
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey};
 use dash_sdk::dpp::key_wallet::bip32::DerivationPath;
 use dash_sdk::dpp::prelude::Identifier;
+use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::dashpay::{
     ContactRequestInput, EcdhProvider, RecipientIdentity, SendContactRequestInput,
 };
 use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, RegisterDpnsNameInput};
+use dash_sdk::platform::transition::masternode_vote_keys::{
+    diagnose_voting_key_failure, is_voting_key_failure, voter_identity_voting_key,
+};
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
+use dash_sdk::platform::transition::vote::PutVote;
 use dash_sdk::platform::types::identity::PublicKeyHash;
-use dash_sdk::platform::Fetch;
+use dash_sdk::platform::{Fetch, FetchMany};
 use dash_sdk::sdk::{Address, AddressList};
 use dash_sdk::{Error, Sdk, SdkBuilder};
 
@@ -147,6 +153,7 @@ result_from!(VoteStateResult {
 });
 result_from!(ContestsResult { contests: Vec<ffi::Contest> = Vec::new() });
 result_from!(ContactRequestsResult { requests: Vec<ffi::ContactRequest> = Vec::new() });
+result_from!(NameVotesResult { votes: Vec<ffi::NameVote> = Vec::new() });
 
 impl From<Result<(Vec<ffi::DpnsName>, bool), Status>> for ffi::NamesResult {
     fn from(outcome: Result<(Vec<ffi::DpnsName>, bool), Status>) -> Self {
@@ -350,6 +357,36 @@ impl PlatformClient {
         .into()
     }
 
+    pub fn current_contests(&self) -> ffi::ContestsResult {
+        self.call("current_contests", |sdk| async move {
+            let contests = sdk.get_current_dpns_contests(None, None, None).await?;
+            Ok(contests
+                .into_iter()
+                .map(|(name, ends_at_ms)| ffi::Contest {
+                    name,
+                    ends_at_ms,
+                    state: marshal::empty_vote_state(),
+                })
+                .collect())
+        })
+        .into()
+    }
+
+    pub fn identity_votes(&self, pro_tx_hash: &[u8; 32]) -> ffi::NameVotesResult {
+        self.call("identity_votes", |sdk| {
+            let pro_tx_hash = marshal::pro_tx_hash(pro_tx_hash);
+            async move {
+                let votes = ResourceVote::fetch_many(&sdk, pro_tx_hash).await?;
+                Ok(votes
+                    .values()
+                    .flatten()
+                    .filter_map(marshal::name_vote)
+                    .collect())
+            }
+        })
+        .into()
+    }
+
     pub fn contact_requests(
         &self,
         identity: &[u8; 32],
@@ -548,6 +585,48 @@ impl PlatformClient {
             }
         })
         .into()
+    }
+
+    pub fn cast_masternode_vote(
+        &self,
+        pro_tx_hash: &[u8; 32],
+        voting_key_hash: &[u8; 20],
+        label: &str,
+        choice: ffi::VoteChoice,
+        towards: &[u8; 32],
+        signer: cxx::UniquePtr<ffi::WalletSigner>,
+    ) -> Status {
+        self.call("cast_masternode_vote", |sdk| {
+            let pro_tx_hash = marshal::pro_tx_hash(pro_tx_hash);
+            let voting_key_hash = *voting_key_hash;
+            let vote = marshal::dpns_vote(label, choice, towards);
+            async move {
+                let signer = WalletSigner::new(signer)?;
+                if let Err(error) = vote?
+                    .put_to_platform_and_wait_for_response(
+                        Identifier::from(pro_tx_hash.to_byte_array()),
+                        &voter_identity_voting_key(&voting_key_hash),
+                        &sdk,
+                        &signer,
+                        None,
+                    )
+                    .await
+                {
+                    let mut status = classify(&error);
+                    if is_voting_key_failure(&error) {
+                        if let Some(problem) =
+                            diagnose_voting_key_failure(&sdk, pro_tx_hash, &voting_key_hash).await
+                        {
+                            status.message = format!("{}: {problem:?}", status.message);
+                        }
+                    }
+                    return Err(status);
+                }
+                Ok(())
+            }
+        })
+        .err()
+        .unwrap_or_else(Status::ok)
     }
 }
 
