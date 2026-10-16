@@ -210,7 +210,9 @@ async fn wallet_fixture(
         staged: Mutex::new(BTreeMap::new()),
         fail_store: AtomicBool::new(false),
         fail_flush: AtomicBool::new(false),
-        commits_inline: AtomicBool::new(false),
+        // Drains admit inline-committing backends only; the buffered mode
+        // exists for `should_refuse_drain_on_a_buffered_persistence_backend`.
+        commits_inline: AtomicBool::new(true),
         fail_load: AtomicBool::new(false),
     });
     let sdk = Arc::new(
@@ -583,9 +585,8 @@ async fn should_complete_drain_when_an_inline_commit_flush_notification_fails() 
 async fn should_keep_drain_pending_when_completion_persistence_fails() {
     let (lock, keys) = drain_lock_fixture();
     let (wallet, persistence, _, _dir) = wallet_fixture(&lock, keys).await;
-    for (fail_store, fail_flush) in [(true, false), (false, true)] {
-        persistence.fail_store.store(fail_store, Ordering::SeqCst);
-        persistence.fail_flush.store(fail_flush, Ordering::SeqCst);
+    {
+        persistence.fail_store.store(true, Ordering::SeqCst);
         assert!(matches!(
             wallet
                 .asset_locks
@@ -609,7 +610,6 @@ async fn should_keep_drain_pending_when_completion_persistence_fails() {
         assert_eq!(status.out_point, Some(lock.out_point));
     }
     persistence.fail_store.store(false, Ordering::SeqCst);
-    persistence.fail_flush.store(false, Ordering::SeqCst);
     wallet
         .asset_locks
         .complete_wallet_drain(lock.out_point, OPERATION_ID)
@@ -623,6 +623,61 @@ async fn should_keep_drain_pending_when_completion_persistence_fails() {
             .unwrap()
             .state,
         AssetLockOperationState::Completed
+    );
+}
+
+/// A buffered backend could commit a retained changeset through a later,
+/// unrelated flush, so every drain entry point refuses it before any Core
+/// funds move or any row is written; the stored state is left untouched.
+#[tokio::test]
+async fn should_refuse_drain_on_a_buffered_persistence_backend() {
+    let (lock, keys) = drain_lock_fixture();
+    let (wallet, persistence, _, _dir) = wallet_fixture(&lock, keys).await;
+    persistence.commits_inline.store(false, Ordering::SeqCst);
+
+    fn refused<T: std::fmt::Debug>(result: Result<T, PlatformWalletError>) {
+        match result {
+            Err(PlatformWalletError::Persistence(message)) => {
+                assert!(message.contains("commits each store inline"), "{message}");
+            }
+            other => panic!("buffered backend must be refused, got {other:?}"),
+        }
+    }
+    refused(
+        wallet
+            .shielded_wallet_drain_operation_status(OPERATION_ID)
+            .await
+            .map(|snapshot| snapshot.state),
+    );
+    refused(
+        wallet
+            .asset_locks
+            .complete_wallet_drain(lock.out_point, OPERATION_ID)
+            .await,
+    );
+    let fresh = Arc::new(AssetLockOperationContext::new([0x77; 16]));
+    let _registration = wallet
+        .asset_locks
+        .register_wallet_drain_operation(fresh.clone());
+    refused(wallet.asset_locks.begin_wallet_drain(&fresh).await);
+    assert!(fresh.snapshot().out_point.is_none());
+
+    assert_ne!(
+        persistence.committed_status(&lock.out_point),
+        AssetLockStatus::DrainCompleted
+    );
+    assert!(persistence.staged.lock().unwrap().is_empty());
+    assert_eq!(wallet.asset_locks.list_tracked_locks().await.len(), 1);
+
+    // The same backend in inline-commit mode is admitted unchanged.
+    persistence.commits_inline.store(true, Ordering::SeqCst);
+    assert_eq!(
+        wallet
+            .shielded_wallet_drain_operation_status(OPERATION_ID)
+            .await
+            .unwrap()
+            .state,
+        AssetLockOperationState::Pending
     );
 }
 

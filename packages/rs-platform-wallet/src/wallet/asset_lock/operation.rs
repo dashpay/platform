@@ -183,12 +183,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         ..Default::default()
                     })
                     .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+                // `require_wallet_drain_persistence` admits inline-committing
+                // backends only, so the row is already durable: a failed flush
+                // notification must not suppress its live publication.
                 if let Err(error) = self.persister.flush() {
-                    if !self.persister.store_commits_inline() {
-                        return Err(PlatformWalletError::Persistence(error.to_string()));
-                    }
-                    // The row is already committed. A failed notification must
-                    // not suppress its live publication.
                     tracing::warn!(%out_point, %error, "drain completion committed inline; flush notification failed");
                 }
                 lock.status = AssetLockStatus::DrainCompleted;
@@ -221,6 +219,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .map_err(|e| PlatformWalletError::Persistence(e.to_string()))
     }
 
+    /// A drain needs the `WALLET_DRAIN` capabilities **and** a backend whose
+    /// successful `store` is already durable. Every drain write (checkpoint,
+    /// rejection removal, completion) treats "store returned Ok" as "committed"
+    /// and publishes live state on that basis; a buffered backend could instead
+    /// retain a changeset whose flush failed and commit it through a later,
+    /// unrelated flush, leaving live and durable state disagreeing with no
+    /// caller left to reconcile them. The shipped FFI and SQLite persisters
+    /// commit inline; buffered backends are refused before any Core funds move.
     pub(crate) fn require_wallet_drain_persistence(&self) -> Result<(), PlatformWalletError> {
         let capabilities = self.persister.persistence_capabilities();
         let required = PersistenceCapabilities::WALLET_DRAIN;
@@ -229,6 +235,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 "wallet drain requires persistence capabilities {:?}",
                 capabilities.missing(required).names()
             )));
+        }
+        if !self.persister.store_commits_inline() {
+            return Err(PlatformWalletError::Persistence(
+                "wallet drain requires a persistence backend that commits each store inline; \
+                 buffered backends are not supported"
+                    .into(),
+            ));
         }
         Ok(())
     }

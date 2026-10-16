@@ -1680,6 +1680,14 @@
           "id": "should_resume_the_same_lock_for_a_reused_uuid_without_a_second_core_lock",
           "command": "cargo test -p platform-wallet --features shielded --lib wallet_drain_tests",
           "covers_restart": true
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/wallet_drain_tests.rs",
+          "id": "should_refuse_drain_on_a_buffered_persistence_backend",
+          "command": "cargo test -p platform-wallet --features shielded --lib should_refuse_drain_on_a_buffered_persistence_backend",
+          "covers_restart": false
         }
       ]
     }

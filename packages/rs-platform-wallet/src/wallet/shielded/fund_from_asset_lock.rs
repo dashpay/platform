@@ -1259,6 +1259,10 @@ mod tests {
     ) {
         let ctx = consumption_report_context().await;
         ctx.persistence.wallet_drain.store(true, Ordering::SeqCst);
+        // Drains admit inline-committing backends only.
+        ctx.persistence
+            .store_commits_inline
+            .store(true, Ordering::SeqCst);
         ctx.wallet_manager
             .write()
             .await
@@ -1432,16 +1436,17 @@ mod tests {
         assert!(persisted_statuses(&ctx).is_empty());
         assert_eq!(operation.snapshot().state, AssetLockOperationState::Pending);
 
-        // A buffered backend whose flush fails has not committed: stay Pending.
-        *ctx.persistence
-            .fail_next_flush
-            .lock()
-            .expect("recording persistence mutex") = Some(PersistenceErrorKind::Transient);
+        // A buffered backend is refused outright, before any write: its
+        // retained changeset could otherwise commit through a later flush.
+        ctx.persistence
+            .store_commits_inline
+            .store(false, Ordering::SeqCst);
         assert!(matches!(
             settle(&ctx).await,
-            Err(PlatformWalletError::Persistence(_))
+            Err(PlatformWalletError::Persistence(message)) if message.contains("inline")
         ));
         assert_eq!(live_lock(&ctx).await.status, AssetLockStatus::ChainLocked);
+        assert!(persisted_statuses(&ctx).is_empty());
         assert_eq!(operation.snapshot().state, AssetLockOperationState::Pending);
 
         // An inline-committing backend already holds the row: a failed flush

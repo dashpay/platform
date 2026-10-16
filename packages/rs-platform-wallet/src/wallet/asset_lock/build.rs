@@ -966,6 +966,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         signer: &S,
         operation: Option<&AssetLockOperationContext>,
     ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
+        if operation.is_some() {
+            self.require_wallet_drain_persistence()?;
+        }
         // Serialize build→persist so a concurrent build cannot interleave its
         // pool snapshot with ours. The snapshot is collected under the build's
         // wallet-manager guard; without this serialization, build A's snapshot
@@ -1261,14 +1264,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             "could not durably remove rejected drain asset lock: {error}"
                         )));
                     }
+                    // Drains run on inline-committing backends only (see
+                    // `require_wallet_drain_persistence`), so the removal is
+                    // already durable: a failed host notification must not
+                    // strand its context or inputs.
                     if let Err(error) = self.persister.flush() {
-                        if !self.persister.store_commits_inline() {
-                            return Err(PlatformWalletError::Persistence(format!(
-                                "could not durably remove rejected drain asset lock: {error}"
-                            )));
-                        }
-                        // The removal is already committed. A failed host
-                        // notification must not strand its context or inputs.
                         tracing::warn!(%out_point, %error, "rejected drain removed inline; flush notification failed");
                     }
                 } else {
@@ -1607,6 +1607,9 @@ mod tests {
             let (wallet, info) = manager.get_wallet_and_info(&wallet_id).unwrap();
             Self {
                 restored_wallet: Some((wallet.clone(), info.core_wallet.clone())),
+                // Drains admit inline-committing backends only; a test that
+                // needs the refused buffered mode overrides this explicitly.
+                commits_inline: true,
                 ..Default::default()
             }
         }
@@ -4630,8 +4633,9 @@ mod tests {
 
     #[tokio::test]
     async fn should_release_rejected_drain_only_when_removal_committed() {
-        for commits_inline in [false, true] {
-            for fail_remove_store in [false, true] {
+        for fail_remove_store in [false, true] {
+            {
+                let commits_inline = true;
                 let (wallet_manager, wallet_id, _, signer) =
                     funded_wallet_manager(StandardAccountType::BIP44Account).await;
                 let persistence = Arc::new(CapturingPersistence {
@@ -4725,11 +4729,11 @@ mod tests {
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_retry_rolled_back_drain_checkpoint_without_rebuilding() {
-        for inline in [false, true] {
+        {
             let (wallet_manager, wallet_id, _, signer) =
                 funded_wallet_manager(StandardAccountType::BIP44Account).await;
             let persistence = Arc::new(CapturingPersistence {
-                commits_inline: inline,
+                commits_inline: true,
                 fail_lock_store: std::sync::atomic::AtomicBool::new(true),
                 restore_stored_locks: std::sync::atomic::AtomicBool::new(true),
                 ..CapturingPersistence::for_wallet(&wallet_manager, wallet_id)
@@ -4927,11 +4931,13 @@ mod tests {
                 .state,
             super::AssetLockOperationState::Pending
         );
-        // A failed buffered flush leaves only the unpublished checkpoint.
-        // Explicit retry must make that exact row durable before tracking it.
+        // On an inline-committing backend the row store already committed;
+        // the failed flush notification only kept it unpublished. Explicit
+        // retry re-establishes that exact row before tracking it.
         assert!(persistence.load().unwrap().wallets[&wallet_id]
             .unused_asset_locks
-            .is_empty());
+            .values()
+            .any(|locks| locks.contains_key(&point)));
         assert_eq!(
             manager.begin_wallet_drain(&operation).await.unwrap(),
             Some(point)
