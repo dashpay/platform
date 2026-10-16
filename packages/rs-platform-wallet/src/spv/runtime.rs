@@ -38,7 +38,8 @@ pub struct SpvQuorumPublicKey {
     /// The quorum's BLS public key.
     pub public_key: [u8; 48],
     /// dash-spv's verification status for the quorum. Never `Invalid`: the
-    /// lookup skips invalid entries.
+    /// lookup skips invalid entries. Only `Verified` makes the key fit to
+    /// verify Platform proofs.
     pub status: LLMQEntryVerificationStatus,
 }
 
@@ -335,10 +336,19 @@ impl SpvRuntime {
             .map_err(classify_spv_send_error)
     }
 
-    /// Look up a quorum public key via the SPV masternode state.
+    /// Look up the public key of a quorum dash-spv verified, for Platform
+    /// proof verification.
     ///
-    /// The key is returned whatever dash-spv's verification status for the
-    /// quorum, `Invalid` excepted. A caller that must know the status uses
+    /// Only a [`LLMQEntryVerificationStatus::Verified`] quorum's key is
+    /// returned. A quorum dash-spv holds but has not verified (`Unknown`,
+    /// `Skipped`) fails with [`PlatformWalletError::QuorumNotVerified`]; that
+    /// is usually transient, for example a freshly mined quorum whose
+    /// work-block list has not arrived yet. A quorum dash-spv does not hold,
+    /// or found `Invalid`, fails with [`PlatformWalletError::SpvError`].
+    /// [`PlatformWalletError::quorum_lookup_context_error`] maps either to
+    /// the SDK error class a context provider reports.
+    ///
+    /// A caller that accepts unverified keys uses
     /// [`Self::get_quorum_public_key_with_status`].
     pub async fn get_quorum_public_key(
         &self,
@@ -346,9 +356,25 @@ impl SpvRuntime {
         quorum_hash: [u8; 32],
         height: u32,
     ) -> Result<[u8; 48], PlatformWalletError> {
-        self.get_quorum_public_key_with_status(quorum_type, quorum_hash, height)
-            .await
-            .map(|quorum| quorum.public_key)
+        let quorum = self
+            .get_quorum_public_key_with_status(quorum_type, quorum_hash, height)
+            .await?;
+        match quorum.status {
+            LLMQEntryVerificationStatus::Verified => Ok(quorum.public_key),
+            // dash-spv's lookup already skips `Invalid` entries; kept out of
+            // `QuorumNotVerified` should that ever change.
+            LLMQEntryVerificationStatus::Invalid(error) => {
+                Err(PlatformWalletError::SpvError(format!(
+                    "quorum {quorum_type}:{} is invalid: {error}",
+                    hex::encode(quorum_hash)
+                )))
+            }
+            status => Err(PlatformWalletError::QuorumNotVerified {
+                quorum_type,
+                quorum_hash,
+                status,
+            }),
+        }
     }
 
     /// Look up a quorum public key via the SPV masternode state, with
@@ -356,7 +382,9 @@ impl SpvRuntime {
     ///
     /// Only [`LLMQEntryVerificationStatus::Verified`] means dash-spv checked the
     /// quorum's commitment against the members it derives for the quorum. Any
-    /// other status is a key dash-spv holds but has not verified.
+    /// other status is a key dash-spv holds but has not verified, which must
+    /// not verify Platform proofs; [`Self::get_quorum_public_key`] enforces
+    /// that.
     pub async fn get_quorum_public_key_with_status(
         &self,
         quorum_type: u32,
@@ -1186,104 +1214,187 @@ mod tests {
         assert_no_storage_writer_survives(&storage).await;
     }
 
-    /// The status-carrying lookup returns the key with dash-spv's status for
-    /// the quorum, and the key-only lookup the same key, whatever the status.
-    /// Neither returns a quorum dash-spv found `Invalid`.
-    #[tokio::test]
-    async fn should_return_the_quorum_status_with_its_key() {
+    /// The hash Platform names the [`hold_quorum`] quorum by: dash-spv's
+    /// quorum hash in the reverse byte order.
+    const QUORUM_FIXTURE_PLATFORM_HASH: [u8; 32] = [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+        25, 26, 27, 28, 29, 30, 31,
+    ];
+
+    /// Height of the masternode list holding the fixture quorum.
+    const QUORUM_FIXTURE_HEIGHT: u32 = 1_000;
+
+    /// Make the offline runtime's engine hold, at [`QUORUM_FIXTURE_HEIGHT`], one
+    /// LLMQ type 6 quorum with key `[9; 48]` and the given dash-spv status.
+    async fn hold_quorum(
+        runtime: &SpvRuntime,
+        status: dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus,
+    ) {
         use std::collections::BTreeMap;
 
         use dashcore::bls_sig_utils::{BLSPublicKey, BLSSignature};
         use dashcore::hash_types::QuorumVVecHash;
         use dashcore::hashes::Hash;
-        use dashcore::sml::llmq_entry_verification::{
-            LLMQEntryVerificationSkipStatus, LLMQEntryVerificationStatus,
-        };
         use dashcore::sml::llmq_type::LLMQType;
         use dashcore::sml::masternode_list::MasternodeList;
         use dashcore::sml::quorum_entry::qualified_quorum_entry::QualifiedQuorumEntry;
-        use dashcore::sml::quorum_validation_error::QuorumValidationError;
         use dashcore::transaction::special_transaction::quorum_commitment::QuorumEntry;
         use dashcore::{BlockHash, QuorumHash};
 
-        let (runtime, _storage) = offline_runtime().await;
         let engine = {
             let client = runtime.client.read().await;
             dash_spv::test_utils::masternode_list_engine(client.as_ref().unwrap()).unwrap()
         };
+        let mut quorum_hash = QUORUM_FIXTURE_PLATFORM_HASH;
+        quorum_hash.reverse();
+        let quorum_hash = QuorumHash::from_byte_array(quorum_hash);
+        let mut quorum: QualifiedQuorumEntry = QuorumEntry {
+            version: 2,
+            llmq_type: LLMQType::Llmqtype25_67,
+            quorum_hash,
+            quorum_index: None,
+            signers: vec![true; 4],
+            valid_members: vec![true; 4],
+            quorum_public_key: BLSPublicKey::from([9; 48]),
+            quorum_vvec_hash: QuorumVVecHash::all_zeros(),
+            threshold_sig: BLSSignature::from([1; 96]),
+            all_commitment_aggregated_signature: BLSSignature::from([1; 96]),
+        }
+        .into();
+        quorum.verified = status;
+        let quorums = BTreeMap::from([(
+            LLMQType::Llmqtype25_67,
+            BTreeMap::from([(quorum_hash, Arc::new(quorum))]),
+        )]);
+        let list = MasternodeList::build(
+            BTreeMap::new(),
+            quorums,
+            BlockHash::from_byte_array([3; 32]),
+            QUORUM_FIXTURE_HEIGHT,
+        )
+        .build();
+        engine
+            .write()
+            .await
+            .masternode_lists
+            .insert(QUORUM_FIXTURE_HEIGHT, list);
+    }
 
-        // Platform names the quorum by its hash in the reverse byte order.
-        let platform_hash: [u8; 32] = std::array::from_fn(|i| i as u8);
-        let quorum_hash = QuorumHash::from_byte_array(std::array::from_fn(|i| 31 - i as u8));
-        let height = 1_000;
-        let hold = |status: LLMQEntryVerificationStatus| {
-            let mut quorum: QualifiedQuorumEntry = QuorumEntry {
-                version: 2,
-                llmq_type: LLMQType::Llmqtype25_67,
-                quorum_hash,
-                quorum_index: None,
-                signers: vec![true; 4],
-                valid_members: vec![true; 4],
-                quorum_public_key: BLSPublicKey::from([9; 48]),
-                quorum_vvec_hash: QuorumVVecHash::all_zeros(),
-                threshold_sig: BLSSignature::from([1; 96]),
-                all_commitment_aggregated_signature: BLSSignature::from([1; 96]),
-            }
-            .into();
-            quorum.verified = status;
-            let quorums = BTreeMap::from([(
-                LLMQType::Llmqtype25_67,
-                BTreeMap::from([(quorum_hash, Arc::new(quorum))]),
-            )]);
-            MasternodeList::build(
-                BTreeMap::new(),
-                quorums,
-                BlockHash::from_byte_array([3; 32]),
-                height,
-            )
-            .build()
+    /// The status-carrying lookup returns the key with dash-spv's status for
+    /// the quorum, whatever the status. It does not return a quorum dash-spv
+    /// found `Invalid`.
+    #[tokio::test]
+    async fn should_return_the_quorum_status_with_its_key() {
+        use dashcore::sml::llmq_entry_verification::{
+            LLMQEntryVerificationSkipStatus, LLMQEntryVerificationStatus,
         };
+        use dashcore::sml::quorum_validation_error::QuorumValidationError;
 
+        let (runtime, _storage) = offline_runtime().await;
         for status in [
             LLMQEntryVerificationStatus::Unknown,
+            LLMQEntryVerificationStatus::Skipped(
+                LLMQEntryVerificationSkipStatus::NotMarkedForVerification,
+            ),
             LLMQEntryVerificationStatus::Skipped(LLMQEntryVerificationSkipStatus::MissedList(992)),
             LLMQEntryVerificationStatus::Verified,
         ] {
-            engine
-                .write()
-                .await
-                .masternode_lists
-                .insert(height, hold(status.clone()));
+            hold_quorum(&runtime, status.clone()).await;
             let quorum = runtime
-                .get_quorum_public_key_with_status(6, platform_hash, height)
+                .get_quorum_public_key_with_status(
+                    6,
+                    QUORUM_FIXTURE_PLATFORM_HASH,
+                    QUORUM_FIXTURE_HEIGHT,
+                )
                 .await
                 .unwrap();
             assert_eq!(quorum.public_key, [9; 48]);
             assert_eq!(quorum.status, status);
-            assert_eq!(
-                runtime
-                    .get_quorum_public_key(6, platform_hash, height)
-                    .await
-                    .unwrap(),
-                [9; 48],
-                "the key-only lookup ignores the status"
-            );
         }
 
-        engine.write().await.masternode_lists.insert(
-            height,
-            hold(LLMQEntryVerificationStatus::Invalid(
-                QuorumValidationError::InvalidQuorumPublicKey,
-            )),
+        hold_quorum(
+            &runtime,
+            LLMQEntryVerificationStatus::Invalid(QuorumValidationError::InvalidQuorumPublicKey),
+        )
+        .await;
+        assert!(runtime
+            .get_quorum_public_key_with_status(
+                6,
+                QUORUM_FIXTURE_PLATFORM_HASH,
+                QUORUM_FIXTURE_HEIGHT
+            )
+            .await
+            .is_err());
+    }
+
+    /// The key-only lookup feeds Platform proof verification, so it returns
+    /// only a key dash-spv verified. A quorum dash-spv holds unverified fails
+    /// with `QuorumNotVerified` naming the quorum and its status, which a
+    /// caller tells apart from a quorum dash-spv does not hold or found
+    /// `Invalid`.
+    #[tokio::test]
+    async fn should_reject_an_unverified_quorum_key_for_proof_verification() {
+        use dashcore::sml::llmq_entry_verification::{
+            LLMQEntryVerificationSkipStatus, LLMQEntryVerificationStatus,
+        };
+        use dashcore::sml::quorum_validation_error::QuorumValidationError;
+
+        let (runtime, _storage) = offline_runtime().await;
+        for status in [
+            LLMQEntryVerificationStatus::Unknown,
+            LLMQEntryVerificationStatus::Skipped(
+                LLMQEntryVerificationSkipStatus::NotMarkedForVerification,
+            ),
+            LLMQEntryVerificationStatus::Skipped(LLMQEntryVerificationSkipStatus::MissedList(992)),
+        ] {
+            hold_quorum(&runtime, status.clone()).await;
+            match runtime
+                .get_quorum_public_key(6, QUORUM_FIXTURE_PLATFORM_HASH, QUORUM_FIXTURE_HEIGHT)
+                .await
+            {
+                Err(PlatformWalletError::QuorumNotVerified {
+                    quorum_type,
+                    quorum_hash,
+                    status: reported,
+                }) => {
+                    assert_eq!(quorum_type, 6);
+                    assert_eq!(quorum_hash, QUORUM_FIXTURE_PLATFORM_HASH);
+                    assert_eq!(reported, status);
+                }
+                other => panic!("expected QuorumNotVerified for {status}, got {other:?}"),
+            }
+        }
+
+        hold_quorum(&runtime, LLMQEntryVerificationStatus::Verified).await;
+        assert_eq!(
+            runtime
+                .get_quorum_public_key(6, QUORUM_FIXTURE_PLATFORM_HASH, QUORUM_FIXTURE_HEIGHT)
+                .await
+                .unwrap(),
+            [9; 48]
         );
-        assert!(runtime
-            .get_quorum_public_key_with_status(6, platform_hash, height)
-            .await
-            .is_err());
-        assert!(runtime
-            .get_quorum_public_key(6, platform_hash, height)
-            .await
-            .is_err());
+
+        let unknown_hash = [0xee; 32];
+        let missing = runtime
+            .get_quorum_public_key(6, unknown_hash, QUORUM_FIXTURE_HEIGHT)
+            .await;
+        assert!(
+            matches!(missing, Err(PlatformWalletError::SpvError(_))),
+            "a quorum dash-spv does not hold is not found, got {missing:?}"
+        );
+
+        hold_quorum(
+            &runtime,
+            LLMQEntryVerificationStatus::Invalid(QuorumValidationError::InvalidQuorumPublicKey),
+        )
+        .await;
+        let invalid = runtime
+            .get_quorum_public_key(6, QUORUM_FIXTURE_PLATFORM_HASH, QUORUM_FIXTURE_HEIGHT)
+            .await;
+        assert!(
+            matches!(invalid, Err(PlatformWalletError::SpvError(_))),
+            "an Invalid quorum is not found, got {invalid:?}"
+        );
     }
 
     /// Drive the production startup path and wait for upstream `run` to return.
