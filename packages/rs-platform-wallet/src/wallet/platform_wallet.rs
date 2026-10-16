@@ -1017,7 +1017,7 @@ impl PlatformWallet {
         // and watermark. A re-bind racing an in-flight sync pass
         // therefore cannot wipe the pass's results (an
         // unregister-then-register cycle here would purge the whole
-        // wallet behind the pass's store lock and then restore a
+        // wallet — superseding the pass — and then restore a
         // pre-pass snapshot — the "note discovered by sync is
         // unspendable until app restart" / "every pass rescans from
         // 0" failure). Registration also runs BEFORE the restore so
