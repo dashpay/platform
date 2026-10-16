@@ -467,6 +467,49 @@ final class CoreTxoReconcileTests: XCTestCase {
         XCTAssertEqual(try restoredUtxoCount(handler), 0)
     }
 
+    /// A healed coin can be the prevout a stored spender was missing. The
+    /// heal's own save then repairs that spender's amount and direction —
+    /// they do not stay stale until the next launch's load-time pass.
+    func testAHealedPrevoutRepairsItsSpendersAccounting() throws {
+        let (handler, container) = try makeHandler()
+        try seedWallet(in: container)
+        let coinTxid = txid(0x86)
+        let spenderTxid = txid(0x87)
+        // One input spending the missing coin, one output the wallet does not own.
+        var bytes = Data([2, 0, 0, 0, 1])
+        bytes.append(coinTxid)
+        bytes.append(contentsOf: [0, 0, 0, 0, 0, 255, 255, 255, 255, 1])
+        withUnsafeBytes(of: UInt64(40).littleEndian) { bytes.append(contentsOf: $0) }
+        bytes.append(contentsOf: [0, 0, 0, 0, 0])
+        let context = ModelContext(container)
+        // Stored as an incoming payment: what history showed while the coin was missing.
+        let spender = PersistentTransaction(
+            txid: spenderTxid, transactionData: bytes, context: 3, blockHeight: 2_391_800,
+            direction: CoreDirectionCode.incoming, netAmount: 40
+        )
+        context.insert(spender)
+        context.insert(PersistentPendingInput(
+            outpoint: PersistentTxo.makeOutpoint(txid: coinTxid, vout: 0),
+            inputIndex: 0,
+            spendingTxid: spenderTxid,
+            spendingTransaction: spender,
+            walletId: walletId
+        ))
+        try context.save()
+        let engine = FakeCoreTxoEngine(inventory: [engineUtxo(txid: coinTxid)])
+
+        let report = run(handler, engine: engine)
+
+        XCTAssertTrue(report.completed)
+        XCTAssertEqual(report.healedSpent, 1)
+        // Read without a load in between: the load-time pass would repair it too.
+        let row = try XCTUnwrap(
+            ModelContext(container).fetch(FetchDescriptor<PersistentTransaction>()).first { $0.txid == spenderTxid }
+        )
+        XCTAssertEqual(row.netAmount, -19_549, "the healed coin is the spender's only input")
+        XCTAssertEqual(row.direction, CoreDirectionCode.outgoing)
+    }
+
     /// A store read that fails inside the heal pass is a failure, not a
     /// skip: the account lookup cannot tell "no such account" from "could
     /// not read", so it must not answer the former when the latter
