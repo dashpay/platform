@@ -4452,26 +4452,15 @@ fn build_core_address_entry_ffi(
         pool_type_tag,
         address_index: info.index,
         // `CoreAddressEntryFFI` carries a single `is_used` bool with no
-        // slot for a reservation, so `Reserved` can only flatten to
-        // `false` and would reload as `Available` — silently returning a
-        // handed-out address to the pool. Nothing in platform reserves
-        // addresses (no caller of `next_receive_address_and_reserve` /
-        // `next_unused_and_reserve` in the workspace), so that arm is
-        // unreachable today. It is spelled out rather than folded into a
-        // catch-all so the first reserving caller shows up as an explicit
-        // schema decision instead of losing state on the next reload.
+        // slot for a reservation. The row is a reuse guard, so `Reserved`
+        // flattens to `true`: a handed-out address must not be handed out
+        // again after a reload. Its release is a later `Available` row,
+        // stored as `false`, which the host applies as written. The one
+        // reserving caller is the two-step DashPay contact payment, which
+        // reserves the contact address for the length of its send.
         is_used: match info.state {
-            AddressState::Used => true,
+            AddressState::Used | AddressState::Reserved { .. } => true,
             AddressState::Available => false,
-            AddressState::Reserved { .. } => {
-                tracing::warn!(
-                    index = info.index,
-                    "persist: address pool entry is reserved, but the persisted \
-                     address schema cannot represent a reservation; it will \
-                     reload as available and may be handed out again"
-                );
-                false
-            }
         },
         balance: info.balance,
         address_base58: address_ptr,
@@ -4569,8 +4558,8 @@ unsafe fn address_info_from_ffi(
         index: entry.address_index,
         path,
         // The persisted entry only carries `is_used`, so state round-trips
-        // to `Used`/`Available`; a `Reserved` entry is not representable —
-        // see `build_core_address_entry_ffi`.
+        // to `Used`/`Available`; a `Reserved` entry is stored as used and
+        // reloads `Used` — see `build_core_address_entry_ffi`.
         state: if entry.is_used {
             AddressState::Used
         } else {
@@ -9608,13 +9597,11 @@ mod tests {
 
     /// Pin what the persisted address row does to `AddressState`.
     /// `CoreAddressEntryFFI` carries a single `is_used` bool, so only
-    /// `Used` and `Available` survive a save/load cycle intact;
-    /// `Reserved { .. }` has no representation and comes back
-    /// `Available`, i.e. a reload silently frees a handed-out address.
-    /// Nothing in platform reserves addresses today, so this records the
-    /// boundary rather than a live bug: if a reserving caller is ever
-    /// added, this test is where the schema decision (a dedicated
-    /// reservation field on the row) has to be made.
+    /// `Used` and `Available` survive a save/load cycle intact.
+    /// `Reserved { .. }` flattens to used: the row is a reuse guard, and a
+    /// reload must never hand out an address that was handed out (the
+    /// two-step DashPay contact payment reserves its address across the
+    /// broadcast). A released reservation is stored as `Available`.
     #[test]
     fn address_state_round_trip_keeps_used_and_flattens_reserved() {
         for (state, expected) in [
@@ -9622,7 +9609,7 @@ mod tests {
             (AddressState::Used, AddressState::Used),
             (
                 AddressState::Reserved { at: 1_700_000_000 },
-                AddressState::Available,
+                AddressState::Used,
             ),
         ] {
             let mut info = typed_key_test_address_info(11, None);

@@ -128,6 +128,13 @@ pub static CORE_SIGNED_TRANSACTION_STORAGE: Lazy<
     HandleStorage<crate::core_wallet::FFICoreSignedTransaction>,
 > = Lazy::new(HandleStorage::new);
 
+/// Prepared (signed, not yet broadcast) DashPay contact payments. Removed
+/// exactly once by send, abandon or free; repeating any of them is a safe
+/// invalid-handle error.
+pub static PREPARED_DASHPAY_PAYMENT_STORAGE: Lazy<
+    HandleStorage<crate::dashpay::FFIPreparedDashPayPayment>,
+> = Lazy::new(HandleStorage::new);
+
 /// Storage for AssetLockManager handles (pinned to `SpvBroadcaster`).
 pub static ASSET_LOCK_MANAGER_STORAGE: Lazy<
     HandleStorage<
