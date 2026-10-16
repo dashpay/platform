@@ -18,7 +18,8 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::DEFAULT_FEE_PER_KB;
 use crate::wallet::asset_lock::{
-    AssetLockOperationContext, AssetLockOperationRegistration, AssetLockOperationSnapshot,
+    max_asset_lock_inputs, AssetLockOperationContext, AssetLockOperationRegistration,
+    AssetLockOperationSnapshot,
 };
 use crate::wallet::core::resolved_funding_accounts;
 use crate::wallet::PlatformWallet;
@@ -118,6 +119,14 @@ impl PlatformWallet {
             estimated_l1_fee_duffs: None,
             estimated_recipient_credits: None,
         };
+        // Dash Core relays at most `max_asset_lock_transaction_inputs` (100)
+        // asset-lock inputs and Platform consensus validates the same bound —
+        // tighter than the builder's standard-transaction limit — so report
+        // it before sizing the payload.
+        if candidates.len() > max_asset_lock_inputs(self.sdk.version()) {
+            preview.status = WalletDrainPreviewStatus::InputLimitMayBeExceeded;
+            return Ok(preview);
+        }
         // Only a P2PKH placeholder is needed for the payload size. No wallet
         // key or address is touched. With no add_funding calls this local
         // builder carries no live reservation sets.
@@ -253,13 +262,13 @@ mod tests {
                 .status,
             WalletDrainPreviewStatus::InsufficientFunds
         );
-        let large = wallet_with_outputs(&vec![10_000; 501]).await;
+        let large = wallet_with_outputs(&vec![10_000; 101]).await;
         let quote = large.shielded_wallet_drain_preview(0, 0).await.unwrap();
         assert_eq!(
             quote.status,
             WalletDrainPreviewStatus::InputLimitMayBeExceeded
         );
-        assert_eq!(quote.candidate_input_count, 501);
+        assert_eq!(quote.candidate_input_count, 101);
         assert_eq!(quote.estimated_l1_fee_duffs, None);
         assert_eq!(quote.estimated_recipient_credits, None);
     }

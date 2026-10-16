@@ -11,7 +11,7 @@ class DashSdkErrorTest {
 
     @Test
     fun shouldPreserveAssetLockInputCapWithoutRetryingAPartialDrain() {
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 60, "501 exceeds 500")
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 60, "101 exceeds 100")
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.AssetLockTooManyInputs)
         assertEquals(native.message, mapped.message)

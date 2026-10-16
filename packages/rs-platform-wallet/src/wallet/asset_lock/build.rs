@@ -31,7 +31,7 @@ use crate::ASSET_LOCK_FUNDING_SOURCES;
 
 use super::manager::{AssetLockManager, DEFAULT_FEE_PER_KB};
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
-use super::{AssetLockOperationContext, AssetLockOperationState};
+use super::{max_asset_lock_inputs, AssetLockOperationContext, AssetLockOperationState};
 
 // ---------------------------------------------------------------------------
 // Asset lock transaction building
@@ -1042,11 +1042,35 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // have been swept and re-owned) and no transaction reaches the wire.
         // The funding key index consumed by the build is the same residue any
         // discarded build leaves and is reclaimed by the gap-limit scan.
-        if let AssetLockBuildAmount::DrainAll {
-            minimum_lock_duffs: Some(minimum),
-        } = amount
-        {
-            if locked_amount_duffs < minimum {
+        //
+        // The same verdict covers the asset-lock input cap: Dash Core relays
+        // at most `max_asset_lock_transaction_inputs` (100) inputs and drops a
+        // larger lock silently (`assetlocktx-too-many-inputs`), and Platform
+        // consensus validates the same versioned bound — tighter than the
+        // standard-transaction limit key-wallet's builder applies. A drain
+        // pools every eligible input, so an oversized lock is abandoned here
+        // rather than stranded on the wire.
+        let max_inputs = max_asset_lock_inputs(self.sdk.version());
+        let abandon = match amount {
+            AssetLockBuildAmount::DrainAll { .. } if tx.input.len() > max_inputs => {
+                Some(PlatformWalletError::AssetLockTooManyInputs {
+                    count: tx.input.len(),
+                    max: max_inputs,
+                })
+            }
+            AssetLockBuildAmount::DrainAll {
+                minimum_lock_duffs: Some(minimum),
+            } if locked_amount_duffs < minimum => {
+                Some(PlatformWalletError::AssetLockTransaction(format!(
+                    "drained asset lock of {locked_amount_duffs} duffs is below the required \
+                     minimum of {minimum} duffs (the balance cannot clear the shield pool fee); \
+                     nothing was broadcast"
+                )))
+            }
+            _ => None,
+        };
+        if let Some(error) = abandon {
+            {
                 drop(build_persist_guard);
                 // Nothing reached the broadcaster, so the fence has no
                 // transaction to protect: release it alongside the reservation
@@ -1076,11 +1100,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 )
                 .await;
                 in_broadcast_pin.settle_released();
-                return Err(PlatformWalletError::AssetLockTransaction(format!(
-                    "drained asset lock of {locked_amount_duffs} duffs is below the required \
-                     minimum of {minimum} duffs (the balance cannot clear the shield pool fee); \
-                     nothing was broadcast"
-                )));
+                return Err(error);
             }
         }
 
@@ -4200,8 +4220,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_wallet_drain_refuse_501_inputs_before_dispatch_and_allow_500() {
-        for count in [501, 500] {
+    async fn should_wallet_drain_refuse_101_inputs_before_dispatch_and_allow_100() {
+        for count in [101, 100] {
             let (wallet_manager, wallet_id, _, signer) =
                 crate::test_support::funded_wallet_manager_with_outputs(
                     StandardAccountType::BIP44Account,
@@ -4227,12 +4247,12 @@ mod tests {
                     Some(&operation),
                 )
                 .await;
-            if count == 501 {
+            if count == 101 {
                 assert!(matches!(
                     result,
                     Err(PlatformWalletError::AssetLockTooManyInputs {
-                        count: 501,
-                        max: 500
+                        count: 101,
+                        max: 100
                     })
                 ));
                 assert_eq!(manager.broadcaster.calls(), 0);
@@ -4244,7 +4264,7 @@ mod tests {
                         .transaction
                         .input
                         .len(),
-                    500
+                    100
                 );
             }
         }
