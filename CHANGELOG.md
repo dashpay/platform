@@ -35,6 +35,10 @@
   (`WalletEvent::ChainTruncated`) updates the in-memory balance but is not yet
   mirrored to persisted wallet state
   ([#5380](https://github.com/dashpay/platform/issues/5380)).
+- **platform-wallet:** the SPV broadcast-readiness wait (`SpvRuntime::wait_until_ready`)
+  wakes when the client starts or dash-spv reports a peer update, instead of
+  re-checking every 250 ms, so a broadcast held for readiness goes out as soon
+  as the first peer connects.
 - **Breaking (Rust features):** remove DPP's `core_key_wallet_bip_38` and SDK's
   `core_key_wallet_bip38` feature forwards because upstream removed BIP38 support.
 - **Breaking (C API):** the unified FFI no longer exports
