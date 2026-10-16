@@ -1968,6 +1968,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dash-sdk-contract"
+version = "4.2.0-beta.4"
+dependencies = [
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "dash-spv"
 version = "0.45.0"
 source = "git+https://github.com/dashpay/rust-dashcore?rev=626c91d1efcc471d2ea06290cadd08ef222aee35#626c91d1efcc471d2ea06290cadd08ef222aee35"
