@@ -150,10 +150,12 @@ pub enum InvitationError {
         wallet: Network,
     },
 
-    /// Platform rejected the link's islock as stale and the funding
-    /// transaction is not chain-locked yet, so no ChainLock proof can replace
-    /// it. Retry once the funding block is chain-locked.
-    #[error("invitation funding transaction is not chain-locked: {0}")]
+    /// Retry later: the link may be fine but cannot be used yet. Either the
+    /// funding transaction has not reached the queried node, or it is not
+    /// chain-locked yet and the claim needs a ChainLock proof (the link has
+    /// no islock, or Platform rejected its islock as stale). The message
+    /// says which.
+    #[error("{0}")]
     NotChainLocked(String),
 
     /// An SDK call failed.
@@ -937,7 +939,7 @@ async fn inspect_invitation_funding(
 
 /// Fetch the invitation's funding transaction with the bounded propagation
 /// retry (see [`fetch_funding_tx_with_retry`]); a miss after every attempt
-/// is an error.
+/// is [`InvitationError::NotChainLocked`], a retry-later signal.
 async fn fetch_funding_tx(
     sdk: &Sdk,
     invitation: &ParsedInvitation,
@@ -947,20 +949,14 @@ async fn fetch_funding_tx(
         |txid| async move { Ok(sdk.get_transaction(&txid).await?) },
         || rs_dapi_client::transport::sleep(CLAIM_FETCH_RETRY_DELAY),
     )
-    .await?
-    .ok_or_else(|| {
-        invalid(
-            "invitation funding transaction not found (tried both byte orders across \
-             repeated attempts); it may not have propagated to the queried DAPI node yet — \
-             retry shortly",
-        )
-    })
+    .await
 }
 
 /// Fetch the claim's funding transaction with the bounded propagation retry —
 /// the injectable orchestration seam of [`fetch_funding_tx`] (tests
-/// script `fetch`/`delay`; production passes `Sdk::get_transaction` and a
-/// `tokio::time::sleep`).
+/// script `fetch`/`delay`; production passes `Sdk::get_transaction` and
+/// `rs_dapi_client::transport::sleep`, which also runs in the browser where
+/// `tokio::time::sleep` does not).
 ///
 /// Two independent concerns are layered here:
 ///   1. Byte order — old iOS links carry the txid little-endian, so a
@@ -975,12 +971,15 @@ async fn fetch_funding_tx(
 ///      attempts — and none after the last (the caller surfaces the miss
 ///      immediately).
 ///
-/// Returns `Ok(None)` only after every attempt missed on both byte orders.
+/// Every attempt missing on both byte orders is
+/// [`InvitationError::NotChainLocked`]: the transaction may simply not have
+/// reached the queried node yet, so the caller should retry later rather than
+/// treat the link as invalid.
 async fn fetch_funding_tx_with_retry<T, F, FFut, D, DFut>(
     funding_txid: &str,
     mut fetch: F,
     mut delay: D,
-) -> Result<Option<T>, InvitationError>
+) -> Result<T, InvitationError>
 where
     F: FnMut(String) -> FFut,
     FFut: std::future::Future<Output = Result<Option<T>, InvitationError>>,
@@ -989,19 +988,24 @@ where
 {
     for attempt in 0..CLAIM_FETCH_MAX_ATTEMPTS {
         if let Some(tx) = fetch(funding_txid.to_string()).await? {
-            return Ok(Some(tx));
+            return Ok(tx);
         }
         // Reversed lookup is computed lazily on a canonical miss, so a hit
         // never depends on the txid being reversible hex.
         let reversed = reverse_txid_hex(funding_txid)?;
         if let Some(tx) = fetch(reversed).await? {
-            return Ok(Some(tx));
+            return Ok(tx);
         }
         if attempt + 1 < CLAIM_FETCH_MAX_ATTEMPTS {
             delay().await;
         }
     }
-    Ok(None)
+    Err(InvitationError::NotChainLocked(
+        "invitation funding transaction not found (tried both byte orders across \
+         repeated attempts); it may not have propagated to the queried DAPI node yet — \
+         retry shortly"
+            .to_string(),
+    ))
 }
 
 /// Submit the claim's reconstructed proof with the stale-islock → ChainLock
@@ -1282,7 +1286,7 @@ fn assemble_asset_lock_proof(
             // chain-locked otherwise. There is no separate fallback — this IS the
             // ChainLock proof.
             if !is_chain_locked {
-                return Err(InvitationError::Invalid(
+                return Err(InvitationError::NotChainLocked(
                     "chainlock invitation funding transaction is not yet chain-locked; \
                      retry once it confirms"
                         .to_string(),
@@ -1350,7 +1354,7 @@ mod tests {
     }
 
     #[test]
-    fn wif_round_trip_preserves_compression_and_network() {
+    fn should_round_trip_a_wif_keeping_compression_and_network() {
         for (network, first_byte) in [(Network::Mainnet, 204u8), (Network::Testnet, 239u8)] {
             let wif = PrivateKey::new(voucher(), network).to_wif();
             let decoded = PrivateKey::from_wif(&wif).expect("wif decodes");
@@ -1364,7 +1368,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_parse_round_trip_with_inviter() {
+    fn should_round_trip_an_encoded_link_with_inviter_info() {
         let proof = instant_proof_paying_voucher();
         let info = inviter_info();
         let uri = encode_invitation_uri(&voucher(), Network::Testnet, &proof, Some(&info))
@@ -1387,7 +1391,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_parse_round_trip_pure_voucher_no_inviter() {
+    fn should_round_trip_an_encoded_link_without_inviter_info() {
         let proof = instant_proof_paying_voucher();
         let uri =
             encode_invitation_uri(&voucher(), Network::Mainnet, &proof, None).expect("encode");
@@ -1399,7 +1403,7 @@ mod tests {
     /// Params in a non-canonical order must still parse (field-level, not
     /// byte-level, interop — the two legacy wallets differ in order).
     #[test]
-    fn parse_is_order_independent() {
+    fn should_parse_a_link_regardless_of_field_order() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
         let uri = format!("dashpay://invite?islock=deadbeef&pk={wif}&du=bob&assetlocktx=aabbcc");
         let parsed = parse_invitation_uri(&uri).expect("parse");
@@ -1414,7 +1418,7 @@ mod tests {
     /// The `https://invitations.dashpay.io/applink` host is accepted as a
     /// first-class alternative to the custom scheme (iOS emits it).
     #[test]
-    fn parse_accepts_applink_host() {
+    fn should_parse_a_link_on_the_applink_host() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
         let uri = format!(
             "https://invitations.dashpay.io/applink?du=carol&assetlocktx=aabb&pk={wif}&islock=cc"
@@ -1431,7 +1435,7 @@ mod tests {
     /// `Some`; both a missing param and the literal `"null"` yield `None`
     /// (a ChainLock-confirmed invite Android's own validator accepts).
     #[test]
-    fn parse_islock_present_absent_and_null() {
+    fn should_parse_an_islock_that_is_present_absent_or_null() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
         let present = format!("dashpay://invite?assetlocktx=aa&pk={wif}&islock=00aa11");
         assert_eq!(
@@ -1454,7 +1458,7 @@ mod tests {
 
     /// A `du`-less link still parses (iOS accepts du-less links).
     #[test]
-    fn parse_accepts_du_less_link() {
+    fn should_parse_a_link_without_a_du_field() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
         let uri = format!("dashpay://invite?assetlocktx=aa&pk={wif}&islock=bb");
         let parsed = parse_invitation_uri(&uri).expect("parse");
@@ -1462,7 +1466,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_rejects_missing_pk_or_assetlocktx() {
+    fn should_reject_a_link_missing_pk_or_assetlocktx() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
         // No pk.
         assert!(parse_invitation_uri("dashpay://invite?assetlocktx=aa").is_err());
@@ -1473,13 +1477,13 @@ mod tests {
     }
 
     #[test]
-    fn parse_rejects_wrong_scheme_and_host() {
+    fn should_reject_a_link_with_the_wrong_scheme_or_host() {
         assert!(parse_invitation_uri("https://example.com/foo?pk=x").is_err());
         assert!(parse_invitation_uri("dashpay://contact?pk=x").is_err());
     }
 
     #[test]
-    fn parse_rejects_uncompressed_wif() {
+    fn should_reject_an_uncompressed_wif() {
         let uncompressed = PrivateKey::new_uncompressed(voucher(), Network::Testnet).to_wif();
         let uri = format!("dashpay://invite?assetlocktx=aa&pk={uncompressed}");
         let err = parse_invitation_uri(&uri).unwrap_err();
@@ -1487,13 +1491,13 @@ mod tests {
     }
 
     #[test]
-    fn parse_rejects_bad_wif() {
+    fn should_reject_a_malformed_wif() {
         let err = parse_invitation_uri("dashpay://invite?assetlocktx=aa&pk=not-a-wif").unwrap_err();
         assert!(err.to_string().contains("WIF"));
     }
 
     #[test]
-    fn parse_rejects_oversized_uri() {
+    fn should_reject_an_oversized_uri() {
         let huge = format!("dashpay://invite?pk={}", "z".repeat(MAX_INVITATION_URI_LEN));
         let err = parse_invitation_uri(&huge).unwrap_err();
         assert!(err.to_string().contains("too long"));
@@ -1502,7 +1506,7 @@ mod tests {
     /// A hand-crafted Android-style link (params in Android's emit order, with
     /// display-name + avatar-url) parses to the right fields.
     #[test]
-    fn parse_android_style_link() {
+    fn should_parse_an_android_style_link() {
         let wif = PrivateKey::new(voucher(), Network::Mainnet).to_wif();
         // Android order: du, assetlocktx, pk, islock, display-name, avatar-url.
         let uri = format!(
@@ -1527,7 +1531,7 @@ mod tests {
 
     /// The voucher output is selected by pk↔script match, not hard-coded to 0.
     #[test]
-    fn voucher_output_index_selects_matching_output() {
+    fn should_select_the_output_that_pays_the_voucher_key() {
         let key = voucher();
         // Voucher output sits at index 2, behind two decoy outputs.
         let tx = asset_lock_tx_paying_voucher_at(&key, 2);
@@ -1547,7 +1551,7 @@ mod tests {
     }
 
     #[test]
-    fn voucher_output_index_rejects_no_match() {
+    fn should_reject_a_funding_tx_with_no_output_paying_the_voucher() {
         let key = voucher();
         let other = SecretKey::from_secret_bytes([0x33u8; 32]).unwrap();
         let tx = asset_lock_tx_paying_voucher_at(&other, 0);
@@ -1556,7 +1560,7 @@ mod tests {
     }
 
     #[test]
-    fn voucher_output_index_rejects_non_asset_lock_tx() {
+    fn should_reject_a_funding_tx_that_is_not_an_asset_lock() {
         let key = voucher();
         let tx = Transaction {
             version: 2,
@@ -1571,7 +1575,7 @@ mod tests {
     /// A `du`-less link that still carries `display-name`/`avatar-url` must
     /// surface them (the reference wallets emit those independently of `du`).
     #[test]
-    fn parse_du_less_link_keeps_metadata() {
+    fn should_keep_inviter_metadata_when_the_du_field_is_missing() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
         let uri = format!(
             "dashpay://invite?assetlocktx=aa&pk={wif}&display-name=No%20User&avatar-url=https%3A%2F%2Fimg%2Fx.png"
@@ -1586,7 +1590,7 @@ mod tests {
     /// A duplicated required key is ambiguous (iOS binds the last, Android the
     /// first) — reject rather than claim a wallet-dependent key.
     #[test]
-    fn parse_rejects_duplicate_required_keys() {
+    fn should_reject_a_link_with_duplicate_required_keys() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
         let other = PrivateKey::new(
             SecretKey::from_secret_bytes([0x44u8; 32]).unwrap(),
@@ -1611,7 +1615,7 @@ mod tests {
     /// host in its own query must both be rejected — otherwise the decoy's query
     /// (with a `pk`/`assetlocktx`) would be parsed.
     #[test]
-    fn parse_rejects_decoy_scheme_and_host() {
+    fn should_reject_a_link_with_a_decoy_scheme_or_host() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
         // Suffixed authority — not exactly `invite`.
         let suffixed = format!("dashpay://inviteXYZ?assetlocktx=aa&pk={wif}");
@@ -1630,7 +1634,7 @@ mod tests {
     /// WIF network compatibility is mainnet-vs-not: a testnet WIF is rejected on
     /// a mainnet wallet, but accepted on any testnet-family wallet.
     #[test]
-    fn wif_network_matches_is_mainnet_vs_testnet_family() {
+    fn should_match_wif_networks_by_mainnet_versus_testnet_family() {
         assert!(wif_network_matches(Network::Mainnet, Network::Mainnet));
         assert!(wif_network_matches(Network::Testnet, Network::Testnet));
         // WIF decodes 0xEF to Testnet; a devnet/regtest wallet must still accept.
@@ -1660,7 +1664,7 @@ mod tests {
     /// A backend answering with an unrelated tx (id matches neither byte order) is
     /// rejected before any proof is built.
     #[test]
-    fn assemble_rejects_txid_mismatch() {
+    fn should_reject_a_fetched_tx_whose_id_does_not_match() {
         let key = voucher();
         let tx = asset_lock_tx_paying_voucher_at(&key, 0);
         let inv = parsed(key, "00".repeat(32), None);
@@ -1669,22 +1673,26 @@ mod tests {
     }
 
     /// A ChainLock invite (no islock) whose funding tx is not yet chain-locked is
-    /// rejected — the proof must prove finality.
+    /// not claimable yet — the proof must prove finality — and that is the
+    /// retry-later signal, not an invalid link.
     #[test]
-    fn assemble_chainlock_requires_chain_lock() {
+    fn should_ask_to_retry_a_chainlock_invitation_until_it_is_chain_locked() {
         let key = voucher();
         let tx = asset_lock_tx_paying_voucher_at(&key, 0);
         let txid = tx.txid().to_string();
         let inv = parsed(key, txid, None);
         let err = assemble_asset_lock_proof(tx, false, 100, &inv).unwrap_err();
-        assert!(format!("{err}").contains("not yet chain-locked"));
+        assert!(
+            matches!(err, InvitationError::NotChainLocked(_)),
+            "expected the retry-later signal, got {err:?}"
+        );
     }
 
     /// A chain-locked ChainLock invite (no islock) assembles a ChainLock proof at
     /// the tx's voucher output, with no separate fallback (the primary IS the CL
     /// proof).
     #[test]
-    fn assemble_chainlock_ok_when_locked() {
+    fn should_assemble_a_chainlock_proof_once_chain_locked() {
         let key = voucher();
         let tx = asset_lock_tx_paying_voucher_at(&key, 0);
         let txid = tx.txid().to_string();
@@ -1702,7 +1710,7 @@ mod tests {
     /// same credit output — the stale-islock recovery the claim path submits if
     /// Platform rejects the IS proof with `InvalidInstantAssetLockProofSignatureError`.
     #[test]
-    fn assemble_islock_present_and_chainlocked_carries_chain_fallback() {
+    fn should_carry_a_chain_fallback_for_a_chain_locked_islock_invitation() {
         let key = voucher();
         let tx = asset_lock_tx_paying_voucher_at(&key, 0);
         let txid = tx.txid().to_string();
@@ -1729,7 +1737,7 @@ mod tests {
     /// no ChainLock proof to fall back to, and the claim must be retried once the
     /// block confirms.
     #[test]
-    fn assemble_islock_present_not_chainlocked_has_no_fallback() {
+    fn should_have_no_chain_fallback_for_an_islock_invitation_that_is_not_chain_locked() {
         let key = voucher();
         let tx = asset_lock_tx_paying_voucher_at(&key, 0);
         let txid = tx.txid().to_string();
@@ -1755,7 +1763,7 @@ mod tests {
     /// "has this invitation been used?" check answers about a stranger's
     /// identity and reports a perfectly good voucher as spent.
     #[test]
-    fn prospective_id_follows_the_selected_credit_output() {
+    fn should_derive_the_prospective_id_from_the_selected_credit_output() {
         let key = voucher();
         let decoy = SecretKey::from_secret_bytes([0x22u8; 32]).unwrap();
         let payload = AssetLockPayload {
@@ -1817,7 +1825,7 @@ mod tests {
     /// would otherwise assume encodes "spent": it does not, and Platform
     /// exposes no client query for spent asset locks to fill the gap.
     #[test]
-    fn prospective_id_is_outpoint_derived_and_says_nothing_about_consumption() {
+    fn should_derive_the_prospective_id_from_the_outpoint_alone() {
         let key = voucher();
         let payload = AssetLockPayload {
             version: 1,
@@ -1971,7 +1979,7 @@ mod tests {
         use std::cell::Cell;
 
         use super::super::adopt_already_landed_claim;
-        use super::super::InvitationError;
+        use super::super::{Error, InvitationError};
         use super::{identity_with_keys, our_keys, test_key};
         use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
         use dpp::consensus::basic::BasicError;
@@ -1987,7 +1995,7 @@ mod tests {
 
         /// Platform's consumed-outpoint rejection for `out_point`.
         fn consumed(out_point: OutPoint) -> InvitationError {
-            InvitationError::Sdk(crate::Error::Protocol(dpp::ProtocolError::ConsensusError(
+            InvitationError::Sdk(Error::Protocol(dpp::ProtocolError::ConsensusError(
                 Box::new(ConsensusError::BasicError(
                     BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(
                         IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
@@ -2000,13 +2008,13 @@ mod tests {
         }
 
         fn is_consumed(result: &Result<Identity, InvitationError>) -> bool {
-            matches!(result, Err(InvitationError::Sdk(crate::Error::Protocol(_))))
+            matches!(result, Err(InvitationError::Sdk(Error::Protocol(_))))
         }
 
         /// Run the seam with a scripted lookup, counting how often it is called.
         async fn adopt(
             submitted: Result<Identity, InvitationError>,
-            lookup: Result<Option<Identity>, crate::Error>,
+            lookup: Result<Option<Identity>, Error>,
         ) -> (Result<Identity, InvitationError>, u32) {
             let calls = Cell::new(0);
             let keys = our_keys();
@@ -2061,7 +2069,7 @@ mod tests {
         async fn should_keep_the_rejection_when_the_lookup_fails() {
             let (result, _) = adopt(
                 Err(consumed(out_point())),
-                Err(crate::Error::Generic("timeout".to_string())),
+                Err(Error::Generic("timeout".to_string())),
             )
             .await;
             assert!(is_consumed(&result));
@@ -2083,7 +2091,7 @@ mod tests {
         #[tokio::test]
         async fn should_pass_unrelated_errors_through_without_a_lookup() {
             let (result, lookups) = adopt(
-                Err(InvitationError::Sdk(crate::Error::Generic(
+                Err(InvitationError::Sdk(Error::Generic(
                     "unrelated".to_string(),
                 ))),
                 Ok(Some(identity_with_keys(our_keys()))),
@@ -2091,7 +2099,7 @@ mod tests {
             .await;
             assert!(matches!(
                 result,
-                Err(InvitationError::Sdk(crate::Error::Generic(_)))
+                Err(InvitationError::Sdk(Error::Generic(_)))
             ));
             assert_eq!(lookups, 0);
         }
@@ -2100,7 +2108,7 @@ mod tests {
     /// An islock that locks a DIFFERENT tx than the funding tx is rejected (the
     /// txid-binding guard), so a link can't pair a valid islock with a foreign tx.
     #[test]
-    fn assemble_rejects_islock_for_wrong_tx() {
+    fn should_reject_an_islock_that_locks_another_tx() {
         let key = voucher();
         let tx = asset_lock_tx_paying_voucher_at(&key, 0);
         let txid = tx.txid().to_string();
@@ -2150,7 +2158,7 @@ mod tests {
 
         async fn run(
             script: Vec<Result<Option<u32>, InvitationError>>,
-        ) -> (Result<Option<u32>, InvitationError>, Vec<String>, u32) {
+        ) -> (Result<u32, InvitationError>, Vec<String>, u32) {
             let canonical = canonical_txid();
             let (queue, calls, delays) = harness(script);
             let (queue_f, calls_f, delays_f) =
@@ -2184,9 +2192,9 @@ mod tests {
         /// A first-call canonical hit returns immediately: one lookup, no
         /// reversed fallback, no delay.
         #[tokio::test]
-        async fn canonical_hit_returns_immediately() {
+        async fn should_return_a_canonical_hit_immediately() {
             let (result, calls, delays) = run(vec![Ok(Some(7))]).await;
-            assert_eq!(result.expect("no error"), Some(7));
+            assert_eq!(result.expect("no error"), 7);
             assert_eq!(calls, vec![canonical_txid()]);
             assert_eq!(delays, 0);
         }
@@ -2195,9 +2203,9 @@ mod tests {
         /// same attempt (the legacy-iOS little-endian compatibility path) — no
         /// delay is spent on the byte-order fallback.
         #[tokio::test]
-        async fn reversed_hit_within_same_attempt_no_delay() {
+        async fn should_try_the_reversed_txid_in_the_same_attempt_without_a_delay() {
             let (result, calls, delays) = run(vec![Ok(None), Ok(Some(9))]).await;
-            assert_eq!(result.expect("no error"), Some(9));
+            assert_eq!(result.expect("no error"), 9);
             assert_eq!(
                 calls,
                 vec![
@@ -2211,24 +2219,28 @@ mod tests {
         /// A hit on a later attempt (propagation lag) succeeds after exactly
         /// one delay per fully-missed attempt.
         #[tokio::test]
-        async fn hit_after_missed_attempts_counts_one_delay_per_miss() {
+        async fn should_wait_once_per_fully_missed_attempt_before_a_hit() {
             // Attempts 1 and 2 miss on both orders; attempt 3 hits canonically.
             let (result, calls, delays) =
                 run(vec![Ok(None), Ok(None), Ok(None), Ok(None), Ok(Some(3))]).await;
-            assert_eq!(result.expect("no error"), Some(3));
+            assert_eq!(result.expect("no error"), 3);
             assert_eq!(calls.len(), 5);
             assert_eq!(delays, 2);
         }
 
-        /// Exhausting every attempt returns Ok(None) — a miss, not an error —
-        /// after 2 lookups per attempt, with NO delay after the final attempt.
+        /// Exhausting every attempt is the retry-later signal (the tx may not
+        /// have reached the node yet), not an invalid link, after 2 lookups per
+        /// attempt, with NO delay after the final attempt.
         #[tokio::test]
-        async fn exhausts_attempts_without_trailing_delay() {
+        async fn should_ask_to_retry_later_after_every_attempt_misses() {
             let script = (0..CLAIM_FETCH_MAX_ATTEMPTS * 2)
                 .map(|_| Ok(None))
                 .collect();
             let (result, calls, delays) = run(script).await;
-            assert_eq!(result.expect("misses are not errors"), None);
+            assert!(
+                matches!(result, Err(InvitationError::NotChainLocked(_))),
+                "a funding tx that never appears must be a retry-later signal, got {result:?}"
+            );
             assert_eq!(calls.len(), (CLAIM_FETCH_MAX_ATTEMPTS * 2) as usize);
             assert_eq!(delays, CLAIM_FETCH_MAX_ATTEMPTS - 1);
         }
@@ -2236,7 +2248,7 @@ mod tests {
         /// A transport error is NOT masked as a miss: it propagates
         /// immediately, with no further lookups and no extra delay.
         #[tokio::test]
-        async fn transport_error_propagates_immediately() {
+        async fn should_propagate_a_transport_error_immediately() {
             // Attempt 1 misses both orders (1 delay); attempt 2's canonical
             // lookup errors.
             let (result, calls, delays) = run(vec![
@@ -2263,7 +2275,7 @@ mod tests {
         use std::sync::{Arc, Mutex};
 
         use super::super::submit_claim_with_stale_islock_fallback;
-        use super::super::InvitationError;
+        use super::super::{Error, InvitationError};
         use super::{asset_lock_tx_paying_voucher_at, voucher};
         use dpp::consensus::basic::identity::InvalidInstantAssetLockProofSignatureError;
         use dpp::dashcore::InstantLock;
@@ -2274,15 +2286,15 @@ mod tests {
         /// The one rejection the seam recovers from: Platform's stale-islock
         /// consensus error, in the `Protocol(ConsensusError)` shape
         /// `is_instant_lock_proof_invalid` matches.
-        fn stale_islock_rejection() -> crate::Error {
-            crate::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+        fn stale_islock_rejection() -> Error {
+            Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
                 InvalidInstantAssetLockProofSignatureError::new().into(),
             )))
         }
 
         /// Any error the seam must NOT treat as a stale islock.
-        fn unrelated_sdk_error() -> crate::Error {
-            crate::Error::Config("simulated unrelated rejection".to_string())
+        fn unrelated_sdk_error() -> Error {
+            Error::Config("simulated unrelated rejection".to_string())
         }
 
         /// An InstantSend primary — the variant is what the assertions key on,
@@ -2303,9 +2315,9 @@ mod tests {
         /// it was handed and pops the next scripted result.
         async fn run(
             chain_fallback: Option<AssetLockProof>,
-            script: Vec<Result<u32, crate::Error>>,
+            script: Vec<Result<u32, Error>>,
         ) -> (Result<u32, InvitationError>, Vec<AssetLockProof>) {
-            let queue: Arc<Mutex<VecDeque<Result<u32, crate::Error>>>> =
+            let queue: Arc<Mutex<VecDeque<Result<u32, Error>>>> =
                 Arc::new(Mutex::new(script.into_iter().collect()));
             let submitted: Arc<Mutex<Vec<AssetLockProof>>> = Arc::new(Mutex::new(Vec::new()));
             let (queue_f, submitted_f) = (Arc::clone(&queue), Arc::clone(&submitted));
@@ -2333,7 +2345,7 @@ mod tests {
         /// A successful primary submission returns immediately: one submission,
         /// and the ChainLock fallback is never touched even though it exists.
         #[tokio::test]
-        async fn primary_success_never_submits_fallback() {
+        async fn should_not_submit_the_fallback_when_the_primary_succeeds() {
             let (result, submitted) = run(Some(chain_fallback_proof()), vec![Ok(7)]).await;
             assert_eq!(result.expect("primary success"), 7);
             assert_eq!(submitted.len(), 1, "exactly one submission");
@@ -2347,7 +2359,7 @@ mod tests {
         /// fallback over the same outpoint, and the fallback's success is the
         /// claim's success.
         #[tokio::test]
-        async fn stale_islock_resubmits_chain_fallback() {
+        async fn should_resubmit_the_chain_fallback_after_a_stale_islock() {
             let (result, submitted) = run(
                 Some(chain_fallback_proof()),
                 vec![Err(stale_islock_rejection()), Ok(9)],
@@ -2369,7 +2381,7 @@ mod tests {
         /// chain-locked) surfaces `InvitationError::NotChainLocked` — the clear retry
         /// signal — after exactly one submission.
         #[tokio::test]
-        async fn stale_islock_without_fallback_surfaces_retry_signal() {
+        async fn should_ask_to_retry_when_a_stale_islock_has_no_chain_fallback() {
             let (result, submitted) = run(None, vec![Err(stale_islock_rejection())]).await;
             assert!(
                 matches!(result, Err(InvitationError::NotChainLocked(_))),
@@ -2385,7 +2397,7 @@ mod tests {
         /// An unrelated SDK error propagates unchanged after one submission:
         /// the fallback exists but must NOT be tried for it.
         #[tokio::test]
-        async fn unrelated_error_propagates_without_second_submission() {
+        async fn should_propagate_an_unrelated_error_without_a_second_submission() {
             let (result, submitted) = run(
                 Some(chain_fallback_proof()),
                 vec![Err(unrelated_sdk_error())],
@@ -2406,7 +2418,7 @@ mod tests {
         /// one wearing the stale-islock shape again — propagates rather than
         /// looping.
         #[tokio::test]
-        async fn fallback_rejection_is_not_recovered_again() {
+        async fn should_not_recover_a_rejected_fallback_again() {
             let (result, submitted) = run(
                 Some(chain_fallback_proof()),
                 vec![Err(stale_islock_rejection()), Err(stale_islock_rejection())],

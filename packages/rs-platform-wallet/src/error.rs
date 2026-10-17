@@ -1753,3 +1753,38 @@ mod identity_insufficient_balance_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod invitation_error_mapping_tests {
+    use super::*;
+
+    /// The retry-later signal keeps its own wallet variant, apart from a link
+    /// that is simply invalid, so hosts can tell "try again" from "reject".
+    #[test]
+    fn should_map_each_invitation_error_to_its_wallet_variant() {
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::Invalid("bad link".to_string())),
+            PlatformWalletError::InvalidIdentityData(message) if message == "bad link"
+        ));
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::NotChainLocked("later".to_string())),
+            PlatformWalletError::AssetLockNotChainLocked(message) if message == "later"
+        ));
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::NetworkMismatch {
+                invitation: Network::Testnet,
+                wallet: Network::Mainnet,
+            }),
+            PlatformWalletError::InvitationNetworkMismatch {
+                invitation: Network::Testnet,
+                wallet: Network::Mainnet,
+            }
+        ));
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::Sdk(dash_sdk::Error::Generic(
+                "boom".to_string()
+            ))),
+            PlatformWalletError::Sdk(dash_sdk::Error::Generic(message)) if message == "boom"
+        ));
+    }
+}
