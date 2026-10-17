@@ -24,7 +24,7 @@ use drive::grovedb::Transaction;
 use drive::util::batch::DriveOperation;
 use drive::util::batch::DriveOperation::IdentityOperation;
 use drive::util::batch::IdentityOperationType::{
-    AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
+    AddNewIdentity, AddNewKeysToMasternodeIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
 };
 
 impl<C> Platform<C>
@@ -212,9 +212,8 @@ where
             }
 
             if !non_unique_keys_to_add.is_empty() {
-                drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
+                drive_operations.push(IdentityOperation(AddNewKeysToMasternodeIdentity {
                     identity_id: operator_identifier.to_buffer(),
-                    unique_keys_to_add: vec![],
                     non_unique_keys_to_add,
                 }));
             }
@@ -374,9 +373,8 @@ where
 
                 if !non_unique_keys_to_add.is_empty() {
                     // We should add keys that didn't exist before
-                    drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
+                    drive_operations.push(IdentityOperation(AddNewKeysToMasternodeIdentity {
                         identity_id: operator_identifier.to_buffer(),
-                        unique_keys_to_add: vec![],
                         non_unique_keys_to_add,
                     }));
                 }
@@ -1172,7 +1170,7 @@ mod tests {
 
         let added_platform_node_key = drive_operations.iter().any(|operation| {
             if let drive::util::batch::DriveOperation::IdentityOperation(
-                drive::util::batch::IdentityOperationType::AddNewKeysToIdentity {
+                drive::util::batch::IdentityOperationType::AddNewKeysToMasternodeIdentity {
                     identity_id,
                     non_unique_keys_to_add,
                     ..
