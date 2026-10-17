@@ -18,7 +18,6 @@ use dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::OutPoint;
-use dpp::ProtocolError;
 
 use super::put_settings::PutSettings;
 use crate::Error;
@@ -106,23 +105,19 @@ pub fn is_asset_lock_already_consumed(error: &Error, out_point: &OutPoint) -> bo
 /// Companion to [`is_instant_lock_proof_invalid`]; both feed the
 /// CL-proof retry path in the identity registration / top-up flow.
 ///
-/// **Coverage caveat:** only inspects the two `Error` variants that today
-/// wrap consensus errors — `StateTransitionBroadcastError` (from
-/// `broadcast_and_wait`) and `Protocol(ProtocolError::ConsensusError)`
-/// (from validation). If a future SDK version surfaces the same
-/// `InvalidAssetLockProofCoreChainHeightError` through a different variant
-/// (e.g. wrapped in a transport-layer error type), the retry helper
-/// silently falls through to the passthrough. Re-audit this matcher
-/// whenever `Error` gains new variants that can carry consensus errors.
+/// **Coverage caveat:** the consensus error comes from
+/// [`Error::consensus_error`], which sees `StateTransitionBroadcastError`
+/// (from `broadcast_and_wait`), `Protocol(ProtocolError::ConsensusError)`
+/// (from validation) and either of them inside the
+/// `NoAvailableAddressesToRetry` envelope. If a future SDK version surfaces
+/// the same `InvalidAssetLockProofCoreChainHeightError` through a different
+/// variant, the retry helper silently falls through to the passthrough.
+/// Re-audit [`Error::consensus_error`] whenever `Error` gains new variants
+/// that can carry consensus errors.
 pub fn as_asset_lock_proof_cl_height_too_low(
     error: &Error,
 ) -> Option<&InvalidAssetLockProofCoreChainHeightError> {
-    let consensus_error = match error {
-        Error::StateTransitionBroadcastError(broadcast_err) => broadcast_err.cause.as_ref(),
-        Error::Protocol(ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
-        _ => None,
-    };
-    match consensus_error {
+    match error.consensus_error() {
         Some(ConsensusError::BasicError(
             BasicError::InvalidAssetLockProofCoreChainHeightError(e),
         )) => Some(e),
@@ -270,6 +265,7 @@ fn bump_user_fee_increase(mut settings: PutSettings) -> PutSettings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::ProtocolError;
 
     /// Fabricate the SDK-side 10506 error shape exactly as
     /// `as_asset_lock_proof_cl_height_too_low` recognizes it. Both the
@@ -307,7 +303,7 @@ mod tests {
     /// `tokio::time::advance` so the retry's `CL_HEIGHT_RETRY_DELAY`
     /// sleeps fire instantly and total test wall time is sub-millisecond.
     #[tokio::test(start_paused = true)]
-    async fn submit_with_cl_height_retry_bumps_user_fee_and_surfaces_after_budget() {
+    async fn should_bump_the_fee_on_each_retry_and_surface_the_error_after_the_budget() {
         use std::sync::atomic::{AtomicU32, Ordering};
         use std::sync::Arc;
         use tokio::sync::Mutex;
@@ -388,6 +384,40 @@ mod tests {
             );
         }
     }
+
+    /// A 10506 that arrives inside the exhausted-address-retry envelope is
+    /// still a 10506: the retry bumps the fee and resubmits instead of
+    /// surfacing the error on the first attempt.
+    #[tokio::test(start_paused = true)]
+    async fn should_retry_cl_height_rejection_wrapped_in_exhausted_address_retry() {
+        use std::sync::{Arc, Mutex};
+
+        let seen: Arc<Mutex<Vec<Option<u16>>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen_in_submit = seen.clone();
+
+        let result = submit_with_cl_height_retry(None, move |settings| {
+            let seen = seen_in_submit.clone();
+            async move {
+                let mut seen = seen.lock().unwrap();
+                seen.push(settings.and_then(|s| s.user_fee_increase));
+                if seen.len() == 1 {
+                    Err(Error::NoAvailableAddressesToRetry(Box::new(
+                        fabricate_cl_height_too_low_error(),
+                    )))
+                } else {
+                    Ok(())
+                }
+            }
+        })
+        .await;
+
+        assert!(result.is_ok(), "the retry must resubmit and succeed");
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![None, Some(1)],
+            "the second attempt must carry a bumped user_fee_increase"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -398,6 +428,7 @@ mod asset_lock_already_consumed_tests {
     use dpp::consensus::basic::UnsupportedProtocolVersionError;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::Txid;
+    use dpp::ProtocolError;
 
     fn out_point() -> OutPoint {
         OutPoint::new(Txid::all_zeros(), 7)
@@ -417,14 +448,14 @@ mod asset_lock_already_consumed_tests {
     }
 
     #[test]
-    fn recognizes_protocol_consensus_error_for_exact_outpoint() {
+    fn should_recognize_a_protocol_consensus_error_for_the_exact_outpoint() {
         let error = Error::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error())));
 
         assert!(is_asset_lock_already_consumed(&error, &out_point()));
     }
 
     #[test]
-    fn recognizes_broadcast_consensus_error_for_exact_outpoint() {
+    fn should_recognize_a_broadcast_consensus_error_for_the_exact_outpoint() {
         let error = Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
             code: 10504,
             message: "asset lock already consumed".to_string(),
@@ -435,7 +466,7 @@ mod asset_lock_already_consumed_tests {
     }
 
     #[test]
-    fn ignores_unrelated_errors_and_different_outpoints() {
+    fn should_ignore_unrelated_errors_and_different_outpoints() {
         let error = Error::Protocol(ProtocolError::ConsensusError(Box::new(consensus_error())));
         let different_out_point = OutPoint::new(Txid::all_zeros(), 8);
 
