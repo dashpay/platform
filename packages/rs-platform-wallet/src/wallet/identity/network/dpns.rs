@@ -185,6 +185,8 @@ impl IdentityWallet {
     ///
     /// On success the just-registered label is appended to
     /// `ManagedIdentity.dpns_names` and an identity changeset is queued.
+    /// The identity's balance after the registration is kept when the
+    /// domain's proof carries it (from protocol version 14).
     pub async fn register_name_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
@@ -257,17 +259,23 @@ impl IdentityWallet {
             contest_fund,
         };
 
-        let result = self.sdk.register_dpns_name(input).await.map_err(|e| {
-            // Preserve a structured key-unavailable signer failure so the FFI
-            // boundary can still restore code 31; only genuine operation
-            // failures get stringified into `InvalidIdentityData`.
-            crate::error::preserve_signer_key_unavailable_or(e, |e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to register DPNS name '{}': {}",
-                    name, e
-                ))
-            })
-        })?;
+        let (result, owner_balance, metadata) = self
+            .sdk
+            .register_dpns_name_with_owner_balance_and_metadata(input)
+            .await
+            .map_err(|e| {
+                // Preserve a structured key-unavailable signer failure so the FFI
+                // boundary can still restore code 31; only genuine operation
+                // failures get stringified into `InvalidIdentityData`.
+                crate::error::preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to register DPNS name '{}': {}",
+                        name, e
+                    ))
+                })
+            })?;
+        self.persist_proven_owner_balance(identity_id, owner_balance, metadata)
+            .await;
 
         // Same book-keeping as `register_name`: append the just-
         // registered label to `ManagedIdentity.dpns_names` and emit
