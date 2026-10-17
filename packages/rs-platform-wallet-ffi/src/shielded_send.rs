@@ -814,6 +814,10 @@ fn catch_funding_panic(
 ///   `ErrorWalletOperation` (6) catch-all below, hiding a typed error behind
 ///   the code every unclassified failure already uses and forcing hosts back
 ///   to substring-matching the Display text.
+/// - `CoreFundsAwaitingNetwork` -> `ErrorCoreFundsAwaitingNetwork` (59): the
+///   same shortfall when the coins that are not final yet would fund the lock.
+///   Waiting cures it, which adding funds or a smaller amount does not, so a
+///   host must be able to tell it from 29.
 /// - The double-spend verdicts ride the same typed conversion (both the
 ///   fresh-build and resume entry points funnel through here, and the resume
 ///   is where the double-spend screen actually fires). What the
@@ -848,7 +852,10 @@ fn map_asset_lock_funding_result(
             e @ (PlatformWalletError::AssetLockInputConflict { .. }
             | PlatformWalletError::AssetLockInputContested { .. }),
         ) => e.into(),
-        Err(e @ PlatformWalletError::AssetLockInsufficientFunds { .. }) => e.into(),
+        Err(
+            e @ (PlatformWalletError::AssetLockInsufficientFunds { .. }
+            | PlatformWalletError::CoreFundsAwaitingNetwork { .. }),
+        ) => e.into(),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
@@ -3210,6 +3217,27 @@ mod tests {
             "structured available/required duffs must cross the boundary verbatim"
         );
         assert!(message_of(&result).contains("asset lock coin selection is short"));
+    }
+
+    /// A shortfall that the coins not final yet would fund crosses as code
+    /// 59, as it does from a plain send, with its message verbatim.
+    #[test]
+    fn should_keep_funds_awaiting_network_typed_through_the_funding_helper() {
+        let err = PlatformWalletError::CoreFundsAwaitingNetwork {
+            available: Some(0),
+            waiting: 18_000_000,
+            required: Some(10_000_000),
+            outpoint: None,
+        };
+        let rendered = err.to_string();
+        let result = map_asset_lock_funding_result(Err(err), "shielded fund-from-asset-lock");
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorCoreFundsAwaitingNetwork
+        );
+        assert_eq!(result.code as i32, 59);
+        assert_eq!(message_of(&result), rendered);
     }
 
     /// The resume sibling shares the helper, so the shortfall stays typed on

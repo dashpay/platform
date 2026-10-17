@@ -118,6 +118,16 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorCoreFundsAwaitingNetwork` (native code 59). The payment or
+         * asset lock (identity registration and top-up, invitation, shielded
+         * and platform-address funding) is covered only by coins the network has not confirmed yet (neither
+         * InstantSend-locked nor mined); they become spendable once their
+         * transaction is. Not a shortfall — retry once they are confirmed.
+         */
+        class CoreFundsAwaitingNetwork(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorShieldedInsufficientBalance` (native code 41; historical FFI
          * spelling). A Platform Payment account's deterministic shield input
          * set cannot cover the requested amount plus input 0's retained fee
@@ -228,6 +238,8 @@ sealed class DashSdkError(
          * drain), and by
          * [shieldedFundFromAssetLock][org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedFundFromAssetLock]
          * when the pooled funding sources cannot cover the requested lock.
+         * When coins that are not confirmed yet would fund the lock, both
+         * raise [CoreFundsAwaitingNetwork] instead: wait, don't add funds.
          */
         class AssetLockInsufficientFunds(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
@@ -733,6 +745,7 @@ sealed class DashSdkError(
             20 -> PlatformWallet.TransactionBroadcastUnconfirmed(message, cause) // ErrorTransactionBroadcastUnconfirmed
             42 -> PlatformWallet.MasternodeWithdrawalUnconfirmed(message, cause) // ErrorMasternodeWithdrawalUnconfirmed
             22 -> PlatformWallet.CoreInsufficientFunds(message, cause) // ErrorCoreInsufficientFunds
+            59 -> PlatformWallet.CoreFundsAwaitingNetwork(message, cause) // ErrorCoreFundsAwaitingNetwork
             23 -> PlatformWallet.AssetLockNotTracked(message, cause) // ErrorAssetLockNotTracked
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch

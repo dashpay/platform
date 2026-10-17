@@ -258,6 +258,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorShieldedRecoveryKeysRequired = 57
     /// Platform returned no balance. Retrying the read is safe; ownership is unchanged.
     case errorIdentityBalanceUnavailable = 58
+    /// The payment or asset lock (identity registration and top-up,
+    /// invitation, shielded and platform-address funding) needs coins the
+    /// network has not confirmed yet (neither InstantSend-locked nor mined). Not a shortfall and nothing was sent:
+    /// they become spendable once their transaction is InstantSend-locked or
+    /// mined.
+    case errorCoreFundsAwaitingNetwork = 59
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -385,6 +391,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedRecoveryKeysRequired
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_BALANCE_UNAVAILABLE:
             self = .errorIdentityBalanceUnavailable
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CORE_FUNDS_AWAITING_NETWORK:
+            self = .errorCoreFundsAwaitingNetwork
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -554,6 +562,8 @@ public enum PlatformWalletError: LocalizedError {
     case arithmeticOverflow(String)
     case noSelectableInputs(String)
     case coreInsufficientFunds(String)
+    /// See `PlatformWalletResultCode.errorCoreFundsAwaitingNetwork`.
+    case coreFundsAwaitingNetwork(String)
     case assetLockNotTracked(String)
     /// The one-shot output cannot be reused. This may come from a retained
     /// local tombstone or an unauthenticated Platform report, so it does not
@@ -566,8 +576,10 @@ public enum PlatformWalletError: LocalizedError {
     /// the funding form: an exact-amount build can confirm a smaller amount,
     /// while a whole-account drain takes no amount to lower and instead needs
     /// funds added to the drained account (or a lower minimum lock floor).
-    /// The `available` / `required` duff figures are in the message. Kotlin
-    /// parity: `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`.
+    /// The `available` / `required` duff figures are in the message. When
+    /// coins that are not confirmed yet would fund the lock, the same call
+    /// throws `coreFundsAwaitingNetwork` instead: wait, don't add funds.
+    /// Kotlin parity: `DashSdkError.PlatformWallet.AssetLockInsufficientFunds`.
     case assetLockInsufficientFunds(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition
@@ -786,6 +798,7 @@ public enum PlatformWalletError: LocalizedError {
              .serialization(let m), .deserialization(let m), .memoryAllocation(let m),
              .arithmeticOverflow(let m), .noSelectableInputs(let m),
              .coreInsufficientFunds(let m),
+             .coreFundsAwaitingNetwork(let m),
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
@@ -898,6 +911,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorArithmeticOverflow: self = .arithmeticOverflow(detail)
         case .errorNoSelectableInputs: self = .noSelectableInputs(detail)
         case .errorCoreInsufficientFunds: self = .coreInsufficientFunds(detail)
+        case .errorCoreFundsAwaitingNetwork: self = .coreFundsAwaitingNetwork(detail)
         case .errorAssetLockNotTracked: self = .assetLockNotTracked(detail)
         case .errorAssetLockAlreadyConsumed: self = .assetLockAlreadyConsumed(detail)
         case .errorAssetLockFundingMismatch: self = .assetLockFundingMismatch(detail)

@@ -146,6 +146,92 @@ The local shielded balance API introduces three Rust source compatibility change
   index is zero. An absent row is different from a recorded empty scan; do not
   infer presence merely from `last_synced_index > 0`.
 
+## Final-inputs API migration
+
+Spending only final coins brings these Rust source and behaviour changes:
+
+- `CoreWallet::finalize_transaction_with_options(builder, options, sources,
+  source_index, signer)` takes a `FinalizeOptions` after the builder in place
+  of the trailing `reservation_only: bool`: `reservation_only` and `inputs`
+  (coins the build may spend, by outpoint — the wallet's current copy of each
+  is seeded under the write guard). `finalize_transaction` keeps its
+  signature.
+- Migrating a batched drain: the old
+  `finalize_transaction_with_options(builder.add_inputs(batch), sources,
+  source_index, signer, true)` spent every seeded coin. With final-inputs
+  funding, a coin seeded with `add_inputs` that is not final in the caller's
+  copy is dropped before selection, without an error: the batch sweeps less
+  than asked, or fails with `CoreInsufficientFunds { available: Some(0), .. }`
+  (`CorePooledInsufficientFunds` over several sources) when none of it is
+  final. It is never `CoreFundsAwaitingNetwork`. Pass the
+  batch as
+  `FinalizeOptions::default().with_inputs(outpoints).with_reservation_only(true)`
+  instead: each coin is then looked up in the wallet as it is now, and one
+  that is not final is refused by name with `CoreFundsAwaitingNetwork`.
+- New `CoreWallet::finalize_transaction_from(make, options, sources,
+  source_index, signer)` takes a factory (`Fn() ->
+  Result<TransactionBuilder, PlatformWalletError> + Send + Sync`, by value,
+  dropped before the signer runs) instead of a builder. It
+  builds `make()`, and on a shortfall builds `make()` once more as a trial,
+  without signing any input or keeping a reservation (a payload finalizer set
+  on the builder still runs, so a ProUpServTx trial computes its operator-BLS
+  payload signature and discards it), with the coins that are not final yet
+  treated as final: if key-wallet builds that, the shortfall is
+  `CoreFundsAwaitingNetwork` (not for a `reservation_only` build, which spends
+  only its chosen inputs; see the drain note above for coins seeded with
+  `add_inputs`). A finalizer handed a plain builder cannot make
+  it again, so its shortfall stays insufficient funds.
+- `FinalizeOptions` is `#[non_exhaustive]`: build it with
+  `FinalizeOptions::default()`, `with_inputs` and `with_reservation_only`.
+- New `CoreWallet::check_chosen_outpoints(sources, source_index, outpoints)`:
+  the finalizers' check of `FinalizeOptions::inputs`, for a host that wants
+  the refusal when the coins are picked. The FFI coin-control setter
+  (`core_wallet_tx_builder_add_inputs_from_outpoints`) goes through it, so an
+  outpoint the named account does not hold is now `ErrorInvalidParameter`
+  (`ChosenInputUnavailable`) there too, and an account the wallet does not
+  have is `ErrorUnknown` (`WalletNotFound`, which has no code of its own yet),
+  as from the finalizer; both were `ErrorWalletOperation`.
+- FFI: `core_wallet_tx_builder_set_fee_rate` refuses a rate whose fee
+  arithmetic would overflow (`ErrorInvalidParameter`, above about 42.9 DASH
+  per kB); `core_wallet_tx_builder_set_current_height` is accepted and ignored
+  — the finalizers always built at the wallet's own height.
+- `PlatformWalletError` gains `ChosenInputUnavailable { outpoint, problem:
+  ChosenInputProblem }` (new public enum: `NotInFundingAccounts`,
+  `NotSpendable`; FFI `ErrorInvalidParameter`): a coin chosen by outpoint the
+  build cannot spend — and a coin seeded on the builder with `add_inputs`
+  that selection picked but no funding account holds, which used to be a
+  `TransactionBuild` string error. A short build that would only succeed by
+  selecting such a seeded coin once waiting coins confirm now returns this
+  refusal too, where it used to return `CoreInsufficientFunds` /
+  `CorePooledInsufficientFunds`. An exhaustive `match` needs an arm for it.
+- `PlatformWalletError` gains `CoreFundsAwaitingNetwork { available, waiting,
+  required, outpoint }` (FFI code 59): the build's final coins fall short, but
+  key-wallet would build it if the coins that are not yet confirmed or
+  InstantSend-locked were final. An exhaustive `match` needs an arm for it.
+- The asset-lock builds (identity registration and top-up, invitations,
+  shielded and platform-address funding) return `CoreFundsAwaitingNetwork`
+  for the same condition, where they returned `AssetLockInsufficientFunds`
+  (FFI code 29): a caller that matched 29 to offer "add funds" should treat 59
+  as "wait". A drain reports it when the build itself fails (no final coin
+  it can select, or too little to leave more than dust after the fee) and the
+  lock its waiting coins would complete, every coin less the fee, reaches the
+  minimum lock floor; one that builds from a few final coins and lands under
+  the floor is still refused as before.
+- Behaviour: every payment build that funds from the wallet, and
+  `pooled_spendable_balance` / `pooled_max_sendable`, use only confirmed or
+  InstantSend-locked coins. A coin in `FinalizeOptions::inputs` that a
+  funding account holds is judged as the wallet holds it when the build is
+  finalized: a candidate if final by then (the only kind with
+  `reservation_only`), refused with `CoreFundsAwaitingNetwork` naming its
+  outpoint if not, with `InputMidBroadcast` if an in-flight broadcast pins it.
+  A chosen coin the funding accounts don't hold (another account's, or spent
+  since it was chosen) is refused by name in both funding modes: the caller
+  picked it, so it is not dropped silently. The one exception: a coin another
+  in-flight build holds reserved is left out by key-wallet's reservation
+  filter (reservations are not readable from platform-wallet). A coin
+  seeded on the builder itself (`add_inputs`) is the caller's snapshot; a
+  selected one that has lost its final status is refused the same way.
+
 ## Dependencies
 
 - `key-wallet`: Core wallet functionality
