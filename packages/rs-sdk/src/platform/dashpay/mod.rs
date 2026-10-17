@@ -13,7 +13,7 @@ pub use contact_request::{
     EcdhProvider, RecipientIdentity, SendContactRequestInput, SendContactRequestResult,
 };
 pub use contact_request_queries::ContactRequestDocuments;
-pub use profile::{ProfileFields, MAX_PROFILE_OWNERS_PER_QUERY};
+pub use profile::ProfileFields;
 
 use crate::{Error, Sdk};
 use dpp::prelude::Identifier;

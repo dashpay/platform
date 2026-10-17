@@ -32,7 +32,7 @@ const AVATAR_KEYS: [&str; 3] = ["avatarUrl", "avatarHash", "avatarFingerprint"];
 
 /// Most owners one profile query can carry: the Platform `In` clause
 /// cardinality cap, which is also the document-query limit.
-pub const MAX_PROFILE_OWNERS_PER_QUERY: usize = 100;
+pub(crate) const MAX_PROFILE_OWNERS_PER_QUERY: usize = 100;
 
 /// The profile fields a caller sets. `None` leaves the field alone on
 /// [`Sdk::update_profile`] and omits it on [`Sdk::create_profile`].

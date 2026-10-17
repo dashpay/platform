@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use dpp::document::DocumentV0Getters;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
 #[cfg(test)]
 use dpp::identity::identity_public_key::Purpose;
@@ -13,12 +14,15 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
-use dash_sdk::platform::dashpay::{ProfileFields, MAX_PROFILE_OWNERS_PER_QUERY};
+use dash_sdk::platform::dashpay::ProfileFields;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
-use crate::wallet::identity::{ContactProfileEntry, DashPayProfile};
+use crate::wallet::identity::{
+    calculate_avatar_hash, calculate_dhash_fingerprint, ContactProfileEntry, DashPayProfile,
+    ProfileUpdate,
+};
 
 // Profile documents require HIGH or CRITICAL authentication; MASTER is reserved
 // for identity operations and cannot authorize an ordinary document write. A key
@@ -47,8 +51,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Fetch DashPay profile documents from Platform for all managed
     /// identities and cache them on [`ManagedIdentity`].
     ///
-    /// Fetches in `In`-chunks (one query per ≤`MAX_PROFILE_OWNERS_PER_QUERY` ids, not
-    /// N+1) with per-chunk failure isolation, and persists only when the
+    /// Fetches through [`Sdk::get_profiles`](dash_sdk::Sdk::get_profiles) (`In`
+    /// queries, not N+1; a failed fetch leaves the cache as is for the next
+    /// sweep), and persists only when the
     /// fetched profile differs from the cached one — a `None` result clears the
     /// cache only when a profile is currently stored (both arms guarded so a
     /// no-change sweep writes nothing). Returns the number of identities whose
@@ -75,29 +80,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //    per-call re-parse, no network round-trip).
         let dashpay_contract = super::dashpay_contract()?;
 
-        // 3. Fetch (no guard held) in `In`-chunks. A chunk failure logs and
-        //    continues so the other chunks still land; an id present in the
-        //    chunk but absent from the result is confirmed-absent (`None`).
-        let mut fetched: std::collections::BTreeMap<Identifier, Option<DashPayProfile>> =
-            std::collections::BTreeMap::new();
-        for chunk in identity_ids.chunks(MAX_PROFILE_OWNERS_PER_QUERY) {
-            match self
-                .fetch_contact_profiles_chunk(&dashpay_contract, chunk)
-                .await
-            {
-                Ok(found) => {
-                    for id in chunk {
-                        fetched.insert(*id, found.get(id).cloned().flatten());
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        error = %e,
-                        "Failed to fetch an own-profile chunk; will retry next sweep"
-                    );
-                }
+        // 3. Fetch (no guard held). A failure logs and leaves the cache as is;
+        //    an id absent from the result is confirmed-absent (`None`).
+        let found = match self.fetch_profiles(&dashpay_contract, &identity_ids).await {
+            Ok(found) => found,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to fetch the own profiles; will retry next sweep"
+                );
+                return Ok(0);
             }
-        }
+        };
+        let fetched: std::collections::BTreeMap<Identifier, Option<DashPayProfile>> = identity_ids
+            .iter()
+            .map(|id| (*id, found.get(id).cloned().flatten()))
+            .collect();
 
         // 4. Under the write guard: persist-on-change only (mirror the
         //    None-arm's is_some guard for both directions).
@@ -142,14 +140,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     pub async fn create_profile_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
-        input: crate::wallet::identity::ProfileUpdate,
+        input: ProfileUpdate,
         signer: &S,
-    ) -> Result<crate::wallet::identity::DashPayProfile, PlatformWalletError>
+    ) -> Result<DashPayProfile, PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        use dpp::data_contract::accessors::v0::DataContractV0Getters;
-
         // 1. The DashPay data contract (process-wide cache).
         let dashpay_contract = super::dashpay_contract()?;
 
@@ -191,18 +187,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )
             .await
             .map_err(PlatformWalletError::Sdk)?;
-        let profile = profile_from_properties(created.properties());
 
-        {
-            let mut wm = self.wallet_manager.write().await;
-            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-                if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                    managed.set_dashpay_profile(Some(profile.clone()), &self.persister);
-                }
-            }
-        }
-
-        Ok(profile)
+        Ok(self.cache_own_profile(identity_id, &created).await)
     }
 
     /// Update an existing DashPay profile document using an
@@ -213,14 +199,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     pub async fn update_profile_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
-        input: crate::wallet::identity::ProfileUpdate,
+        input: ProfileUpdate,
         signer: &S,
-    ) -> Result<crate::wallet::identity::DashPayProfile, PlatformWalletError>
+    ) -> Result<DashPayProfile, PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        use dpp::data_contract::accessors::v0::DataContractV0Getters;
-
         // 1. The DashPay contract (process-wide cache).
         let dashpay_contract = super::dashpay_contract()?;
 
@@ -265,18 +249,25 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             )
             .await
             .map_err(PlatformWalletError::Sdk)?;
-        let profile = profile_from_properties(merged.properties());
 
-        {
-            let mut wm = self.wallet_manager.write().await;
-            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-                if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                    managed.set_dashpay_profile(Some(profile.clone()), &self.persister);
-                }
+        Ok(self.cache_own_profile(identity_id, &merged).await)
+    }
+
+    /// Cache the profile document Platform confirmed for an own identity, in
+    /// the same sanitized form the sync path caches, and return it.
+    async fn cache_own_profile(
+        &self,
+        identity_id: &Identifier,
+        document: &Document,
+    ) -> DashPayProfile {
+        let profile = cacheable_profile(document.properties());
+        let mut wm = self.wallet_manager.write().await;
+        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
+                managed.set_dashpay_profile(profile.clone(), &self.persister);
             }
         }
-
-        Ok(profile)
+        profile.unwrap_or_default()
     }
 }
 
@@ -286,13 +277,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
 /// The SDK profile fields for a [`ProfileUpdate`]. The avatar hash and dHash
 /// fingerprint are computed only when new avatar bytes are provided.
-fn profile_fields(
-    input: crate::wallet::identity::ProfileUpdate,
-) -> Result<ProfileFields, PlatformWalletError> {
+fn profile_fields(input: ProfileUpdate) -> Result<ProfileFields, PlatformWalletError> {
     let (avatar_hash, avatar_fingerprint) = if let Some(bytes) = &input.avatar_bytes {
-        let hash = crate::wallet::identity::calculate_avatar_hash(bytes);
-        let fingerprint = crate::wallet::identity::calculate_dhash_fingerprint(bytes)
-            .map_err(PlatformWalletError::InvalidIdentityData)?;
+        let hash = calculate_avatar_hash(bytes);
+        let fingerprint =
+            calculate_dhash_fingerprint(bytes).map_err(PlatformWalletError::InvalidIdentityData)?;
         (Some(hash), Some(fingerprint))
     } else {
         (None, None)
@@ -310,9 +299,7 @@ fn profile_fields(
 /// Empty strings are normalized to `None`. `avatarHash`/`avatarFingerprint`
 /// are read via `as_bytes_slice` so both `Bytes` and the sized `Bytes32`
 /// representation round-trip.
-fn profile_from_properties(
-    props: &std::collections::BTreeMap<String, Value>,
-) -> crate::wallet::identity::DashPayProfile {
+fn profile_from_properties(props: &std::collections::BTreeMap<String, Value>) -> DashPayProfile {
     let text = |key: &str| {
         props
             .get(key)
@@ -330,7 +317,7 @@ fn profile_from_properties(
         .and_then(|v: &Value| v.as_bytes_slice().ok())
         .and_then(|bytes| <[u8; 8]>::try_from(bytes).ok());
 
-    crate::wallet::identity::DashPayProfile {
+    DashPayProfile {
         display_name: text("displayName"),
         bio: public_message.clone(),
         avatar_url: text("avatarUrl"),
@@ -401,7 +388,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// `updateContactProfiles`: iterate the full contact set every sweep
     /// (so a contact established before this shipped is backfilled, and a
     /// dropped fetch self-heals next sweep), skip recently-checked ids,
-    /// fetch in `In`-chunks with per-chunk failure isolation, and write the
+    /// fetch per owner with failure isolation, and write the
     /// per-owner cache with full-replace + persist-on-change. Contacts that
     /// are themselves managed identities are skipped (their own
     /// `dashpay_profile` is authoritative). Display-only: a failure never
@@ -468,38 +455,30 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return Ok(0);
         }
 
-        // 2. Fetch (no guard held). Per chunk: one `In` query over ≤IN_CAP
-        //    owner ids; a chunk failure logs and continues so the others
-        //    still land. An id present in the chunk but absent from the
-        //    result is confirmed-absent (cached as `None` — the negative
-        //    cache).
+        // 2. Fetch (no guard held). Per owner: one `get_profiles` call; a
+        //    failure logs and continues so the other owners still land. An id
+        //    requested but absent from the result is confirmed-absent (cached
+        //    as `None` — the negative cache).
         // One owner's fetched contacts: each contact id paired with its profile, or
         // `None` when confirmed-absent (the negative cache).
         type OwnerContactProfiles = Vec<(Identifier, Option<DashPayProfile>)>;
         let mut results: Vec<(Identifier, OwnerContactProfiles)> = Vec::new();
         for (owner_id, to_fetch) in plan {
-            let mut owner_results: OwnerContactProfiles = Vec::new();
-            for chunk in to_fetch.chunks(MAX_PROFILE_OWNERS_PER_QUERY) {
-                match self
-                    .fetch_contact_profiles_chunk(&dashpay_contract, chunk)
-                    .await
-                {
-                    Ok(found) => {
-                        for id in chunk {
-                            owner_results.push((*id, found.get(id).cloned().flatten()));
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            owner = %owner_id,
-                            error = %e,
-                            "Failed to fetch a contact-profile chunk; will retry next sweep"
-                        );
-                    }
+            match self.fetch_profiles(&dashpay_contract, &to_fetch).await {
+                Ok(found) => {
+                    let owner_results: OwnerContactProfiles = to_fetch
+                        .iter()
+                        .map(|id| (*id, found.get(id).cloned().flatten()))
+                        .collect();
+                    results.push((owner_id, owner_results));
                 }
-            }
-            if !owner_results.is_empty() {
-                results.push((owner_id, owner_results));
+                Err(e) => {
+                    tracing::warn!(
+                        owner = %owner_id,
+                        error = %e,
+                        "Failed to fetch the contact profiles; will retry next sweep"
+                    );
+                }
             }
         }
 
@@ -547,41 +526,44 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Ok(written)
     }
 
-    /// Fetch one chunk of profiles through [`Sdk::get_profiles`](dash_sdk::Sdk::get_profiles),
+    /// Fetch profiles through [`Sdk::get_profiles`](dash_sdk::Sdk::get_profiles),
     /// returning the present profiles keyed by owner id (absent ids are simply
     /// missing). The `profile` `ownerId` index is unique, so the set lookup
     /// needs no pagination (≤1 profile per owner).
-    async fn fetch_contact_profiles_chunk(
+    async fn fetch_profiles(
         &self,
         dashpay_contract: &Arc<dpp::data_contract::DataContract>,
-        chunk: &[Identifier],
+        owner_ids: &[Identifier],
     ) -> Result<std::collections::BTreeMap<Identifier, Option<DashPayProfile>>, PlatformWalletError>
     {
         let docs = self
             .sdk
-            .get_profiles(dashpay_contract, chunk)
+            .get_profiles(dashpay_contract, owner_ids)
             .await
             .map_err(PlatformWalletError::Sdk)?;
 
-        let mut out = std::collections::BTreeMap::new();
-        for (owner, doc) in docs {
-            let mut profile = profile_from_properties(doc.properties());
-            // Drop an untrusted avatar URL rather than caching it.
-            if profile
-                .avatar_url
-                .as_deref()
-                .is_some_and(|u| !is_valid_avatar_url(u))
-            {
-                profile.avatar_url = None;
-            }
-            // A doc that parses to no populated field is treated as
-            // confirmed-absent (negative cache), not a cached-present empty
-            // profile — so self-heal keeps it honest.
-            let entry = (profile != DashPayProfile::default()).then_some(profile);
-            out.insert(owner, entry);
-        }
-        Ok(out)
+        Ok(docs
+            .into_iter()
+            .map(|(owner, doc)| (owner, cacheable_profile(doc.properties())))
+            .collect())
     }
+}
+
+/// Parse a profile document into the form the cache stores, for every path
+/// that caches one. An untrusted avatar URL is dropped rather than cached. A
+/// doc that parses to no populated field is `None` (confirmed-absent, the
+/// negative cache), not a cached-present empty profile — so self-heal keeps
+/// it honest.
+fn cacheable_profile(props: &std::collections::BTreeMap<String, Value>) -> Option<DashPayProfile> {
+    let mut profile = profile_from_properties(props);
+    if profile
+        .avatar_url
+        .as_deref()
+        .is_some_and(|u| !is_valid_avatar_url(u))
+    {
+        profile.avatar_url = None;
+    }
+    (profile != DashPayProfile::default()).then_some(profile)
 }
 
 #[cfg(test)]
@@ -690,7 +672,7 @@ mod tests {
     /// `publicMessage` is both the bio and the public message, and an
     /// `avatarHash` stored as the sized `Bytes32` round-trips.
     #[test]
-    fn profile_from_properties_reads_every_field() {
+    fn should_read_every_profile_field_from_properties() {
         let mut props = BTreeMap::new();
         props.insert("displayName".to_string(), Value::Text("Alice".into()));
         props.insert("publicMessage".to_string(), Value::Text("hello".into()));
@@ -711,6 +693,35 @@ mod tests {
         assert_eq!(prof.avatar_url.as_deref(), Some("https://x/a.png"));
         assert_eq!(prof.avatar_hash, Some([7u8; 32]));
         assert_eq!(prof.avatar_fingerprint, Some([1, 2, 3, 4, 5, 6, 7, 8]));
+    }
+
+    /// Every cached profile, own or contact, is sanitized the same way: a
+    /// non-https avatar URL is dropped while the other fields stay, and a
+    /// document with no populated field is not cached as a profile.
+    #[test]
+    fn should_cache_a_profile_without_an_untrusted_avatar_url() {
+        let mut props = BTreeMap::new();
+        props.insert("displayName".to_string(), Value::Text("Alice".into()));
+        props.insert(
+            "avatarUrl".to_string(),
+            Value::Text("http://example.com/a.png".into()),
+        );
+
+        let cached = cacheable_profile(&props).expect("display name keeps it present");
+        assert_eq!(cached.display_name.as_deref(), Some("Alice"));
+        assert_eq!(cached.avatar_url, None);
+
+        props.insert(
+            "avatarUrl".to_string(),
+            Value::Text("https://example.com/a.png".into()),
+        );
+        let cached = cacheable_profile(&props).unwrap();
+        assert_eq!(
+            cached.avatar_url.as_deref(),
+            Some("https://example.com/a.png")
+        );
+
+        assert_eq!(cacheable_profile(&BTreeMap::new()), None);
     }
 
     // --- contact-profile sync helpers ---
