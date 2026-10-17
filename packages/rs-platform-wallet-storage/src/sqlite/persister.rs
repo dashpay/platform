@@ -1303,6 +1303,15 @@ impl PlatformWalletPersistence for SqlitePersister {
         self.config.flush_mode == FlushMode::Immediate
     }
 
+    /// Every `store` writes the record in the same transaction as the cursor
+    /// it travels with (`dashpay_backfill` table), and an empty record clears
+    /// the stored one. Durable coverage additionally needs inline rounds, so
+    /// in [`FlushMode::Manual`] `persists_backfill_coverage` still reads
+    /// `false` through [`store_commits_inline`](Self::store_commits_inline).
+    fn stores_dashpay_backfill(&self) -> bool {
+        true
+    }
+
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
         // Every `flush_inner` applies the complete changeset in one SQLite
         // transaction. The current schema also has lossless token balances,
@@ -1849,6 +1858,8 @@ fn load_one_wallet(
                 ))
             })?;
     }
+    let dashpay_backfill = schema::dashpay_backfill::load_for_wallet(conn, &wallet_id)
+        .map_err(PersistenceError::from)?;
     Ok(platform_wallet::changeset::ClientWalletStartState {
         wallet,
         wallet_info,
@@ -1859,10 +1870,7 @@ fn load_one_wallet(
         // replay inert here, which is the behaviour this path had before the
         // field existed.
         unconfirmed_outgoing_txs: Vec::new(),
-        // Not persisted by this backend yet: the backfill record rides the
-        // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
-        // pre-record behaviour here (a rewind per launch, never lossy).
-        dashpay_backfill: Default::default(),
+        dashpay_backfill,
     })
 }
 
@@ -2228,6 +2236,9 @@ fn apply_changeset_to_tx(
     if let Some(scan_state) = cs.identity_scan_state.as_ref() {
         schema::identity_scan_states::apply(tx, wallet_id, scan_state)?;
     }
+    if let Some(record) = cs.dashpay_backfill.as_ref() {
+        schema::dashpay_backfill::apply(tx, wallet_id, record)?;
+    }
     if let Some(balances) = cs.token_balances.as_ref() {
         schema::token_balances::apply(tx, wallet_id, balances)?;
     }
@@ -2394,6 +2405,7 @@ mod tests {
             "core_sync_state",
             "core_transactions",
             "core_utxos",
+            "dashpay_backfill",
             "identities",
             "identity_keys",
             "identity_scan_failed_indices",
