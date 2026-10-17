@@ -475,8 +475,9 @@ pub mod ffi {
         /// the next page. Platform records votes by proTxHash, not by voter
         /// identity. Hash in the embedder's internal byte order.
         fn identity_votes(self: &PlatformClient, pro_tx_hash: &[u8; 32]) -> NameVotesResult;
-        /// The DashPay profiles of `owners` (unique, at most 100); an owner
-        /// without one is missing from the result.
+        /// The DashPay profiles of `owners` (unique, any number); an owner
+        /// without one is missing from the result. A duplicated owner is
+        /// refused before any query.
         fn get_profiles(self: &PlatformClient, owners: &[[u8; 32]]) -> ProfilesResult;
         /// Every request sent by or to `identity`, created after `since_ms`
         /// (0 = all).
