@@ -31,8 +31,6 @@ use crate::data_contract::document_type::index::{
     DerivedIndexProperty, DerivedIndexPropertyName, Index, IndexGrammarAdmissions,
     PreallocationBinding,
 };
-#[cfg(feature = "validation")]
-#[cfg(feature = "validation")]
 use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property::{is_path_listed, DocumentReferenceKind};
 #[cfg(feature = "validation")]
@@ -61,6 +59,8 @@ use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintErro
 #[cfg(feature = "validation")]
 use crate::consensus::ConsensusError;
 #[cfg(feature = "validation")]
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+#[cfg(feature = "validation")]
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use super::common;
@@ -69,7 +69,7 @@ use super::schema_at_path;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
     validate_generated_from_declarations, validate_list_element_sources,
-    validate_reference_lookup_sources,
+    validate_reference_lookup_sources, validate_referencing_rules, validate_stored_version_reads,
 };
 
 mod ranked_prefix_overlap;
@@ -158,6 +158,7 @@ fn validate_ranked_index_property_key_length(
     document_type_name: &str,
     index: &Index,
     index_property_name: &str,
+    reported_property_name: &str,
     property_type: &DocumentPropertyType,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
@@ -172,9 +173,12 @@ fn validate_ranked_index_property_key_length(
         return Ok(());
     };
 
-    // A typed array is no index key at all, and its byte bound measures the
-    // whole list: the property-type check right after this one rejects it
-    // with the error that explains the problem.
+    // A typed array an index names is keyed by its elements, and the
+    // index-property check judges it here through the element type, so a
+    // typed array reaching this check whole is the field a derived index
+    // property reads: its byte bound measures the whole list, and the
+    // property-type check right after this one rejects it with the error
+    // that explains the problem.
     if matches!(property_type, DocumentPropertyType::TypedArray(_)) {
         return Ok(());
     }
@@ -241,7 +245,7 @@ fn validate_ranked_index_property_key_length(
         InvalidIndexedPropertyConstraintError::new(
             document_type_name.to_owned(),
             index.name.to_owned(),
-            index_property_name.to_owned(),
+            reported_property_name.to_owned(),
             constraint_name.to_string(),
             reason,
         )
@@ -390,6 +394,35 @@ fn parse_generation_3(
         )));
     }
 
+    // A property type shorthand (`"type": "identifier"`, or `"type": "bytes"`
+    // with a `size`) is read as the long form it stands for: from here on
+    // every stage, the meta-schema, the document validator the core compiles
+    // and the `$ref` walks included, reads the expanded schema and `$defs`,
+    // so a shorthand parses to exactly what its long form parses to. The
+    // document type keeps the schema as sent (restored before returning),
+    // since that is what the contract stores, serializes and proves. Only a
+    // document type's parse expands the contract's `$defs`, so the `$defs` of
+    // a contract without document types stay as sent, unchecked, as before 14.
+    let expanded_schema_defs = schema_defs
+        .map(|schema_defs| {
+            DocumentType::expand_schema_defs_property_type_shorthands(
+                schema_defs,
+                full_validation,
+                platform_version,
+            )
+        })
+        .transpose()?
+        .flatten();
+    let schema_defs = expanded_schema_defs.as_ref().or(schema_defs);
+    let (schema, schema_as_sent) = match DocumentType::expand_property_type_shorthands(
+        &schema,
+        full_validation,
+        platform_version,
+    )? {
+        Some(expanded_schema) => (expanded_schema, Some(schema)),
+        None => (schema, None),
+    };
+
     // Read the doctype-level keywords before the core parser consumes
     // `schema`. Each is read wherever it appears, and its shape is enforced on
     // both paths: see "Doctype-level keywords on contracts that predate them"
@@ -484,6 +517,9 @@ fn parse_generation_3(
             // DERIVED INDEX PROPERTIES: a value read through a same-contract permanent or
             // moderated reference (`apply_derived_index_properties`).
             admit_derived_index_properties: true,
+            // INDEXED ARRAYS: an index keyed by the elements of a typed array
+            // (`validate_indexed_array_index`).
+            admit_indexed_arrays: true,
         },
         platform_version,
     )?;
@@ -498,6 +534,7 @@ fn parse_generation_3(
         &v2.schema,
         property_names::OWNER_REFERS_TO,
         "the writer",
+        v2.documents_mutable,
         platform_version,
     )
     .map_err(consensus_or_protocol_data_contract_error)?;
@@ -505,6 +542,7 @@ fn parse_generation_3(
         &v2.schema,
         property_names::CREATOR_REFERS_TO,
         "the creator",
+        v2.documents_mutable,
         platform_version,
     )
     .map_err(consensus_or_protocol_data_contract_error)?;
@@ -588,7 +626,10 @@ fn parse_generation_3(
     // integer properties they read and their transient flags are known; their
     // limits are checked under full validation only. The `enum`s their string
     // constants are checked against are read through `$ref`s into the
-    // contract's `$defs` too.
+    // contract's `$defs` too. The `deleteConstraints` rules with them, once
+    // `canBeDeleted` is resolved against the contract default and `indexOnly`
+    // and `"onlyWhenConsumed"` are applied: only a type whose owner deletes its
+    // stored documents declares them.
     apply_property_constraints(
         &mut v2,
         schema_defs,
@@ -611,6 +652,10 @@ fn parse_generation_3(
         full_validation,
         platform_version,
     )?;
+    // After `apply_property_constraints` and `apply_moderator_abilities`: whether the type
+    // keeps the revision `$revision` reads, and has a write replacing the stored version a rule
+    // reads through `$old.`, depends on the fields it keeps for its moderators too.
+    validate_stored_version_reads(&v2, name).map_err(consensus_or_protocol_data_contract_error)?;
     // After `apply_index_only`: `ttl` is refused on an indexOnly type.
     common::apply_documents_ttl(
         &mut v2,
@@ -644,12 +689,14 @@ fn parse_generation_3(
     if full_validation {
         validate_typed_array_max_items(&v2, name, platform_version)?;
         validate_contested_summed_value_bounds(&v2, schema_defs, name, platform_version)?;
+        validate_expiring_summed_value_bounds(&v2, schema_defs, name, platform_version)?;
         validate_reference_expressions(&v2, data_contract_id, name, platform_version)?;
         validate_reference_count(&v2, name, platform_version)?;
         validate_no_immutable_deletable_element_references(&v2, name)?;
         validate_no_immutable_contract_owner_requirements(&v2, name)?;
         validate_transient_fields(&v2, name)?;
         validate_no_transient_index_properties(&v2, name)?;
+        validate_integer_range_sources_keyed_in_value_order(&v2, name)?;
     }
     // The property an `inList` reference reads the list's document through; the
     // list itself is checked where the referenced type is in hand. In every
@@ -658,6 +705,18 @@ fn parse_generation_3(
     if full_validation {
         validate_list_element_sources(DocumentTypeRef::V2(&v2), name)
             .map_err(consensus_or_protocol_data_contract_error)?;
+        // The declaring side of a rule reading a document a reference points at, once
+        // the references, `indexOnly`, the trade flags and the moderator fields are
+        // known; what it reads of the referenced type is checked where that type is in
+        // hand
+        validate_referencing_rules(DocumentTypeRef::V2(&v2), name)
+            .map_err(consensus_or_protocol_data_contract_error)?;
+    }
+
+    // Every stage above read the expanded schema; the document type holds the
+    // one the contract was sent with
+    if let Some(schema_as_sent) = schema_as_sent {
+        v2.schema = schema_as_sent;
     }
 
     Ok(v2)
@@ -681,8 +740,15 @@ fn parse_generation_3(
 ///   whose delete carries them;
 /// * a unique or contested index, whose check reads the values a create
 ///   carries, which a derived value is not among;
-/// * a derived property bucketed by `timeRange` or `integerRange`, or skipped
-///   by `skipIfAbsent`, whose rules read the value off the document itself.
+/// * a derived property bucketed by `timeRange` or `integerRange`, whose
+///   rules read the value off the document itself.
+///
+/// A derived property may be a skip property of `skipIfAbsent`: Drive puts
+/// its value into the document before keying it, null where the reference or
+/// the referenced field is absent, and an index skips a document holding null
+/// for a skip property as it skips one missing it. Whether the value can be
+/// absent at all is judged on the referenced side
+/// ([`resolve_derived_index_properties`]).
 fn apply_derived_index_properties(
     document_type: &mut DocumentTypeV2,
     data_contract_id: Identifier,
@@ -779,17 +845,6 @@ fn derived_index_property_referring_side_error(
             "a derived value can not be bucketed by timeRange or integerRange".to_string(),
         );
     }
-    if index
-        .skip_if_absent_properties
-        .iter()
-        .any(|skipped| skipped == index_property_name)
-    {
-        return Some(
-            "skipIfAbsent reads whether the document holds a value, and a derived value is \
-             read from the referenced document instead"
-                .to_string(),
-        );
-    }
     None
 }
 
@@ -816,8 +871,17 @@ fn derived_index_property_referring_side_error(
 ///   `moderatorAbilities.deleteKeepsFields`, or one inside an object listed
 ///   there, is read from the record once the document is removed.
 ///
+/// And, for a derived property an index skips on (`skipIfAbsent`), what a
+/// stored type's skip property may not be:
+///
+/// * one that is never absent: the reference property is required, and the
+///   field always holds a value (`$ownerId`, `$creatorId`, or a schema
+///   property required together with every object around it), so the index
+///   could never skip on it;
+/// * a byte array that may be empty, which is keyed like a missing value.
+///
 /// The transient, fixed and key checks of a schema property need the
-/// `validation` feature; the owner, creator and kept checks run in every
+/// `validation` feature; the owner, creator, kept and skip checks run in every
 /// build.
 pub(in crate::data_contract) fn resolve_derived_index_properties(
     document_types: &mut BTreeMap<String, DocumentType>,
@@ -854,6 +918,22 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                     )
                 };
                 let referenced_name = derived.referenced_document_type_name.as_str();
+                let reference_property = derived.reference_property.as_str();
+                // A skip property must be able to be absent: here, only when its reference is
+                // optional or the field it reads can be missing on the referenced document
+                let never_absent = |field_always_held: String| {
+                    refusal(format!(
+                        "skipIfAbsent skips on it, but it is never absent: \
+                         \"{reference_property}\" is required and {field_always_held}, so the \
+                         index could never skip on it; remove it from skipIfAbsent, or make \
+                         \"{reference_property}\" optional"
+                    ))
+                };
+                let skipped = full_validation
+                    && index
+                        .skip_if_absent_properties
+                        .contains(&index_property.name);
+                let reference_required = declaring.required_fields.contains(reference_property);
                 match &derived.field {
                     DerivedIndexField::OwnerId => {
                         if full_validation && owner_can_change(referenced) {
@@ -861,6 +941,11 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                                 "documents of \"{referenced_name}\" can be transferred or \
                                  traded, so the owner an entry was written under could change; \
                                  $creatorId never does"
+                            )));
+                        }
+                        if skipped && reference_required {
+                            return Err(never_absent(format!(
+                                "every document of \"{referenced_name}\" has an owner"
                             )));
                         }
                     }
@@ -875,6 +960,11 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                             return Err(refusal(format!(
                                 "\"{referenced_name}\" records no creator: its documents never \
                                  change hands, so their creator is their owner, $ownerId"
+                            )));
+                        }
+                        if skipped && reference_required {
+                            return Err(never_absent(format!(
+                                "every document of \"{referenced_name}\" records its creator"
                             )));
                         }
                     }
@@ -897,6 +987,7 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                             validate_ranked_index_property_key_length(
                                 name,
                                 index,
+                                &index_property.name,
                                 &index_property.name,
                                 &property.property_type,
                                 platform_version,
@@ -923,6 +1014,34 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                                  `moderatorAbilities.deleteKeepsFields` (a list fixed when the \
                                  type is registered, which no update changes)"
                             )));
+                        }
+                        if skipped {
+                            // A required leaf inside an optional object is only present when
+                            // the object is, so every object around it must be required too
+                            let mut prefix = String::new();
+                            let always_held = path.split('.').all(|segment| {
+                                if !prefix.is_empty() {
+                                    prefix.push('.');
+                                }
+                                prefix.push_str(segment);
+                                referenced.required_fields().contains(&prefix)
+                            });
+                            if reference_required && always_held {
+                                return Err(never_absent(format!(
+                                    "\"{referenced_name}\" requires \"{path}\""
+                                )));
+                            }
+                            if let DocumentPropertyType::ByteArray(sizes) = &property.property_type
+                            {
+                                if sizes.min_size.unwrap_or_default() == 0 {
+                                    return Err(refusal(format!(
+                                        "skipIfAbsent skips on it, but \"{path}\" of \
+                                         \"{referenced_name}\" is a byte array that may be \
+                                         empty, which is indexed under the same key as a \
+                                         missing value: set its `minItems` to at least 1"
+                                    )));
+                                }
+                            }
                         }
                         resolved.push((
                             name.clone(),
@@ -1222,6 +1341,49 @@ fn validate_no_transient_index_properties(
     Ok(())
 }
 
+/// No `integerRange` buckets an unsigned property keyed the earlier way.
+/// A grid reads and writes its source's keys as generation 1 of
+/// `serialize_value_for_key` keys unsigned values (`IntegerRangeKeyType`),
+/// while an unsigned property that ends a `rangeSummable` index keeps
+/// generation 0's keys at every protocol version
+/// ([`Index::ends_range_summable_with`]), so the two can't share a property.
+/// A signed source keeps its signed keys either way.
+///
+/// Full validation only, like the other index checks: only this generation
+/// (protocol version 14) admits `integerRange`.
+#[cfg(feature = "validation")]
+fn validate_integer_range_sources_keyed_in_value_order(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    for index in document_type.indices.values() {
+        let Some(transform) = &index.integer_range else {
+            continue;
+        };
+        if transform.key_type.min_value() < 0
+            || DocumentTypeRef::V2(document_type)
+                .tree_keys_differ_between_generations(&transform.source)
+        {
+            continue;
+        }
+        let summing = document_type
+            .indices
+            .values()
+            .find(|other| other.ends_range_summable_with(&transform.source))
+            .map_or("", |other| other.name.as_str());
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "integerRange.on (\"{}\") of index \"{}\" of document type \"{name}\" names \
+                 a property that the rangeSummable index \"{summing}\" ends with: such a \
+                 property keeps its earlier key encoding, which an integerRange grid does not \
+                 read; bucket another property",
+                transform.source, index.name
+            )),
+        ));
+    }
+    Ok(())
+}
+
 /// Every typed array property's `maxItems` (which the parse requires) is at
 /// most `SystemLimits::max_typed_array_items`, so its worst-case encoded
 /// size stays small. Read off the flattened properties, which reach a typed
@@ -1286,26 +1448,19 @@ fn validate_contested_summed_value_bounds(
     else {
         return Ok(());
     };
-    // Every summed declaration of a type names the same property (`apply_doctype_aggregates`)
-    let Some(summed_property) = document_type.documents_summable.as_ref().or_else(|| {
-        document_type
-            .indices
-            .values()
-            .find_map(|index| index.summable.as_ref())
-    }) else {
+    let Some((summed_property, property_schema)) =
+        summed_property_schema(document_type, schema_defs)?
+    else {
         return Ok(());
     };
-    let bounds = schema_at_path(&document_type.schema, schema_defs, summed_property)
-        .and_then(|property_schema| {
-            property_schema
-                .map(|property_schema| {
-                    Ok::<_, DataContractError>((
-                        property_schema.get_optional_integer::<i64>(property_names::MINIMUM)?,
-                        property_schema.get_optional_integer::<i64>(property_names::MAXIMUM)?,
-                    ))
-                })
-                .transpose()
+    let bounds = property_schema
+        .map(|property_schema| {
+            Ok::<_, DataContractError>((
+                property_schema.get_optional_integer::<i64>(property_names::MINIMUM)?,
+                property_schema.get_optional_integer::<i64>(property_names::MAXIMUM)?,
+            ))
         })
+        .transpose()
         .map_err(consensus_or_protocol_data_contract_error)?;
     let limit = i64::try_from(limit).unwrap_or(i64::MAX);
     let within_limit = matches!(
@@ -1323,6 +1478,98 @@ fn validate_contested_summed_value_bounds(
         ));
     }
     Ok(())
+}
+
+/// A document type with a `ttl` and a summed property whose values may be negative keeps them
+/// within `SystemLimits::max_expiring_signed_summed_value_magnitude`: unless the property's
+/// schema declares a `minimum` of at least 0, it declares a `maximum` of at most the limit and
+/// a `minimum` of at least its negation. The platform deletes expired documents at the end of
+/// a block with no transition to refuse, and removing a negative value raises every sum it was
+/// in, each merk node's as well as the total, so sums that stayed in `i64` while it was there
+/// could leave it once it is gone. Removing values that are never negative only lowers sums;
+/// values this small keep them in `i64` short of 2^36 documents.
+///
+/// The bounds are compared as numbers, in whatever form the schema writes them (an integer of
+/// any width, or a float: the meta-schema admits any number, and without `sizedIntegerTypes`
+/// the property is an `i64` whatever they are), so a `maximum` beside a `minimum` of at least 0
+/// is never read. Converting to `f64` keeps every comparison exact: 0 and the limit are exactly
+/// representable, and the conversion preserves order.
+///
+/// Full validation only, like the contested bounds: a contract stored before the rule was
+/// checked when it was registered, and must stay readable.
+#[cfg(feature = "validation")]
+fn validate_expiring_summed_value_bounds(
+    document_type: &DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(limit) = platform_version
+        .system_limits
+        .max_expiring_signed_summed_value_magnitude
+    else {
+        return Ok(());
+    };
+    if document_type.documents_ttl_seconds.is_none() {
+        return Ok(());
+    }
+    let Some((summed_property, property_schema)) =
+        summed_property_schema(document_type, schema_defs)?
+    else {
+        return Ok(());
+    };
+    let bound = |keyword: &str| {
+        property_schema
+            .as_ref()
+            .and_then(|property_schema| property_schema.get(keyword))
+            .and_then(|bound| bound.as_float())
+    };
+    let limit_value = limit as f64;
+    let admitted = match (
+        bound(property_names::MINIMUM),
+        bound(property_names::MAXIMUM),
+    ) {
+        (Some(minimum), _) if minimum >= 0.0 => true,
+        (Some(minimum), Some(maximum)) => minimum >= -limit_value && maximum <= limit_value,
+        _ => false,
+    };
+    if !admitted {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{}\" sets `ttl` and sums \"{}\", which admits negative \
+                 values: deleting an expired document takes its value out of the type's \
+                 sums, so the property must declare a minimum of at least 0, or a minimum of \
+                 at least -{} and a maximum of at most {}",
+                name, summed_property, limit, limit,
+            )),
+        ));
+    }
+    Ok(())
+}
+
+/// The property a document type sums and its schema, `None` when the type sums nothing. The
+/// schema is `None` when it is not found. Every summed declaration of a type (`summable`,
+/// `averageable`, `documentsSummable`, `documentsAverageable`) names the same property
+/// (`apply_doctype_aggregates`). The schema is followed through `$ref`s into `schema_defs`, so
+/// the bounds are read from it rather than from the inferred type, which is `i64` whatever they
+/// are without `sizedIntegerTypes`.
+#[cfg(feature = "validation")]
+#[allow(clippy::type_complexity)]
+fn summed_property_schema<'a>(
+    document_type: &'a DocumentTypeV2,
+    schema_defs: Option<&'a BTreeMap<String, Value>>,
+) -> Result<Option<(&'a str, Option<BTreeMap<String, &'a Value>>)>, ProtocolError> {
+    let Some(property) = document_type.documents_summable.as_ref().or_else(|| {
+        document_type
+            .indices
+            .values()
+            .find_map(|index| index.summable.as_ref())
+    }) else {
+        return Ok(None);
+    };
+    let property_schema = schema_at_path(&document_type.schema, schema_defs, property)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    Ok(Some((property, property_schema)))
 }
 
 /// Every reference expression (`anyOf` / `allOf`), on an identifier property,
@@ -1580,7 +1827,8 @@ fn validate_no_immutable_contract_owner_requirements(
 /// replace state validation could not clear: a typed array of them, at the
 /// top level or inside an immutable object, a single one inside an immutable
 /// object, or one found by `findBy`, alone or as an operand of an
-/// expression, anywhere, unless a `findBy` function computes its key: that
+/// expression, anywhere (on a string or byte array property too), unless a
+/// `findBy` function computes its key: that
 /// reference is judged when the document is created only. Every
 /// replace re-validates such a reference, so once a target is deleted the
 /// property would have to change, which an immutable
@@ -1608,7 +1856,14 @@ fn validate_no_immutable_deletable_element_references(
     name: &str,
 ) -> Result<(), ProtocolError> {
     for (path, property) in document_type.flattened_properties() {
-        let Some(reference) = property.property_type.reference() else {
+        // On an identifier, or on a string or byte array property whose value
+        // its `findBy` reads
+        let Some(reference) = property.property_type.reference().or_else(|| {
+            property
+                .revealed_reference
+                .as_ref()
+                .map(PropertyReference::Revealed)
+        }) else {
             continue;
         };
         let Some(target) = reference.target() else {
@@ -1624,7 +1879,7 @@ fn validate_no_immutable_deletable_element_references(
             matches!(
                 leaf,
                 DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. }
-                    if !lookup.is_checked_on_create_only()
+                    if !lookup.is_checked_on_create_only(document_type.documents_mutable)
             )
         });
         if !deletable_lookup
@@ -1710,19 +1965,29 @@ impl DocumentType {
 }
 
 #[cfg(all(test, feature = "validation"))]
+mod byte_array_reads_tests;
+#[cfg(all(test, feature = "validation"))]
+mod choose_first_tests;
+#[cfg(all(test, feature = "validation"))]
 mod commit_reveal_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod contested_summed_value_bounds_tests;
+#[cfg(all(test, feature = "validation"))]
+mod delete_constraints_tests;
 #[cfg(all(test, feature = "validation"))]
 mod derived_index_property_tests;
 #[cfg(test)]
 mod documents_ttl_tests;
 #[cfg(all(test, feature = "validation"))]
 mod dotted_aggregate_name_tests;
+#[cfg(all(test, feature = "validation"))]
+mod expiring_summed_value_bounds_tests;
 #[cfg(test)]
 mod immutable_tests;
 #[cfg(test)]
 mod index_only_tests;
+#[cfg(all(test, feature = "validation"))]
+mod indexed_array_tests;
 #[cfg(all(test, feature = "validation"))]
 mod moderated_preallocation_tests;
 #[cfg(all(test, feature = "validation"))]
@@ -1746,6 +2011,8 @@ mod meta_schema_v0_stray_keyword_tests;
 mod moderator_abilities_tests;
 #[cfg(all(test, feature = "validation"))]
 mod name_rules_tests;
+#[cfg(all(test, feature = "validation"))]
+mod non_transferable_token_cost_tests;
 #[cfg(test)]
 mod only_when_consumed_tests;
 #[cfg(all(test, feature = "validation"))]
@@ -1755,23 +2022,35 @@ mod property_constraint_aggregates_tests;
 #[cfg(all(test, feature = "validation"))]
 mod property_constraints_tests;
 #[cfg(all(test, feature = "validation"))]
+mod property_type_shorthand_tests;
+#[cfg(all(test, feature = "validation"))]
 mod reference_expression_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_lookup_tests;
 #[cfg(all(test, feature = "validation"))]
 mod reference_test_helpers;
 #[cfg(all(test, feature = "validation"))]
+mod referenced_rule_tests;
+#[cfg(all(test, feature = "validation"))]
 mod retracted_when_tests;
 #[cfg(all(test, feature = "validation"))]
 mod shared_stage_error_tests;
 #[cfg(all(test, feature = "validation"))]
+mod stored_version_reads_tests;
+#[cfg(all(test, feature = "validation"))]
+mod string_find_by_key_tests;
+#[cfg(all(test, feature = "validation"))]
 mod transient_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_counter_index_tests;
 #[cfg(all(test, feature = "validation"))]
 mod typed_array_reference_tests;
 #[cfg(all(test, feature = "validation"))]
 mod typed_array_test_helpers;
 #[cfg(all(test, feature = "validation", feature = "random-documents"))]
 mod typed_array_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_where_tests;
 
 #[cfg(test)]
 mod tests {

@@ -269,8 +269,10 @@ fn dashpay_payment_records(event: &WalletEvent) -> Vec<&TransactionRecord> {
         // by the wallet-event adapter instead, on the lossless channel and
         // on the same store round as the rows that justify the verdict
         // (see the module docs).
+        // `ChainTruncated` carries txids of dropped records, not records.
         WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::TransactionsSwept { .. }
+        | WalletEvent::ChainTruncated { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
         | WalletEvent::ChainLockProcessed { .. } => Vec::new(),
     }
@@ -296,6 +298,7 @@ fn drives_payment_hooks(event: &WalletEvent) -> bool {
         // adapter's own store round.
         WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::TransactionsSwept { .. }
+        | WalletEvent::ChainTruncated { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
         | WalletEvent::ChainLockProcessed { .. } => false,
     }
@@ -480,6 +483,23 @@ mod tests {
             superseded_by: dashcore::Txid::from([0x22; 32]),
             winner_mined_height: None,
             released_outpoints: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: std::collections::BTreeMap::new(),
+        };
+        assert!(dashpay_payment_records(&event).is_empty());
+        assert!(!drives_payment_hooks(&event));
+    }
+
+    /// `ChainTruncated` names dropped transactions by txid; it carries no
+    /// record an incoming payment could be recovered from.
+    #[test]
+    fn should_not_drive_payment_hooks_for_a_chain_truncation() {
+        let event = WalletEvent::ChainTruncated {
+            wallet_id: [0u8; 32],
+            height: 42,
+            txids: vec![dashcore::Txid::from([0x31; 32])],
+            unconfirmed_txids: vec![dashcore::Txid::from([0x32; 32])],
+            restored_outpoints: Vec::new(),
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
         };

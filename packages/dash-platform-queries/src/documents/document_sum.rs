@@ -9,6 +9,10 @@
 //! Empty entries (verifier emitted `None` for a queried-but-absent
 //! branch) contribute 0 to the sum via `filter_map(|e| e.sum)`.
 //!
+//! A `containsAny` over several elements of a typed array is refused, even
+//! grouped by the array: folded, a document holding two of the elements would
+//! be summed twice. `DocumentSplitSums` keeps one sum per element.
+//!
 //! Overflow handling: the fold uses [`i64::checked_add`] and returns
 //! a `RequestError` on overflow rather than panicking (debug) or
 //! wrapping (release). A grovedb sum-tree's per-node aggregate
@@ -67,7 +71,7 @@ impl FromProof<DocumentQuery> for DocumentSum {
         assert_select_is_sum(&request)?;
         let response: Self::Response = response.into();
         let (entries, mtd, proof) =
-            verify_sum_query(request, response, platform_version, provider)?;
+            verify_sum_query(request, response, true, platform_version, provider)?;
         // Fold per-branch sums into a single `i64` using
         // `checked_add` (via `fold_sum_entries`). A multi-entry
         // fold (carrier-aggregate across many In branches, or

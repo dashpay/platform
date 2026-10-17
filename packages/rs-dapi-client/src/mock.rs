@@ -23,6 +23,7 @@ use std::{
     any::type_name,
     collections::HashMap,
     fmt::{Debug, Display},
+    sync::Mutex,
 };
 
 /// Mock DAPI client.
@@ -33,6 +34,7 @@ use std::{
 #[derive(Default, Debug)]
 pub struct MockDapiClient {
     expectations: Expectations,
+    request_counts: Mutex<HashMap<Key, usize>>,
 }
 /// Result of executing a mock request
 pub type MockResult<T> = ExecutionResult<<T as TransportRequest>::Response, DapiClientError>;
@@ -41,6 +43,16 @@ impl MockDapiClient {
     /// Create a new mock client
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Number of transport executions of this exact request, including failures.
+    pub fn request_count<R: Mockable>(&self, request: &R) -> usize {
+        self.request_counts
+            .lock()
+            .expect("request counter lock")
+            .get(&Key::new(request))
+            .copied()
+            .unwrap_or_default()
     }
 
     /// Add a new expectation for a request
@@ -130,6 +142,12 @@ impl DapiRequestExecutor for MockDapiClient {
         R::Response: Mockable,
     {
         let (key, response) = self.expectations.get(&request);
+        *self
+            .request_counts
+            .lock()
+            .expect("request counter lock")
+            .entry(key.clone())
+            .or_default() += 1;
 
         tracing::trace!(
             %key,

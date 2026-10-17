@@ -1,5 +1,6 @@
 //! Read-only accessors on [`PlatformWalletManager`].
 
+use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash};
 use std::sync::Arc;
 
 use dashcore::{OutPoint, Txid};
@@ -1288,9 +1289,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     for entry in pool.addresses.values() {
                         if let Some(PublicKeyType::EdDSA(pk)) = &entry.public_key {
                             if let Ok(pk32) = <[u8; 32]>::try_from(pk.as_slice()) {
-                                let node_id =
-                                    dashcore::PlatformNodeId::from_ed25519_public_key(&pk32)
-                                        .to_byte_array();
+                                let node_id = EddsaPkHash::from(EddsaPkBytes::from_bytes(pk32))
+                                    .to_canonical_bytes();
                                 platform_index.insert(node_id, entry.index);
                             }
                         }

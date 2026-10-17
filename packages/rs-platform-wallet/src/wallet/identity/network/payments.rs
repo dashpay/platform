@@ -1938,10 +1938,9 @@ mod tests {
                 .wallet
                 .derive_extended_private_key(path)
                 .map_err(|e| e.to_string())?;
-            let secp = dashcore::secp256k1::Secp256k1::new();
             let msg = dashcore::secp256k1::Message::from_digest(sighash);
-            let sig = secp.sign_ecdsa(&msg, &xprv.private_key);
-            let pk = dashcore::secp256k1::PublicKey::from_secret_key(&secp, &xprv.private_key);
+            let sig = xprv.private_key.sign_ecdsa(msg);
+            let pk = dashcore::secp256k1::PublicKey::from_secret_key(&xprv.private_key);
             Ok((sig, pk))
         }
 
@@ -1953,9 +1952,7 @@ mod tests {
                 .wallet
                 .derive_extended_private_key(path)
                 .map_err(|e| e.to_string())?;
-            let secp = dashcore::secp256k1::Secp256k1::new();
             Ok(dashcore::secp256k1::PublicKey::from_secret_key(
-                &secp,
                 &xprv.private_key,
             ))
         }
@@ -2110,8 +2107,7 @@ mod tests {
         use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
         use dpp::identity::{IdentityPublicKey, SecurityLevel};
         let data = dashcore::secp256k1::PublicKey::from_secret_key(
-            &dashcore::secp256k1::Secp256k1::new(),
-            &dashcore::secp256k1::SecretKey::from_slice(&[0x37u8; 32]).expect("secret"),
+            &dashcore::secp256k1::SecretKey::from_secret_bytes([0x37u8; 32]).expect("secret"),
         )
         .serialize()
         .to_vec();
@@ -5575,8 +5571,7 @@ mod tests {
             key_type: KeyType::ECDSA_SECP256K1,
             read_only: false,
             data: dashcore::secp256k1::PublicKey::from_secret_key(
-                &dashcore::secp256k1::Secp256k1::new(),
-                &dashcore::secp256k1::SecretKey::from_slice(&[0x24u8; 32]).expect("secret"),
+                &dashcore::secp256k1::SecretKey::from_secret_bytes([0x24u8; 32]).expect("secret"),
             )
             .serialize()
             .to_vec()
@@ -5844,11 +5839,9 @@ mod tests {
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
 
         // The contact's encryption keypair (the "sender" of the request).
-        let secp = dashcore::secp256k1::Secp256k1::new();
-        let contact_secret = dashcore::secp256k1::SecretKey::from_slice(&[0x42u8; 32])
+        let contact_secret = dashcore::secp256k1::SecretKey::from_secret_bytes([0x42u8; 32])
             .expect("valid contact secret");
-        let contact_public =
-            dashcore::secp256k1::PublicKey::from_secret_key(&secp, &contact_secret);
+        let contact_public = dashcore::secp256k1::PublicKey::from_secret_key(&contact_secret);
 
         // Our side, through the production provider.
         let ours = provider
@@ -5932,7 +5925,6 @@ mod tests {
 
         let owner = Identifier::from([0xAA; 32]);
         let contact = Identifier::from([0xBB; 32]);
-        let secp = dashcore::secp256k1::Secp256k1::new();
         let key_at = |id: u32, purpose: Purpose, byte: u8| {
             IdentityPublicKey::V0(IdentityPublicKeyV0 {
                 id,
@@ -5942,8 +5934,7 @@ mod tests {
                 key_type: KeyType::ECDSA_SECP256K1,
                 read_only: false,
                 data: dashcore::secp256k1::PublicKey::from_secret_key(
-                    &secp,
-                    &dashcore::secp256k1::SecretKey::from_slice(&[byte; 32]).expect("secret"),
+                    &dashcore::secp256k1::SecretKey::from_secret_bytes([byte; 32]).expect("secret"),
                 )
                 .serialize()
                 .to_vec()

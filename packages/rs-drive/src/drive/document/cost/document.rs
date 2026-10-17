@@ -137,12 +137,25 @@ pub(crate) fn value_of(
             Value::Identifier([1; 32])
         }
         DocumentPropertyType::TypedArray(array) => {
-            let item_length = bounds(&array.item_type, platform_version)
-                .map(|(_, _, middle)| middle)
-                .unwrap_or_else(|| u32::from(array.item_type.min_size().unwrap_or_default()));
+            let item_length = match bounds(&array.item_type, platform_version) {
+                // At least one unit when the element can hold one: the ordinal is
+                // stamped into the element's last bytes, and empty elements are all
+                // one key, where a document of `maxItems` one-unit elements writes as
+                // many (a string of `maxLength` 1 has a middle length of 0).
+                Some((_, max, middle)) => middle.max(u32::from(max.is_none_or(|max| max > 0))),
+                None => u32::from(array.item_type.min_size().unwrap_or_default()),
+            };
+            // Distinct elements of one size: an index naming the array keys
+            // the document once per distinct element, so repeats would price
+            // one entry where a document of distinct elements writes many.
             Value::Array(
                 (0..length)
-                    .map(|_| value_of(&array.item_type, item_length, platform_version))
+                    .map(|ordinal| {
+                        distinct_element(
+                            value_of(&array.item_type, item_length, platform_version),
+                            ordinal,
+                        )
+                    })
                     .collect(),
             )
         }
@@ -150,6 +163,78 @@ pub(crate) fn value_of(
             Value::Array(vec![])
         }
         DocumentPropertyType::Object(_) => Value::Map(vec![]),
+    }
+}
+
+/// The 94 printable ASCII characters other than the space: more symbols than
+/// an indexed typed array holds elements, so a one-character string element
+/// keeps every ordinal apart, and each is one UTF-8 byte.
+const PRINTABLE_ASCII: &[u8] =
+    b"!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+
+/// `element`, a value `value_of` built, made the `ordinal`th of a list of
+/// distinct values of the same size: an integer or a number counts up from it
+/// (wrapping within its width), a string or byte array takes the ordinal in its
+/// last bytes, and a boolean alternates. Its stored size does not change.
+fn distinct_element(element: Value, ordinal: u32) -> Value {
+    fn stamp(bytes: &mut [u8], ordinal: u32, alphabet: Option<&[u8]>) {
+        let mut rest = ordinal;
+        for byte in bytes.iter_mut().rev() {
+            match alphabet {
+                Some(alphabet) => {
+                    let radix = alphabet.len() as u32;
+                    *byte = alphabet[(rest % radix) as usize];
+                    rest /= radix;
+                }
+                None => {
+                    *byte = (rest & 0xff) as u8;
+                    rest >>= 8;
+                }
+            }
+            if rest == 0 {
+                break;
+            }
+        }
+    }
+    match element {
+        Value::U128(value) => Value::U128(value.wrapping_add(u128::from(ordinal))),
+        Value::I128(value) => Value::I128(value.wrapping_add(i128::from(ordinal))),
+        Value::U64(value) => Value::U64(value.wrapping_add(u64::from(ordinal))),
+        Value::I64(value) => Value::I64(value.wrapping_add(i64::from(ordinal))),
+        Value::U32(value) => Value::U32(value.wrapping_add(ordinal)),
+        Value::I32(value) => Value::I32(value.wrapping_add(ordinal as i32)),
+        Value::U16(value) => Value::U16(value.wrapping_add(ordinal as u16)),
+        Value::I16(value) => Value::I16(value.wrapping_add(ordinal as i16)),
+        Value::U8(value) => Value::U8(value.wrapping_add(ordinal as u8)),
+        Value::I8(value) => Value::I8(value.wrapping_add(ordinal as i8)),
+        Value::Float(value) => Value::Float(value + f64::from(ordinal)),
+        Value::Bool(_) => Value::Bool(ordinal.is_multiple_of(2)),
+        Value::Text(text) => {
+            let mut bytes = text.into_bytes();
+            stamp(&mut bytes, ordinal, Some(PRINTABLE_ASCII));
+            Value::Text(String::from_utf8(bytes).unwrap_or_default())
+        }
+        Value::Bytes(mut bytes) => {
+            stamp(&mut bytes, ordinal, None);
+            Value::Bytes(bytes)
+        }
+        Value::Bytes20(mut bytes) => {
+            stamp(&mut bytes, ordinal, None);
+            Value::Bytes20(bytes)
+        }
+        Value::Bytes32(mut bytes) => {
+            stamp(&mut bytes, ordinal, None);
+            Value::Bytes32(bytes)
+        }
+        Value::Bytes36(mut bytes) => {
+            stamp(&mut bytes, ordinal, None);
+            Value::Bytes36(bytes)
+        }
+        Value::Identifier(mut bytes) => {
+            stamp(&mut bytes, ordinal, None);
+            Value::Identifier(bytes)
+        }
+        other => other,
     }
 }
 

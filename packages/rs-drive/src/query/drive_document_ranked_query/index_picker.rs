@@ -104,6 +104,7 @@ pub fn find_ranked_index_for_axis<'b>(
         .map(|field| SkipIfAbsentBinding {
             field,
             excludes_missing: true,
+            constrains: true,
         })
         .collect();
     indexes.values().find(|index| {

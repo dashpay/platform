@@ -1,7 +1,7 @@
 //! Withdrawal transactions definitions and processing
 
-use dpp::dashcore::consensus::Encodable;
-use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::consensus::{serialize, Encodable};
+use dpp::dashcore::hashes::{sha256d, Hash};
 use dpp::dashcore::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
 use dpp::dashcore::{Transaction, VarInt};
 use std::collections::{BTreeMap, HashMap};
@@ -161,7 +161,11 @@ impl From<&UnsignedWithdrawalTxs> for Vec<ExtendVoteExtension> {
 
 pub(crate) fn tx_to_extend_vote_extension(tx: &Transaction) -> ExtendVoteExtension {
     let request_id = make_extend_vote_request_id(tx);
-    let extension = tx.txid().as_byte_array().to_vec();
+    // `tx` must be unsigned. Core verifies `quorumSig` against the hash of the full serialization
+    // with only `quorumSig` zeroed, so the message covers `requestedHeight` and `quorumHash`. For
+    // a version 1 asset unlock this hash is the txid; the txid of a version 2 asset unlock leaves
+    // those fields out, so it is not the signed message.
+    let extension = sha256d::Hash::hash(&serialize(tx)).to_byte_array().to_vec();
 
     ExtendVoteExtension {
         r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
@@ -186,4 +190,121 @@ pub(crate) fn make_extend_vote_request_id(asset_unlock_tx: &Transaction) -> Vec<
     request_id.extend_from_slice(&index);
 
     request_id
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::withdrawals::unsigned_withdrawal_transactions;
+    use dpp::dashcore::bls_sig_utils::BLSSignature;
+    use dpp::dashcore::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
+    use dpp::dashcore::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
+    use dpp::dashcore::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBasePayload;
+    use dpp::dashcore::{PubkeyHash, QuorumHash, ScriptBuf, TxOut};
+    use std::str::FromStr;
+
+    /// An unsigned version 2 asset unlock paying 1 Dash to the P2PKH script of `[0x11; 20]`,
+    /// the transaction of the DIP-0027 worked examples.
+    fn unsigned_version_2_asset_unlock(
+        index: u64,
+        request_height: u32,
+        quorum_hash: [u8; 32],
+    ) -> Transaction {
+        Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![TxOut {
+                value: 100_000_000,
+                script_pubkey: ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0x11; 20])),
+            }],
+            special_transaction_payload: Some(AssetUnlockPayloadType(AssetUnlockPayload {
+                base: AssetUnlockBasePayload {
+                    version: 2,
+                    index,
+                    fee: 70_000,
+                },
+                request_info: AssetUnlockRequestInfo {
+                    request_height,
+                    quorum_hash: QuorumHash::from_byte_array(quorum_hash),
+                },
+                quorum_sig: BLSSignature::from([0; 96]),
+            })),
+        }
+    }
+
+    /// Parses a hash displayed in reversed byte order, as Core prints it, into raw bytes.
+    fn displayed_hash_bytes(displayed: &str) -> Vec<u8> {
+        sha256d::Hash::from_str(displayed)
+            .expect("expected a valid hash")
+            .to_byte_array()
+            .to_vec()
+    }
+
+    #[test]
+    fn should_sign_the_full_serialization_of_a_version_2_unlock_not_its_txid() {
+        // DIP-0027 publishes the version 2 txid of its worked example at index 101: the hash of
+        // the full serialization with `requestedHeight`, `quorumHash` and `quorumSig` zeroed.
+        let dip_0027_txid = displayed_hash_bytes(
+            "3c4db73c8356407a5d7c78df5045bd280f2dc4fd644b06c4bfbdead3d5ae41cf",
+        );
+
+        // With the signing info zeroed the message and the txid coincide, which pins the
+        // serialization and byte order of the message to Core's.
+        let zeroed_signing_info = unsigned_version_2_asset_unlock(101, 0, [0; 32]);
+        assert_eq!(
+            tx_to_extend_vote_extension(&zeroed_signing_info).extension,
+            dip_0027_txid
+        );
+
+        // The worked example is requested at height 500 by quorum hash one. Core's message
+        // covers both, so it is the hash of the serialization that includes them, not the txid.
+        let mut quorum_hash_one = [0; 32];
+        quorum_hash_one[0] = 1;
+        let worked_example = unsigned_version_2_asset_unlock(101, 500, quorum_hash_one);
+        let extension = tx_to_extend_vote_extension(&worked_example).extension;
+
+        assert_ne!(extension, dip_0027_txid);
+        assert_eq!(
+            extension,
+            displayed_hash_bytes(
+                "7df5cfea6865226753795ccdd8536781a179f2767febf4281e2236e178dc4a50"
+            )
+        );
+    }
+
+    #[test]
+    fn should_sign_a_different_message_when_a_version_2_unlock_is_re_signed() {
+        // A re-signed version 2 unlock keeps its txid, but Core verifies the new signature
+        // against a message covering the new `requestedHeight` and `quorumHash`. Signing the
+        // txid would make every re-signed withdrawal fail verification in Core.
+        let first_instance = unsigned_version_2_asset_unlock(101, 500, [1; 32]);
+        let re_signed_at_new_height = unsigned_version_2_asset_unlock(101, 700, [1; 32]);
+        let re_signed_by_new_quorum = unsigned_version_2_asset_unlock(101, 500, [2; 32]);
+
+        let first_extension = tx_to_extend_vote_extension(&first_instance).extension;
+
+        assert_ne!(
+            tx_to_extend_vote_extension(&re_signed_at_new_height).extension,
+            first_extension
+        );
+        assert_ne!(
+            tx_to_extend_vote_extension(&re_signed_by_new_quorum).extension,
+            first_extension
+        );
+    }
+
+    #[test]
+    fn should_keep_signing_the_txid_of_version_1_unlocks() {
+        // The txid of a version 1 unlock is the hash of its full serialization, so for every
+        // unlock Platform builds as version 1 the vote extension stays byte for byte the same.
+        let transactions = unsigned_withdrawal_transactions(500);
+
+        for transaction in transactions.iter() {
+            assert_eq!(
+                tx_to_extend_vote_extension(transaction).extension,
+                transaction.txid().to_byte_array().to_vec()
+            );
+        }
+    }
 }

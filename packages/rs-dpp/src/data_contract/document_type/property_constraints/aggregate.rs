@@ -65,7 +65,8 @@ impl AggregateRead {
     }
 
     /// The filter's keys with the values they must take, for a document being
-    /// written with properties `data` and owner `owner_id`: each value as the
+    /// written (or, for a rule of `deleteConstraints`, deleted) with id
+    /// `document_id`, properties `data` and owner `owner_id`: each value as the
     /// key of `counted`, the type the read totals, holds it, which
     /// `counted.serialize_value_for_key` accepts. `None` when a value the
     /// document gives is missing or is one the key cannot hold: no document of
@@ -76,6 +77,7 @@ impl AggregateRead {
     pub fn filter_values(
         &self,
         counted: DocumentTypeRef,
+        document_id: Identifier,
         data: &Value,
         owner_id: Identifier,
         platform_version: &PlatformVersion,
@@ -84,6 +86,7 @@ impl AggregateRead {
         for (key, binding) in &self.filter {
             let value = match binding {
                 AggregateBinding::Owner => Value::Identifier(owner_id.to_buffer()),
+                AggregateBinding::Id => Value::Identifier(document_id.to_buffer()),
                 AggregateBinding::Integer(integer) => Value::I128(*integer),
                 AggregateBinding::Property { path, .. } => {
                     match data.get_optional_value_at_path(path) {
@@ -124,7 +127,7 @@ impl AggregateRead {
     /// type and the document matches every key, then 1 for a `countOf` and its
     /// value of the property for a `sumOf`. Consensus reads the stored total
     /// before the write, then takes off what the document added as it was
-    /// stored and adds what it adds as it is written.
+    /// stored and adds what it adds as it is written; a delete adds nothing.
     pub fn contribution(
         &self,
         counted: DocumentTypeRef,

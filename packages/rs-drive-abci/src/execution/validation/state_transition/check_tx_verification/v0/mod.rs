@@ -8,7 +8,7 @@ use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
-use dpp::identity::state_transition::OptionallyAssetLockProved;
+use dpp::identity::state_transition::{AssetLockProved, OptionallyAssetLockProved};
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
@@ -17,7 +17,10 @@ use dpp::state_transition::StateTransition;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
+use crate::execution::validation::state_transition::batch::choose_first_reservation;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::address_witnesses::{StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0};
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
@@ -39,7 +42,10 @@ use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
+use dpp::consensus::basic::BasicError;
 use dpp::identity::PartialIdentity;
+use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::prelude::AddressNonce;
 
 #[allow(clippy::too_many_arguments)]
@@ -199,6 +205,28 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     return Ok(
                         ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
                             result.errors,
+                        ),
+                    );
+                }
+            }
+
+            // An identity create's identity id must be the one its asset lock's outpoint
+            // derives, and a block refuses one whose id is not. The id is outside the bytes the
+            // asset lock key signs, so it is compared here, before the asset lock proof is
+            // verified, and such a transition is refused without that verification. Basic
+            // structure has checked that the outpoint exists. Admission is not consensus, so
+            // every protocol version gets this.
+            if let StateTransition::IdentityCreate(identity_create) = state_transition {
+                if identity_create.asset_lock_proof().create_identifier()?
+                    != identity_create.identity_id()
+                {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_error(
+                            BasicError::InvalidIdentifierError(InvalidIdentifierError::new(
+                                "identity_id".to_string(),
+                                "does not match created identifier from asset lock".to_string(),
+                            ))
+                            .into(),
                         ),
                     );
                 }
@@ -364,9 +392,33 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 None
             };
 
-            let action = if state_transition.validates_full_state_on_check_tx()
-                || relies_on_gas_sponsor_to_pay
-            {
+            // The batch, now built, names who pays. A signer who relied on a sponsor the
+            // document types do not offer, or who is their own contract's owner, pays
+            // themselves, and is held to the floor the pre-check holds an unsponsored batch to
+            // before any of its state is validated
+            if let (true, Some(identity), Some(action)) = (
+                relies_on_gas_sponsor_to_pay,
+                maybe_identity.as_ref(),
+                action.as_ref(),
+            ) {
+                let result = state_transition
+                    .validate_identity_minimum_balance_once_gas_payer_is_known(
+                        identity,
+                        action,
+                        platform_version,
+                    )?;
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+            }
+
+            let validates_state =
+                state_transition.validates_full_state_on_check_tx() || relies_on_gas_sponsor_to_pay;
+            let action = if validates_state {
                 // A sponsored batch joins the next block, so its state is judged at that
                 // block's height: an age counted in blocks (a `refersTo`'s
                 // `minimumAgeBlocks`) is then the one the block sees
@@ -398,6 +450,15 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     );
                 }
                 result.data
+            } else if matches!(state_transition, StateTransition::IdentityCreate(_)) {
+                // An identity create keeps the action built for its advanced structure
+                // validation, so its asset lock proof and signature are verified once. Every
+                // other transition is transformed again below: keeping its action would change
+                // its check_tx fee estimate, which counts the operations of both transforms (a
+                // batch's transform adds the fees of the contracts and tokens it reads). Block
+                // execution never runs this function, so this decides mempool admission only
+                // and is inert for consensus at every protocol version.
+                action
             } else {
                 None
             };
@@ -446,6 +507,17 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         ),
                     );
                 }
+            }
+
+            // A create choosing the first of the commitments to its values reads up to its scan's
+            // budget of competitors in a block; its state was not validated here, so the signer
+            // is held to that budget too
+            if !validates_state {
+                reserve_choose_first_scans(
+                    &action,
+                    &mut state_transition_execution_context,
+                    platform_version,
+                );
             }
 
             let execution_event = ExecutionEvent::create_from_state_transition_action(
@@ -576,6 +648,25 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
                 let action = state_transition_action_result.into_data()?;
 
+                // As on the first check: a batch naming no sponsor is the signer's to pay
+                if let (true, Some(identity)) =
+                    (relies_on_gas_sponsor_to_pay, maybe_identity.as_ref())
+                {
+                    let result = state_transition
+                        .validate_identity_minimum_balance_once_gas_payer_is_known(
+                            identity,
+                            &action,
+                            platform_version,
+                        )?;
+                    if !result.is_valid() {
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
+                    }
+                }
+
                 let action = if relies_on_gas_sponsor_to_pay {
                     let result = state_transition.validate_state(
                         Some(action),
@@ -613,6 +704,15 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     }
                 }
 
+                // As on the first check: the budget of a scan whose state was not validated
+                if !relies_on_gas_sponsor_to_pay {
+                    reserve_choose_first_scans(
+                        &action,
+                        &mut state_transition_execution_context,
+                        platform_version,
+                    );
+                }
+
                 let execution_event = ExecutionEvent::create_from_state_transition_action(
                     action,
                     maybe_identity,
@@ -631,6 +731,20 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
         _ => Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
             "CheckTxLevel must be first time check or recheck",
         ))),
+    }
+}
+
+/// Reserves, on top of the estimated fee of `action`, what the `chooseFirst` checks of its
+/// creates may bill in a block (see `choose_first_reservation`: their two hashes and the
+/// competitor scan's budget), for an action whose state check tx did not validate. Fee
+/// validation then admits only a signer who could pay for them.
+fn reserve_choose_first_scans(
+    action: &StateTransitionAction,
+    execution_context: &mut StateTransitionExecutionContext,
+    platform_version: &PlatformVersion,
+) {
+    for operation in choose_first_reservation(action, platform_version) {
+        execution_context.add_operation(operation);
     }
 }
 

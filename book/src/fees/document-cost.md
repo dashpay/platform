@@ -49,7 +49,9 @@ The storage depends on what is already stored, so it comes in two scenarios:
 The estimate also splits the storage by index: the layers an index shares with
 other indexes (a common prefix of properties, paid once for the document) and
 the layers only it uses, so an index's cost on its own is its shared layers
-plus its own. A `skipIfAbsent` index that skips the document writes nothing,
+plus its own. An index naming a typed array writes one set of entries per
+distinct element of the document's list (the worst case holds `maxItems`
+distinct elements), and nothing for an empty list. A `skipIfAbsent` index that skips the document writes nothing,
 and adds no layer, just as Drive builds none for it; the rows of a ranked
 level under a time window with a `ttl` are priced like the window, as
 processing.

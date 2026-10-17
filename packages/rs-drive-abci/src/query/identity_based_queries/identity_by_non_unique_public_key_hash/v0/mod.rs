@@ -7,7 +7,7 @@ use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_request:
 use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::{
     get_identity_by_non_unique_public_key_hash_response_v0, GetIdentityByNonUniquePublicKeyHashResponseV0,
 };
-use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::{IdentityProvedResponse, IdentityResponse};
+use dapi_grpc::platform::v0::get_identity_by_non_unique_public_key_hash_response::get_identity_by_non_unique_public_key_hash_response_v0::IdentityResponse;
 use dpp::check_validation_result_with_data;
 use dpp::platform_value::{Bytes20, Bytes32};
 use dpp::serialization::PlatformSerializable;
@@ -59,17 +59,8 @@ impl<C> Platform<C> {
             GetIdentityByNonUniquePublicKeyHashResponseV0 {
                 result: Some(
                     get_identity_by_non_unique_public_key_hash_response_v0::Result::Proof(
-                        IdentityProvedResponse {
-                            grovedb_identity_public_key_hash_proof: Some(
-                                self.response_proof_v0(
-                                    platform_state,
-                                    proof.identity_id_public_key_hash_proof,
-                                    GroveDBToUse::Current,
-                                )
-                                .map(|(_, proof)| proof)?,
-                            ),
-                            identity_proof_bytes: proof.identity_proof,
-                        },
+                        self.response_proof_v0(platform_state, proof, GroveDBToUse::Current)
+                            .map(|(_, proof)| proof)?,
                     ),
                 ),
                 metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),

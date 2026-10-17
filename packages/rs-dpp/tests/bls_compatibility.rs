@@ -1,7 +1,5 @@
-use dpp::bls_signatures::{
-    AggregateSignature, Bls12381G2Impl, Pairing, PublicKey, SecretKey, SerializationFormat,
-    Signature, SignatureSchemes,
-};
+use dash_pkc::bls::{BlsPublicKey, BlsScChia, BlsScIetf, BlsSecretKey, BlsSignature};
+use dpp::bls::{PublicKey, SecretKey, Signature};
 use dpp::core_types::validator::v0::ValidatorV0;
 use dpp::core_types::validator_set::v0::ValidatorSetV0;
 use dpp::native_bls::NativeBlsModule;
@@ -73,21 +71,24 @@ fn should_preserve_key_generation_from_fixed_material() {
     assert_eq!(vectors.len(), 3);
     for v in vectors {
         let ikm = bytes::<32>(&v.ikm);
-        let current = SecretKey::<Bls12381G2Impl>::from_hash(ikm);
+        let current = SecretKey::from_ikm(&ikm).unwrap();
+        let candidate = BlsSecretKey::<BlsScIetf>::from_ikm(&ikm).unwrap();
         assert_eq!(current.to_be_bytes(), bytes::<32>(&v.secret_key));
+        assert_eq!(*candidate.to_bytes(), current.to_be_bytes());
+        assert_eq!(current.public_key().to_bytes(), bytes::<48>(&v.public_key));
         assert_eq!(
-            current.public_key().0.to_compressed(),
+            candidate.public_key().to_bytes(),
             bytes::<48>(&v.public_key)
         );
     }
 }
 
 #[test]
-fn should_match_frozen_basic_signatures() {
+fn should_match_frozen_basic_signatures_in_both_backends() {
     let vectors = corpus().basic;
     assert_eq!(vectors.len(), 16);
     for v in vectors {
-        let secret = bytes::<32>(&v.secret_key);
+        let secret = bytes(&v.secret_key);
         let message = hex::decode(v.message).unwrap();
         let public: [u8; 48] = bytes(&v.public_key);
         let signature: [u8; 96] = bytes(&v.signature);
@@ -99,9 +100,32 @@ fn should_match_frozen_basic_signatures() {
         assert!(NativeBlsModule
             .verify_signature(&signature, &message, &public)
             .unwrap());
-        let key = PublicKey::<Bls12381G2Impl>::try_from(public.as_slice()).unwrap();
+        let candidate = BlsSecretKey::<BlsScIetf>::from_bytes(&secret).unwrap();
+        assert_eq!(candidate.public_key().to_bytes(), public);
+        assert_eq!(candidate.sign(&message).to_bytes(), signature);
+        let decoded = BlsSignature::<BlsScIetf>::from_bytes(&signature).unwrap();
+        assert!(candidate.public_key().verify(&message, &decoded).is_ok());
         assert_eq!(
-            key.to_bytes_with_mode(SerializationFormat::Legacy),
+            PublicKey::try_from(public.as_slice())
+                .unwrap()
+                .to_legacy_bytes()
+                .unwrap(),
+            bytes::<48>(&v.legacy_public_key)
+        );
+        assert_eq!(
+            SecretKey::from_be_bytes(&secret)
+                .unwrap()
+                .public_key()
+                .to_legacy_bytes()
+                .unwrap(),
+            bytes::<48>(&v.legacy_public_key)
+        );
+        assert_eq!(
+            candidate
+                .public_key()
+                .to_scheme::<BlsScChia>()
+                .unwrap()
+                .to_bytes(),
             bytes::<48>(&v.legacy_public_key)
         );
         let mut wrong_message = message.clone();
@@ -109,19 +133,24 @@ fn should_match_frozen_basic_signatures() {
         assert!(!NativeBlsModule
             .verify_signature(&signature, &wrong_message, &public)
             .unwrap());
+        assert!(candidate
+            .public_key()
+            .verify(&wrong_message, &decoded)
+            .is_err());
         let mut other_secret = [0; 32];
         other_secret[31] = 3;
-        let other = SecretKey::<Bls12381G2Impl>::from_be_bytes(&other_secret)
+        let other = BlsSecretKey::<BlsScIetf>::from_bytes(&other_secret)
             .unwrap()
             .public_key();
         assert!(!NativeBlsModule
             .verify_signature(&signature, &message, &other.to_bytes())
             .unwrap());
+        assert!(other.verify(&message, &decoded).is_err());
     }
 }
 
 #[test]
-fn should_match_frozen_secure_aggregates() {
+fn should_match_frozen_secure_aggregates_in_both_backends() {
     let vectors = corpus().secure_aggregation;
     assert_eq!(vectors.len(), 5);
     for v in vectors {
@@ -129,31 +158,41 @@ fn should_match_frozen_secure_aggregates() {
         let public_keys: Vec<_> = v
             .public_keys
             .iter()
-            .map(|key| PublicKey::<Bls12381G2Impl>::try_from(bytes::<48>(key).as_slice()).unwrap())
+            .map(|key| PublicKey::try_from(bytes::<48>(key).as_slice()).unwrap())
             .collect();
         let signatures: Vec<_> = v
             .secret_keys
             .iter()
             .map(|key| {
-                SecretKey::<Bls12381G2Impl>::from_be_bytes(&bytes(key))
+                SecretKey::from_be_bytes(&bytes(key))
                     .unwrap()
-                    .sign(SignatureSchemes::Basic, &message)
+                    .sign(&message)
                     .unwrap()
             })
             .collect();
-        let AggregateSignature::Basic(point) =
-            AggregateSignature::from_signatures_secure(&signatures, &public_keys).unwrap()
-        else {
-            panic!("expected Basic");
-        };
-        assert_eq!(point.to_compressed(), bytes::<96>(&v.signature));
-        assert!(Signature::Basic(point)
-            .verify_secure(&public_keys, &message)
-            .is_ok());
+        let point = Signature::aggregate_secure(&signatures, &public_keys).unwrap();
+        assert_eq!(point.to_bytes(), bytes::<96>(&v.signature));
+        assert!(point.verify_secure(&public_keys, &message).is_ok());
+        let candidate_keys: Vec<_> = v
+            .secret_keys
+            .iter()
+            .map(|key| BlsSecretKey::<BlsScIetf>::from_bytes(&bytes(key)).unwrap())
+            .collect();
+        let pks: Vec<_> = candidate_keys.iter().map(|key| key.public_key()).collect();
+        let sigs: Vec<_> = candidate_keys
+            .iter()
+            .map(|key| key.sign(&message))
+            .collect();
+        let refs: Vec<_> = pks.iter().collect();
+        let candidate =
+            BlsSignature::secure_aggregate(&sigs.iter().collect::<Vec<_>>(), &refs).unwrap();
+        assert_eq!(candidate.to_bytes(), bytes::<96>(&v.signature));
+        assert!(candidate.secure_verify_aggregates(&message, &refs).is_ok());
         let mut wrong_message = message;
         wrong_message.push(1);
-        assert!(Signature::Basic(point)
-            .verify_secure(&public_keys, &wrong_message)
+        assert!(point.verify_secure(&public_keys, &wrong_message).is_err());
+        assert!(candidate
+            .secure_verify_aggregates(&wrong_message, &refs)
             .is_err());
     }
 }
@@ -164,14 +203,20 @@ fn should_preserve_historical_scalar_reduction() {
     assert_eq!(vectors.len(), 4);
     for v in vectors {
         let input = bytes(&v.input);
-        let key = SecretKey::<Bls12381G2Impl>::from_be_bytes(&input).into_option();
+        let key = SecretKey::from_be_bytes(&input);
         assert_eq!(
             key.as_ref().map(|key| hex::encode(key.to_be_bytes())),
             v.normalized,
             "{}",
             v.name
         );
-        if v.normalized.is_some() {
+        // The strict upstream constructor cannot replace the historical DPP parser directly.
+        assert!(
+            BlsSecretKey::<BlsScIetf>::from_bytes(&input).is_err(),
+            "{}",
+            v.name
+        );
+        if let Some(normalized) = v.normalized {
             assert_eq!(
                 hex::encode(NativeBlsModule.private_key_to_public_key(&input).unwrap()),
                 v.public_key.unwrap()
@@ -180,6 +225,9 @@ fn should_preserve_historical_scalar_reduction() {
                 hex::encode(NativeBlsModule.sign(b"scalar boundary", &input).unwrap()),
                 v.signature.unwrap()
             );
+            let reduced = dash_pkc::bls::Fr::from_bendian_reduce(&input).unwrap();
+            let candidate = BlsSecretKey::<BlsScIetf>::try_from(reduced).unwrap();
+            assert_eq!(*candidate.to_bytes(), bytes::<32>(&normalized));
         } else {
             assert!(matches!(
                 NativeBlsModule.sign(b"scalar boundary", &input),
@@ -201,6 +249,7 @@ fn should_preserve_identity_key_parsing_without_accepting_identity_signatures() 
     signature[0] = 0xc0;
     // This is historical parsing behavior, not permission to verify an identity signature.
     assert!(NativeBlsModule.validate_public_key(&public_key).is_ok());
+    assert!(BlsPublicKey::<BlsScIetf>::from_bytes(&public_key).is_err());
     assert!(!NativeBlsModule
         .verify_signature(&signature, b"identity", &public_key)
         .unwrap());
@@ -208,6 +257,43 @@ fn should_preserve_identity_key_parsing_without_accepting_identity_signatures() 
     assert!(!NativeBlsModule
         .verify_signature(&signature, b"identity", &valid)
         .unwrap());
+
+    let identity_key = PublicKey::try_from(public_key.as_slice()).unwrap();
+    let identity_signature = Signature::from_compressed(&signature).unwrap();
+    assert_eq!(identity_key, PublicKey::default());
+    assert_eq!(identity_key.to_bytes(), public_key);
+    assert_eq!(identity_key.to_legacy_bytes().unwrap(), public_key);
+    assert_eq!(identity_signature.to_bytes(), signature);
+
+    let v = &corpus().basic[0];
+    let message = hex::decode(&v.message).unwrap();
+    let valid_key = PublicKey::try_from(valid.as_slice()).unwrap();
+    let valid_signature = Signature::from_compressed(&bytes(&v.signature)).unwrap();
+    assert!(valid_signature.verify(&identity_key, &message).is_err());
+    assert!(identity_signature.verify(&valid_key, &message).is_err());
+    assert!(valid_signature
+        .verify_secure(&[identity_key], &message)
+        .is_err());
+    assert!(identity_signature
+        .verify_secure(&[valid_key], &message)
+        .is_err());
+    assert!(Signature::aggregate_secure(&[identity_signature], &[valid_key]).is_err());
+    assert!(Signature::aggregate_secure(&[valid_signature], &[identity_key]).is_err());
+}
+
+#[test]
+fn should_tell_the_identity_key_from_a_valid_one() {
+    let mut identity = [0; 48];
+    identity[0] = 0xc0;
+    assert!(PublicKey::try_from(identity.as_slice())
+        .unwrap()
+        .is_identity());
+    assert!(PublicKey::default().is_identity());
+
+    let valid = bytes::<48>(&corpus().basic[0].public_key);
+    assert!(!PublicKey::try_from(valid.as_slice()).unwrap().is_identity());
+    let secret = SecretKey::from_be_bytes(&bytes(&corpus().basic[0].secret_key)).unwrap();
+    assert!(!secret.public_key().is_identity());
 }
 
 #[test]
@@ -243,6 +329,7 @@ fn should_preserve_invalid_input_results_and_validation_order() {
         assert!(!NativeBlsModule
             .verify_signature(&signature, b"", &public_key)
             .unwrap());
+        assert!(BlsSignature::<BlsScIetf>::from_bytes(&signature).is_err());
     }
     assert!(NativeBlsModule.sign(b"", &secret).is_ok());
 }
@@ -257,13 +344,13 @@ fn should_reject_points_outside_the_prime_order_subgroup() {
     signature[0] = 0xa0;
     signature[95] = 2;
     assert!(NativeBlsModule.validate_public_key(&public_key).is_err());
-    assert!(bool::from(
-        <Bls12381G2Impl as Pairing>::Signature::from_compressed(&signature).is_none()
-    ));
+    assert!(BlsPublicKey::<BlsScIetf>::from_bytes(&public_key).is_err());
+    assert!(Signature::from_compressed(&signature).is_none());
     let valid = bytes::<48>(&corpus().basic[0].public_key);
     assert!(!NativeBlsModule
         .verify_signature(&signature, b"", &valid)
         .unwrap());
+    assert!(BlsSignature::<BlsScIetf>::from_bytes(&signature).is_err());
 }
 
 #[test]
@@ -279,12 +366,11 @@ fn should_read_and_reemit_frozen_validator_storage() {
         assert_eq!(bincode::encode_to_vec(&validator, config).unwrap(), encoded);
         assert_eq!(serde_json::to_value(&validator).unwrap(), v.validator);
         if let Some(key) = &validator.public_key {
-            // Quorum storage uses Serde's fixed 48-byte tuple, without a length prefix.
+            // QuorumForSavingV1 uses bincode(with_serde): exactly 48 bytes, with no length prefix.
             let bytes = bincode::serde::encode_to_vec(key, config).unwrap();
-            assert_eq!(bytes, key.0.to_compressed());
+            assert_eq!(bytes, key.to_bytes());
             let decoded =
-                bincode::serde::decode_from_slice::<PublicKey<Bls12381G2Impl>, _>(&bytes, config)
-                    .unwrap();
+                bincode::serde::decode_from_slice::<PublicKey, _>(&bytes, config).unwrap();
             assert_eq!(decoded, (*key, 48));
         }
         assert_eq!(

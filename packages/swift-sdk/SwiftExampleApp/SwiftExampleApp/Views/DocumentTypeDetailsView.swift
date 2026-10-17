@@ -477,8 +477,9 @@ struct ExpandableIndexRowView: View {
 }
 
 /// One `propertyConstraints` rule: its name, the rule as declared, what it
-/// reads (properties, `$ownerId`, system times and heights, `countOf` and
-/// `sumOf` totals), and whether an owner change is judged against it too.
+/// reads (properties, `$ownerId`, system times, heights and revisions, the
+/// stored version through `$old.`, `countOf` and `sumOf` totals, values of
+/// referenced documents), and whether an owner change is judged against it too.
 struct PropertyConstraintRowView: View {
     let rule: DocumentPropertyConstraint
 
@@ -514,7 +515,7 @@ struct PropertyConstraintRowView: View {
 
             if rule.readsOwner {
                 Label(
-                    "Reads $ownerId, the document's owner: transfers and purchases are judged against this rule too.",
+                    "Reads the owner ($ownerId, $old.$ownerId, the owner before the write, or a total that depends on the owner): transfers and purchases are judged against this rule too.",
                     systemImage: "person.crop.circle.badge.checkmark"
                 )
                 .font(.caption2)
@@ -526,7 +527,17 @@ struct PropertyConstraintRowView: View {
                     .font(.caption2)
                     .foregroundColor(.teal)
                     .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name).readsSystem")
-                Text("A price update is judged against the rules reading $updatedAt or its block heights, and a transfer or purchase against those reading $transferredAt or its block heights.")
+                Text("A price update is judged against the rules reading $updatedAt or its block heights, a transfer or purchase against those reading $transferredAt or its block heights, and each of them against those reading $revision.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            if rule.readsStored {
+                Label("Reads the stored version ($old.), the one a write replaces", systemImage: "clock.arrow.circlepath")
+                    .font(.caption2)
+                    .foregroundColor(.orange)
+                    .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name).readsStored")
+                Text("A create has no stored version: there, and in the check before sending, every $old. read is absent.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
@@ -540,11 +551,21 @@ struct PropertyConstraintRowView: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
+
+            if !referencedReadsText.isEmpty {
+                Label("Reads referenced documents: \(referencedReadsText)", systemImage: "link")
+                    .font(.caption2)
+                    .foregroundColor(.blue)
+                    .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name).readsReferenced")
+                Text("The platform reads the referenced documents when it checks the references; the check before sending does not, so it cannot catch this rule.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding(.vertical, 4)
-        // Keeps the row's identifier on the row and the readsSystem and
-        // readsTotals lines' on those lines, rather than the row's on every
-        // child
+        // Keeps the row's identifier on the row and the readsSystem,
+        // readsStored, readsTotals and readsReferenced lines' on those lines,
+        // rather than the row's on every child
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("documentType.propertyConstraint.\(rule.name)")
     }
@@ -588,6 +609,18 @@ struct PropertyConstraintRowView: View {
             }
             .filter { seen.insert($0).inserted }
             .joined(separator: "; ")
+    }
+
+    /// The values the rule reads of referenced documents, repeats dropped,
+    /// each as `<reference>.<path> (<kind>)`: `pollId.status (text),
+    /// pollId.$ownerId (identifier)`. The Android example app builds the same
+    /// text, for cross-platform UAT: keep the two identical.
+    private var referencedReadsText: String {
+        var seen = Set<String>()
+        return rule.readsReferenced
+            .map { "\($0.reference).\($0.path) (\($0.kind.name))" }
+            .filter { seen.insert($0).inserted }
+            .joined(separator: ", ")
     }
 }
 

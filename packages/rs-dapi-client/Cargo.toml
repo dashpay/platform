@@ -25,7 +25,15 @@ offline-testing = []
 backon = { version = "1.3", default-features = false, features = [
   "tokio-sleep",
 ] }
-tokio = { version = "1.40", features = ["time"] }
+tokio = { version = "1.40", features = ["time", "net"] }
+# SOCKS5 proxy support (transport/proxy.rs).
+tokio-socks = { version = "0.5.3", default-features = false, features = [
+  "tokio",
+] }
+hyper-util = { version = "0.1.11", default-features = false, features = [
+  "tokio",
+] }
+tower-service = { version = "0.3" }
 # The native transport (tonic channel + TLS) comes from dapi-grpc's transport
 # feature; wasm builds use tonic-web-wasm-client instead and must not pull it.
 dapi-grpc = { path = "../dapi-grpc", features = [
@@ -73,6 +81,10 @@ tokio = { version = "1.40", features = ["macros", "rt", "test-util", "io-util"] 
 h2 = "0.4"
 hyper-util = { version = "0.1", features = ["tokio"] }
 tower = { version = "0.5", features = ["util"] }
+# tests/socks5_proxy.rs runs a TLS gRPC server on loopback.
+tonic = { version = "0.14.2", default-features = false, features = [
+  "router",
+] }
 
 [package.metadata.cargo-machete]
 

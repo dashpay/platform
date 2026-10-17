@@ -8968,7 +8968,6 @@ mod tests {
     use dashcore::blockdata::transaction::txout::TxOut;
     use dashcore::blockdata::transaction::Transaction;
     use dashcore::consensus::encode::serialize;
-    use dashcore::secp256k1::Secp256k1;
     use dashcore::{Network, ScriptBuf};
     use key_wallet::account::{Account, AccountType, StandardAccountType};
     use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
@@ -9127,8 +9126,7 @@ mod tests {
         let seed = mnemonic.to_seed("");
         let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
             .expect("master derivation must succeed");
-        let secp = Secp256k1::new();
-        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let xpub = ExtendedPubKey::from_priv(&master);
         let account = Account::from_xpub(
             None,
             AccountType::Standard {
@@ -9160,8 +9158,7 @@ mod tests {
         let seed = mnemonic.to_seed("");
         let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
             .expect("master derivation must succeed");
-        let secp = Secp256k1::new();
-        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let xpub = ExtendedPubKey::from_priv(&master);
         let account = Account::from_xpub(None, account_type, xpub, Network::Testnet)
             .expect("Account::from_xpub on a valid xpub must succeed");
         let mut accounts = key_wallet::AccountCollection::new();
@@ -9275,8 +9272,7 @@ mod tests {
         let seed = mnemonic.to_seed("");
         let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
             .expect("master derivation must succeed");
-        let secp = Secp256k1::new();
-        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let xpub = ExtendedPubKey::from_priv(&master);
         let account =
             Account::from_xpub(None, AccountType::ProviderOwnerKeys, xpub, Network::Testnet)
                 .expect("Account::from_xpub on a valid xpub must succeed");
@@ -9402,8 +9398,12 @@ mod tests {
             version: 1,
             mn_type: None,
             pro_tx_hash: dashcore::Txid::from_byte_array([7u8; 32]),
-            ip_address: 42,
-            port: 19999,
+            service_address: dashcore::sml::masternode_list_entry::MasternodeNetInfo::Legacy(
+                std::net::SocketAddr::new(
+                    std::net::Ipv6Addr::from(42u128.to_le_bytes()).into(),
+                    19999,
+                ),
+            ),
             script_payout: ScriptBuf::new(),
             inputs_hash: [3u8; 32].into(),
             platform_node_id: None,
@@ -10920,5 +10920,41 @@ mod tests {
                 .all(|a| matches!(a.state, AddressState::Used)),
             "every emitted marked-used address must carry used == true"
         );
+    }
+
+    /// A cold restore must hand every persisted owned DPNS label to the
+    /// in-memory identity, so a later capped fetch only adds to it and no
+    /// snapshot emitted before the next complete fetch drops an owned pick
+    /// that lies outside the fetched prefix.
+    #[test]
+    fn restored_identity_carries_its_persisted_dpns_names() {
+        use super::build_wallet_identity_bucket;
+        use crate::wallet_restore_types::{IdentityRestoreEntryFFI, WalletRestoreEntryFFI};
+        use std::ffi::CString;
+        use std::os::raw::c_char;
+
+        let labels: Vec<CString> = ["alice", "bob", "carol"]
+            .iter()
+            .map(|l| CString::new(*l).unwrap())
+            .collect();
+        let pointers: Vec<*const c_char> = labels.iter().map(|l| l.as_ptr()).collect();
+        let mut identity: IdentityRestoreEntryFFI = unsafe { std::mem::zeroed() };
+        identity.identity_id = [7; 32];
+        identity.dpns_names = pointers.as_ptr();
+        identity.dpns_names_count = pointers.len();
+        let entry = WalletRestoreEntryFFI {
+            wallet_id: [42; 32],
+            identities: &identity,
+            identities_count: 1,
+            ..Default::default()
+        };
+
+        let bucket = build_wallet_identity_bucket(&entry).expect("identity must restore");
+        let restored: Vec<&str> = bucket[&0]
+            .dpns_names
+            .iter()
+            .map(|n| n.label.as_str())
+            .collect();
+        assert_eq!(restored, ["alice", "bob", "carol"]);
     }
 }

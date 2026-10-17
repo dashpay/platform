@@ -812,6 +812,36 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
             "encoding GetDocumentsRequest"
         );
 
+        // The elements of a typed array are first indexed at protocol version
+        // 14, the first whose contract grammar (document meta-schema
+        // generation 3) admits an index on a typed array. A server before it
+        // knows neither operator, in the page or in any sub-query, which
+        // rides the same wire mapping.
+        let reads_array_elements = where_clauses
+            .iter()
+            .chain(
+                sub_queries
+                    .iter()
+                    .flat_map(|sub_query| sub_query.where_clauses.iter()),
+            )
+            .any(|clause| clause.operator.reads_array_elements());
+        if reads_array_elements
+            && platform_version
+                .dpp
+                .contract_versions
+                .document_type_versions
+                .schema
+                .document_type_schema
+                < 3
+        {
+            return Err(Error::Config(format!(
+                "contains and containsAny queries require protocol version 14+, the first \
+                 version whose contract grammar indexes the elements of a typed array; this \
+                 network runs protocol version {}",
+                platform_version.protocol_version
+            )));
+        }
+
         match feature_version {
             0 => {
                 if !sub_queries.is_empty() {
@@ -1462,6 +1492,8 @@ fn where_operator_to_proto(op: WhereOperator) -> ProtoWhereOperator {
         WhereOperator::BetweenExcludeRight => ProtoWhereOperator::BetweenExcludeRight,
         WhereOperator::In => ProtoWhereOperator::In,
         WhereOperator::StartsWith => ProtoWhereOperator::StartsWith,
+        WhereOperator::Contains => ProtoWhereOperator::Contains,
+        WhereOperator::ContainsAny => ProtoWhereOperator::ContainsAny,
     }
 }
 
@@ -1656,6 +1688,92 @@ mod encode_version_gate_tests {
         assert_eq!(selection.selector, ProtoTimeRangeSelector::Newest as i32);
         assert_eq!(selection.start_ms, None);
         assert_eq!(selection.grid, None, "a grid-less selection names no grid");
+    }
+
+    fn contains_query() -> DocumentQuery {
+        DocumentQuery::new(post_contract(), "post")
+            .expect("the fixture has this document type")
+            .with_where(WhereClause {
+                field: "hashtag".to_string(),
+                operator: WhereOperator::Contains,
+                value: platform_value!("dash"),
+            })
+    }
+
+    #[test]
+    fn should_refuse_to_encode_an_element_query_for_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+        let error =
+            GetDocumentsRequest::try_from_platform_versioned(contains_query(), platform_version)
+                .expect_err("protocol version 13's contract grammar indexes no typed array");
+        let message = match error {
+            Error::Config(message) => message,
+            other => panic!("expected Error::Config, got {other:?}"),
+        };
+        assert!(
+            message.contains("protocol version 14"),
+            "the refusal must name the real version floor, got: {message}"
+        );
+    }
+
+    /// A sub-query's clauses ride the same wire mapping as the page's, so an
+    /// element operator only there is refused before protocol version 14 too.
+    #[test]
+    fn should_refuse_to_encode_an_element_sub_query_for_protocol_version_13() {
+        use super::super::composite_document_query::CompositeSubQueryKind;
+
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+        for operator in [WhereOperator::Contains, WhereOperator::ContainsAny] {
+            let value = match operator {
+                WhereOperator::ContainsAny => platform_value!(["dash"]),
+                _ => platform_value!("dash"),
+            };
+            let query = DocumentQuery::new(post_contract(), "post")
+                .expect("the fixture has this document type")
+                .with_limit(10)
+                .with_sub_query(CompositeSubQuery {
+                    data_contract: post_contract(),
+                    document_type_name: "post".to_string(),
+                    kind: CompositeSubQueryKind::Documents,
+                    where_clauses: vec![WhereClause {
+                        field: "hashtag".to_string(),
+                        operator,
+                        value,
+                    }],
+                    order_by_clauses: vec![],
+                    limit: Some(10),
+                    binding: None,
+                });
+            let error = GetDocumentsRequest::try_from_platform_versioned(query, platform_version)
+                .expect_err("protocol version 13's contract grammar indexes no typed array");
+            let message = match error {
+                Error::Config(message) => message,
+                other => panic!("expected Error::Config, got {other:?}"),
+            };
+            assert!(
+                message.contains("contains and containsAny queries require protocol version 14"),
+                "{operator:?} in a sub-query must be refused with the version floor, got: \
+                 {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_encode_the_element_operators_for_protocol_version_14() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
+        for (operator, expected) in [
+            (WhereOperator::Contains, ProtoWhereOperator::Contains),
+            (WhereOperator::ContainsAny, ProtoWhereOperator::ContainsAny),
+        ] {
+            let mut query = contains_query();
+            query.where_clauses[0].operator = operator;
+            let request = GetDocumentsRequest::try_from_platform_versioned(query, platform_version)
+                .expect("protocol version 14 indexes typed arrays");
+            let Some(V1(v1)) = request.version else {
+                panic!("protocol version 14 encodes on the v1 wire");
+            };
+            assert_eq!(v1.where_clauses[0].operator, expected as i32);
+        }
     }
 
     #[test]

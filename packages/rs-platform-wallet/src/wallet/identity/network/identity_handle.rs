@@ -27,7 +27,9 @@ use dashcore::secp256k1::PublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::prelude::Identifier;
-use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType};
+use key_wallet::bip32::{
+    ApplicationKeyPurpose, ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType,
+};
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
 };
@@ -114,6 +116,78 @@ pub fn identity_auth_derivation_path_for_type(
     ]))
 }
 
+/// A DashPay Connect key: the DIP-13 application sub-features
+/// (dashpay/dips#191), whose paths key-wallet builds. Identity, request and
+/// contract ids are DIP-14 256-bit children, so two devices restored from
+/// one seed derive the same key without coordination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectKey {
+    /// `m/9'/coin'/5'/6'/0'/identity_id'/request_id'`; `request_id` is
+    /// `hash256` of the app's ephemeral public key.
+    SessionAuthentication {
+        identity_id: Identifier,
+        request_id: [u8; 32],
+    },
+    /// `m/9'/coin'/5'/7'/0'/identity_id'/contract_id'/purpose'`: one half of
+    /// the encryption pair an identity holds for a contract.
+    AppEncryption {
+        identity_id: Identifier,
+        contract_id: [u8; 32],
+        purpose: ApplicationKeyPurpose,
+    },
+}
+
+impl ConnectKey {
+    /// The key's derivation path on `network`.
+    pub fn derivation_path(&self, network: key_wallet::Network) -> DerivationPath {
+        match *self {
+            ConnectKey::SessionAuthentication {
+                identity_id,
+                request_id,
+            } => DerivationPath::application_session_authentication_path(
+                network,
+                identity_id.to_buffer(),
+                request_id,
+            ),
+            ConnectKey::AppEncryption {
+                identity_id,
+                contract_id,
+                purpose,
+            } => DerivationPath::application_encryption_path(
+                network,
+                identity_id.to_buffer(),
+                contract_id,
+                purpose,
+            ),
+        }
+    }
+}
+
+/// Derive the ECDSA secp256k1 keypair of `key` from a master xpriv. Pure,
+/// like [`derive_ecdsa_identity_auth_keypair_from_master`], so it works for
+/// watch-only wallets whose seed the FFI resolves on demand.
+pub fn derive_connect_keypair_from_master(
+    master: &ExtendedPrivKey,
+    network: key_wallet::Network,
+    key: ConnectKey,
+) -> Result<DerivedIdentityAuthKey, PlatformWalletError> {
+    use key_wallet::bip32::ExtendedPubKey;
+
+    let path = key.derivation_path(network);
+    // See `derive_ecdsa_identity_auth_keypair_from_master` for why the
+    // intermediate `ExtendedPrivKey` needs no explicit wipe.
+    let derived = master.derive_priv(&path).map_err(|e| {
+        PlatformWalletError::InvalidIdentityData(format!("Failed to derive connect key: {e}"))
+    })?;
+    let extended_pub = ExtendedPubKey::from_priv(&derived);
+
+    Ok(DerivedIdentityAuthKey {
+        derivation_path: path,
+        private_key: Zeroizing::new(derived.private_key.to_secret_bytes()),
+        public_key: extended_pub.public_key.serialize(),
+    })
+}
+
 /// One ECDSA identity-authentication keypair derived from a master
 /// xpriv at a specific `(identity_index, key_index)` slot. Wraps
 /// the secret scalar in [`Zeroizing`] so it is wiped on drop —
@@ -147,7 +221,6 @@ pub fn derive_ecdsa_identity_auth_keypair_from_master(
     identity_index: u32,
     key_index: u32,
 ) -> Result<DerivedIdentityAuthKey, PlatformWalletError> {
-    use dashcore::secp256k1::Secp256k1;
     use key_wallet::bip32::ExtendedPubKey;
 
     let path = identity_auth_derivation_path_for_type(
@@ -156,7 +229,6 @@ pub fn derive_ecdsa_identity_auth_keypair_from_master(
         identity_index,
         key_index,
     )?;
-    let secp = Secp256k1::new();
     // `ExtendedPrivKey` doesn't implement `Zeroize`, so we can't
     // wrap it in `Zeroizing` directly — but its inner
     // `secp256k1::SecretKey` does implement `Drop` with a memzero,
@@ -167,16 +239,16 @@ pub fn derive_ecdsa_identity_auth_keypair_from_master(
     // returned `private_key` is wrapped in `Zeroizing` below so
     // the 32-byte scalar copy crossing the function boundary is
     // also scrubbed on the caller's drop.
-    let derived = master.derive_priv(&secp, &path).map_err(|e| {
+    let derived = master.derive_priv(&path).map_err(|e| {
         PlatformWalletError::InvalidIdentityData(format!(
             "Failed to derive private key at (identity={identity_index}, key={key_index}): {e}"
         ))
     })?;
-    let extended_pub = ExtendedPubKey::from_priv(&secp, &derived);
+    let extended_pub = ExtendedPubKey::from_priv(&derived);
 
     Ok(DerivedIdentityAuthKey {
         derivation_path: path,
-        private_key: Zeroizing::new(derived.private_key.secret_bytes()),
+        private_key: Zeroizing::new(derived.private_key.to_secret_bytes()),
         public_key: extended_pub.public_key.serialize(),
     })
 }
@@ -196,7 +268,6 @@ pub fn derive_identity_auth_keypair(
     identity_index: u32,
     key_index: u32,
 ) -> Result<(DerivationPath, ExtendedPrivKey, PublicKey), PlatformWalletError> {
-    use dashcore::secp256k1::Secp256k1;
     use key_wallet::bip32::ExtendedPubKey;
 
     let full_path = identity_auth_derivation_path(network, identity_index, key_index)?;
@@ -209,8 +280,7 @@ pub fn derive_identity_auth_keypair(
             ))
         })?;
 
-    let secp = Secp256k1::new();
-    let extended_pub = ExtendedPubKey::from_priv(&secp, &auth_key);
+    let extended_pub = ExtendedPubKey::from_priv(&auth_key);
     Ok((full_path, auth_key, extended_pub.public_key))
 }
 
@@ -434,7 +504,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             ))
         })?;
 
-        Ok(Zeroizing::new(secret_key.secret_bytes()))
+        Ok(Zeroizing::new(secret_key.to_secret_bytes()))
     }
 
     /// Get a read-lock handle to the shared [`WalletManager`].
@@ -641,5 +711,75 @@ mod tests {
                  keypair's pubkey (identity_index={identity_index})"
             );
         }
+    }
+
+    // ── DashPay Connect keys ──────────────────────────────────────────
+
+    const CONNECT_IDENTITY: [u8; 32] = [0x35; 32];
+    const CONNECT_LEAF: [u8; 32] = [0x6B; 32];
+
+    fn session_key() -> ConnectKey {
+        ConnectKey::SessionAuthentication {
+            identity_id: Identifier::from(CONNECT_IDENTITY),
+            request_id: CONNECT_LEAF,
+        }
+    }
+
+    fn encryption_key(purpose: ApplicationKeyPurpose) -> ConnectKey {
+        ConnectKey::AppEncryption {
+            identity_id: Identifier::from(CONNECT_IDENTITY),
+            contract_id: CONNECT_LEAF,
+            purpose,
+        }
+    }
+
+    /// The keys key-wallet pins for these inputs; a change orphans every key
+    /// already registered on-chain. The public key is the compressed point of
+    /// the returned scalar.
+    #[test]
+    fn connect_keypairs_match_the_pinned_vectors() {
+        use dashcore::secp256k1::{PublicKey as SecpPublicKey, SecretKey};
+
+        for (network, key, expected) in [
+            (
+                Network::Testnet,
+                session_key(),
+                "022c8b2e806244482374b1caf8306146dc03aad3b99a5954efd5e70a0eddd37a5d",
+            ),
+            (
+                Network::Mainnet,
+                encryption_key(ApplicationKeyPurpose::Encryption),
+                "03e989de1b62f137231cc06659c810c17100becd1f5e23d5710faa7602769fe434",
+            ),
+        ] {
+            let derived = derive_connect_keypair_from_master(&master_for(network), network, key)
+                .expect("connect derive");
+            assert_eq!(hex::encode(derived.public_key), expected);
+            assert_eq!(derived.derivation_path, key.derivation_path(network));
+
+            let secret: [u8; 32] = *derived.private_key;
+            let sk = SecretKey::from_secret_bytes(secret).expect("valid scalar");
+            assert_eq!(
+                SecpPublicKey::from_secret_key(&sk).serialize(),
+                derived.public_key
+            );
+        }
+    }
+
+    /// The two halves of an encryption pair and the session key are distinct.
+    #[test]
+    fn connect_keys_are_distinct_per_kind_and_purpose() {
+        let master = master_for(Network::Testnet);
+        let derive = |key| {
+            derive_connect_keypair_from_master(&master, Network::Testnet, key)
+                .expect("connect derive")
+                .public_key
+        };
+        let session = derive(session_key());
+        let encryption = derive(encryption_key(ApplicationKeyPurpose::Encryption));
+        let decryption = derive(encryption_key(ApplicationKeyPurpose::Decryption));
+        assert_ne!(session, encryption);
+        assert_ne!(session, decryption);
+        assert_ne!(encryption, decryption);
     }
 }

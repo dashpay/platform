@@ -46,14 +46,17 @@ The refusals below are `InvalidContractStructure` (10231) unless a bullet says o
 
 - `$createdAt` must be in `required`.
 - Refused together with `documentsKeepHistory: true` (Drive never deletes a document whose type keeps history), with `indexOnly: true` (there is no stored row to delete by id), and on a type with a contested index (a contested document waits in its vote poll, and could expire before it is stored).
+- A summed property ([`summable`, `averageable`, `documentsSummable` or `documentsAverageable`](aggregates.md)) declares a `minimum` of at least 0, or a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27, `max_expiring_signed_summed_value_magnitude`). Deleting an expired document takes its value out of the type's sums at the end of a block, with no transition to refuse: removing values that are never negative only lowers the sums, and values this small keep them in the signed 64-bit range short of 2^36 documents. Checked when a contract is registered or updated, like the bounds below.
 - At least `min_document_ttl_seconds` and at most `max_document_ttl_seconds` of `SystemLimits`: 3600 and 31536000 at protocol version 14. The meta-schema itself admits 1 to 4294967295, so a `ttl` of 0 is a `JsonSchemaError` (10101) and one outside the narrower bounds is 10231.
 - For references, a type with a `ttl` is deletable. A `permanentDocument` reference may not point at it, one found by `findBy` or with `inList` included (`ReferencedDocumentTypeDeletableError`, 40122); a `deletableDocument` reference may. See [References](refers-to.md).
 
-Everything else combines with a `ttl`: mutable types, `transferable`, `tradeMode`, `moderatorAbilities.delete`, `creationRestrictionMode`, count, sum and ranked indexes, `timeRange` indexes with or without their own `ttl`, references declared on the type, action fees and token costs.
+Everything else combines with a `ttl`: mutable types, `transferable`, `tradeMode`, `moderatorAbilities.delete`, `creationRestrictionMode`, count, sum and ranked indexes, `timeRange` indexes with or without their own `ttl`, references declared on the type, action fees and token costs, with a summed property bounded as above.
 
 ### On update
 
 An update may not add, remove or change the `ttl` of an existing document type. Every stored document has the expiry it was written and paid with: adding one would leave stored documents that the cleanup cannot find, removing it would leave entries that delete documents the type says live forever, and changing it would move expiries away from what was paid for. A document type added by an update may declare a `ttl` freely.
+
+Nor may an update raise the `maxItems` of a [typed array an index names](indexes.md#typed-arrays) on a type with a `ttl` (`DocumentTypeUpdateError`, 40212). A document's create prepaid its deletion by the index entries that bound allows, and a replace pays only for the bytes it adds, so a raised bound would let a stored document grow a cleanup it never paid for.
 
 ## See also
 
