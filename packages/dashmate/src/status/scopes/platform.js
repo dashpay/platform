@@ -49,11 +49,19 @@ export default function getPlatformScopeFactory(
       rpcClient.getBlockchainInfo(),
     ]);
 
-    const {
-      result: {
-        softforks: { mn_rr: mnRR },
-      },
-    } = blockchainInfo;
+    // Core v24 omits softforks from getblockchaininfo unless started with
+    // -deprecatedrpc=softforks and reports them in getdeploymentinfo. Core v23 has no
+    // getdeploymentinfo, so softforks is read first.
+    const deployments = blockchainInfo.result.softforks
+      ?? (await rpcClient.getDeploymentInfo()).result?.deployments;
+
+    const mnRR = deployments?.mn_rr;
+
+    // getPlatformScope reads the mn_rr deployment outside its try, so a missing or malformed
+    // deployment has to fail here, where it is handled as unavailable Core info.
+    if (typeof mnRR?.active !== 'boolean' || !Number.isInteger(mnRR.height)) {
+      throw new Error(`Core did not report a valid mn_rr deployment: ${JSON.stringify(mnRR)}`);
+    }
 
     const {
       result: {
@@ -336,7 +344,7 @@ export default function getPlatformScopeFactory(
     } catch (e) {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
-        console.error('Could not get MNSync from core', e);
+        console.error('Could not get sync status and platform activation from Core', e);
       }
     }
 
