@@ -3556,4 +3556,224 @@ mod tests {
             );
         }
     }
+
+    mod hash_key_data {
+        use super::*;
+        use crate::execution::check_tx::CheckTxLevel;
+        use crate::platform_types::platform::PlatformRef;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::consensus::basic::BasicError;
+        use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
+        use simple_signer::signer::SimpleSigner;
+        use std::collections::BTreeMap;
+
+        const HASH_KEY_ID: u32 = 1;
+
+        /// A platform at `platform_version` holding an identity with only a master key, and an
+        /// identity update, signed by that key, adding a hash key of `key_type` whose data has
+        /// `data_len` bytes. Hash keys carry no proof of possession, so the key data is all that
+        /// can be wrong with it.
+        async fn identity_update_adding_a_hash_key(
+            key_type: KeyType,
+            data_len: usize,
+            platform_version: &PlatformVersion,
+        ) -> (TempPlatform<MockCoreRPCLike>, StateTransition) {
+            let platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(platform_version.protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let mut rng = StdRng::seed_from_u64(417);
+            let (master_key, master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+            let mut signer = SimpleSigner::default();
+            signer.add_identity_public_key(master_key.clone(), master_private_key);
+            let identity: Identity = IdentityV0 {
+                id: Identifier::random_with_rng(&mut rng),
+                public_keys: BTreeMap::from([(master_key.id(), master_key.clone())]),
+                balance: dash_to_credits!(0.1),
+                revision: 0,
+            }
+            .into();
+            platform
+                .drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add a new identity");
+
+            let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![IdentityPublicKeyInCreationV0 {
+                    id: HASH_KEY_ID,
+                    key_type,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    contract_bounds: None,
+                    read_only: false,
+                    data: vec![0x5a; data_len].into(),
+                    signature: Default::default(),
+                }
+                .into()],
+                disable_public_keys: vec![],
+                user_fee_increase: 0,
+                signature_public_key_id: master_key.id(),
+                signature: Default::default(),
+            }
+            .into();
+            let mut transition: StateTransition = update_transition.into();
+            let signable_bytes = transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+            transition.set_signature(
+                signer
+                    .sign(&master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+            (platform, transition)
+        }
+
+        fn check_tx(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) -> Vec<ConsensusError> {
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            platform
+                .check_tx(
+                    &transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize"),
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("expected to check tx")
+                .errors
+        }
+
+        fn process_block(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) -> StateTransitionExecutionResult {
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize")],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+            processing_result.execution_results()[0].clone()
+        }
+
+        /// A hash key's data is the hash itself, so from protocol version 14 an identity update
+        /// adding one whose data is not 20 bytes fails basic structure validation: check_tx
+        /// refuses it with a consensus error, and a block refuses it unpaid, like any other
+        /// basic structure failure.
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_identity_update_adding_a_hash_key_of_the_wrong_size() {
+            let platform_version = PlatformVersion::latest();
+            for (key_type, data_len) in [
+                (KeyType::ECDSA_HASH160, 0),
+                (KeyType::ECDSA_HASH160, 19),
+                (KeyType::ECDSA_HASH160, 21),
+                (KeyType::BIP13_SCRIPT_HASH, 19),
+                (KeyType::EDDSA_25519_HASH160, 19),
+            ] {
+                let (platform, transition) =
+                    identity_update_adding_a_hash_key(key_type, data_len, platform_version).await;
+
+                let errors = check_tx(&platform, &transition, platform_version);
+                assert_matches!(
+                    errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::InvalidIdentityPublicKeyDataError(error)
+                    )] if error.public_key_id() == HASH_KEY_ID,
+                    "{key_type} with {data_len} bytes: {errors:?}"
+                );
+
+                let execution = process_block(&platform, &transition, platform_version);
+                assert_matches!(
+                    execution,
+                    StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(BasicError::InvalidIdentityPublicKeyDataError(
+                            _
+                        ))
+                    ),
+                    "{key_type} with {data_len} bytes"
+                );
+            }
+        }
+
+        /// Protocol version 13 does not check the size of a hash key's data, so such a key fails
+        /// once its hash is taken, as an internal error that keeps the transition out of every
+        /// block; that history replays unchanged.
+        #[tokio::test]
+        async fn should_fail_an_identity_update_adding_a_hash_key_of_the_wrong_size_internally_at_protocol_version_13(
+        ) {
+            let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+            let (platform, transition) =
+                identity_update_adding_a_hash_key(KeyType::ECDSA_HASH160, 19, platform_version)
+                    .await;
+            assert_matches!(
+                process_block(&platform, &transition, platform_version),
+                StateTransitionExecutionResult::InternalError(_)
+            );
+        }
+
+        /// The same identity update with 20 bytes of hash key data adds the key, so the refusals
+        /// above come from the key data alone.
+        #[tokio::test]
+        async fn should_add_a_hash_key_of_20_bytes_at_protocol_versions_13_and_14() {
+            for platform_version in [
+                PlatformVersion::get(13).expect("expected protocol version 13"),
+                PlatformVersion::latest(),
+            ] {
+                let (platform, transition) =
+                    identity_update_adding_a_hash_key(KeyType::ECDSA_HASH160, 20, platform_version)
+                        .await;
+                assert_matches!(
+                    process_block(&platform, &transition, platform_version),
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    "at protocol version {}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+    }
 }
