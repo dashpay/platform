@@ -1,3 +1,25 @@
+## [5.0.0-rc.4](https://github.com/dashpay/platform/compare/v5.0.0-rc.3...v5.0.0-rc.4) (2026-10-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive-abci:** keep the operator identity when Core re-encodes the same operator key (#5461)
+* **dpp:** refuse hash key data that is not 20 bytes at protocol version 14 (#5463)
+
+### Bug Fixes
+
+* **dashmate:** show platform status on Dash Core v24 ([#5458](https://github.com/dashpay/platform/issues/5458))
+* **dpp:** refuse hash key data that is not 20 bytes at protocol version 14 ([#5463](https://github.com/dashpay/platform/issues/5463))
+* **drive-abci:** keep the operator identity when Core re-encodes the same operator key ([#5461](https://github.com/dashpay/platform/issues/5461))
+* **drive:** add masternode identity keys through a dedicated operation ([#5456](https://github.com/dashpay/platform/issues/5456))
+* **platform-wallet:** find a masternode's operator identity after Core re-encodes its operator key ([#5462](https://github.com/dashpay/platform/issues/5462))
+
+
+### Continuous Integration
+
+* fall back to GitHub-hosted runners when DASH_LIGHT_RUNNER is unset ([#5469](https://github.com/dashpay/platform/issues/5469))
+* run short PR jobs on self-hosted light runners ([#5468](https://github.com/dashpay/platform/issues/5468))
+
 ## [5.0.0-rc.3](https://github.com/dashpay/platform/compare/v5.0.0-rc.2...v5.0.0-rc.3) (2026-10-15)
 
 
