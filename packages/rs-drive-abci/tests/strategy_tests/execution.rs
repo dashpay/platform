@@ -769,6 +769,11 @@ pub(crate) async fn run_chain_for_strategy<'a>(
         .expect_submit_chain_lock()
         .returning(move |chain_lock: &ChainLock| Ok(chain_lock.block_height));
 
+    platform
+        .core_rpc
+        .expect_verify_chain_lock()
+        .returning(|_| Ok(true));
+
     create_chain_for_strategy(
         platform,
         block_count,
