@@ -406,7 +406,17 @@ unwrapped copy is allocated.
   depends on both). A sticky writable directory such as `/tmp` (`0o1777`)
   is accepted — the sticky bit is what stops one user replacing another's
   entries. A read-only group-accessible ancestor (`0o750`) is accepted too
-  — it only leaks filenames, never the 0600-protected vault contents. The
+  — it only leaks filenames, never the 0600-protected vault contents. On
+  Android, `system` (`AID_SYSTEM`, 1000) is trusted as well, both as an
+  owner and as the group of a group-writable ancestor: Android creates every
+  app's private storage beneath `system:system` `0771` directories (`/data`,
+  `/data/user/0`, `/data/data`), and no app can run as or join `system`.
+  The app's own per-app group (gid equal to its uid) is trusted as the group
+  of a group-writable ancestor too, because Android creates the app's
+  `files` and `databases` directories `0771` in that group. Other-writable
+  ancestors and ancestors writable by any other group are still refused
+  there. The trusted sets are `PLATFORM_IDS` and `trusted_groups` in
+  `src/parent_permissions.rs`, empty on every other target. The
   walk is Unix-only; Windows ACLs are not inspected (issue #3754).
   Each secret is capped at `MAX_SECRET_LEN` (8176 B) at the write
   boundary — still ~30× any mnemonic/seed/xpriv — so a single oversized
