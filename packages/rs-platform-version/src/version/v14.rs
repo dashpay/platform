@@ -2667,27 +2667,6 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     typed array and a `where`, and every contract that registers today
 ///     binds no typed array.
 ///
-/// 96. **Chain locks signed by quorums Platform does not hold yet**: a block
-///     proposal's chain lock is checked against the chain lock quorums
-///     Platform fetched at its last committed core height. When a quorum was
-///     mined after that height, inside the same DKG interval, or when the
-///     signing height lies between the two stored quorum sets after a jump of
-///     the core height, the chain lock is signed by quorums Platform does not
-///     hold, and `verify_chain_lock_locally` 0 rejected it although it was
-///     valid, failing rounds until Core produced a chain lock Platform could
-///     verify or one signed past the DKG interval. `verify_chain_lock_locally`
-///     1 (`DRIVE_ABCI_METHOD_VERSIONS_V10`) rejects locally only when Platform
-///     holds exactly the quorums active at the signing height, using Dash
-///     Core's DKG mining schedule, and leaves the other chain locks to Core
-///     after Core's `verifychainlock` accepts their signature:
-///     `submitchainlock` skips the signature check for a height Core already
-///     has a chain lock at or above. So 1 accepts valid chain locks that 0
-///     rejected, and rejects forged ones that 0 left to that early return.
-///     A block committed at this version with a genuine chain lock, which an
-///     honest proposer always proposes, replays the same way under 1. A block
-///     whose forged chain lock 0 accepted through that early return cannot be
-///     applied by 1. A node running 0 refuses the proposals 1 accepts this way.
-///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's

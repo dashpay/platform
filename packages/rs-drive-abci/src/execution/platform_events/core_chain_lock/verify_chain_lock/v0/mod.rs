@@ -288,6 +288,44 @@ mod tests {
     }
 
     #[test]
+    fn should_keep_protocol_version_14_verdict_on_chain_lock_left_to_core_when_core_already_has_a_chain_lock_at_its_height(
+    ) {
+        // Protocol version 14 leaves a chain lock signed past the DKG interval of Platform's
+        // core height to submitchainlock without a signature check, and Core, already holding a
+        // chain lock at 1140, answers that height. Blocks committed under protocol version 14
+        // replay the same way only if it keeps accepting such a chain lock.
+        const CORE_BEST_CHAIN_LOCK_HEIGHT: u32 = 1140;
+        let mut platform = chain_lock_test_platform();
+        let scenario = QuorumMinedAfterCoreHeight::default();
+        let state = scenario.platform_state(&platform.platform.state.load());
+        let forged = sign_chain_lock(&TestQuorum::new(9, 0), 1128 + 8);
+
+        let mut core_rpc = MockCoreRPCLike::new();
+        core_rpc.expect_verify_chain_lock().times(0);
+        core_rpc
+            .expect_submit_chain_lock()
+            .times(1)
+            .returning(|_| Ok(CORE_BEST_CHAIN_LOCK_HEIGHT));
+        platform.core_rpc = core_rpc;
+
+        let result = platform
+            .platform
+            .verify_chain_lock_v0(
+                0,
+                &state,
+                &forged,
+                true,
+                PlatformVersion::get(14).expect("protocol version 14 exists"),
+            )
+            .expect("verification runs");
+
+        assert!(result.chain_lock_signature_is_deserializable);
+        assert_eq!(result.found_valid_locally, None);
+        assert_eq!(result.found_valid_by_core, None);
+        assert_eq!(result.core_is_synced, Some(true));
+    }
+
+    #[test]
     fn should_fail_verification_of_chain_lock_left_to_core_when_verifychainlock_fails() {
         // The block proposal turns this error into an invalid chain lock, as it does when
         // submitchainlock fails.
