@@ -13,6 +13,10 @@ use crate::wallet::PlatformWallet;
 use std::time::Duration;
 
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use dpp::prelude::Identifier;
+use key_wallet::account::derivation::AccountDerivation;
+use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::transaction_checking::transaction_context::TransactionContext;
 use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
 
@@ -122,13 +126,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Vec::new();
         let mut load_error: Option<PlatformWalletError> = None;
 
-        'load: for (expected_wallet_id, wallet_state) in wallets {
+        // Each wallet's start state, and whether it was re-read under the
+        // durable-cursor lock that `held` still holds (see the publication
+        // step below).
+        let mut pending: std::collections::VecDeque<(WalletId, ClientWalletStartState, bool)> =
+            wallets
+                .into_iter()
+                .map(|(wallet_id, state)| (wallet_id, state, false))
+                .collect();
+        // The durable-cursor lock, kept from a re-read to the publication of
+        // the wallet processed from it. Nothing between the two takes the
+        // lock, and it is released before the rollback below.
+        let mut held = None;
+
+        'load: while let Some((expected_wallet_id, wallet_state, reread)) = pending.pop_front() {
             let ClientWalletStartState {
                 mut wallet,
                 mut wallet_info,
                 identity_manager,
                 unused_asset_locks,
                 unconfirmed_outgoing_txs,
+                dashpay_backfill,
             } = wallet_state;
 
             // Replay the sends the host still holds as unconfirmed, before
@@ -222,14 +240,55 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 core_balance.immature(),
                 core_balance.locked(),
             );
-            let platform_info = PlatformWalletInfo {
+            let mut platform_info = PlatformWalletInfo {
                 observed_input_conflicts: Default::default(),
                 core_wallet: wallet_info,
                 generation: Arc::clone(&generation),
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),
+                dashpay_backfill,
+                rewind_barrier: Default::default(),
             };
+            // A restored outbound-account marker says the contact's external
+            // account was built from its current xpub, which suppresses the
+            // startup rebuild. It must not vouch for a pool the host kept
+            // across a rotation: the host replaces the account's xpub but may
+            // keep the old pool's addresses, and `send_payment` hands out a
+            // pooled address before deriving a new one. So any external pool
+            // holding an address its current xpub does not derive loses its
+            // contact's marker, and the first contact sweep rebuilds it from
+            // the current xpub, as every cold start did before the marker
+            // was persisted (dashpay/platform#4302 review).
+            //
+            // A backend that cannot keep markers durably never had one written
+            // by this process, and one it hands back may name an account it
+            // did not keep: none is trusted, so the sweep rebuilds each
+            // outbound account once, as before the marker was persisted. Its
+            // pools are then not validated at all: no result could keep a
+            // marker that is cleared regardless.
+            if crate::changeset::persists_outbound_account_markers(&*self.persister) {
+                let distrusted =
+                    distrust_markers_of_foreign_external_pools(&wallet, &mut platform_info);
+                if distrusted > 0 {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(expected_wallet_id),
+                        contacts = distrusted,
+                        "load: restored DashPay external pools hold addresses their current \
+                         xpub does not derive; their accounts will be rebuilt"
+                    );
+                }
+            } else {
+                let cleared = clear_restored_outbound_markers(&mut platform_info);
+                if cleared > 0 {
+                    tracing::info!(
+                        wallet_id = %hex::encode(expected_wallet_id),
+                        contacts = cleared,
+                        "load: this backend does not keep outbound-account markers durably; \
+                         restored markers are not trusted"
+                    );
+                }
+            }
             // Seed the double-spend screen's session memory from the
             // freshly restored state: it closes the race where SPV's
             // chainlock dispatcher promotion-evicts a restored spender
@@ -237,6 +296,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             crate::wallet::asset_lock::sync::recovery::seed_observed_input_conflicts(
                 &platform_info,
             );
+
+            // The cursor the host just handed back is the durable one; it
+            // seeds the shared record of it as the wallet is published below.
+            let loaded_cursor = platform_info.core_wallet.metadata.synced_height;
 
             if wallet_id != expected_wallet_id {
                 load_error = Some(PlatformWalletError::WalletCreation(format!(
@@ -265,17 +328,128 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             //
             // The existence check and the insert share one write-lock scope
             // so a concurrent loader can't slip between them (TOCTOU).
+            //
+            // The durable cursor is seeded in that same scope, under the
+            // cursor lock taken first (its order: cursor lock, then manager).
+            // The insert makes the wallet visible to the scanner and the
+            // event adapter; seeding after it would let an adapter commit or
+            // a reconcile record a newer durable height first, and the seed
+            // would then overwrite it with the stale loaded one. An entry a
+            // removed same-id predecessor left behind is what the host holds
+            // now — a commit of its may have been accepted after the start
+            // state was read — so it wins over the loaded cursor, and a
+            // loaded cursor below it is owed to the host like any in-memory
+            // reset, in this wallet's inherited epoch, so no coverage is
+            // recorded beside the host's higher cursor without a reset
+            // (dashpay/platform#4302 review).
+            //
+            // The same predecessor can also have changed the host's DashPay
+            // backfill record after the start state was read: stored coverage
+            // for a receival account this snapshot does not hold, or
+            // invalidated coverage this snapshot still carries. So when an
+            // entry shows a same-id wallet was published in this process, the
+            // record this wallet carries replaces the host's before the wallet
+            // is published, paired with the loaded cursor when that is below
+            // the host's (`settle_published_backfill`). The existence check
+            // comes first, so a wallet still registered under this id is never
+            // overwritten, and every publisher holds the cursor lock, so none
+            // appears before the insert.
+            //
+            // A record is not all such a predecessor can have changed. It can
+            // also have replaced a receival account's xpub under the same
+            // `(owner, contact, index)` key and stored coverage scanned with
+            // the new one. Publishing this snapshot would restore the old
+            // xpub beside that key, and the scan it then runs would vouch for
+            // scripts the host's account does not derive. Coverage carries no
+            // xpub to check against, so the snapshot itself is replaced: under
+            // the lock, where no publisher or adapter commit can move the
+            // host, the start state is read again, and this wallet is
+            // processed from that read and published WITHOUT releasing the
+            // lock in between. A same-id wallet can only appear by being
+            // published, which takes this lock, so nothing can register,
+            // rotate an account and be removed between the read and the
+            // publication. No token stands in for that guarantee: a cursor
+            // entry does not move on account writes or same-id lifecycle
+            // changes, so it cannot prove a read is still current
+            // (dashpay/platform#4302 review).
             {
-                let mut wm = self.wallet_manager.write().await;
-                if wm.get_wallet(&wallet_id).is_some() {
+                let mut durable_cursors = match held.take() {
+                    Some(guard) => guard,
+                    None => self.durable_cursors.lock().await,
+                };
+                if self
+                    .wallet_manager
+                    .read()
+                    .await
+                    .get_wallet(&wallet_id)
+                    .is_some()
+                {
                     continue 'load;
                 }
+                if !reread && durable_cursors.contains_key(&wallet_id) {
+                    let persister = Arc::clone(&self.persister);
+                    let current = match run_blocking_load(move || persister.load()).await {
+                        Ok(mut state) => state.wallets.remove(&expected_wallet_id),
+                        Err(e) => {
+                            load_error = Some(PlatformWalletError::from_load_failure(e));
+                            break 'load;
+                        }
+                    };
+                    match current {
+                        Some(state) => {
+                            pending.push_front((expected_wallet_id, state, true));
+                            held = Some(durable_cursors);
+                        }
+                        None => tracing::warn!(
+                            wallet_id = %hex::encode(expected_wallet_id),
+                            "load: the wallet is no longer on the host; not publishing its \
+                             stale snapshot"
+                        ),
+                    }
+                    continue 'load;
+                }
+                // Coverage for a receival account this wallet did not restore
+                // vouches for scripts nothing will watch; it is dropped here,
+                // and from the host before the wallet is published, exactly
+                // as registration does (dashpay/platform#4302 review).
+                let dropped = super::retain_coverage_for_held_accounts(
+                    &mut platform_info.dashpay_backfill,
+                    &platform_info.core_wallet,
+                );
+                match self.settle_published_backfill(
+                    &mut durable_cursors,
+                    wallet_id,
+                    std::mem::take(&mut platform_info.dashpay_backfill),
+                    dropped,
+                    loaded_cursor,
+                    loaded_cursor,
+                ) {
+                    Ok(record) => platform_info.dashpay_backfill = record,
+                    Err(e) => {
+                        load_error = Some(e);
+                        break 'load;
+                    }
+                }
+                let mut wm = self.wallet_manager.write().await;
                 if let Err(e) = wm.insert_wallet(wallet, platform_info) {
                     load_error = Some(PlatformWalletError::WalletCreation(format!(
                         "Failed to register persisted wallet in WalletManager: {}",
                         e
                     )));
                     break 'load;
+                }
+                let host_cursor = durable_cursors
+                    .get(&wallet_id)
+                    .map_or(loaded_cursor, |entry| entry.height);
+                durable_cursors
+                    .entry(wallet_id)
+                    .or_insert(crate::changeset::DurableCursor::at(loaded_cursor));
+                self.inherit_rewind_barrier(&mut wm, &wallet_id);
+                if loaded_cursor < host_cursor {
+                    if let Some(info) = wm.get_wallet_info_mut(&wallet_id) {
+                        let epoch = info.rewind_barrier.epoch();
+                        info.dashpay_backfill.owe_cursor(loaded_cursor, epoch);
+                    }
                 }
             }
             inserted_in_manager.push(wallet_id);
@@ -340,6 +514,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 Arc::clone(&self.lock_notify),
                 Arc::clone(&persister_dyn),
                 broadcaster,
+                Arc::clone(&self.sync_fault),
+                Arc::clone(&self.durable_cursors),
             );
 
             // Initialize the platform-address provider. If the snapshot
@@ -402,6 +578,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 }
             }
         }
+        // A `break` between a re-read and its publication leaves the lock
+        // held; the rollback must not run under it.
+        drop(held);
 
         if let Some(err) = load_error {
             // Walk back every wallet committed in this call so the
@@ -465,7 +644,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         }
                         continue;
                     }
-                    if let Err(e) = wm.remove_wallet(id) {
+                    if let Err(e) = self.remove_from_wallet_manager(&mut wm, id) {
                         tracing::warn!(
                             wallet_id = %hex::encode(id),
                             error = %e,
@@ -718,6 +897,7 @@ mod idempotent_load_tests {
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: self.pending.clone(),
+                    dashpay_backfill: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -784,6 +964,7 @@ mod idempotent_load_tests {
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
+                    dashpay_backfill: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -823,6 +1004,7 @@ mod idempotent_load_tests {
                 identity_manager: IdentityManagerStartState::default(),
                 unused_asset_locks: BTreeMap::new(),
                 unconfirmed_outgoing_txs: Vec::new(),
+                dashpay_backfill: Default::default(),
             };
             let mut wallets = BTreeMap::new();
             wallets.insert(self.wallet.compute_wallet_id(), entry());
@@ -1283,6 +1465,125 @@ mod idempotent_load_tests {
     }
 }
 
+/// Clear the outbound-account marker of every established contact whose
+/// restored DashPay external pool holds an address the account's current
+/// xpub (on `wallet`) does not derive at that index, so the contact sweep
+/// rebuilds the account instead of trusting the pool. Returns how many
+/// markers were cleared.
+fn distrust_markers_of_foreign_external_pools(
+    wallet: &key_wallet::Wallet,
+    info: &mut PlatformWalletInfo,
+) -> usize {
+    let foreign: Vec<_> = info
+        .core_wallet
+        .accounts
+        .dashpay_external_accounts
+        .iter()
+        // Only a marker can be distrusted, so a relationship without one
+        // costs no derivation.
+        .filter(|(key, _)| {
+            info.identity_manager
+                .managed_identity(&Identifier::from(key.user_identity_id))
+                .and_then(|managed| {
+                    managed
+                        .dashpay()
+                        .established_contacts()
+                        .get(&Identifier::from(key.friend_identity_id))
+                })
+                .is_some_and(|established| established.external_account_reference.is_some())
+        })
+        .filter(|(key, managed)| {
+            wallet
+                .accounts
+                .dashpay_external_accounts
+                .get(key)
+                .is_some_and(|account| {
+                    managed
+                        .managed_account_type()
+                        .address_pools()
+                        .into_iter()
+                        .any(|pool| !pool_derives_from(pool, account))
+                })
+        })
+        .map(|(key, _)| *key)
+        .collect();
+    let mut cleared = 0;
+    for key in foreign {
+        let owner = Identifier::from(key.user_identity_id);
+        let contact = Identifier::from(key.friend_identity_id);
+        let marker = info
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .and_then(|managed| managed.established_contact_mut(&contact))
+            .and_then(|established| established.external_account_reference.take());
+        if marker.is_some() {
+            cleared += 1;
+        }
+    }
+    cleared
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many restored pools [`pool_derives_from`] validated on this
+    /// thread, so a test can show a load did no derivation it did not need.
+    static POOL_VALIDATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many restored pools have been validated on this thread.
+#[cfg(test)]
+pub(crate) fn pool_validations_on_this_thread() -> usize {
+    POOL_VALIDATIONS.with(std::cell::Cell::get)
+}
+
+/// Clear every restored outbound-account marker on `info`. Returns how many
+/// were set.
+fn clear_restored_outbound_markers(info: &mut PlatformWalletInfo) -> usize {
+    let mut cleared = 0;
+    for owner in info.identity_manager.identity_ids() {
+        let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
+            continue;
+        };
+        let contacts: Vec<Identifier> = managed
+            .dashpay()
+            .established_contacts()
+            .keys()
+            .copied()
+            .collect();
+        for contact in contacts {
+            if let Some(established) = managed.established_contact_mut(&contact) {
+                if established.external_account_reference.take().is_some() {
+                    cleared += 1;
+                }
+            }
+        }
+    }
+    cleared
+}
+
+/// Whether every address in `pool` is the one `account` derives at its index.
+///
+/// Each restored index is derived on its own through key-wallet's
+/// [`AccountDerivation::derive_address_at`] — the derivation that generates
+/// the pool — so the cost follows the restored rows (a sparse row at a huge
+/// index costs one derivation) and the check cannot drift from address
+/// generation. The comparison is by script, which is what the pool watches
+/// and pays to, so an address encoded for another network still matches its
+/// key. A failed derivation counts as a mismatch, and a hardened pool never
+/// matches: its children cannot be derived from a public key.
+fn pool_derives_from(pool: &AddressPool, account: &key_wallet::Account) -> bool {
+    #[cfg(test)]
+    POOL_VALIDATIONS.with(|count| count.set(count.get() + 1));
+    if pool.pool_type == AddressPoolType::AbsentHardened {
+        return pool.addresses.is_empty();
+    }
+    pool.addresses.iter().all(|(index, info)| {
+        account
+            .derive_address_at(pool.pool_type, *index, None)
+            .is_ok_and(|address| address.script_pubkey() == info.script_pubkey)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1529,6 +1830,68 @@ mod tests {
             1,
             "dropping the manager must release the persister immediately — an \
              idle adapter holds no strong reference to await"
+        );
+    }
+
+    /// Restored-address validation costs one derivation per restored row: a
+    /// single sparse row at index 1,000,000 is checked directly, not by
+    /// deriving every index below it, and a row another xpub derived is still
+    /// caught. The expected addresses come from key-wallet's own per-index
+    /// derivation, so the validator cannot drift from it unnoticed
+    /// (dashpay/platform#4302 review).
+    #[test]
+    fn restored_address_validation_is_proportional_to_the_restored_rows() {
+        use key_wallet::account::derivation::AccountDerivation;
+        use key_wallet::account::AccountType;
+        use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::managed_account::ManagedCoreFundsAccount;
+
+        let secp = dashcore::secp256k1::Secp256k1::new();
+        let account = |seed: u8| key_wallet::Account {
+            parent_wallet_id: None,
+            account_type: AccountType::DashpayExternalAccount {
+                index: 0,
+                user_identity_id: [0xAA; 32],
+                friend_identity_id: [0x01; 32],
+            },
+            network: dashcore::Network::Testnet,
+            account_xpub: ExtendedPubKey::from_priv(
+                &secp,
+                &ExtendedPrivKey::new_master(dashcore::Network::Testnet, &[seed; 32])
+                    .expect("master"),
+            ),
+            is_watch_only: true,
+        };
+        let (current, previous) = (account(1), account(2));
+        let managed = ManagedCoreFundsAccount::from_account(&current);
+        let pool = managed.managed_account_type().address_pools()[0].clone();
+        assert_eq!(pool.pool_type, AddressPoolType::Absent);
+        assert!(super::pool_derives_from(&pool, &current));
+
+        let sparse = |from: &key_wallet::Account| {
+            let mut pool = pool.clone();
+            let mut info = pool.addresses[&0].clone();
+            info.index = 1_000_000;
+            info.address = from
+                .derive_address_at(AddressPoolType::Absent, 1_000_000, None)
+                .expect("key-wallet derives the row");
+            info.script_pubkey = info.address.script_pubkey();
+            pool.addresses.insert(1_000_000, info);
+            pool.highest_generated = Some(1_000_000);
+            pool
+        };
+
+        let started = std::time::Instant::now();
+        assert!(super::pool_derives_from(&sparse(&current), &current));
+        assert!(
+            !super::pool_derives_from(&sparse(&previous), &current),
+            "a row the current account does not derive is caught"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "validation must not derive every index below the sparse row"
         );
     }
 }
