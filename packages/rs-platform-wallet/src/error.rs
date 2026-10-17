@@ -1,3 +1,4 @@
+use dash_sdk::platform::dashpay::InvitationError;
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
 use dpp::consensus::ConsensusError;
@@ -8,6 +9,11 @@ use key_wallet::account::StandardAccountType;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::Network;
+
+pub use dash_sdk::platform::transition::asset_lock_submission::{
+    as_asset_lock_proof_cl_height_too_low, is_asset_lock_already_consumed,
+    is_instant_lock_proof_invalid,
+};
 
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]
@@ -996,6 +1002,22 @@ pub enum PlatformWalletError {
     ShieldedNotBound,
 }
 
+/// The SDK's invitation errors map onto the variants the wallet used before
+/// the invitation codec and claim moved into `dash-sdk`, so hosts see the same
+/// error codes and messages.
+impl From<InvitationError> for PlatformWalletError {
+    fn from(error: InvitationError) -> Self {
+        match error {
+            InvitationError::Invalid(message) => Self::InvalidIdentityData(message),
+            InvitationError::NetworkMismatch { invitation, wallet } => {
+                Self::InvitationNetworkMismatch { invitation, wallet }
+            }
+            InvitationError::NotChainLocked(message) => Self::AssetLockNotChainLocked(message),
+            InvitationError::Sdk(error) => Self::Sdk(error),
+        }
+    }
+}
+
 impl PlatformWalletError {
     /// A persister `load` failed.
     ///
@@ -1061,28 +1083,11 @@ impl PlatformWalletError {
     pub fn consensus_error(&self) -> Option<&ConsensusError> {
         match self {
             Self::Sdk(source) | Self::TokenOperationFailed { source, .. } => {
-                consensus_error_of(source)
+                source.consensus_error()
             }
             _ => None,
         }
     }
-}
-
-/// Check whether an SDK error indicates that an InstantSend lock proof was
-/// rejected by Platform (e.g. the IS lock has expired).
-///
-/// This matches the `InvalidInstantAssetLockProofSignatureError` consensus
-/// error returned by Drive when the instant lock signature cannot be verified
-/// (typically because the quorum that signed it has rotated out).
-pub fn is_instant_lock_proof_invalid(error: &dash_sdk::Error) -> bool {
-    use dpp::consensus::basic::BasicError;
-
-    matches!(
-        consensus_error_of(error),
-        Some(ConsensusError::BasicError(
-            BasicError::InvalidInstantAssetLockProofSignatureError(_),
-        ))
-    )
 }
 
 /// Check whether an SDK error is Platform rejecting a ChainLock asset-lock
@@ -1093,7 +1098,7 @@ pub fn is_asset_lock_proof_transaction_height_invalid(error: &dash_sdk::Error) -
     use dpp::consensus::basic::BasicError;
 
     matches!(
-        consensus_error_of(error),
+        error.consensus_error(),
         Some(ConsensusError::BasicError(
             BasicError::InvalidAssetLockProofTransactionHeightError(_),
         ))
@@ -1115,61 +1120,6 @@ pub fn is_asset_lock_proof_transaction_height_invalid(error: &dash_sdk::Error) -
 /// 300-second IS deadline elapses.
 pub fn is_instant_lock_timeout(error: &PlatformWalletError) -> bool {
     matches!(error, PlatformWalletError::FinalityTimeout(_))
-}
-
-/// Extract the `InvalidAssetLockProofCoreChainHeightError` (DPP
-/// consensus code 10506) from an SDK error if Platform rejected a
-/// ChainLock asset-lock proof because Platform's
-/// `last_committed_core_height` is still behind the proof's
-/// `core_chain_locked_height`.
-///
-/// Returns `Some(&error)` whenever the rejection matches, exposing
-/// `proof_core_chain_locked_height()` (what the wallet claimed) and
-/// `current_core_chain_locked_height()` (Platform's currently observed
-/// tip). The latter is what the wallet can log to attribute the lag
-/// to: small means routine race against Platform's
-/// `create-empty-blocks-interval` (3m on mainnet); large or stuck
-/// means the DAPI node we hit is genuinely behind / misbehaving.
-///
-/// Returns `None` for everything else. The check is stateless and
-/// re-evaluated on every CheckTx, so a resubmit after Platform
-/// catches up will pass — but Tenderdash's mempool caches rejected-tx
-/// hashes for ~24h on mainnet/testnet (`keep-invalid-txs-in-cache =
-/// true` in dashmate's tenderdash template), so the resubmit must
-/// carry a *different* signable-bytes hash to bypass the cache. The
-/// submission layer handles that by bumping
-/// `PutSettings::user_fee_increase` before re-issuing.
-///
-/// Companion to [`is_instant_lock_proof_invalid`]; both feed the
-/// CL-proof retry path in the identity registration / top-up flow.
-///
-/// **Coverage caveat:** only inspects the two `dash_sdk::Error`
-/// variants that today wrap consensus errors —
-/// `StateTransitionBroadcastError` (from `broadcast_and_wait`) and
-/// `Protocol(ProtocolError::ConsensusError)` (from validation). If a
-/// future SDK version surfaces the same `InvalidAssetLockProofCoreChainHeightError`
-/// through a different variant (e.g. wrapped in a transport-layer
-/// error type), the retry helper silently falls through to the "Sdk"
-/// passthrough. Re-audit this matcher whenever `dash_sdk::Error`
-/// gains new variants that can carry consensus errors.
-pub fn as_asset_lock_proof_cl_height_too_low(
-    error: &dash_sdk::Error,
-) -> Option<&dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError> {
-    use dpp::consensus::basic::BasicError;
-
-    let consensus_error = match error {
-        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
-            broadcast_err.cause.as_ref()
-        }
-        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
-        _ => None,
-    };
-    match consensus_error {
-        Some(ConsensusError::BasicError(
-            BasicError::InvalidAssetLockProofCoreChainHeightError(e),
-        )) => Some(e),
-        _ => None,
-    }
 }
 
 /// Extract the `AddressInvalidNonceError` (DPP consensus code 40603) when
@@ -1225,48 +1175,6 @@ pub fn promote_address_nonce_error_or_sdk(error: dash_sdk::Error) -> PlatformWal
     promote_address_nonce_error(&error).unwrap_or(PlatformWalletError::Sdk(error))
 }
 
-/// Extract the consensus verdict from the `dash_sdk::Error` shapes that can
-/// carry one — `StateTransitionBroadcastError` (wait-stream),
-/// `Protocol(ConsensusError)` (CheckTx), and the dapi-client's
-/// exhausted-retry envelope it recurses into. Shared by the typed-promotion
-/// matchers below; the same coverage caveat as
-/// [`as_asset_lock_proof_cl_height_too_low`] applies (re-audit when
-/// `dash_sdk::Error` gains consensus-carrying variants).
-fn consensus_error_of(error: &dash_sdk::Error) -> Option<&ConsensusError> {
-    match error {
-        dash_sdk::Error::StateTransitionBroadcastError(broadcast_err) => {
-            broadcast_err.cause.as_ref()
-        }
-        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(ce)) => Some(ce.as_ref()),
-        dash_sdk::Error::NoAvailableAddressesToRetry(inner) => consensus_error_of(inner),
-        _ => None,
-    }
-}
-
-/// Whether Platform rejected a transition because the exact asset-lock
-/// outpoint it submitted has already been consumed.
-///
-/// Matches the structured consensus error carried by both CheckTx
-/// (`Protocol(ConsensusError)`) and wait-stream
-/// (`StateTransitionBroadcastError`) failures. The outpoint comparison is
-/// deliberate: callers may only recognize a report for the tracked lock they
-/// actually submitted, never an unrelated outpoint mentioned by a malformed
-/// error. This signal alone does not authenticate terminal consumption.
-pub fn is_asset_lock_already_consumed(
-    error: &dash_sdk::Error,
-    out_point: &dashcore::OutPoint,
-) -> bool {
-    use dpp::consensus::basic::BasicError;
-
-    matches!(
-        consensus_error_of(error),
-        Some(ConsensusError::BasicError(
-            BasicError::IdentityAssetLockTransactionOutPointAlreadyConsumedError(e),
-        )) if e.transaction_id() == out_point.txid
-            && e.output_index() == out_point.vout as usize
-    )
-}
-
 /// Promote a document-trade consensus rejection to its typed
 /// [`PlatformWalletError`] so callers get structured data instead of a
 /// stringified verdict:
@@ -1283,7 +1191,7 @@ pub fn is_asset_lock_already_consumed(
 pub fn promote_document_trade_error(error: &dash_sdk::Error) -> Option<PlatformWalletError> {
     use dpp::consensus::state::state_error::StateError;
 
-    match consensus_error_of(error)? {
+    match error.consensus_error()? {
         ConsensusError::StateError(StateError::DocumentNotForSaleError(e)) => {
             Some(PlatformWalletError::DocumentNotForSale {
                 document_id: *e.document_id(),
@@ -1315,7 +1223,7 @@ pub fn promote_identity_insufficient_balance(
 ) -> Option<PlatformWalletError> {
     use dpp::consensus::state::state_error::StateError;
 
-    match consensus_error_of(error)? {
+    match error.consensus_error()? {
         ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(e)) => {
             Some(PlatformWalletError::InsufficientIdentityCredits {
                 identity_id: *e.identity_id(),
@@ -1757,90 +1665,6 @@ mod address_nonce_tests {
 }
 
 #[cfg(test)]
-mod asset_lock_already_consumed_tests {
-    use super::*;
-    use dash_sdk::error::StateTransitionBroadcastError;
-    use dashcore::hashes::Hash;
-    use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
-    use dpp::consensus::basic::UnsupportedProtocolVersionError;
-
-    fn out_point() -> dashcore::OutPoint {
-        dashcore::OutPoint::new(dashcore::Txid::all_zeros(), 7)
-    }
-
-    fn consensus_error() -> dpp::consensus::ConsensusError {
-        let out_point = out_point();
-        IdentityAssetLockTransactionOutPointAlreadyConsumedError::new(
-            out_point.txid,
-            out_point.vout as usize,
-        )
-        .into()
-    }
-
-    fn unrelated_consensus_error() -> dpp::consensus::ConsensusError {
-        UnsupportedProtocolVersionError::new(2, 1).into()
-    }
-
-    #[test]
-    fn recognizes_protocol_consensus_error_for_exact_outpoint() {
-        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
-            consensus_error(),
-        )));
-
-        assert!(is_asset_lock_already_consumed(&error, &out_point()));
-    }
-
-    #[test]
-    fn recognizes_broadcast_consensus_error_for_exact_outpoint() {
-        let error = dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
-            code: 10504,
-            message: "asset lock already consumed".to_string(),
-            cause: Some(consensus_error()),
-        });
-
-        assert!(is_asset_lock_already_consumed(&error, &out_point()));
-    }
-
-    #[test]
-    fn ignores_unrelated_errors_and_different_outpoints() {
-        let error = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
-            consensus_error(),
-        )));
-        let different_out_point = dashcore::OutPoint::new(dashcore::Txid::all_zeros(), 8);
-
-        assert!(!is_asset_lock_already_consumed(
-            &error,
-            &different_out_point
-        ));
-        assert!(!is_asset_lock_already_consumed(
-            &dash_sdk::Error::Generic("boom".to_string()),
-            &out_point()
-        ));
-
-        let unrelated_protocol = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(
-            Box::new(unrelated_consensus_error()),
-        ));
-        assert!(!is_asset_lock_already_consumed(
-            &unrelated_protocol,
-            &out_point()
-        ));
-
-        let unrelated_broadcast =
-            dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
-                code: 10504,
-                // Deliberately resembles the target message: matching must
-                // depend on the structured cause, never this display text.
-                message: "asset lock output already completely used".to_string(),
-                cause: Some(unrelated_consensus_error()),
-            });
-        assert!(!is_asset_lock_already_consumed(
-            &unrelated_broadcast,
-            &out_point()
-        ));
-    }
-}
-
-#[cfg(test)]
 mod identity_insufficient_balance_tests {
     use super::*;
     use dash_sdk::error::StateTransitionBroadcastError;
@@ -1927,5 +1751,40 @@ mod identity_insufficient_balance_tests {
             }
             other => panic!("expected preserved Sdk(Protocol(Generic)), got {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod invitation_error_mapping_tests {
+    use super::*;
+
+    /// The retry-later signal keeps its own wallet variant, apart from a link
+    /// that is simply invalid, so hosts can tell "try again" from "reject".
+    #[test]
+    fn should_map_each_invitation_error_to_its_wallet_variant() {
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::Invalid("bad link".to_string())),
+            PlatformWalletError::InvalidIdentityData(message) if message == "bad link"
+        ));
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::NotChainLocked("later".to_string())),
+            PlatformWalletError::AssetLockNotChainLocked(message) if message == "later"
+        ));
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::NetworkMismatch {
+                invitation: Network::Testnet,
+                wallet: Network::Mainnet,
+            }),
+            PlatformWalletError::InvitationNetworkMismatch {
+                invitation: Network::Testnet,
+                wallet: Network::Mainnet,
+            }
+        ));
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::Sdk(dash_sdk::Error::Generic(
+                "boom".to_string()
+            ))),
+            PlatformWalletError::Sdk(dash_sdk::Error::Generic(message)) if message == "boom"
+        ));
     }
 }
