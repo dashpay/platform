@@ -20,11 +20,23 @@ use crate::sqlite::util::safe_cast::i64_to_u32;
 /// covered receival accounts) only deletes the stored one. It is how upstream
 /// retracts coverage it can no longer vouch for, and a record with nothing
 /// covered claims nothing anyway.
+///
+/// # Errors
+///
+/// [`WalletStorageError::BlobTooLarge`] when the encoded cover set exceeds the
+/// limit [`load_for_wallet`] reads under. Refused before anything is written,
+/// so the round fails whole and the record and cursor already on file stand:
+/// a store that succeeded must never leave the next load unable to read it.
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     record: &DashPayBackfillRecord,
 ) -> Result<(), WalletStorageError> {
+    let encoded_len = record
+        .covered()
+        .len()
+        .saturating_mul(DashPayBackfillRecord::COVERED_ENTRY_LEN);
+    blob::check_size(i64::try_from(encoded_len).unwrap_or(i64::MAX))?;
     tx.prepare_cached("DELETE FROM dashpay_backfill WHERE wallet_id = ?1")?
         .execute(params![wallet_id.as_slice()])?;
     if record.is_empty() {

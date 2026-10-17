@@ -520,3 +520,96 @@ fn should_upgrade_a_v018_database_to_no_marker_and_no_backfill() {
         .expect("backfill load")
         .is_empty());
 }
+
+/// A backfill rewind can lower the cursor below the wallet's birth: the
+/// rescan hands the contact's checkpoint to `update_synced_height` unclamped.
+/// The relaunch must restore that cursor, not the `birth_height - 1` seed,
+/// or the range between them is skipped for a contact the record calls
+/// covered.
+#[test]
+fn should_restore_a_rewound_cursor_below_the_wallet_birth() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0x5E);
+    persister
+        .lock_conn_for_test()
+        .execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 501)",
+            params![w.as_slice()],
+        )
+        .expect("insert wallet born at 501");
+    store_and_flush(&persister, w, cursor_cs(1_000, false));
+    store_and_flush(
+        &persister,
+        w,
+        PlatformWalletChangeSet {
+            dashpay_backfill: Some(record(100, 1_000, vec![covered(0x01, 0x02, 0, 100)])),
+            ..cursor_cs(100, true)
+        },
+    );
+    drop(persister);
+
+    let wallet = reload_wallet(&path, &w);
+    assert_eq!(
+        wallet.wallet_info.metadata.synced_height, 100,
+        "the stored rewind must win over the birth seed"
+    );
+    assert_eq!(
+        wallet.dashpay_backfill.covered_from(
+            &Identifier::from([0x01; 32]),
+            &Identifier::from([0x02; 32]),
+            0
+        ),
+        Some(100)
+    );
+}
+
+/// A record whose encoded cover set the loader would refuse must be refused
+/// by the writer instead, before anything is written: the round fails whole,
+/// and the record and cursor already on file stand.
+#[test]
+fn should_refuse_a_cover_set_the_loader_could_not_read() {
+    let limit = platform_wallet_storage::sqlite::schema::blob::BLOB_SIZE_LIMIT_BYTES;
+    let max_entries = limit / DashPayBackfillRecord::COVERED_ENTRY_LEN;
+    let entries = |n: usize| -> Vec<DashPayBackfillCoveredContact> {
+        (0..n)
+            .map(|i| covered(0x01, 0x02, u32::try_from(i).expect("index fits"), 100))
+            .collect()
+    };
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0x5F);
+    ensure_wallet_meta(&persister, &w);
+    store_and_flush(&persister, w, cursor_cs(5_000, false));
+
+    // At the limit: stored, and readable on the next load.
+    let at_limit = record(1_000, 5_000, entries(max_entries));
+    store_and_flush(
+        &persister,
+        w,
+        PlatformWalletChangeSet {
+            dashpay_backfill: Some(at_limit.clone()),
+            ..cursor_cs(1_000, true)
+        },
+    );
+
+    // One entry over: refused, with nothing of the round written.
+    let err = persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                dashpay_backfill: Some(record(10, 5_000, entries(max_entries + 1))),
+                ..cursor_cs(10, true)
+            },
+        )
+        .expect_err("an unreadable cover set must be refused");
+    assert!(
+        !err.is_transient(),
+        "a retry would only be refused again: {err:?}"
+    );
+    assert_eq!(stored_cursor(&persister, &w), Some(1_000));
+    drop(persister);
+
+    let wallet = reload_wallet(&path, &w);
+    assert_eq!(wallet.dashpay_backfill, at_limit);
+    assert_eq!(wallet.wallet_info.metadata.synced_height, 1_000);
+}

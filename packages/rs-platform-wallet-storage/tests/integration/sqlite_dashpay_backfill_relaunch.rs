@@ -38,6 +38,7 @@ use platform_wallet::key_wallet_manager::WalletInterface;
 use platform_wallet::test_support::{
     encrypt_contact_xpub_for_test, test_platform_wallet_manager_with,
 };
+use platform_wallet::wallet::identity::ExternalAccountRegistration;
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::{
     derive_contact_xpub, ContactRequest, EstablishedContact, PlatformEventHandler, PlatformWallet,
@@ -466,7 +467,7 @@ async fn should_restore_the_outbound_account_marker_with_its_account_after_a_sql
         )
         .await
         .expect("register the outbound account");
-    assert_eq!(format!("{registration:?}"), "Built");
+    assert_eq!(registration, ExternalAccountRegistration::Built);
 
     let (xpub_before, pool_before) = {
         let state = wallet.state().await;
@@ -605,6 +606,6 @@ async fn should_restore_the_outbound_account_marker_with_its_account_after_a_sql
         )
         .await
         .expect("re-register after relaunch");
-    assert_eq!(format!("{again:?}"), "AlreadyExisted");
+    assert_eq!(again, ExternalAccountRegistration::AlreadyExisted);
     close(manager, wallet, persister).await;
 }

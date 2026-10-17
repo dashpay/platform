@@ -290,12 +290,15 @@ pub fn apply_persisted_core_state(
         wallet_info.metadata.last_processed_height =
             wallet_info.metadata.last_processed_height.max(h);
     }
-    // The max against the seeded `birth_height - 1` never undoes a stored
-    // DashPay backfill rewind: the rescan clamps its floor to the wallet's
-    // birth floor (`update_synced_height` in `reconcile_dashpay_rescan`), so
-    // a rewound cursor is never below the seed.
+    // The stored cursor is restored as written, not maxed against the seeded
+    // `birth_height - 1`: a DashPay backfill rewind can lower it below the
+    // wallet's birth (`reconcile_dashpay_rescan` passes the contact's
+    // checkpoint to `update_synced_height` unclamped), and the restored
+    // backfill record vouches for exactly that cursor. Taking the seed would
+    // skip the range between them for a contact the record calls covered.
+    // The FFI restore path assigns it the same way.
     if let Some(h) = core.synced_height {
-        wallet_info.metadata.synced_height = wallet_info.metadata.synced_height.max(h);
+        wallet_info.metadata.synced_height = h;
     }
 
     // Restore the highest applied chainlock when the persister carries it
