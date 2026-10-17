@@ -27,9 +27,6 @@ use std::sync::Arc;
 
 const PROFILE_DOCUMENT_TYPE: &str = "profile";
 
-/// The profile schema requires these three together (`dependentRequired`).
-const AVATAR_KEYS: [&str; 3] = ["avatarUrl", "avatarHash", "avatarFingerprint"];
-
 /// Most owners one profile query can carry: the Platform `In` clause
 /// cardinality cap, which is also the document-query limit.
 pub(crate) const MAX_PROFILE_OWNERS_PER_QUERY: usize = 100;
@@ -38,10 +35,9 @@ pub(crate) const MAX_PROFILE_OWNERS_PER_QUERY: usize = 100;
 /// [`Sdk::update_profile`] and omits it on [`Sdk::create_profile`].
 ///
 /// `avatar_hash` and `avatar_fingerprint` are computed by the caller from the
-/// avatar image bytes. The schema requires the three avatar fields together:
-/// a create sets all three or none, and an update that changes `avatar_url`
-/// must set both hashes with it. The two hashes are always set together, and a
-/// text field that is set is not empty. A field cannot be cleared.
+/// avatar image bytes. An update that changes `avatar_url` must set both hashes
+/// with it, and an update sets the two hashes together. A field cannot be
+/// cleared.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProfileFields {
     /// Display name (1 to 25 chars per DIP-15)
@@ -80,46 +76,6 @@ impl ProfileFields {
         }
         properties
     }
-
-    /// Refuse, before anything is signed, a create the schema would reject
-    /// after the broadcast: no field at all, or an empty text field.
-    fn ensure_valid_create(&self) -> Result<(), Error> {
-        if *self == ProfileFields::default() {
-            return Err(Error::Generic(
-                "a profile needs at least one field".to_string(),
-            ));
-        }
-        self.ensure_text_fields_not_empty()
-    }
-
-    /// Refuse, before anything is read or signed, an update that replaces only
-    /// one of the two avatar hashes, or sets an empty text field. A changed
-    /// `avatar_url` needs its hashes too; that is checked against the existing
-    /// document in [`replacement_document`].
-    fn ensure_valid_update(&self) -> Result<(), Error> {
-        if self.avatar_hash.is_some() != self.avatar_fingerprint.is_some() {
-            return Err(Error::Generic(
-                "avatarHash and avatarFingerprint must be set together".to_string(),
-            ));
-        }
-        self.ensure_text_fields_not_empty()
-    }
-
-    /// Every profile text field has `minLength` 1.
-    fn ensure_text_fields_not_empty(&self) -> Result<(), Error> {
-        let text_fields = [
-            ("displayName", &self.display_name),
-            ("publicMessage", &self.public_message),
-            ("avatarUrl", &self.avatar_url),
-        ];
-        match text_fields
-            .into_iter()
-            .find(|(_, value)| value.as_deref() == Some(""))
-        {
-            Some((name, _)) => Err(Error::Generic(format!("{name} must not be empty"))),
-            None => Ok(()),
-        }
-    }
 }
 
 impl Sdk {
@@ -148,10 +104,6 @@ impl Sdk {
 
     /// Create the profile document of `owner_id` from `fields`.
     ///
-    /// `fields` must set at least one field, no empty text field, and all of
-    /// the avatar fields or none; otherwise the call fails before anything is
-    /// signed.
-    ///
     /// `signing_key` must be a HIGH or CRITICAL authentication key of the
     /// owner. Returns the document as confirmed by Platform.
     pub async fn create_profile<S: Signer<IdentityPublicKey>>(
@@ -163,7 +115,7 @@ impl Sdk {
         signer: &S,
     ) -> Result<Document, Error> {
         self.ensure_dashpay_contract(dashpay_contract)?;
-        let properties = new_profile_properties(dashpay_contract, fields)?;
+        let properties = sanitized_properties(dashpay_contract, fields.overlay(BTreeMap::new()))?;
 
         let entropy: [u8; 32] = StdRng::from_os_rng().random();
         let id = Document::generate_document_id_v0(
@@ -188,10 +140,10 @@ impl Sdk {
     /// `fields` that are set so a partial update keeps the other fields,
     /// increment the revision and replace it.
     ///
-    /// Text fields that are set must not be empty, the two avatar hashes are set
-    /// together, and a changed `avatar_url` comes with both hashes; otherwise
-    /// the call fails before anything is signed. An unchanged `avatar_url` may
-    /// be sent without hashes, which keeps the existing ones.
+    /// The two avatar hashes are set together, and a changed `avatar_url` comes
+    /// with both hashes; otherwise the call fails before anything is signed. An
+    /// unchanged `avatar_url` may be sent without hashes, which keeps the
+    /// existing ones.
     ///
     /// `signing_key` must be a HIGH or CRITICAL authentication key of the
     /// owner. Returns the merged document as confirmed by Platform. Fails if
@@ -204,7 +156,6 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<Document, Error> {
-        fields.ensure_valid_update()?;
         let existing = self
             .get_profiles(dashpay_contract, &[owner_id])
             .await?
@@ -260,24 +211,23 @@ fn ensure_unique_owners(owner_ids: &[Identifier]) -> Result<(), Error> {
     Ok(())
 }
 
-/// The sanitized properties of a new profile built from `fields`.
-fn new_profile_properties(
-    dashpay_contract: &DataContract,
-    fields: ProfileFields,
-) -> Result<BTreeMap<String, Value>, Error> {
-    fields.ensure_valid_create()?;
-    let properties = fields.overlay(BTreeMap::new());
-    ensure_avatar_fields_together(&properties)?;
-    sanitized_properties(dashpay_contract, properties)
-}
-
 /// The replacement of `existing`: same id and owner, `fields` overlaid on its
 /// properties so a partial update keeps the others, revision incremented.
+///
+/// Refuses two patches the schema cannot see on the merged document, because
+/// the stored avatar fills the gap, and that would leave a hash of a different
+/// image under the avatar: one of the two hashes alone, and a changed
+/// `avatar_url` without both.
 fn replacement_document(
     existing: &Document,
     fields: ProfileFields,
     dashpay_contract: &DataContract,
 ) -> Result<Document, Error> {
+    if fields.avatar_hash.is_some() != fields.avatar_fingerprint.is_some() {
+        return Err(Error::Generic(
+            "avatarHash and avatarFingerprint must be set together".to_string(),
+        ));
+    }
     let url_changed = fields.avatar_url.as_deref().is_some_and(|url| {
         existing
             .properties()
@@ -290,9 +240,10 @@ fn replacement_document(
             "a changed avatarUrl needs its avatarHash and avatarFingerprint".to_string(),
         ));
     }
-    let merged = fields.overlay(existing.properties().clone());
-    ensure_avatar_fields_together(&merged)?;
-    let properties = sanitized_properties(dashpay_contract, merged)?;
+    let properties = sanitized_properties(
+        dashpay_contract,
+        fields.overlay(existing.properties().clone()),
+    )?;
     let revision = existing.revision().unwrap_or(INITIAL_REVISION) + 1;
     Ok(profile_document(
         existing.id(),
@@ -300,21 +251,6 @@ fn replacement_document(
         properties,
         Some(revision),
     ))
-}
-
-/// The avatar URL, hash and fingerprint are all present or all absent, as the
-/// schema requires; consensus would reject anything else after the broadcast.
-fn ensure_avatar_fields_together(properties: &BTreeMap<String, Value>) -> Result<(), Error> {
-    let present = AVATAR_KEYS
-        .iter()
-        .filter(|key| properties.contains_key(**key))
-        .count();
-    if present != 0 && present != AVATAR_KEYS.len() {
-        return Err(Error::Generic(
-            "avatarUrl, avatarHash and avatarFingerprint must be set together".to_string(),
-        ));
-    }
-    Ok(())
 }
 
 /// Normalize `properties` to the representations the profile schema expects.
@@ -454,123 +390,53 @@ mod tests {
         );
     }
 
-    /// A create must not broadcast a profile the schema rejects: avatar fields
-    /// set partially, no field at all, or an empty text field.
+    /// An update must not replace only one of the two hashes, though the
+    /// stored avatar keeps the merged document complete; replacing the whole
+    /// avatar, an unchanged URL on its own, or only unrelated fields stays
+    /// allowed.
     #[test]
-    fn should_reject_an_invalid_create_before_signing() {
-        let contract = dashpay_contract();
-        let create = |fields: ProfileFields| new_profile_properties(&contract, fields);
+    fn should_reject_an_update_with_one_hash() {
+        let existing = profile_document(
+            Identifier::new([0xD1; 32]),
+            Identifier::new([0x0E; 32]),
+            existing_full(),
+            Some(3),
+        );
+        let replace =
+            |fields: ProfileFields| replacement_document(&existing, fields, &dashpay_contract());
 
-        assert!(create(avatar_fields()).is_ok());
-        assert!(create(ProfileFields {
-            display_name: Some("Alice".into()),
-            ..Default::default()
-        })
-        .is_ok());
-
-        for partial in [
+        for allowed in [
+            avatar_fields(),
+            ProfileFields {
+                avatar_url: None,
+                ..avatar_fields()
+            },
             ProfileFields {
                 avatar_hash: None,
                 avatar_fingerprint: None,
                 ..avatar_fields()
             },
             ProfileFields {
-                avatar_url: None,
-                ..avatar_fields()
+                public_message: Some("hi".into()),
+                ..Default::default()
             },
+        ] {
+            assert!(replace(allowed.clone()).is_ok(), "{allowed:?}");
+        }
+        for one_hash in [
             ProfileFields {
                 avatar_fingerprint: None,
                 ..avatar_fields()
             },
             ProfileFields {
-                avatar_hash: Some([7u8; 32]),
+                avatar_hash: Some([9u8; 32]),
                 ..Default::default()
             },
         ] {
             assert!(
-                matches!(create(partial.clone()), Err(Error::Generic(_))),
-                "{partial:?}"
+                matches!(replace(one_hash.clone()), Err(Error::Generic(_))),
+                "{one_hash:?}"
             );
-        }
-        assert!(matches!(
-            create(ProfileFields::default()),
-            Err(Error::Generic(_))
-        ));
-        for empty in [
-            ProfileFields {
-                display_name: Some(String::new()),
-                ..avatar_fields()
-            },
-            ProfileFields {
-                public_message: Some(String::new()),
-                ..avatar_fields()
-            },
-            ProfileFields {
-                avatar_url: Some(String::new()),
-                ..avatar_fields()
-            },
-        ] {
-            assert!(
-                matches!(create(empty.clone()), Err(Error::Generic(_))),
-                "{empty:?}"
-            );
-        }
-    }
-
-    /// An update must not replace only one of the two hashes or set an empty
-    /// text field; replacing the whole avatar, an unchanged URL on its own, or
-    /// only unrelated fields stays allowed.
-    #[test]
-    fn should_reject_an_update_with_one_hash_or_an_empty_text_field() {
-        let fields_ok = |fields: ProfileFields| fields.ensure_valid_update().is_ok();
-
-        assert!(fields_ok(avatar_fields()));
-        assert!(fields_ok(ProfileFields {
-            avatar_url: None,
-            ..avatar_fields()
-        }));
-        assert!(fields_ok(ProfileFields {
-            avatar_hash: None,
-            avatar_fingerprint: None,
-            ..avatar_fields()
-        }));
-        assert!(fields_ok(ProfileFields {
-            public_message: Some("hi".into()),
-            ..Default::default()
-        }));
-
-        assert!(!fields_ok(ProfileFields {
-            avatar_fingerprint: None,
-            ..avatar_fields()
-        }));
-        assert!(!fields_ok(ProfileFields {
-            avatar_hash: Some([9u8; 32]),
-            ..Default::default()
-        }));
-        for (name, empty) in [
-            (
-                "displayName",
-                ProfileFields {
-                    display_name: Some(String::new()),
-                    ..Default::default()
-                },
-            ),
-            (
-                "publicMessage",
-                ProfileFields {
-                    public_message: Some(String::new()),
-                    ..Default::default()
-                },
-            ),
-            (
-                "avatarUrl",
-                ProfileFields {
-                    avatar_url: Some(String::new()),
-                    ..Default::default()
-                },
-            ),
-        ] {
-            assert!(!fields_ok(empty), "empty {name} accepted");
         }
     }
 
@@ -622,31 +488,6 @@ mod tests {
             changed.properties().get("avatarHash"),
             Some(&Value::Bytes32([9u8; 32]))
         );
-    }
-
-    /// Hashes sent for a profile that has no avatar URL would leave a document
-    /// the schema rejects, so the merged result is refused.
-    #[test]
-    fn should_reject_a_replacement_whose_merged_avatar_is_incomplete() {
-        let existing = profile_document(
-            Identifier::new([0xD1; 32]),
-            Identifier::new([0x0E; 32]),
-            ProfileFields {
-                display_name: Some("Alice".into()),
-                ..Default::default()
-            }
-            .overlay(BTreeMap::new()),
-            Some(1),
-        );
-        let hashes_only = ProfileFields {
-            avatar_url: None,
-            ..avatar_fields()
-        };
-
-        assert!(matches!(
-            replacement_document(&existing, hashes_only, &dashpay_contract()),
-            Err(Error::Generic(_))
-        ));
     }
 
     #[test]
