@@ -22,23 +22,29 @@ use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::Identifier;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 const PROFILE_DOCUMENT_TYPE: &str = "profile";
 
-/// Most owners one [`Sdk::get_profiles`] call can look up: the Platform `In`
-/// clause cardinality cap, which is also the document-query limit.
-pub const MAX_PROFILE_OWNERS_PER_QUERY: usize = 100;
+/// The profile schema requires these three together (`dependentRequired`).
+const AVATAR_KEYS: [&str; 3] = ["avatarUrl", "avatarHash", "avatarFingerprint"];
+
+/// Most owners one profile query can carry: the Platform `In` clause
+/// cardinality cap, which is also the document-query limit.
+pub(crate) const MAX_PROFILE_OWNERS_PER_QUERY: usize = 100;
 
 /// The profile fields a caller sets. `None` leaves the field alone on
 /// [`Sdk::update_profile`] and omits it on [`Sdk::create_profile`].
 ///
 /// `avatar_hash` and `avatar_fingerprint` are computed by the caller from the
-/// avatar image bytes and set together with a new `avatar_url`.
+/// avatar image bytes. The schema requires the three avatar fields together:
+/// a create sets all three or none, and an update that changes `avatar_url`
+/// must set both hashes with it. The two hashes are always set together, and a
+/// text field that is set is not empty. A field cannot be cleared.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProfileFields {
-    /// Display name (max 25 chars per DIP-15)
+    /// Display name (1 to 25 chars per DIP-15)
     pub display_name: Option<String>,
     /// Public message, the bio (max 140 chars per DIP-15)
     pub public_message: Option<String>,
@@ -74,32 +80,80 @@ impl ProfileFields {
         }
         properties
     }
+
+    /// Refuse, before anything is signed, a create the schema would reject
+    /// after the broadcast: no field at all, or an empty text field.
+    fn ensure_valid_create(&self) -> Result<(), Error> {
+        if *self == ProfileFields::default() {
+            return Err(Error::Generic(
+                "a profile needs at least one field".to_string(),
+            ));
+        }
+        self.ensure_text_fields_not_empty()
+    }
+
+    /// Refuse, before anything is read or signed, an update that replaces only
+    /// one of the two avatar hashes, or sets an empty text field. A changed
+    /// `avatar_url` needs its hashes too; that is checked against the existing
+    /// document in [`replacement_document`].
+    fn ensure_valid_update(&self) -> Result<(), Error> {
+        if self.avatar_hash.is_some() != self.avatar_fingerprint.is_some() {
+            return Err(Error::Generic(
+                "avatarHash and avatarFingerprint must be set together".to_string(),
+            ));
+        }
+        self.ensure_text_fields_not_empty()
+    }
+
+    /// Every profile text field has `minLength` 1.
+    fn ensure_text_fields_not_empty(&self) -> Result<(), Error> {
+        let text_fields = [
+            ("displayName", &self.display_name),
+            ("publicMessage", &self.public_message),
+            ("avatarUrl", &self.avatar_url),
+        ];
+        match text_fields
+            .into_iter()
+            .find(|(_, value)| value.as_deref() == Some(""))
+        {
+            Some((name, _)) => Err(Error::Generic(format!("{name} must not be empty"))),
+            None => Ok(()),
+        }
+    }
 }
 
 impl Sdk {
-    /// Fetch the `profile` documents of `owner_ids` (unique, at most
-    /// [`MAX_PROFILE_OWNERS_PER_QUERY`]), keyed by owner id. An owner without a
-    /// profile is missing from the result. More than that many owners, or a
-    /// duplicated owner, is rejected with [`Error::Generic`] before any query.
+    /// Fetch the `profile` documents of `owner_ids` (unique), keyed by owner
+    /// id, in queries of at most 100 owners each. An owner without a profile
+    /// is missing from the result. A duplicated owner is rejected with
+    /// [`Error::Generic`] before any query.
     ///
-    /// `dashpay_contract` is the DashPay data contract the caller resolved.
+    /// `dashpay_contract` must be the DashPay system data contract.
     pub async fn get_profiles(
         &self,
         dashpay_contract: &Arc<DataContract>,
         owner_ids: &[Identifier],
     ) -> Result<BTreeMap<Identifier, Document>, Error> {
-        ensure_valid_profile_owners(owner_ids)?;
-        if owner_ids.is_empty() {
-            return Ok(BTreeMap::new());
+        self.ensure_dashpay_contract(dashpay_contract)?;
+        ensure_unique_owners(owner_ids)?;
+        let mut profiles = BTreeMap::new();
+        for chunk in owner_ids.chunks(MAX_PROFILE_OWNERS_PER_QUERY) {
+            profiles.extend(
+                self.fetch_profile_documents(profiles_query(dashpay_contract, chunk)?)
+                    .await?,
+            );
         }
-        self.fetch_profile_documents(profiles_query(dashpay_contract, owner_ids))
-            .await
+        Ok(profiles)
     }
 
     /// Create the profile document of `owner_id` from `fields`.
     ///
-    /// `signing_key` must be a HIGH or CRITICAL authentication key of the owner.
-    /// Returns the document as confirmed by Platform.
+    /// `fields` must set at least one field, no empty text field, and all of
+    /// the avatar fields or none; otherwise the call fails before anything is
+    /// signed.
+    ///
+    /// `signing_key` must be a HIGH or CRITICAL authentication key of the
+    /// owner. Returns the document as confirmed by Platform.
     pub async fn create_profile<S: Signer<IdentityPublicKey>>(
         &self,
         dashpay_contract: &Arc<DataContract>,
@@ -108,7 +162,8 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<Document, Error> {
-        let properties = sanitized_properties(dashpay_contract, fields.overlay(BTreeMap::new()))?;
+        self.ensure_dashpay_contract(dashpay_contract)?;
+        let properties = new_profile_properties(dashpay_contract, fields)?;
 
         let entropy: [u8; 32] = StdRng::from_os_rng().random();
         let id = Document::generate_document_id_v0(
@@ -133,9 +188,14 @@ impl Sdk {
     /// `fields` that are set so a partial update keeps the other fields,
     /// increment the revision and replace it.
     ///
-    /// `signing_key` must be a HIGH or CRITICAL authentication key of the owner.
-    /// Returns the merged document as confirmed by Platform. Fails if the owner
-    /// has no profile.
+    /// Text fields that are set must not be empty, the two avatar hashes are set
+    /// together, and a changed `avatar_url` comes with both hashes; otherwise
+    /// the call fails before anything is signed. An unchanged `avatar_url` may
+    /// be sent without hashes, which keeps the existing ones.
+    ///
+    /// `signing_key` must be a HIGH or CRITICAL authentication key of the
+    /// owner. Returns the merged document as confirmed by Platform. Fails if
+    /// the owner has no profile.
     pub async fn update_profile<S: Signer<IdentityPublicKey>>(
         &self,
         dashpay_contract: &Arc<DataContract>,
@@ -144,8 +204,9 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<Document, Error> {
+        fields.ensure_valid_update()?;
         let existing = self
-            .fetch_profile_documents(owner_profile_query(dashpay_contract, owner_id))
+            .get_profiles(dashpay_contract, &[owner_id])
             .await?
             .remove(&owner_id)
             .ok_or_else(|| {
@@ -173,24 +234,41 @@ impl Sdk {
             .map(|document| (document.owner_id(), document))
             .collect())
     }
+
+    /// The profile queries and transitions are built against the contract the
+    /// caller passes in, so it must be the DashPay system contract.
+    fn ensure_dashpay_contract(&self, dashpay_contract: &DataContract) -> Result<(), Error> {
+        let expected = self.get_dashpay_contract_id()?;
+        if dashpay_contract.id() != expected {
+            return Err(Error::Generic(format!(
+                "expected the DashPay contract {expected}, got {}",
+                dashpay_contract.id()
+            )));
+        }
+        Ok(())
+    }
 }
 
-/// Refuse owner lists Platform would reject: more than
-/// [`MAX_PROFILE_OWNERS_PER_QUERY`] owners, or a duplicated owner.
-fn ensure_valid_profile_owners(owner_ids: &[Identifier]) -> Result<(), Error> {
-    if owner_ids.len() > MAX_PROFILE_OWNERS_PER_QUERY {
-        return Err(Error::Generic(format!(
-            "at most {MAX_PROFILE_OWNERS_PER_QUERY} profile owners per query, got {}",
-            owner_ids.len()
-        )));
-    }
-    let mut seen = std::collections::BTreeSet::new();
+/// Refuse a duplicated owner, which Platform rejects in an `In` clause.
+fn ensure_unique_owners(owner_ids: &[Identifier]) -> Result<(), Error> {
+    let mut seen = BTreeSet::new();
     if let Some(duplicate) = owner_ids.iter().find(|id| !seen.insert(**id)) {
         return Err(Error::Generic(format!(
             "duplicate profile owner {duplicate} in query"
         )));
     }
     Ok(())
+}
+
+/// The sanitized properties of a new profile built from `fields`.
+fn new_profile_properties(
+    dashpay_contract: &DataContract,
+    fields: ProfileFields,
+) -> Result<BTreeMap<String, Value>, Error> {
+    fields.ensure_valid_create()?;
+    let properties = fields.overlay(BTreeMap::new());
+    ensure_avatar_fields_together(&properties)?;
+    sanitized_properties(dashpay_contract, properties)
 }
 
 /// The replacement of `existing`: same id and owner, `fields` overlaid on its
@@ -200,10 +278,21 @@ fn replacement_document(
     fields: ProfileFields,
     dashpay_contract: &DataContract,
 ) -> Result<Document, Error> {
-    let properties = sanitized_properties(
-        dashpay_contract,
-        fields.overlay(existing.properties().clone()),
-    )?;
+    let url_changed = fields.avatar_url.as_deref().is_some_and(|url| {
+        existing
+            .properties()
+            .get("avatarUrl")
+            .and_then(Value::as_str)
+            != Some(url)
+    });
+    if url_changed && fields.avatar_hash.is_none() {
+        return Err(Error::Generic(
+            "a changed avatarUrl needs its avatarHash and avatarFingerprint".to_string(),
+        ));
+    }
+    let merged = fields.overlay(existing.properties().clone());
+    ensure_avatar_fields_together(&merged)?;
+    let properties = sanitized_properties(dashpay_contract, merged)?;
     let revision = existing.revision().unwrap_or(INITIAL_REVISION) + 1;
     Ok(profile_document(
         existing.id(),
@@ -211,6 +300,21 @@ fn replacement_document(
         properties,
         Some(revision),
     ))
+}
+
+/// The avatar URL, hash and fingerprint are all present or all absent, as the
+/// schema requires; consensus would reject anything else after the broadcast.
+fn ensure_avatar_fields_together(properties: &BTreeMap<String, Value>) -> Result<(), Error> {
+    let present = AVATAR_KEYS
+        .iter()
+        .filter(|key| properties.contains_key(**key))
+        .count();
+    if present != 0 && present != AVATAR_KEYS.len() {
+        return Err(Error::Generic(
+            "avatarUrl, avatarHash and avatarFingerprint must be set together".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// Normalize `properties` to the representations the profile schema expects.
@@ -246,56 +350,23 @@ fn profile_document(
 /// range field or it rejects the query with "missing order by for range". The
 /// `$ownerId` index is unique, so ordering does not change the result set
 /// (at most one profile per owner).
-fn profiles_query(dashpay_contract: &Arc<DataContract>, owner_ids: &[Identifier]) -> DocumentQuery {
-    DocumentQuery {
-        select: drive::query::SelectProjection::documents(),
-        data_contract: Arc::clone(dashpay_contract),
-        document_type_name: PROFILE_DOCUMENT_TYPE.to_string(),
-        where_clauses: vec![WhereClause {
-            field: "$ownerId".to_string(),
-            operator: WhereOperator::In,
-            value: Value::Array(owner_ids.iter().map(|id| platform_value!(id)).collect()),
-        }],
-        time_range_clauses: vec![],
-        integer_range_clauses: vec![],
-        sub_queries: vec![],
-        group_by: vec![],
-        having: vec![],
-        order_by_clauses: vec![OrderClause {
-            field: "$ownerId".to_string(),
-            ascending: true,
-        }],
-        limit: MAX_PROFILE_OWNERS_PER_QUERY as u32,
-        offset: None,
-        start: None,
-    }
-}
-
-/// Build the single-owner `profile` query `$ownerId == owner_id` (limit 1: a
-/// profile is unique per owner).
-fn owner_profile_query(
+fn profiles_query(
     dashpay_contract: &Arc<DataContract>,
-    owner_id: Identifier,
-) -> DocumentQuery {
-    DocumentQuery {
-        select: drive::query::SelectProjection::documents(),
-        data_contract: Arc::clone(dashpay_contract),
-        document_type_name: PROFILE_DOCUMENT_TYPE.to_string(),
-        where_clauses: vec![WhereClause {
-            field: "$ownerId".to_string(),
-            operator: WhereOperator::Equal,
-            value: platform_value!(owner_id),
-        }],
-        time_range_clauses: vec![],
-        integer_range_clauses: vec![],
-        sub_queries: vec![],
-        group_by: vec![],
-        having: vec![],
-        order_by_clauses: vec![],
-        limit: 1,
-        offset: None,
-        start: None,
-    }
+    owner_ids: &[Identifier],
+) -> Result<DocumentQuery, Error> {
+    Ok(
+        DocumentQuery::new(Arc::clone(dashpay_contract), PROFILE_DOCUMENT_TYPE)?
+            .with_where(WhereClause {
+                field: "$ownerId".to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(owner_ids.iter().map(|id| platform_value!(id)).collect()),
+            })
+            .with_order_by(OrderClause {
+                field: "$ownerId".to_string(),
+                ascending: true,
+            })
+            .with_limit(MAX_PROFILE_OWNERS_PER_QUERY as u32),
+    )
 }
 
 #[cfg(test)]
@@ -304,13 +375,20 @@ mod tests {
     use dpp::system_data_contracts::load_system_data_contract;
     use dpp::version::PlatformVersion;
 
+    fn avatar_fields() -> ProfileFields {
+        ProfileFields {
+            avatar_url: Some("https://x/a.png".into()),
+            avatar_hash: Some([7u8; 32]),
+            avatar_fingerprint: Some([1, 2, 3, 4, 5, 6, 7, 8]),
+            ..Default::default()
+        }
+    }
+
     fn existing_full() -> BTreeMap<String, Value> {
         ProfileFields {
             display_name: Some("Alice".into()),
             public_message: Some("hello world".into()),
-            avatar_url: Some("https://x/a.png".into()),
-            avatar_hash: Some([7u8; 32]),
-            avatar_fingerprint: Some([1, 2, 3, 4, 5, 6, 7, 8]),
+            ..avatar_fields()
         }
         .overlay(BTreeMap::new())
     }
@@ -327,10 +405,16 @@ mod tests {
         .expect("DashPay system contract loads")
     }
 
+    fn owner(n: usize) -> Identifier {
+        let mut bytes = [0u8; 32];
+        bytes[..8].copy_from_slice(&(n as u64 + 1).to_be_bytes());
+        Identifier::new(bytes)
+    }
+
     /// A partial update (only `displayName`) yields a replacement of the same
     /// document with the sibling fields kept and the revision incremented.
     #[test]
-    fn partial_update_replaces_the_same_document_keeping_sibling_fields() {
+    fn should_replace_the_same_document_keeping_sibling_fields() {
         let (id, owner) = (Identifier::new([0xD1; 32]), Identifier::new([0x0E; 32]));
         let existing = profile_document(id, owner, existing_full(), Some(3));
         let fields = ProfileFields {
@@ -354,31 +438,9 @@ mod tests {
         );
     }
 
-    /// `get_profiles` refuses too many owners and duplicated owners locally.
-    #[test]
-    fn profile_owners_over_the_cap_or_duplicated_are_rejected() {
-        let ids = |n: usize| -> Vec<Identifier> {
-            (0..n).map(|i| Identifier::new([i as u8 + 1; 32])).collect()
-        };
-
-        assert!(ensure_valid_profile_owners(&[]).is_ok());
-        assert!(ensure_valid_profile_owners(&ids(MAX_PROFILE_OWNERS_PER_QUERY)).is_ok());
-        assert!(matches!(
-            ensure_valid_profile_owners(&ids(MAX_PROFILE_OWNERS_PER_QUERY + 1)),
-            Err(Error::Generic(_))
-        ));
-
-        let mut duplicated = ids(2);
-        duplicated.push(duplicated[0]);
-        assert!(matches!(
-            ensure_valid_profile_owners(&duplicated),
-            Err(Error::Generic(_))
-        ));
-    }
-
     /// A supplied avatar hash and fingerprint replace the existing ones.
     #[test]
-    fn avatar_replaced_when_supplied() {
+    fn should_replace_the_avatar_when_supplied() {
         let replaced = ProfileFields {
             avatar_hash: Some([9u8; 32]),
             avatar_fingerprint: Some([9u8; 8]),
@@ -392,6 +454,211 @@ mod tests {
         );
     }
 
+    /// A create must not broadcast a profile the schema rejects: avatar fields
+    /// set partially, no field at all, or an empty text field.
+    #[test]
+    fn should_reject_an_invalid_create_before_signing() {
+        let contract = dashpay_contract();
+        let create = |fields: ProfileFields| new_profile_properties(&contract, fields);
+
+        assert!(create(avatar_fields()).is_ok());
+        assert!(create(ProfileFields {
+            display_name: Some("Alice".into()),
+            ..Default::default()
+        })
+        .is_ok());
+
+        for partial in [
+            ProfileFields {
+                avatar_hash: None,
+                avatar_fingerprint: None,
+                ..avatar_fields()
+            },
+            ProfileFields {
+                avatar_url: None,
+                ..avatar_fields()
+            },
+            ProfileFields {
+                avatar_fingerprint: None,
+                ..avatar_fields()
+            },
+            ProfileFields {
+                avatar_hash: Some([7u8; 32]),
+                ..Default::default()
+            },
+        ] {
+            assert!(
+                matches!(create(partial.clone()), Err(Error::Generic(_))),
+                "{partial:?}"
+            );
+        }
+        assert!(matches!(
+            create(ProfileFields::default()),
+            Err(Error::Generic(_))
+        ));
+        for empty in [
+            ProfileFields {
+                display_name: Some(String::new()),
+                ..avatar_fields()
+            },
+            ProfileFields {
+                public_message: Some(String::new()),
+                ..avatar_fields()
+            },
+            ProfileFields {
+                avatar_url: Some(String::new()),
+                ..avatar_fields()
+            },
+        ] {
+            assert!(
+                matches!(create(empty.clone()), Err(Error::Generic(_))),
+                "{empty:?}"
+            );
+        }
+    }
+
+    /// An update must not replace only one of the two hashes or set an empty
+    /// text field; replacing the whole avatar, an unchanged URL on its own, or
+    /// only unrelated fields stays allowed.
+    #[test]
+    fn should_reject_an_update_with_one_hash_or_an_empty_text_field() {
+        let fields_ok = |fields: ProfileFields| fields.ensure_valid_update().is_ok();
+
+        assert!(fields_ok(avatar_fields()));
+        assert!(fields_ok(ProfileFields {
+            avatar_url: None,
+            ..avatar_fields()
+        }));
+        assert!(fields_ok(ProfileFields {
+            avatar_hash: None,
+            avatar_fingerprint: None,
+            ..avatar_fields()
+        }));
+        assert!(fields_ok(ProfileFields {
+            public_message: Some("hi".into()),
+            ..Default::default()
+        }));
+
+        assert!(!fields_ok(ProfileFields {
+            avatar_fingerprint: None,
+            ..avatar_fields()
+        }));
+        assert!(!fields_ok(ProfileFields {
+            avatar_hash: Some([9u8; 32]),
+            ..Default::default()
+        }));
+        for (name, empty) in [
+            (
+                "displayName",
+                ProfileFields {
+                    display_name: Some(String::new()),
+                    ..Default::default()
+                },
+            ),
+            (
+                "publicMessage",
+                ProfileFields {
+                    public_message: Some(String::new()),
+                    ..Default::default()
+                },
+            ),
+            (
+                "avatarUrl",
+                ProfileFields {
+                    avatar_url: Some(String::new()),
+                    ..Default::default()
+                },
+            ),
+        ] {
+            assert!(!fields_ok(empty), "empty {name} accepted");
+        }
+    }
+
+    /// A changed avatar URL must not keep the old hashes under it, but the
+    /// unchanged URL the app resends on a text-only edit keeps its hashes.
+    #[test]
+    fn should_require_hashes_only_for_a_changed_avatar_url() {
+        let existing = profile_document(
+            Identifier::new([0xD1; 32]),
+            Identifier::new([0x0E; 32]),
+            existing_full(),
+            Some(3),
+        );
+        let replace =
+            |fields: ProfileFields| replacement_document(&existing, fields, &dashpay_contract());
+        let new_url = Some("https://x/b.png".to_string());
+
+        assert!(matches!(
+            replace(ProfileFields {
+                avatar_url: new_url.clone(),
+                ..Default::default()
+            }),
+            Err(Error::Generic(_))
+        ));
+
+        let unchanged = replace(ProfileFields {
+            display_name: Some("Alice 2".into()),
+            avatar_url: Some("https://x/a.png".into()),
+            ..Default::default()
+        })
+        .expect("an unchanged URL needs no hashes");
+        assert_eq!(
+            unchanged.properties().get("avatarHash"),
+            Some(&Value::Bytes32([7u8; 32]))
+        );
+
+        let changed = replace(ProfileFields {
+            avatar_url: new_url,
+            avatar_hash: Some([9u8; 32]),
+            avatar_fingerprint: Some([9u8; 8]),
+            ..Default::default()
+        })
+        .expect("a changed URL with its hashes");
+        assert_eq!(
+            text(changed.properties(), "avatarUrl"),
+            Some("https://x/b.png")
+        );
+        assert_eq!(
+            changed.properties().get("avatarHash"),
+            Some(&Value::Bytes32([9u8; 32]))
+        );
+    }
+
+    /// Hashes sent for a profile that has no avatar URL would leave a document
+    /// the schema rejects, so the merged result is refused.
+    #[test]
+    fn should_reject_a_replacement_whose_merged_avatar_is_incomplete() {
+        let existing = profile_document(
+            Identifier::new([0xD1; 32]),
+            Identifier::new([0x0E; 32]),
+            ProfileFields {
+                display_name: Some("Alice".into()),
+                ..Default::default()
+            }
+            .overlay(BTreeMap::new()),
+            Some(1),
+        );
+        let hashes_only = ProfileFields {
+            avatar_url: None,
+            ..avatar_fields()
+        };
+
+        assert!(matches!(
+            replacement_document(&existing, hashes_only, &dashpay_contract()),
+            Err(Error::Generic(_))
+        ));
+    }
+
+    #[test]
+    fn should_reject_duplicated_profile_owners() {
+        assert!(ensure_unique_owners(&[]).is_ok());
+        assert!(ensure_unique_owners(&[owner(0), owner(1)]).is_ok());
+        assert!(matches!(
+            ensure_unique_owners(&[owner(0), owner(1), owner(0)]),
+            Err(Error::Generic(_))
+        ));
+    }
+
     /// DAPI rejects any query that uses a range where-operator without a
     /// matching `orderBy` on the range field ("missing order by for range").
     /// The profile query filters by `$ownerId In [...]`, a range operator, so
@@ -399,11 +666,10 @@ mod tests {
     /// Guarded against vacuous truth: the query must actually contain a range
     /// clause, otherwise the invariant would pass trivially.
     #[test]
-    fn profiles_query_orders_by_every_range_field() {
+    fn should_order_the_profile_query_by_every_range_field() {
         let contract = Arc::new(dashpay_contract());
-        let owners = vec![Identifier::new([1u8; 32]), Identifier::new([2u8; 32])];
 
-        let query = profiles_query(&contract, &owners);
+        let query = profiles_query(&contract, &[owner(0), owner(1)]).unwrap();
 
         assert!(
             query.where_clauses.iter().any(|wc| wc.operator.is_range()),
@@ -418,6 +684,62 @@ mod tests {
                     wc.field
                 );
             }
+        }
+    }
+
+    #[cfg(feature = "mocks")]
+    mod with_mock_sdk {
+        use super::*;
+        use crate::query_types::Documents;
+        use dpp::data_contract::accessors::v0::DataContractV0Setters;
+
+        /// More than 100 owners are fetched in queries of at most 100 each and
+        /// merged. The mock answers only the three expected chunk queries, so a
+        /// single oversized query would fail.
+        #[tokio::test]
+        async fn should_fetch_profiles_in_chunks_of_at_most_one_hundred_owners() {
+            let contract = Arc::new(dashpay_contract());
+            let owners: Vec<Identifier> = (0..250).map(owner).collect();
+            let mut sdk = Sdk::new_mock();
+
+            for chunk in owners.chunks(MAX_PROFILE_OWNERS_PER_QUERY) {
+                let first = chunk[0];
+                let document = profile_document(
+                    Identifier::new([first.to_buffer()[7]; 32]),
+                    first,
+                    existing_full(),
+                    Some(1),
+                );
+                let answer = Documents::from([(document.id(), Some(document))]);
+                sdk.mock()
+                    .expect_fetch_many::<Identifier, Document, _, Documents>(
+                        profiles_query(&contract, chunk).unwrap(),
+                        Some(answer),
+                    )
+                    .await
+                    .expect("chunk expectation");
+            }
+
+            let profiles = sdk.get_profiles(&contract, &owners).await.unwrap();
+
+            assert_eq!(
+                profiles.keys().copied().collect::<Vec<_>>(),
+                vec![owner(0), owner(100), owner(200)]
+            );
+        }
+
+        /// A contract that is not the DashPay system contract is refused before
+        /// any query is made.
+        #[tokio::test]
+        async fn should_reject_a_contract_that_is_not_the_dashpay_contract() {
+            let mut other = dashpay_contract();
+            other.set_id(Identifier::new([0x42; 32]));
+
+            let result = Sdk::new_mock()
+                .get_profiles(&Arc::new(other), &[owner(0)])
+                .await;
+
+            assert!(matches!(result, Err(Error::Generic(_))));
         }
     }
 }
