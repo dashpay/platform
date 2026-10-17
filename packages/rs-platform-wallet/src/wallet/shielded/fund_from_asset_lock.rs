@@ -17,8 +17,10 @@
 //!    [`build_shield_from_asset_lock_transition_with_signer`] so the
 //!    asset-lock-proof signature is routed through the external
 //!    `key_wallet::signer::Signer` (the host never sees the raw key).
-//!    IS→CL fallback fires on Platform-side IS rejection
-//!    (`is_instant_lock_proof_invalid`).
+//!    IS→CL fallback fires when `needs_chain_lock_proof` matches:
+//!    Platform rejected the IS signature, or the InstantSend proof
+//!    made the transition too large (the SDK refuses that before
+//!    broadcast with a typed error).
 //! 4. **Finalize lock state** — a verified submit consumes the tracked
 //!    outpoint. An unauthenticated "already consumed" rejection is recorded
 //!    only as nonterminal consumption-unknown state after Core ChainLock
@@ -39,10 +41,9 @@ use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 
 use std::time::Duration;
 
-use crate::error::is_instant_lock_proof_invalid;
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
-    ResolvedFunding,
+    needs_chain_lock_proof, out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding,
+    FundingResolution, ResolvedFunding,
 };
 use crate::wallet::PlatformWallet;
 use crate::PlatformWalletError;
@@ -352,8 +353,8 @@ impl PlatformWallet {
         // Step 4: submit. Two Platform-side fallback layers — matching
         // the address-funding sibling: CL-height-too-low retries bump
         // `user_fee_increase` (bypasses Tenderdash's invalid-tx hash
-        // cache) and IS-lock rejection triggers an IS→CL upgrade on
-        // the same outpoint.
+        // cache) and an unusable IS proof (rejected, or too large)
+        // triggers an IS→CL upgrade on the same outpoint.
         //
         // Subtle: `ShieldFromAssetLockTransition::set_user_fee_increase`
         // is a no-op (pinned at `state_transition::mod`'s
@@ -393,12 +394,13 @@ impl PlatformWallet {
         .await
         {
             Ok(actions) => (Ok(actions), proof.clone()),
-            Err(e) if is_instant_lock_proof_invalid(&e) => {
+            Err(e) if needs_chain_lock_proof(&e, &proof) => {
                 let out_point = proof_out_point;
                 tracing::warn!(
-                    "IS-lock proof rejected by Platform for shielded fund-from-asset-lock \
-                     (tx {}), retrying with ChainLock proof",
-                    out_point.txid
+                    "IS-lock proof unusable for shielded fund-from-asset-lock (tx {}): {}; \
+                     retrying with ChainLock proof",
+                    out_point.txid,
+                    e
                 );
                 let chain_proof = self
                     .asset_locks

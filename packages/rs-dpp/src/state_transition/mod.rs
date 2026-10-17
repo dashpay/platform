@@ -46,6 +46,7 @@ mod verify_identity_signed_signature;
 
 // pub mod state_transition_fee;
 
+use crate::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
 #[cfg(feature = "state-transition-validation")]
 use crate::consensus::basic::UnsupportedFeatureError;
 #[cfg(feature = "state-transition-signing")]
@@ -543,6 +544,28 @@ macro_rules! call_errorable_method_identity_signed {
 /// Byte budget of a serialized [`StateTransition`], as the `limit` of its `platform_serialize`
 /// attribute below declares it; the attribute takes a literal, so the number is repeated here.
 pub const STATE_TRANSITION_MAX_ENCODED_BYTES: usize = 100_000;
+
+/// Checks the serialized length of a state transition against the protocol's
+/// `max_state_transition_size`: a transition of `size_bytes` is refused when
+/// it is larger, with the error Drive reports for one.
+///
+/// DAPI refuses an oversized transition before Drive sees it with an untyped
+/// `InvalidArgument`, so clients that need the typed error (an asset-lock
+/// flow switching from a growing InstantSend proof to a fixed-size ChainLock
+/// proof, dashwallet-ios#1042) check it with this before sending.
+pub fn validate_state_transition_size(
+    size_bytes: u64,
+    platform_version: &PlatformVersion,
+) -> Result<(), StateTransitionMaxSizeExceededError> {
+    let max_size_bytes = platform_version.system_limits.max_state_transition_size;
+    if size_bytes > max_size_bytes {
+        return Err(StateTransitionMaxSizeExceededError::new(
+            size_bytes,
+            max_size_bytes,
+        ));
+    }
+    Ok(())
+}
 
 #[derive(
     Debug,
