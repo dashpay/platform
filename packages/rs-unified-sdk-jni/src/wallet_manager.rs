@@ -2660,6 +2660,43 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
     })
 }
 
+/// The wallet's core scan watermark as the ENGINE holds it
+/// (`platform_wallet_core_wallet_state`'s `synced_height`) — the value the
+/// TXO-store reconcile gates on, as Swift's does. The persisted copy in the
+/// host store trails it by up to one persistence round, which is exactly
+/// the window the SYNCED transition lands in. Throws `NotFound` when the
+/// manager does not hold the wallet. Backs
+/// `PlatformWalletManager.reconcileTxoStore`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerCoreWalletSyncedHeight(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+) -> jlong {
+    guard(&mut env, -1, |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return -1;
+        };
+        let mut state = platform_wallet_ffi::CoreWalletStateFFI {
+            synced_height: 0,
+            last_processed_height: 0,
+            monitor_revision: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_core_wallet_state(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                &mut state as *mut platform_wallet_ffi::CoreWalletStateFFI,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return -1;
+        }
+        jlong::from(state.synced_height)
+    })
+}
+
 #[cfg(feature = "shielded")]
 sync_start_stop!(
     Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedSyncStart,
@@ -3218,6 +3255,470 @@ fn core_selection_strategy(
     }
 }
 
+// ── TXO-store reconcile transport ─────────────────────────────────────
+//
+// Two exports, each a serialization shim over exactly ONE platform-wallet
+// call: `platform_wallet_wallet_utxos_page` and
+// `platform_wallet_classify_outpoints`. The account ordering, the cursor
+// semantics, the page bound and every classification rule live in
+// `platform-wallet`, so the Swift host walks the identical inventory and
+// gets the identical verdicts. Nothing here decides anything; it moves
+// serde-shaped JSON in and out.
+
+/// The account tuple that owns one inventory row — the raw `AccountSpecFFI`
+/// tag layout minus the xpub, in the field names the Kotlin `EngineUtxoRow`
+/// and `PlatformWalletPersistenceHandler.fetchAccount` resolve a Room
+/// account by. The DashPay identity halves are emitted only when set
+/// (all-zero on every non-DashPay account); the Kotlin side defaults them.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UtxoAccountTuple {
+    type_tag: u8,
+    standard_tag: u8,
+    index: u32,
+    registration_index: u32,
+    key_class: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    user_identity_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    friend_identity_id: Option<String>,
+}
+
+impl UtxoAccountTuple {
+    fn from_entry(e: &platform_wallet_ffi::WalletUtxoEntryFFI) -> Self {
+        let identity = |id: &[u8; 32]| (*id != [0u8; 32]).then(|| hex::encode(id));
+        UtxoAccountTuple {
+            type_tag: e.type_tag as u8,
+            standard_tag: e.standard_tag as u8,
+            index: e.index,
+            registration_index: e.registration_index,
+            key_class: e.key_class,
+            user_identity_id: identity(&e.user_identity_id),
+            friend_identity_id: identity(&e.friend_identity_id),
+        }
+    }
+
+    /// The two 32-byte identity halves, or `None` when a hex string the
+    /// host handed back is malformed — a tuple this layer did not emit.
+    fn identity_ids(&self) -> Option<([u8; 32], [u8; 32])> {
+        fn id32(hex_id: &Option<String>) -> Option<[u8; 32]> {
+            match hex_id {
+                None => Some([0u8; 32]),
+                Some(h) => hex::decode(h).ok()?.try_into().ok(),
+            }
+        }
+        Some((
+            id32(&self.user_identity_id)?,
+            id32(&self.friend_identity_id)?,
+        ))
+    }
+}
+
+/// One row of an inventory page — the typed contract the Kotlin
+/// `EngineUtxoRow` decodes, strictly (an unknown or missing key throws
+/// there rather than healing a defaulted row). `txid` is lower hex in the
+/// same byte order the changeset path hands Kotlin, so hex→bytes
+/// reproduces the `txos.txid` blob; `address` is the engine's own
+/// Base58Check rendering, empty when the script has no address form.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UtxoPageRow {
+    #[serde(flatten)]
+    account: UtxoAccountTuple,
+    txid: String,
+    vout: u32,
+    amount: u64,
+    address: String,
+    script_hex: String,
+    height: u32,
+    is_confirmed: bool,
+    is_instantlocked: bool,
+    is_coinbase: bool,
+    is_locked: bool,
+}
+
+impl UtxoPageRow {
+    /// The row for one accessor entry, carrying the engine's own address
+    /// and flags.
+    ///
+    /// # Safety
+    ///
+    /// `e.address` must be null or a valid NUL-terminated string, and
+    /// `e.script_pubkey` null or valid for `e.script_pubkey_len` bytes —
+    /// the accessor's contract for every entry it returns.
+    unsafe fn from_entry(e: &platform_wallet_ffi::WalletUtxoEntryFFI) -> Self {
+        let script: &[u8] = if e.script_pubkey.is_null() || e.script_pubkey_len == 0 {
+            &[]
+        } else {
+            std::slice::from_raw_parts(e.script_pubkey, e.script_pubkey_len)
+        };
+        // Never null per the accessor's contract; treated as empty if it
+        // ever is, which the Kotlin heal skips rather than filing a row it
+        // cannot key an address by.
+        let address = if e.address.is_null() {
+            String::new()
+        } else {
+            CStr::from_ptr(e.address).to_string_lossy().into_owned()
+        };
+        UtxoPageRow {
+            account: UtxoAccountTuple::from_entry(e),
+            txid: hex::encode(e.outpoint.txid),
+            vout: e.outpoint.vout,
+            amount: e.value_duffs,
+            address,
+            script_hex: hex::encode(script),
+            height: e.height,
+            is_confirmed: e.is_confirmed,
+            is_instantlocked: e.is_instantlocked,
+            is_coinbase: e.is_coinbase,
+            is_locked: e.is_locked,
+        }
+    }
+}
+
+/// One page: the rows, the opaque resume cursor (absent on the last page)
+/// and whether more pages follow.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UtxoPage {
+    utxos: Vec<UtxoPageRow>,
+    cursor: Option<String>,
+    has_more: bool,
+}
+
+impl UtxoPage {
+    /// The page for `utxos`. The cursor is the last row itself; a page with
+    /// no rows has nowhere to resume from, and the accessor reports no more
+    /// in that case. Fails only if the cursor cannot be encoded.
+    fn new(utxos: Vec<UtxoPageRow>, has_more: bool) -> serde_json::Result<Self> {
+        let cursor = match utxos.last() {
+            Some(last) if has_more => Some(serde_json::to_string(&UtxoPageCursor::after(last))?),
+            _ => None,
+        };
+        Ok(UtxoPage {
+            has_more: has_more && cursor.is_some(),
+            cursor,
+            utxos,
+        })
+    }
+}
+
+/// Where a paged inventory sweep left off — the last row's account tuple
+/// and outpoint, which is exactly what `platform_wallet_wallet_utxos_page`
+/// resumes from. Serialized as JSON and handed to the host as an opaque
+/// string; the host only ever gives back what a previous page returned.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UtxoPageCursor {
+    #[serde(flatten)]
+    account: UtxoAccountTuple,
+    txid: String,
+    vout: u32,
+}
+
+impl UtxoPageCursor {
+    /// The cursor that resumes the sweep after `last`.
+    fn after(last: &UtxoPageRow) -> Self {
+        UtxoPageCursor {
+            account: last.account.clone(),
+            txid: last.txid.clone(),
+            vout: last.vout,
+        }
+    }
+
+    /// The resume point a cursor string names, or `None` when it is not
+    /// one a previous page returned (unparseable, or a malformed identity
+    /// half or txid).
+    fn decode(raw: &str) -> Option<platform_wallet_ffi::WalletUtxoCursorFFI> {
+        let c = serde_json::from_str::<UtxoPageCursor>(raw).ok()?;
+        let (user_identity_id, friend_identity_id) = c.account.identity_ids()?;
+        let txid: [u8; 32] = hex::decode(&c.txid).ok()?.try_into().ok()?;
+        Some(platform_wallet_ffi::WalletUtxoCursorFFI {
+            type_tag: c.account.type_tag,
+            standard_tag: c.account.standard_tag,
+            index: c.account.index,
+            registration_index: c.account.registration_index,
+            key_class: c.account.key_class,
+            user_identity_id,
+            friend_identity_id,
+            outpoint: platform_wallet_ffi::OutPointFFI { txid, vout: c.vout },
+        })
+    }
+}
+
+/// One store row the host asks the engine to classify: the account the
+/// STORE files the coin under, the outpoint, and the script the store
+/// recorded. The engine checks that claim against its own pools rather
+/// than trusting it, which is why the tuple and script travel with every
+/// query instead of the outpoint alone.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OutpointQuery {
+    #[serde(flatten)]
+    account: UtxoAccountTuple,
+    txid: String,
+    vout: u32,
+    #[serde(default)]
+    script_hex: String,
+}
+
+impl OutpointQuery {
+    /// The FFI query for this row and the script bytes it must point at.
+    /// The script pointer is left null: the caller fills it once the
+    /// owned scripts have stopped moving. The error names the malformed
+    /// field, as the SDK exception the batch fails with.
+    fn to_ffi(
+        &self,
+    ) -> Result<(platform_wallet_ffi::OutpointOwnershipQueryFFI, Vec<u8>), &'static str> {
+        let (user_identity_id, friend_identity_id) = self
+            .account
+            .identity_ids()
+            .ok_or("outpoint query carries a malformed identity id")?;
+        let txid: [u8; 32] = hex::decode(&self.txid)
+            .ok()
+            .and_then(|b| b.try_into().ok())
+            .ok_or("outpoint query carries a malformed txid")?;
+        let script = hex::decode(&self.script_hex)
+            .map_err(|_| "outpoint query carries a malformed script")?;
+        let query = platform_wallet_ffi::OutpointOwnershipQueryFFI {
+            type_tag: self.account.type_tag,
+            standard_tag: self.account.standard_tag,
+            index: self.account.index,
+            registration_index: self.account.registration_index,
+            key_class: self.account.key_class,
+            user_identity_id,
+            friend_identity_id,
+            outpoint: platform_wallet_ffi::OutPointFFI {
+                txid,
+                vout: self.vout,
+            },
+            script_pubkey: ptr::null(),
+            script_pubkey_len: 0,
+        };
+        Ok((query, script))
+    }
+}
+
+/// One bounded page of the engine's UTXO inventory across every funds
+/// account of one wallet — the source of truth
+/// `PlatformWalletManager.reconcileTxoStore` diffs against the Room `txos`
+/// mirror (dropped change outputs of CoinJoin-funded sends leave the
+/// mirror short; the engine reloads from that mirror on restart, so an
+/// un-reconciled hole becomes a fund loss).
+///
+/// Paged rather than swept whole because inventory size is
+/// chain-controlled: anyone who knows a watched address can keep sending
+/// dust outputs to it, and a periodic full-inventory read would let them
+/// decide how much a phone allocates at every SYNCED transition and every
+/// 30-minute pass. Nothing bigger than one page is ever formatted, copied
+/// across JNI, or parsed.
+///
+/// Returns a JSON object `{"utxos":[...],"cursor":<string|null>,"hasMore":<bool>}`.
+/// `cursor` is opaque: hand it back verbatim on the next call
+/// (`null`/absent starts from the beginning) and keep going while
+/// `hasMore` is true. A cursor this export did not produce is rejected
+/// with an SDK exception rather than silently restarting the sweep.
+/// `limit` caps the rows in one page; non-positive passes 0, which means
+/// the engine's own default, and the engine clamps its own maximum — this
+/// layer holds no copy of either bound.
+///
+/// Rows carry the engine's own address and flags. Nothing is derived
+/// here: an address computed in this shim could disagree with the one the
+/// engine credited the coin under, and the store keys its address rows by
+/// that string.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerUtxosPageJson(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    cursor: JString,
+    limit: jni::sys::jint,
+) -> jni::sys::jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return ptr::null_mut();
+        };
+        // 0 means "the engine's default page"; the engine also clamps its
+        // own maximum, so a host asking for more simply gets less.
+        let page_limit = if limit <= 0 { 0usize } else { limit as usize };
+
+        // Resume point, decoded from the opaque cursor. Kept alive across
+        // the FFI call — it is passed by pointer.
+        let resume: Option<platform_wallet_ffi::WalletUtxoCursorFFI> = if cursor.is_null() {
+            None
+        } else {
+            let raw = match env.get_string(&cursor) {
+                Ok(s) => String::from(s),
+                Err(_) => {
+                    throw_sdk_exception(env, 1, "inventory cursor must be a String");
+                    return ptr::null_mut();
+                }
+            };
+            match UtxoPageCursor::decode(&raw) {
+                Some(r) => Some(r),
+                None => {
+                    throw_sdk_exception(
+                        env,
+                        1,
+                        "malformed inventory cursor: only a cursor returned by a previous page may be handed back",
+                    );
+                    return ptr::null_mut();
+                }
+            }
+        };
+
+        let mut entries: *const platform_wallet_ffi::WalletUtxoEntryFFI = ptr::null();
+        let mut count: usize = 0;
+        let mut has_more = false;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_wallet_utxos_page(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                resume.as_ref().map_or(ptr::null(), |c| c as *const _),
+                page_limit,
+                &mut entries,
+                &mut count,
+                &mut has_more,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let mut rows: Vec<UtxoPageRow> = Vec::with_capacity(count);
+        if !entries.is_null() && count > 0 {
+            let items = unsafe { std::slice::from_raw_parts(entries, count) };
+            for e in items {
+                // SAFETY: every entry the accessor returns satisfies the
+                // pointer contract `from_entry` documents.
+                rows.push(unsafe { UtxoPageRow::from_entry(e) });
+            }
+            unsafe {
+                platform_wallet_ffi::platform_wallet_wallet_utxos_page_free(
+                    entries as *mut platform_wallet_ffi::WalletUtxoEntryFFI,
+                    count,
+                )
+            };
+        }
+        let page = match UtxoPage::new(rows, has_more) {
+            Ok(p) => p,
+            Err(e) => {
+                throw_sdk_exception(env, 1, &format!("inventory cursor encode failed: {e}"));
+                return ptr::null_mut();
+            }
+        };
+        match serde_json::to_string(&page) {
+            Ok(json) => env
+                .new_string(json)
+                .map(|s| s.into_raw())
+                .unwrap_or(ptr::null_mut()),
+            Err(e) => {
+                throw_sdk_exception(env, 1, &format!("inventory page encode failed: {e}"));
+                ptr::null_mut()
+            }
+        }
+    })
+}
+
+/// Classify a batch of store rows against the engine's live state — the
+/// reverse half of the reconcile transport, and the reason the paged
+/// inventory carries no spent-outpoint list. The host pages its OWN mirror
+/// rows and asks about them a batch at a time, so neither side builds a
+/// set over the whole engine inventory.
+///
+/// `queriesJson` is a JSON array of store rows: the account tuple the
+/// store files each coin under, its `txid` (lower hex, wire order) and
+/// `vout`, and the `scriptHex` the store recorded for it. The account and
+/// script are the store's CLAIM — the engine checks both against its own
+/// pools rather than trusting them, which is why a bare outpoint is not
+/// enough.
+///
+/// Returns one verdict byte per query, positionally: see the
+/// `OUTPOINT_CLASS_*` constants (0 unknown, 1 unspent, 2 known-uncredited,
+/// 3 not-owned). A query whose account tag this build cannot map keeps
+/// `unknown` and the rest are still answered.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerClassifyOutpoints(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    queries_json: JString,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return ptr::null_mut();
+        };
+        let raw = match env.get_string(&queries_json) {
+            Ok(s) => String::from(s),
+            Err(_) => {
+                throw_sdk_exception(env, 1, "outpoint queries must be a String");
+                return ptr::null_mut();
+            }
+        };
+        let parsed: Vec<OutpointQuery> = match serde_json::from_str(&raw) {
+            Ok(q) => q,
+            Err(e) => {
+                throw_sdk_exception(env, 1, &format!("malformed outpoint queries: {e}"));
+                return ptr::null_mut();
+            }
+        };
+        if parsed.is_empty() {
+            return env
+                .byte_array_from_slice(&[])
+                .map(|a| a.into_raw())
+                .unwrap_or(ptr::null_mut());
+        }
+        // Scripts are owned here for the duration of the call — the query
+        // struct borrows them by pointer.
+        let mut scripts: Vec<Vec<u8>> = Vec::with_capacity(parsed.len());
+        let mut queries: Vec<platform_wallet_ffi::OutpointOwnershipQueryFFI> =
+            Vec::with_capacity(parsed.len());
+        for q in &parsed {
+            match q.to_ffi() {
+                Ok((query, script)) => {
+                    scripts.push(script);
+                    // Its script pointer is filled below, once `scripts`
+                    // has stopped reallocating.
+                    queries.push(query);
+                }
+                Err(message) => {
+                    throw_sdk_exception(env, 1, message);
+                    return ptr::null_mut();
+                }
+            }
+        }
+        for (query, script) in queries.iter_mut().zip(scripts.iter()) {
+            query.script_pubkey = if script.is_empty() {
+                ptr::null()
+            } else {
+                script.as_ptr()
+            };
+            query.script_pubkey_len = script.len();
+        }
+
+        // Caller-allocated answers, one byte per query.
+        let mut classes = vec![platform_wallet_ffi::OUTPOINT_CLASS_UNKNOWN; queries.len()];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_classify_outpoints(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                queries.as_ptr(),
+                queries.len(),
+                classes.as_mut_ptr(),
+            )
+        };
+        // `scripts` must outlive the call above; this keeps that explicit
+        // against a future reorder.
+        drop(scripts);
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        env.byte_array_from_slice(&classes)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
 /// Read a 32-byte id from a Java `byte[]`; throws + returns None on the
 /// wrong length or a JNI error.
 fn read_id32(env: &mut JNIEnv, arr: &JByteArray) -> Option<[u8; 32]> {
@@ -3999,4 +4500,428 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    //! The TXO-reconcile transport codecs against the golden payloads the
+    //! Kotlin `PlatformWalletPersistenceHandlerTest` reads too, so the
+    //! serde models here and the kotlinx models there cannot drift apart
+    //! silently.
+
+    use super::*;
+    use platform_wallet_ffi::{AccountTypeTagFFI, StandardAccountTypeTagFFI, WalletUtxoEntryFFI};
+    use std::ffi::CString;
+
+    /// The checked-in transport payloads, shared byte-for-byte with the
+    /// Kotlin tests (`theInventoryDecoderReadsTheGoldenRustPage`,
+    /// `classificationQueriesMatchTheGoldenRustInput`). Referenced from the
+    /// single canonical copy in the Kotlin SDK's test resources.
+    const GOLDEN: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kotlin-sdk/sdk/src/test/resources/golden/txo_reconcile_transport_v1.json"
+    ));
+
+    fn golden() -> serde_json::Value {
+        serde_json::from_str(GOLDEN).expect("golden fixture must parse")
+    }
+
+    /// A txid whose bytes count up from `first`, so a byte-order slip shows.
+    fn txid(first: u8) -> [u8; 32] {
+        std::array::from_fn(|i| first + i as u8)
+    }
+
+    fn p2pkh(fill: u8) -> Vec<u8> {
+        let mut script = vec![0x76, 0xa9, 0x14];
+        script.extend([fill; 20]);
+        script.extend([0x88, 0xac]);
+        script
+    }
+
+    /// One accessor entry plus the buffers it points into, kept alive with it.
+    struct Coin {
+        entry: WalletUtxoEntryFFI,
+        _address: CString,
+        script: Vec<u8>,
+    }
+
+    struct CoinSpec {
+        type_tag: AccountTypeTagFFI,
+        standard_tag: StandardAccountTypeTagFFI,
+        index: u32,
+        registration_index: u32,
+        key_class: u32,
+        identities: [[u8; 32]; 2],
+        txid: [u8; 32],
+        vout: u32,
+        value: u64,
+        address: &'static str,
+        script: Vec<u8>,
+        height: u32,
+        /// confirmed, instantlocked, coinbase, locked.
+        flags: [bool; 4],
+    }
+
+    impl CoinSpec {
+        fn build(self) -> Coin {
+            let address = CString::new(self.address).expect("fixture address has no NUL");
+            let script = self.script;
+            let entry = WalletUtxoEntryFFI {
+                type_tag: self.type_tag,
+                standard_tag: self.standard_tag,
+                index: self.index,
+                registration_index: self.registration_index,
+                key_class: self.key_class,
+                user_identity_id: self.identities[0],
+                friend_identity_id: self.identities[1],
+                outpoint: platform_wallet_ffi::OutPointFFI {
+                    txid: self.txid,
+                    vout: self.vout,
+                },
+                value_duffs: self.value,
+                address: address.as_ptr() as *mut c_char,
+                // Null when empty, as the accessor hands it over.
+                script_pubkey: if script.is_empty() {
+                    ptr::null_mut()
+                } else {
+                    script.as_ptr() as *mut u8
+                },
+                script_pubkey_len: script.len(),
+                height: self.height,
+                is_confirmed: self.flags[0],
+                is_instantlocked: self.flags[1],
+                is_coinbase: self.flags[2],
+                is_locked: self.flags[3],
+            };
+            Coin {
+                entry,
+                _address: address,
+                script,
+            }
+        }
+    }
+
+    const NO_IDENTITY: [[u8; 32]; 2] = [[0u8; 32]; 2];
+    const DASHPAY_IDENTITIES: [[u8; 32]; 2] = [[0xa1; 32], [0xb2; 32]];
+
+    /// The four golden coins: a zero-valued BIP44 account, non-default
+    /// account fields with every flag set, a registration index with no
+    /// address form, and a DashPay account with both identity halves.
+    fn golden_coins() -> Vec<Coin> {
+        vec![
+            CoinSpec {
+                type_tag: AccountTypeTagFFI::Standard,
+                standard_tag: StandardAccountTypeTagFFI::Bip44,
+                index: 0,
+                registration_index: 0,
+                key_class: 0,
+                identities: NO_IDENTITY,
+                txid: txid(0x00),
+                vout: 0,
+                value: 19_549,
+                address: "yStxXHHzhAx58JhaPBNhn3xsH93UwBM2nd",
+                script: p2pkh(0x5b),
+                height: 1_534_921,
+                flags: [true, false, false, false],
+            }
+            .build(),
+            CoinSpec {
+                type_tag: AccountTypeTagFFI::Standard,
+                standard_tag: StandardAccountTypeTagFFI::Bip32,
+                index: 2,
+                registration_index: 0,
+                key_class: 0,
+                identities: NO_IDENTITY,
+                txid: txid(0x20),
+                vout: 7,
+                value: 5_000_000_000,
+                address: "yGoldenFixtureBip32Addr",
+                script: p2pkh(0xc3),
+                height: 1_400_000,
+                flags: [true, true, true, true],
+            }
+            .build(),
+            CoinSpec {
+                type_tag: AccountTypeTagFFI::IdentityTopUp,
+                standard_tag: StandardAccountTypeTagFFI::Bip44,
+                index: 0,
+                registration_index: 4,
+                key_class: 0,
+                identities: NO_IDENTITY,
+                txid: txid(0x40),
+                vout: 1,
+                value: 100_000,
+                address: "",
+                script: Vec::new(),
+                height: 0,
+                flags: [false, false, false, false],
+            }
+            .build(),
+            CoinSpec {
+                type_tag: AccountTypeTagFFI::DashpayReceivingFunds,
+                standard_tag: StandardAccountTypeTagFFI::Bip44,
+                index: 1,
+                registration_index: 0,
+                key_class: 0,
+                identities: DASHPAY_IDENTITIES,
+                txid: txid(0x60),
+                vout: 3,
+                value: 250_000,
+                address: "yGoldenFixtureDashPayAddr",
+                script: p2pkh(0xd4),
+                height: 1_534_000,
+                flags: [true, true, false, false],
+            }
+            .build(),
+        ]
+    }
+
+    fn rows(coins: &[Coin]) -> Vec<UtxoPageRow> {
+        coins
+            .iter()
+            // SAFETY: every pointer in a `Coin` entry points into that coin's
+            // own live buffers.
+            .map(|c| unsafe { UtxoPageRow::from_entry(&c.entry) })
+            .collect()
+    }
+
+    // ── Inventory page (Rust → Kotlin) ────────────────────────────────
+
+    #[test]
+    fn inventory_page_serializes_to_the_golden_page() {
+        let page = UtxoPage::new(rows(&golden_coins()), true).expect("page encodes");
+        assert_eq!(
+            serde_json::to_value(&page).expect("page serializes"),
+            golden()["inventoryPage"],
+            "the inventory page drifted from the golden fixture the Kotlin decoder is tested against"
+        );
+    }
+
+    #[test]
+    fn a_last_or_empty_page_carries_no_cursor() {
+        let last = UtxoPage::new(rows(&golden_coins()), false).expect("page encodes");
+        assert!(!last.has_more);
+        assert!(last.cursor.is_none());
+        let value = serde_json::to_value(&last).expect("page serializes");
+        assert_eq!(value["cursor"], serde_json::Value::Null);
+        assert_eq!(value["hasMore"], serde_json::Value::Bool(false));
+
+        // An empty page has nowhere to resume from, whatever the accessor said.
+        let empty = UtxoPage::new(Vec::new(), true).expect("page encodes");
+        assert!(!empty.has_more);
+        assert!(empty.cursor.is_none());
+    }
+
+    #[test]
+    fn the_golden_cursor_resumes_after_the_last_row() {
+        let coins = golden_coins();
+        let last = &coins.last().expect("golden coins").entry;
+        let raw = golden()["inventoryPage"]["cursor"]
+            .as_str()
+            .expect("golden cursor is a string")
+            .to_owned();
+
+        let resume = UtxoPageCursor::decode(&raw).expect("golden cursor decodes");
+
+        assert_eq!(resume.type_tag, last.type_tag as u8);
+        assert_eq!(resume.standard_tag, last.standard_tag as u8);
+        assert_eq!(resume.index, last.index);
+        assert_eq!(resume.registration_index, last.registration_index);
+        assert_eq!(resume.key_class, last.key_class);
+        assert_eq!(resume.user_identity_id, last.user_identity_id);
+        assert_eq!(resume.friend_identity_id, last.friend_identity_id);
+        assert_eq!(resume.outpoint.txid, last.outpoint.txid);
+        assert_eq!(resume.outpoint.vout, last.outpoint.vout);
+    }
+
+    #[test]
+    fn a_cursor_round_trips_every_account_field() {
+        let coin = CoinSpec {
+            type_tag: AccountTypeTagFFI::PlatformPayment,
+            standard_tag: StandardAccountTypeTagFFI::Bip32,
+            index: 7,
+            registration_index: 9,
+            key_class: 2,
+            identities: [[0x0c; 32], [0x0d; 32]],
+            txid: txid(0x80),
+            vout: 65_535,
+            value: 1,
+            address: "yGoldenFixtureCursorAddr",
+            script: p2pkh(0x01),
+            height: 2,
+            flags: [false, true, false, true],
+        }
+        .build();
+        let row = rows(std::slice::from_ref(&coin)).remove(0);
+        let raw = serde_json::to_string(&UtxoPageCursor::after(&row)).expect("cursor encodes");
+
+        let resume = UtxoPageCursor::decode(&raw).expect("own cursor decodes");
+
+        let e = &coin.entry;
+        assert_eq!(
+            (
+                resume.type_tag,
+                resume.standard_tag,
+                resume.index,
+                resume.registration_index,
+                resume.key_class
+            ),
+            (14, 1, 7, 9, 2)
+        );
+        assert_eq!(resume.user_identity_id, e.user_identity_id);
+        assert_eq!(resume.friend_identity_id, e.friend_identity_id);
+        assert_eq!(resume.outpoint.txid, e.outpoint.txid);
+        assert_eq!(resume.outpoint.vout, e.outpoint.vout);
+    }
+
+    #[test]
+    fn a_cursor_this_layer_did_not_emit_is_rejected() {
+        let good: serde_json::Value = serde_json::from_str(
+            golden()["inventoryPage"]["cursor"]
+                .as_str()
+                .expect("golden cursor is a string"),
+        )
+        .expect("golden cursor is JSON");
+        let tampered = |key: &str, value: serde_json::Value| {
+            let mut c = good.clone();
+            c[key] = value;
+            c.to_string()
+        };
+        let mut missing_index = good.clone();
+        missing_index
+            .as_object_mut()
+            .expect("cursor is an object")
+            .remove("index");
+
+        for (label, raw) in [
+            ("not a cursor object", "7".to_owned()),
+            ("missing index", missing_index.to_string()),
+            ("short txid", tampered("txid", "00".repeat(31).into())),
+            ("non-hex txid", tampered("txid", "zz".repeat(32).into())),
+            (
+                "short identity",
+                tampered("userIdentityId", "a1".repeat(31).into()),
+            ),
+            (
+                "odd-length identity",
+                tampered("friendIdentityId", "b".repeat(63).into()),
+            ),
+        ] {
+            assert!(
+                UtxoPageCursor::decode(&raw).is_none(),
+                "{label} must be rejected"
+            );
+        }
+    }
+
+    // ── Classification queries (Kotlin → Rust) ────────────────────────
+
+    fn golden_queries() -> serde_json::Value {
+        golden()["outpointQueries"].clone()
+    }
+
+    #[test]
+    fn golden_queries_decode_to_the_inventory_coins() {
+        let parsed: Vec<OutpointQuery> =
+            serde_json::from_value(golden_queries()).expect("golden queries deserialize");
+        let coins = golden_coins();
+        assert_eq!(parsed.len(), coins.len());
+
+        for (q, coin) in parsed.iter().zip(&coins) {
+            let e = &coin.entry;
+            // The tuple the store sends is the tuple the inventory emitted.
+            assert_eq!(q.account, UtxoAccountTuple::from_entry(e));
+            let (ffi, script) = q.to_ffi().expect("golden query converts");
+            assert_eq!(ffi.type_tag, e.type_tag as u8);
+            assert_eq!(ffi.standard_tag, e.standard_tag as u8);
+            assert_eq!(ffi.index, e.index);
+            assert_eq!(ffi.registration_index, e.registration_index);
+            assert_eq!(ffi.key_class, e.key_class);
+            assert_eq!(ffi.user_identity_id, e.user_identity_id);
+            assert_eq!(ffi.friend_identity_id, e.friend_identity_id);
+            assert_eq!(
+                ffi.outpoint.txid, e.outpoint.txid,
+                "same byte order both ways"
+            );
+            assert_eq!(ffi.outpoint.vout, e.outpoint.vout);
+            assert_eq!(script, coin.script);
+            assert!(
+                ffi.script_pubkey.is_null(),
+                "the caller fills the script pointer"
+            );
+        }
+    }
+
+    #[test]
+    fn a_query_missing_any_required_field_fails_the_batch() {
+        // Mirrors Kotlin's `FakeEngine.RUST_REQUIRED_QUERY_KEYS`: every field
+        // without a serde default, zero-valued ones included (kotlinx drops a
+        // property equal to its declared default, which once sent BIP44
+        // account-0 queries without `standardTag`).
+        for key in [
+            "typeTag",
+            "standardTag",
+            "index",
+            "registrationIndex",
+            "keyClass",
+            "txid",
+            "vout",
+        ] {
+            let mut batch = golden_queries();
+            batch[0]
+                .as_object_mut()
+                .expect("query is an object")
+                .remove(key);
+            let err = serde_json::from_value::<Vec<OutpointQuery>>(batch)
+                .err()
+                .unwrap_or_else(|| panic!("a query without `{key}` must not deserialize"));
+            assert!(
+                err.to_string().contains(&format!("missing field `{key}`")),
+                "{key}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_query_fields_are_rejected_by_name() {
+        let dashpay = 3;
+        let cases: [(&str, serde_json::Value, &str); 5] = [
+            (
+                "userIdentityId",
+                "a1".repeat(31).into(),
+                "outpoint query carries a malformed identity id",
+            ),
+            (
+                "friendIdentityId",
+                "zz".repeat(32).into(),
+                "outpoint query carries a malformed identity id",
+            ),
+            (
+                "txid",
+                "60".repeat(31).into(),
+                "outpoint query carries a malformed txid",
+            ),
+            (
+                "txid",
+                "6".repeat(64 + 1).into(),
+                "outpoint query carries a malformed txid",
+            ),
+            (
+                "scriptHex",
+                "76a".into(),
+                "outpoint query carries a malformed script",
+            ),
+        ];
+        for (key, value, expected) in cases {
+            let mut batch = golden_queries();
+            batch[dashpay][key] = value;
+            let parsed: Vec<OutpointQuery> =
+                serde_json::from_value(batch).expect("still well-formed JSON");
+            assert_eq!(
+                parsed[dashpay].to_ffi().err(),
+                Some(expected),
+                "{key} must be rejected"
+            );
+        }
+    }
 }

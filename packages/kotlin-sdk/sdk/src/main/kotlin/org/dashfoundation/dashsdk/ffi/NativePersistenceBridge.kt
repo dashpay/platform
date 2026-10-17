@@ -437,6 +437,31 @@ abstract class NativePersistenceBridge {
      */
     open fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = 0
 
+    /**
+     * The engine's credit verdicts for the round (dashpay/platform#4638):
+     * every `Received` / `Change` output of the round's records that the
+     * engine did NOT credit to the owning account. Fired inside the
+     * begin/end bracket BEFORE the changeset callback, and only on rounds
+     * that carry at least one verdict, so an implementation has them in
+     * hand when the round's [onWalletChangesetUtxoAdded] entries arrive.
+     * Descriptor `([B[B[B[II)I`.
+     *
+     * [outpoints] is [count] 36-byte keys (32-byte wire-order txid plus a
+     * little-endian vout) packed into one array; [verdicts] holds one
+     * `UTXO_CREDIT_VERDICT_*` code per outpoint (1 observed spent, 2
+     * doomed, 3 uncredited) and [spentAtHeights] the observed spending
+     * block's height for code 1, 0 otherwise. Purely additive: a host that
+     * ignores the verdicts writes exactly what it wrote before the slot
+     * existed.
+     */
+    open fun onWalletChangesetUtxoVerdicts(
+        walletId: ByteArray,
+        outpoints: ByteArray,
+        verdicts: ByteArray,
+        spentAtHeights: IntArray,
+        count: Int,
+    ): Int = 0
+
     // ── Identities ────────────────────────────────────────────────────
 
     /**
