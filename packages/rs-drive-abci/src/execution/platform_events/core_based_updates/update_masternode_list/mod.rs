@@ -1119,4 +1119,6 @@ mod test {
 }
 
 #[cfg(test)]
+mod operator_key_encoding_tests;
+#[cfg(test)]
 mod versioning_tests;
