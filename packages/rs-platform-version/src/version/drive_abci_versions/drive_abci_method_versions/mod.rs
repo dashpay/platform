@@ -104,6 +104,26 @@ pub struct DriveAbciCoreChainLockMethodVersionsAndConstants {
     pub verify_chain_lock_through_core: FeatureVersion,
     pub make_sure_core_is_synced_to_chain_lock: FeatureVersion,
     pub recent_block_count_amount: u32, //what constitutes a recent block, for v0 it's 2.
+    /// Dash Core's DKG mining schedule (`llmq/params.h`) of each non-rotating chain lock quorum
+    /// type, read by `verify_chain_lock_locally` 1 to find the first core height at which the
+    /// quorums Platform holds can change. A quorum type missing from it can change its quorums at
+    /// any later height. `None` for the protocol versions that select `verify_chain_lock_locally`
+    /// 0, which does not read it.
+    pub dkg_mining_schedules: Option<&'static [DkgMiningSchedule]>,
+}
+
+/// When Dash Core can mine a commitment of a non-rotating quorum type: at the core heights whose
+/// offset in the DKG interval is within the mining window, both ends included.
+#[derive(Clone, Copy, Debug)]
+pub struct DkgMiningSchedule {
+    /// The LLMQ type, as Dash Core numbers it (`llmq_test` is 100)
+    pub quorum_type: u8,
+    /// The length of the DKG interval in blocks; intervals start at multiples of it
+    pub interval: u32,
+    /// The first offset in the interval at which a commitment can be mined
+    pub mining_window_start: u32,
+    /// The last offset in the interval at which a commitment can be mined
+    pub mining_window_end: u32,
 }
 
 #[derive(Clone, Debug, Default)]

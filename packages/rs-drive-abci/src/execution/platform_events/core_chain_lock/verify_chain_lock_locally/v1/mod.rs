@@ -14,6 +14,7 @@ use crate::error::execution::ExecutionError;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSetV0Methods;
+use dpp::version::drive_abci_versions::drive_abci_method_versions::DkgMiningSchedule;
 use dpp::version::PlatformVersion;
 
 const CHAIN_LOCK_REQUEST_ID_PREFIX: &str = "clsig";
@@ -24,56 +25,22 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
+    /// Verify the chain lock against the chain lock quorums Platform holds, without Core.
     /// Returning None here means Platform cannot tell on its own whether the chain lock is
-    /// valid, because it might not hold the quorums Core signed it with, and Core's
-    /// `verifychainlock` accepted its signature; submitting it to Core then decides whether Core
-    /// is synced to it. `Some(false)` is returned when the signature fails against exactly the
-    /// quorums active at the signing height, which Platform holds, or when `verifychainlock`
-    /// fails it.
+    /// valid, because it might not hold the quorums Core signed it with. `Some(false)` is only
+    /// returned when Platform holds exactly the quorums active at the signing height.
+    ///
+    /// This leaves to Core chain locks that version 0 rejects, so it relies on
+    /// `verify_chain_lock_through_core` 1 having Core's `verifychainlock` check their signature
+    /// before `submitchainlock`, which skips that check for a height Core already has a chain
+    /// lock at or above.
     #[inline(always)]
     pub(super) fn verify_chain_lock_locally_v1(
         &self,
         round: u32,
         platform_state: &PlatformState,
         chain_lock: &ChainLock,
-        _platform_version: &PlatformVersion,
-    ) -> Result<Option<bool>, Error> {
-        if let Some(valid) =
-            self.verify_chain_lock_with_held_quorums(round, platform_state, chain_lock)?
-        {
-            return Ok(Some(valid));
-        }
-
-        // `submitchainlock` returns Core's best chain lock height without checking the signature
-        // when that height is at or above the chain lock's, so the signature is checked with
-        // `verifychainlock` first.
-        //
-        // `verifychainlock` also fails a valid chain lock while Core does not have the block at
-        // the signing height, where `submitchainlock` fails too.
-        if self.core_rpc.verify_chain_lock(chain_lock)? {
-            Ok(None)
-        } else {
-            tracing::warn!(
-                ?chain_lock,
-                "h:{} r:{} Core's verifychainlock rejected the chain lock at core height {}: its signature is invalid, or Core does not have the block at core height {} yet",
-                platform_state.last_committed_block_height() + 1,
-                round,
-                chain_lock.block_height,
-                chain_lock.block_height.saturating_sub(SIGN_OFFSET),
-            );
-            Ok(Some(false))
-        }
-    }
-
-    /// Verify the chain lock against the chain lock quorums Platform holds, without Core.
-    /// Returning None here means Platform cannot tell on its own whether the chain lock is
-    /// valid, because it might not hold the quorums Core signed it with. `Some(false)` is only
-    /// returned when Platform holds exactly the quorums active at the signing height.
-    pub(super) fn verify_chain_lock_with_held_quorums(
-        &self,
-        round: u32,
-        platform_state: &PlatformState,
-        chain_lock: &ChainLock,
+        platform_version: &PlatformVersion,
     ) -> Result<Option<bool>, Error> {
         let quorum_set = platform_state.chain_lock_validating_quorums();
         let quorum_config = quorum_set.config();
@@ -126,10 +93,19 @@ where
         // stay active at least until a block in which a new quorum commitment can be mined, which
         // is only inside the DKG mining window. That window ends well before the DKG interval
         // does, so the quorums can change before `last_block_in_window`.
+        let dkg_mining_schedules = platform_version
+            .drive_abci
+            .methods
+            .core_chain_lock
+            .dkg_mining_schedules
+            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "verify_chain_lock_locally v1 requires core_chain_lock.dkg_mining_schedules",
+            )))?;
         let first_possible_quorum_change = first_possible_quorum_change_after(
+            dkg_mining_schedules,
             quorum_config.quorum_type,
             platform_state.last_committed_core_height(),
-        );
+        )?;
 
         let mut selected_quorums = platform_state
             .chain_lock_validating_quorums()
@@ -284,56 +260,32 @@ where
     }
 }
 
-/// When Dash Core can mine a commitment of a non-rotating quorum type: at the core heights whose
-/// offset in the DKG interval is within the mining window, both ends included.
-struct DkgMiningSchedule {
-    interval: u32,
-    mining_window_start: u32,
-    mining_window_end: u32,
-}
-
-/// Dash Core's DKG schedule (`llmq/params.h`) of the non-rotating quorum types, the ones chain
-/// locks are signed with. `None` for rotating and unknown types.
-fn dkg_mining_schedule(quorum_type: QuorumType) -> Option<DkgMiningSchedule> {
-    let (interval, mining_window_start, mining_window_end) = match quorum_type {
-        QuorumType::Llmq50_60
-        | QuorumType::Llmq100_67
-        | QuorumType::Llmq25_67
-        | QuorumType::LlmqTest
-        | QuorumType::LlmqDevnet
-        | QuorumType::LlmqTestV17
-        | QuorumType::LlmqTestInstantsend
-        | QuorumType::LlmqTestPlatform
-        | QuorumType::LlmqDevnetPlatform => (24, 10, 18),
-        QuorumType::Llmq400_60 => (288, 20, 28),
-        QuorumType::Llmq400_85 => (576, 20, 48),
-        _ => return None,
-    };
-    Some(DkgMiningSchedule {
-        interval,
-        mining_window_start,
-        mining_window_end,
-    })
-}
-
 /// The first core height after `last_committed_core_height` at which a quorum commitment of
-/// `quorum_type` can be mined. Core only changes the active quorums when a commitment is mined,
-/// so the quorums active at `last_committed_core_height` stay the active ones up to the block
-/// before the returned height.
+/// `quorum_type` can be mined, from Dash Core's DKG mining schedules. Core only changes the active
+/// quorums when a commitment is mined, so the quorums active at `last_committed_core_height` stay
+/// the active ones up to the block before the returned height.
 fn first_possible_quorum_change_after(
+    dkg_mining_schedules: &[DkgMiningSchedule],
     quorum_type: QuorumType,
     last_committed_core_height: u32,
-) -> u32 {
+) -> Result<u32, Error> {
     let next_height = last_committed_core_height.saturating_add(1);
 
-    let Some(schedule) = dkg_mining_schedule(quorum_type) else {
+    let Some(schedule) = dkg_mining_schedules
+        .iter()
+        .find(|schedule| schedule.quorum_type == quorum_type as u8)
+    else {
         // Without the type's DKG schedule, any later block may change the quorums
-        return next_height;
+        return Ok(next_height);
     };
-    let offset_in_interval = last_committed_core_height % schedule.interval;
+    let offset_in_interval = last_committed_core_height
+        .checked_rem(schedule.interval)
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "a DKG mining schedule has an interval of 0",
+        )))?;
     let interval_start = last_committed_core_height - offset_in_interval;
 
-    if offset_in_interval < schedule.mining_window_start {
+    Ok(if offset_in_interval < schedule.mining_window_start {
         interval_start.saturating_add(schedule.mining_window_start)
     } else if offset_in_interval < schedule.mining_window_end {
         next_height
@@ -341,13 +293,15 @@ fn first_possible_quorum_change_after(
         interval_start
             .saturating_add(schedule.interval)
             .saturating_add(schedule.mining_window_start)
-    }
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::first_possible_quorum_change_after;
     use crate::config::ChainLockConfig;
+    use crate::error::execution::ExecutionError;
+    use crate::error::Error;
     use crate::platform_types::platform_state::PlatformState;
     use crate::platform_types::signature_verification_quorum_set::{Quorums, VerificationQuorum};
     use crate::rpc::core::MockCoreRPCLike;
@@ -361,6 +315,7 @@ mod tests {
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock, QuorumHash};
     use dpp::dashcore_rpc::json::QuorumType;
+    use dpp::version::PlatformVersion;
     use std::str::FromStr;
 
     fn verify(
@@ -370,7 +325,7 @@ mod tests {
     ) -> Option<bool> {
         platform
             .platform
-            .verify_chain_lock_with_held_quorums(0, state, chain_lock)
+            .verify_chain_lock_locally_v1(0, state, chain_lock, PlatformVersion::latest())
             .expect("verification runs")
     }
 
@@ -652,9 +607,59 @@ mod tests {
     }
 
     #[test]
+    fn should_read_dkg_mining_schedule_from_platform_version() {
+        // From 1106 the next llmq_test commitment can be mined at 1114, so a wrong signer at
+        // signing height 1113 is rejected locally. Without llmq_test's schedule any later block
+        // may change the quorums, so the same chain lock is left to Core.
+        let platform = chain_lock_test_platform();
+        let scenario = QuorumMinedAfterCoreHeight::default();
+        let state = scenario.platform_state(&platform.platform.state.load());
+        let chain_lock = sign_chain_lock(&TestQuorum::new(9, 0), 1113 + 8);
+        let verify_with = |platform_version: &PlatformVersion| {
+            platform
+                .platform
+                .verify_chain_lock_locally_v1(0, &state, &chain_lock, platform_version)
+        };
+
+        assert_eq!(
+            verify_with(PlatformVersion::latest()).expect("verification runs"),
+            Some(false)
+        );
+
+        let mut without_schedules = PlatformVersion::latest().clone();
+        without_schedules
+            .drive_abci
+            .methods
+            .core_chain_lock
+            .dkg_mining_schedules = Some(&[]);
+        assert_eq!(
+            verify_with(&without_schedules).expect("verification runs"),
+            None
+        );
+
+        without_schedules
+            .drive_abci
+            .methods
+            .core_chain_lock
+            .dkg_mining_schedules = None;
+        assert!(matches!(
+            verify_with(&without_schedules),
+            Err(Error::Execution(ExecutionError::CorruptedCodeExecution(_)))
+        ));
+    }
+
+    #[test]
     fn should_find_first_possible_quorum_change_from_dash_core_dkg_schedule() {
         // Dash Core mines a commitment only at offsets mining_window_start..=mining_window_end
-        // of each DKG interval (`llmq/params.h`).
+        // of each DKG interval (`llmq/params.h`). The expected schedules are keyed by dashcore's
+        // `QuorumType` and the version table by Core's LLMQ type number, so this also checks
+        // that numbering.
+        let dkg_mining_schedules = PlatformVersion::latest()
+            .drive_abci
+            .methods
+            .core_chain_lock
+            .dkg_mining_schedules
+            .expect("the latest protocol version has DKG mining schedules");
         let schedules = [
             (QuorumType::LlmqTest, 24, 10, 18),
             (QuorumType::LlmqTestInstantsend, 24, 10, 18),
@@ -670,8 +675,10 @@ mod tests {
         ];
         for (quorum_type, interval, start, end) in schedules {
             let interval_start = interval * 8873;
-            let first_change =
-                |core_height| first_possible_quorum_change_after(quorum_type, core_height);
+            let first_change = |core_height| {
+                first_possible_quorum_change_after(dkg_mining_schedules, quorum_type, core_height)
+                    .expect("the schedule has an interval")
+            };
             assert_eq!(
                 first_change(interval_start),
                 interval_start + start,
@@ -706,7 +713,11 @@ mod tests {
             QuorumType::LlmqDevnetDip0024,
             QuorumType::LlmqSingleNode,
         ] {
-            assert_eq!(first_possible_quorum_change_after(quorum_type, 1110), 1111);
+            assert_eq!(
+                first_possible_quorum_change_after(dkg_mining_schedules, quorum_type, 1110)
+                    .expect("no schedule to read"),
+                1111
+            );
         }
     }
 

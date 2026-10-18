@@ -174,7 +174,7 @@ mod tests {
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock};
     use dpp::dashcore_rpc::Error as DashCoreRpcError;
-    use dpp::version::PlatformVersion;
+    use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
 
     #[test]
     fn should_accept_through_core_chain_lock_signed_by_quorum_mined_after_last_committed_core_height(
@@ -245,6 +245,8 @@ mod tests {
         // have signed it, at 1136 the signing height is past the DKG interval of Platform's core
         // height 1106. Core already has a chain lock at 1140, so submitchainlock returns that
         // height without checking the signature; verifychainlock does check it and fails it.
+        // The rejection is Core's verdict, so the block proposal reports the chain lock as
+        // invalid based on a core request, not on platform state.
         const CORE_BEST_CHAIN_LOCK_HEIGHT: u32 = 1140;
         let mut platform = chain_lock_test_platform();
         let scenario = QuorumMinedAfterCoreHeight::default();
@@ -273,17 +275,95 @@ mod tests {
 
             assert!(result.chain_lock_signature_is_deserializable);
             assert_eq!(
-                result.found_valid_locally,
+                result.found_valid_by_core,
                 Some(false),
-                "a forged chain lock at {chain_lock_height} must be rejected, not accepted \
-                 through Core's early return (core is synced: {:?})",
+                "a forged chain lock at {chain_lock_height} must be rejected by Core's verdict, \
+                 not accepted through Core's early return (core is synced: {:?})",
                 result.core_is_synced
             );
-            assert_eq!(result.found_valid_by_core, None);
+            assert_eq!(
+                result.found_valid_locally, None,
+                "Platform could not check the chain lock against the quorums it holds"
+            );
             assert_eq!(
                 result.core_is_synced, None,
                 "submitchainlock must not be asked"
             );
+        }
+    }
+
+    /// Whether the block proposal accepts a chain lock with this verification result
+    fn accepted_by_block_proposal(result: &VerifyChainLockResult) -> bool {
+        result.chain_lock_signature_is_deserializable
+            && result.found_valid_locally != Some(false)
+            && result.found_valid_by_core != Some(false)
+            && result.core_is_synced != Some(false)
+    }
+
+    #[test]
+    fn should_never_accept_forged_chain_lock_signed_where_a_new_quorum_may_have_signed() {
+        // Protocol versions up to 14 reject this forged chain lock locally, because Platform
+        // holds the quorums of signing heights up to 1113 and assumes they hold up to the
+        // interval end. From 15 Platform leaves it to Core, since a quorum mined at 1114 may
+        // have signed it, so a protocol version must not leave chain locks to Core without
+        // having verifychainlock check them: Core, already holding a chain lock at 1140, would
+        // answer submitchainlock with that height without checking the signature.
+        const CORE_BEST_CHAIN_LOCK_HEIGHT: u32 = 1140;
+        let mut platform = chain_lock_test_platform();
+        let scenario = QuorumMinedAfterCoreHeight::default();
+        let state = scenario.platform_state(&platform.platform.state.load());
+        let forged = sign_chain_lock(&TestQuorum::new(9, 0), 1114 + 8);
+
+        let mut core_rpc = MockCoreRPCLike::new();
+        core_rpc.expect_verify_chain_lock().returning(|_| Ok(false));
+        core_rpc
+            .expect_submit_chain_lock()
+            .returning(|_| Ok(CORE_BEST_CHAIN_LOCK_HEIGHT));
+        platform.core_rpc = core_rpc;
+
+        for platform_version in PLATFORM_VERSIONS {
+            let result = platform
+                .platform
+                .verify_chain_lock_v0(0, &state, &forged, true, platform_version)
+                .expect("verification runs");
+
+            assert!(
+                !accepted_by_block_proposal(&result),
+                "protocol version {} accepted a forged chain lock",
+                platform_version.protocol_version
+            );
+        }
+    }
+
+    #[test]
+    fn should_ask_verifychainlock_once_about_chain_lock_left_to_core_without_submitting() {
+        // Without submitting, Core's verifychainlock is the whole verification of a chain lock
+        // Platform leaves to Core, and it is asked once.
+        let mut platform = chain_lock_test_platform();
+        let scenario = QuorumMinedAfterCoreHeight::default();
+        let state = scenario.platform_state(&platform.platform.state.load());
+        let chain_lock = scenario.chain_lock_signed_by_new_quorum();
+
+        for verdict in [true, false] {
+            let mut core_rpc = MockCoreRPCLike::new();
+            let asked = chain_lock.clone();
+            core_rpc
+                .expect_verify_chain_lock()
+                .withf(move |chain_lock| *chain_lock == asked)
+                .times(1)
+                .returning(move |_| Ok(verdict));
+            core_rpc.expect_submit_chain_lock().times(0);
+            platform.core_rpc = core_rpc;
+
+            let result = platform
+                .platform
+                .verify_chain_lock_v0(0, &state, &chain_lock, false, PlatformVersion::latest())
+                .expect("verification runs");
+
+            assert!(result.chain_lock_signature_is_deserializable);
+            assert_eq!(result.found_valid_locally, None);
+            assert_eq!(result.found_valid_by_core, Some(verdict));
+            assert_eq!(result.core_is_synced, None);
         }
     }
 

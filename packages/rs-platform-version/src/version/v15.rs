@@ -49,19 +49,21 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    signed past the DKG interval. `verify_chain_lock_locally` 1
 ///    (`DRIVE_ABCI_METHOD_VERSIONS_V11`) rejects locally only when Platform
 ///    holds exactly the quorums active at the signing height, using Dash Core's
-///    DKG mining schedule, and leaves the other chain locks to Core after
-///    Core's `verifychainlock` accepts their signature: `submitchainlock` skips
-///    the signature check for a height Core already has a chain lock at or
-///    above. So 1 accepts valid chain locks that 0 rejected, and rejects forged
-///    ones that 0 left to that early return. Protocol v14 and earlier keep
-///    `verify_chain_lock_locally` 0, so the blocks committed under them replay
-///    with the same verdicts.
+///    DKG mining schedule (`core_chain_lock.dkg_mining_schedules`), and leaves
+///    the other chain locks to Core. `verify_chain_lock_through_core` 1 has
+///    Core's `verifychainlock` check the signature of every chain lock left to
+///    Core before `submitchainlock`, which skips that check for a height Core
+///    already has a chain lock at or above, and reports a failure as Core's
+///    verdict. So v15 accepts valid chain locks that v14 rejected, and rejects
+///    forged ones that v14 left to that early return. Protocol v14 and earlier
+///    keep `verify_chain_lock_locally` 0 and `verify_chain_lock_through_core` 0,
+///    so the blocks committed under them replay with the same verdicts.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V9,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and has Core's verifychainlock check the others
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
