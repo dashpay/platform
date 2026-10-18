@@ -718,6 +718,25 @@ pub struct WalletRestoreEntryFFI {
     /// leaves every existing field where it was.
     pub unconfirmed_outgoing_tx_records: *const UnconfirmedOutgoingTxRecordFFI,
     pub unconfirmed_outgoing_tx_records_count: usize,
+    /// Whether the host holds a persisted DashPay backfill record for this
+    /// wallet (dashpay/platform#4302). `false` — the zero-init default — for
+    /// a wallet that never rewound for a contact, a row persisted before the
+    /// record existed, or a host that does not store the slot; the rescan
+    /// sweep then behaves as it always did and writes one. The three fields
+    /// below are read only when this is `true`.
+    pub has_dashpay_backfill: bool,
+    /// Lowest height the backfill rewound the cursor to.
+    pub dashpay_backfill_floor: u32,
+    /// Highest cursor the backfill rewound from — the height the scan climbs
+    /// back to for the backfill to be complete.
+    pub dashpay_backfill_rewound_from: u32,
+    /// Receival contacts the backfill covers, each with the height it is
+    /// covered from. Host-owned for the callback window, freed by
+    /// `LoadWalletListFreeFn`; `null` / `0` when the record covers no one.
+    /// Appended at the end, like every addition to this `#[repr(C)]` struct,
+    /// so no existing offset moves.
+    pub dashpay_backfill_covered: *const crate::core_wallet_types::DashPayBackfillCoveredContactFFI,
+    pub dashpay_backfill_covered_count: usize,
 }
 
 /// Every field named explicitly so that adding a field to this ABI struct
@@ -758,6 +777,11 @@ impl Default for WalletRestoreEntryFFI {
             last_applied_chain_lock_bytes_len: 0,
             unconfirmed_outgoing_tx_records: std::ptr::null(),
             unconfirmed_outgoing_tx_records_count: 0,
+            has_dashpay_backfill: false,
+            dashpay_backfill_floor: 0,
+            dashpay_backfill_rewound_from: 0,
+            dashpay_backfill_covered: std::ptr::null(),
+            dashpay_backfill_covered_count: 0,
         }
     }
 }

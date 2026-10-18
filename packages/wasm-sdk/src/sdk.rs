@@ -134,34 +134,48 @@ impl WasmSdk {
     /// page load (see [`contract_store`]).
     pub(crate) fn cache_contract(&self, contract: dash_sdk::platform::DataContract) {
         if let Some(ref context) = self.trusted_context {
-            contract_store::store(self.sdk.network, &contract, self.sdk.version());
-            context.add_known_contract(contract);
+            cache_contract_in_context(&self.sdk, context, contract);
         }
     }
 
-    /// Drop the cached contract when any of `documents` was written under a
-    /// newer contract version than the cached one, so the next query fetches
-    /// the current contract instead of decoding documents with a stale
-    /// layout. Returns whether the cache was dropped. Documents predating the
-    /// `$contractVersion` stamp carry no version and are ignored.
+    /// Whether documents outrun the contract snapshot used by a query.
+    /// Remove retained entries only when they are also below the highest
+    /// observed version. A newer entry can survive while the query still
+    /// needs a retry. Documents without a version stamp are ignored.
     pub(crate) fn drop_stale_contract<'a>(
         &self,
         contract: &dash_sdk::platform::DataContract,
         documents: impl IntoIterator<Item = &'a Document>,
     ) -> bool {
-        let stale = documents_outrun_contract(
-            contract.version(),
-            documents
-                .into_iter()
-                .map(|document| document.contract_version()),
-        );
-        if stale {
-            self.remove_cached_contract(&contract.id());
+        let Some(observed_version) = documents
+            .into_iter()
+            .filter_map(|document| document.contract_version())
+            .max()
+        else {
+            return false;
+        };
+        if observed_version <= contract.version() {
+            return false;
         }
-        stale
+        let id = contract.id();
+        if let Some(context) = &self.trusted_context {
+            if context
+                .get_known_contract(&id)
+                .is_some_and(|retained| retained.version() < observed_version)
+            {
+                context.remove_known_contract(&id);
+            }
+        }
+        contract_store::remove_if_older(
+            self.sdk.network,
+            &id,
+            observed_version,
+            self.sdk.version(),
+        );
+        true
     }
 
-    /// Fetch a proved contract and replace its trusted-context cache entry.
+    /// Fetch a proved contract and cache it when its version is newer.
     pub(crate) async fn refresh_contract(
         &self,
         contract_id: dash_sdk::platform::Identifier,
@@ -173,8 +187,8 @@ impl WasmSdk {
     ///
     /// A miss does not always fetch: when a fetch for the same id is
     /// already in flight (another query missed the cold cache a moment
-    /// ago), this call joins it and every waiter receives that one
-    /// fetch's result — see [`Self::join_or_start_contract_fetch`].
+    /// ago), this call joins it. After success, a contract promoted while
+    /// the fetch was pending takes precedence over its older result.
     pub(crate) async fn get_or_fetch_contract(
         &self,
         contract_id: dash_sdk::platform::Identifier,
@@ -185,10 +199,15 @@ impl WasmSdk {
 
         let sdk = self.sdk.clone();
         let trusted_context = self.trusted_context.clone();
-        self.join_or_start_contract_fetch(contract_id, move || {
-            fetch_contract_into_cache(sdk, trusted_context, contract_id)
-        })
-        .await
+        let fetched = self
+            .join_or_start_contract_fetch(contract_id, move || {
+                fetch_contract_into_cache(sdk, trusted_context, contract_id)
+            })
+            .await?;
+        Ok(self
+            .get_cached_contract(&contract_id)
+            .map(|cached| (*cached).clone())
+            .unwrap_or(fetched))
     }
 
     /// Single-flight over contract fetches: join the fetch already in
@@ -256,7 +275,11 @@ impl WasmSdk {
         if self.trusted_context.is_none() {
             return false;
         }
-        self.cache_contract(contract.clone().into());
+        let contract: DataContract = contract.clone().into();
+        contract_store::store(self.sdk.network, &contract, self.sdk.version());
+        if let Some(context) = &self.trusted_context {
+            context.add_known_contract(contract);
+        }
         true
     }
 
@@ -500,7 +523,7 @@ impl WasmSdkBuilder {
         // trip. Persisted for mainnet and testnet only; see `contract_store`.
         if let Some(context) = &self.trusted_context {
             for contract in contract_store::load_all(self.network, sdk.version()) {
-                context.add_known_contract(contract);
+                cache_contract_in_context(&sdk, context, contract);
             }
         }
         Ok(WasmSdk::new(sdk, self.trusted_context))
@@ -661,24 +684,17 @@ async fn fetch_contract_into_cache(
         .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
 
     if let Some(context) = trusted_context {
-        contract_store::store(sdk.network, &contract, sdk.version());
-        context.add_known_contract(contract.clone());
+        cache_contract_in_context(&sdk, &context, contract.clone());
     }
 
     Ok(contract)
 }
 
-/// Whether any document version stamp exceeds the contract version it was
-/// decoded with. `None` stamps (documents serialized before the stamp
-/// existed) never count as newer.
-fn documents_outrun_contract(
-    contract_version: u32,
-    document_versions: impl IntoIterator<Item = Option<u32>>,
-) -> bool {
-    document_versions
-        .into_iter()
-        .flatten()
-        .any(|version| version > contract_version)
+/// Persist the retained memory entry so an older completion cannot write its
+/// candidate back over a newer contract already shared by this context.
+fn cache_contract_in_context(sdk: &Sdk, context: &WasmTrustedContext, contract: DataContract) {
+    let retained = context.add_known_contract_if_newer(contract);
+    contract_store::store_if_newer(sdk.network, &retained, sdk.version());
 }
 
 #[cfg(test)]
@@ -927,10 +943,6 @@ mod tests {
     /// cache entry and its persisted copy; older or unstamped documents do not.
     #[test]
     fn stale_contract_is_dropped_when_documents_outrun_it() {
-        assert!(!documents_outrun_contract(2, [None, Some(1), Some(2)]));
-        assert!(documents_outrun_contract(2, [None, Some(3)]));
-        assert!(!documents_outrun_contract(2, std::iter::empty()));
-
         let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
         let sdk = user_builder()
             .with_trusted_context(&ctx)
@@ -963,6 +975,127 @@ mod tests {
             next.get_cached_contract(&id).is_none(),
             "a stale entry must not come back on the next load"
         );
+    }
+
+    fn assert_stale_query_preserves_newer_persistence(
+        id_byte: u8,
+        memory_version: Option<u32>,
+        persisted_version: u32,
+        observed_version: u32,
+    ) {
+        let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
+        let sdk = user_builder()
+            .with_trusted_context(&ctx)
+            .build()
+            .expect("build");
+        let snapshot = custom_contract(id_byte, 1, sdk.inner_sdk().version());
+        let id = snapshot.id();
+        if let Some(version) = memory_version {
+            let mut memory = snapshot.clone();
+            memory.set_version(version);
+            ctx.add_known_contract(memory);
+        }
+        let mut durable = snapshot.clone();
+        durable.set_version(persisted_version);
+        contract_store::store(Network::Testnet, &durable, sdk.inner_sdk().version());
+        let document = Document::V0(dash_sdk::dpp::document::DocumentV0 {
+            contract_version: Some(observed_version),
+            ..Default::default()
+        });
+
+        assert!(sdk.drop_stale_contract(&snapshot, [&document]));
+        assert_eq!(
+            sdk.get_cached_contract(&id)
+                .map(|contract| contract.version()),
+            memory_version.filter(|version| *version >= observed_version),
+            "memory is evaluated independently against the observed document version"
+        );
+        assert_eq!(
+            contract_store::load_all(Network::Testnet, sdk.inner_sdk().version())
+                .iter()
+                .find(|contract| contract.id() == id)
+                .expect("a durable body covering the observed version must survive")
+                .version(),
+            persisted_version
+        );
+    }
+
+    #[test]
+    fn should_preserve_newer_persistence_when_stale_query_memory_is_older() {
+        assert_stale_query_preserves_newer_persistence(0xB0, Some(1), 2, 2);
+    }
+
+    #[test]
+    fn should_preserve_newer_persistence_when_stale_query_memory_is_absent() {
+        assert_stale_query_preserves_newer_persistence(0xB1, None, 2, 2);
+    }
+
+    #[test]
+    fn should_evaluate_query_memory_and_persistence_freshness_independently() {
+        assert_stale_query_preserves_newer_persistence(0xB2, Some(2), 3, 2);
+        assert_stale_query_preserves_newer_persistence(0xB3, Some(2), 3, 3);
+    }
+
+    #[test]
+    fn should_evict_contracts_below_the_highest_stamp_in_either_document_order() {
+        for (offset, versions) in [[2, 3], [3, 2]].into_iter().enumerate() {
+            let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
+            let sdk = user_builder()
+                .with_trusted_context(&ctx)
+                .build()
+                .expect("build");
+            let snapshot = custom_contract(0xB4 + offset as u8, 1, sdk.inner_sdk().version());
+            let mut cached = snapshot.clone();
+            cached.set_version(2);
+            sdk.cache_contract(cached);
+            let documents = versions.map(|version| {
+                Document::V0(dash_sdk::dpp::document::DocumentV0 {
+                    contract_version: Some(version),
+                    ..Default::default()
+                })
+            });
+
+            assert!(sdk.drop_stale_contract(&snapshot, &documents));
+            assert!(sdk.get_cached_contract(&snapshot.id()).is_none());
+            assert!(
+                contract_store::load_all(Network::Testnet, sdk.inner_sdk().version())
+                    .iter()
+                    .all(|contract| contract.id() != snapshot.id())
+            );
+        }
+    }
+
+    #[test]
+    fn should_keep_cache_when_documents_do_not_outrun_the_query_snapshot() {
+        let ctx = WasmTrustedContext::for_testing(vec![parse(DISCOVERED_ADDR_1)]);
+        let sdk = user_builder()
+            .with_trusted_context(&ctx)
+            .build()
+            .expect("build");
+        let snapshot = custom_contract(0xB6, 2, sdk.inner_sdk().version());
+        sdk.cache_contract(snapshot.clone());
+        for versions in [vec![], vec![None], vec![Some(1), None], vec![Some(2)]] {
+            let documents: Vec<_> = versions
+                .into_iter()
+                .map(|version| {
+                    Document::V0(dash_sdk::dpp::document::DocumentV0 {
+                        contract_version: version,
+                        ..Default::default()
+                    })
+                })
+                .collect();
+            assert!(!sdk.drop_stale_contract(&snapshot, &documents));
+            assert_eq!(
+                sdk.get_cached_contract(&snapshot.id())
+                    .expect("memory")
+                    .version(),
+                2
+            );
+            assert!(
+                contract_store::load_all(Network::Testnet, sdk.inner_sdk().version())
+                    .contains(&snapshot)
+            );
+        }
     }
 
     /// Repro of the bug behind the fix: a user calling

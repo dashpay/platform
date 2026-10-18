@@ -129,20 +129,15 @@ pub struct SystemLimits {
     ///   across the documents of a batch (one read and one write per counter) in place of
     ///   that refusal.
     ///
-    /// * A token shielded pool leans on the cap twice, and neither is visible from the pool's
-    ///   own code. Its balance write is absolute rather than a delta, so two pool operations in
-    ///   one batch would silently discard the first — value lost on every node, no disagreement
-    ///   to notice. And an outputs-only bundle's sighash binds the owner, but nothing that
-    ///   tells one of that owner's transitions from another, while its anchor is never checked
-    ///   against a pool at all — so the same authorized bytes can sit in two shields of one
-    ///   batch: state validation runs per transition against the transaction before any
-    ///   operation applies, so the second cannot see the first's pending insert, and the
-    ///   within-bundle check is scoped to one action set. The two inserts are then byte-identical
-    ///   in path, key and value, which a node running the shipped batching default folds in
-    ///   silence while a node verifying batch
-    ///   consistency refuses — the two disagree on one block and neither shows why. Raising the
-    ///   cap means batch-scoped nullifier deduplication and a delta-based pool balance write,
-    ///   not just making the ignored cases above pass.
+    /// * Token shielded pool validation runs against the pre-batch transaction. Its accepted-action
+    ///   tracker refuses cross-candidate `(token_id, nullifier)` overlap for spends, outputs-only
+    ///   dummy nullifiers and shielded document payments, before document triggers. Only finally
+    ///   accepted pool writers reserve nullifiers; a non-closing group action is checked but
+    ///   reserves nothing. This closes the nullifier dependency on the cap, including pure
+    ///   shielded transfers whose pool total never changes. Pool balance writes remain absolute:
+    ///   repeated pool-total writes are refused by `refuse_repeated_token_balance_writes` as an
+    ///   internal error. Raising the cap still requires delta-based pool balance writes and a
+    ///   review of the other balance, nonce, counter and group dependencies above.
     ///
     /// * The batch minimum balance pre-check reserves the compute fee of every shielded pool
     ///   bundle a batch carries, on top of `document_batch_sub_transition` per sub-transition.

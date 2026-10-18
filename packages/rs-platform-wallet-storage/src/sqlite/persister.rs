@@ -1215,7 +1215,7 @@ impl SqlitePersister {
     /// every subsequent `store()` call on this persister until overwritten
     /// or cleared. A test that wants it to fire exactly once (the common
     /// case) needs its own latch — see `release_at_store_seam` in
-    /// `tests/common` for the pattern.
+    /// `tests/integration/common` for the pattern.
     #[doc(hidden)]
     #[cfg(any(test, feature = "__test-helpers"))]
     pub fn set_store_flush_seam_for_test(&self, seam: Arc<dyn Fn() + Send + Sync>) {
@@ -1859,6 +1859,10 @@ fn load_one_wallet(
         // replay inert here, which is the behaviour this path had before the
         // field existed.
         unconfirmed_outgoing_txs: Vec::new(),
+        // Not persisted by this backend yet: the backfill record rides the
+        // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
+        // pre-record behaviour here (a rewind per launch, never lossy).
+        dashpay_backfill: Default::default(),
     })
 }
 

@@ -48,6 +48,11 @@ pub struct MockDashPlatformSdk {
 }
 
 impl MockDashPlatformSdk {
+    /// Number of transport executions of this exact request, including failures.
+    pub async fn request_count<R: Mockable>(&self, request: &R) -> usize {
+        self.dapi.lock().await.request_count(request)
+    }
+
     /// Returns true when requests should use proofs.
     ///
     /// ## Panics
@@ -293,6 +298,12 @@ impl MockDashPlatformSdk {
                 "GetGroupActionSignersRequest" => {
                     load_expectation::<proto::GetGroupActionSignersRequest>(&mut dapi, filename)?
                 }
+                "BroadcastStateTransitionRequest" => {
+                    load_expectation::<proto::BroadcastStateTransitionRequest>(&mut dapi, filename)?
+                }
+                "WaitForStateTransitionResultRequest" => load_expectation::<
+                    proto::WaitForStateTransitionResultRequest,
+                >(&mut dapi, filename)?,
                 "EvoNode" => load_expectation::<EvoNode>(&mut dapi, filename)?,
                 "GetTokenDirectPurchasePricesRequest" => load_expectation::<
                     proto::GetTokenDirectPurchasePricesRequest,

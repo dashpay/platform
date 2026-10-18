@@ -149,10 +149,10 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// variant did — so ranked secondaries keep ranking correctly over
 /// shared-prefix shapes.
 ///
-/// Until a contract uses the ranked or time-range grammar, the only v14
-/// behavior changes are the shared-prefix fix, the contested-index
-/// cross-check, the index-reorder schema-compatibility fix and the relative
-/// daily withdrawal limit; everything else matches v13:
+/// Until a contract uses the ranked or time-range grammar, those features
+/// change nothing. Every other change these notes describe applies
+/// regardless, including the table changes below, some of which touch no
+/// contract (identity creation, for one):
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
 ///   meta-schema, which hosts the ranked index keywords
@@ -211,6 +211,12 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   addresses `advanced_structure` 0 → 1: a key whose proof of possession fails
 ///   is refused unpaid instead of charging the inputs a penalty, since the
 ///   address witnesses do not sign those proofs. v13 keeps the paid refusal of v0.
+/// * `DRIVE_ABCI_VALIDATION_VERSIONS_V10` also bumps the identity create
+///   `advanced_structure` 0 → 1: an identity id other than the one the asset lock
+///   derives and a key whose proof of possession fails are refused unpaid instead of
+///   charging the asset lock a penalty, since the asset lock signature covers
+///   neither the identity id nor the key signatures. A key structure failure is
+///   still charged. v13 keeps the paid refusals of v0.
 /// * `DOCUMENT_VERSIONS_V4` bumps `document_serialization_version` to
 ///   default 3: documents are stamped with the contract version their bytes
 ///   conform to (a varint after the format prefix), enabling the
@@ -1316,6 +1322,15 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     payouts to the block's `apply_drive_operations` instead of converting
 ///     them to a plain grove batch, skips a share whose `payToId` has no
 ///     balance and caps each share at what is left of its masternode's payout.
+///     After paying valid shares, a proposer without a balance returns its
+///     remaining allocation, including any last-proposer rounding remainder, to
+///     the applying block's current epoch processing pool. An existing zero
+///     balance remains a valid recipient; other balance read errors propagate.
+///     `SystemOperationType::AddToCurrentEpochProcessingPool` defers the return
+///     until after ordinary writes and repaid debt, unbilled and in the same
+///     transaction before commit. Estimates and zero returns do not access or
+///     mutate that pool. Generic lowering and older apply generations refuse
+///     this operation instead of silently dropping it.
 ///     An apply that meets one it does not route fails (`CorruptedCodeExecution`)
 ///     instead of dropping it. `apply_drive_operations` 1 also merges every
 ///     credit and debit one batch makes to an identity's balance into one net
@@ -2667,6 +2682,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///     typed array and a `where`, and every contract that registers today
 ///     binds no typed array.
 ///
+/// 96. **A hash key's data is 20 bytes**: key structure validation v1
+///     (`STATE_TRANSITION_METHOD_VERSIONS_V2`, in place) refuses an
+///     ECDSA_HASH160, BIP13_SCRIPT_HASH or EDDSA_25519_HASH160 key whose data
+///     is not 20 bytes (`InvalidIdentityPublicKeyDataError`, 10511), after its
+///     other rules. Each transition keeps the outcome of its key structure
+///     check: charged in identity create and identity create from addresses,
+///     unpaid in identity update and identity create from the shielded pool.
+///     Such a key otherwise fails when its hash is taken, as an internal error
+///     that keeps the transition out of every block. The data of an
+///     ECDSA_SECP256K1 or BLS12_381 key is left to its proof of possession,
+///     which refuses data that is not a public key. Earlier versions select
+///     generation 0, which does not check the size of a hash key's data.
+///
 /// The app-connect system contract (`SystemDataContract::AppConnect`, schema v1)
 /// carries only the wallet's `loginKeyResponse`: a flat indexOnly entry keyed by
 /// the app's ephemeral key hash and the responding identity, with the wallet's
@@ -2752,7 +2780,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2, // changed: saved platform state structure 1 keeps masternodes and validator sets as one aux entry each
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit; record_token_shielded_pool_anchors records and prunes the anchors of the token pools a block touched; decode_raw_state_transitions, execute_event, validate_fees_of_event and add_distribute_storage_fee_to_epochs_operations each move to 1 — the table's own per-slot comments carry the full list
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more; the three shielded-fee token pool transitions gain basic structure validation and document_base_transition_state_validation 2 admits a document token cost paid from a token pool and enforces pause and the issuer's frozen-recipient policy on transparent payments; the ShieldFromAssetLock transform_into_action 1 checks its bundle against the bound preimage
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation; the ContractUserModeration gates and the batch transformer's contract_moderation_gate; a contest accepts at most max_contenders_per_contest contenders and maximum_contenders_to_consider rises to 10,000; a contender's fund doubles past 250 contenders and for every 50 more; the three shielded-fee token pool transitions gain basic structure validation and document_base_transition_state_validation 2 admits a document token cost paid from a token pool and enforces pause and the issuer's frozen-recipient policy on transparent payments; the ShieldFromAssetLock transform_into_action 1 checks its bundle against the bound preimage; identity create and identity create from addresses advanced_structure 1 refuse unpaid a failure in a field the funding signature does not cover
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
         query: DRIVE_ABCI_QUERY_VERSIONS_V2, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -2762,7 +2790,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         validation: DPP_VALIDATION_VERSIONS_V5, // changed: validate_config_update 2 admits the contract moderation declaration of config V2
         state_transition_serialization_versions: STATE_TRANSITION_SERIALIZATION_VERSIONS_V3, // changed: the indexOnly delete-by-values kind (documentIndexOnlyDelete) joins the wire; ShieldFromAssetLock moves to version 1 alone; the ContractUserModeration transition
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
-        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry; verify_identity_signed_signature 1: a BLS12_381 signature must verify
+        state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V2, // changed: public keys in creation may carry a budget or an expiry, and a hash key's data must be 20 bytes; verify_identity_signed_signature 1: a BLS12_381 signature must verify
         state_transitions: STATE_TRANSITION_VERSIONS_V4,
         contract_versions: CONTRACT_VERSIONS_V6, // changed: token_configuration_format max_version 1 admits the shielded pool opt-in; v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords; validate_structure_interval v1 rejects a zero epoch interval; config max_version 2 (the contract moderation declaration) and validate_moderation_config; validate_document 1 rejects repeated nested text keys; serialize_value_for_key 1 keys unsigned integers in value order (except a property ending a rangeSummable index); generation 3 indexes the elements of typed arrays, on indexOnly types under the item 92 rules
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
