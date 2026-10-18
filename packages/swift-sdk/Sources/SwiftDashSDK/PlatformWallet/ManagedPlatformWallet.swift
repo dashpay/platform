@@ -3733,10 +3733,12 @@ extension ManagedPlatformWallet {
     /// The transition carries the cached identity's revision plus one,
     /// read when the Rust side starts the update. With `revision` set, an
     /// update that would carry another one throws before anything is
-    /// signed or broadcast (`IdentityRevisionMismatch` in the message), so
-    /// a caller that recorded `revision` beforehand knows the only revision
-    /// this update can land at: Drive takes an identity update only at one
-    /// above the identity's revision. `nil` takes whatever the cache gives.
+    /// signed or broadcast (as `.unknown`, with a message that says the
+    /// update was asked for another revision and nothing was broadcast),
+    /// so a caller that recorded `revision` beforehand knows the only
+    /// revision this update can land at: Drive takes an identity update
+    /// only at one above the identity's revision. `nil` takes whatever the
+    /// cache gives.
     public func updateIdentity(
         identityId: Identifier,
         addPublicKeys: [ManagedPlatformWallet.IdentityPubkey] = [],

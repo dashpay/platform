@@ -167,7 +167,8 @@ impl IdentityWallet {
         };
 
         // Increment revision for the update transition.
-        identity.set_revision(update_revision(identity_id, identity.revision(), revision)?);
+        let transition_revision = update_revision(identity_id, identity.revision(), revision)?;
+        identity.set_revision(transition_revision);
 
         // Pick the MASTER signing key — DPP requires identity update
         // transitions to be authorized by MASTER specifically.
@@ -258,10 +259,15 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                // Bump the cached revision so a subsequent update
-                // doesn't reuse the pre-broadcast value.
+                // The identity is at the transition's revision now, so a
+                // subsequent update must not reuse the pre-broadcast value.
+                // The cache may have been refreshed since the snapshot (to
+                // this revision or past it), so it takes the higher of the
+                // two instead of adding one to whatever it holds.
                 let cached_revision = managed.identity.revision();
-                managed.identity.set_revision(cached_revision + 1);
+                managed
+                    .identity
+                    .set_revision(cached_revision.max(transition_revision));
 
                 for key in added_keys_for_local_apply {
                     let breadcrumb = identity_index.map(|idx| (self.wallet_id, idx, key.id()));
@@ -415,6 +421,11 @@ mod update_revision_tests {
             update_revision(&id, 3, Some(5)),
             Err(PlatformWalletError::IdentityRevisionMismatch { .. })
         ));
+    }
+
+    #[test]
+    fn should_refuse_an_identity_at_the_last_revision() {
+        let id = Identifier::from([7u8; 32]);
         assert!(matches!(
             update_revision(&id, u64::MAX, None),
             Err(PlatformWalletError::InvalidIdentityData(_))
