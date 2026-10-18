@@ -148,7 +148,7 @@ where
 
         let mut engine = sha256d::Hash::engine();
 
-        let mut reversed_quorum_hash = quorum_hash.to_byte_array().to_vec();
+        let mut reversed_quorum_hash = quorum_hash.to_byte_array();
         reversed_quorum_hash.reverse();
 
         engine.input(&[quorum_config.quorum_type as u8]);
@@ -194,7 +194,7 @@ where
 
                 let mut engine = sha256d::Hash::engine();
 
-                let mut reversed_quorum_hash = quorum_hash.to_byte_array().to_vec();
+                let mut reversed_quorum_hash = quorum_hash.to_byte_array();
                 reversed_quorum_hash.reverse();
 
                 engine.input(&[quorum_config.quorum_type as u8]);
