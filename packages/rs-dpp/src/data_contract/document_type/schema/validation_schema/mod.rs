@@ -96,9 +96,13 @@ pub enum JsonTypes {
 }
 
 /// One schema node: the keywords it carries that constrain a value on its own
-/// ([`SchemaKeyword::constrains_a_value`]), each `None` when it does not. Numbers that bound
-/// a value (`minimum`, `multipleOf`, ...), and `enum` and `const` values, are kept as the
-/// schema wrote them, integer or float.
+/// ([`SchemaKeyword::constrains_a_value`]), each `None` when it does not.
+///
+/// The keywords that apply to a value of any type are held inline. The others are held by
+/// group, one boxed struct per [`SchemaKeyword`] group, allocated only when the node
+/// carries a keyword of the group, so a node pays only for the groups it uses. Numbers that
+/// bound a value (`minimum`, `multipleOf`, ...), and `enum` and `const` values, are kept as
+/// the schema wrote them, integer or float.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SchemaNode {
     /// `$ref`: a JSON pointer into the schema the document type compiles, a key of
@@ -110,6 +114,21 @@ pub struct SchemaNode {
     pub enum_values: Option<Vec<Value>>,
     /// `const`.
     pub constant: Option<Value>,
+    /// The [`ObjectKeyword`]s.
+    pub object: Option<Box<ObjectConstraints>>,
+    /// The [`ArrayKeyword`]s.
+    pub array: Option<Box<ArrayConstraints>>,
+    /// The [`StringKeyword`]s.
+    pub string: Option<Box<StringConstraints>>,
+    /// The [`NumberKeyword`]s.
+    pub number: Option<Box<NumberConstraints>>,
+    /// The [`FormatKeyword`]s.
+    pub format: Option<Box<FormatConstraints>>,
+}
+
+/// The [`ObjectKeyword`]s of a node.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ObjectConstraints {
     /// `properties`, in declared order.
     pub properties: Option<Vec<(String, SchemaNode)>>,
     /// `additionalProperties`. Every document meta-schema holds it to `false`.
@@ -123,6 +142,11 @@ pub struct SchemaNode {
     /// `dependentRequired`: for each property name, the names an object holding it must
     /// hold too.
     pub dependent_required: Option<BTreeMap<String, Vec<String>>>,
+}
+
+/// The [`ArrayKeyword`]s of a node.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ArrayConstraints {
     /// `items`: the schema of every element.
     pub items: Option<Box<SchemaNode>>,
     /// `contains`: a schema at least one element must match.
@@ -133,6 +157,11 @@ pub struct SchemaNode {
     pub max_items: Option<u64>,
     /// `uniqueItems`.
     pub unique_items: Option<bool>,
+}
+
+/// The [`StringKeyword`]s of a node.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct StringConstraints {
     /// `minLength`.
     pub min_length: Option<u64>,
     /// `maxLength`.
@@ -141,6 +170,11 @@ pub struct SchemaNode {
     pub max_bytes: Option<u64>,
     /// `pattern`.
     pub pattern: Option<String>,
+}
+
+/// The [`NumberKeyword`]s of a node.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct NumberConstraints {
     /// `minimum`.
     pub minimum: Option<Value>,
     /// `maximum`.
@@ -151,6 +185,11 @@ pub struct SchemaNode {
     pub exclusive_maximum: Option<Value>,
     /// `multipleOf`.
     pub multiple_of: Option<Value>,
+}
+
+/// The [`FormatKeyword`]s of a node.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FormatConstraints {
     /// `format`.
     pub format: Option<String>,
     /// `byteArray`, Platform's keyword for an array of bytes, with the value it was
@@ -235,7 +274,7 @@ impl SchemaNode {
     }
 
     /// The value the node carries for a keyword, as a schema writes it: `None` when it does
-    /// not carry the keyword, and for a keyword that constrains no value.
+    /// not carry the keyword, and for a keyword that constrains no value on its own.
     pub fn value_of(&self, keyword: SchemaKeyword) -> Option<Value> {
         match keyword {
             SchemaKeyword::Any(keyword) => match keyword {
@@ -252,58 +291,84 @@ impl SchemaNode {
                 AnyKeyword::Enum => self.enum_values.clone().map(Value::Array),
                 AnyKeyword::Const => self.constant.clone(),
             },
-            SchemaKeyword::Object(keyword) => match keyword {
-                ObjectKeyword::Properties => self.properties.as_ref().map(|properties| {
-                    Value::Map(
-                        properties
-                            .iter()
-                            .map(|(name, node)| (Value::Text(name.clone()), node.to_value()))
-                            .collect(),
-                    )
-                }),
-                ObjectKeyword::AdditionalProperties => self.additional_properties.map(Value::Bool),
-                ObjectKeyword::Required => self.required.as_deref().map(texts),
-                ObjectKeyword::MinProperties => self.min_properties.map(Value::U64),
-                ObjectKeyword::MaxProperties => self.max_properties.map(Value::U64),
-                ObjectKeyword::DependentRequired => {
-                    self.dependent_required.as_ref().map(|dependent_required| {
+            SchemaKeyword::Object(keyword) => {
+                let object = self.object.as_deref()?;
+                match keyword {
+                    ObjectKeyword::Properties => object.properties.as_ref().map(|properties| {
                         Value::Map(
-                            dependent_required
+                            properties
                                 .iter()
-                                .map(|(name, names)| (Value::Text(name.clone()), texts(names)))
+                                .map(|(name, node)| (Value::Text(name.clone()), node.to_value()))
                                 .collect(),
                         )
-                    })
+                    }),
+                    ObjectKeyword::AdditionalProperties => {
+                        object.additional_properties.map(Value::Bool)
+                    }
+                    ObjectKeyword::Required => object.required.as_deref().map(texts),
+                    ObjectKeyword::MinProperties => object.min_properties.map(Value::U64),
+                    ObjectKeyword::MaxProperties => object.max_properties.map(Value::U64),
+                    ObjectKeyword::DependentRequired => {
+                        object
+                            .dependent_required
+                            .as_ref()
+                            .map(|dependent_required| {
+                                Value::Map(
+                                    dependent_required
+                                        .iter()
+                                        .map(|(name, names)| {
+                                            (Value::Text(name.clone()), texts(names))
+                                        })
+                                        .collect(),
+                                )
+                            })
+                    }
                 }
-            },
-            SchemaKeyword::Array(keyword) => match keyword {
-                ArrayKeyword::Items => self.items.as_ref().map(|items| items.to_value()),
-                ArrayKeyword::Contains => {
-                    self.contains.as_ref().map(|contains| contains.to_value())
+            }
+            SchemaKeyword::Array(keyword) => {
+                let array = self.array.as_deref()?;
+                match keyword {
+                    ArrayKeyword::Items => array.items.as_ref().map(|items| items.to_value()),
+                    ArrayKeyword::Contains => {
+                        array.contains.as_ref().map(|contains| contains.to_value())
+                    }
+                    ArrayKeyword::MinItems => array.min_items.map(Value::U64),
+                    ArrayKeyword::MaxItems => array.max_items.map(Value::U64),
+                    ArrayKeyword::UniqueItems => array.unique_items.map(Value::Bool),
                 }
-                ArrayKeyword::MinItems => self.min_items.map(Value::U64),
-                ArrayKeyword::MaxItems => self.max_items.map(Value::U64),
-                ArrayKeyword::UniqueItems => self.unique_items.map(Value::Bool),
-            },
-            SchemaKeyword::String(keyword) => match keyword {
-                StringKeyword::MinLength => self.min_length.map(Value::U64),
-                StringKeyword::MaxLength => self.max_length.map(Value::U64),
-                StringKeyword::MaxBytes => self.max_bytes.map(Value::U64),
-                StringKeyword::Pattern => self.pattern.clone().map(Value::Text),
-            },
-            SchemaKeyword::Number(keyword) => match keyword {
-                NumberKeyword::Minimum => self.minimum.clone(),
-                NumberKeyword::Maximum => self.maximum.clone(),
-                NumberKeyword::ExclusiveMinimum => self.exclusive_minimum.clone(),
-                NumberKeyword::ExclusiveMaximum => self.exclusive_maximum.clone(),
-                NumberKeyword::MultipleOf => self.multiple_of.clone(),
-            },
-            SchemaKeyword::Format(keyword) => match keyword {
-                FormatKeyword::Format => self.format.clone().map(Value::Text),
-                FormatKeyword::ByteArray => self.byte_array.map(Value::Bool),
-                FormatKeyword::ContentMediaType => self.content_media_type.clone().map(Value::Text),
-                FormatKeyword::EncryptedFor => self.encrypted_for.as_ref().map(encrypted_for_value),
-            },
+            }
+            SchemaKeyword::String(keyword) => {
+                let string = self.string.as_deref()?;
+                match keyword {
+                    StringKeyword::MinLength => string.min_length.map(Value::U64),
+                    StringKeyword::MaxLength => string.max_length.map(Value::U64),
+                    StringKeyword::MaxBytes => string.max_bytes.map(Value::U64),
+                    StringKeyword::Pattern => string.pattern.clone().map(Value::Text),
+                }
+            }
+            SchemaKeyword::Number(keyword) => {
+                let number = self.number.as_deref()?;
+                match keyword {
+                    NumberKeyword::Minimum => number.minimum.clone(),
+                    NumberKeyword::Maximum => number.maximum.clone(),
+                    NumberKeyword::ExclusiveMinimum => number.exclusive_minimum.clone(),
+                    NumberKeyword::ExclusiveMaximum => number.exclusive_maximum.clone(),
+                    NumberKeyword::MultipleOf => number.multiple_of.clone(),
+                }
+            }
+            SchemaKeyword::Format(keyword) => {
+                let format = self.format.as_deref()?;
+                match keyword {
+                    FormatKeyword::Format => format.format.clone().map(Value::Text),
+                    FormatKeyword::ByteArray => format.byte_array.map(Value::Bool),
+                    FormatKeyword::ContentMediaType => {
+                        format.content_media_type.clone().map(Value::Text)
+                    }
+                    FormatKeyword::EncryptedFor => {
+                        format.encrypted_for.as_ref().map(encrypted_for_value)
+                    }
+                }
+            }
             SchemaKeyword::Relationship(_)
             | SchemaKeyword::Meta(_)
             | SchemaKeyword::Annotation(_) => None,
@@ -433,86 +498,103 @@ fn build_node(
                 }
                 AnyKeyword::Const => node.constant = Some(value.clone()),
             },
-            SchemaKeyword::Object(keyword) => match keyword {
-                ObjectKeyword::Properties => {
-                    let properties = value
-                        .as_map()
-                        .ok_or_else(|| {
-                            structure_error("`properties` must be an object".to_string())
-                        })?
-                        .iter()
-                        .map(|(property_name, property)| {
-                            Ok((
-                                text(property_name, name)?.to_string(),
-                                build_node(property, false, pending)?,
-                            ))
-                        })
-                        .collect::<Result<_, DataContractError>>()?;
-                    node.properties = Some(properties);
-                }
-                ObjectKeyword::AdditionalProperties => {
-                    node.additional_properties = Some(boolean(value, name)?)
-                }
-                ObjectKeyword::Required => node.required = Some(texts_of(value, name)?),
-                ObjectKeyword::MinProperties => node.min_properties = Some(count(value, name)?),
-                ObjectKeyword::MaxProperties => node.max_properties = Some(count(value, name)?),
-                ObjectKeyword::DependentRequired => {
-                    let dependent_required = value
-                        .as_map()
-                        .ok_or_else(|| {
-                            structure_error("`dependentRequired` must be an object".to_string())
-                        })?
-                        .iter()
-                        .map(|(property_name, names)| {
-                            Ok((
-                                text(property_name, name)?.to_string(),
-                                texts_of(names, name)?,
-                            ))
-                        })
-                        .collect::<Result<_, DataContractError>>()?;
-                    node.dependent_required = Some(dependent_required);
-                }
-            },
-            SchemaKeyword::Array(keyword) => match keyword {
-                ArrayKeyword::Items => {
-                    node.items = Some(Box::new(build_node(value, false, pending)?))
-                }
-                ArrayKeyword::Contains => {
-                    node.contains = Some(Box::new(build_node(value, false, pending)?))
-                }
-                ArrayKeyword::MinItems => node.min_items = Some(count(value, name)?),
-                ArrayKeyword::MaxItems => node.max_items = Some(count(value, name)?),
-                ArrayKeyword::UniqueItems => node.unique_items = Some(boolean(value, name)?),
-            },
-            SchemaKeyword::String(keyword) => match keyword {
-                StringKeyword::MinLength => node.min_length = Some(count(value, name)?),
-                StringKeyword::MaxLength => node.max_length = Some(count(value, name)?),
-                StringKeyword::MaxBytes => node.max_bytes = Some(count(value, name)?),
-                StringKeyword::Pattern => node.pattern = Some(text(value, name)?.to_string()),
-            },
-            SchemaKeyword::Number(keyword) => {
-                let bound = Some(number(value, name)?);
+            SchemaKeyword::Object(keyword) => {
+                let object = node.object.get_or_insert_with(Default::default);
                 match keyword {
-                    NumberKeyword::Minimum => node.minimum = bound,
-                    NumberKeyword::Maximum => node.maximum = bound,
-                    NumberKeyword::ExclusiveMinimum => node.exclusive_minimum = bound,
-                    NumberKeyword::ExclusiveMaximum => node.exclusive_maximum = bound,
-                    NumberKeyword::MultipleOf => node.multiple_of = bound,
+                    ObjectKeyword::Properties => {
+                        let properties = value
+                            .as_map()
+                            .ok_or_else(|| {
+                                structure_error("`properties` must be an object".to_string())
+                            })?
+                            .iter()
+                            .map(|(property_name, property)| {
+                                Ok((
+                                    text(property_name, name)?.to_string(),
+                                    build_node(property, false, pending)?,
+                                ))
+                            })
+                            .collect::<Result<_, DataContractError>>()?;
+                        object.properties = Some(properties);
+                    }
+                    ObjectKeyword::AdditionalProperties => {
+                        object.additional_properties = Some(boolean(value, name)?)
+                    }
+                    ObjectKeyword::Required => object.required = Some(texts_of(value, name)?),
+                    ObjectKeyword::MinProperties => {
+                        object.min_properties = Some(count(value, name)?)
+                    }
+                    ObjectKeyword::MaxProperties => {
+                        object.max_properties = Some(count(value, name)?)
+                    }
+                    ObjectKeyword::DependentRequired => {
+                        let dependent_required = value
+                            .as_map()
+                            .ok_or_else(|| {
+                                structure_error("`dependentRequired` must be an object".to_string())
+                            })?
+                            .iter()
+                            .map(|(property_name, names)| {
+                                Ok((
+                                    text(property_name, name)?.to_string(),
+                                    texts_of(names, name)?,
+                                ))
+                            })
+                            .collect::<Result<_, DataContractError>>()?;
+                        object.dependent_required = Some(dependent_required);
+                    }
                 }
             }
-            SchemaKeyword::Format(keyword) => match keyword {
-                FormatKeyword::Format => node.format = Some(text(value, name)?.to_string()),
-                FormatKeyword::ByteArray => node.byte_array = Some(boolean(value, name)?),
-                FormatKeyword::ContentMediaType => {
-                    node.content_media_type = Some(text(value, name)?.to_string())
+            SchemaKeyword::Array(keyword) => {
+                let array = node.array.get_or_insert_with(Default::default);
+                match keyword {
+                    ArrayKeyword::Items => {
+                        array.items = Some(Box::new(build_node(value, false, pending)?))
+                    }
+                    ArrayKeyword::Contains => {
+                        array.contains = Some(Box::new(build_node(value, false, pending)?))
+                    }
+                    ArrayKeyword::MinItems => array.min_items = Some(count(value, name)?),
+                    ArrayKeyword::MaxItems => array.max_items = Some(count(value, name)?),
+                    ArrayKeyword::UniqueItems => array.unique_items = Some(boolean(value, name)?),
                 }
-                FormatKeyword::EncryptedFor => {
-                    node.encrypted_for =
-                        Some(platform_value::from_value(value.clone()).map_err(|error| {
-                            structure_error(format!("`{name}` is malformed: {error}"))
-                        })?)
+            }
+            SchemaKeyword::String(keyword) => {
+                let string = node.string.get_or_insert_with(Default::default);
+                match keyword {
+                    StringKeyword::MinLength => string.min_length = Some(count(value, name)?),
+                    StringKeyword::MaxLength => string.max_length = Some(count(value, name)?),
+                    StringKeyword::MaxBytes => string.max_bytes = Some(count(value, name)?),
+                    StringKeyword::Pattern => string.pattern = Some(text(value, name)?.to_string()),
                 }
-            },
+            }
+            SchemaKeyword::Number(keyword) => {
+                let bound = Some(number(value, name)?);
+                let number = node.number.get_or_insert_with(Default::default);
+                match keyword {
+                    NumberKeyword::Minimum => number.minimum = bound,
+                    NumberKeyword::Maximum => number.maximum = bound,
+                    NumberKeyword::ExclusiveMinimum => number.exclusive_minimum = bound,
+                    NumberKeyword::ExclusiveMaximum => number.exclusive_maximum = bound,
+                    NumberKeyword::MultipleOf => number.multiple_of = bound,
+                }
+            }
+            SchemaKeyword::Format(keyword) => {
+                let format = node.format.get_or_insert_with(Default::default);
+                match keyword {
+                    FormatKeyword::Format => format.format = Some(text(value, name)?.to_string()),
+                    FormatKeyword::ByteArray => format.byte_array = Some(boolean(value, name)?),
+                    FormatKeyword::ContentMediaType => {
+                        format.content_media_type = Some(text(value, name)?.to_string())
+                    }
+                    FormatKeyword::EncryptedFor => {
+                        format.encrypted_for =
+                            Some(platform_value::from_value(value.clone()).map_err(|error| {
+                                structure_error(format!("`{name}` is malformed: {error}"))
+                            })?)
+                    }
+                }
+            }
             SchemaKeyword::Relationship(_)
             | SchemaKeyword::Meta(_)
             | SchemaKeyword::Annotation(_) => {}

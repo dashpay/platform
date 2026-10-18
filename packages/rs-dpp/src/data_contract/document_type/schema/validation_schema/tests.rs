@@ -7,8 +7,29 @@ fn build(root: Value) -> ValidationSchema {
     ValidationSchema::try_from_root(&root).expect("expected the schema to build")
 }
 
+fn object(node: &SchemaNode) -> &ObjectConstraints {
+    node.object.as_deref().expect("expected object keywords")
+}
+
+fn array(node: &SchemaNode) -> &ArrayConstraints {
+    node.array.as_deref().expect("expected array keywords")
+}
+
+fn string(node: &SchemaNode) -> &StringConstraints {
+    node.string.as_deref().expect("expected string keywords")
+}
+
+fn number(node: &SchemaNode) -> &NumberConstraints {
+    node.number.as_deref().expect("expected number keywords")
+}
+
+fn format(node: &SchemaNode) -> &FormatConstraints {
+    node.format.as_deref().expect("expected format keywords")
+}
+
 fn property<'a>(node: &'a SchemaNode, name: &str) -> &'a SchemaNode {
-    node.properties
+    object(node)
+        .properties
         .as_ref()
         .expect("expected properties")
         .iter()
@@ -82,15 +103,15 @@ fn should_keep_every_validation_keyword_of_a_node() {
 
     let root = &schema.root;
     assert_eq!(root.types, Some(JsonTypes::One(JsonType::Object)));
-    assert_eq!(root.required, Some(vec!["name".to_string()]));
-    assert_eq!(root.additional_properties, Some(false));
+    assert_eq!(object(root).required, Some(vec!["name".to_string()]));
+    assert_eq!(object(root).additional_properties, Some(false));
 
     let name = property(root, "name");
-    assert_eq!(name.min_length, Some(1));
-    assert_eq!(name.max_length, Some(63));
-    assert_eq!(name.max_bytes, Some(126));
-    assert_eq!(name.pattern.as_deref(), Some("^[a-z]+$"));
-    assert_eq!(name.format.as_deref(), Some("uri"));
+    assert_eq!(string(name).min_length, Some(1));
+    assert_eq!(string(name).max_length, Some(63));
+    assert_eq!(string(name).max_bytes, Some(126));
+    assert_eq!(string(name).pattern.as_deref(), Some("^[a-z]+$"));
+    assert_eq!(format(name).format.as_deref(), Some("uri"));
     assert_eq!(
         name.enum_values,
         Some(vec![Value::Text("a".into()), Value::Text("b".into())])
@@ -101,34 +122,43 @@ fn should_keep_every_validation_keyword_of_a_node() {
         score.types,
         Some(JsonTypes::AnyOf(vec![JsonType::Integer, JsonType::Null]))
     );
-    assert!(score.minimum.as_ref().is_some_and(Value::is_integer));
-    assert_eq!(score.maximum, Some(Value::Float(100.5)));
-    assert!(score.exclusive_minimum.is_some());
-    assert!(score.exclusive_maximum.is_some());
-    assert!(score.multiple_of.is_some());
+    assert!(number(score)
+        .minimum
+        .as_ref()
+        .is_some_and(Value::is_integer));
+    assert_eq!(number(score).maximum, Some(Value::Float(100.5)));
+    assert!(number(score).exclusive_minimum.is_some());
+    assert!(number(score).exclusive_maximum.is_some());
+    assert!(number(score).multiple_of.is_some());
     assert!(score.constant.is_some());
 
     let tags = property(root, "tags");
     assert_eq!(
-        tags.items.as_deref().and_then(|items| items.max_length),
+        array(tags)
+            .items
+            .as_deref()
+            .and_then(|items| string(items).max_length),
         Some(8)
     );
-    assert!(tags
+    assert!(array(tags)
         .contains
         .as_deref()
         .is_some_and(|contains| contains.constant.is_some()));
-    assert_eq!((tags.min_items, tags.max_items), (Some(1), Some(4)));
-    assert_eq!(tags.unique_items, Some(true));
+    assert_eq!(
+        (array(tags).min_items, array(tags).max_items),
+        (Some(1), Some(4))
+    );
+    assert_eq!(array(tags).unique_items, Some(true));
 
     let key = property(root, "key");
-    assert_eq!(key.byte_array, Some(true));
+    assert_eq!(format(key).byte_array, Some(true));
     assert_eq!(
-        key.content_media_type.as_deref(),
+        format(key).content_media_type.as_deref(),
         Some("application/x.dash.dpp.identifier")
     );
 
     let message = property(root, "message");
-    let encrypted_for = message
+    let encrypted_for = format(message)
         .encrypted_for
         .as_ref()
         .expect("expected encryptedFor");
@@ -153,13 +183,34 @@ fn should_keep_every_validation_keyword_of_a_node() {
 
     let meta = property(root, "meta");
     assert_eq!(
-        (meta.min_properties, meta.max_properties),
+        (object(meta).min_properties, object(meta).max_properties),
         (Some(1), Some(2))
     );
     assert_eq!(
-        meta.dependent_required,
+        object(meta).dependent_required,
         Some(BTreeMap::from([("a".to_string(), vec!["b".to_string()])]))
     );
+}
+
+#[test]
+fn should_allocate_only_the_keyword_groups_a_node_uses() {
+    let schema = build(platform_value!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string", "maxLength": 10, "position": 0 },
+            "flag": { "type": "boolean", "position": 1 },
+        },
+    }));
+
+    let name = property(&schema.root, "name");
+    assert!(name.string.is_some());
+    assert!(name.object.is_none() && name.array.is_none());
+    assert!(name.number.is_none() && name.format.is_none());
+
+    let flag = property(&schema.root, "flag");
+    assert_eq!(flag.types, Some(JsonTypes::One(JsonType::Boolean)));
+    assert!(flag.object.is_none() && flag.array.is_none() && flag.string.is_none());
+    assert!(flag.number.is_none() && flag.format.is_none());
 }
 
 #[test]
@@ -174,12 +225,12 @@ fn should_keep_the_keywords_beside_a_reference() {
 
     let label = property(&schema.root, "label");
     assert_eq!(label.reference.as_deref(), Some("#/$defs/label"));
-    assert_eq!(label.max_length, Some(5));
+    assert_eq!(string(label).max_length, Some(5));
     assert_eq!(
         schema
             .references
             .get("#/$defs/label")
-            .map(|node| node.min_length),
+            .map(|node| string(node).min_length),
         Some(Some(1))
     );
 }
@@ -226,7 +277,7 @@ fn should_resolve_escaped_and_percent_encoded_pointers() {
             schema
                 .references
                 .get(reference)
-                .and_then(|node| node.max_length),
+                .and_then(|node| string(node).max_length),
             Some(max_length),
             "{reference}"
         );
@@ -298,7 +349,7 @@ fn should_keep_required_names_that_no_property_carries() {
     }));
 
     assert_eq!(
-        schema.root.required,
+        object(&schema.root).required,
         Some(vec!["a".to_string(), "missing".to_string()])
     );
 }
@@ -377,8 +428,7 @@ fn should_build_the_validation_schema_of_a_contract_document_type() {
         let schema = contract
             .document_type_validation_schema(name, platform_version)
             .unwrap_or_else(|error| panic!("expected `{name}` to build: {error}"));
-        let property_names: BTreeSet<&str> = schema
-            .root
+        let property_names: BTreeSet<&str> = object(&schema.root)
             .properties
             .iter()
             .flatten()
