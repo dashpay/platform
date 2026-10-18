@@ -36,7 +36,8 @@ where
     ///   signature is known yet: `verify_chain_lock_through_core` has to check it
     /// * `Err(Error::BLSError)` - The signature could not be deserialized
     /// * `Err(Error::Execution)` - An unknown method version, no quorums to verify against, or
-    ///   from version 1 a platform version without DKG mining schedules
+    ///   from version 1 a platform version without DKG mining schedules or with a schedule whose
+    ///   interval is 0
     pub fn verify_chain_lock_locally(
         &self,
         round: u32,
@@ -182,7 +183,9 @@ mod tests {
         // version 0 accepted is rejected. Valid chain locks must never be rejected by version 1.
         // Neither version asks Core, and protocol version 14 must give version 0's verdicts.
         // Through `verify_chain_lock`, Core's verifychainlock must then check exactly the chain
-        // locks version 1 leaves to Core, before any of them is submitted.
+        // locks version 1 leaves to Core, before any of them is submitted, while protocol
+        // version 14 keeps submitting the chain locks version 0 leaves to Core without that
+        // check, as the blocks committed under it were.
         let mut platform = chain_lock_test_platform();
         // This Core fails the signature of every chain lock it is asked about, and already has
         // a chain lock above all of them, so submitchainlock would report it synced without a
@@ -310,6 +313,36 @@ mod tests {
                         assert_eq!(
                             result.core_is_synced,
                             (submit && v1 == Some(true)).then_some(true),
+                            "{case}"
+                        );
+
+                        let (verify_before, submit_before) = core_calls();
+                        let result = platform
+                            .platform
+                            .verify_chain_lock(0, &state, &chain_lock, submit, v0_version)
+                            .expect("protocol version 14 runs");
+                        let (verify_after, submit_after) = core_calls();
+                        let case = format!("{case}, protocol version 14");
+
+                        assert_eq!(
+                            verify_after - verify_before,
+                            usize::from(!submit && v0.is_none()),
+                            "{case}"
+                        );
+                        assert_eq!(
+                            submit_after - submit_before,
+                            usize::from(submit && v0 != Some(false)),
+                            "{case}"
+                        );
+                        assert_eq!(result.found_valid_locally, v0, "{case}");
+                        assert_eq!(
+                            result.found_valid_by_core,
+                            (!submit && v0.is_none()).then_some(false),
+                            "{case}"
+                        );
+                        assert_eq!(
+                            result.core_is_synced,
+                            (submit && v0 != Some(false)).then_some(true),
                             "{case}"
                         );
                     }

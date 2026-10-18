@@ -315,7 +315,8 @@ mod tests {
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock, QuorumHash};
     use dpp::dashcore_rpc::json::QuorumType;
-    use dpp::version::PlatformVersion;
+    use dpp::version::drive_abci_versions::drive_abci_method_versions::DkgMiningSchedule;
+    use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
     use std::str::FromStr;
 
     fn verify(
@@ -646,6 +647,59 @@ mod tests {
             verify_with(&without_schedules),
             Err(Error::Execution(ExecutionError::CorruptedCodeExecution(_)))
         ));
+
+        let mut zero_interval = PlatformVersion::latest().clone();
+        zero_interval
+            .drive_abci
+            .methods
+            .core_chain_lock
+            .dkg_mining_schedules = Some(&[DkgMiningSchedule {
+            quorum_type: QuorumType::LlmqTest as u8,
+            interval: 0,
+            mining_window_start: 10,
+            mining_window_end: 18,
+        }]);
+        assert!(
+            matches!(
+                verify_with(&zero_interval),
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(_)))
+            ),
+            "a schedule with an interval of 0 must fail instead of dividing by it"
+        );
+    }
+
+    #[test]
+    fn should_have_well_formed_dkg_mining_schedules_in_every_platform_version() {
+        // Version 1 takes the first schedule of a quorum type and computes offsets in its
+        // interval, so a schedule must be unique per type and its mining window must lie inside
+        // the interval.
+        for platform_version in PLATFORM_VERSIONS {
+            let Some(dkg_mining_schedules) = platform_version
+                .drive_abci
+                .methods
+                .core_chain_lock
+                .dkg_mining_schedules
+            else {
+                continue;
+            };
+            for (index, schedule) in dkg_mining_schedules.iter().enumerate() {
+                let case = format!(
+                    "protocol version {}, quorum type {}",
+                    platform_version.protocol_version, schedule.quorum_type
+                );
+                assert!(
+                    schedule.mining_window_start <= schedule.mining_window_end
+                        && schedule.mining_window_end < schedule.interval,
+                    "{case}: {schedule:?}"
+                );
+                assert!(
+                    dkg_mining_schedules[index + 1..]
+                        .iter()
+                        .all(|other| other.quorum_type != schedule.quorum_type),
+                    "{case} has more than one schedule"
+                );
+            }
+        }
     }
 
     #[test]

@@ -55,7 +55,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    Core before `submitchainlock`, which skips that check for a height Core
 ///    already has a chain lock at or above, and reports a failure as Core's
 ///    verdict. So v15 accepts valid chain locks that v14 rejected, and rejects
-///    forged ones that v14 left to that early return. Protocol v14 and earlier
+///    forged ones that v14 left to `submitchainlock`'s early return. Protocol
+///    v14 and earlier
 ///    keep `verify_chain_lock_locally` 0 and `verify_chain_lock_through_core` 0,
 ///    so the blocks committed under them replay with the same verdicts.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {

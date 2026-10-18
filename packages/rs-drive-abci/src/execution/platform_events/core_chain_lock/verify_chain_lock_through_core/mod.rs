@@ -35,7 +35,8 @@ where
     ///   `submitchainlock` skips that check for a height Core already has a chain lock at or
     ///   above; version 1 submits only a chain lock `verifychainlock` accepted
     /// * `Err(Error::CoreRpc)` - A Core RPC call failed
-    /// * `Err(Error::Execution)` - An unknown method version
+    /// * `Err(Error::Execution)` - An unknown method version, here or in
+    ///   `make_sure_core_is_synced_to_chain_lock`, which version 1 submits through
     pub fn verify_chain_lock_through_core(
         &self,
         chain_lock: &ChainLock,

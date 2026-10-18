@@ -292,7 +292,8 @@ mod tests {
         }
     }
 
-    /// Whether the block proposal accepts a chain lock with this verification result
+    /// Whether the block proposal accepts a chain lock with this verification result, following
+    /// the checks `run_block_proposal` makes on it
     fn accepted_by_block_proposal(result: &VerifyChainLockResult) -> bool {
         result.chain_lock_signature_is_deserializable
             && result.found_valid_locally != Some(false)
@@ -324,7 +325,7 @@ mod tests {
         for platform_version in PLATFORM_VERSIONS {
             let result = platform
                 .platform
-                .verify_chain_lock_v0(0, &state, &forged, true, platform_version)
+                .verify_chain_lock(0, &state, &forged, true, platform_version)
                 .expect("verification runs");
 
             assert!(
@@ -333,6 +334,40 @@ mod tests {
                 platform_version.protocol_version
             );
         }
+    }
+
+    #[test]
+    fn should_not_accept_chain_lock_left_to_core_that_core_is_not_synced_to() {
+        // Core's verifychainlock accepts the chain lock signed by the quorum mined at 1114, but
+        // Core's best chain lock is 10 blocks behind it, so submitchainlock does not make Core
+        // synced to it.
+        let mut platform = chain_lock_test_platform();
+        let scenario = QuorumMinedAfterCoreHeight::default();
+        let state = scenario.platform_state(&platform.platform.state.load());
+        let chain_lock = scenario.chain_lock_signed_by_new_quorum();
+        let core_best_chain_lock_height = chain_lock.block_height - 10;
+
+        let mut core_rpc = MockCoreRPCLike::new();
+        core_rpc
+            .expect_verify_chain_lock()
+            .times(1)
+            .returning(|_| Ok(true));
+        core_rpc
+            .expect_submit_chain_lock()
+            .times(1)
+            .returning(move |_| Ok(core_best_chain_lock_height));
+        platform.core_rpc = core_rpc;
+
+        let result = platform
+            .platform
+            .verify_chain_lock(0, &state, &chain_lock, true, PlatformVersion::latest())
+            .expect("verification runs");
+
+        assert!(result.chain_lock_signature_is_deserializable);
+        assert_eq!(result.found_valid_locally, None);
+        assert_eq!(result.found_valid_by_core, Some(true));
+        assert_eq!(result.core_is_synced, Some(false));
+        assert!(!accepted_by_block_proposal(&result));
     }
 
     #[test]
