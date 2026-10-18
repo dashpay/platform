@@ -156,7 +156,8 @@ impl ManagedIdentity {
     /// Mutable access to the per-session contact-rescan guard set.
     ///
     /// In-memory only — never persisted; see the field docs on
-    /// [`DashPayState::rescan_triggered`] for the self-healing contract.
+    /// [`DashPayState::rescan_triggered`] for how it composes with the
+    /// wallet's durable backfill record.
     pub fn dashpay_rescan_triggered_mut(
         &mut self,
     ) -> &mut std::collections::BTreeSet<dpp::prelude::Identifier> {

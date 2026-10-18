@@ -2564,6 +2564,7 @@ mod tests {
         use dpp::dashcore::{BlockHash, OutPoint, Transaction};
         use dpp::dashcore_rpc::json::GetRawTransactionResult;
         use dpp::fee::Credits;
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
         use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
         use dpp::identity::state_transition::asset_lock_proof::{
             AssetLockProof, InstantAssetLockProof,
@@ -2685,6 +2686,9 @@ mod tests {
             /// The same keys with a critical key in place of the master key: a key structure
             /// failure, as an identity needs a master key
             WithoutAMasterKey,
+            /// The valid keys, except that the hash key's data has this many bytes instead of
+            /// the 20 bytes of a hash
+            WithAHashKeyOfSize(usize),
         }
 
         /// How an identity create proves its asset lock.
@@ -2734,11 +2738,13 @@ mod tests {
             let mut rng = StdRng::seed_from_u64(567);
 
             let (first_key, first_private_key) = match keys {
-                Keys::Valid => IdentityPublicKey::random_ecdsa_master_authentication_key(
-                    0,
-                    Some(58),
-                    platform_version,
-                ),
+                Keys::Valid | Keys::WithAHashKeyOfSize(_) => {
+                    IdentityPublicKey::random_ecdsa_master_authentication_key(
+                        0,
+                        Some(58),
+                        platform_version,
+                    )
+                }
                 Keys::WithoutAMasterKey => {
                     IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
                         0,
@@ -2759,7 +2765,7 @@ mod tests {
                 .expect("expected to get key pair");
             signer.add_identity_public_key(second_key.clone(), second_private_key);
 
-            let (hash_key, _) = IdentityPublicKey::random_key_with_known_attributes(
+            let (mut hash_key, _) = IdentityPublicKey::random_key_with_known_attributes(
                 2,
                 &mut rng,
                 Purpose::AUTHENTICATION,
@@ -2769,6 +2775,9 @@ mod tests {
                 platform_version,
             )
             .expect("expected to get key pair");
+            if let Keys::WithAHashKeyOfSize(size) = keys {
+                hash_key.set_data(vec![0x5a; size].into());
+            }
 
             let (_, pk) = ECDSA_SECP256K1
                 .random_public_and_private_key_data(&mut rng, platform_version)
@@ -3233,6 +3242,96 @@ mod tests {
             assert_eq!(
                 asset_lock_value.remaining_credit_value(),
                 asset_lock_value.initial_credit_value() - charged_credits
+            );
+        }
+
+        /// A hash key's data is the hash itself, so from protocol version 14 data that is not 20
+        /// bytes fails the key structure check: check_tx refuses it with a consensus error, and
+        /// a block charges it to the asset lock like any other key structure failure, as the
+        /// asset lock key signs the keys an identity create registers.
+        #[tokio::test]
+        async fn should_charge_the_asset_lock_for_an_identity_create_with_a_hash_key_of_the_wrong_size(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            for size in [0, 19, 21] {
+                let platform = new_platform(platform_version.protocol_version);
+                let registration =
+                    registration(Keys::WithAHashKeyOfSize(size), platform_version).await;
+
+                let errors = check_tx(
+                    &platform,
+                    &registration.transition,
+                    CheckTxLevel::FirstTimeCheck,
+                );
+                assert_matches!(
+                    errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::InvalidIdentityPublicKeyDataError(error)
+                    )] if error.public_key_id() == 2,
+                    "{size} bytes: {errors:?}"
+                );
+
+                let charged =
+                    process_block(&platform, &[&registration.transition], platform_version);
+                assert_matches!(
+                    charged.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::PaidConsensusError {
+                        error: ConsensusError::BasicError(
+                            BasicError::InvalidIdentityPublicKeyDataError(_)
+                        ),
+                        ..
+                    }],
+                    "{size} bytes: {:?}",
+                    charged.execution_results()
+                );
+                let charged_credits = charged.aggregated_fees().processing_fee;
+                assert!(
+                    charged_credits
+                        > platform_version
+                            .drive_abci
+                            .validation_and_processing
+                            .penalties
+                            .validation_of_added_keys_structure_failure,
+                    "{size} bytes: charged {charged_credits}"
+                );
+                let StoredAssetLockInfo::PartiallyConsumed(asset_lock_value) =
+                    asset_lock_info(&platform, &registration, platform_version)
+                else {
+                    panic!("{size} bytes: expected the asset lock to be partially consumed");
+                };
+                assert_eq!(
+                    asset_lock_value.remaining_credit_value(),
+                    asset_lock_value.initial_credit_value() - charged_credits,
+                    "{size} bytes"
+                );
+                assert_eq!(
+                    identity_balance(&platform, &registration, platform_version),
+                    None,
+                    "{size} bytes"
+                );
+            }
+        }
+
+        /// Protocol version 13 does not check the size of a hash key's data, so such a key fails
+        /// once its hash is taken, as an internal error that keeps the transition out of every
+        /// block; that history replays unchanged.
+        #[tokio::test]
+        async fn should_fail_an_identity_create_with_a_hash_key_of_the_wrong_size_internally_at_protocol_version_13(
+        ) {
+            let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+            let platform = new_platform(platform_version.protocol_version);
+            let registration = registration(Keys::WithAHashKeyOfSize(19), platform_version).await;
+
+            let failed = process_block(&platform, &[&registration.transition], platform_version);
+            assert_matches!(
+                failed.execution_results().as_slice(),
+                [StateTransitionExecutionResult::InternalError(_)],
+                "{:?}",
+                failed.execution_results()
+            );
+            assert_eq!(
+                asset_lock_info(&platform, &registration, platform_version),
+                StoredAssetLockInfo::NotPresent
             );
         }
 

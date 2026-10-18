@@ -58,6 +58,29 @@ pub(crate) fn credit_pool_balance_from_coinbase(coinbase: &[u8]) -> Result<u64, 
     }
 }
 
+/// Reads the version of a block's coinbase payload from the block's serialized coinbase
+/// transaction; `None` when it carries no payload. The version is the payload's first field,
+/// so a raw payload is read the same way as in [`credit_pool_balance_from_coinbase`].
+pub(crate) fn coinbase_payload_version_from_coinbase(
+    coinbase: &[u8],
+) -> Result<Option<u16>, String> {
+    let (transaction, _) = deserialize_partial::<Transaction>(coinbase)
+        .map_err(|e| format!("coinbase cannot be decoded: {e}"))?;
+    match transaction.special_transaction_payload {
+        None => Ok(None),
+        Some(TransactionPayload::CoinbasePayloadType(payload)) => Ok(Some(payload.version)),
+        Some(TransactionPayload::RawPayloadType(COINBASE_TRANSACTION_TYPE, bytes)) => {
+            let (payload, _) = deserialize_partial::<CoinbasePayload>(&bytes)
+                .map_err(|e| format!("coinbase payload cannot be decoded: {e}"))?;
+            Ok(Some(payload.version))
+        }
+        Some(payload) => Err(format!(
+            "coinbase carries a {:?} payload",
+            payload.get_type()
+        )),
+    }
+}
+
 /// Core height must be of type u32 (Platform heights are u64)
 pub type CoreHeight = u32;
 /// Core RPC interface
@@ -174,6 +197,11 @@ pub trait CoreRPCLike {
     /// block's coinbase (only the coinbase is transferred). Only ask for a chain locked height:
     /// the answer is then the same on every node.
     fn get_credit_pool_balance(&self, height: CoreHeight) -> Result<u64, Error>;
+
+    /// Get the version of the coinbase payload of the block at `height`, `None` for a coinbase
+    /// without a payload (only the coinbase is transferred). Only ask for a chain locked height:
+    /// the answer is then the same on every node.
+    fn get_coinbase_payload_version(&self, height: CoreHeight) -> Result<Option<u16>, Error>;
 }
 
 #[derive(Debug)]
@@ -288,6 +316,27 @@ impl DefaultCoreRPC {
         Ok(DefaultCoreRPC {
             inner: Client::new(url, Auth::UserPass(username, password))?,
             prefetcher,
+        })
+    }
+
+    /// The serialized coinbase of the block at `height`, `None` for a coinbase without a payload.
+    fn coinbase_with_payload(&self, height: CoreHeight) -> Result<Option<Vec<u8>>, Error> {
+        let block_hash = self.get_block_hash(height)?;
+        // Only the coinbase, as raw hex: the special transactions of type 5, the first one,
+        // verbosity 1. An empty answer is a coinbase without a payload, before DIP3.
+        let args = [
+            Value::String(block_hash.to_string()),
+            Value::from(COINBASE_TRANSACTION_TYPE),
+            Value::from(1),
+            Value::from(0),
+            Value::from(1),
+        ];
+        let coinbases = retry!(self.inner.call::<Vec<String>>("getspecialtxes", &args))?;
+        let Some(coinbase) = coinbases.first() else {
+            return Ok(None);
+        };
+        hex::decode(coinbase).map(Some).map_err(|e| {
+            Error::UnexpectedStructure(format!("getspecialtxes answered invalid hex: {e}"))
         })
     }
 }
@@ -482,30 +531,23 @@ impl CoreRPCLike for DefaultCoreRPC {
     }
 
     fn get_credit_pool_balance(&self, height: CoreHeight) -> Result<u64, Error> {
-        let block_hash = self.get_block_hash(height)?;
-        // Only the coinbase, as raw hex: the special transactions of type 5, the first one,
-        // verbosity 1. An empty answer is a coinbase without a payload, before DIP3.
-        let args = [
-            Value::String(block_hash.to_string()),
-            Value::from(COINBASE_TRANSACTION_TYPE),
-            Value::from(1),
-            Value::from(0),
-            Value::from(1),
-        ];
-        let coinbases = retry!(self.inner.call::<Vec<String>>("getspecialtxes", &args))?;
-        let Some(coinbase) = coinbases.first() else {
+        let Some(coinbase) = self.coinbase_with_payload(height)? else {
             return Ok(0);
         };
-        let coinbase = hex::decode(coinbase).map_err(|e| {
-            Error::UnexpectedStructure(format!("getspecialtxes answered invalid hex: {e}"))
-        })?;
         credit_pool_balance_from_coinbase(&coinbase).map_err(Error::UnexpectedStructure)
+    }
+
+    fn get_coinbase_payload_version(&self, height: CoreHeight) -> Result<Option<u16>, Error> {
+        let Some(coinbase) = self.coinbase_with_payload(height)? else {
+            return Ok(None);
+        };
+        coinbase_payload_version_from_coinbase(&coinbase).map_err(Error::UnexpectedStructure)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::credit_pool_balance_from_coinbase;
+    use super::{coinbase_payload_version_from_coinbase, credit_pool_balance_from_coinbase};
     use dpp::dashcore::bls_sig_utils::BLSSignature;
     use dpp::dashcore::consensus::serialize;
     use dpp::dashcore::hash_types::{MerkleRootMasternodeList, MerkleRootQuorums};
@@ -631,6 +673,32 @@ mod tests {
         // Cut inside the payload, before the balance.
         assert!(credit_pool_balance_from_coinbase(&full[..full.len() - 60]).is_err());
         assert!(credit_pool_balance_from_coinbase(&full[..40]).is_err());
+    }
+
+    /// The payload version tells whether Core's rules for that block required the version 4
+    /// payload, which Core v24 does exactly at the blocks where DEPLOYMENT_V24 and V20 are active.
+    #[test]
+    fn should_read_the_payload_version_of_a_coinbase() {
+        assert_eq!(
+            coinbase_payload_version_from_coinbase(&coinbase(Some(version_3_payload()))),
+            Ok(Some(3))
+        );
+        assert_eq!(
+            coinbase_payload_version_from_coinbase(&raised_coinbase(4, &[0xaa; 32])),
+            Ok(Some(4))
+        );
+        let mut after_balance = vec![0xaa; 32];
+        after_balance.extend_from_slice(&[0xbb; 16]);
+        assert_eq!(
+            coinbase_payload_version_from_coinbase(&raised_coinbase(5, &after_balance)),
+            Ok(Some(5))
+        );
+        assert_eq!(
+            coinbase_payload_version_from_coinbase(&coinbase(None)),
+            Ok(None)
+        );
+        let full = coinbase(Some(version_3_payload()));
+        assert!(coinbase_payload_version_from_coinbase(&full[..40]).is_err());
     }
 
     /// Reading a Core deployment over a real JSON-RPC connection, from a mock Core that serves
