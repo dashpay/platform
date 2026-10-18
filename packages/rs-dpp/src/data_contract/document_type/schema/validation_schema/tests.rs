@@ -342,6 +342,61 @@ fn should_reuse_the_root_for_a_reference_to_it() {
 }
 
 #[test]
+fn should_read_a_repeated_key_by_its_last_entry_in_the_place_of_its_first() {
+    let text = |text: &str| Value::Text(text.to_string());
+    let schema = build(Value::Map(vec![
+        (text("type"), text("object")),
+        (
+            text("properties"),
+            Value::Map(vec![
+                // Shadowed by the last `value`: an unknown type the validator never reads.
+                (text("value"), platform_value!({ "type": "bytes" })),
+                (text("other"), platform_value!({ "type": "boolean" })),
+                (
+                    text("value"),
+                    platform_value!({ "type": "string", "maxLength": 10 }),
+                ),
+                (
+                    text("label"),
+                    Value::Map(vec![
+                        (text("$ref"), text("#/$defs/missing")),
+                        (text("$ref"), text("#/$defs/label")),
+                    ]),
+                ),
+            ]),
+        ),
+        (
+            text("$defs"),
+            Value::Map(vec![
+                (text("label"), platform_value!({ "maxLength": 1 })),
+                (text("label"), platform_value!({ "maxLength": 2 })),
+            ]),
+        ),
+    ]));
+
+    let names: Vec<&str> = object(&schema.root)
+        .properties
+        .iter()
+        .flatten()
+        .map(|(name, _)| name.as_str())
+        .collect();
+    assert_eq!(names, ["value", "other", "label"]);
+    assert_eq!(string(property(&schema.root, "value")).max_length, Some(10));
+    assert_eq!(
+        property(&schema.root, "label").reference.as_deref(),
+        Some("#/$defs/label")
+    );
+    assert_eq!(
+        schema.references.keys().collect::<Vec<_>>(),
+        ["#/$defs/label"]
+    );
+    assert_eq!(
+        string(&schema.references["#/$defs/label"]).max_length,
+        Some(2)
+    );
+}
+
+#[test]
 fn should_refuse_a_reference_that_does_not_resolve() {
     let root = platform_value!({
         "type": "object",

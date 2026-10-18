@@ -1035,3 +1035,32 @@ fn should_read_back_at_protocol_version_14_a_contract_stored_before_it_with_unre
         );
     }
 }
+
+/// The validation schema reads a stored contract's schemas as the document validator does,
+/// a repeated key by its last entry, so a contract stored before protocol version 14 with
+/// a shadowed shorthand builds one for each of its document types.
+#[test]
+fn should_build_the_validation_schema_of_a_contract_stored_with_unread_shorthands() {
+    let platform_version_13 = PlatformVersion::get(13).expect("protocol version 13");
+    let platform_version = PlatformVersion::latest();
+    for (case, format) in contracts_with_unread_shorthands(platform_version_13) {
+        let registered = DataContract::try_from_platform_versioned(
+            format,
+            true,
+            &mut vec![],
+            platform_version_13,
+        )
+        .unwrap_or_else(|error| panic!("{case}: protocol version 13 registers it: {error}"));
+        let bytes = registered
+            .serialize_to_bytes_with_platform_version(platform_version_13)
+            .unwrap_or_else(|error| panic!("{case}: it serializes: {error}"));
+        let stored = DataContract::versioned_deserialize_trusted(&bytes, false, platform_version)
+            .unwrap_or_else(|error| panic!("{case}: read back at the latest version: {error}"));
+
+        for name in stored.document_types().keys() {
+            stored
+                .document_type_validation_schema(name, platform_version)
+                .unwrap_or_else(|error| panic!("{case}: `{name}` builds: {error}"));
+        }
+    }
+}

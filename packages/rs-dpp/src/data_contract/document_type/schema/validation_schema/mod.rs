@@ -415,6 +415,23 @@ fn structure_error(message: String) -> DataContractError {
     DataContractError::InvalidContractStructure(message)
 }
 
+/// The entries of a schema map as the JSON Schema validator reads them: a map converts to
+/// a JSON object with its order preserved, so a repeated key keeps the place of its first
+/// entry and takes the value of its last.
+fn last_wins(map: &[(Value, Value)]) -> Result<Vec<(&str, &Value)>, DataContractError> {
+    let mut entries: Vec<(&str, &Value)> = Vec::with_capacity(map.len());
+    for (key, value) in map {
+        let key = key
+            .as_text()
+            .ok_or_else(|| structure_error("schema keys must be strings".to_string()))?;
+        match entries.iter_mut().find(|(seen, _)| *seen == key) {
+            Some(entry) => entry.1 = value,
+            None => entries.push((key, value)),
+        }
+    }
+    Ok(entries)
+}
+
 fn text<'a>(value: &'a Value, keyword: &str) -> Result<&'a str, DataContractError> {
     value
         .as_text()
@@ -477,10 +494,7 @@ fn build_node(
         .as_map()
         .ok_or_else(|| structure_error("a schema must be an object".to_string()))?;
     let mut node = SchemaNode::default();
-    for (key, value) in map {
-        let name = key
-            .as_text()
-            .ok_or_else(|| structure_error("schema keys must be strings".to_string()))?;
+    for (name, value) in last_wins(map)? {
         let Some(keyword) = SchemaKeyword::from_name(name) else {
             // The root also carries the document type's own keywords, `$schema` and `$defs`.
             if is_root {
@@ -512,19 +526,17 @@ fn build_node(
                 let object = node.object.get_or_insert_with(Default::default);
                 match keyword {
                     ObjectKeyword::Properties => {
-                        let properties = value
-                            .as_map()
-                            .ok_or_else(|| {
-                                structure_error("`properties` must be an object".to_string())
-                            })?
-                            .iter()
-                            .map(|(property_name, property)| {
-                                Ok((
-                                    text(property_name, name)?.to_string(),
-                                    build_node(property, false, pending)?,
-                                ))
-                            })
-                            .collect::<Result<_, DataContractError>>()?;
+                        let properties = last_wins(value.as_map().ok_or_else(|| {
+                            structure_error("`properties` must be an object".to_string())
+                        })?)?
+                        .into_iter()
+                        .map(|(property_name, property)| {
+                            Ok((
+                                property_name.to_string(),
+                                build_node(property, false, pending)?,
+                            ))
+                        })
+                        .collect::<Result<_, DataContractError>>()?;
                         object.properties = Some(properties);
                     }
                     ObjectKeyword::AdditionalProperties => {
@@ -538,19 +550,14 @@ fn build_node(
                         object.max_properties = Some(count(value, name)?)
                     }
                     ObjectKeyword::DependentRequired => {
-                        let dependent_required = value
-                            .as_map()
-                            .ok_or_else(|| {
-                                structure_error("`dependentRequired` must be an object".to_string())
-                            })?
-                            .iter()
-                            .map(|(property_name, names)| {
-                                Ok((
-                                    text(property_name, name)?.to_string(),
-                                    texts_of(names, name)?,
-                                ))
-                            })
-                            .collect::<Result<_, DataContractError>>()?;
+                        let dependent_required = last_wins(value.as_map().ok_or_else(|| {
+                            structure_error("`dependentRequired` must be an object".to_string())
+                        })?)?
+                        .into_iter()
+                        .map(|(property_name, names)| {
+                            Ok((property_name.to_string(), texts_of(names, name)?))
+                        })
+                        .collect::<Result<_, DataContractError>>()?;
                         object.dependent_required = Some(dependent_required);
                     }
                 }
@@ -616,7 +623,8 @@ fn build_node(
 /// Resolves a `$ref` against the schema it appears in: a fragment-only URI holding a JSON
 /// pointer. As the JSON Schema validator does, the whole fragment is percent-decoded first,
 /// so an encoded `/` (`%2F`) separates segments, and then each segment is unescaped (`~1`
-/// is `/`, `~0` is `~`).
+/// is `/`, `~0` is `~`). A segment naming a repeated map key reaches its last entry, as
+/// [`last_wins`] reads the map.
 fn resolve_pointer<'a>(root: &'a Value, reference: &str) -> Result<&'a Value, DataContractError> {
     let unresolved = || structure_error(format!("`$ref` `{reference}` does not resolve"));
     let fragment = reference.strip_prefix('#').ok_or_else(unresolved)?;
@@ -631,6 +639,7 @@ fn resolve_pointer<'a>(root: &'a Value, reference: &str) -> Result<&'a Value, Da
         target = match target {
             Value::Map(map) => map
                 .iter()
+                .rev()
                 .find(|(key, _)| key.as_text() == Some(segment.as_str()))
                 .map(|(_, value)| value)
                 .ok_or_else(unresolved)?,
