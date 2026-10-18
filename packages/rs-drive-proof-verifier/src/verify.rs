@@ -9,9 +9,18 @@ use tenderdash_abci::{
 };
 
 use crate::ContextProvider;
+use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::error::proof::ProofError;
 use drive::error::Error as DriveError;
 use drive::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
+
+/// The limit Drive proves a paged query with: the request's, or for a request naming none,
+/// Drive's default page (`default_query_limit`, [`DEFAULT_QUERY_LIMIT`] unless the node's
+/// operator changes it). Checked against no limit, a proof of a full default page reads as
+/// missing the rest of the range.
+pub(crate) fn limit_drive_proves(limit: Option<u16>) -> Option<u16> {
+    limit.or(Some(DEFAULT_QUERY_LIMIT))
+}
 
 /// Reject GroveDB proof envelopes older than Drive's
 /// `MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION` before the bytes reach Drive.

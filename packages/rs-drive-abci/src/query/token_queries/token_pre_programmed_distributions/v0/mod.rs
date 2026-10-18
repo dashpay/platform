@@ -150,9 +150,32 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::setup_platform_with_token_state;
-    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
+    use crate::query::tests::{
+        assert_drive_part_of_proof_verified, assert_invalid_argument_status, setup_platform,
+        NoQuorumKeysContextProvider,
+    };
     use dapi_grpc::platform::v0::get_token_pre_programmed_distributions_response::get_token_pre_programmed_distributions_response_v0;
+    use dapi_grpc::platform::v0::{
+        get_token_pre_programmed_distributions_request,
+        get_token_pre_programmed_distributions_response, GetTokenPreProgrammedDistributionsRequest,
+        GetTokenPreProgrammedDistributionsResponse,
+    };
+    use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::Network;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::accessors::v1::DataContractV1Getters;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+    use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::v1::DataContractV1;
+    use dpp::data_contract::{DataContract, TokenConfiguration};
+    use dpp::prelude::TimestampMillis;
+    use drive::config::DEFAULT_QUERY_LIMIT;
+    use drive::drive::Drive;
+    use drive_proof_verifier::types::TokenPreProgrammedDistributions;
+    use drive_proof_verifier::FromProof;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_invalid_token_id() {
@@ -665,5 +688,143 @@ mod tests {
             result.errors.as_slice(),
             [QueryError::InvalidArgument(msg)] if msg.contains("start_recipient")
         ));
+    }
+
+    /// Drive answers a proved request naming no limit with its default page and proves that
+    /// page, so the client verifies the proof against that page: checked against no limit, the
+    /// proof of a full page reads as missing the rest of the range
+    #[test]
+    fn should_verify_a_full_default_page_of_distributions_requested_with_no_limit() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let contract = DataContract::V1(DataContractV1 {
+            id: Identifier::from([1u8; 32]),
+            version: 0,
+            owner_id: Identifier::from([2u8; 32]),
+            document_types: Default::default(),
+            config: DataContractConfig::default_for_version(version)
+                .expect("expected a contract config"),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: Default::default(),
+            tokens: BTreeMap::from([(
+                0,
+                TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive()),
+            )]),
+            keywords: Vec::new(),
+            description: None,
+        });
+        platform
+            .drive
+            .insert_contract(&contract, BlockInfo::genesis(), true, None, version)
+            .expect("expected to insert contract");
+        let token_id = contract.token_id(0).expect("expected token at position 0");
+
+        // One recipient more than Drive's default page, released at five times
+        let mut distributions = BTreeMap::<TimestampMillis, BTreeMap<Identifier, u64>>::new();
+        for n in 0..=DEFAULT_QUERY_LIMIT as u64 {
+            let mut recipient = [0u8; 32];
+            recipient[..8].copy_from_slice(&n.to_be_bytes());
+            distributions
+                .entry(1_000 * (n / 25 + 1))
+                .or_default()
+                .insert(Identifier::from(recipient), 1 + n);
+        }
+        let distribution =
+            TokenPreProgrammedDistribution::V0(TokenPreProgrammedDistributionV0 { distributions });
+        let mut batch_operations = vec![];
+        platform
+            .drive
+            .add_pre_programmed_distributions(
+                token_id.to_buffer(),
+                contract.owner_id().to_buffer(),
+                &distribution,
+                &BlockInfo::genesis(),
+                &mut None,
+                &mut batch_operations,
+                None,
+                version,
+            )
+            .expect("expected to add pre-programmed distributions");
+        platform
+            .drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                batch_operations,
+                &mut vec![],
+                &version.drive,
+            )
+            .expect("expected to apply batch operations");
+
+        let request_v0 = GetTokenPreProgrammedDistributionsRequestV0 {
+            token_id: token_id.to_vec(),
+            start_at_info: None,
+            limit: None,
+            prove: true,
+        };
+        let response_v0 = platform
+            .query_token_pre_programmed_distributions_v0(request_v0.clone(), &state, version)
+            .expect("expected query to succeed")
+            .into_data()
+            .expect("expected query to be valid");
+        let Some(get_token_pre_programmed_distributions_response_v0::Result::Proof(proof)) =
+            &response_v0.result
+        else {
+            panic!("expected a proof")
+        };
+
+        // Drive proved its default page
+        Drive::verify_token_pre_programmed_distributions::<
+            BTreeMap<TimestampMillis, BTreeMap<Identifier, u64>>,
+            BTreeMap<Identifier, u64>,
+        >(
+            &proof.grovedb_proof,
+            token_id.to_buffer(),
+            None,
+            None,
+            false,
+            version,
+        )
+        .expect_err("expected the proof of a full page to fail with no limit");
+        let (_, proved): (_, BTreeMap<TimestampMillis, BTreeMap<Identifier, u64>>) =
+            Drive::verify_token_pre_programmed_distributions(
+                &proof.grovedb_proof,
+                token_id.to_buffer(),
+                None,
+                Some(DEFAULT_QUERY_LIMIT),
+                false,
+                version,
+            )
+            .expect("expected the proof to verify as a default page");
+        assert_eq!(
+            proved.values().map(BTreeMap::len).sum::<usize>(),
+            DEFAULT_QUERY_LIMIT as usize
+        );
+
+        let error = <TokenPreProgrammedDistributions as FromProof<
+            GetTokenPreProgrammedDistributionsRequest,
+        >>::maybe_from_proof_with_metadata(
+            GetTokenPreProgrammedDistributionsRequest {
+                version: Some(get_token_pre_programmed_distributions_request::Version::V0(
+                    request_v0,
+                )),
+            },
+            GetTokenPreProgrammedDistributionsResponse {
+                version: Some(
+                    get_token_pre_programmed_distributions_response::Version::V0(response_v0),
+                ),
+            },
+            Network::Testnet,
+            version,
+            &NoQuorumKeysContextProvider,
+        )
+        .expect_err("expected no quorum key");
+        assert_drive_part_of_proof_verified(error);
     }
 }

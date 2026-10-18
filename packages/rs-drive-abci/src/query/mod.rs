@@ -38,7 +38,8 @@ pub(crate) mod tests {
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dapi_grpc::tonic::{Code, Status};
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::DataContract;
+    use dpp::data_contract::{DataContract, TokenConfiguration};
+    use drive_proof_verifier::{ContextProvider, ContextProviderError};
 
     use crate::config::PlatformConfig;
     use dpp::dashcore::Network;
@@ -295,6 +296,56 @@ pub(crate) mod tests {
             validation_result.errors.as_slice(),
             [QueryError::InvalidArgument(msg)] if msg.contains("id must be a valid identifier (32 bytes long)")
         ));
+    }
+
+    /// Serves no contract and no quorum key, so the `FromProof` of a query that needs neither
+    /// checks the Drive part of a proof and then stops at the quorum key the signature check
+    /// asks for
+    pub struct NoQuorumKeysContextProvider;
+
+    impl ContextProvider for NoQuorumKeysContextProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::Config(
+                "no quorum keys in this test".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// `FromProof` checks the GroveDB proof before the Tenderdash signature, so with
+    /// [`NoQuorumKeysContextProvider`] `QuorumKeyUnavailable` means the Drive part verified
+    pub fn assert_drive_part_of_proof_verified(error: drive_proof_verifier::Error) {
+        assert!(
+            matches!(
+                error,
+                drive_proof_verifier::Error::QuorumKeyUnavailable { .. }
+            ),
+            "expected the Drive part of the proof to verify and the signature check to stop at \
+             the quorum key, got {error:?}"
+        );
     }
 
     /// Set up a platform with token state for testing token queries.

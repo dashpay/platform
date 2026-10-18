@@ -1,6 +1,6 @@
 use crate::error::MapGroveDbError;
 use crate::types::groups::{GroupActionSigners, GroupActions, Groups};
-use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{limit_drive_proves, supported_grovedb_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error, FromProof};
 use dapi_grpc::platform::v0::{
     get_group_action_signers_request, get_group_actions_request, get_group_info_request,
@@ -126,7 +126,7 @@ impl FromProof<GetGroupInfosRequest> for Groups {
             supported_grovedb_proof_bytes(&proof)?,
             contract_id,
             start_at_group_contract_position,
-            count,
+            limit_drive_proves(count),
             false,
             platform_version,
         )
@@ -226,7 +226,7 @@ impl FromProof<GetGroupActionsRequest> for GroupActions {
             group_contract_position,
             status,
             start_at_action_id,
-            count,
+            limit_drive_proves(count),
             false,
             platform_version,
         )

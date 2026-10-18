@@ -137,15 +137,25 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::{
-        assert_invalid_argument_status, assert_invalid_identifier, setup_platform,
+        assert_drive_part_of_proof_verified, assert_invalid_argument_status,
+        assert_invalid_identifier, setup_platform, NoQuorumKeysContextProvider,
     };
     use dapi_grpc::platform::v0::get_group_infos_request::StartAtGroupContractPosition;
+    use dapi_grpc::platform::v0::{
+        get_group_infos_request, get_group_infos_response, GetGroupInfosRequest,
+        GetGroupInfosResponse,
+    };
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::Network;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::data_contract::group::Group;
+    use dpp::data_contract::GroupContractPosition;
     #[allow(unused_imports)]
     use dpp::identifier::Identifier;
+    use drive::config::DEFAULT_QUERY_LIMIT;
+    use drive::drive::Drive;
+    use drive_proof_verifier::types::groups::Groups;
+    use drive_proof_verifier::FromProof;
     use std::collections::BTreeMap;
 
     #[test]
@@ -427,5 +437,89 @@ mod tests {
             .expect("expected query to succeed");
 
         assert!(result.errors.is_empty());
+    }
+
+    /// Drive answers a proved request naming no count with its default page and proves that
+    /// page, so the client verifies the proof against that page: checked against no limit, the
+    /// proof of a full page reads as missing the rest of the range
+    #[test]
+    fn should_verify_a_full_default_page_of_groups_requested_with_no_count() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let contract_id = Identifier::from([1u8; 32]);
+        let member_id = Identifier::from([2u8; 32]);
+
+        // One group more than Drive's default page
+        let groups: BTreeMap<GroupContractPosition, Group> = (0..=DEFAULT_QUERY_LIMIT)
+            .map(|position| {
+                let group = Group::V0(GroupV0 {
+                    members: BTreeMap::from([(member_id, 5u32)]),
+                    required_power: 5,
+                });
+                (position, group)
+            })
+            .collect();
+        platform
+            .drive
+            .add_new_groups(
+                contract_id,
+                &groups,
+                &BlockInfo::genesis(),
+                true,
+                None,
+                version,
+            )
+            .expect("expected to add groups");
+
+        let request_v0 = GetGroupInfosRequestV0 {
+            contract_id: contract_id.to_vec(),
+            start_at_group_contract_position: None,
+            count: None,
+            prove: true,
+        };
+        let response_v0 = platform
+            .query_group_infos_v0(request_v0.clone(), &state, version)
+            .expect("expected query to succeed")
+            .into_data()
+            .expect("expected query to be valid");
+        let Some(get_group_infos_response_v0::Result::Proof(proof)) = &response_v0.result else {
+            panic!("expected a proof")
+        };
+
+        // Drive proved its default page
+        Drive::verify_group_infos_in_contract::<BTreeMap<GroupContractPosition, Group>>(
+            &proof.grovedb_proof,
+            contract_id,
+            None,
+            None,
+            false,
+            version,
+        )
+        .expect_err("expected the proof of a full page to fail with no limit");
+        let (_, proved_groups): (_, BTreeMap<GroupContractPosition, Group>) =
+            Drive::verify_group_infos_in_contract(
+                &proof.grovedb_proof,
+                contract_id,
+                None,
+                Some(DEFAULT_QUERY_LIMIT),
+                false,
+                version,
+            )
+            .expect("expected the proof to verify as a default page");
+        assert_eq!(proved_groups.len(), DEFAULT_QUERY_LIMIT as usize);
+
+        let error = <Groups as FromProof<GetGroupInfosRequest>>::maybe_from_proof_with_metadata(
+            GetGroupInfosRequest {
+                version: Some(get_group_infos_request::Version::V0(request_v0)),
+            },
+            GetGroupInfosResponse {
+                version: Some(get_group_infos_response::Version::V0(response_v0)),
+            },
+            Network::Testnet,
+            version,
+            &NoQuorumKeysContextProvider,
+        )
+        .expect_err("expected no quorum key");
+        assert_drive_part_of_proof_verified(error);
     }
 }
