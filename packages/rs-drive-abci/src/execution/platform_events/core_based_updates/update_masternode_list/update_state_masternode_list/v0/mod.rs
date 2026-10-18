@@ -130,10 +130,21 @@ where
         // Inert for every protocol version selecting this generation: it processed its blocks
         // without updated masternodes' operator payouts, so a diff's must not reach the stored
         // list or the identity updates.
-        let masternode_diff = without_operator_payout_changes(
+        let mut masternode_diff = without_operator_payout_changes(
             self.core_rpc
                 .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?,
         );
+
+        if !start_from_scratch {
+            // Protocol versions 1 to 13 select this generation. The call changes no entry unless
+            // DEPLOYMENT_V24 is active at `core_block_height`, so blocks at earlier Core heights
+            // execute unchanged.
+            self.drop_unchanged_operator_keys(
+                state.full_masternode_list(),
+                core_block_height,
+                &mut masternode_diff.updated_mns,
+            )?;
+        }
 
         let MasternodeListDiff {
             added_mns,

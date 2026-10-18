@@ -19,7 +19,7 @@ use drive::drive::identity::key::fetch::{
 use drive::util::batch::DriveOperation;
 use drive::util::batch::DriveOperation::IdentityOperation;
 use drive::util::batch::IdentityOperationType::{
-    AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
+    AddNewIdentity, AddNewKeysToMasternodeIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
 };
 
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -287,9 +287,8 @@ where
             }
         }
         if let Some(key) = new_key {
-            drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
+            drive_operations.push(IdentityOperation(AddNewKeysToMasternodeIdentity {
                 identity_id: owner_identifier,
-                unique_keys_to_add: vec![],
                 non_unique_keys_to_add: vec![key],
             }));
         }

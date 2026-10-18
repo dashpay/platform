@@ -3,6 +3,7 @@ use drive::util::grove_operations::DirectQueryType;
 
 mod gas_sponsored_bundle;
 mod minimum_pool_notes;
+mod nullifier_batch_guard;
 mod pool_nullifier_admission;
 
 /// Token shielded pool transitions: shield, unshield and shielded transfer inside a batch.
