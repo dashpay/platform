@@ -125,11 +125,11 @@ fn get_evonodes_proposed_epoch_blocks_by_range(
         };
 
         // Create a query with the epoch and range parameters
-        // The limit travels in the request: Drive builds the proof for the
-        // limit it applied (its default page when none is given), and the
-        // verifier re-derives the query shape from the request, defaulting a
-        // missing limit to that same page. `0` sends no limit, so it means
-        // "Drive's default page".
+        // The limit MUST travel in the request: Drive builds the proof for the
+        // limit it applied (its default when none is given), and the verifier
+        // re-derives the query shape from the request — a request without a
+        // limit therefore fails proof verification ("Proof is missing data for
+        // query range"). `0` means "Drive's default page".
         let query = EvonodesProposedEpochBlocksByRangeQuery {
             epoch: if epoch > 0 { Some(epoch) } else { None },
             limit: if limit > 0 { Some(limit) } else { None },

@@ -39,6 +39,7 @@ pub(crate) mod tests {
     use dapi_grpc::tonic::{Code, Status};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::{DataContract, TokenConfiguration};
+    use drive::config::DEFAULT_QUERY_LIMIT;
     use drive_proof_verifier::{ContextProvider, ContextProviderError};
 
     use crate::config::PlatformConfig;
@@ -78,30 +79,49 @@ pub(crate) mod tests {
         Arc<PlatformState>,
         &'a PlatformVersion,
     ) {
+        setup_platform_with_config(
+            with_genesis_state,
+            PlatformConfig::default_for_network(network),
+            initial_protocol_version,
+        )
+    }
+
+    /// [`setup_platform`] on testnet for a node whose operator set Drive's default page, the
+    /// limit a request naming none is answered with, to `default_query_limit`
+    pub fn setup_platform_with_default_query_limit<'a>(
+        with_genesis_state: Option<(TimestampMillis, CoreBlockHeight)>,
+        default_query_limit: u16,
+    ) -> (
+        TempPlatform<MockCoreRPCLike>,
+        Arc<PlatformState>,
+        &'a PlatformVersion,
+    ) {
+        let mut config = PlatformConfig::default_for_network(Network::Testnet);
+        config.drive.default_query_limit = default_query_limit;
+        setup_platform_with_config(with_genesis_state, config, None)
+    }
+
+    fn setup_platform_with_config<'a>(
+        with_genesis_state: Option<(TimestampMillis, CoreBlockHeight)>,
+        config: PlatformConfig,
+        initial_protocol_version: Option<ProtocolVersion>,
+    ) -> (
+        TempPlatform<MockCoreRPCLike>,
+        Arc<PlatformState>,
+        &'a PlatformVersion,
+    ) {
+        let mut platform_builder = TestPlatformBuilder::new().with_config(config);
+
+        if let Some(initial_protocol_version) = initial_protocol_version {
+            platform_builder =
+                platform_builder.with_initial_protocol_version(initial_protocol_version);
+        }
+
+        let platform = platform_builder.build_with_mock_rpc();
         let platform = if let Some((timestamp, activation_core_block_height)) = with_genesis_state {
-            let mut platform_builder = TestPlatformBuilder::new()
-                .with_config(PlatformConfig::default_for_network(network));
-
-            if let Some(initial_protocol_version) = initial_protocol_version {
-                platform_builder =
-                    platform_builder.with_initial_protocol_version(initial_protocol_version);
-            }
-
-            platform_builder
-                .build_with_mock_rpc()
-                .set_genesis_state_with_activation_info(timestamp, activation_core_block_height)
+            platform.set_genesis_state_with_activation_info(timestamp, activation_core_block_height)
         } else {
-            let mut platform_builder = TestPlatformBuilder::new()
-                .with_config(PlatformConfig::default_for_network(network));
-
-            if let Some(initial_protocol_version) = initial_protocol_version {
-                platform_builder =
-                    platform_builder.with_initial_protocol_version(initial_protocol_version);
-            }
-
-            platform_builder
-                .build_with_mock_rpc()
-                .set_initial_state_structure()
+            platform.set_initial_state_structure()
         };
 
         // We can't return a reference to Arc (`load` method) so we clone Arc (`load_full`).
@@ -334,6 +354,17 @@ pub(crate) mod tests {
             Ok(1)
         }
     }
+
+    /// The nodes a proved request naming no limit is checked against, as (the node's default
+    /// page, results stored): a node left at the default with one result more than its page,
+    /// and a node whose operator set a larger default with every result inside it
+    pub const NO_LIMIT_PROOF_CASES: [(u16, u16); 2] = [
+        (DEFAULT_QUERY_LIMIT, DEFAULT_QUERY_LIMIT + 1),
+        (
+            2 * DEFAULT_QUERY_LIMIT,
+            DEFAULT_QUERY_LIMIT + DEFAULT_QUERY_LIMIT / 2,
+        ),
+    ];
 
     /// `FromProof` checks the GroveDB proof before the Tenderdash signature, so with
     /// [`NoQuorumKeysContextProvider`] `QuorumKeyUnavailable` means the Drive part verified
