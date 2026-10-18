@@ -91,6 +91,9 @@ pub enum StringKeyword {
     MinLength,
     /// `maxLength`.
     MaxLength,
+    /// `maxBytes`: Platform's bound on a string's UTF-8 bytes, which JSON Schema leaves
+    /// unchecked and the document validator checks right after it.
+    MaxBytes,
     /// `pattern`.
     Pattern,
 }
@@ -156,8 +159,6 @@ pub enum AnnotationKeyword {
 pub enum PlatformKeyword {
     /// `position`.
     Position,
-    /// `maxBytes`.
-    MaxBytes,
     /// `refersTo`.
     RefersTo,
     /// `distinctFrom`.

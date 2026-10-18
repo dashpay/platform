@@ -129,6 +129,8 @@ pub struct SchemaNode {
     pub min_length: Option<u64>,
     /// `maxLength`.
     pub max_length: Option<u64>,
+    /// `maxBytes`.
+    pub max_bytes: Option<u64>,
     /// `pattern`.
     pub pattern: Option<String>,
     /// `minimum`.
@@ -276,6 +278,7 @@ impl SchemaNode {
             SchemaKeyword::String(keyword) => match keyword {
                 StringKeyword::MinLength => self.min_length.map(Value::U64),
                 StringKeyword::MaxLength => self.max_length.map(Value::U64),
+                StringKeyword::MaxBytes => self.max_bytes.map(Value::U64),
                 StringKeyword::Pattern => self.pattern.clone().map(Value::Text),
             },
             SchemaKeyword::Number(keyword) => match keyword {
@@ -450,6 +453,7 @@ fn build_node(
             SchemaKeyword::String(keyword) => match keyword {
                 StringKeyword::MinLength => node.min_length = Some(count(value, name)?),
                 StringKeyword::MaxLength => node.max_length = Some(count(value, name)?),
+                StringKeyword::MaxBytes => node.max_bytes = Some(count(value, name)?),
                 StringKeyword::Pattern => node.pattern = Some(text(value, name)?.to_string()),
             },
             SchemaKeyword::Number(keyword) => {

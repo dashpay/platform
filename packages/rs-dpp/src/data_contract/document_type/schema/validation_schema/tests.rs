@@ -26,6 +26,7 @@ fn should_keep_every_validation_keyword_of_a_node() {
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 63,
+                "maxBytes": 126,
                 "pattern": "^[a-z]+$",
                 "format": "uri",
                 "enum": ["a", "b"],
@@ -75,6 +76,7 @@ fn should_keep_every_validation_keyword_of_a_node() {
     let name = property(root, "name");
     assert_eq!(name.min_length, Some(1));
     assert_eq!(name.max_length, Some(63));
+    assert_eq!(name.max_bytes, Some(126));
     assert_eq!(name.pattern.as_deref(), Some("^[a-z]+$"));
     assert_eq!(name.format.as_deref(), Some("uri"));
     assert_eq!(
@@ -229,7 +231,6 @@ fn should_ignore_annotations_and_platform_keywords_below_the_root() {
                 "position": 0,
                 "description": "a name",
                 "$comment": "kept short",
-                "maxBytes": 10,
                 "requiredSince": 2,
             },
         },
