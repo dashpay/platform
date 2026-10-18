@@ -182,9 +182,9 @@ pub enum RelationshipKeyword {
 #[strum(serialize_all = "camelCase")]
 pub enum MetaKeyword {
     /// `$id`: names the schema. The JSON Schema validator resolves a `$ref` through the
-    /// schemas named this way before it follows the pointer, which the validation schema
-    /// does not represent, so the builder refuses a schema that reaches a `$ref` while one of
-    /// its nodes carries an `$id`, or while any `$id` of the schema is a fragment.
+    /// schemas named this way before it follows the pointer, and against the `$id` above
+    /// it, neither of which the validation schema represents, so the builder refuses a
+    /// schema in which an `$id` would redirect a `$ref` it reaches.
     #[strum(serialize = "$id")]
     Id,
     /// `position`: the property's place in the stored document, whose values are written

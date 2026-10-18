@@ -445,6 +445,61 @@ fn should_refuse_a_reference_in_a_schema_holding_a_fragment_id_anywhere() {
     assert!(ValidationSchema::try_from_root(&root).is_err());
 }
 
+#[test]
+fn should_refuse_a_reference_an_absolute_id_names() {
+    // An `examples` value is searched for identifiers too, and an absolute `$id` resolving to
+    // the reference's URL names the schema the reference reaches.
+    let root = platform_value!({
+        "type": "object",
+        "properties": {
+            "note": {
+                "type": "string",
+                "examples": [{ "$id": "json-schema:///#/$defs/label", "maxLength": 1 }],
+            },
+            "user": { "$ref": "#/$defs/label" },
+        },
+        "$defs": { "label": { "type": "string", "maxLength": 10 } },
+    });
+    assert!(ValidationSchema::try_from_root(&root).is_err());
+}
+
+#[test]
+fn should_build_a_reference_no_id_names_or_rescopes() {
+    let schema = build(platform_value!({
+        "type": "object",
+        "properties": {
+            "named": { "$id": "#named", "type": "string" },
+            // A fragment `$id` above a reference leaves the URL it resolves to unchanged.
+            "scoped": {
+                "$id": "#scoped",
+                "type": "object",
+                "properties": { "user": { "$ref": "#/$defs/label" } },
+            },
+        },
+        "$defs": { "label": { "type": "string", "maxLength": 10 } },
+    }));
+    assert_eq!(
+        string(&schema.references["#/$defs/label"]).max_length,
+        Some(10)
+    );
+}
+
+#[test]
+fn should_refuse_a_reference_an_id_above_it_rescopes() {
+    let root = platform_value!({
+        "type": "object",
+        "properties": {
+            "scoped": {
+                "$id": "elsewhere",
+                "type": "object",
+                "properties": { "user": { "$ref": "#/$defs/label" } },
+            },
+        },
+        "$defs": { "label": { "type": "string" } },
+    });
+    assert!(ValidationSchema::try_from_root(&root).is_err());
+}
+
 /// The divergence the refusal above guards: the existing validator checks a `$ref` against
 /// the subschema an `$id` names, not the one its pointer reaches.
 #[cfg(feature = "validation")]
@@ -471,6 +526,54 @@ fn should_match_the_existing_validator_in_resolving_a_reference_through_an_id() 
         !result.is_valid(),
         "the existing validator holds `user` to the named schema's maxLength of 1"
     );
+
+    let absolute_alias = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "note": {
+                "type": "string",
+                "examples": [{ "$id": "json-schema:///#/$defs/label", "maxLength": 1 }],
+            },
+            "user": { "$ref": "#/$defs/label" },
+        },
+        "$defs": { "label": { "type": "string", "maxLength": 10 } },
+    });
+    let result = JsonSchemaValidator::new()
+        .compile_and_validate(
+            &absolute_alias,
+            &serde_json::json!({ "user": "hello" }),
+            PlatformVersion::latest(),
+        )
+        .expect("expected the schema to compile");
+    assert!(
+        !result.is_valid(),
+        "the existing validator holds `user` to the schema the absolute `$id` names"
+    );
+
+    // Where no `$id` names the reference's URL or rescopes it, the existing validator
+    // follows the pointer, as the validation schema does.
+    let unredirected = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "named": { "$id": "#named", "type": "string" },
+            "scoped": {
+                "$id": "#scoped",
+                "type": "object",
+                "properties": { "user": { "$ref": "#/$defs/label" } },
+            },
+        },
+        "$defs": { "label": { "type": "string", "maxLength": 10 } },
+    });
+    for (user, valid) in [("hello", true), ("hello world", false)] {
+        let result = JsonSchemaValidator::new()
+            .compile_and_validate(
+                &unredirected,
+                &serde_json::json!({ "scoped": { "user": user } }),
+                PlatformVersion::latest(),
+            )
+            .expect("expected the schema to compile");
+        assert_eq!(result.is_valid(), valid, "{user}");
+    }
 }
 
 #[test]

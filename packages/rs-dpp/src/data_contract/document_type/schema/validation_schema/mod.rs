@@ -36,7 +36,8 @@ use crate::data_contract::DataContract;
 use crate::ProtocolError;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use url::Url;
 
 mod keyword;
 #[cfg(test)]
@@ -226,10 +227,10 @@ impl ValidationSchema {
     /// wrong shape, a `$ref` that does not resolve, and a schema that reaches a `$ref` while
     /// an `$id` could redirect it (see [`MetaKeyword::Id`]).
     pub fn try_from_root(root: &Value) -> Result<Self, DataContractError> {
-        let mut walk = Walk::default();
-        let root_node = build_node(root, true, &mut walk)?;
+        let mut pending = VecDeque::new();
+        let root_node = build_node(root, true, &mut pending)?;
         let mut references = BTreeMap::new();
-        while let Some(reference) = walk.pending.pop_front() {
+        while let Some(reference) = pending.pop_front() {
             if references.contains_key(&reference) {
                 continue;
             }
@@ -239,17 +240,12 @@ impl ValidationSchema {
                 root_node.clone()
             } else {
                 let target = resolve_pointer(root, &reference)?;
-                build_node(target, false, &mut walk)?
+                build_node(target, false, &mut pending)?
             };
             references.insert(reference, node);
         }
-        if let Some(reference) = references.keys().next() {
-            if walk.names_a_schema || has_fragment_id(root) {
-                return Err(structure_error(format!(
-                    "`$ref` `{reference}` may resolve through the schemas an `$id` names, which \
-                     the validation schema does not represent"
-                )));
-            }
+        if !references.is_empty() {
+            refuse_references_an_id_redirects(root, &references)?;
         }
         Ok(Self {
             root: root_node,
@@ -424,21 +420,101 @@ fn structure_error(message: String) -> DataContractError {
     DataContractError::InvalidContractStructure(message)
 }
 
-/// Whether any value of `schema` carries an `$id` that is a fragment, looking where the
-/// JSON Schema validator indexes named schemas: every value but those of `enum` and
-/// `const`, so including the document type's own keywords. A fragment `$id` there can name
-/// the very fragment a `$ref` asks for. Any other `$id` outside the nodes the builder
-/// visits, such as the `$id` a reference's `where` condition matches, names a schema at a
-/// URL no fragment `$ref` reaches.
-fn has_fragment_id(schema: &Value) -> bool {
+/// The URL the JSON Schema validator resolves a schema against when no `$id` sets
+/// another.
+const DEFAULT_ROOT_URL: &str = "json-schema:///";
+
+/// What the JSON Schema validator's resolver reads of a schema's identifiers.
+#[derive(Default)]
+struct Identifiers {
+    /// The canonical URL of every schema an `$id` names.
+    named: BTreeSet<String>,
+    /// Every `$ref`, with the URL it is resolved against.
+    references: Vec<(Url, String)>,
+}
+
+/// Refuses a schema in which a `$ref` the builder reached would be resolved by the JSON
+/// Schema validator to another schema than the one its pointer reaches from the root: one
+/// whose URL, resolved against the `$id` above it, differs from its URL resolved against
+/// the root, or names a schema an `$id` names, which the validator resolves to before it
+/// follows the pointer.
+fn refuse_references_an_id_redirects(
+    root: &Value,
+    reached: &BTreeMap<String, SchemaNode>,
+) -> Result<(), DataContractError> {
+    let redirected = |reference: &str| {
+        structure_error(format!(
+            "`$ref` `{reference}` resolves through the schemas an `$id` names, which the \
+             validation schema does not represent"
+        ))
+    };
+    let root_url = Url::parse(DEFAULT_ROOT_URL)
+        .map_err(|error| structure_error(format!("invalid default schema URL: {error}")))?;
+    let mut identifiers = Identifiers::default();
+    collect_identifiers(root, &root_url, &mut identifiers)?;
+    for (scope, reference) in &identifiers.references {
+        if !reached.contains_key(reference) {
+            continue;
+        }
+        let url = scope.join(reference).map_err(|_| redirected(reference))?;
+        let from_root = root_url
+            .join(reference)
+            .map_err(|_| redirected(reference))?;
+        if url != from_root || identifiers.named.contains(url.as_str()) {
+            return Err(redirected(reference));
+        }
+    }
+    Ok(())
+}
+
+/// Collects the identifiers of `schema` the way the JSON Schema validator's resolver indexes
+/// them: every map carrying an `$id` names a schema at the URL the `$id` resolves to against
+/// its enclosing scope (an empty fragment dropped), and sets the scope of everything below
+/// it. Every value is searched but those of `enum` and `const`, so including the document
+/// type's own keywords and `examples`.
+fn collect_identifiers(
+    schema: &Value,
+    scope: &Url,
+    identifiers: &mut Identifiers,
+) -> Result<(), DataContractError> {
     match schema {
-        Value::Map(map) => map.iter().any(|(key, value)| match key.as_text() {
-            Some("$id") => value.as_text().is_some_and(|id| id.starts_with('#')),
-            Some("enum") | Some("const") => false,
-            _ => has_fragment_id(value),
-        }),
-        Value::Array(elements) => elements.iter().any(has_fragment_id),
-        _ => false,
+        Value::Map(map) => {
+            let entries = last_wins(map)?;
+            let mut scope = scope.clone();
+            if let Some(id) = entries
+                .iter()
+                .find(|(key, _)| *key == "$id")
+                .and_then(|(_, id)| id.as_text())
+            {
+                let mut named = scope.join(id).map_err(|error| {
+                    structure_error(format!("`$id` `{id}` is not a URL reference: {error}"))
+                })?;
+                if named.fragment() == Some("") {
+                    named.set_fragment(None);
+                }
+                identifiers.named.insert(named.to_string());
+                scope = named;
+            }
+            for (key, value) in entries {
+                match key {
+                    "enum" | "const" => continue,
+                    "$ref" => {
+                        if let Some(reference) = value.as_text() {
+                            identifiers
+                                .references
+                                .push((scope.clone(), reference.to_string()));
+                        }
+                    }
+                    _ => {}
+                }
+                collect_identifiers(value, &scope, identifiers)?;
+            }
+            Ok(())
+        }
+        Value::Array(elements) => elements
+            .iter()
+            .try_for_each(|element| collect_identifiers(element, scope, identifiers)),
+        _ => Ok(()),
     }
 }
 
@@ -512,19 +588,10 @@ fn types(value: &Value) -> Result<JsonTypes, DataContractError> {
     }
 }
 
-/// What building the nodes of one schema gathers beside them.
-#[derive(Default)]
-struct Walk {
-    /// The references reached and not yet built.
-    pending: VecDeque<String>,
-    /// Whether a node built carries an `$id`.
-    names_a_schema: bool,
-}
-
 fn build_node(
     schema: &Value,
     is_root: bool,
-    walk: &mut Walk,
+    pending: &mut VecDeque<String>,
 ) -> Result<SchemaNode, DataContractError> {
     let map = schema
         .as_map()
@@ -544,7 +611,7 @@ fn build_node(
             SchemaKeyword::Any(keyword) => match keyword {
                 AnyKeyword::Ref => {
                     let reference = text(value, name)?.to_string();
-                    walk.pending.push_back(reference.clone());
+                    pending.push_back(reference.clone());
                     node.reference = Some(reference);
                 }
                 AnyKeyword::Type => node.types = Some(types(value)?),
@@ -569,7 +636,7 @@ fn build_node(
                         .map(|(property_name, property)| {
                             Ok((
                                 property_name.to_string(),
-                                build_node(property, false, walk)?,
+                                build_node(property, false, pending)?,
                             ))
                         })
                         .collect::<Result<_, DataContractError>>()?;
@@ -602,10 +669,10 @@ fn build_node(
                 let array = node.array.get_or_insert_with(Default::default);
                 match keyword {
                     ArrayKeyword::Items => {
-                        array.items = Some(Box::new(build_node(value, false, walk)?))
+                        array.items = Some(Box::new(build_node(value, false, pending)?))
                     }
                     ArrayKeyword::Contains => {
-                        array.contains = Some(Box::new(build_node(value, false, walk)?))
+                        array.contains = Some(Box::new(build_node(value, false, pending)?))
                     }
                     ArrayKeyword::MinItems => array.min_items = Some(count(value, name)?),
                     ArrayKeyword::MaxItems => array.max_items = Some(count(value, name)?),
@@ -648,7 +715,6 @@ fn build_node(
                     }
                 }
             }
-            SchemaKeyword::Meta(MetaKeyword::Id) => walk.names_a_schema = true,
             SchemaKeyword::Relationship(_)
             | SchemaKeyword::Meta(_)
             | SchemaKeyword::Annotation(_) => {}
