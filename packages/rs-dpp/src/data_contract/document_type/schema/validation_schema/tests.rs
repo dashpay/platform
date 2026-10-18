@@ -55,6 +55,18 @@ fn should_keep_every_validation_keyword_of_a_node() {
                 "minItems": 32,
                 "maxItems": 32,
             },
+            "message": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 1040,
+                "encryptedFor": {
+                    "recipient": "key",
+                    "recipientKey": "recipientKeyId",
+                    "senderKey": "senderKeyId",
+                    "scheme": "ecdh-secp256k1-aes256-cbc",
+                },
+            },
             "meta": {
                 "type": "object",
                 "properties": { "a": { "type": "string" } },
@@ -113,6 +125,30 @@ fn should_keep_every_validation_keyword_of_a_node() {
     assert_eq!(
         key.content_media_type.as_deref(),
         Some("application/x.dash.dpp.identifier")
+    );
+
+    let message = property(root, "message");
+    let encrypted_for = message
+        .encrypted_for
+        .as_ref()
+        .expect("expected encryptedFor");
+    assert_eq!(encrypted_for.recipient.to_string(), "key");
+    assert_eq!(
+        (
+            encrypted_for.recipient_key.as_str(),
+            encrypted_for.sender_key.as_str()
+        ),
+        ("recipientKeyId", "senderKeyId")
+    );
+    assert_eq!(encrypted_for.scheme.as_str(), "ecdh-secp256k1-aes256-cbc");
+    assert_eq!(
+        message.value_of(SchemaKeyword::Format(FormatKeyword::EncryptedFor)),
+        Some(platform_value!({
+            "recipient": "key",
+            "recipientKey": "recipientKeyId",
+            "senderKey": "senderKeyId",
+            "scheme": "ecdh-secp256k1-aes256-cbc",
+        }))
     );
 
     let meta = property(root, "meta");

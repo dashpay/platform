@@ -22,6 +22,7 @@
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::property::EncryptedFor;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
@@ -150,6 +151,8 @@ pub struct SchemaNode {
     pub byte_array: Option<bool>,
     /// `contentMediaType`.
     pub content_media_type: Option<String>,
+    /// `encryptedFor`.
+    pub encrypted_for: Option<EncryptedFor>,
 }
 
 /// A document type's schema as the document validator reads it: the root node and every
@@ -292,10 +295,32 @@ impl SchemaNode {
                 FormatKeyword::Format => self.format.clone().map(Value::Text),
                 FormatKeyword::ByteArray => self.byte_array.map(Value::Bool),
                 FormatKeyword::ContentMediaType => self.content_media_type.clone().map(Value::Text),
+                FormatKeyword::EncryptedFor => self.encrypted_for.as_ref().map(encrypted_for_value),
             },
             SchemaKeyword::Annotation(_) | SchemaKeyword::Platform(_) => None,
         }
     }
+}
+
+fn encrypted_for_value(encrypted_for: &EncryptedFor) -> Value {
+    Value::Map(vec![
+        (
+            Value::Text("recipient".into()),
+            Value::Text(encrypted_for.recipient.to_string()),
+        ),
+        (
+            Value::Text("recipientKey".into()),
+            Value::Text(encrypted_for.recipient_key.clone()),
+        ),
+        (
+            Value::Text("senderKey".into()),
+            Value::Text(encrypted_for.sender_key.clone()),
+        ),
+        (
+            Value::Text("scheme".into()),
+            Value::Text(encrypted_for.scheme.as_str().into()),
+        ),
+    ])
 }
 
 fn texts(names: &[String]) -> Value {
@@ -471,6 +496,12 @@ fn build_node(
                 FormatKeyword::ByteArray => node.byte_array = Some(boolean(value, name)?),
                 FormatKeyword::ContentMediaType => {
                     node.content_media_type = Some(text(value, name)?.to_string())
+                }
+                FormatKeyword::EncryptedFor => {
+                    node.encrypted_for =
+                        Some(platform_value::from_value(value.clone()).map_err(|error| {
+                            structure_error(format!("`{name}` is malformed: {error}"))
+                        })?)
                 }
             },
             SchemaKeyword::Annotation(_) | SchemaKeyword::Platform(_) => {}

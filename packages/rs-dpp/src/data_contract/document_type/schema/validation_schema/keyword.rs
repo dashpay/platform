@@ -130,6 +130,10 @@ pub enum FormatKeyword {
     /// `contentMediaType`: a string keyword in JSON Schema, which Platform writes only on
     /// byte arrays, where it marks an identifier.
     ContentMediaType,
+    /// `encryptedFor`: the byte array is ciphertext made with a named scheme, for a
+    /// recipient other properties name. JSON Schema leaves it unchecked; the document
+    /// validator checks right after that the bytes have a length the scheme produces.
+    EncryptedFor,
 }
 
 /// Keywords that annotate a schema and constrain nothing.
@@ -163,8 +167,6 @@ pub enum PlatformKeyword {
     RefersTo,
     /// `distinctFrom`.
     DistinctFrom,
-    /// `encryptedFor`.
-    EncryptedFor,
     /// `generatedFrom`.
     GeneratedFrom,
     /// `requiredSince`.
