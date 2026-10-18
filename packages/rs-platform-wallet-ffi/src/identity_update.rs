@@ -312,6 +312,58 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
     disable_public_key_ids_count: usize,
     signer_handle: *mut SignerHandle,
 ) -> PlatformWalletFFIResult {
+    update_identity_with_signer(
+        wallet_handle,
+        identity_id,
+        add_public_keys,
+        add_public_keys_count,
+        disable_public_key_ids,
+        disable_public_key_ids_count,
+        None,
+        signer_handle,
+    )
+}
+
+/// [`platform_wallet_update_identity_with_signer`], with the revision the
+/// update must carry. When the cached identity would give the transition
+/// another revision (it moved since the caller read it), the call fails
+/// before anything is signed or broadcast, so a caller that recorded
+/// `revision` knows the only revision this update can land at.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_update_identity_with_signer_at_revision(
+    wallet_handle: Handle,
+    identity_id: *const u8,
+    add_public_keys: *const IdentityPubkeyFFI,
+    add_public_keys_count: usize,
+    disable_public_key_ids: *const u32,
+    disable_public_key_ids_count: usize,
+    revision: u64,
+    signer_handle: *mut SignerHandle,
+) -> PlatformWalletFFIResult {
+    update_identity_with_signer(
+        wallet_handle,
+        identity_id,
+        add_public_keys,
+        add_public_keys_count,
+        disable_public_key_ids,
+        disable_public_key_ids_count,
+        Some(revision),
+        signer_handle,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn update_identity_with_signer(
+    wallet_handle: Handle,
+    identity_id: *const u8,
+    add_public_keys: *const IdentityPubkeyFFI,
+    add_public_keys_count: usize,
+    disable_public_key_ids: *const u32,
+    disable_public_key_ids_count: usize,
+    revision: Option<u64>,
+    signer_handle: *mut SignerHandle,
+) -> PlatformWalletFFIResult {
     check_ptr!(signer_handle);
 
     let id = unwrap_result_or_return!(read_identifier(identity_id));
@@ -375,7 +427,14 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
         block_on_worker(async move {
             let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
             identity_wallet
-                .update_identity_with_external_signer(&id, add_keys, disable_ids, signer, None)
+                .update_identity_with_external_signer_at_revision(
+                    &id,
+                    add_keys,
+                    disable_ids,
+                    revision,
+                    signer,
+                    None,
+                )
                 .await
         })
     });

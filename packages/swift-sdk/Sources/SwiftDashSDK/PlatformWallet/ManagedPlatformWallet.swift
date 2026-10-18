@@ -3729,10 +3729,19 @@ extension ManagedPlatformWallet {
     /// otherwise subsequent operations that try to sign with the
     /// newly-added keys will fail. The signer here only signs the
     /// update transition itself with an existing MASTER key.
+    ///
+    /// The transition carries the cached identity's revision plus one,
+    /// read when the Rust side starts the update. With `revision` set, an
+    /// update that would carry another one throws before anything is
+    /// signed or broadcast (`IdentityRevisionMismatch` in the message), so
+    /// a caller that recorded `revision` beforehand knows the only revision
+    /// this update can land at: Drive takes an identity update only at one
+    /// above the identity's revision. `nil` takes whatever the cache gives.
     public func updateIdentity(
         identityId: Identifier,
         addPublicKeys: [ManagedPlatformWallet.IdentityPubkey] = [],
         disablePublicKeyIds: [UInt32] = [],
+        revision: UInt64? = nil,
         signer: KeychainSigner
     ) async throws {
         let handle = self.handle
@@ -3751,30 +3760,25 @@ extension ManagedPlatformWallet {
             let result = idBytes.withUnsafeBufferPointer {
                 idBp -> PlatformWalletFFIResult in
                 disableIds.withUnsafeBufferPointer { disableBp in
+                    let update = { (rows: UnsafePointer<IdentityPubkeyFFI>?, count: Int) -> PlatformWalletFFIResult in
+                        let disable = disableIds.isEmpty ? nil : disableBp.baseAddress
+                        guard let revision else {
+                            return platform_wallet_update_identity_with_signer(
+                                handle, idBp.baseAddress!, rows, UInt(count),
+                                disable, UInt(disableIds.count), signerHandle)
+                        }
+                        return platform_wallet_update_identity_with_signer_at_revision(
+                            handle, idBp.baseAddress!, rows, UInt(count),
+                            disable, UInt(disableIds.count), revision, signerHandle)
+                    }
                     if addPubkeys.isEmpty {
-                        return platform_wallet_update_identity_with_signer(
-                            handle,
-                            idBp.baseAddress!,
-                            nil,
-                            0,
-                            disableIds.isEmpty ? nil : disableBp.baseAddress,
-                            UInt(disableIds.count),
-                            signerHandle
-                        )
+                        return update(nil, 0)
                     }
                     return ManagedPlatformWallet.withPubkeyFFIArray(
                         addPubkeys,
                         buffers: pubkeyBuffers
                     ) { ffiRowsPtr, ffiRowsCount in
-                        platform_wallet_update_identity_with_signer(
-                            handle,
-                            idBp.baseAddress!,
-                            ffiRowsPtr,
-                            UInt(ffiRowsCount),
-                            disableIds.isEmpty ? nil : disableBp.baseAddress,
-                            UInt(disableIds.count),
-                            signerHandle
-                        )
+                        update(ffiRowsPtr, ffiRowsCount)
                     }
                 }
             }

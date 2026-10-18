@@ -77,6 +77,20 @@ pub enum PlatformWalletError {
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
 
+    /// An identity update was asked to carry a revision the cached identity
+    /// would not give it: the cache moved since the caller read the
+    /// revision, or the caller read it elsewhere. Raised before the
+    /// transition is signed, so nothing was broadcast.
+    #[error(
+        "identity {identity_id}: the update was asked to carry revision {expected}, \
+         but the cached identity would give it {actual}; nothing was broadcast"
+    )]
+    IdentityRevisionMismatch {
+        identity_id: Identifier,
+        expected: u64,
+        actual: u64,
+    },
+
     /// A DashPay invitation link's voucher key is for the other network (a
     /// testnet link opened in a mainnet wallet, or the reverse). Definitive:
     /// the claim refuses the link before any network work.

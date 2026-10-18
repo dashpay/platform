@@ -98,6 +98,42 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
+        self.update_identity_with_external_signer_at_revision(
+            identity_id,
+            add_public_keys,
+            disable_public_keys,
+            None,
+            signer,
+            settings,
+        )
+        .await
+    }
+
+    /// [`Self::update_identity_with_external_signer`], with the revision
+    /// the transition must carry.
+    ///
+    /// The transition takes the cached identity's revision plus one, read
+    /// when the update starts. A caller that records the revision before
+    /// submitting (to tell later whether the update can still land: Drive
+    /// takes an identity update only at one above the identity's revision)
+    /// cannot see that read, and a refresh in between moves it. With
+    /// `revision` set, an update that would carry another one fails with
+    /// [`PlatformWalletError::IdentityRevisionMismatch`] before anything is
+    /// signed or broadcast, so the revision the caller recorded is the only
+    /// one this update can land at. `None` takes whatever the cache gives,
+    /// as [`Self::update_identity_with_external_signer`] does.
+    pub async fn update_identity_with_external_signer_at_revision<S>(
+        &self,
+        identity_id: &Identifier,
+        add_public_keys: Vec<IdentityPublicKey>,
+        disable_public_keys: Vec<u32>,
+        revision: Option<u64>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(), PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
         use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
         use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
         use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
@@ -131,8 +167,7 @@ impl IdentityWallet {
         };
 
         // Increment revision for the update transition.
-        let original_revision = identity.revision();
-        identity.set_revision(original_revision + 1);
+        identity.set_revision(update_revision(identity_id, identity.revision(), revision)?);
 
         // Pick the MASTER signing key — DPP requires identity update
         // transitions to be authorized by MASTER specifically.
@@ -330,5 +365,59 @@ impl IdentityWallet {
             .await?;
 
         Ok(result)
+    }
+}
+
+/// The revision an update of an identity cached at `cached` carries: one
+/// above it. With `expected` set, any other value is refused.
+fn update_revision(
+    identity_id: &Identifier,
+    cached: u64,
+    expected: Option<u64>,
+) -> Result<u64, PlatformWalletError> {
+    let next = cached.checked_add(1).ok_or_else(|| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "identity {identity_id} is at the last revision"
+        ))
+    })?;
+    match expected {
+        Some(expected) if expected != next => Err(PlatformWalletError::IdentityRevisionMismatch {
+            identity_id: *identity_id,
+            expected,
+            actual: next,
+        }),
+        _ => Ok(next),
+    }
+}
+
+#[cfg(test)]
+mod update_revision_tests {
+    use super::*;
+
+    #[test]
+    fn should_carry_one_above_the_cached_revision() {
+        let id = Identifier::from([7u8; 32]);
+        assert_eq!(update_revision(&id, 4, None).unwrap(), 5);
+        assert_eq!(update_revision(&id, 4, Some(5)).unwrap(), 5);
+    }
+
+    #[test]
+    fn should_refuse_an_update_asked_for_another_revision() {
+        let id = Identifier::from([7u8; 32]);
+        // The cache moved past the revision the caller read.
+        match update_revision(&id, 5, Some(5)) {
+            Err(PlatformWalletError::IdentityRevisionMismatch {
+                expected, actual, ..
+            }) => assert_eq!((expected, actual), (5, 6)),
+            other => panic!("unexpected: {other:?}"),
+        }
+        assert!(matches!(
+            update_revision(&id, 3, Some(5)),
+            Err(PlatformWalletError::IdentityRevisionMismatch { .. })
+        ));
+        assert!(matches!(
+            update_revision(&id, u64::MAX, None),
+            Err(PlatformWalletError::InvalidIdentityData(_))
+        ));
     }
 }
