@@ -52,7 +52,7 @@ pub mod token_total_supply;
 
 use crate::from_request::TryFromRequest;
 use crate::verify::{
-    supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_tenderdash_proof, verify_tenderdash_signature,
+    supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
 };
 use crate::{types::*, ContextProvider, DataContractProvider, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
@@ -2455,13 +2455,16 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByRangeRequest> for Propo
             }
         };
         let checked_limit = limit.map(try_u32_to_u16).transpose()?;
+        let grovedb_proof = supported_grovedb_proof_bytes(proof)?;
 
-        let (root_hash, proposer_block_counts) = Drive::verify_epoch_proposers(
-            supported_grovedb_proof_bytes(proof)?,
-            epoch_index,
-            ProposerQueryType::ByRange(checked_limit, formatted_start),
-            platform_version,
-        )
+        let (root_hash, proposer_block_counts) = verify_page_drive_proves(checked_limit, |limit| {
+            Drive::verify_epoch_proposers(
+                grovedb_proof,
+                epoch_index,
+                ProposerQueryType::ByRange(limit, formatted_start),
+                platform_version,
+            )
+        })
         .map_drive_error(proof, mtd)?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;

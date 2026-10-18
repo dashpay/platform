@@ -9,6 +9,7 @@ use tokio::task::JoinHandle;
 
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::sml::masternode_list::MasternodeList;
+use dashcore::sml::masternode_list_entry::MasternodeListEntry;
 use dashcore::{PubkeyHash, QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
@@ -610,6 +611,27 @@ impl SpvRuntime {
         let engine_guard = engine.read().await;
         let list = engine_guard.latest_masternode_list()?;
         Some(MasternodeListSummary::all_from_list(list))
+    }
+
+    /// The current-tip deterministic masternode list's raw entries, for the
+    /// paths that need what [`MasternodeListSummary`] leaves out: a
+    /// version-3 entry's whole extended address map and the entry version.
+    /// `None` when the list isn't available; same lock order as
+    /// [`Self::masternode_list_summaries`].
+    pub(crate) async fn masternode_list_entries(&self) -> Option<Vec<MasternodeListEntry>> {
+        let engine = {
+            let client_guard = self.client.read().await;
+            let client = client_guard.as_ref()?;
+            client.masternode_list_engine().ok()?
+        };
+        let engine_guard = engine.read().await;
+        let list = engine_guard.latest_masternode_list()?;
+        Some(
+            list.masternodes
+                .values()
+                .map(|qualified| qualified.masternode_list_entry.clone())
+                .collect(),
+        )
     }
 
     /// Blocking twin of [`Self::masternode_list_summaries`] for FFI threads

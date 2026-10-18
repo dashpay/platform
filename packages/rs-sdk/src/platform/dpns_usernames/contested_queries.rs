@@ -8,8 +8,10 @@ use crate::platform::fetch_many::FetchMany;
 use crate::{Error, Sdk};
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::TimestampMillis;
+use dpp::voting::contender_structs::ContenderWithSerializedDocument;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
+use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive::query::vote_poll_vote_state_query::{
@@ -50,9 +52,12 @@ pub struct ContestedDpnsUsername {
 impl Sdk {
     /// Get all contested DPNS usernames
     ///
+    /// Reads the names in ascending order, in pages of up to 100 (the most Drive answers to one
+    /// query), until `limit` names are read or none are left.
+    ///
     /// # Arguments
     ///
-    /// * `limit` - Maximum number of results to return
+    /// * `limit` - Maximum number of results to return; `None` returns every name
     /// * `start_after` - Optional name to start after
     ///   (for pagination)
     ///
@@ -65,48 +70,49 @@ impl Sdk {
         start_after: Option<String>,
     ) -> Result<Vec<String>, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
-
-        let start_index_values = vec![Value::Text(DPNS_PARENT_DOMAIN.to_string())];
-
-        // For a range query of all items under "dash", we use empty end_index_values
-        let end_index_values = vec![];
-
-        // If we have a start_after value, we use it as the start_at_value
-        let start_at_value = start_after.map(|name| {
-            // Create a compound value with both parent domain and label
-            let value = Value::Array(vec![
-                Value::Text(DPNS_PARENT_DOMAIN.to_string()),
-                Value::Text(name),
-            ]);
-            (value, false) // false means exclusive (start after, not at)
-        });
-
-        let query = VotePollsByDocumentTypeQuery {
-            contract_id: dpns_contract_id,
-            document_type_name: "domain".to_string(),
-            index_name: "parentNameAndLabel".to_string(),
-            start_index_values,
-            end_index_values,
-            start_at_value,
-            limit: limit.map(|l| l as u16),
-            order_ascending: true,
-        };
-
-        let contested_resources = ContestedResource::fetch_many(self, query).await?;
-
-        // Convert ContestedResources to our ContestedDpnsUsername format
         let mut usernames = Vec::new();
+        let mut start_after = start_after;
 
-        // The ContestedResources contains a Vec of ContestedResource items
-        for contested_resource in contested_resources.0.iter() {
-            // Extract the label from the contested resource
-            // The ContestedResource contains the index values [parent_domain, label]
-            if let Some(label) = Self::extract_label_from_contested_resource(&contested_resource.0)
-            {
-                // For now, we'll create a simplified version
-                // In a real implementation, we'd fetch the contenders
-                usernames.push(label);
+        loop {
+            let page_limit = match limit {
+                Some(limit) => {
+                    let left = (limit as usize).saturating_sub(usernames.len());
+                    if left == 0 {
+                        break;
+                    }
+                    left.min(DEFAULT_QUERY_LIMIT as usize) as u16
+                }
+                None => DEFAULT_QUERY_LIMIT,
+            };
+
+            // With the parent domain fixed, the query ranges over the next property of the
+            // index, the label: Drive answers each contest with its label alone, and starts
+            // after a label, not after a [parent domain, label] pair
+            let query = VotePollsByDocumentTypeQuery {
+                contract_id: dpns_contract_id,
+                document_type_name: "domain".to_string(),
+                index_name: "parentNameAndLabel".to_string(),
+                start_index_values: vec![Value::Text(DPNS_PARENT_DOMAIN.to_string())],
+                end_index_values: vec![],
+                // false means exclusive (start after, not at)
+                start_at_value: start_after.take().map(|name| (Value::Text(name), false)),
+                limit: Some(page_limit),
+                order_ascending: true,
+            };
+
+            let contested_resources = ContestedResource::fetch_many(self, query).await?;
+            let read = contested_resources.0.len();
+            for contested_resource in contested_resources.0 {
+                usernames.push(Self::extract_label_from_contested_resource(
+                    contested_resource,
+                )?);
             }
+
+            // A short page is the last one
+            if read < page_limit as usize {
+                break;
+            }
+            start_after = usernames.last().cloned();
         }
 
         Ok(usernames)
@@ -127,8 +133,6 @@ impl Sdk {
         label: &str,
         limit: Option<u32>,
     ) -> Result<Contenders, Error> {
-        use dpp::voting::contender_structs::ContenderWithSerializedDocument;
-
         let dpns_contract_id = self.get_dpns_contract_id()?;
 
         let vote_poll = ContestedDocumentResourceVotePoll {
@@ -253,23 +257,23 @@ impl Sdk {
 
         let mut usernames_with_identity = Vec::new();
 
-        // Check each contested name to see if our identity is a contender
-        for contested_label in all_contested {
-            let vote_state = self
-                .get_contested_dpns_vote_state(&contested_label, None)
-                .await?;
+        // Check each contested name to see if our identity is a contender. `buffered` runs a
+        // bounded number of contests at once and yields them in name order
+        let mut contests = stream::iter(all_contested)
+            .map(|contested_label| async move {
+                let contenders = self
+                    .get_all_contested_dpns_contenders(&contested_label)
+                    .await;
+                (contested_label, contenders)
+            })
+            .buffered(DPNS_VOTE_STATE_QUERY_CONCURRENCY);
+        while let Some((contested_label, contenders)) = contests.next().await {
+            let contenders = contenders?;
 
-            // Check if our identity is among the contenders
-            let is_contender = vote_state
-                .contenders
-                .iter()
-                .any(|(contender_id, _)| contender_id == &identity_id);
-
-            if is_contender {
-                let contenders = vote_state.contenders.into_keys().collect();
+            if contenders.contains(&identity_id) {
                 usernames_with_identity.push(ContestedDpnsUsername {
-                    label: contested_label.clone(),
                     normalized_label: contested_label.to_lowercase(),
+                    label: contested_label,
                     contenders,
                 });
             }
@@ -278,26 +282,65 @@ impl Sdk {
         Ok(usernames_with_identity)
     }
 
-    // Helper function to extract label from contested resource value
-    fn extract_label_from_contested_resource(
-        resource: &dpp::platform_value::Value,
-    ) -> Option<String> {
-        // The ContestedResource contains a Value that represents the serialized index values
-        // For DPNS with parentNameAndLabel index, this should be [parent_domain, label]
-        // However, the exact structure depends on how the data is serialized
+    /// Every contender of the contest for `label`, in identity order. A contest holds up to
+    /// `max_contenders_per_contest` (1,000) contenders and Drive answers at most 100 per query,
+    /// so they are read in pages of 100 that each start after the last contender read; every
+    /// request names its count, so its proof is verified against the page Drive proved.
+    async fn get_all_contested_dpns_contenders(
+        &self,
+        label: &str,
+    ) -> Result<Vec<Identifier>, Error> {
+        let vote_poll = ContestedDocumentResourceVotePoll {
+            contract_id: self.get_dpns_contract_id()?,
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![
+                Value::Text(DPNS_PARENT_DOMAIN.to_string()),
+                Value::Text(label.to_string()),
+            ],
+        };
 
-        // First, try to interpret as an array directly
-        if let dpp::platform_value::Value::Array(values) = resource {
-            if values.len() >= 2 {
-                if let dpp::platform_value::Value::Text(label) = &values[1] {
-                    return Some(label.clone());
+        let mut contenders: Vec<Identifier> = Vec::new();
+        let mut start_at = None;
+        loop {
+            let page = ContenderWithSerializedDocument::fetch_many(
+                self,
+                ContestedDocumentVotePollDriveQuery {
+                    vote_poll: vote_poll.clone(),
+                    result_type: ContestedDocumentVotePollDriveQueryResultType::VoteTally,
+                    offset: None,
+                    limit: Some(DEFAULT_QUERY_LIMIT),
+                    start_at,
+                    allow_include_locked_and_abstaining_vote_tally: false,
+                },
+            )
+            .await?;
+            let read = page.contenders.len();
+            contenders.extend(page.contenders.into_keys());
+
+            // A short page is the last one
+            match contenders.last() {
+                Some(last) if read >= DEFAULT_QUERY_LIMIT as usize => {
+                    start_at = Some((last.to_buffer(), false));
                 }
+                _ => break,
             }
         }
 
-        // If not an array, it might be encoded differently
-        // For now, return None if we can't extract it
-        None
+        Ok(contenders)
+    }
+
+    /// The label of a contested resource of the `parentNameAndLabel` index queried with the
+    /// parent domain fixed: Drive answers with the value of the label property alone, as text.
+    /// Anything else means the query and Drive disagree on the index, so it is an error rather
+    /// than a name left out.
+    fn extract_label_from_contested_resource(resource: ContestedResource) -> Result<String, Error> {
+        match resource.0 {
+            Value::Text(label) => Ok(label),
+            other => Err(Error::InvalidProvedResponse(format!(
+                "expected a contested DPNS name to be text, got {other:?}"
+            ))),
+        }
     }
 
     // Helper function to extract label from index values
@@ -500,5 +543,263 @@ impl Sdk {
         }
 
         Ok(name_to_end_time)
+    }
+}
+
+#[cfg(all(test, feature = "mocks"))]
+mod tests {
+    use super::*;
+    use crate::SdkBuilder;
+    use dpp::version::PlatformVersion;
+    use dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
+    use drive_proof_verifier::types::ContestedResources;
+
+    fn mock_sdk() -> Sdk {
+        SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("expected a mock sdk")
+    }
+
+    /// Contested names sort as their numbers do
+    fn name(n: usize) -> String {
+        format!("name{n:03}")
+    }
+
+    fn names(from: usize, to: usize) -> Vec<String> {
+        (from..to).map(name).collect()
+    }
+
+    /// The query reading the contested names after `start_after`, built here rather than with
+    /// the code under test, so a request shaped differently matches no expectation
+    fn names_page_query(
+        sdk: &Sdk,
+        start_after: Option<&str>,
+        limit: u16,
+    ) -> VotePollsByDocumentTypeQuery {
+        VotePollsByDocumentTypeQuery {
+            contract_id: sdk
+                .get_dpns_contract_id()
+                .expect("expected the dpns contract id"),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            start_index_values: vec![Value::Text("dash".to_string())],
+            end_index_values: vec![],
+            start_at_value: start_after.map(|name| (Value::Text(name.to_string()), false)),
+            limit: Some(limit),
+            order_ascending: true,
+        }
+    }
+
+    /// Drive's answer to a names query: each contest as its label alone
+    fn names_page(labels: &[String]) -> ContestedResources {
+        labels
+            .iter()
+            .map(|label| ContestedResource(Value::Text(label.clone())))
+            .collect()
+    }
+
+    async fn expect_names_page(
+        sdk: &mut Sdk,
+        start_after: Option<&str>,
+        limit: u16,
+        labels: &[String],
+    ) {
+        let query = names_page_query(sdk, start_after, limit);
+        sdk.mock()
+            .expect_fetch_many::<Identifier, ContestedResource, _, ContestedResources>(
+                query,
+                Some(names_page(labels)),
+            )
+            .await
+            .expect("expected to register the page");
+    }
+
+    #[tokio::test]
+    async fn should_read_every_contested_name_once_across_pages() {
+        let mut sdk = mock_sdk();
+        expect_names_page(&mut sdk, None, 100, &names(0, 100)).await;
+        expect_names_page(&mut sdk, Some(&name(99)), 100, &names(100, 200)).await;
+        expect_names_page(&mut sdk, Some(&name(199)), 100, &names(200, 250)).await;
+
+        let usernames = sdk
+            .get_contested_dpns_normalized_usernames(None, None)
+            .await
+            .expect("expected every page to answer");
+
+        assert_eq!(usernames, names(0, 250));
+    }
+
+    #[tokio::test]
+    async fn should_stop_at_an_empty_page_after_a_full_one() {
+        let mut sdk = mock_sdk();
+        expect_names_page(&mut sdk, None, 100, &names(0, 100)).await;
+        expect_names_page(&mut sdk, Some(&name(99)), 100, &[]).await;
+
+        let usernames = sdk
+            .get_contested_dpns_normalized_usernames(None, None)
+            .await
+            .expect("expected both pages to answer");
+
+        assert_eq!(usernames, names(0, 100));
+    }
+
+    #[tokio::test]
+    async fn should_read_a_limit_over_100_in_pages_of_at_most_100() {
+        let mut sdk = mock_sdk();
+        expect_names_page(&mut sdk, None, 100, &names(0, 100)).await;
+        expect_names_page(&mut sdk, Some(&name(99)), 50, &names(100, 150)).await;
+
+        let usernames = sdk
+            .get_contested_dpns_normalized_usernames(Some(150), None)
+            .await
+            .expect("expected both pages to answer");
+
+        assert_eq!(usernames, names(0, 150));
+    }
+
+    #[tokio::test]
+    async fn should_start_after_the_given_name() {
+        let mut sdk = mock_sdk();
+        expect_names_page(&mut sdk, Some(&name(41)), 5, &names(42, 47)).await;
+
+        let usernames = sdk
+            .get_contested_dpns_normalized_usernames(Some(5), Some(name(41)))
+            .await
+            .expect("expected the page to answer");
+
+        assert_eq!(usernames, names(42, 47));
+    }
+
+    #[test]
+    fn should_extract_a_label_answered_as_text() {
+        let label = Sdk::extract_label_from_contested_resource(ContestedResource(Value::Text(
+            "alice".to_string(),
+        )))
+        .expect("expected a text label");
+
+        assert_eq!(label, "alice");
+    }
+
+    #[test]
+    fn should_refuse_a_contested_resource_that_is_not_text() {
+        let error =
+            Sdk::extract_label_from_contested_resource(ContestedResource(Value::Array(vec![
+                Value::Text("dash".to_string()),
+                Value::Text("alice".to_string()),
+            ])))
+            .expect_err("expected an array to be refused");
+
+        assert!(matches!(error, Error::InvalidProvedResponse(_)));
+    }
+
+    /// Identity `n`: identities sort as their numbers do
+    fn contender(n: u16) -> Identifier {
+        let mut id = [0u8; 32];
+        id[30..].copy_from_slice(&n.to_be_bytes());
+        Identifier::new(id)
+    }
+
+    fn contenders(from: u16, to: u16) -> Vec<Identifier> {
+        (from..to).map(contender).collect()
+    }
+
+    /// The page of contenders of the contest for `label` after `start_after`, built here rather
+    /// than with the code under test, so a request shaped differently (one without a count, or
+    /// a cursor that is not the last contender, exclusive) matches no expectation
+    async fn expect_contenders_page(
+        sdk: &mut Sdk,
+        label: &str,
+        start_after: Option<Identifier>,
+        page: &[Identifier],
+    ) {
+        let query = ContestedDocumentVotePollDriveQuery {
+            vote_poll: ContestedDocumentResourceVotePoll {
+                contract_id: sdk
+                    .get_dpns_contract_id()
+                    .expect("expected the dpns contract id"),
+                document_type_name: "domain".to_string(),
+                index_name: "parentNameAndLabel".to_string(),
+                index_values: vec![
+                    Value::Text("dash".to_string()),
+                    Value::Text(label.to_string()),
+                ],
+            },
+            result_type: ContestedDocumentVotePollDriveQueryResultType::VoteTally,
+            allow_include_locked_and_abstaining_vote_tally: false,
+            start_at: start_after.map(|id| (id.to_buffer(), false)),
+            limit: Some(100),
+            offset: None,
+        };
+        let page = Contenders::from_iter(page.iter().map(|&identity_id| {
+            (
+                identity_id,
+                Some(ContenderWithSerializedDocument::V0(
+                    ContenderWithSerializedDocumentV0 {
+                        identity_id,
+                        serialized_document: None,
+                        vote_tally: Some(0),
+                    },
+                )),
+            )
+        }));
+        sdk.mock()
+            .expect_fetch_many::<_, ContenderWithSerializedDocument, _, Contenders>(
+                query,
+                Some(page),
+            )
+            .await
+            .expect("expected to register the page of contenders");
+    }
+
+    #[tokio::test]
+    async fn should_list_the_contested_names_an_identity_contends_for() {
+        let identity = contender(1);
+        let other = contender(2);
+        let mut sdk = mock_sdk();
+        expect_names_page(&mut sdk, None, 100, &names(0, 3)).await;
+        expect_contenders_page(&mut sdk, &name(0), None, &[other]).await;
+        expect_contenders_page(&mut sdk, &name(1), None, &[identity, other]).await;
+        expect_contenders_page(&mut sdk, &name(2), None, &[identity]).await;
+
+        let usernames = sdk
+            .get_contested_dpns_usernames_by_identity(identity, None)
+            .await
+            .expect("expected every query to answer");
+
+        let labels: Vec<&str> = usernames.iter().map(|u| u.label.as_str()).collect();
+        assert_eq!(labels, [name(1), name(2)]);
+        assert_eq!(usernames[0].contenders, [identity, other]);
+        assert_eq!(usernames[1].contenders, [identity]);
+    }
+
+    /// A contest holds up to 1,000 contenders and Drive answers 100 per query: an identity past
+    /// the first 100 is found, and the name lists every contender
+    #[tokio::test]
+    async fn should_find_an_identity_past_the_first_100_contenders() {
+        let identity = contender(150);
+        let mut sdk = mock_sdk();
+        expect_names_page(&mut sdk, None, 100, &names(0, 2)).await;
+        // 160 contenders, the identity on the second page
+        expect_contenders_page(&mut sdk, &name(0), None, &contenders(0, 100)).await;
+        expect_contenders_page(
+            &mut sdk,
+            &name(0),
+            Some(contender(99)),
+            &contenders(100, 160),
+        )
+        .await;
+        // Exactly one full page, without the identity
+        expect_contenders_page(&mut sdk, &name(1), None, &contenders(200, 300)).await;
+        expect_contenders_page(&mut sdk, &name(1), Some(contender(299)), &[]).await;
+
+        let usernames = sdk
+            .get_contested_dpns_usernames_by_identity(identity, None)
+            .await
+            .expect("expected every page to answer");
+
+        assert_eq!(usernames.len(), 1);
+        assert_eq!(usernames[0].label, name(0));
+        assert_eq!(usernames[0].contenders, contenders(0, 160));
     }
 }
