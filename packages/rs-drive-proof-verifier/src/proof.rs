@@ -93,6 +93,7 @@ use dpp::voting::votes::Vote;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
 };
+use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::drive::Drive;
 use drive::error::proof::ProofError;
 use drive::grovedb::GroveTrunkQueryResult;
@@ -1980,7 +1981,8 @@ impl FromProof<platform::GetContestedResourcesRequest> for ContestedResources {
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query = VotePollsByDocumentTypeQuery::try_from_request(request)?;
+        let mut drive_query = VotePollsByDocumentTypeQuery::try_from_request(request)?;
+        drive_query.limit = vote_query_limit_drive_proves(drive_query.limit);
         let resolved_request = drive_query.resolve_with_known_contracts_provider(
             &provider.as_contract_lookup_fn(platform_version),
         )?;
@@ -2020,7 +2022,8 @@ impl FromProof<platform::GetContestedResourceVoteStateRequest> for Contenders {
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query = ContestedDocumentVotePollDriveQuery::try_from_request(request)?;
+        let mut drive_query = ContestedDocumentVotePollDriveQuery::try_from_request(request)?;
+        drive_query.limit = vote_query_limit_drive_proves(drive_query.limit);
 
         // Resolve request to get verify_*_proof
         let contracts_provider = provider.as_contract_lookup_fn(platform_version);
@@ -2074,7 +2077,8 @@ impl FromProof<GetContestedResourceVotersForIdentityRequest> for Voters {
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request)?;
+        let mut drive_query = ContestedDocumentVotePollVotesDriveQuery::try_from_request(request)?;
+        drive_query.limit = vote_query_limit_drive_proves(drive_query.limit);
 
         // Parse request to get resolved contract that implements verify_*_proof
         let contracts_provider = provider.as_contract_lookup_fn(platform_version);
@@ -2119,7 +2123,9 @@ impl FromProof<platform::GetContestedResourceIdentityVotesRequest> for ResourceV
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query = ContestedResourceVotesGivenByIdentityQuery::try_from_request(request)?;
+        let mut drive_query =
+            ContestedResourceVotesGivenByIdentityQuery::try_from_request(request)?;
+        drive_query.limit = vote_query_limit_drive_proves(drive_query.limit);
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2163,7 +2169,8 @@ impl FromProof<platform::GetVotePollsByEndDateRequest> for VotePollsGroupedByTim
         let response: Self::Response = response.into();
 
         // Decode request to get drive query
-        let drive_query = VotePollsByEndDateDriveQuery::try_from_request(request)?;
+        let mut drive_query = VotePollsByEndDateDriveQuery::try_from_request(request)?;
+        drive_query.limit = vote_query_limit_drive_proves(drive_query.limit);
 
         // Parse response to read proof and metadata
         let proof = response.proof().or(Err(Error::NoProofInResult))?;
@@ -2449,6 +2456,14 @@ impl FromProof<platform::GetEvonodesProposedEpochBlocksByRangeRequest> for Propo
             proof.clone(),
         ))
     }
+}
+
+/// The limit Drive proves a vote query with: the request's, or for a request naming none,
+/// Drive's default page (`default_query_limit`, [`DEFAULT_QUERY_LIMIT`] unless the node's
+/// operator changes it). Checked against no limit, a proof of a full default page reads as
+/// missing the rest of the range.
+fn vote_query_limit_drive_proves(limit: Option<u16>) -> Option<u16> {
+    limit.or(Some(DEFAULT_QUERY_LIMIT))
 }
 
 /// Convert u32, if 0 return None, otherwise return Some(u16).
