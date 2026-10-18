@@ -81,7 +81,7 @@ fn should_keep_every_validation_keyword_of_a_node() {
     }));
 
     let root = &schema.root;
-    assert_eq!(root.types, Some(TypeKeyword::One(JsonType::Object)));
+    assert_eq!(root.types, Some(JsonTypes::One(JsonType::Object)));
     assert_eq!(root.required, Some(vec!["name".to_string()]));
     assert_eq!(root.additional_properties, Some(false));
 
@@ -99,7 +99,7 @@ fn should_keep_every_validation_keyword_of_a_node() {
     let score = property(root, "score");
     assert_eq!(
         score.types,
-        Some(TypeKeyword::AnyOf(vec![JsonType::Integer, JsonType::Null]))
+        Some(JsonTypes::AnyOf(vec![JsonType::Integer, JsonType::Null]))
     );
     assert!(score.minimum.as_ref().is_some_and(Value::is_integer));
     assert_eq!(score.maximum, Some(Value::Float(100.5)));
@@ -254,7 +254,7 @@ fn should_ignore_the_document_type_keywords_at_the_root() {
         "additionalProperties": false,
     }));
 
-    assert_eq!(schema.root.types, Some(TypeKeyword::One(JsonType::Object)));
+    assert_eq!(schema.root.types, Some(JsonTypes::One(JsonType::Object)));
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn should_ignore_annotations_and_platform_keywords_below_the_root() {
 
     assert_eq!(
         property(&schema.root, "a").types,
-        Some(TypeKeyword::One(JsonType::String))
+        Some(JsonTypes::One(JsonType::String))
     );
 }
 

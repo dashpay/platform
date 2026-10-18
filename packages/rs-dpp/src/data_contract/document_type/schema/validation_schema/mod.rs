@@ -2,9 +2,15 @@
 //!
 //! The document validator compiles a document type's schema with the contract's `$defs`
 //! and the base schema added and its property type shorthands expanded, and checks every
-//! document value against it with JSON Schema (draft 2020-12) semantics. [`ValidationSchema`]
-//! holds exactly the keywords of that schema that constrain a value, one typed field per
-//! keyword, so the schema can be read without the raw `Value` it came from.
+//! document value against it with JSON Schema (draft 2020-12) semantics. Consensus also
+//! checks two keywords of that schema that bound one value but that JSON Schema leaves
+//! alone: `maxBytes` on a string, which the document validator checks right after, and
+//! `encryptedFor` on a byte array, which the validation of a create or replace checks.
+//! [`ValidationSchema`] holds exactly the keywords of that schema that constrain a value on
+//! its own, both kinds, one typed field per keyword, so the schema can be read without the
+//! raw `Value` it came from.
+//! The keywords it leaves out are grouped in [`SchemaKeyword`]: relationships, which
+//! consensus checks against more than the value, meta keywords and annotations.
 //!
 //! It follows JSON Schema, not the document type parser, where the two differ:
 //!
@@ -81,10 +87,10 @@ impl JsonType {
     }
 }
 
-/// The `type` keyword, in the form it was written: one type, or a list a value matches if
-/// it is of any of them.
+/// The value of the `type` keyword, in the form it was written: one JSON type, or a list
+/// of them, any of which a value may be.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TypeKeyword {
+pub enum JsonTypes {
     One(JsonType),
     AnyOf(Vec<JsonType>),
 }
@@ -99,7 +105,7 @@ pub struct SchemaNode {
     /// [`ValidationSchema::references`].
     pub reference: Option<String>,
     /// `type`.
-    pub types: Option<TypeKeyword>,
+    pub types: Option<JsonTypes>,
     /// `enum`, in declared order.
     pub enum_values: Option<Vec<Value>>,
     /// `const`.
@@ -235,8 +241,8 @@ impl SchemaNode {
             SchemaKeyword::Any(keyword) => match keyword {
                 AnyKeyword::Ref => self.reference.clone().map(Value::Text),
                 AnyKeyword::Type => self.types.as_ref().map(|types| match types {
-                    TypeKeyword::One(json_type) => Value::Text(json_type.name().into()),
-                    TypeKeyword::AnyOf(json_types) => Value::Array(
+                    JsonTypes::One(json_type) => Value::Text(json_type.name().into()),
+                    JsonTypes::AnyOf(json_types) => Value::Array(
                         json_types
                             .iter()
                             .map(|json_type| Value::Text(json_type.name().into()))
@@ -369,13 +375,13 @@ fn number(value: &Value, keyword: &str) -> Result<Value, DataContractError> {
     }
 }
 
-fn types(value: &Value) -> Result<TypeKeyword, DataContractError> {
+fn types(value: &Value) -> Result<JsonTypes, DataContractError> {
     let json_type = |name: &str| {
         JsonType::from_name(name).ok_or_else(|| structure_error(format!("unknown type `{name}`")))
     };
     match value {
-        Value::Text(name) => Ok(TypeKeyword::One(json_type(name)?)),
-        Value::Array(names) => Ok(TypeKeyword::AnyOf(
+        Value::Text(name) => Ok(JsonTypes::One(json_type(name)?)),
+        Value::Array(names) => Ok(JsonTypes::AnyOf(
             names
                 .iter()
                 .map(|name| json_type(text(name, "type")?))

@@ -136,8 +136,8 @@ pub enum FormatKeyword {
     /// byte arrays, where it marks an identifier.
     ContentMediaType,
     /// `encryptedFor`: the byte array is ciphertext made with a named scheme, for a
-    /// recipient other properties name. JSON Schema leaves it unchecked; the document
-    /// validator checks right after that the bytes have a length the scheme produces.
+    /// recipient other properties name. JSON Schema leaves it unchecked; the validation of a
+    /// create or replace checks that the bytes have a length the scheme produces.
     EncryptedFor,
 }
 
