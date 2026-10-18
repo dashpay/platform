@@ -285,6 +285,10 @@ fn should_name_every_keyword_once_and_read_it_back() {
             "multipleOf",
         ),
         (
+            SchemaKeyword::Format(FormatKeyword::ContentMediaType),
+            "contentMediaType",
+        ),
+        (
             SchemaKeyword::Platform(PlatformKeyword::RequiredSince),
             "requiredSince",
         ),

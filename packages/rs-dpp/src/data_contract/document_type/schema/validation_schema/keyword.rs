@@ -4,7 +4,7 @@ use strum::IntoEnumIterator;
 
 /// A keyword a document meta-schema admits on a schema node.
 ///
-/// The first five groups constrain a value, and [`SchemaNode`](super::SchemaNode) holds
+/// The first six groups constrain a value, and [`SchemaNode`](super::SchemaNode) holds
 /// them. The last two constrain nothing the JSON Schema validation of a document checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SchemaKeyword {
@@ -18,6 +18,8 @@ pub enum SchemaKeyword {
     String(StringKeyword),
     /// Applies to a number.
     Number(NumberKeyword),
+    /// Says what kind of string, number or byte array a value is, beyond its JSON type.
+    Format(FormatKeyword),
     /// Annotates, and constrains nothing.
     Annotation(AnnotationKeyword),
     /// Platform's own, which other stages read from the document type.
@@ -77,11 +79,6 @@ pub enum ArrayKeyword {
     MaxItems,
     /// `uniqueItems`.
     UniqueItems,
-    /// `byteArray`: Platform's keyword for an array of bytes.
-    ByteArray,
-    /// `contentMediaType`: a string keyword in JSON Schema, which Platform writes only on
-    /// byte arrays, where it marks an identifier.
-    ContentMediaType,
 }
 
 /// Keywords that apply to a string.
@@ -96,8 +93,6 @@ pub enum StringKeyword {
     MaxLength,
     /// `pattern`.
     Pattern,
-    /// `format`.
-    Format,
 }
 
 /// Keywords that apply to a number.
@@ -116,6 +111,22 @@ pub enum NumberKeyword {
     ExclusiveMaximum,
     /// `multipleOf`.
     MultipleOf,
+}
+
+/// Keywords that say what kind of string, number or byte array a value is, beyond its JSON
+/// type.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, strum::EnumIter, strum::IntoStaticStr,
+)]
+#[strum(serialize_all = "camelCase")]
+pub enum FormatKeyword {
+    /// `format`: a named format, such as `uri` or `date-time`, that a value must follow.
+    Format,
+    /// `byteArray`: Platform's keyword for an array whose elements are bytes.
+    ByteArray,
+    /// `contentMediaType`: a string keyword in JSON Schema, which Platform writes only on
+    /// byte arrays, where it marks an identifier.
+    ContentMediaType,
 }
 
 /// Keywords that annotate a schema and constrain nothing.
@@ -168,6 +179,7 @@ impl SchemaKeyword {
             .chain(ArrayKeyword::iter().map(SchemaKeyword::Array))
             .chain(StringKeyword::iter().map(SchemaKeyword::String))
             .chain(NumberKeyword::iter().map(SchemaKeyword::Number))
+            .chain(FormatKeyword::iter().map(SchemaKeyword::Format))
             .chain(AnnotationKeyword::iter().map(SchemaKeyword::Annotation))
             .chain(PlatformKeyword::iter().map(SchemaKeyword::Platform))
     }
@@ -180,6 +192,7 @@ impl SchemaKeyword {
             SchemaKeyword::Array(keyword) => keyword.into(),
             SchemaKeyword::String(keyword) => keyword.into(),
             SchemaKeyword::Number(keyword) => keyword.into(),
+            SchemaKeyword::Format(keyword) => keyword.into(),
             SchemaKeyword::Annotation(keyword) => keyword.into(),
             SchemaKeyword::Platform(keyword) => keyword.into(),
         }

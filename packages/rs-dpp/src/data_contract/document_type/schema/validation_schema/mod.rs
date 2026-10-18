@@ -36,8 +36,8 @@ mod keyword;
 mod tests;
 
 pub use keyword::{
-    AnnotationKeyword, AnyKeyword, ArrayKeyword, NumberKeyword, ObjectKeyword, PlatformKeyword,
-    SchemaKeyword, StringKeyword,
+    AnnotationKeyword, AnyKeyword, ArrayKeyword, FormatKeyword, NumberKeyword, ObjectKeyword,
+    PlatformKeyword, SchemaKeyword, StringKeyword,
 };
 
 /// A JSON Schema simple type.
@@ -125,19 +125,12 @@ pub struct SchemaNode {
     pub max_items: Option<u64>,
     /// `uniqueItems`.
     pub unique_items: Option<bool>,
-    /// `byteArray`, Platform's keyword for an array of bytes, with the value it was
-    /// written with.
-    pub byte_array: Option<bool>,
-    /// `contentMediaType`.
-    pub content_media_type: Option<String>,
     /// `minLength`.
     pub min_length: Option<u64>,
     /// `maxLength`.
     pub max_length: Option<u64>,
     /// `pattern`.
     pub pattern: Option<String>,
-    /// `format`.
-    pub format: Option<String>,
     /// `minimum`.
     pub minimum: Option<Value>,
     /// `maximum`.
@@ -148,6 +141,13 @@ pub struct SchemaNode {
     pub exclusive_maximum: Option<Value>,
     /// `multipleOf`.
     pub multiple_of: Option<Value>,
+    /// `format`.
+    pub format: Option<String>,
+    /// `byteArray`, Platform's keyword for an array of bytes, with the value it was
+    /// written with.
+    pub byte_array: Option<bool>,
+    /// `contentMediaType`.
+    pub content_media_type: Option<String>,
 }
 
 /// A document type's schema as the document validator reads it: the root node and every
@@ -272,14 +272,11 @@ impl SchemaNode {
                 ArrayKeyword::MinItems => self.min_items.map(Value::U64),
                 ArrayKeyword::MaxItems => self.max_items.map(Value::U64),
                 ArrayKeyword::UniqueItems => self.unique_items.map(Value::Bool),
-                ArrayKeyword::ByteArray => self.byte_array.map(Value::Bool),
-                ArrayKeyword::ContentMediaType => self.content_media_type.clone().map(Value::Text),
             },
             SchemaKeyword::String(keyword) => match keyword {
                 StringKeyword::MinLength => self.min_length.map(Value::U64),
                 StringKeyword::MaxLength => self.max_length.map(Value::U64),
                 StringKeyword::Pattern => self.pattern.clone().map(Value::Text),
-                StringKeyword::Format => self.format.clone().map(Value::Text),
             },
             SchemaKeyword::Number(keyword) => match keyword {
                 NumberKeyword::Minimum => self.minimum.clone(),
@@ -287,6 +284,11 @@ impl SchemaNode {
                 NumberKeyword::ExclusiveMinimum => self.exclusive_minimum.clone(),
                 NumberKeyword::ExclusiveMaximum => self.exclusive_maximum.clone(),
                 NumberKeyword::MultipleOf => self.multiple_of.clone(),
+            },
+            SchemaKeyword::Format(keyword) => match keyword {
+                FormatKeyword::Format => self.format.clone().map(Value::Text),
+                FormatKeyword::ByteArray => self.byte_array.map(Value::Bool),
+                FormatKeyword::ContentMediaType => self.content_media_type.clone().map(Value::Text),
             },
             SchemaKeyword::Annotation(_) | SchemaKeyword::Platform(_) => None,
         }
@@ -444,16 +446,11 @@ fn build_node(
                 ArrayKeyword::MinItems => node.min_items = Some(count(value, name)?),
                 ArrayKeyword::MaxItems => node.max_items = Some(count(value, name)?),
                 ArrayKeyword::UniqueItems => node.unique_items = Some(boolean(value, name)?),
-                ArrayKeyword::ByteArray => node.byte_array = Some(boolean(value, name)?),
-                ArrayKeyword::ContentMediaType => {
-                    node.content_media_type = Some(text(value, name)?.to_string())
-                }
             },
             SchemaKeyword::String(keyword) => match keyword {
                 StringKeyword::MinLength => node.min_length = Some(count(value, name)?),
                 StringKeyword::MaxLength => node.max_length = Some(count(value, name)?),
                 StringKeyword::Pattern => node.pattern = Some(text(value, name)?.to_string()),
-                StringKeyword::Format => node.format = Some(text(value, name)?.to_string()),
             },
             SchemaKeyword::Number(keyword) => {
                 let bound = Some(number(value, name)?);
@@ -465,6 +462,13 @@ fn build_node(
                     NumberKeyword::MultipleOf => node.multiple_of = bound,
                 }
             }
+            SchemaKeyword::Format(keyword) => match keyword {
+                FormatKeyword::Format => node.format = Some(text(value, name)?.to_string()),
+                FormatKeyword::ByteArray => node.byte_array = Some(boolean(value, name)?),
+                FormatKeyword::ContentMediaType => {
+                    node.content_media_type = Some(text(value, name)?.to_string())
+                }
+            },
             SchemaKeyword::Annotation(_) | SchemaKeyword::Platform(_) => {}
         }
     }
