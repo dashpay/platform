@@ -149,7 +149,11 @@ pub struct ObjectConstraints {
 pub struct ArrayConstraints {
     /// `items`: the schema of every element.
     pub items: Option<Box<SchemaNode>>,
-    /// `contains`: a schema at least one element must match.
+    /// `contains`: a schema at least one element must match. The document meta-schemas take
+    /// `contains` from JSON Schema's applicator vocabulary, which admits any schema: a
+    /// boolean, or composition keywords such as `not` or `anyOf`. The builder holds a
+    /// `contains` schema made of [`SchemaKeyword`]s only and refuses any other; no contract
+    /// on mainnet or testnet declares `contains` at all.
     pub contains: Option<Box<SchemaNode>>,
     /// `minItems`.
     pub min_items: Option<u64>,
@@ -228,8 +232,14 @@ impl ValidationSchema {
             if references.contains_key(&reference) {
                 continue;
             }
-            let target = resolve_pointer(root, &reference)?;
-            let node = build_node(target, false, &mut pending)?;
+            // `#` is the root itself, already built: rebuilt as a nested schema, its
+            // `$schema` and `$defs` would be refused.
+            let node = if reference == "#" {
+                root_node.clone()
+            } else {
+                let target = resolve_pointer(root, &reference)?;
+                build_node(target, false, &mut pending)?
+            };
             references.insert(reference, node);
         }
         Ok(Self {
@@ -604,20 +614,20 @@ fn build_node(
 }
 
 /// Resolves a `$ref` against the schema it appears in: a fragment-only URI holding a JSON
-/// pointer, its segments percent-decoded and then unescaped (`~1` is `/`, `~0` is `~`).
+/// pointer. As the JSON Schema validator does, the whole fragment is percent-decoded first,
+/// so an encoded `/` (`%2F`) separates segments, and then each segment is unescaped (`~1`
+/// is `/`, `~0` is `~`).
 fn resolve_pointer<'a>(root: &'a Value, reference: &str) -> Result<&'a Value, DataContractError> {
     let unresolved = || structure_error(format!("`$ref` `{reference}` does not resolve"));
-    let pointer = reference.strip_prefix('#').ok_or_else(unresolved)?;
+    let fragment = reference.strip_prefix('#').ok_or_else(unresolved)?;
+    let pointer = percent_decode(fragment).ok_or_else(unresolved)?;
     if pointer.is_empty() {
         return Ok(root);
     }
     let pointer = pointer.strip_prefix('/').ok_or_else(unresolved)?;
     let mut target = root;
     for segment in pointer.split('/') {
-        let segment = percent_decode(segment)
-            .ok_or_else(unresolved)?
-            .replace("~1", "/")
-            .replace("~0", "~");
+        let segment = segment.replace("~1", "/").replace("~0", "~");
         target = match target {
             Value::Map(map) => map
                 .iter()
@@ -635,21 +645,28 @@ fn resolve_pointer<'a>(root: &'a Value, reference: &str) -> Result<&'a Value, Da
     Ok(target)
 }
 
-fn percent_decode(segment: &str) -> Option<String> {
-    let bytes = segment.as_bytes();
+/// Decodes every `%` followed by two hex digits into the byte they name, leaving any other
+/// `%` as written, as the `percent-encoding` crate the JSON Schema validator uses does.
+/// `None` when the decoded bytes are not UTF-8.
+fn percent_decode(encoded: &str) -> Option<String> {
+    let bytes = encoded.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut index = 0;
     while index < bytes.len() {
-        if bytes[index] == b'%' {
-            let hex = segment.get(index + 1..index + 3)?;
-            if !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-                return None;
+        let escaped = (bytes[index] == b'%')
+            .then(|| encoded.get(index + 1..index + 3))
+            .flatten()
+            .filter(|hex| hex.bytes().all(|byte| byte.is_ascii_hexdigit()))
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match escaped {
+            Some(byte) => {
+                decoded.push(byte);
+                index += 3;
             }
-            decoded.push(u8::from_str_radix(hex, 16).ok()?);
-            index += 3;
-        } else {
-            decoded.push(bytes[index]);
-            index += 1;
+            None => {
+                decoded.push(bytes[index]);
+                index += 1;
+            }
         }
     }
     String::from_utf8(decoded).ok()

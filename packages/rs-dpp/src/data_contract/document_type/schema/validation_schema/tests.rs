@@ -285,6 +285,63 @@ fn should_resolve_escaped_and_percent_encoded_pointers() {
 }
 
 #[test]
+fn should_decode_the_whole_fragment_before_splitting_it() {
+    let schema = build(platform_value!({
+        "type": "object",
+        "properties": {
+            "encodedSeparators": { "$ref": "#/$defs/wrapper%2Fproperties%2Flabel" },
+            "encodedLeadingSlash": { "$ref": "#%2F$defs%2Fwrapper" },
+            "lonePercent": { "$ref": "#/$defs/100%" },
+        },
+        "$defs": {
+            "wrapper": {
+                "type": "object",
+                "properties": { "label": { "type": "string", "maxLength": 7 } },
+            },
+            "wrapper/properties/label": { "type": "string", "maxLength": 1 },
+            "100%": { "type": "string", "maxLength": 3 },
+        },
+    }));
+
+    // `%2F` separates segments once decoded: the label inside `wrapper`, not the
+    // definition whose name holds slashes.
+    assert_eq!(
+        schema
+            .references
+            .get("#/$defs/wrapper%2Fproperties%2Flabel")
+            .and_then(|node| string(node).max_length),
+        Some(7)
+    );
+    assert_eq!(
+        schema
+            .references
+            .get("#%2F$defs%2Fwrapper")
+            .map(|node| &node.types),
+        Some(&Some(JsonTypes::One(JsonType::Object)))
+    );
+    // A `%` not followed by two hex digits is kept as written.
+    assert_eq!(
+        schema
+            .references
+            .get("#/$defs/100%")
+            .and_then(|node| string(node).max_length),
+        Some(3)
+    );
+}
+
+#[test]
+fn should_reuse_the_root_for_a_reference_to_it() {
+    let schema = build(platform_value!({
+        "$schema": "https://example.com/meta",
+        "type": "object",
+        "properties": { "child": { "$ref": "#" } },
+        "$defs": { "unused": { "type": "string" } },
+    }));
+
+    assert_eq!(schema.references.get("#"), Some(&schema.root));
+}
+
+#[test]
 fn should_refuse_a_reference_that_does_not_resolve() {
     let root = platform_value!({
         "type": "object",
