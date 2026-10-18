@@ -6,6 +6,8 @@ mod expand_property_type_shorthands;
 
 mod find_identifier_and_binary_paths;
 
+pub mod validation_schema;
+
 #[cfg(feature = "validation")]
 mod recursive_schema_validator;
 
