@@ -8,6 +8,7 @@ use crate::platform::fetch_many::FetchMany;
 use crate::{Error, Sdk};
 use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::TimestampMillis;
+use dpp::voting::contender_structs::ContenderWithSerializedDocument;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dpp::voting::vote_polls::VotePoll;
 use drive::config::DEFAULT_QUERY_LIMIT;
@@ -132,8 +133,6 @@ impl Sdk {
         label: &str,
         limit: Option<u32>,
     ) -> Result<Contenders, Error> {
-        use dpp::voting::contender_structs::ContenderWithSerializedDocument;
-
         let dpns_contract_id = self.get_dpns_contract_id()?;
 
         let vote_poll = ContestedDocumentResourceVotePoll {
@@ -259,35 +258,76 @@ impl Sdk {
         let mut usernames_with_identity = Vec::new();
 
         // Check each contested name to see if our identity is a contender. `buffered` runs a
-        // bounded number of vote state queries at once and yields them in name order
-        let mut vote_states = stream::iter(all_contested)
+        // bounded number of contests at once and yields them in name order
+        let mut contests = stream::iter(all_contested)
             .map(|contested_label| async move {
-                let vote_state = self
-                    .get_contested_dpns_vote_state(&contested_label, None)
+                let contenders = self
+                    .get_all_contested_dpns_contenders(&contested_label)
                     .await;
-                (contested_label, vote_state)
+                (contested_label, contenders)
             })
             .buffered(DPNS_VOTE_STATE_QUERY_CONCURRENCY);
-        while let Some((contested_label, vote_state)) = vote_states.next().await {
-            let vote_state = vote_state?;
+        while let Some((contested_label, contenders)) = contests.next().await {
+            let contenders = contenders?;
 
-            // Check if our identity is among the contenders
-            let is_contender = vote_state
-                .contenders
-                .iter()
-                .any(|(contender_id, _)| contender_id == &identity_id);
-
-            if is_contender {
-                let contenders = vote_state.contenders.into_keys().collect();
+            if contenders.contains(&identity_id) {
                 usernames_with_identity.push(ContestedDpnsUsername {
-                    label: contested_label.clone(),
                     normalized_label: contested_label.to_lowercase(),
+                    label: contested_label,
                     contenders,
                 });
             }
         }
 
         Ok(usernames_with_identity)
+    }
+
+    /// Every contender of the contest for `label`, in identity order. A contest holds up to
+    /// `max_contenders_per_contest` (1,000) contenders and Drive answers at most 100 per query,
+    /// so they are read in pages of 100 that each start after the last contender read; every
+    /// request names its count, so its proof is verified against the page Drive proved.
+    async fn get_all_contested_dpns_contenders(
+        &self,
+        label: &str,
+    ) -> Result<Vec<Identifier>, Error> {
+        let vote_poll = ContestedDocumentResourceVotePoll {
+            contract_id: self.get_dpns_contract_id()?,
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![
+                Value::Text(DPNS_PARENT_DOMAIN.to_string()),
+                Value::Text(label.to_string()),
+            ],
+        };
+
+        let mut contenders: Vec<Identifier> = Vec::new();
+        let mut start_at = None;
+        loop {
+            let page = ContenderWithSerializedDocument::fetch_many(
+                self,
+                ContestedDocumentVotePollDriveQuery {
+                    vote_poll: vote_poll.clone(),
+                    result_type: ContestedDocumentVotePollDriveQueryResultType::VoteTally,
+                    offset: None,
+                    limit: Some(DEFAULT_QUERY_LIMIT),
+                    start_at,
+                    allow_include_locked_and_abstaining_vote_tally: false,
+                },
+            )
+            .await?;
+            let read = page.contenders.len();
+            contenders.extend(page.contenders.into_keys());
+
+            // A short page is the last one
+            match contenders.last() {
+                Some(last) if read >= DEFAULT_QUERY_LIMIT as usize => {
+                    start_at = Some((last.to_buffer(), false));
+                }
+                _ => break,
+            }
+        }
+
+        Ok(contenders)
     }
 
     /// The label of a contested resource of the `parentNameAndLabel` index queried with the
@@ -511,9 +551,7 @@ mod tests {
     use super::*;
     use crate::SdkBuilder;
     use dpp::version::PlatformVersion;
-    use dpp::voting::contender_structs::{
-        ContenderWithSerializedDocument, ContenderWithSerializedDocumentV0,
-    };
+    use dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
     use drive_proof_verifier::types::ContestedResources;
 
     fn mock_sdk() -> Sdk {
@@ -655,8 +693,26 @@ mod tests {
         assert!(matches!(error, Error::InvalidProvedResponse(_)));
     }
 
-    /// The vote state of `label` with contenders `contenders`
-    async fn expect_vote_state(sdk: &mut Sdk, label: &str, contenders: &[Identifier]) {
+    /// Identity `n`: identities sort as their numbers do
+    fn contender(n: u16) -> Identifier {
+        let mut id = [0u8; 32];
+        id[30..].copy_from_slice(&n.to_be_bytes());
+        Identifier::new(id)
+    }
+
+    fn contenders(from: u16, to: u16) -> Vec<Identifier> {
+        (from..to).map(contender).collect()
+    }
+
+    /// The page of contenders of the contest for `label` after `start_after`, built here rather
+    /// than with the code under test, so a request shaped differently (one without a count, or
+    /// a cursor that is not the last contender, exclusive) matches no expectation
+    async fn expect_contenders_page(
+        sdk: &mut Sdk,
+        label: &str,
+        start_after: Option<Identifier>,
+        page: &[Identifier],
+    ) {
         let query = ContestedDocumentVotePollDriveQuery {
             vote_poll: ContestedDocumentResourceVotePoll {
                 contract_id: sdk
@@ -669,13 +725,13 @@ mod tests {
                     Value::Text(label.to_string()),
                 ],
             },
-            result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
-            allow_include_locked_and_abstaining_vote_tally: true,
-            start_at: None,
-            limit: None,
+            result_type: ContestedDocumentVotePollDriveQueryResultType::VoteTally,
+            allow_include_locked_and_abstaining_vote_tally: false,
+            start_at: start_after.map(|id| (id.to_buffer(), false)),
+            limit: Some(100),
             offset: None,
         };
-        let contenders = Contenders::from_iter(contenders.iter().map(|&identity_id| {
+        let page = Contenders::from_iter(page.iter().map(|&identity_id| {
             (
                 identity_id,
                 Some(ContenderWithSerializedDocument::V0(
@@ -690,21 +746,21 @@ mod tests {
         sdk.mock()
             .expect_fetch_many::<_, ContenderWithSerializedDocument, _, Contenders>(
                 query,
-                Some(contenders),
+                Some(page),
             )
             .await
-            .expect("expected to register the vote state");
+            .expect("expected to register the page of contenders");
     }
 
     #[tokio::test]
     async fn should_list_the_contested_names_an_identity_contends_for() {
-        let identity = Identifier::new([1; 32]);
-        let other = Identifier::new([2; 32]);
+        let identity = contender(1);
+        let other = contender(2);
         let mut sdk = mock_sdk();
         expect_names_page(&mut sdk, None, 100, &names(0, 3)).await;
-        expect_vote_state(&mut sdk, &name(0), &[other]).await;
-        expect_vote_state(&mut sdk, &name(1), &[identity, other]).await;
-        expect_vote_state(&mut sdk, &name(2), &[identity]).await;
+        expect_contenders_page(&mut sdk, &name(0), None, &[other]).await;
+        expect_contenders_page(&mut sdk, &name(1), None, &[identity, other]).await;
+        expect_contenders_page(&mut sdk, &name(2), None, &[identity]).await;
 
         let usernames = sdk
             .get_contested_dpns_usernames_by_identity(identity, None)
@@ -715,5 +771,35 @@ mod tests {
         assert_eq!(labels, [name(1), name(2)]);
         assert_eq!(usernames[0].contenders, [identity, other]);
         assert_eq!(usernames[1].contenders, [identity]);
+    }
+
+    /// A contest holds up to 1,000 contenders and Drive answers 100 per query: an identity past
+    /// the first 100 is found, and the name lists every contender
+    #[tokio::test]
+    async fn should_find_an_identity_past_the_first_100_contenders() {
+        let identity = contender(150);
+        let mut sdk = mock_sdk();
+        expect_names_page(&mut sdk, None, 100, &names(0, 2)).await;
+        // 160 contenders, the identity on the second page
+        expect_contenders_page(&mut sdk, &name(0), None, &contenders(0, 100)).await;
+        expect_contenders_page(
+            &mut sdk,
+            &name(0),
+            Some(contender(99)),
+            &contenders(100, 160),
+        )
+        .await;
+        // Exactly one full page, without the identity
+        expect_contenders_page(&mut sdk, &name(1), None, &contenders(200, 300)).await;
+        expect_contenders_page(&mut sdk, &name(1), Some(contender(299)), &[]).await;
+
+        let usernames = sdk
+            .get_contested_dpns_usernames_by_identity(identity, None)
+            .await
+            .expect("expected every page to answer");
+
+        assert_eq!(usernames.len(), 1);
+        assert_eq!(usernames[0].label, name(0));
+        assert_eq!(usernames[0].contenders, contenders(0, 160));
     }
 }
