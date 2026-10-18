@@ -326,8 +326,12 @@ fn should_name_every_keyword_once_and_read_it_back() {
             "contentMediaType",
         ),
         (
-            SchemaKeyword::Platform(PlatformKeyword::RequiredSince),
+            SchemaKeyword::Meta(MetaKeyword::RequiredSince),
             "requiredSince",
+        ),
+        (
+            SchemaKeyword::Relationship(RelationshipKeyword::DistinctFrom),
+            "distinctFrom",
         ),
     ] {
         assert_eq!(keyword.name(), name);

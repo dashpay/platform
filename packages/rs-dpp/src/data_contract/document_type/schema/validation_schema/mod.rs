@@ -37,8 +37,8 @@ mod keyword;
 mod tests;
 
 pub use keyword::{
-    AnnotationKeyword, AnyKeyword, ArrayKeyword, FormatKeyword, NumberKeyword, ObjectKeyword,
-    PlatformKeyword, SchemaKeyword, StringKeyword,
+    AnnotationKeyword, AnyKeyword, ArrayKeyword, FormatKeyword, MetaKeyword, NumberKeyword,
+    ObjectKeyword, RelationshipKeyword, SchemaKeyword, StringKeyword,
 };
 
 /// A JSON Schema simple type.
@@ -89,9 +89,10 @@ pub enum TypeKeyword {
     AnyOf(Vec<JsonType>),
 }
 
-/// One schema node: the keywords it carries that constrain a value
-/// ([`SchemaKeyword::constrains_a_value`]), each `None` when it does not. Numbers that bound a value (`minimum`, `multipleOf`, ...), and `enum` and
-/// `const` values, are kept as the schema wrote them, integer or float.
+/// One schema node: the keywords it carries that constrain a value on its own
+/// ([`SchemaKeyword::constrains_a_value`]), each `None` when it does not. Numbers that bound
+/// a value (`minimum`, `multipleOf`, ...), and `enum` and `const` values, are kept as the
+/// schema wrote them, integer or float.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SchemaNode {
     /// `$ref`: a JSON pointer into the schema the document type compiles, a key of
@@ -297,7 +298,9 @@ impl SchemaNode {
                 FormatKeyword::ContentMediaType => self.content_media_type.clone().map(Value::Text),
                 FormatKeyword::EncryptedFor => self.encrypted_for.as_ref().map(encrypted_for_value),
             },
-            SchemaKeyword::Annotation(_) | SchemaKeyword::Platform(_) => None,
+            SchemaKeyword::Relationship(_)
+            | SchemaKeyword::Meta(_)
+            | SchemaKeyword::Annotation(_) => None,
         }
     }
 }
@@ -504,7 +507,9 @@ fn build_node(
                         })?)
                 }
             },
-            SchemaKeyword::Annotation(_) | SchemaKeyword::Platform(_) => {}
+            SchemaKeyword::Relationship(_)
+            | SchemaKeyword::Meta(_)
+            | SchemaKeyword::Annotation(_) => {}
         }
     }
     Ok(node)

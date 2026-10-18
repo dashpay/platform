@@ -4,8 +4,10 @@ use strum::IntoEnumIterator;
 
 /// A keyword a document meta-schema admits on a schema node.
 ///
-/// The first six groups constrain a value, and [`SchemaNode`](super::SchemaNode) holds
-/// them. The last two constrain nothing the JSON Schema validation of a document checks.
+/// The first six groups constrain a value on its own, and
+/// [`SchemaNode`](super::SchemaNode) holds them. The last three do not: a relationship is
+/// checked against more than the value, and meta keywords and annotations constrain no
+/// value at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SchemaKeyword {
     /// Applies to a value of any type.
@@ -20,10 +22,13 @@ pub enum SchemaKeyword {
     Number(NumberKeyword),
     /// Says what kind of string, number or byte array a value is, beyond its JSON type.
     Format(FormatKeyword),
+    /// Ties the value to something outside it: another document, identity or key, or
+    /// other properties of the same document.
+    Relationship(RelationshipKeyword),
+    /// Describes the property within the schema rather than its value.
+    Meta(MetaKeyword),
     /// Annotates, and constrains nothing.
     Annotation(AnnotationKeyword),
-    /// Platform's own, which other stages read from the document type.
-    Platform(PlatformKeyword),
 }
 
 /// Keywords that apply to a value of any type.
@@ -155,21 +160,35 @@ pub enum AnnotationKeyword {
     Examples,
 }
 
-/// Platform's own keywords, which other stages read from the document type.
+/// Keywords that tie a value to something outside it. Consensus checks each of them, but
+/// not from the value alone.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, strum::EnumIter, strum::IntoStaticStr,
 )]
 #[strum(serialize_all = "camelCase")]
-pub enum PlatformKeyword {
-    /// `position`.
-    Position,
-    /// `refersTo`.
+pub enum RelationshipKeyword {
+    /// `refersTo`: the value names another document, an identity or an identity key, which
+    /// must exist and meet the declared conditions.
     RefersTo,
-    /// `distinctFrom`.
+    /// `distinctFrom`: the value must differ from another identifier property or the
+    /// document's owner.
     DistinctFrom,
-    /// `generatedFrom`.
+    /// `generatedFrom`: the value is generated from other properties of the document.
     GeneratedFrom,
-    /// `requiredSince`.
+}
+
+/// Keywords that describe a property within the schema rather than its value. Not JSON
+/// Schema's meta-data vocabulary (`description`, `examples`), which is
+/// [`AnnotationKeyword`]: these carry meaning consensus depends on.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, strum::EnumIter, strum::IntoStaticStr,
+)]
+#[strum(serialize_all = "camelCase")]
+pub enum MetaKeyword {
+    /// `position`: the property's place in the stored document, whose values are written
+    /// one after another without names.
+    Position,
+    /// `requiredSince`: the contract version from which the property is required.
     RequiredSince,
 }
 
@@ -183,8 +202,9 @@ impl SchemaKeyword {
             .chain(StringKeyword::iter().map(SchemaKeyword::String))
             .chain(NumberKeyword::iter().map(SchemaKeyword::Number))
             .chain(FormatKeyword::iter().map(SchemaKeyword::Format))
+            .chain(RelationshipKeyword::iter().map(SchemaKeyword::Relationship))
+            .chain(MetaKeyword::iter().map(SchemaKeyword::Meta))
             .chain(AnnotationKeyword::iter().map(SchemaKeyword::Annotation))
-            .chain(PlatformKeyword::iter().map(SchemaKeyword::Platform))
     }
 
     /// The keyword as a schema writes it.
@@ -196,8 +216,9 @@ impl SchemaKeyword {
             SchemaKeyword::String(keyword) => keyword.into(),
             SchemaKeyword::Number(keyword) => keyword.into(),
             SchemaKeyword::Format(keyword) => keyword.into(),
+            SchemaKeyword::Relationship(keyword) => keyword.into(),
+            SchemaKeyword::Meta(keyword) => keyword.into(),
             SchemaKeyword::Annotation(keyword) => keyword.into(),
-            SchemaKeyword::Platform(keyword) => keyword.into(),
         }
     }
 
@@ -206,12 +227,12 @@ impl SchemaKeyword {
         SchemaKeyword::iter().find(|keyword| keyword.name() == name)
     }
 
-    /// Whether the keyword constrains a value, so that [`SchemaNode`](super::SchemaNode)
-    /// holds it.
+    /// Whether the keyword constrains a value on its own, so that
+    /// [`SchemaNode`](super::SchemaNode) holds it.
     pub fn constrains_a_value(self) -> bool {
         !matches!(
             self,
-            SchemaKeyword::Annotation(_) | SchemaKeyword::Platform(_)
+            SchemaKeyword::Relationship(_) | SchemaKeyword::Meta(_) | SchemaKeyword::Annotation(_)
         )
     }
 }
