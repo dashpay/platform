@@ -150,10 +150,6 @@ pub enum AnnotationKeyword {
     /// `$comment`.
     #[strum(serialize = "$comment")]
     Comment,
-    /// `$id`. A `$ref` resolves by JSON pointer only, as the parser refuses any other
-    /// form, so an `$id` changes nothing a document is checked against.
-    #[strum(serialize = "$id")]
-    Id,
     /// `description`.
     Description,
     /// `examples`.
@@ -185,6 +181,12 @@ pub enum RelationshipKeyword {
 )]
 #[strum(serialize_all = "camelCase")]
 pub enum MetaKeyword {
+    /// `$id`: names the schema. The JSON Schema validator resolves a `$ref` through the
+    /// schemas named this way before it follows the pointer, which the validation schema
+    /// does not represent, so the builder refuses a schema that reaches a `$ref` while one of
+    /// its nodes carries an `$id`, or while any `$id` of the schema is a fragment.
+    #[strum(serialize = "$id")]
+    Id,
     /// `position`: the property's place in the stored document, whose values are written
     /// one after another without names.
     Position,

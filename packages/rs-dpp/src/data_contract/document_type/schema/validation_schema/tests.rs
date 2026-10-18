@@ -397,6 +397,83 @@ fn should_read_a_repeated_key_by_its_last_entry_in_the_place_of_its_first() {
 }
 
 #[test]
+fn should_refuse_a_reference_in_a_schema_that_names_a_subschema() {
+    let root = platform_value!({
+        "type": "object",
+        "properties": {
+            "named": { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
+            "user": { "$ref": "#/$defs/label" },
+        },
+        "$defs": { "label": { "type": "string", "maxLength": 10 } },
+    });
+    assert!(ValidationSchema::try_from_root(&root).is_err());
+}
+
+#[test]
+fn should_build_a_schema_that_names_a_subschema_but_reaches_no_reference() {
+    let schema = build(platform_value!({
+        "type": "object",
+        "properties": {
+            "named": { "$id": "#named", "type": "string", "maxLength": 1 },
+            "choice": { "type": "string", "enum": [{ "$id": "#not-a-schema" }] },
+        },
+    }));
+    assert_eq!(string(property(&schema.root, "named")).max_length, Some(1));
+}
+
+#[test]
+fn should_build_a_schema_whose_only_ids_are_outside_its_nodes_and_not_fragments() {
+    // As in a contract on testnet: a reference's `where` condition matches a document by
+    // its `$id`, which is not a schema `$id`.
+    let schema = build(platform_value!({
+        "type": "object",
+        "ownerRefersTo": { "where": { "$id": "targetId" } },
+        "properties": { "repoId": { "$ref": "#/$defs/id", "position": 0 } },
+        "$defs": { "id": { "type": "string", "maxLength": 3 } },
+    }));
+    assert_eq!(string(&schema.references["#/$defs/id"]).max_length, Some(3));
+}
+
+#[test]
+fn should_refuse_a_reference_in_a_schema_holding_a_fragment_id_anywhere() {
+    let root = platform_value!({
+        "type": "object",
+        "ownerRefersTo": { "where": { "$id": "#/$defs/id" } },
+        "properties": { "repoId": { "$ref": "#/$defs/id", "position": 0 } },
+        "$defs": { "id": { "type": "string" } },
+    });
+    assert!(ValidationSchema::try_from_root(&root).is_err());
+}
+
+/// The divergence the refusal above guards: the existing validator checks a `$ref` against
+/// the subschema an `$id` names, not the one its pointer reaches.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_in_resolving_a_reference_through_an_id() {
+    use crate::validation::JsonSchemaValidator;
+
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "named": { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
+            "user": { "$ref": "#/$defs/label" },
+        },
+        "$defs": { "label": { "type": "string", "maxLength": 10 } },
+    });
+    let result = JsonSchemaValidator::new()
+        .compile_and_validate(
+            &schema,
+            &serde_json::json!({ "user": "hello" }),
+            PlatformVersion::latest(),
+        )
+        .expect("expected the schema to compile");
+    assert!(
+        !result.is_valid(),
+        "the existing validator holds `user` to the named schema's maxLength of 1"
+    );
+}
+
+#[test]
 fn should_refuse_a_reference_that_does_not_resolve() {
     let root = platform_value!({
         "type": "object",
@@ -475,7 +552,7 @@ fn should_name_every_keyword_once_and_read_it_back() {
     }
     for (keyword, name) in [
         (SchemaKeyword::Any(AnyKeyword::Ref), "$ref"),
-        (SchemaKeyword::Annotation(AnnotationKeyword::Id), "$id"),
+        (SchemaKeyword::Meta(MetaKeyword::Id), "$id"),
         (
             SchemaKeyword::Object(ObjectKeyword::AdditionalProperties),
             "additionalProperties",
