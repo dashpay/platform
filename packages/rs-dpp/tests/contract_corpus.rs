@@ -4,7 +4,7 @@ mod contract_corpus;
 use contract_corpus::{contracts, CorpusContract, Network};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::schema::validation_schema::VALIDATION_KEYWORDS;
+use dpp::data_contract::document_type::schema::validation_schema::SchemaKeyword;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
 use dpp::data_contract::DataContract;
@@ -92,7 +92,7 @@ fn should_reload_every_corpus_contract_reserialized_at_the_latest_protocol_versi
 }
 
 /// The validation keywords of a schema the way the validation schema holds them: only the
-/// keywords of `VALIDATION_KEYWORDS`, at every node.
+/// keywords that constrain a value, at every node.
 fn validation_keywords_of(schema: &Value) -> Value {
     let Value::Map(map) = schema else {
         return schema.clone();
@@ -101,7 +101,8 @@ fn validation_keywords_of(schema: &Value) -> Value {
         map.iter()
             .filter_map(|(key, value)| {
                 let keyword = key.as_text()?;
-                if !VALIDATION_KEYWORDS.contains(&keyword) {
+                if !SchemaKeyword::from_name(keyword).is_some_and(SchemaKeyword::constrains_a_value)
+                {
                     return None;
                 }
                 let value = match (keyword, value) {

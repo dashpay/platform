@@ -31,57 +31,14 @@ use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, VecDeque};
 
+mod keyword;
 #[cfg(test)]
 mod tests;
 
-/// The keywords of a schema node that constrain a value, which [`SchemaNode`] holds.
-pub const VALIDATION_KEYWORDS: [&str; 26] = [
-    "$ref",
-    "type",
-    "enum",
-    "const",
-    "properties",
-    "additionalProperties",
-    "required",
-    "minProperties",
-    "maxProperties",
-    "dependentRequired",
-    "items",
-    "contains",
-    "minItems",
-    "maxItems",
-    "uniqueItems",
-    "byteArray",
-    "contentMediaType",
-    "minLength",
-    "maxLength",
-    "pattern",
-    "format",
-    "minimum",
-    "maximum",
-    "exclusiveMinimum",
-    "exclusiveMaximum",
-    "multipleOf",
-];
-
-/// The keywords a document meta-schema admits on a schema node that constrain nothing the
-/// JSON Schema validation of a document checks, which [`SchemaNode`] leaves out:
-/// annotations, and Platform's own keywords, which other stages read from the document
-/// type. `$id` is among them because a `$ref` resolves by JSON pointer only: the parser
-/// refuses any other form.
-pub const NON_VALIDATING_KEYWORDS: [&str; 11] = [
-    "$comment",
-    "$id",
-    "description",
-    "examples",
-    "position",
-    "maxBytes",
-    "refersTo",
-    "distinctFrom",
-    "encryptedFor",
-    "generatedFrom",
-    "requiredSince",
-];
+pub use keyword::{
+    AnnotationKeyword, AnyKeyword, ArrayKeyword, NumberKeyword, ObjectKeyword, PlatformKeyword,
+    SchemaKeyword, StringKeyword,
+};
 
 /// A JSON Schema simple type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -131,8 +88,8 @@ pub enum TypeKeyword {
     AnyOf(Vec<JsonType>),
 }
 
-/// One schema node: the keywords of [`VALIDATION_KEYWORDS`] it carries, each `None` when
-/// it does not. Numbers that bound a value (`minimum`, `multipleOf`, ...), and `enum` and
+/// One schema node: the keywords it carries that constrain a value
+/// ([`SchemaKeyword::constrains_a_value`]), each `None` when it does not. Numbers that bound a value (`minimum`, `multipleOf`, ...), and `enum` and
 /// `const` values, are kept as the schema wrote them, integer or float.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SchemaNode {
@@ -197,9 +154,8 @@ pub struct SchemaNode {
 /// schema a `$ref` reaches.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ValidationSchema {
-    /// The document type's own schema. Its keywords that are not in
-    /// [`VALIDATION_KEYWORDS`] are the document type's other keywords, `$schema` and
-    /// `$defs`, which constrain no value.
+    /// The document type's own schema. Its keys that are not a [`SchemaKeyword`] are the
+    /// document type's other keywords, `$schema` and `$defs`, which constrain no value.
     pub root: SchemaNode,
     /// Every schema a `$ref` of the root or of another referenced schema reaches, by the
     /// reference as written.
@@ -211,9 +167,8 @@ impl ValidationSchema {
     /// document type's schema with the contract's `$defs` and the base schema added and its
     /// property type shorthands expanded.
     ///
-    /// Refuses a keyword below the root that is in neither [`VALIDATION_KEYWORDS`] nor
-    /// [`NON_VALIDATING_KEYWORDS`], a keyword value of the wrong shape, and a `$ref` that
-    /// does not resolve.
+    /// Refuses a key below the root that is not a [`SchemaKeyword`], a keyword value of the
+    /// wrong shape, and a `$ref` that does not resolve.
     pub fn try_from_root(root: &Value) -> Result<Self, DataContractError> {
         let mut pending = VecDeque::new();
         let root_node = build_node(root, true, &mut pending)?;
@@ -255,17 +210,25 @@ impl DataContract {
 
 impl SchemaNode {
     /// The node as a schema: the keywords it carries, in the order of
-    /// [`VALIDATION_KEYWORDS`].
+    /// [`SchemaKeyword::iter`].
     pub fn to_value(&self) -> Value {
-        let mut map: Vec<(Value, Value)> = Vec::new();
-        let mut put = |keyword: &str, value: Value| map.push((Value::Text(keyword.into()), value));
-        if let Some(reference) = &self.reference {
-            put("$ref", Value::Text(reference.clone()));
-        }
-        if let Some(types) = &self.types {
-            put(
-                "type",
-                match types {
+        Value::Map(
+            SchemaKeyword::iter()
+                .filter_map(|keyword| {
+                    self.value_of(keyword)
+                        .map(|value| (Value::Text(keyword.name().into()), value))
+                })
+                .collect(),
+        )
+    }
+
+    /// The value the node carries for a keyword, as a schema writes it: `None` when it does
+    /// not carry the keyword, and for a keyword that constrains no value.
+    pub fn value_of(&self, keyword: SchemaKeyword) -> Option<Value> {
+        match keyword {
+            SchemaKeyword::Any(keyword) => match keyword {
+                AnyKeyword::Ref => self.reference.clone().map(Value::Text),
+                AnyKeyword::Type => self.types.as_ref().map(|types| match types {
                     TypeKeyword::One(json_type) => Value::Text(json_type.name().into()),
                     TypeKeyword::AnyOf(json_types) => Value::Array(
                         json_types
@@ -273,94 +236,60 @@ impl SchemaNode {
                             .map(|json_type| Value::Text(json_type.name().into()))
                             .collect(),
                     ),
-                },
-            );
+                }),
+                AnyKeyword::Enum => self.enum_values.clone().map(Value::Array),
+                AnyKeyword::Const => self.constant.clone(),
+            },
+            SchemaKeyword::Object(keyword) => match keyword {
+                ObjectKeyword::Properties => self.properties.as_ref().map(|properties| {
+                    Value::Map(
+                        properties
+                            .iter()
+                            .map(|(name, node)| (Value::Text(name.clone()), node.to_value()))
+                            .collect(),
+                    )
+                }),
+                ObjectKeyword::AdditionalProperties => self.additional_properties.map(Value::Bool),
+                ObjectKeyword::Required => self.required.as_deref().map(texts),
+                ObjectKeyword::MinProperties => self.min_properties.map(Value::U64),
+                ObjectKeyword::MaxProperties => self.max_properties.map(Value::U64),
+                ObjectKeyword::DependentRequired => {
+                    self.dependent_required.as_ref().map(|dependent_required| {
+                        Value::Map(
+                            dependent_required
+                                .iter()
+                                .map(|(name, names)| (Value::Text(name.clone()), texts(names)))
+                                .collect(),
+                        )
+                    })
+                }
+            },
+            SchemaKeyword::Array(keyword) => match keyword {
+                ArrayKeyword::Items => self.items.as_ref().map(|items| items.to_value()),
+                ArrayKeyword::Contains => {
+                    self.contains.as_ref().map(|contains| contains.to_value())
+                }
+                ArrayKeyword::MinItems => self.min_items.map(Value::U64),
+                ArrayKeyword::MaxItems => self.max_items.map(Value::U64),
+                ArrayKeyword::UniqueItems => self.unique_items.map(Value::Bool),
+                ArrayKeyword::ByteArray => self.byte_array.map(Value::Bool),
+                ArrayKeyword::ContentMediaType => self.content_media_type.clone().map(Value::Text),
+            },
+            SchemaKeyword::String(keyword) => match keyword {
+                StringKeyword::MinLength => self.min_length.map(Value::U64),
+                StringKeyword::MaxLength => self.max_length.map(Value::U64),
+                StringKeyword::Pattern => self.pattern.clone().map(Value::Text),
+                StringKeyword::Format => self.format.clone().map(Value::Text),
+            },
+            SchemaKeyword::Number(keyword) => match keyword {
+                NumberKeyword::Minimum => self.minimum.clone(),
+                NumberKeyword::Maximum => self.maximum.clone(),
+                NumberKeyword::ExclusiveMinimum => self.exclusive_minimum.clone(),
+                NumberKeyword::ExclusiveMaximum => self.exclusive_maximum.clone(),
+                NumberKeyword::MultipleOf => self.multiple_of.clone(),
+            },
+            SchemaKeyword::Annotation(_) | SchemaKeyword::Platform(_) => None,
         }
-        if let Some(enum_values) = &self.enum_values {
-            put("enum", Value::Array(enum_values.clone()));
-        }
-        if let Some(constant) = &self.constant {
-            put("const", constant.clone());
-        }
-        if let Some(properties) = &self.properties {
-            put(
-                "properties",
-                Value::Map(
-                    properties
-                        .iter()
-                        .map(|(name, node)| (Value::Text(name.clone()), node.to_value()))
-                        .collect(),
-                ),
-            );
-        }
-        if let Some(additional_properties) = self.additional_properties {
-            put("additionalProperties", Value::Bool(additional_properties));
-        }
-        if let Some(required) = &self.required {
-            put("required", texts(required));
-        }
-        if let Some(min_properties) = self.min_properties {
-            put("minProperties", Value::U64(min_properties));
-        }
-        if let Some(max_properties) = self.max_properties {
-            put("maxProperties", Value::U64(max_properties));
-        }
-        if let Some(dependent_required) = &self.dependent_required {
-            put(
-                "dependentRequired",
-                Value::Map(
-                    dependent_required
-                        .iter()
-                        .map(|(name, names)| (Value::Text(name.clone()), texts(names)))
-                        .collect(),
-                ),
-            );
-        }
-        if let Some(items) = &self.items {
-            put("items", items.to_value());
-        }
-        if let Some(contains) = &self.contains {
-            put("contains", contains.to_value());
-        }
-        if let Some(min_items) = self.min_items {
-            put("minItems", Value::U64(min_items));
-        }
-        if let Some(max_items) = self.max_items {
-            put("maxItems", Value::U64(max_items));
-        }
-        if let Some(unique_items) = self.unique_items {
-            put("uniqueItems", Value::Bool(unique_items));
-        }
-        if let Some(byte_array) = self.byte_array {
-            put("byteArray", Value::Bool(byte_array));
-        }
-        if let Some(content_media_type) = &self.content_media_type {
-            put("contentMediaType", Value::Text(content_media_type.clone()));
-        }
-        if let Some(min_length) = self.min_length {
-            put("minLength", Value::U64(min_length));
-        }
-        if let Some(max_length) = self.max_length {
-            put("maxLength", Value::U64(max_length));
-        }
-        if let Some(pattern) = &self.pattern {
-            put("pattern", Value::Text(pattern.clone()));
-        }
-        if let Some(format) = &self.format {
-            put("format", Value::Text(format.clone()));
-        }
-        for (keyword, bound) in [
-            ("minimum", &self.minimum),
-            ("maximum", &self.maximum),
-            ("exclusiveMinimum", &self.exclusive_minimum),
-            ("exclusiveMaximum", &self.exclusive_maximum),
-            ("multipleOf", &self.multiple_of),
-        ] {
-            if let Some(bound) = bound {
-                put(keyword, bound.clone());
-            }
-        }
-        Value::Map(map)
     }
 }
 
@@ -435,80 +364,108 @@ fn build_node(
         .ok_or_else(|| structure_error("a schema must be an object".to_string()))?;
     let mut node = SchemaNode::default();
     for (key, value) in map {
-        let keyword = key
+        let name = key
             .as_text()
             .ok_or_else(|| structure_error("schema keys must be strings".to_string()))?;
-        match keyword {
-            "$ref" => {
-                let reference = text(value, keyword)?.to_string();
-                pending.push_back(reference.clone());
-                node.reference = Some(reference);
-            }
-            "type" => node.types = Some(types(value)?),
-            "enum" => {
-                node.enum_values = Some(
-                    value
-                        .as_array()
-                        .ok_or_else(|| structure_error("`enum` must be an array".to_string()))?
-                        .clone(),
-                )
-            }
-            "const" => node.constant = Some(value.clone()),
-            "properties" => {
-                let properties = value
-                    .as_map()
-                    .ok_or_else(|| structure_error("`properties` must be an object".to_string()))?
-                    .iter()
-                    .map(|(name, property)| {
-                        Ok((
-                            text(name, keyword)?.to_string(),
-                            build_node(property, false, pending)?,
-                        ))
-                    })
-                    .collect::<Result<_, DataContractError>>()?;
-                node.properties = Some(properties);
-            }
-            "additionalProperties" => node.additional_properties = Some(boolean(value, keyword)?),
-            "required" => node.required = Some(texts_of(value, keyword)?),
-            "minProperties" => node.min_properties = Some(count(value, keyword)?),
-            "maxProperties" => node.max_properties = Some(count(value, keyword)?),
-            "dependentRequired" => {
-                let dependent_required = value
-                    .as_map()
-                    .ok_or_else(|| {
-                        structure_error("`dependentRequired` must be an object".to_string())
-                    })?
-                    .iter()
-                    .map(|(name, names)| {
-                        Ok((text(name, keyword)?.to_string(), texts_of(names, keyword)?))
-                    })
-                    .collect::<Result<_, DataContractError>>()?;
-                node.dependent_required = Some(dependent_required);
-            }
-            "items" => node.items = Some(Box::new(build_node(value, false, pending)?)),
-            "contains" => node.contains = Some(Box::new(build_node(value, false, pending)?)),
-            "minItems" => node.min_items = Some(count(value, keyword)?),
-            "maxItems" => node.max_items = Some(count(value, keyword)?),
-            "uniqueItems" => node.unique_items = Some(boolean(value, keyword)?),
-            "byteArray" => node.byte_array = Some(boolean(value, keyword)?),
-            "contentMediaType" => node.content_media_type = Some(text(value, keyword)?.to_string()),
-            "minLength" => node.min_length = Some(count(value, keyword)?),
-            "maxLength" => node.max_length = Some(count(value, keyword)?),
-            "pattern" => node.pattern = Some(text(value, keyword)?.to_string()),
-            "format" => node.format = Some(text(value, keyword)?.to_string()),
-            "minimum" => node.minimum = Some(number(value, keyword)?),
-            "maximum" => node.maximum = Some(number(value, keyword)?),
-            "exclusiveMinimum" => node.exclusive_minimum = Some(number(value, keyword)?),
-            "exclusiveMaximum" => node.exclusive_maximum = Some(number(value, keyword)?),
-            "multipleOf" => node.multiple_of = Some(number(value, keyword)?),
-            keyword if NON_VALIDATING_KEYWORDS.contains(&keyword) => {}
+        let Some(keyword) = SchemaKeyword::from_name(name) else {
             // The root also carries the document type's own keywords, `$schema` and `$defs`.
-            _ if is_root => {}
-            keyword => {
-                return Err(structure_error(format!(
-                    "a document schema does not support the keyword `{keyword}`"
-                )))
+            if is_root {
+                continue;
             }
+            return Err(structure_error(format!(
+                "a document schema does not support the keyword `{name}`"
+            )));
+        };
+        match keyword {
+            SchemaKeyword::Any(keyword) => match keyword {
+                AnyKeyword::Ref => {
+                    let reference = text(value, name)?.to_string();
+                    pending.push_back(reference.clone());
+                    node.reference = Some(reference);
+                }
+                AnyKeyword::Type => node.types = Some(types(value)?),
+                AnyKeyword::Enum => {
+                    node.enum_values = Some(
+                        value
+                            .as_array()
+                            .ok_or_else(|| structure_error("`enum` must be an array".to_string()))?
+                            .clone(),
+                    )
+                }
+                AnyKeyword::Const => node.constant = Some(value.clone()),
+            },
+            SchemaKeyword::Object(keyword) => match keyword {
+                ObjectKeyword::Properties => {
+                    let properties = value
+                        .as_map()
+                        .ok_or_else(|| {
+                            structure_error("`properties` must be an object".to_string())
+                        })?
+                        .iter()
+                        .map(|(property_name, property)| {
+                            Ok((
+                                text(property_name, name)?.to_string(),
+                                build_node(property, false, pending)?,
+                            ))
+                        })
+                        .collect::<Result<_, DataContractError>>()?;
+                    node.properties = Some(properties);
+                }
+                ObjectKeyword::AdditionalProperties => {
+                    node.additional_properties = Some(boolean(value, name)?)
+                }
+                ObjectKeyword::Required => node.required = Some(texts_of(value, name)?),
+                ObjectKeyword::MinProperties => node.min_properties = Some(count(value, name)?),
+                ObjectKeyword::MaxProperties => node.max_properties = Some(count(value, name)?),
+                ObjectKeyword::DependentRequired => {
+                    let dependent_required = value
+                        .as_map()
+                        .ok_or_else(|| {
+                            structure_error("`dependentRequired` must be an object".to_string())
+                        })?
+                        .iter()
+                        .map(|(property_name, names)| {
+                            Ok((
+                                text(property_name, name)?.to_string(),
+                                texts_of(names, name)?,
+                            ))
+                        })
+                        .collect::<Result<_, DataContractError>>()?;
+                    node.dependent_required = Some(dependent_required);
+                }
+            },
+            SchemaKeyword::Array(keyword) => match keyword {
+                ArrayKeyword::Items => {
+                    node.items = Some(Box::new(build_node(value, false, pending)?))
+                }
+                ArrayKeyword::Contains => {
+                    node.contains = Some(Box::new(build_node(value, false, pending)?))
+                }
+                ArrayKeyword::MinItems => node.min_items = Some(count(value, name)?),
+                ArrayKeyword::MaxItems => node.max_items = Some(count(value, name)?),
+                ArrayKeyword::UniqueItems => node.unique_items = Some(boolean(value, name)?),
+                ArrayKeyword::ByteArray => node.byte_array = Some(boolean(value, name)?),
+                ArrayKeyword::ContentMediaType => {
+                    node.content_media_type = Some(text(value, name)?.to_string())
+                }
+            },
+            SchemaKeyword::String(keyword) => match keyword {
+                StringKeyword::MinLength => node.min_length = Some(count(value, name)?),
+                StringKeyword::MaxLength => node.max_length = Some(count(value, name)?),
+                StringKeyword::Pattern => node.pattern = Some(text(value, name)?.to_string()),
+                StringKeyword::Format => node.format = Some(text(value, name)?.to_string()),
+            },
+            SchemaKeyword::Number(keyword) => {
+                let bound = Some(number(value, name)?);
+                match keyword {
+                    NumberKeyword::Minimum => node.minimum = bound,
+                    NumberKeyword::Maximum => node.maximum = bound,
+                    NumberKeyword::ExclusiveMinimum => node.exclusive_minimum = bound,
+                    NumberKeyword::ExclusiveMaximum => node.exclusive_maximum = bound,
+                    NumberKeyword::MultipleOf => node.multiple_of = bound,
+                }
+            }
+            SchemaKeyword::Annotation(_) | SchemaKeyword::Platform(_) => {}
         }
     }
     Ok(node)

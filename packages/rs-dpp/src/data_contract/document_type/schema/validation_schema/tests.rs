@@ -267,6 +267,33 @@ fn should_keep_required_names_that_no_property_carries() {
 }
 
 #[test]
+fn should_name_every_keyword_once_and_read_it_back() {
+    let mut names = BTreeSet::new();
+    for keyword in SchemaKeyword::iter() {
+        assert!(names.insert(keyword.name()), "{keyword:?} shares its name");
+        assert_eq!(SchemaKeyword::from_name(keyword.name()), Some(keyword));
+    }
+    for (keyword, name) in [
+        (SchemaKeyword::Any(AnyKeyword::Ref), "$ref"),
+        (SchemaKeyword::Annotation(AnnotationKeyword::Id), "$id"),
+        (
+            SchemaKeyword::Object(ObjectKeyword::AdditionalProperties),
+            "additionalProperties",
+        ),
+        (
+            SchemaKeyword::Number(NumberKeyword::MultipleOf),
+            "multipleOf",
+        ),
+        (
+            SchemaKeyword::Platform(PlatformKeyword::RequiredSince),
+            "requiredSince",
+        ),
+    ] {
+        assert_eq!(keyword.name(), name);
+    }
+}
+
+#[test]
 fn should_classify_every_keyword_a_document_meta_schema_admits() {
     let meta_schemas = [
         include_str!("../../../../../schema/meta_schemas/document/v0/document-meta.json"),
@@ -287,10 +314,7 @@ fn should_classify_every_keyword_a_document_meta_schema_admits() {
 
     let unclassified: Vec<_> = admitted
         .iter()
-        .filter(|keyword| {
-            !VALIDATION_KEYWORDS.contains(&keyword.as_str())
-                && !NON_VALIDATING_KEYWORDS.contains(&keyword.as_str())
-        })
+        .filter(|keyword| SchemaKeyword::from_name(keyword).is_none())
         .collect();
     assert!(
         unclassified.is_empty(),
