@@ -190,6 +190,7 @@ mod tests {
 
         mod contests_requests_query {
             use super::*;
+            use crate::config::PlatformConfig;
             use dapi_grpc::platform::v0::get_contested_resources_request::get_contested_resources_request_v0;
             use dpp::dashcore::Network;
             use dpp::data_contract::TokenConfiguration;
@@ -448,20 +449,39 @@ mod tests {
                 );
             }
 
-            /// Drive answers a proved request naming no limit with its default page and proves
-            /// that page, so the client verifies the proof against that page: checked against no
-            /// limit, the proof of a full page reads as missing the rest of the range
+            /// Drive answers a proved request naming no limit with a page of the node's
+            /// `default_query_limit` and proves that page. On a node keeping the default (100),
+            /// the proof of a full page verifies only as that page
             #[tokio::test]
             async fn should_verify_a_full_default_page_of_contests_requested_with_no_limit() {
+                verify_101_contests_requested_with_no_limit(DEFAULT_QUERY_LIMIT).await;
+            }
+
+            /// On a node configured with a larger default page, every contest fits it and the
+            /// proof verifies only as the whole range
+            #[tokio::test]
+            async fn should_verify_every_contest_requested_with_no_limit_from_a_node_with_a_larger_default(
+            ) {
+                verify_101_contests_requested_with_no_limit(200).await;
+            }
+
+            /// Creates 101 contests on a node whose `default_query_limit` is
+            /// `node_default_query_limit`, and checks that `FromProof` verifies the Drive part of
+            /// the proofs of a contested resources request and a vote polls by end date request
+            /// naming no limit
+            async fn verify_101_contests_requested_with_no_limit(node_default_query_limit: u16) {
                 let platform_version = PlatformVersion::latest();
+                let mut config = PlatformConfig::default_testnet();
+                config.drive.default_query_limit = node_default_query_limit;
                 let mut platform = TestPlatformBuilder::new()
+                    .with_config(config)
                     .with_latest_protocol_version()
                     .build_with_mock_rpc()
                     .set_genesis_state();
 
                 let platform_state = platform.state.load();
 
-                // One contest more than Drive's default page. The suffix leaves out the letters
+                // One contest more than the standard default page (100). The suffix leaves out the letters
                 // DPNS normalizes to digits (i, l and o), which would merge two names into one contest
                 const SUFFIX_LETTERS: &[u8] = b"abcdefghjkmnpqrstuvwxyz";
                 let mut dpns_contract = None;
@@ -528,7 +548,9 @@ mod tests {
                     panic!("expected a proof")
                 };
 
-                // Drive proved its default page
+                // Drive proved a page of the node's default: checked against the whole range and
+                // against a page of the standard default, only the check matching that page holds
+                let contests_count = DEFAULT_QUERY_LIMIT as usize + 1;
                 let mut query = ResolvedVotePollsByDocumentTypeQuery {
                     contract: DataContractResolvedInfo::BorrowedDataContract(
                         dpns_contract.as_ref(),
@@ -541,14 +563,24 @@ mod tests {
                     order_ascending: true,
                     start_at_value: &None,
                 };
-                query
-                    .verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version)
-                    .expect_err("expected the proof of a full page to fail with no limit");
+                let whole_range =
+                    query.verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version);
                 query.limit = Some(DEFAULT_QUERY_LIMIT);
-                let (_, contests) = query
-                    .verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version)
-                    .expect("expected the proof to verify as a default page");
-                assert_eq!(contests.len(), DEFAULT_QUERY_LIMIT as usize);
+                let standard_page =
+                    query.verify_contests_proof(proof.grovedb_proof.as_ref(), platform_version);
+                if (node_default_query_limit as usize) < contests_count {
+                    whole_range
+                        .expect_err("expected the proof of a full page to fail with no limit");
+                    let (_, contests) =
+                        standard_page.expect("expected the proof to verify as a default page");
+                    assert_eq!(contests.len(), DEFAULT_QUERY_LIMIT as usize);
+                } else {
+                    let (_, contests) =
+                        whole_range.expect("expected the proof to verify as the whole range");
+                    assert_eq!(contests.len(), contests_count);
+                    standard_page
+                        .expect_err("expected the proof of every contest to fail as a 100 page");
+                }
 
                 let error = <ContestedResources as FromProof<GetContestedResourcesRequest>>::maybe_from_proof_with_metadata(
                     request,
