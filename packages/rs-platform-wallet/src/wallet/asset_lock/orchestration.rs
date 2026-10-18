@@ -601,18 +601,53 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
+        self.resolve_funding_observing_out_point(
+            funding,
+            funding_type,
+            destination_index,
+            asset_lock_signer,
+            |_| {},
+        )
+        .await
+    }
+
+    /// [`Self::resolve_funding_with_is_timeout_fallback`], calling
+    /// `on_out_point` with the lock's outpoint as soon as it is known and the
+    /// lock is committed to this operation — before the proof wait:
+    ///
+    /// - `FromWalletBalance` / `DrainAccountBalance`: once the new asset-lock
+    ///   transaction has been broadcast;
+    /// - `FromExistingAssetLock`: once the tracked lock has passed the
+    ///   consumed / role checks, before it is resumed.
+    ///
+    /// Not called when the resolution fails before that point. A caller uses
+    /// it to start work that depends only on the outpoint (the shielded flow
+    /// proves its Orchard bundle) while the InstantSend lock is awaited.
+    pub(crate) async fn resolve_funding_observing_out_point<AS>(
+        &self,
+        funding: AssetLockFunding,
+        funding_type: AssetLockFundingType,
+        destination_index: u32,
+        asset_lock_signer: &AS,
+        on_out_point: impl FnOnce(OutPoint) + Send,
+    ) -> Result<FundingResolution, PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+    {
         match funding {
             AssetLockFunding::FromWalletBalance {
                 amount_duffs,
                 account_index,
             } => {
                 match self
-                    .create_funded_asset_lock_proof(
-                        amount_duffs,
+                    .create_funded_asset_lock_proof_pooled(
+                        super::build::AssetLockBuildAmount::Exact(amount_duffs),
+                        &crate::ASSET_LOCK_FUNDING_SOURCES,
                         account_index,
                         funding_type,
                         destination_index,
                         asset_lock_signer,
+                        on_out_point,
                     )
                     .await
                 {
@@ -640,12 +675,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // Same pipeline as `FromWalletBalance`, with drain amount
                 // semantics and the caller-picked funding account family.
                 match self
-                    .create_funded_asset_lock_proof_with_funding(
+                    .create_funded_asset_lock_proof_pooled(
                         super::build::AssetLockBuildAmount::DrainAll { minimum_lock_duffs },
-                        account,
+                        &[account.into()],
+                        account.account_index(),
                         funding_type,
                         destination_index,
                         asset_lock_signer,
+                        on_out_point,
                     )
                     .await
                 {
@@ -693,6 +730,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         actual_identity_index,
                     )?;
                 }
+                on_out_point(out_point);
                 // 300s is an InstantSend-preference window, not a finality
                 // timeout: on expiry the caller falls back to an unbounded
                 // ChainLock wait, so a resumed broadcast lock never fails
