@@ -155,6 +155,7 @@ impl PlatformWalletPersistence for RecoveryPersistence {
             wallets: BTreeMap::from([(
                 self.wallet.compute_wallet_id(),
                 ClientWalletStartState {
+                    dashpay_backfill: Default::default(),
                     wallet: self.wallet.clone(),
                     wallet_info: self.info.clone(),
                     identity_manager: Default::default(),
@@ -233,6 +234,8 @@ async fn wallet_fixture(
         Arc::new(Notify::new()),
         persistence.clone(),
         Arc::new(SpvBroadcaster::new(spv)),
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        crate::changeset::DurableCursors::default(),
     );
     manager
         .write()
@@ -285,6 +288,8 @@ async fn restart_wallet(
         Arc::new(Notify::new()),
         persistence,
         Arc::new(SpvBroadcaster::new(spv)),
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        crate::changeset::DurableCursors::default(),
     );
     *wallet.shielded_keys.write().await = old.shielded_keys.read().await.clone();
     wallet

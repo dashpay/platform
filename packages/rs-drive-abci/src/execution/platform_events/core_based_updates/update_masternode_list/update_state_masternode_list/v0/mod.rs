@@ -123,9 +123,20 @@ where
             Some(state_core_height)
         };
 
-        let masternode_diff = self
+        let mut masternode_diff = self
             .core_rpc
             .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?;
+
+        if !start_from_scratch {
+            // Protocol versions 1 to 13 select this generation. The call changes no entry unless
+            // DEPLOYMENT_V24 is active at `core_block_height`, so blocks at earlier Core heights
+            // execute unchanged.
+            self.drop_unchanged_operator_keys(
+                state.full_masternode_list(),
+                core_block_height,
+                &mut masternode_diff.updated_mns,
+            )?;
+        }
 
         let MasternodeListDiff {
             added_mns,

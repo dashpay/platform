@@ -205,6 +205,8 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::new(NoPlatformPersistence),
             Arc::new(SpvBroadcaster::new(spv)),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            crate::changeset::DurableCursors::default(),
         )
     }
 
@@ -316,6 +318,8 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::new(NoPlatformPersistence),
             Arc::new(SpvBroadcaster::new(spv)),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            crate::changeset::DurableCursors::default(),
         );
         assert_eq!(
             wallet

@@ -12,8 +12,8 @@ use crate::persistence::{
     LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
     PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
     PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
-    PersistWalletChangesetUtxoVerdictsFn, PersistenceCallbacks, PersistenceCallbacksExtension,
-    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
+    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
@@ -277,6 +277,10 @@ unsafe fn persistence_extension_callbacks(
         load_identity_balance_block_time: slot!(
             on_load_identity_balance_block_time_fn,
             LoadIdentityBalanceBlockTimeFn
+        ),
+        wallet_dashpay_backfill: slot!(
+            on_persist_wallet_dashpay_backfill_fn,
+            PersistWalletDashPayBackfillFn
         ),
         persist_asset_lock_operation_id: slot!(
             on_persist_asset_lock_operation_id_fn,
@@ -914,6 +918,17 @@ mod tests {
         0
     }
 
+    unsafe extern "C" fn persist_wallet_dashpay_backfill(
+        _context: *mut c_void,
+        _wallet_id: *const u8,
+        _floor: u32,
+        _rewound_from: u32,
+        _covered: *const crate::core_wallet_types::DashPayBackfillCoveredContactFFI,
+        _covered_count: usize,
+    ) -> i32 {
+        0
+    }
+
     unsafe extern "C" fn persist_tracked_masternodes(
         _context: *mut c_void,
         _network: *const std::os::raw::c_char,
@@ -1266,12 +1281,43 @@ mod tests {
         assert!(read_short.wallet_changeset_sweeps.is_none());
         assert!(read_short.wallet_changeset_chain_lock_height.is_none());
         assert!(read_short.wallet_changeset_utxo_verdicts.is_none());
+        assert!(read_short.wallet_dashpay_backfill.is_none());
         let read_unknown = unsafe { persistence_extension_callbacks(&unknown) };
         assert!(read_unknown.dpns_name_states.is_none());
         assert!(read_unknown.load_tracked_masternodes.is_none());
         assert!(read_unknown.wallet_changeset_sweeps.is_none());
         assert!(read_unknown.wallet_changeset_chain_lock_height.is_none());
         assert!(read_unknown.wallet_changeset_utxo_verdicts.is_none());
+        assert!(read_unknown.wallet_dashpay_backfill.is_none());
+    }
+
+    /// A host whose `struct_size` stops right after the identity
+    /// balance-block-time slots (built before the DashPay backfill slot
+    /// existed) keeps every earlier slot and simply never has the backfill
+    /// slot read; a host declaring the full size yields it.
+    #[test]
+    fn dashpay_backfill_slot_is_gated_by_struct_size() {
+        let without = PersistenceCallbacksExtension {
+            struct_size: std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_dashpay_backfill_fn
+            ),
+            on_persist_wallet_changeset_utxo_verdicts_fn: Some(
+                persist_wallet_changeset_utxo_verdicts,
+            ),
+            on_persist_wallet_dashpay_backfill_fn: Some(persist_wallet_dashpay_backfill),
+            ..Default::default()
+        };
+        let read = unsafe { persistence_extension_callbacks(&without) };
+        assert!(read.wallet_changeset_utxo_verdicts.is_some());
+        assert!(read.wallet_dashpay_backfill.is_none());
+
+        let with = PersistenceCallbacksExtension {
+            on_persist_wallet_dashpay_backfill_fn: Some(persist_wallet_dashpay_backfill),
+            ..Default::default()
+        };
+        let read = unsafe { persistence_extension_callbacks(&with) };
+        assert!(read.wallet_dashpay_backfill.is_some());
     }
 
     #[test]

@@ -1724,6 +1724,7 @@ mod tests {
                 state.wallets.insert(
                     wallet.compute_wallet_id(),
                     ClientWalletStartState {
+                        dashpay_backfill: Default::default(),
                         wallet: wallet.clone(),
                         wallet_info: info.clone(),
                         identity_manager: Default::default(),
