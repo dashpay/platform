@@ -129,7 +129,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{is_basic_re_encoding_of_legacy_key, V24_COINBASE_PAYLOAD_VERSION};
+    use super::{
+        is_basic_re_encoding_of_legacy_key, without_operator_payout_changes,
+        V24_COINBASE_PAYLOAD_VERSION,
+    };
     use crate::error::execution::ExecutionError;
     use crate::error::Error;
     use crate::execution::platform_events::core_based_updates::update_masternode_list::operator_key_encoding_tests::{
@@ -137,10 +140,13 @@ mod tests {
         MN_L1_BASIC_KEY, MN_L1_LEGACY_KEY, MN_L2, MN_L2_BASIC_KEY, MN_L2_LEGACY_KEY, MN_L3,
         MN_L3_NEW_KEY, MN_L4,
     };
+    use crate::config::PlatformConfig;
+    use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::dashcore::ProTxHash;
-    use dpp::dashcore_rpc::dashcore_rpc_json::DMNStateDiff;
+    use dpp::dashcore::{Network, ProTxHash};
+    use dpp::dashcore_rpc::dashcore_rpc_json::{DMNStateDiff, MasternodeListDiff};
     use dpp::dashcore_rpc::Error as CoreRpcError;
+    use dpp::version::PlatformVersion;
     use serde_json::json;
     use std::str::FromStr;
 
@@ -356,5 +362,126 @@ mod tests {
             .drop_unchanged_operator_keys(&masternodes, 401, &mut entries)
             .expect("expected to normalize the diff");
         assert_eq!(entries, reported);
+    }
+
+    /// v0 and v1 drop operator payouts from a fetched diff and then the operator keys Core
+    /// re-encoded. The first reads nothing and writes only `operator_payout_address`; the second
+    /// reads the stored list and `pub_key_operator`, asks Core only about entries it would clear,
+    /// and writes only `pub_key_operator`. So the diff they apply is the same whichever runs first,
+    /// also for entries that carry an operator payout and a re-encoded or unchanged key at once.
+    #[test]
+    fn should_normalize_a_diff_the_same_whichever_normalization_runs_first() {
+        let masternodes = recorded_masternodes();
+        let reported = MasternodeListDiff {
+            base_height: 400,
+            block_height: 401,
+            added_mns: vec![],
+            removed_mns: vec![],
+            updated_mns: updated_mns()
+                .into_iter()
+                .map(|(pro_tx_hash, state_diff)| {
+                    (
+                        pro_tx_hash,
+                        DMNStateDiff {
+                            operator_payout_address: Some(Some([0x81; 20])),
+                            ..state_diff
+                        },
+                    )
+                })
+                .collect(),
+        };
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_coinbase_payload_version()
+            .times(2)
+            .returning(|_| Ok(Some(V24_COINBASE_PAYLOAD_VERSION)));
+
+        let mut payouts_first = without_operator_payout_changes(reported.clone());
+        platform
+            .drop_unchanged_operator_keys(&masternodes, 401, &mut payouts_first.updated_mns)
+            .expect("expected to normalize the diff");
+
+        let mut keys_first = reported;
+        platform
+            .drop_unchanged_operator_keys(&masternodes, 401, &mut keys_first.updated_mns)
+            .expect("expected to normalize the diff");
+        let keys_first = without_operator_payout_changes(keys_first);
+
+        let mut expected = updated_mns();
+        expected[0].1.pub_key_operator = None;
+        expected[1].1.pub_key_operator = None;
+        assert_eq!(payouts_first.updated_mns, expected);
+        assert_eq!(keys_first.updated_mns, expected);
+    }
+
+    /// When a re-encoded operator key and an operator payout are the only stored fields a diff
+    /// changes, v0 and v1 drop both before they check whether the diff changes the stored list.
+    /// So the block keeps the masternode lists as they were, leaves the platform state clean, and
+    /// hands the identity updates an entry with neither.
+    #[test]
+    fn should_leave_the_state_clean_when_a_diff_only_re_encodes_a_key_and_sets_an_operator_payout()
+    {
+        let mn_l2 = pro_tx_hash(MN_L2);
+        let listed = recorded_masternodes()
+            .remove(&mn_l2)
+            .expect("expected MN_L2 in the recording");
+        let reported = DMNStateDiff {
+            operator_payout_address: Some(Some([0x81; 20])),
+            ..diff_entry(json!({ "pubKeyOperator": MN_L2_BASIC_KEY, "lastPaidHeight": 401 }))
+        };
+        for (generation, platform_version) in [
+            (
+                0,
+                PlatformVersion::get(13).expect("expected protocol version 13"),
+            ),
+            (1, PlatformVersion::latest()),
+        ] {
+            let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+            let reported = reported.clone();
+            platform
+                .core_rpc
+                .expect_get_protx_diff_with_masternodes()
+                .times(1)
+                .returning(move |base_block, block| {
+                    Ok(MasternodeListDiff {
+                        base_height: base_block.unwrap_or_default(),
+                        block_height: block,
+                        added_mns: vec![],
+                        removed_mns: vec![],
+                        updated_mns: vec![(mn_l2, reported.clone())],
+                    })
+                });
+            platform
+                .core_rpc
+                .expect_get_coinbase_payload_version()
+                .times(1)
+                .returning(|_| Ok(Some(V24_COINBASE_PAYLOAD_VERSION)));
+            let mut state = PlatformState::default_with_protocol_versions(
+                platform_version.protocol_version,
+                platform_version.protocol_version,
+                &PlatformConfig::default_for_network(Network::Testnet),
+            )
+            .expect("expected a platform state");
+            state.insert_masternode(listed.clone());
+            state.mark_saved();
+            let before = state.full_masternode_list().clone();
+
+            let outcome = if generation == 0 {
+                platform.update_state_masternode_list_v0(&mut state, 401, false)
+            } else {
+                platform.update_state_masternode_list_v1(&mut state, 401, false)
+            }
+            .expect("expected to update the masternode list");
+
+            assert!(!state.heavy_fields_dirty, "v{generation}");
+            assert!(state.masternode_changes.is_empty(), "v{generation}");
+            assert_eq!(state.full_masternode_list(), &before, "v{generation}");
+            assert_eq!(
+                outcome.masternode_list_diff.updated_mns,
+                vec![(mn_l2, diff_entry(json!({ "lastPaidHeight": 401 })))],
+                "v{generation}"
+            );
+        }
     }
 }
