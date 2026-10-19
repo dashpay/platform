@@ -317,7 +317,7 @@ impl IdentityWallet {
     /// version from Platform and the status is set to `Active`. A fetch at
     /// a lower revision than the cache's was answered before an update the
     /// cache already holds: the cache keeps its revision, key set and every
-    /// disable, and takes the fetch's balance and key limits
+    /// disable, and keeps its own balance and key limits
     /// ([`ManagedIdentity::take_fetched_identity`]).
     ///
     /// Returns the identity the cache holds afterwards.
@@ -373,8 +373,14 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
+                // An older answer only changes keys by disabling them; their
+                // rows are stored here, since nothing below stores keys.
+                let disables = managed.disables_from_older_fetch(&identity);
                 if !managed.take_fetched_identity(&identity) {
                     identity = managed.identity.clone();
+                }
+                for (key_id, disabled_at) in disables {
+                    managed.disable_keys(&[key_id], disabled_at, &self.persister);
                 }
                 managed.set_status(IdentityStatus::Active, &self.persister);
             }
@@ -592,8 +598,8 @@ mod tests {
 
     /// A refresh answered before an update the cache already took (the
     /// cache at 6, Platform's answer at 5) keeps the cache's revision, key
-    /// set and every disable, and takes the answer's balance; an answer
-    /// at 6 or above replaces the cache. Either way the call returns what
+    /// set, every disable and its balance, which the revision does not
+    /// order; an answer at 6 or above replaces the cache. Either way the call returns what
     /// the cache holds afterwards.
     #[tokio::test]
     async fn should_not_take_the_cache_back_with_an_older_refresh() {
@@ -607,13 +613,19 @@ mod tests {
             let wallet = wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await;
             let wallet = wallet.identity();
             cache_at_6_with_key_1_disabled(wallet).await;
+            let cached_balance = held(wallet).await.balance();
+            assert_ne!(cached_balance, 777);
 
             let returned = wallet.refresh_identity(&identity_id).await.unwrap();
             let held = held(wallet).await;
             assert_eq!(returned, held, "answered at {answered}");
             assert_eq!(held.revision(), settled, "answered at {answered}");
-            assert_eq!(held.balance(), 777, "answered at {answered}");
             let older = answered < 6;
+            assert_eq!(
+                held.balance(),
+                if older { cached_balance } else { 777 },
+                "answered at {answered}"
+            );
             assert_eq!(
                 held.public_keys()[&1].is_disabled(),
                 older,
@@ -650,6 +662,8 @@ mod tests {
             let wallet = wallet_with_signing_keys_on(sdk, store.clone()).await;
             let wallet = wallet.identity();
             cache_at_6_with_key_1_disabled(wallet).await;
+            let cached_balance = held(wallet).await.balance();
+            assert_ne!(cached_balance, 777);
             store.clear();
 
             let returned = wallet
@@ -660,8 +674,12 @@ mod tests {
             let held = held(wallet).await;
             assert_eq!(returned, held, "answered at {answered}");
             assert_eq!(held.revision(), 6, "answered at {answered}");
-            assert_eq!(held.balance(), 777, "answered at {answered}");
             let older = answered < 6;
+            assert_eq!(
+                held.balance(),
+                if older { cached_balance } else { 777 },
+                "answered at {answered}"
+            );
             assert_eq!(
                 held.public_keys()[&1].is_disabled(),
                 older,
