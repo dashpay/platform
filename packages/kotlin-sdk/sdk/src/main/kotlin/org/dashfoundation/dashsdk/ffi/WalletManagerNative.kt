@@ -199,7 +199,10 @@ internal object WalletManagerNative {
      */
     external fun coreTxBuilderChangeToFirstInput(builder: Long)
 
-    /** `core_wallet_tx_builder_set_fee_rate` — fee rate in duffs/kB (> 0). */
+    /**
+     * `core_wallet_tx_builder_set_fee_rate` — fee rate in duffs/kB (> 0: the JNI glue refuses 0);
+     * refused above about 42.9 DASH/kB (the fee arithmetic would overflow).
+     */
     external fun coreTxBuilderSetFeeRate(builder: Long, satPerKb: Long)
 
     /**
@@ -210,9 +213,9 @@ internal object WalletManagerNative {
     external fun coreTxBuilderSetSelectionStrategy(builder: Long, strategy: Int)
 
     /**
-     * `core_wallet_tx_builder_set_current_height` — advisory chain-tip
-     * height (funding / build override it with the wallet's last processed
-     * height). Non-negative.
+     * `core_wallet_tx_builder_set_current_height` — accepted and ignored:
+     * every build uses the wallet's last processed height, so this height
+     * changes neither coinbase maturity nor locktime. Non-negative.
      */
     external fun coreTxBuilderSetCurrentHeight(builder: Long, height: Int)
 

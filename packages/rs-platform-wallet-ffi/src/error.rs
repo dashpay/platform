@@ -609,6 +609,17 @@ pub enum PlatformWalletFFIResultCode {
     /// [`Self::ErrorShutdownIncomplete`]: restart the host process.
     ErrorSpvProcessRestartRequired = 59,
 
+    /// A Core payment or asset lock (identity registration and top-up,
+    /// invitation, shielded and platform-address funding) the balance covers
+    /// only with coins the network has not confirmed yet — neither
+    /// InstantSend-locked nor mined
+    /// ([`platform_wallet::PlatformWalletError::CoreFundsAwaitingNetwork`]).
+    /// Not a shortfall and nothing was sent: the coins become spendable once
+    /// their transaction is InstantSend-locked or mined, so the host should
+    /// say the money is waiting on the network and offer a retry later — not
+    /// "insufficient funds".
+    ErrorCoreFundsAwaitingNetwork = 61,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -966,6 +977,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InputMidBroadcast { .. } => {
                 PlatformWalletFFIResultCode::ErrorUnknown
             }
+            // A chosen input the build cannot spend (not held by the funding
+            // accounts, or not spendable yet): the caller's parameter. The
+            // outpoint and the reason travel in the message.
+            PlatformWalletError::ChosenInputUnavailable { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
             // A definitively-failed address-nonce race (reaches the blanket impl
             // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
             // provided/expected nonce as structured out-fields is INTENTIONALLY
@@ -974,6 +991,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // string and an FFI retry re-fetches the nonce.
             PlatformWalletError::AddressNonceMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAddressNonceMismatch
+            }
+            PlatformWalletError::CoreFundsAwaitingNetwork { .. } => {
+                PlatformWalletFFIResultCode::ErrorCoreFundsAwaitingNetwork
             }
             // Both shapes are "the wallet cannot cover this payment"; hosts
             // classify and retry them identically, so the pooled variant rides
@@ -2617,6 +2637,27 @@ mod tests {
         unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_string_lossy()
             .into_owned()
+    }
+}
+
+#[cfg(test)]
+mod core_funds_awaiting_network_tests {
+    use super::*;
+
+    #[test]
+    fn should_give_unconfirmed_funds_their_own_code_apart_from_insufficient_funds() {
+        let result = PlatformWalletFFIResult::from(PlatformWalletError::CoreFundsAwaitingNetwork {
+            available: Some(700_000),
+            waiting: 599_000,
+            required: Some(1_000_000),
+            outpoint: None,
+        });
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorCoreFundsAwaitingNetwork
+        );
+        assert_eq!(result.code as u32, 61);
+        assert!(!result.message.is_null());
     }
 }
 

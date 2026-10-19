@@ -129,6 +129,14 @@ class DashSdkErrorTest {
             DashSdkError.fromNative(DashSDKException(offset + 22, "inputs reserved"))
         assertTrue(coreInsufficientFunds is DashSdkError.PlatformWallet.CoreInsufficientFunds)
 
+        val awaitingNetwork =
+            DashSdkError.fromNative(DashSDKException(offset + 61, "funds awaiting network"))
+        assertTrue(awaitingNetwork is DashSdkError.PlatformWallet.CoreFundsAwaitingNetwork)
+        assertFalse(
+            "waiting coins may never confirm; a person decides to try again",
+            awaitingNetwork.isRetryable,
+        )
+
         // The asset-lock coin-selection shortfall (29) must reach callers as its
         // own type rather than Generic, and must stay DISTINCT from the atomic
         // Core-send shortfall (22) — the two selectors report over different

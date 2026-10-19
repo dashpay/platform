@@ -133,7 +133,10 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
         WalletManagerNative.coreTxBuilderChangeToFirstInput(handle)
     }
 
-    /** Set the fee rate in duffs/kB (> 0). */
+    /**
+     * Set the fee rate in duffs/kB (> 0: the JNI glue refuses 0). Refused (invalid parameter) above
+     * about 42.9 DASH/kB, where the fee arithmetic would overflow.
+     */
     internal fun setFeeRate(satPerKb: Long): CoreTransactionBuilder = apply {
         WalletManagerNative.coreTxBuilderSetFeeRate(handle, satPerKb)
     }
@@ -143,7 +146,10 @@ class CoreTransactionBuilder internal constructor(network: Network) : AutoClosea
         WalletManagerNative.coreTxBuilderSetSelectionStrategy(handle, strategy.ffiValue)
     }
 
-    /** Set the advisory chain-tip height (non-negative). */
+    /**
+     * Accepted and ignored: every build uses the wallet's last processed
+     * height, so [height] (non-negative) changes nothing about the build.
+     */
     internal fun setCurrentHeight(height: Int): CoreTransactionBuilder = apply {
         WalletManagerNative.coreTxBuilderSetCurrentHeight(handle, height)
     }
