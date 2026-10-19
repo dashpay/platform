@@ -1254,3 +1254,63 @@ fn should_refuse_a_key_with_limits_before_verifying_the_proof() {
         preimage(version_0_key.into())
     );
 }
+
+/// A hash key's data is the hash itself, so from protocol version 14 `validate_shielded_proof`
+/// refuses a hash key whose data is not 20 bytes, before it verifies proofs of possession or the
+/// bundle. Without the check, a transition with a valid proof would fail once its key hash is
+/// taken, as an internal error.
+#[test]
+fn should_refuse_a_hash_key_of_the_wrong_size_before_verifying_the_proof() {
+    use crate::execution::validation::state_transition::processor::traits::shielded_proof::StateTransitionShieldedProofValidationV0;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::state_transition::StateTransition;
+
+    const INVALID_IDENTITY_PUBLIC_KEY_DATA: u32 = 10511;
+
+    let errors_for = |data_len: usize, version: &PlatformVersion| {
+        let hash_key = IdentityPublicKeyInCreationV0 {
+            id: 1,
+            key_type: KeyType::ECDSA_HASH160,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            read_only: false,
+            data: vec![0x72; data_len].into(),
+            signature: Default::default(),
+        };
+        let st: StateTransition =
+            transition(vec![master_key(), hash_key.into()], vec![action(31)]).into();
+        st.validate_shielded_proof(version)
+            .expect("a refusal is a consensus error, not an internal one")
+            .errors
+    };
+
+    for data_len in [0, 19, 21] {
+        let errors = errors_for(data_len, PlatformVersion::latest());
+        assert_eq!(errors.len(), 1, "{data_len} bytes: {errors:?}");
+        assert_eq!(
+            errors[0].code(),
+            INVALID_IDENTITY_PUBLIC_KEY_DATA,
+            "{data_len} bytes"
+        );
+    }
+
+    // A 20 byte hash key gets past the check, and so does a key of the wrong size at protocol
+    // version 13, which does not check the size of a hash key's data: the transition fails
+    // later, on the placeholder proof of possession of its master key.
+    for (data_len, version) in [
+        (20, PlatformVersion::latest()),
+        (
+            19,
+            PlatformVersion::get(13).expect("expected protocol version 13"),
+        ),
+    ] {
+        let errors = errors_for(data_len, version);
+        assert_matches!(
+            errors.as_slice(),
+            [ConsensusError::SignatureError(_)],
+            "{data_len} bytes at protocol version {}",
+            version.protocol_version
+        );
+    }
+}

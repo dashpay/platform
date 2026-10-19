@@ -107,6 +107,8 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     /// Rust only honours the declaration when the payments callback is
     /// actually wired.
     public static let dashpayPayments: UInt64 = 1 << 12
+    /// Durable operation UUIDs, including consumed asset-lock tombstones.
+    public static let assetLockOperationIds: UInt64 = 1 << 13
 
     public let version: UInt32
     public let bits: UInt64
@@ -2383,7 +2385,13 @@ public class PlatformWalletManager: ObservableObject {
         guard let persistenceHandler = persistenceHandler else { return }
         for wallet in wallets {
             let walletId = wallet.walletId
-            let locks = persistenceHandler.loadCachedAssetLocks(walletId: walletId)
+            let locks: [PlatformWalletPersistenceHandler.AssetLockEntrySnapshot]
+            do {
+                locks = try persistenceHandler.loadCachedAssetLocks(walletId: walletId)
+            } catch {
+                self.lastError = error
+                continue
+            }
             let pending = locks.filter { $0.statusRaw < 2 }
             if pending.isEmpty { continue }
 

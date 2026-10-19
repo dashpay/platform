@@ -1,5 +1,7 @@
+use super::without_operator_payout_changes;
 use crate::error::Error;
 use crate::execution::types::update_state_masternode_list_outcome;
+use crate::platform_types::masternode::apply_diff_replacing_revived_height;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
@@ -98,7 +100,9 @@ where
         updated_mns.iter().any(|(pro_tx_hash, state_diff)| {
             masternode_list.get(pro_tx_hash).is_some_and(|item| {
                 let mut updated = item.state.clone();
-                updated.apply_diff(state_diff.clone());
+                // Inert for every protocol version selecting this generation: it has always
+                // applied diffs with the revived height replaced by the diff's.
+                apply_diff_replacing_revived_height(&mut updated, state_diff.clone());
                 updated != item.state
             })
         })
@@ -123,9 +127,24 @@ where
             Some(state_core_height)
         };
 
-        let masternode_diff = self
-            .core_rpc
-            .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?;
+        // Inert for every protocol version selecting this generation: it processed its blocks
+        // without updated masternodes' operator payouts, so a diff's must not reach the stored
+        // list or the identity updates.
+        let mut masternode_diff = without_operator_payout_changes(
+            self.core_rpc
+                .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?,
+        );
+
+        if !start_from_scratch {
+            // Protocol versions 1 to 13 select this generation. The call changes no entry unless
+            // DEPLOYMENT_V24 is active at `core_block_height`, so blocks at earlier Core heights
+            // execute unchanged.
+            self.drop_unchanged_operator_keys(
+                state.full_masternode_list(),
+                core_block_height,
+                &mut masternode_diff.updated_mns,
+            )?;
+        }
 
         let MasternodeListDiff {
             added_mns,

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
 
@@ -16,11 +17,17 @@ use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
 use drive_proof_verifier::types::{ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery};
 
 fn tree_path() -> PathBuf {
+    // Clock resolution alone does not distinguish parallel test invocations.
+    static NEXT_PATH: AtomicU64 = AtomicU64::new(0);
+    let sequence = NEXT_PATH.fetch_add(1, Ordering::Relaxed);
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
-    std::env::temp_dir().join(format!("shielded_local_balance_{nonce}.sqlite"))
+    std::env::temp_dir().join(format!(
+        "shielded_local_balance_{}_{nonce}_{sequence}.sqlite",
+        std::process::id()
+    ))
 }
 
 fn coordinator(path: &std::path::Path) -> NetworkShieldedCoordinator {

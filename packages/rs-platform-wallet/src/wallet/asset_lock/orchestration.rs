@@ -30,6 +30,7 @@
 //! every flow so register / top-up / address-fund can't drift apart
 //! on their CL fallback or retry-budget windows.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use dashcore::OutPoint;
@@ -42,6 +43,7 @@ pub(crate) use dash_sdk::platform::transition::asset_lock_submission::submit_wit
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::{is_asset_lock_already_consumed, PlatformWalletError};
 use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::asset_lock::AssetLockOperationContext;
 
 // ---------------------------------------------------------------------------
 // Timeout policy
@@ -172,6 +174,14 @@ pub enum AssetLockFunding {
         /// pooled source set. DashPay contact-receiving accounts span
         /// their own indices and are pooled in regardless.
         account_index: u32,
+    },
+
+    /// Drain all ordinary pooled funding sources without creating change.
+    /// The operation context preserves the exact outpoint on errors and panics.
+    DrainWalletBalance {
+        account_index: u32,
+        minimum_lock_duffs: Option<u64>,
+        operation: Arc<AssetLockOperationContext>,
     },
 
     /// Build an asset lock that drains a funding account's whole balance:
@@ -482,6 +492,40 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     Err(e) => Err(e),
                 }
             }
+            AssetLockFunding::DrainWalletBalance {
+                account_index,
+                minimum_lock_duffs,
+                operation,
+            } => {
+                if funding_type != AssetLockFundingType::AssetLockShieldedAddressTopUp {
+                    return Err(PlatformWalletError::AssetLockTransaction(
+                        "pooled wallet drain is available only for shielded funding".into(),
+                    ));
+                }
+                match self
+                    .create_wallet_drain_asset_lock_proof(
+                        account_index,
+                        minimum_lock_duffs,
+                        funding_type,
+                        destination_index,
+                        asset_lock_signer,
+                        &operation,
+                    )
+                    .await
+                {
+                    Ok((proof, path, out_point)) => {
+                        Ok(FundingResolution::Resolved(ResolvedFunding {
+                            proof,
+                            path,
+                            tracked_out_point: Some(out_point),
+                        }))
+                    }
+                    Err(PlatformWalletError::FinalityTimeout(out_point)) => {
+                        Ok(FundingResolution::IsTimeout { out_point })
+                    }
+                    Err(error) => Err(error),
+                }
+            }
             AssetLockFunding::DrainAccountBalance {
                 account,
                 minimum_lock_duffs,
@@ -519,7 +563,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .tracked_resume_metadata(&out_point)
                     .await
                     .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
-                if status == crate::wallet::asset_lock::tracked::AssetLockStatus::Consumed {
+                if status.is_consumed() {
                     return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
                 }
                 // Invitation vouchers are bearer instruments: the credit
@@ -827,6 +871,7 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
                         out_point,
                         transaction: transaction.clone(),
                         account_index: 0,
