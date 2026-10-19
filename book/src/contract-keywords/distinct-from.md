@@ -11,7 +11,7 @@
 | **On update** | Fixed: adding, removing or changing it is refused (`IncompatibleDocumentTypeSchemaError`, 10246) |
 | **Errors** | `DocumentPropertyNotDistinctError` (10419) on a document; at registration `JsonSchemaError` (10101) or `InvalidContractStructure` (10231) |
 
-An identifier here is a 32-byte id, declared as a byte array with the identifier `contentMediaType` (see [Property Schemas](property-schemas.md)).
+An identifier here is a 32-byte id, declared as `"type": "identifier"` or, written in full, as a byte array with the identifier `contentMediaType` (see [Property Schemas](property-schemas.md#byte-arrays-and-identifiers)).
 
 ## Example
 
@@ -20,14 +20,12 @@ An identifier here is a 32-byte id, declared as a byte array with the identifier
   "type": "object",
   "properties": {
     "delegateId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "distinctFrom": "$ownerId",
       "position": 0
     },
     "backupId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "distinctFrom": "delegateId",
       "position": 1
     }

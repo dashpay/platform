@@ -775,6 +775,39 @@ class PlatformWalletPersistenceHandler(
      * height, no collection), so a chainlock-advancing round collects too,
      * not only a header round.
      */
+    /**
+     * The wallet's DashPay coreHeight backfill record (dashpay/platform#4302):
+     * whole-record replace of the three `wallets.dashPayBackfill*` columns,
+     * staged into the round so it commits with — or rolls back with — the
+     * lowered `syncedHeight` the header slot wrote moments earlier in the
+     * same round. A record that vouches for a cursor the round never
+     * committed must not survive on its own.
+     */
+    override fun onWalletChangesetDashPayBackfill(
+        walletId: ByteArray,
+        floor: Int,
+        rewoundFrom: Int,
+        covered: ByteArray,
+        coveredCount: Int,
+    ): Int = guarded {
+        require(covered.size == coveredCount * DASHPAY_BACKFILL_COVERED_ENTRY_SIZE) {
+            "DashPay backfill cover set must be $DASHPAY_BACKFILL_COVERED_ENTRY_SIZE bytes per contact"
+        }
+        stage(walletId) { db ->
+            // Drop stale post-deletion callbacks (can't resurrect a wallet).
+            val wallet = db.walletDao().getByWalletId(walletId) ?: return@stage
+            db.walletDao().upsert(
+                wallet.copy(
+                    dashPayBackfillFloor = floor,
+                    dashPayBackfillRewoundFrom = rewoundFrom,
+                    dashPayBackfillCovered = covered.copyOf(),
+                    lastUpdated = now(),
+                ),
+            )
+        }
+        0
+    }
+
     override fun onWalletChangesetChainLockHeight(walletId: ByteArray, height: Int): Int = guarded {
         val round = openRound(walletId)
         round?.finalityAdvanced = true
@@ -2095,6 +2128,7 @@ class PlatformWalletPersistenceHandler(
 
     // ── Contacts ──────────────────────────────────────────────────────
 
+    /** Marker-less form: same row, no outbound-account marker (stored as NULL). */
     override fun onPersistContactUpsert(
         walletId: ByteArray,
         ownerId: ByteArray,
@@ -2114,6 +2148,36 @@ class PlatformWalletPersistenceHandler(
         isHidden: Boolean,
         contactAccountLabel: String?,
         acceptedAccounts: IntArray,
+    ): Int = onPersistContactUpsert(
+        walletId, ownerId, contactId, isOutgoing, senderKeyIndex, recipientKeyIndex,
+        accountReference, encryptedPublicKey, encryptedAccountLabel, autoAcceptProof,
+        coreHeightCreatedAt, createdAt, paymentChannelBroken, alias, note, isHidden,
+        contactAccountLabel, acceptedAccounts,
+        hasExternalAccountReference = false,
+        externalAccountReference = 0,
+    )
+
+    override fun onPersistContactUpsert(
+        walletId: ByteArray,
+        ownerId: ByteArray,
+        contactId: ByteArray,
+        isOutgoing: Boolean,
+        senderKeyIndex: Int,
+        recipientKeyIndex: Int,
+        accountReference: Int,
+        encryptedPublicKey: ByteArray,
+        encryptedAccountLabel: ByteArray?,
+        autoAcceptProof: ByteArray?,
+        coreHeightCreatedAt: Int,
+        createdAt: Long,
+        paymentChannelBroken: Boolean,
+        alias: String?,
+        note: String?,
+        isHidden: Boolean,
+        contactAccountLabel: String?,
+        acceptedAccounts: IntArray,
+        hasExternalAccountReference: Boolean,
+        externalAccountReference: Int,
     ): Int = guarded {
         stage(walletId) { db ->
             // Owner identity must exist; skip silently otherwise (replayed
@@ -2139,6 +2203,8 @@ class PlatformWalletPersistenceHandler(
                     contactHidden = isHidden,
                     contactAccountLabel = contactAccountLabel,
                     contactAcceptedAccounts = encodeAcceptedAccounts(acceptedAccounts),
+                    externalAccountReference =
+                        if (hasExternalAccountReference) externalAccountReference else null,
                     lastUpdated = now(),
                 ),
             )
@@ -2673,6 +2739,15 @@ class PlatformWalletPersistenceHandler(
                 // slice.
                 val lastAppliedChainLockBytes =
                     w.lastAppliedChainLockBytes ?: ByteArray(0)
+                // Persisted DashPay backfill record — the durable half of the
+                // contact rescan guard. Present only when every column is set
+                // (one round writes all three); otherwise native treats the
+                // wallet as never backfilled and rewinds once, as before.
+                val backfillFloor = w.dashPayBackfillFloor
+                val backfillRewoundFrom = w.dashPayBackfillRewoundFrom
+                val backfillCovered = w.dashPayBackfillCovered
+                val hasBackfill =
+                    backfillFloor != null && backfillRewoundFrom != null && backfillCovered != null
                 out.add(
                     WalletRestoreData(
                         walletId = w.walletId,
@@ -2694,7 +2769,14 @@ class PlatformWalletPersistenceHandler(
                         unresolvedAssetLockTxRecords = unresolvedAssetLockTxRecords,
                         providerSpecialTxs = providerSpecialTxs,
                         lastAppliedChainLockBytes = lastAppliedChainLockBytes,
-                    ),
+                    ).apply {
+                        if (hasBackfill) {
+                            hasDashPayBackfill = true
+                            dashPayBackfillFloor = backfillFloor!!
+                            dashPayBackfillRewoundFrom = backfillRewoundFrom!!
+                            dashPayBackfillCovered = backfillCovered!!
+                        }
+                    },
                 )
             }
             out.toTypedArray()
@@ -2935,7 +3017,12 @@ class PlatformWalletPersistenceHandler(
                         isHidden = c.contactHidden,
                         contactAccountLabel = c.contactAccountLabel,
                         acceptedAccounts = decodeAcceptedAccounts(c.contactAcceptedAccounts),
-                    )
+                    ).apply {
+                        c.externalAccountReference?.let { reference ->
+                            hasExternalAccountReference = true
+                            externalAccountReference = reference
+                        }
+                    }
                 }.toTypedArray()
             // Ignored senders (per-sender mute) — restores the Rust
             // `ignored_senders` set so a previously-ignored sender doesn't
@@ -4024,6 +4111,13 @@ class PlatformWalletPersistenceHandler(
         internal const val CAPABILITY_WALLET_RESTORE: Long = 0x80
         internal const val CAPABILITY_DPNS_NAME_STATES: Long = 0x100
         internal const val CAPABILITY_TRACKED_ASSET_LOCKS: Long = 0x200
+        /**
+         * Bytes per receival account in the opaque cover set
+         * [onWalletChangesetDashPayBackfill] delivers: owner id (32),
+         * contact id (32), account index (4), covered-from height (4).
+         */
+        internal const val DASHPAY_BACKFILL_COVERED_ENTRY_SIZE: Int = 32 + 32 + 4 + 4
+
         internal const val CAPABILITY_CORE_SWEEP_REMOVAL: Long =
             NativePersistenceBridge.CAPABILITY_CORE_SWEEP_REMOVAL
 

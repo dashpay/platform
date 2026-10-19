@@ -1,11 +1,12 @@
-use crate::util::batch::DriveOperation;
+use crate::util::batch::{DriveOperation, SystemOperationType};
 
 use crate::drive::Drive;
-use crate::error::Error;
+use crate::error::{fee::FeeError, Error};
 use crate::fees::op::LowLevelDriveOperation;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
 
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 
@@ -89,8 +90,29 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         DriveOperation::refuse_repeated_token_balance_writes(&operations)?;
         self.refuse_repeated_counter_moves(&operations, block_info, transaction, platform_version)?;
-        let operations = DriveOperation::merge_balance_writes(operations)?;
-        if operations.is_empty() {
+        let mut operations = DriveOperation::merge_balance_writes(operations)?;
+        let mut processing_pool_credits: Credits = 0;
+        for operation in operations.extract_if(.., |operation| {
+            matches!(
+                operation,
+                DriveOperation::SystemOperation(
+                    SystemOperationType::AddToCurrentEpochProcessingPool { .. }
+                )
+            )
+        }) {
+            if let DriveOperation::SystemOperation(
+                SystemOperationType::AddToCurrentEpochProcessingPool { amount },
+            ) = operation
+            {
+                processing_pool_credits =
+                    processing_pool_credits
+                        .checked_add(amount)
+                        .ok_or(Error::Fee(FeeError::Overflow(
+                            "overflow when accumulating processing pool credits",
+                        )))?;
+            }
+        }
+        if operations.is_empty() && (!apply || processing_pool_credits == 0) {
             return Ok(FeeResult::default());
         }
         let forfeits_storage_refunds = operations
@@ -193,6 +215,23 @@ impl Drive {
             transaction,
             platform_version,
         )?;
+        // Read the pool after ordinary writes and debt repayment so neither can overwrite
+        // the returned allocation. This transfer shares their transaction and is not billed.
+        if apply && processing_pool_credits > 0 {
+            let pool_operation = self.add_epoch_processing_credits_for_distribution_operation(
+                &block_info.epoch,
+                processing_pool_credits,
+                transaction,
+                platform_version,
+            )?;
+            self.apply_batch_low_level_drive_operations(
+                None,
+                transaction,
+                vec![pool_operation],
+                &mut vec![],
+                &platform_version.drive,
+            )?;
+        }
         if let Some(owned_transaction) = owned_transaction {
             self.commit_transaction(owned_transaction, &platform_version.drive)?;
         }
@@ -239,10 +278,422 @@ fn forfeit_storage_refunds(cost_operations: &mut [LowLevelDriveOperation]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::credit_pools::epochs::epoch_key_constants::KEY_POOL_PROCESSING_FEES;
+    use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+    use crate::drive::credit_pools::epochs::paths::EpochProposers;
+    use crate::error::drive::DriveError;
+    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use crate::util::batch::{GroveDbOpBatch, IdentityOperationType};
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use crate::util::test_helpers::test_utils::identities::create_test_identity;
+    use dpp::block::epoch::Epoch;
+    use grovedb::Element;
     use grovedb_costs::storage_cost::removal::StorageRemovalPerEpochByIdentifier;
     use grovedb_costs::storage_cost::StorageCost;
     use grovedb_costs::OperationCost;
     use intmap::IntMap;
+
+    fn pool_credit(amount: Credits) -> DriveOperation<'static> {
+        DriveOperation::SystemOperation(SystemOperationType::AddToCurrentEpochProcessingPool {
+            amount,
+        })
+    }
+
+    fn debt_test_block_info() -> BlockInfo {
+        BlockInfo::default_with_epoch(Epoch::new(2).unwrap())
+    }
+
+    fn indebted_identity(
+        drive: &Drive,
+        id: [u8; 32],
+        owed: Credits,
+        platform_version: &PlatformVersion,
+    ) -> [u8; 32] {
+        create_test_identity(drive, id, Some(7), None, platform_version).unwrap();
+        let operation = drive
+            .update_identity_negative_credit_operation(id, owed, platform_version)
+            .unwrap();
+        drive
+            .apply_batch_low_level_drive_operations(
+                None,
+                None,
+                vec![operation],
+                &mut vec![],
+                &platform_version.drive,
+            )
+            .unwrap();
+        id
+    }
+
+    fn balance(drive: &Drive, id: [u8; 32], platform_version: &PlatformVersion) -> Credits {
+        drive
+            .fetch_identity_balance(id, None, platform_version)
+            .unwrap()
+            .unwrap()
+    }
+
+    fn debt(drive: &Drive, id: [u8; 32], platform_version: &PlatformVersion) -> Credits {
+        drive
+            .fetch_identity_negative_balance_operations(
+                id,
+                true,
+                None,
+                &mut vec![],
+                platform_version,
+            )
+            .unwrap()
+            .unwrap()
+    }
+
+    fn processing_pool(drive: &Drive, platform_version: &PlatformVersion) -> Credits {
+        match drive.get_epoch_processing_credits_for_distribution(
+            &debt_test_block_info().epoch,
+            None,
+            platform_version,
+        ) {
+            Ok(credits) => credits,
+            Err(Error::GroveDB(error))
+                if matches!(error.as_ref(), grovedb::Error::PathKeyNotFound(_)) =>
+            {
+                0
+            }
+            Err(error) => panic!("processing pool read failed: {error}"),
+        }
+    }
+
+    #[test]
+    fn should_apply_processing_pool_credits_without_ordinary_operations_in_the_same_transaction() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let block_info = debt_test_block_info();
+        let transaction = drive.grove.start_transaction();
+        let fees = drive
+            .apply_drive_operations(
+                vec![pool_credit(11), pool_credit(13)],
+                true,
+                &block_info,
+                Some(&transaction),
+                platform_version,
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            fees,
+            FeeResult::default(),
+            "internal pool returns are not billed"
+        );
+        assert_eq!(
+            drive
+                .get_epoch_processing_credits_for_distribution(
+                    &block_info.epoch,
+                    Some(&transaction),
+                    platform_version
+                )
+                .unwrap(),
+            24
+        );
+        assert_eq!(
+            processing_pool(&drive, platform_version),
+            0,
+            "caller transaction is not committed"
+        );
+        drive
+            .commit_transaction(transaction, &platform_version.drive)
+            .unwrap();
+        drive
+            .apply_drive_operations(
+                vec![pool_credit(7)],
+                true,
+                &block_info,
+                None,
+                platform_version,
+                None,
+            )
+            .unwrap();
+        assert_eq!(processing_pool(&drive, platform_version), 31);
+    }
+
+    #[test]
+    fn should_add_processing_pool_returns_after_ordinary_pool_writes_and_debt_repayment() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let block_info = debt_test_block_info();
+        let recipient = indebted_identity(&drive, [7; 32], 7, platform_version);
+        let pool_write = block_info
+            .epoch
+            .update_processing_fee_pool_operation(110)
+            .unwrap();
+        let batch = vec![
+            pool_credit(13),
+            DriveOperation::IdentityOperation(IdentityOperationType::AddToIdentityBalance {
+                identity_id: recipient,
+                added_balance: 20,
+            }),
+            pool_credit(11),
+            DriveOperation::GroveDBOpBatch(GroveDbOpBatch::from_operations(vec![pool_write])),
+        ];
+        drive
+            .apply_drive_operations(batch, true, &block_info, None, platform_version, None)
+            .unwrap();
+        assert_eq!(balance(&drive, recipient, platform_version), 13);
+        assert_eq!(debt(&drive, recipient, platform_version), 0);
+        assert_eq!(processing_pool(&drive, platform_version), 110 + 7 + 24);
+    }
+
+    #[test]
+    fn should_estimate_processing_pool_returns_without_reading_or_writing_the_pool() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let block_info = debt_test_block_info();
+        let recipient = indebted_identity(&drive, [7; 32], 7, platform_version);
+        // An invalid pool would reject an applied return. An estimate must never read it.
+        drive
+            .grove
+            .insert(
+                &block_info.epoch.get_path(),
+                KEY_POOL_PROCESSING_FEES,
+                Element::new_item(vec![1]),
+                None,
+                None,
+                &platform_version.drive.grove_version,
+            )
+            .unwrap()
+            .unwrap();
+        let before = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .unwrap();
+        let ordinary =
+            DriveOperation::IdentityOperation(IdentityOperationType::AddToIdentityBalance {
+                identity_id: recipient,
+                added_balance: 20,
+            });
+        let expected = drive
+            .apply_drive_operations(
+                vec![ordinary.clone()],
+                false,
+                &block_info,
+                None,
+                platform_version,
+                None,
+            )
+            .unwrap();
+        let actual = drive
+            .apply_drive_operations(
+                vec![pool_credit(24), ordinary],
+                false,
+                &block_info,
+                None,
+                platform_version,
+                None,
+            )
+            .unwrap();
+        assert_eq!(actual, expected);
+        assert_eq!(
+            drive
+                .apply_drive_operations(
+                    vec![pool_credit(24)],
+                    false,
+                    &block_info,
+                    None,
+                    platform_version,
+                    None
+                )
+                .unwrap(),
+            FeeResult::default()
+        );
+        assert_eq!(
+            drive
+                .apply_drive_operations(
+                    vec![pool_credit(0)],
+                    true,
+                    &block_info,
+                    None,
+                    platform_version,
+                    None
+                )
+                .unwrap(),
+            FeeResult::default()
+        );
+        assert_eq!(
+            drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .unwrap(),
+            before
+        );
+        assert_eq!(balance(&drive, recipient, platform_version), 0);
+        assert_eq!(debt(&drive, recipient, platform_version), 7);
+    }
+
+    #[test]
+    fn should_refuse_processing_pool_credit_accumulation_overflow_before_writing() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let recipient = indebted_identity(&drive, [7; 32], 0, platform_version);
+        let before = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .unwrap();
+        for apply in [false, true] {
+            let result = drive.apply_drive_operations(
+                vec![
+                    DriveOperation::IdentityOperation(
+                        IdentityOperationType::AddToIdentityBalance {
+                            identity_id: recipient,
+                            added_balance: 9,
+                        },
+                    ),
+                    pool_credit(u64::MAX),
+                    pool_credit(1),
+                ],
+                apply,
+                &debt_test_block_info(),
+                None,
+                platform_version,
+                None,
+            );
+            assert!(matches!(result, Err(Error::Fee(FeeError::Overflow(_)))));
+            assert_eq!(
+                drive
+                    .grove
+                    .root_hash(None, &platform_version.drive.grove_version)
+                    .unwrap()
+                    .unwrap(),
+                before
+            );
+        }
+        assert_eq!(balance(&drive, recipient, platform_version), 0);
+    }
+
+    #[test]
+    fn should_roll_back_owned_transaction_when_a_post_batch_processing_pool_return_fails() {
+        let platform_version = PlatformVersion::latest();
+        for corrupted in [true, false] {
+            let drive = setup_drive_with_initial_state_structure(None);
+            let block_info = debt_test_block_info();
+            let recipient = indebted_identity(&drive, [7; 32], 0, platform_version);
+            let pool = if corrupted {
+                Element::new_item(vec![1])
+            } else {
+                Element::new_sum_item(i64::MAX)
+            };
+            drive
+                .grove
+                .insert(
+                    &block_info.epoch.get_path(),
+                    KEY_POOL_PROCESSING_FEES,
+                    pool,
+                    None,
+                    None,
+                    &platform_version.drive.grove_version,
+                )
+                .unwrap()
+                .unwrap();
+            let before = drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .unwrap();
+            let batch = vec![
+                DriveOperation::IdentityOperation(IdentityOperationType::AddToIdentityBalance {
+                    identity_id: recipient,
+                    added_balance: 9,
+                }),
+                pool_credit(1),
+            ];
+            let result = drive.apply_drive_operations(
+                batch.clone(),
+                true,
+                &block_info,
+                None,
+                platform_version,
+                None,
+            );
+            if corrupted {
+                assert!(matches!(
+                    result,
+                    Err(Error::Drive(DriveError::UnexpectedElementType(_)))
+                ));
+            } else {
+                assert!(matches!(result, Err(Error::Protocol(_))));
+            }
+            assert_eq!(
+                drive
+                    .grove
+                    .root_hash(None, &platform_version.drive.grove_version)
+                    .unwrap()
+                    .unwrap(),
+                before
+            );
+            assert_eq!(balance(&drive, recipient, platform_version), 0);
+            // A caller-owned transaction retains writes until its caller rolls back/drops it.
+            let transaction = drive.grove.start_transaction();
+            assert!(drive
+                .apply_drive_operations(
+                    batch,
+                    true,
+                    &block_info,
+                    Some(&transaction),
+                    platform_version,
+                    None
+                )
+                .is_err());
+            assert_eq!(
+                drive
+                    .fetch_identity_balance(recipient, Some(&transaction), platform_version)
+                    .unwrap(),
+                Some(9)
+            );
+            drop(transaction);
+            assert_eq!(
+                drive
+                    .grove
+                    .root_hash(None, &platform_version.drive.grove_version)
+                    .unwrap()
+                    .unwrap(),
+                before
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_processing_pool_returns_in_legacy_apply_and_generic_conversion() {
+        let platform_version = PlatformVersion::latest();
+        let legacy = PlatformVersion::get(13).unwrap();
+        let drive = setup_drive_with_initial_state_structure(None);
+        let block_info = debt_test_block_info();
+        for amount in [0, 1] {
+            for apply in [false, true] {
+                assert!(matches!(
+                    drive.apply_drive_operations(
+                        vec![pool_credit(amount)],
+                        apply,
+                        &block_info,
+                        None,
+                        legacy,
+                        None
+                    ),
+                    Err(Error::Drive(DriveError::NotSupported(_)))
+                ));
+            }
+            for version in [legacy, platform_version] {
+                assert!(matches!(
+                    drive.convert_drive_operations_to_grove_operations(
+                        vec![pool_credit(amount)],
+                        &block_info,
+                        None,
+                        version
+                    ),
+                    Err(Error::Drive(DriveError::NotSupported(_)))
+                ));
+            }
+        }
+        assert_eq!(processing_pool(&drive, platform_version), 0);
+    }
 
     #[test]
     fn should_attribute_a_forfeited_removal_to_nobody() {

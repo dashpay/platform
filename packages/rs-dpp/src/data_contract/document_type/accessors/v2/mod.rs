@@ -183,6 +183,12 @@ pub trait DocumentTypeV2Getters {
     /// the keyword.
     fn property_constraints(&self) -> &BTreeMap<String, PropertyConstraint>;
 
+    /// The rules the stored document must meet for its owner to delete it, by
+    /// name, in the order they are checked (the `deleteConstraints` keyword,
+    /// protocol version 14). Empty on document types that declare none and on
+    /// those that predate the keyword.
+    fn delete_constraints(&self) -> &BTreeMap<String, PropertyConstraint>;
+
     /// The index properties whose values are read from the document a
     /// reference of the type points at (`"<reference property>.<field>"`,
     /// protocol version 14), by their names in the indexes. Empty on document

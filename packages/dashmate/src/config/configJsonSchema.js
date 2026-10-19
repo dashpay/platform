@@ -579,6 +579,11 @@ export default {
               type: 'integer',
               minimum: 0,
             },
+            cacheTtlSeconds: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Seconds between reloads of the quorum lists from Core',
+            },
             versionCheckHost: {
               type: 'string',
               description: 'Host to use for version checking (used in local networks)',
@@ -588,7 +593,7 @@ export default {
               description: 'Override for address host (used in local networks)',
             },
           },
-          required: ['enabled', 'docker', 'api', 'previousBlocksOffset', 'versionCheckHost', 'addressHostOverride'],
+          required: ['enabled', 'docker', 'api', 'previousBlocksOffset', 'cacheTtlSeconds', 'versionCheckHost', 'addressHostOverride'],
           additionalProperties: false,
         },
         gateway: {

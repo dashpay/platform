@@ -68,7 +68,7 @@ impl Drive {
     /// branches return a single collapsed pair regardless. See the
     /// module docstring for the per-shape cost contract.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_count_and_sum_range_no_proof(
+    pub(crate) fn execute_document_count_and_sum_range_no_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,

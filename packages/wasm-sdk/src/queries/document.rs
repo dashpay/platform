@@ -45,7 +45,11 @@ export type DocumentWhereOperator =
   | 'in'
   | 'In'
   | 'startsWith'
-  | 'StartsWith';
+  | 'StartsWith'
+  | 'contains'
+  | 'Contains'
+  | 'containsAny'
+  | 'ContainsAny';
 
 /**
  * Document query filtering clause represented as [field, operator, value].
@@ -526,6 +530,9 @@ pub(super) fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause,
         "BetweenExcludeRight" => WhereOperator::BetweenExcludeRight,
         "in" | "In" => WhereOperator::In,
         "startsWith" | "StartsWith" => WhereOperator::StartsWith,
+        // The elements of a typed array an index keys (protocol version 14).
+        "contains" | "Contains" => WhereOperator::Contains,
+        "containsAny" | "ContainsAny" => WhereOperator::ContainsAny,
         _ => {
             return Err(WasmSdkError::invalid_argument(format!(
                 "Unknown operator: {}",

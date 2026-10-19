@@ -155,8 +155,9 @@ let remaining_address_balances =
 
 ## Stage 5: Identity Nonce Validation
 
-Nonces prevent replay attacks. Each identity-signed transition carries a nonce that must
-be strictly greater than the last used nonce for that identity (or identity-contract pair).
+Nonces prevent replay attacks. Each nonce must be unused for that identity (or
+identity-contract pair) and fall within the bounded nonce window. Nonces can be
+accepted out of order; see [Identity Nonces](../data-model/identities.md#identity-nonces).
 The platform checks this against the stored nonce in state.
 
 ```rust
@@ -309,6 +310,16 @@ same bytes), so the owners of the inputs never signed what this check judges. Fr
 version 14 a failure is therefore refused without a fee, like a failed witness, instead of
 charging the inputs a penalty; check_tx runs this stage for the transition too, so such a
 transition does not reach a block.
+
+For `IdentityCreate` this stage checks that the identity id is the one the asset lock's outpoint
+derives, the structure of the keys, and the proof of possession of each key. The asset lock
+signature covers the keys but neither the identity id nor the key signatures, which are left
+out of the signable bytes. From protocol version 14 an identity id or proof of possession
+failure is therefore refused without a fee instead of charging the asset lock a penalty, and
+the asset lock is left as it was; a key structure failure is still charged. A block holding
+such a transition is refused, as for any unpaid result. `check_tx` runs this stage for
+`IdentityCreate` too, at every protocol version, so such a transition does not reach a block; it
+checks the identity id first, before verifying the asset lock proof.
 
 ## Stage 10: State Validation
 

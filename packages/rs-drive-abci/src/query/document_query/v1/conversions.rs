@@ -51,7 +51,7 @@ use drive::query::{IntegerRangeGridSpec, TimeRangeGridSpec};
 pub(super) fn where_operator_from_proto(op: i32) -> Result<WhereOperator, QueryError> {
     let proto_op = ProtoWhereOperator::try_from(op).map_err(|_| {
         QueryError::InvalidArgument(format!(
-            "unknown WhereOperator discriminant: {} (valid values: 0..=12, see \
+            "unknown WhereOperator discriminant: {} (valid values: 0..=14, see \
              `get_documents_request::WhereOperator`)",
             op
         ))
@@ -68,6 +68,10 @@ pub(super) fn where_operator_from_proto(op: i32) -> Result<WhereOperator, QueryE
         ProtoWhereOperator::BetweenExcludeRight => WhereOperator::BetweenExcludeRight,
         ProtoWhereOperator::In => WhereOperator::In,
         ProtoWhereOperator::StartsWith => WhereOperator::StartsWith,
+        // The elements of a typed array: Drive's grammar, index admissibility
+        // and lowering judge them (protocol version 14).
+        ProtoWhereOperator::Contains => WhereOperator::Contains,
+        ProtoWhereOperator::ContainsAny => WhereOperator::ContainsAny,
         // IN_TIME_RANGE is not an engine operator: it's resolved to a concrete
         // equality from authoritative block time before clause conversion (see
         // `is_time_range_clause` / `time_range_clause_from_proto`), so it must

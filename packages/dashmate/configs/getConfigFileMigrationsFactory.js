@@ -9,7 +9,11 @@ import {
   NETWORK_TESTNET,
   SSL_PROVIDERS,
 } from '../src/constants.js';
-import { stockImagePattern, historicalStockImagePattern } from '../src/config/stockImages.js';
+import {
+  stockImagePattern,
+  stockPrereleaseImagePattern,
+  historicalStockImagePattern,
+} from '../src/config/stockImages.js';
 import generateRandomString from '../src/util/generateRandomString.js';
 
 /**
@@ -1654,9 +1658,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         // happened to derive: null means "use the line this dashmate build
         // ships", and a string is the operator's own and is never touched.
         //
-        // This is the last time a stock tag has to be recognised by shape. From
-        // here on the distinction is recorded rather than inferred, so no future
-        // release needs a migration to re-pin these images.
+        // From here on the distinction is recorded rather than inferred. Releases
+        // from the 4.1 line kept storing the derived tag, so the 5.0.0-rc.3
+        // migration recognises stock tags by shape once more for configs they
+        // stamped.
         const stockDriveImage = stockImagePattern('dashpay/drive', 4);
         const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
 
@@ -1684,6 +1689,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         //
         // Only tags a release published are moved, so a tag the operator chose
         // in this namespace (dashpay/drive:4-local) is left alone.
+        //
+        // getStored, not get: get resolves the derived default to this build's
+        // own tag, which would pin the node to it.
         const stockDriveImage = stockImagePattern('dashpay/drive', 4);
         const stockRsDapiImage = stockImagePattern('dashpay/rs-dapi', 4);
 
@@ -1691,12 +1699,12 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           .forEach(([, options]) => {
             const driveDocker = options.platform?.drive?.abci?.docker;
             if (driveDocker && stockDriveImage.test(driveDocker.image)) {
-              driveDocker.image = base.get('platform.drive.abci.docker.image');
+              driveDocker.image = base.getStored('platform.drive.abci.docker.image');
             }
 
             const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
             if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
-              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+              rsDapiDocker.image = base.getStored('platform.dapi.rsDapi.docker.image');
             }
           });
 
@@ -1760,14 +1768,16 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.drive.tenderdash.docker.image = base.get('platform.drive.tenderdash.docker.image');
             }
 
+            // getStored, not get: get resolves the derived default to this
+            // build's own tag, which would pin the node to it.
             const driveDocker = options.platform?.drive?.abci?.docker;
             if (driveDocker && stockDriveImage.test(driveDocker.image)) {
-              driveDocker.image = base.get('platform.drive.abci.docker.image');
+              driveDocker.image = base.getStored('platform.drive.abci.docker.image');
             }
 
             const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
             if (rsDapiDocker && stockRsDapiImage.test(rsDapiDocker.image)) {
-              rsDapiDocker.image = base.get('platform.dapi.rsDapi.docker.image');
+              rsDapiDocker.image = base.getStored('platform.dapi.rsDapi.docker.image');
             }
 
             // The schema no longer defines this and accepts no undefined
@@ -1786,6 +1796,73 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             // when Core itself restarts.
             if (options.core?.rpc?.users?.drive_consensus) {
               options.core.rpc.users.drive_consensus.whitelist = base.getStored('core.rpc.users.drive_consensus.whitelist');
+            }
+          });
+
+        return configFile;
+      },
+      '5.0.0-beta.4': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // The quorum list service reloads from Core on this interval and answers
+            // from that copy only. Local networks take the short interval of the local
+            // preset; every other network keeps the service's own 60 s.
+            const quorumList = options.platform?.quorumList;
+            if (quorumList && quorumList.cacheTtlSeconds === undefined) {
+              quorumList.cacheTtlSeconds = getDefaultConfigByNetwork(options.network)
+                .get('platform.quorumList.cacheTtlSeconds');
+            }
+          });
+
+        return configFile;
+      },
+      '5.0.0-rc.2': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            // When Drive initializes a chain, it reads the platform activation fork with
+            // getdeploymentinfo: Core v24 reports deployments only there. Core refuses the
+            // method to the consensus user until its whitelist names it, and loads the
+            // whitelist only when Core itself restarts. Added to the operator's list rather
+            // than replacing it; a user without a whitelist may already call every method.
+            const whitelist = options.core?.rpc?.users?.drive_consensus?.whitelist;
+            if (Array.isArray(whitelist) && !whitelist.includes('getdeploymentinfo')) {
+              whitelist.push('getdeploymentinfo');
+            }
+          });
+
+        return configFile;
+      },
+      '5.0.0-rc.3': (configFile) => {
+        // Unset every Drive and rs-dapi tag an earlier release stored, so the node
+        // runs the image line this build ships. Drive carries the protocol: a node
+        // left on an older line keeps running the old protocol and stops when the
+        // network activates the new one.
+        //
+        // 4.1.0 and 4.1.1 were released from the 4.1 line, which still stored the
+        // derived tag (`4`), and stamp a version above the 4.1.0-rc.4 migration
+        // that unsets it. 4.2 and 5.0 prereleases wrote their own tag (`4-dev`,
+        // `4-beta`, `5-beta`, `5-rc`) into a config stamped 4.1.0 when they ran
+        // the 4.1.1 migration on it. Keyed at this release so configs those
+        // prereleases already stamped run it too.
+        //
+        // Only tags a release stored are unset. No release up to 5.0.0-rc.2
+        // stored the stable `5` tag, a minor line (`4.1`) or an exact version, so
+        // any of those is the operator's choice and is left alone.
+        const isStockImage = (repository, image) => (
+          stockImagePattern(repository, 4).test(image)
+          || stockPrereleaseImagePattern(repository, 5).test(image)
+        );
+
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const driveDocker = options.platform?.drive?.abci?.docker;
+            if (driveDocker && isStockImage('dashpay/drive', driveDocker.image)) {
+              driveDocker.image = null;
+            }
+
+            const rsDapiDocker = options.platform?.dapi?.rsDapi?.docker;
+            if (rsDapiDocker && isStockImage('dashpay/rs-dapi', rsDapiDocker.image)) {
+              rsDapiDocker.image = null;
             }
           });
 

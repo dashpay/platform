@@ -126,6 +126,7 @@ pub(crate) mod test_helpers;
 #[cfg(test)]
 pub(in crate::execution) mod tests {
     use crate::rpc::core::MockCoreRPCLike;
+    use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contracts::SystemDataContract;
@@ -2835,6 +2836,14 @@ pub(in crate::execution) mod tests {
             None,
             platform_version,
         )
+    }
+
+    /// Makes a token non-transferable (protocol version 14), as a `token_configuration_modification`
+    /// for the token contract helpers here.
+    pub(in crate::execution) fn make_token_non_transferable(
+        token_configuration: &mut TokenConfiguration,
+    ) {
+        token_configuration.set_transferable(false);
     }
 
     /// Like [`create_token_contract_with_owner_identity`], with the contract's creation epoch

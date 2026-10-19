@@ -1,18 +1,17 @@
+#[cfg(feature = "bls-signatures")]
+use crate::bls;
+#[cfg(feature = "ed25519-dalek")]
+use crate::ed25519_dalek;
 use crate::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use crate::identity::KeyType;
 use crate::util::hash::ripemd160_sha256;
 use crate::ProtocolError;
 use anyhow::anyhow;
-#[cfg(feature = "ed25519-dalek")]
-use dashcore::ed25519_dalek;
 use dashcore::hashes::Hash;
-use dashcore::key::Secp256k1;
 use dashcore::secp256k1::SecretKey;
 use dashcore::{Network, PublicKey as ECDSAPublicKey};
 use platform_value::{BinaryData, Bytes20};
-#[cfg(feature = "bls-signatures")]
-use {crate::bls_signatures, dashcore::blsful::Bls12381G2Impl};
 impl IdentityPublicKeyHashMethodsV0 for IdentityPublicKeyV0 {
     /// Get the original public key hash
     fn public_key_hash(&self) -> Result<[u8; 20], ProtocolError> {
@@ -83,27 +82,25 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
 ) -> Result<bool, ProtocolError> {
     match key_type {
         KeyType::ECDSA_SECP256K1 => {
-            let secp = Secp256k1::new();
-            let secret_key = match SecretKey::from_byte_array(private_key_bytes) {
+            let secret_key = match SecretKey::from_secret_bytes(*private_key_bytes) {
                 Ok(secret_key) => secret_key,
                 Err(_) => return Ok(false),
             };
             let private_key = dashcore::PrivateKey::new(secret_key, network);
 
-            Ok(private_key.public_key(&secp).to_bytes() == data.as_slice())
+            Ok(private_key.public_key().to_bytes() == data.as_slice())
         }
         KeyType::BLS12_381 => {
             #[cfg(feature = "bls-signatures")]
             {
-                let private_key: Option<bls_signatures::SecretKey<Bls12381G2Impl>> =
-                    bls_signatures::SecretKey::<Bls12381G2Impl>::from_be_bytes(private_key_bytes)
-                        .into();
+                let private_key: Option<bls::SecretKey> =
+                    bls::SecretKey::from_be_bytes(private_key_bytes);
                 if private_key.is_none() {
                     return Ok(false);
                 }
                 let private_key = private_key.expect("expected private key");
 
-                Ok(private_key.public_key().0.to_compressed() == data.as_slice())
+                Ok(private_key.public_key().to_bytes() == data.as_slice())
             }
             #[cfg(not(feature = "bls-signatures"))]
             return Err(ProtocolError::NotSupported(
@@ -111,15 +108,14 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
             ));
         }
         KeyType::ECDSA_HASH160 => {
-            let secp = Secp256k1::new();
-            let secret_key = match SecretKey::from_byte_array(private_key_bytes) {
+            let secret_key = match SecretKey::from_secret_bytes(*private_key_bytes) {
                 Ok(secret_key) => secret_key,
                 Err(_) => return Ok(false),
             };
             let private_key = dashcore::PrivateKey::new(secret_key, network);
 
             Ok(
-                ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()).as_slice()
+                ripemd160_sha256(private_key.public_key().to_bytes().as_slice()).as_slice()
                     == data.as_slice(),
             )
         }
@@ -146,8 +142,8 @@ pub(in crate::identity::identity_public_key) fn validate_private_key_bytes_for_k
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bls::Signature;
     use crate::identity::{Purpose, SecurityLevel};
-    use dashcore::blsful::{Bls12381G2Impl, Pairing, Signature, SignatureSchemes};
     use dashcore::Network;
     use dpp::version::PlatformVersion;
     use rand::rngs::StdRng;
@@ -160,10 +156,9 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
             .expect("expected to get keys");
         let decoded_secret_key =
-            dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_key)
-                .expect("expected to get secret key");
+            crate::bls::SecretKey::from_be_bytes(&secret_key).expect("expected to get secret key");
         let public_key = decoded_secret_key.public_key();
-        let decoded_public_key_data = public_key.0.to_compressed();
+        let decoded_public_key_data = public_key.to_bytes();
         assert_eq!(
             public_key_data.as_slice(),
             decoded_public_key_data.as_slice()
@@ -177,18 +172,13 @@ mod tests {
             .random_public_and_private_key_data(&mut rng, PlatformVersion::latest())
             .expect("expected to get keys");
         let decoded_secret_key =
-            dashcore::blsful::SecretKey::<Bls12381G2Impl>::from_be_bytes(&secret_key)
-                .expect("expected to get secret key");
-        let signature = decoded_secret_key
-            .sign(SignatureSchemes::Basic, b"hello")
-            .expect("expected to sign");
-        let compressed = signature.as_raw_value().to_compressed();
-        let g2 = <Bls12381G2Impl as Pairing>::Signature::from_compressed(&compressed)
-            .expect("G2 projective");
-        let decoded_signature = Signature::<Bls12381G2Impl>::Basic(g2);
+            crate::bls::SecretKey::from_be_bytes(&secret_key).expect("expected to get secret key");
+        let signature = decoded_secret_key.sign(b"hello").expect("expected to sign");
+        let compressed = signature.to_bytes();
+        let decoded_signature = Signature::from_compressed(&compressed).expect("valid signature");
         assert_eq!(
             compressed.as_slice(),
-            decoded_signature.as_raw_value().to_compressed().as_slice()
+            decoded_signature.to_bytes().as_slice()
         )
     }
 

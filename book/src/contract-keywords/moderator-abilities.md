@@ -49,11 +49,7 @@ The top-level properties of the type that only the contract's moderators write. 
   ],
   "properties": {
     "postId": {
-      "type": "array",
-      "byteArray": true,
-      "minItems": 32,
-      "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
+      "type": "identifier",
       "position": 0,
       "refersTo": { "type": "deletableDocument", "documentType": "post" }
     },
@@ -71,11 +67,11 @@ A user files a report and can never edit it. A report starts with no `status`: t
 ### How it works
 
 - A moderator changes the fields with the contract user moderation transition's `changeDocumentFields` action, naming the document type, the document id, the new value of each field (`null` removes one; in the JavaScript SDKs a field set to `undefined` is left out, as JSON leaves it out) and a reason.
-- The transition is checked in this order, each refusal paid: the document type exists (`InvalidDocumentTypeError`, 10406); every field named is listed under `changeFields` (41123); the signer is a moderator of the contract (41101), and for a seated team the declaration gives it `changeDocumentFields` on the type (41201) and the reason names a reason document its proposal lists (41203); the document exists (40101) and has not expired (`DocumentExpiredError`, 40140); and the document as changed is still one of its type: its schema (`JsonSchemaError`, 10101), its `propertyConstraints` and its unique indexes (`DuplicateUniqueIndexError`, 40105). A change naming no field, or a system property, is refused before any state is read (10905).
+- The transition is checked in this order, each refusal paid: the document type exists (`InvalidDocumentTypeError`, 10406); every field named is listed under `changeFields` (41123); the signer is a moderator of the contract (41101), and for a seated team the declaration gives it `changeDocumentFields` on the type (41201) and the reason names a reason document its proposal lists (41203); the document exists (40101) and has not expired (`DocumentExpiredError`, 40140); and the document as changed is still one of its type: its schema (`JsonSchemaError`, 10101), the [`propertyConstraints`](property-constraints.md#how-it-works) rules that read a field the change moves (directly or through `$old.`, which reads the document as stored before the change), `$revision` or a total (`DocumentPropertyConstraintViolatedError`, 10422), and its unique indexes (`DuplicateUniqueIndexError`, 40105). The other rules read only what the owner last wrote, and gave their verdict then. A change naming no field, or a system property, is refused before any state is read (10905).
 - Whoever owns the document may have it changed, the contract owner and the moderators included: the fields are the moderators', not the owner's, so the protection that keeps moderators from deleting each other's documents does not apply.
 - The document records who wrote the fields last, and when: [`$moderatedAt` and `$moderatedBy`](system-properties.md#moderatedat-and-moderatedby), which an index of the type may name to find what the moderators handled.
-- The document is updated in place. Every other property stays as its owner wrote it, `$updatedAt` among them, so a change never opens a [`deleteWithin`](deletion.md#moderatorabilitiesdeletewithin) window again. `$revision` goes up by one, so a replace its owner built on the earlier revision is refused (`InvalidDocumentRevisionError`, 40106) rather than writing over the change.
-- References are not checked again: no field a moderator writes holds one or is read by one (see the rules below). A report whose post a moderator has already deleted can still be marked handled.
+- The document is updated in place. Every other property stays as it was, `$updatedAt` among them, so a change never opens a [`deleteWithin`](deletion.md#moderatorabilitiesdeletewithin) window again. `$revision` goes up by one, so a replace its owner built on the earlier revision is refused (`InvalidDocumentRevisionError`, 40106) rather than writing over the change.
+- References are not checked again: no field a moderator writes holds one or is read by one (see the rules below). A report whose post a moderator has already deleted can still be marked handled. Nor is a `propertyConstraints` rule reading a referenced document judged: registration keeps such a rule from reading anything the change can break.
 - The moderator pays for the transition and the bytes it adds. Storage the change frees, or index entries it moves, are refunded to the document's owner, who paid for them. Nothing the type prices is charged: a moderator's change is no action of the owner's.
 - A change that changes nothing, every field already holding the value named, is refused (10905): it would bump `$revision` for nothing.
 - A change needs a listed reason from a seated team, but does not count toward the team's action share: changes of one document have no bound, as deletions of the content that exists do, so counting them would let a member farm the share.

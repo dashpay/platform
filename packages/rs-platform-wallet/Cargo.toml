@@ -92,6 +92,9 @@ name = "shielded_chunk_timing_bench"
 required-features = ["shielded"]
 
 [dev-dependencies]
+tempfile = "3.27.0"
+# `tests::fixtures` for the state transition summary tests.
+dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 # In-process Signer<IdentityPublicKey> for the manual testnet
 # verification example (`examples/dpns_marketplace_testnet.rs`).
 simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
@@ -103,6 +106,9 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 # (via `dashcore/test-utils`) for building funded, signable test wallets.
 # Dev-only, so the production build stays on the leaner default features.
 key-wallet = { workspace = true, features = ["test-utils"] }
+# `test-utils` exposes the SPV client's masternode list engine, so a test can
+# hold a quorum at a known verification status.
+dash-spv = { workspace = true, features = ["test-utils"] }
 rand = "0.8"
 # Drives the parallel decrypt benchmark in `shielded_decrypt_bench.rs`.
 rayon = "1.10"
