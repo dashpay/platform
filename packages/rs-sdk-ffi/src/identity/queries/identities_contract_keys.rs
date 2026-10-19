@@ -21,17 +21,21 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs
 /// - `contract_id`: Base58-encoded contract ID
 /// - `document_type_name`: Optional document type name (pass NULL if not needed)
-/// - `purposes`: Comma-separated list of key purposes (0=Authentication, 1=Encryption, 2=Decryption, 3=Withdraw)
+/// - `purposes`: Comma-separated list of key purposes (0=Authentication, 1=Encryption, 2=Decryption, 3=Transfer). Repeated IDs and purposes are asked for once.
 ///
 /// # Returns
-/// A JSON object read from a proved `getIdentitiesContractKeys` response. Each key is the current
-/// key Drive keeps for the identity, contract (or document type) and purpose: the newest key
-/// registered for it, which stays the current one when it is disabled (`disabled_at` is then set).
+/// A JSON object read from a proved `getIdentitiesContractKeys` response. Each value is the key
+/// Drive's current-key reference names for the identity, contract (or document type) and purpose.
+/// What that reference holds depends on the contract's storage requirement for the purpose:
+/// - `MultipleReferenceToLatest` (every bound authentication key): the key registered last. It
+///   stays the current one when it is disabled (`disabled_at` is then set).
+/// - `Unique`: the key written when the identity's first key of the purpose was registered.
+/// - `Multiple`: there is no reference, so the value is always `null`, whatever keys exist.
 ///
 /// Every requested identity ID (Base58) is a top-level key, and every requested purpose
 /// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`) is a key under it. A purpose
-/// the proof shows the identity has no key for is `null`. A missing identity or purpose is never a
-/// valid answer, so a caller can treat one as malformed:
+/// the proof shows no current-key reference for is `null`. A missing identity or purpose is never
+/// a valid answer, so a caller can treat one as malformed:
 ///
 /// ```json
 /// { "<identity id>": {
@@ -93,7 +97,7 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
         .collect();
 
     let identities_ids = match identities_ids {
-        Ok(ids) => ids,
+        Ok(ids) => unique(ids),
         Err(e) => return DashSDKResult::error(e),
     };
 
@@ -118,24 +122,23 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
     };
 
     // Parse comma-separated purposes
-    let purposes: Result<Vec<Purpose>, DashSDKError> = purposes_str
+    let purposes: Result<Vec<RequestedPurpose>, DashSDKError> = purposes_str
         .split(',')
         .map(|purpose_str| {
-            match purpose_str.trim().parse::<u8>() {
-                Ok(0) => Ok(Purpose::AUTHENTICATION),
-                Ok(1) => Ok(Purpose::ENCRYPTION),
-                Ok(2) => Ok(Purpose::DECRYPTION),
-                Ok(3) => Ok(Purpose::TRANSFER),
-                _ => Err(DashSDKError::new(
+            let number = purpose_str.trim().parse::<u8>().ok();
+            PURPOSES
+                .iter()
+                .find(|(n, _, _)| Some(*n) == number)
+                .map(|(_, purpose, name)| (*purpose, *name))
+                .ok_or_else(|| DashSDKError::new(
                     DashSDKErrorCode::InvalidParameter,
                     format!("Invalid purpose: {}. Must be 0 (Authentication), 1 (Encryption), 2 (Decryption), or 3 (Transfer)", purpose_str),
                 ))
-            }
         })
         .collect();
 
     let purposes = match purposes {
-        Ok(p) => p,
+        Ok(p) => unique(p),
         Err(e) => return DashSDKResult::error(e),
     };
 
@@ -144,7 +147,7 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
             identities_ids.clone(),
             contract_id,
             document_type_name,
-            purposes.clone(),
+            purposes.iter().map(|(purpose, _)| *purpose).collect(),
         )
         .map_err(FFIError::from)?;
         let keys = IdentitiesContractKeys::fetch(&wrapper.sdk, query)
@@ -170,30 +173,43 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
     }
 }
 
-fn purpose_name(purpose: Purpose) -> &'static str {
-    match purpose {
-        Purpose::AUTHENTICATION => "authentication",
-        Purpose::ENCRYPTION => "encryption",
-        Purpose::DECRYPTION => "decryption",
-        Purpose::TRANSFER => "transfer",
-        _ => "unknown",
+/// A purpose the caller asked for, with its name in the JSON answer.
+type RequestedPurpose = (Purpose, &'static str);
+
+/// The purposes this query takes: the number the caller passes, and the name it is answered under.
+const PURPOSES: [(u8, Purpose, &str); 4] = [
+    (0, Purpose::AUTHENTICATION, "authentication"),
+    (1, Purpose::ENCRYPTION, "encryption"),
+    (2, Purpose::DECRYPTION, "decryption"),
+    (3, Purpose::TRANSFER, "transfer"),
+];
+
+/// `items` in their first order, each once. Drive sizes the proof by the number of identities
+/// times the number of purposes, so a repeat would only stretch that limit.
+fn unique<T: PartialEq>(items: Vec<T>) -> Vec<T> {
+    let mut seen = Vec::with_capacity(items.len());
+    for item in items {
+        if !seen.contains(&item) {
+            seen.push(item);
+        }
     }
+    seen
 }
 
 /// The JSON answer for the requested identities and purposes. Every requested identity is a
-/// key, and every requested purpose is a key under it: `null` when the proof shows the identity
-/// has no current key of that purpose for the contract. Keys the proof carries for anything not
+/// key, and every requested purpose is a key under it: `null` when the proof shows no current-key
+/// reference for it. Keys the proof carries for anything not
 /// requested are left out.
 fn contract_keys_json(
     identities_ids: &[Identifier],
-    purposes: &[Purpose],
+    purposes: &[RequestedPurpose],
     keys: Option<&IdentitiesContractKeys>,
 ) -> serde_json::Map<String, serde_json::Value> {
     let mut json_obj = serde_json::Map::new();
     for identity_id in identities_ids {
         let keys_by_purpose = keys.and_then(|keys| keys.get(identity_id));
         let mut purpose_obj = serde_json::Map::new();
-        for purpose in purposes {
+        for (purpose, name) in purposes {
             let key = keys_by_purpose
                 .and_then(|keys_by_purpose| keys_by_purpose.get(purpose))
                 .and_then(Option::as_ref);
@@ -209,7 +225,7 @@ fn contract_keys_json(
                 }),
                 None => serde_json::Value::Null,
             };
-            purpose_obj.insert(purpose_name(*purpose).to_string(), value);
+            purpose_obj.insert(name.to_string(), value);
         }
         json_obj.insert(
             identity_id.to_string(Encoding::Base58),
@@ -223,7 +239,7 @@ fn contract_keys_json(
 mod tests {
     use super::*;
     use crate::test_utils::test_utils::destroy_mock_sdk_handle;
-    use crate::DashSDKResultDataType;
+    use crate::{dash_sdk_error_free, DashSDKResultDataType};
     use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, SecurityLevel};
     use dash_sdk::dpp::platform_value::BinaryData;
@@ -260,8 +276,11 @@ mod tests {
         keys
     }
 
-    fn requested_purposes() -> Vec<Purpose> {
-        vec![Purpose::ENCRYPTION, Purpose::DECRYPTION]
+    fn requested_purposes() -> Vec<RequestedPurpose> {
+        vec![
+            (Purpose::ENCRYPTION, "encryption"),
+            (Purpose::DECRYPTION, "decryption"),
+        ]
     }
 
     fn query() -> IdentitiesContractKeysQuery {
@@ -269,7 +288,7 @@ mod tests {
             vec![Identifier::new(IDENTITY_A), Identifier::new(IDENTITY_B)],
             Identifier::new(CONTRACT),
             None,
-            requested_purposes(),
+            vec![Purpose::ENCRYPTION, Purpose::DECRYPTION],
         )
         .expect("query")
     }
@@ -292,9 +311,19 @@ mod tests {
     }
 
     unsafe fn fetch(handle: *mut SDKHandle, contract: [u8; 32]) -> DashSDKResult {
-        let ids = CString::new(format!("{},{}", base58(IDENTITY_A), base58(IDENTITY_B))).unwrap();
+        let ids = format!("{},{}", base58(IDENTITY_A), base58(IDENTITY_B));
+        fetch_with(handle, &ids, contract, "1,2")
+    }
+
+    unsafe fn fetch_with(
+        handle: *mut SDKHandle,
+        ids: &str,
+        contract: [u8; 32],
+        purposes: &str,
+    ) -> DashSDKResult {
+        let ids = CString::new(ids).unwrap();
         let contract = CString::new(base58(contract)).unwrap();
-        let purposes = CString::new("1,2").unwrap();
+        let purposes = CString::new(purposes).unwrap();
         dash_sdk_identities_fetch_contract_keys(
             handle,
             ids.as_ptr(),
@@ -358,7 +387,7 @@ mod tests {
     fn should_leave_out_keys_that_were_not_requested() {
         let json = serde_json::Value::Object(contract_keys_json(
             &[Identifier::new(IDENTITY_B)],
-            &[Purpose::DECRYPTION],
+            &[(Purpose::DECRYPTION, "decryption")],
             Some(&proved_keys()),
         ));
         assert_eq!(
@@ -382,6 +411,23 @@ mod tests {
     }
 
     #[test]
+    fn should_ask_for_repeated_identities_and_purposes_once() {
+        // The mock knows only the request without repeats.
+        let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
+        let ids = format!(
+            "{},{},{}",
+            base58(IDENTITY_A),
+            base58(IDENTITY_B),
+            base58(IDENTITY_A)
+        );
+        let json = unsafe { json_of(fetch_with(handle, &ids, CONTRACT, "1,2,1")) };
+        destroy_mock_sdk_handle(handle);
+        assert_eq!(json.as_object().map(|o| o.len()), Some(2));
+        assert_eq!(json[base58(IDENTITY_A)]["encryption"]["id"], 9);
+        assert_eq!(json[base58(IDENTITY_B)], all_null());
+    }
+
+    #[test]
     fn should_return_nulls_when_nothing_is_found() {
         let handle = create_mock_sdk_handle_with_keys(None);
         let json = unsafe { json_of(fetch(handle, CONTRACT)) };
@@ -399,7 +445,7 @@ mod tests {
         let result = unsafe { fetch(handle, [4u8; 32]) };
         assert!(result.data.is_null());
         assert!(!result.error.is_null(), "the call must fail");
-        unsafe { crate::dash_sdk_error_free(result.error) };
+        unsafe { dash_sdk_error_free(result.error) };
         destroy_mock_sdk_handle(handle);
     }
 
@@ -408,7 +454,7 @@ mod tests {
         let result = unsafe { fetch(std::ptr::null_mut(), CONTRACT) };
         assert!(!result.error.is_null());
         let code = unsafe { (*result.error).code };
-        unsafe { crate::dash_sdk_error_free(result.error) };
+        unsafe { dash_sdk_error_free(result.error) };
         assert_eq!(code, DashSDKErrorCode::InvalidParameter);
     }
 }
