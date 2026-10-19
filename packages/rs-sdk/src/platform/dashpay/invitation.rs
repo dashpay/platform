@@ -73,7 +73,9 @@ use dpp::dashcore::secp256k1::{PublicKey, SecretKey};
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::{InstantLock, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut};
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::{
+    IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+};
 use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
@@ -1123,19 +1125,26 @@ where
     }
 }
 
-/// The identity carries exactly `expected` public keys — same ids, same key
-/// data. Key data is what only our signer could have produced, so a match
-/// means the identity was created by our claim, not by a finder of the link.
+/// The identity carries exactly `expected` public keys — every field of each
+/// key equal, other than `disabled_at`, which is not part of identity creation.
+/// Key data is what only our signer could have produced, so a match means the
+/// identity was created by our claim, not by a finder of the link; the other
+/// fields (purpose, security level, bounds, limits) are what we asked for.
 fn identity_carries_keys(
     identity: &Identity,
     expected: &BTreeMap<KeyID, IdentityPublicKey>,
 ) -> bool {
+    let creation_fields = |key: &IdentityPublicKey| {
+        let mut key = key.clone();
+        key.remove_disabled_at();
+        key
+    };
     let actual = identity.public_keys();
     actual.len() == expected.len()
         && expected.iter().all(|(id, key)| {
-            actual.get(id).is_some_and(|found| {
-                found.data() == key.data() && found.key_type() == key.key_type()
-            })
+            actual
+                .get(id)
+                .is_some_and(|found| creation_fields(found) == creation_fields(key))
         })
 }
 
@@ -1921,6 +1930,35 @@ mod tests {
         assert!(!identity_carries_keys(&identity_with_keys(theirs), &ours));
         let fewer: BTreeMap<KeyID, IdentityPublicKey> = [(0, test_key(0, 1))].into();
         assert!(!identity_carries_keys(&identity_with_keys(fewer), &ours));
+    }
+
+    /// Matching key data is not enough: a key that differs from what we
+    /// submitted in purpose, security level, read-only flag or usage limits is
+    /// not our identity. `disabled_at` is not part of creation and is ignored.
+    #[test]
+    fn should_not_adopt_an_identity_whose_keys_differ_beyond_their_data() {
+        let ours = our_keys();
+        let with_key = |key: IdentityPublicKey| {
+            let mut keys = ours.clone();
+            keys.insert(1, key);
+            identity_with_keys(keys)
+        };
+        let base = test_key(1, 2);
+
+        let mut other_purpose = base.clone();
+        other_purpose.set_purpose(Purpose::ENCRYPTION);
+        let mut other_level = base.clone();
+        other_level.set_security_level(SecurityLevel::CRITICAL);
+        let mut read_only = base.clone();
+        read_only.set_read_only(true);
+        let limited = base.clone().with_limits(Some(1_000), None);
+        for differing in [other_purpose, other_level, read_only, limited] {
+            assert!(!identity_carries_keys(&with_key(differing), &ours));
+        }
+
+        let mut disabled = base;
+        disabled.set_disabled_at(1);
+        assert!(identity_carries_keys(&with_key(disabled), &ours));
     }
 
     /// A testnet link in a mainnet wallet is refused with the typed
