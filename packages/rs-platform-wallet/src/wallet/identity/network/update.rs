@@ -350,6 +350,11 @@ impl IdentityWallet {
         // local wall-clock `disabled_at` placeholder, which the next
         // Platform refresh reconciles to the on-chain block time. Memory
         // holds the whole update even when the store fails.
+        let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
+        let disabled: Vec<u32> = disabled_ids
+            .into_iter()
+            .filter(|id| !added_ids.contains(id))
+            .collect();
         let added = added_keys
             .into_iter()
             .map(|key| {
@@ -362,7 +367,7 @@ impl IdentityWallet {
             .map(|d| d.as_millis() as u64)
             .unwrap_or_default();
         managed
-            .apply_landed_keys(added, &disabled_ids, disabled_at, &self.persister)
+            .apply_landed_keys(added, &disabled, disabled_at, &self.persister)
             .map_err(landed_but_not_stored)
     }
 

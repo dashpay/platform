@@ -731,14 +731,15 @@ impl ManagedIdentity {
 }
 
 /// `fetched`'s copy of a key, disabled when either copy is: the key's limits
-/// change without a revision bump, while a disable is permanent on Platform
-/// (the cache's timestamp first).
+/// change without a revision bump, while a disable is permanent on Platform.
+/// The fetch's timestamp is Platform's own, so it wins over the cache's,
+/// which may be a local placeholder.
 fn with_disabled_state_of(
     fetched: &IdentityPublicKey,
     cached: &IdentityPublicKey,
 ) -> IdentityPublicKey {
     let mut key = fetched.clone();
-    match cached.disabled_at().or(fetched.disabled_at()) {
+    match fetched.disabled_at().or(cached.disabled_at()) {
         Some(disabled_at) => key.set_disabled_at(disabled_at),
         None => key.remove_disabled_at(),
     }
@@ -759,6 +760,7 @@ mod tests {
     use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
     use std::collections::BTreeMap;
     use std::sync::Mutex;
 
@@ -818,10 +820,10 @@ mod tests {
     }
 
     /// A fetch at a lower revision than the cache's was answered before an
-    /// update the cache holds: it takes the cache's revision, key set and
-    /// disabled states back only per field, keeping those and taking the
-    /// balance and key limits, which change without a revision. A fetch at
-    /// the same revision or higher replaces the cache.
+    /// update the cache holds: the cache keeps its revision, key set and
+    /// disabled states, and takes the fetch's balance and key limits, which
+    /// change without a revision. A fetch at the same revision or higher
+    /// replaces the cache.
     #[test]
     fn should_take_a_fetched_identity_whole_only_when_it_is_not_older() {
         fn limited(id: KeyID, budget: u64, disabled_at: Option<u64>) -> IdentityPublicKey {
@@ -832,7 +834,7 @@ mod tests {
                 contract_bounds: None,
                 key_type: KeyType::ECDSA_SECP256K1,
                 read_only: false,
-                data: dpp::platform_value::BinaryData::new(vec![id as u8; 33]),
+                data: BinaryData::new(vec![id as u8; 33]),
                 disabled_at,
                 total_budget: Some(budget),
                 expires_at: None,
@@ -861,6 +863,11 @@ mod tests {
         let mut live = ManagedIdentity::new(at(6, 10, vec![limited(3, 100, None)]), 0);
         assert!(!live.take_fetched_identity(&at(5, 10, vec![limited(3, 100, Some(4))])));
         assert_eq!(live.identity.public_keys()[&3].disabled_at(), Some(4));
+        // Both disabled: the fetch's timestamp is Platform's, the cache's
+        // may be a local placeholder.
+        let mut stamped = ManagedIdentity::new(at(6, 10, vec![limited(3, 100, Some(99))]), 0);
+        assert!(!stamped.take_fetched_identity(&at(5, 10, vec![limited(3, 100, Some(4))])));
+        assert_eq!(stamped.identity.public_keys()[&3].disabled_at(), Some(4));
 
         let same = at(6, 30, vec![limited(3, 600, Some(9)), limited(4, 1, None)]);
         assert!(managed.take_fetched_identity(&same));

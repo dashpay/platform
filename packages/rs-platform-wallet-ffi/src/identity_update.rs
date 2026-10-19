@@ -380,8 +380,14 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer_at_revision
 
 /// Post-panic guidance for the identity update exports. A panic can strike
 /// after the transition was broadcast, so the outcome is ambiguous.
-const UPDATE_PANIC_GUIDANCE: &str = "The update may or may not have been broadcast: refresh the \
-     identity before deciding again. An update asked at a revision cannot land twice there.";
+const UPDATE_PANIC_GUIDANCE: &str =
+    "The update may or may not have been broadcast: refresh the identity before deciding again.";
+
+/// The same, for the export that pinned a revision: a retry there cannot
+/// land the update twice.
+const UPDATE_AT_REVISION_PANIC_GUIDANCE: &str = "The update may or may not have been broadcast: \
+     refresh the identity before deciding again. An update asked at a revision cannot land twice \
+     there.";
 
 /// The shared body of both update exports, under `catch_unwind`: a panic
 /// (most concretely `block_on_worker`'s `.expect` on a panicking worker)
@@ -399,7 +405,7 @@ unsafe fn update_identity_with_signer(
     revision: Option<u64>,
     signer_handle: *mut SignerHandle,
 ) -> PlatformWalletFFIResult {
-    guard_update(|| {
+    guard_update(revision.is_some(), || {
         update_identity_with_signer_unguarded(
             wallet_handle,
             identity_id,
@@ -413,12 +419,21 @@ unsafe fn update_identity_with_signer(
     })
 }
 
-/// `body` under the update exports' panic guard.
-fn guard_update(body: impl FnOnce() -> PlatformWalletFFIResult) -> PlatformWalletFFIResult {
+/// `body` under the update exports' panic guard; `at_revision` picks the
+/// guidance for the export that pinned a revision.
+fn guard_update(
+    at_revision: bool,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    let guidance = if at_revision {
+        UPDATE_AT_REVISION_PANIC_GUIDANCE
+    } else {
+        UPDATE_PANIC_GUIDANCE
+    };
     catch_panic_to_code(
         "identity update",
         PlatformWalletFFIResultCode::ErrorUnknown,
-        UPDATE_PANIC_GUIDANCE,
+        guidance,
         body,
     )
 }
@@ -522,24 +537,30 @@ mod tests {
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use std::ffi::CStr;
 
     /// A panic in an update body comes back as `ErrorUnknown` with the
     /// ambiguous-outcome guidance, not as a definitive failure, and never
     /// unwinds into the C frame.
     #[test]
     fn should_report_a_panicking_update_as_an_ambiguous_outcome() {
-        let result = guard_update(|| panic!("worker gone"));
-        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
-        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned();
-        assert!(
-            message.contains("identity update panicked: worker gone"),
-            "{message}"
-        );
-        assert!(message.contains(UPDATE_PANIC_GUIDANCE), "{message}");
+        for (at_revision, guidance) in [
+            (false, UPDATE_PANIC_GUIDANCE),
+            (true, UPDATE_AT_REVISION_PANIC_GUIDANCE),
+        ] {
+            let result = guard_update(at_revision, || panic!("worker gone"));
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
+            let message = unsafe { CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned();
+            assert!(
+                message.contains("identity update panicked: worker gone"),
+                "{message}"
+            );
+            assert!(message.ends_with(guidance), "{message}");
+        }
 
-        let ok = guard_update(PlatformWalletFFIResult::ok);
+        let ok = guard_update(true, PlatformWalletFFIResult::ok);
         assert_eq!(ok.code, PlatformWalletFFIResultCode::Success);
     }
 
