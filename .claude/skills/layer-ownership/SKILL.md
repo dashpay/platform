@@ -24,7 +24,7 @@ Do not rescan unchanged subsystems. The conventions are authoritative.
 
 ## Output
 
-In plans, name the owner when placement is not obvious. For PRs, lead with
+For every item, explicitly name current and target owner: repository,
+crate/package, and module (current: `new` for new code). For PRs, lead with
 `pass` or `changes requested`; each finding gives the file/line, misplaced
-responsibility, correct owner, and smallest move. State reviewed SHAs and any
-unavailable evidence.
+responsibility, and smallest move. State reviewed SHAs and unavailable evidence.
