@@ -301,6 +301,26 @@ pub unsafe extern "C" fn platform_wallet_parse_identity_update_transition_free(
 /// Update an identity by adding new public keys and/or disabling
 /// existing key IDs, signing the resulting `IdentityUpdateTransition`
 /// with the supplied `signer_handle`.
+///
+/// # Safety
+/// - `wallet_handle` must come from the platform-wallet handle registry.
+/// - `identity_id` must be null (refused) or point at a 32-byte buffer.
+/// - When `add_public_keys_count` is non-zero, `add_public_keys` must
+///   point at a valid, aligned `[IdentityPubkeyFFI; add_public_keys_count]`
+///   array whose rows satisfy the contract documented on
+///   [`IdentityPubkeyFFI`].
+/// - When `disable_public_key_ids_count` is non-zero,
+///   `disable_public_key_ids` must point at a valid, aligned
+///   `[u32; disable_public_key_ids_count]` array.
+/// - `signer_handle` must be a valid, non-destroyed `SignerHandle` from
+///   rs-sdk-ffi's signer constructors (typically `KeychainSigner.handle`,
+///   made by `dash_sdk_signer_create_with_ctx`). It is borrowed until the
+///   call returns and this function does NOT destroy it. Its callbacks run
+///   on a runtime worker thread while the calling thread blocks, so they
+///   must be safe to call from any thread, must not wait on the calling
+///   thread, and must not call back into this FFI.
+/// - Every buffer above stays owned by the caller and must stay valid and
+///   unmodified until the call returns; none is retained after it.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
@@ -329,6 +349,10 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
 /// another revision (it moved since the caller read it), the call fails
 /// before anything is signed or broadcast, so a caller that recorded
 /// `revision` knows the only revision this update can land at.
+///
+/// # Safety
+/// Same pointer, length and lifetime rules as
+/// [`platform_wallet_update_identity_with_signer`].
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_update_identity_with_signer_at_revision(
