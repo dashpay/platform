@@ -4,7 +4,7 @@ use super::key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus};
 use super::ManagedIdentity;
 use crate::changeset::{
     IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet, KeyWithBreadcrumb,
-    PersistenceError,
+    PersistenceError, PlatformWalletChangeSet,
 };
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
@@ -494,7 +494,7 @@ impl ManagedIdentity {
             return Ok(());
         }
         let keys_cs = self.layer_keys(keys);
-        let cs = crate::changeset::PlatformWalletChangeSet {
+        let cs = PlatformWalletChangeSet {
             identities: Some(self.snapshot_changeset()),
             identity_keys: Some(keys_cs),
             ..Default::default()
@@ -618,7 +618,9 @@ impl ManagedIdentity {
     /// the authoritative on-chain block time.
     ///
     /// Does **not** touch the identity revision — the caller bumps it
-    /// alongside the update transition.
+    /// alongside the update transition. A store failure is logged, not
+    /// returned; a landed update goes through [`Self::apply_landed_keys`],
+    /// which returns it and stores the revision too.
     pub fn disable_keys(
         &mut self,
         key_ids: &[KeyID],
@@ -631,7 +633,7 @@ impl ManagedIdentity {
         if keys_cs.upserts.is_empty() {
             return;
         }
-        let cs = crate::changeset::PlatformWalletChangeSet {
+        let cs = PlatformWalletChangeSet {
             identities: Some(self.snapshot_changeset()),
             identity_keys: Some(keys_cs),
             ..Default::default()
@@ -657,7 +659,7 @@ impl ManagedIdentity {
         keys_cs
             .upserts
             .extend(self.stamp_disabled(disabled, disabled_at).upserts);
-        persister.store(crate::changeset::PlatformWalletChangeSet {
+        persister.store(PlatformWalletChangeSet {
             identities: Some(self.snapshot_changeset()),
             identity_keys: Some(keys_cs),
             ..Default::default()
@@ -689,7 +691,7 @@ impl ManagedIdentity {
                 tracing::warn!(
                     identity = %identity_id,
                     key_id,
-                    "disable_keys: key id not present on identity; skipping",
+                    "stamping disabled keys: key id not present on identity; skipping",
                 );
                 continue;
             };
@@ -728,10 +730,9 @@ impl ManagedIdentity {
     }
 }
 
-/// `fetched`'s copy of a key with the disabled state the two copies agree
-/// on: the key's limits change without a revision bump, while a disable is
-/// permanent on Platform, so either copy showing one keeps it (the cache's
-/// timestamp first).
+/// `fetched`'s copy of a key, disabled when either copy is: the key's limits
+/// change without a revision bump, while a disable is permanent on Platform
+/// (the cache's timestamp first).
 fn with_disabled_state_of(
     fetched: &IdentityPublicKey,
     cached: &IdentityPublicKey,

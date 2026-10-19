@@ -259,8 +259,7 @@ impl IdentityWallet {
     ///     duplicate.
     ///   - The Swift `PersistentPublicKey` rows never receive
     ///     the new keys (rows arrive via the
-    ///     `IdentityKeysChangeSet` persister callback that
-    ///     `add_key` fires).
+    ///     `IdentityKeysChangeSet` persister callback).
     ///   - The Identity Keys list in the iOS app keeps showing
     ///     only the pre-update key set.
     ///
@@ -334,8 +333,10 @@ impl IdentityWallet {
                     breadcrumb: slot.map(|(wallet_id, idx)| (wallet_id, idx, id)),
                 });
             }
+            // Stored with the identity's snapshot even when no touched key
+            // is in the cache, so the revision reaches the store too.
             return managed
-                .add_keys(keys, &self.persister)
+                .apply_landed_keys(keys, &[], 0, &self.persister)
                 .map_err(landed_but_not_stored);
         }
 
@@ -833,6 +834,19 @@ mod update_identity_at_revision_tests {
         assert_eq!(store.changeset_count(), 1);
         assert_eq!(store.stored_revision(identity_id), Some(5));
         assert_eq!(store.key_rows().len(), 2);
+
+        // A cache already at the transition stores its snapshot too, even
+        // when no touched key is in it.
+        let store = Arc::new(CapturingStore::default());
+        let wallet = wallet_at_revision_on(5, store.clone()).await;
+        let wallet = wallet.identity();
+        store.clear();
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![7])
+            .await
+            .unwrap();
+        assert_eq!(store.changeset_count(), 1);
+        assert_eq!(store.stored_revision(identity_id), Some(5));
     }
 
     /// A cache at the transition's revision that lacks a key the update
