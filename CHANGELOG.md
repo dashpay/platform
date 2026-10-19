@@ -12,6 +12,13 @@
   rust-dashcore API, restoring native SDK builds while preserving canonical bytes.
 - **drive-abci:** preserve the fixed 48-byte quorum-key disk encoding independently
   of the BLS backend, with historical saved-state and checkpoint regression fixtures.
+- **platform-wallet (breaking):** `SpvRuntime::get_quorum_public_key`, the
+  quorum-key source for Platform proof verification, returns only keys dash-spv
+  verified. A quorum dash-spv holds unverified (`Unknown` or `Skipped`) fails with
+  the new `PlatformWalletError::QuorumNotVerified`, and
+  `PlatformWalletError::quorum_lookup_context_error` maps it to the SDK's non-ban
+  `ContextProviderError::QuorumSourceUnavailable`.
+  `get_quorum_public_key_with_status` still returns the key with its status.
 
 ### Changed
 
@@ -35,6 +42,10 @@
   (`WalletEvent::ChainTruncated`) updates the in-memory balance but is not yet
   mirrored to persisted wallet state
   ([#5380](https://github.com/dashpay/platform/issues/5380)).
+- **platform-wallet:** the SPV broadcast-readiness wait (`SpvRuntime::wait_until_ready`)
+  wakes when the client starts or dash-spv reports a peer update, instead of
+  re-checking every 250 ms, so a broadcast held for readiness goes out as soon
+  as the first peer connects.
 - **Breaking (Rust features):** remove DPP's `core_key_wallet_bip_38` and SDK's
   `core_key_wallet_bip38` feature forwards because upstream removed BIP38 support.
 - **Breaking (C API):** the unified FFI no longer exports
