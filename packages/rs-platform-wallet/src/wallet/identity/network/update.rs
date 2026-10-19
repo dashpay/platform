@@ -288,31 +288,47 @@ impl IdentityWallet {
         // included) and whatever later updates did to them: applying the
         // payload would take those back. A refresh persists no keys,
         // though, so the touched keys are stored here from the cache's own
-        // copies, with their derivation breadcrumbs.
+        // copies: an added key with its derivation breadcrumb (the store
+        // may not have its row yet), a disabled one with none, which keeps
+        // the breadcrumb its row already holds.
         if managed.identity.revision() >= transition_revision {
-            let slot = managed.wallet_id.zip(managed.identity_index);
             let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
-            let keys = added_ids
-                .iter()
-                .map(|&id| (id, identity_index.map(|idx| (self.wallet_id, idx, id))))
-                .chain(
-                    disabled_ids
-                        .iter()
-                        .filter(|id| !added_ids.contains(id))
-                        .map(|&id| (id, slot.map(|(wallet_id, idx)| (wallet_id, idx, id)))),
-                )
-                .filter_map(|(id, breadcrumb)| {
-                    Some(crate::changeset::KeyWithBreadcrumb {
-                        key: managed.identity.public_keys().get(&id)?.clone(),
-                        breadcrumb,
-                    })
-                })
-                .collect();
-            return managed.add_keys(keys, &self.persister).map_err(|e| {
-                PlatformWalletError::Persistence(format!(
+            let mut keys = Vec::new();
+            for &id in &added_ids {
+                let Some(key) = managed.identity.public_keys().get(&id) else {
+                    tracing::warn!(
+                        identity = %identity_id,
+                        key_id = id,
+                        "landed update: an added key is missing from a cache at its revision; not stored",
+                    );
+                    continue;
+                };
+                keys.push(crate::changeset::KeyWithBreadcrumb {
+                    key: key.clone(),
+                    breadcrumb: identity_index.map(|idx| (self.wallet_id, idx, id)),
+                });
+            }
+            for id in disabled_ids.iter().filter(|id| !added_ids.contains(id)) {
+                if let Some(key) = managed.identity.public_keys().get(id) {
+                    keys.push(crate::changeset::KeyWithBreadcrumb {
+                        key: key.clone(),
+                        breadcrumb: None,
+                    });
+                }
+            }
+            // A failure to store an added key is an error, as on the path
+            // below; one for disabled keys only is logged, as
+            // `disable_keys` does.
+            return match managed.add_keys(keys, &self.persister) {
+                Err(e) if !added_ids.is_empty() => Err(PlatformWalletError::Persistence(format!(
                     "identity key not persisted after update: {e}"
-                ))
-            });
+                ))),
+                Err(e) => {
+                    tracing::error!("Failed to persist changeset: {}", e);
+                    Ok(())
+                }
+                Ok(()) => Ok(()),
+            };
         }
 
         // The identity is at the transition's revision now, so a
@@ -718,7 +734,8 @@ mod update_identity_at_revision_tests {
     /// cache was refreshed to 6 before the confirmation of 5 came back:
     /// key 3 stays disabled, and is stored that way with its breadcrumb (a
     /// refresh stores no keys). A key the update disabled is stored as the
-    /// refresh has it, with the on-chain `disabled_at`.
+    /// refresh has it, with the on-chain `disabled_at`, and without a
+    /// breadcrumb, so its row keeps the one it holds.
     #[tokio::test]
     async fn should_store_the_newer_cache_keys_instead_of_an_older_landed_payload() {
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
@@ -763,6 +780,10 @@ mod update_identity_at_revision_tests {
         );
         let stored = store.stored_key(identity_id, 1).expect("key 1 stored");
         assert_eq!(stored.public_key.disabled_at(), Some(2));
+        assert_eq!(
+            stored.derivation_indices, None,
+            "the row keeps the breadcrumb it holds"
+        );
     }
 
     /// The key the landed-update tests add.

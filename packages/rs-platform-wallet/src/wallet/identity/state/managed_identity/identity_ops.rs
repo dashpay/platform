@@ -387,10 +387,11 @@ impl ManagedIdentity {
     /// (one applied locally after it landed, or a newer refresh), and
     /// taking it would put the cache back. Returns whether it was taken.
     ///
-    /// The revision orders keys, not the balance, which moves without it:
-    /// a fetch at the cache's revision is taken whole, as before, and a
-    /// dropped one takes no balance with it. Balances read by height go
-    /// through their own watermark.
+    /// The revision orders the keys an identity update adds and disables.
+    /// It does not order a key-limits update or the balance, which change
+    /// without it: a fetch at the cache's revision is taken whole, as
+    /// before, and a dropped one takes no balance with it. Balances read by
+    /// height go through their own watermark.
     ///
     /// Only the in-memory identity changes here; the caller persists.
     pub fn take_fetched_identity(&mut self, fetched: &Identity) -> bool {
@@ -399,6 +400,23 @@ impl ManagedIdentity {
         }
         self.identity = fetched.clone();
         true
+    }
+
+    /// `decisions` built from a fetch older than the cache, carried on the
+    /// cache's copies of their keys instead, so storing their breadcrumbs
+    /// (a key's derivation never changes) does not take back what the cache
+    /// holds newer. A key the cache lacks is left out.
+    pub fn key_decisions_on_cached_keys(
+        &self,
+        decisions: Vec<crate::changeset::KeyWithBreadcrumb>,
+    ) -> Vec<crate::changeset::KeyWithBreadcrumb> {
+        decisions
+            .into_iter()
+            .filter_map(|mut decision| {
+                decision.key = self.identity.public_keys().get(&decision.key.id())?.clone();
+                Some(decision)
+            })
+            .collect()
     }
 
     /// Layer an `IdentityPublicKey` onto this identity's

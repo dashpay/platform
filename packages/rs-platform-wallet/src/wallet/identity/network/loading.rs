@@ -1,7 +1,6 @@
 //! Load identities by HD index / DPNS name, refresh state.
 
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
@@ -265,17 +264,8 @@ impl IdentityWallet {
                 let key_decisions = if managed.take_fetched_identity(&identity) {
                     key_decisions
                 } else {
-                    // The breadcrumbs still hold (a key's derivation never
-                    // changes), but each rides on the cache's newer key so
-                    // its upsert does not take that key back either.
                     identity = managed.identity.clone();
-                    key_decisions
-                        .into_iter()
-                        .filter_map(|mut decision| {
-                            decision.key = identity.public_keys().get(&decision.key.id())?.clone();
-                            Some(decision)
-                        })
-                        .collect()
+                    managed.key_decisions_on_cached_keys(key_decisions)
                 };
                 managed.set_status(IdentityStatus::Active, &self.persister);
                 managed.wallet_id = Some(wallet_id);
@@ -540,6 +530,7 @@ mod tests {
     async fn should_not_take_the_cache_back_with_an_older_refresh() {
         use super::super::signing_key::tests::{identity, wallet_with_signing_keys_on};
         use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
         use dpp::identity::{KeyType, Purpose, SecurityLevel};
         use dpp::prelude::Identifier;
 
@@ -583,6 +574,131 @@ mod tests {
                 .identity;
             assert_eq!(held.revision(), settled, "answered at {answered}");
             assert_eq!(&returned, held);
+            // The cache's keys are CRITICAL, the answer's HIGH: a dropped
+            // answer leaves the cache's.
+            let level = held.public_keys()[&1].security_level();
+            let expected = if answered < cached {
+                SecurityLevel::CRITICAL
+            } else {
+                SecurityLevel::HIGH
+            };
+            assert_eq!(level, expected, "answered at {answered}");
+        }
+    }
+
+    /// A load by index answered before an update the cache already took
+    /// leaves the cache's keys, in memory and in what it stores, and returns
+    /// the cache; an answer at the cache's revision is taken.
+    #[tokio::test]
+    async fn should_keep_a_newer_cache_when_a_load_answers_older() {
+        use super::super::signing_key::tests::{identity, wallet_with_signing_keys_on};
+        use crate::changeset::{
+            ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+        };
+        use crate::wallet::platform_wallet::WalletId;
+        use dash_sdk::platform::types::identity::PublicKeyHash;
+        use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::{KeyType, Purpose, SecurityLevel};
+        use dpp::prelude::Identifier;
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Default)]
+        struct Store(Mutex<Vec<PlatformWalletChangeSet>>);
+        impl PlatformWalletPersistence for Store {
+            fn store(
+                &self,
+                _: WalletId,
+                changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                self.0.lock().unwrap().push(changeset);
+                Ok(())
+            }
+            fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        // The probe the loader sends for index 0 of the fixture's seed.
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &[7; 64]).unwrap();
+        let probe = derive_load_probe_hash(
+            ResolvedLoadKeyHashSource::Master(&master),
+            Network::Testnet,
+            0,
+        )
+        .unwrap();
+
+        let identity_id = Identifier::default();
+        for (answered, taken) in [(5, false), (6, true)] {
+            let mut answer = identity(
+                Purpose::AUTHENTICATION,
+                SecurityLevel::HIGH,
+                KeyType::ECDSA_SECP256K1,
+            );
+            answer.set_revision(answered);
+            let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+            sdk.mock()
+                .expect_fetch(PublicKeyHash(probe), Some(answer))
+                .await
+                .unwrap();
+            let store = Arc::new(Store::default());
+            let wallet = wallet_with_signing_keys_on(sdk, store.clone()).await;
+            let wallet = wallet.identity();
+            {
+                let mut wm = wallet.wallet_manager.write().await;
+                wm.get_wallet_info_mut(&wallet.wallet_id)
+                    .unwrap()
+                    .identity_manager
+                    .managed_identity_mut(&identity_id)
+                    .unwrap()
+                    .identity
+                    .set_revision(6);
+            }
+            store.0.lock().unwrap().clear();
+
+            let returned = wallet
+                .load_identity_by_index_from_master(0, &master)
+                .await
+                .unwrap()
+                .unwrap();
+            let expected = if taken {
+                SecurityLevel::HIGH
+            } else {
+                SecurityLevel::CRITICAL
+            };
+            assert_eq!(returned.revision(), 6, "answered at {answered}");
+            assert_eq!(
+                returned.public_keys()[&1].security_level(),
+                expected,
+                "answered at {answered}"
+            );
+            let wm = wallet.wallet_manager.read().await;
+            let held = &wm
+                .get_wallet_info(&wallet.wallet_id)
+                .unwrap()
+                .identity_manager
+                .identity(&identity_id)
+                .unwrap()
+                .identity;
+            assert_eq!(held, &returned);
+            // It stored key rows, each carrying the key the cache holds.
+            let stored = store.0.lock().unwrap();
+            let rows: Vec<_> = stored
+                .iter()
+                .flat_map(|changeset| changeset.identity_keys.iter())
+                .flat_map(|keys| keys.upserts.values())
+                .collect();
+            assert!(!rows.is_empty(), "answered at {answered}");
+            for entry in rows {
+                assert_eq!(
+                    entry.public_key.security_level(),
+                    expected,
+                    "answered at {answered}"
+                );
+            }
         }
     }
 
