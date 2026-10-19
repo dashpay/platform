@@ -264,7 +264,9 @@ impl ValidationSchema {
                 )?;
             }
             // The root reached by a reference keeps the document type keywords beside its
-            // own, which a nested schema would refuse.
+            // own, which a nested schema would refuse. It is built again in the reference's
+            // reading only for the keywords that reading refuses (a property's `maxBytes`
+            // when `contains` reaches the root, say): the node built is the root's.
             let other_keys = if std::ptr::eq(target, root) {
                 OtherKeys::Document
             } else {
@@ -690,8 +692,10 @@ fn refuse_a_property_reference_the_parser_resolves_elsewhere(
 /// What the JSON Schema validator reads of a schema's identifiers.
 #[derive(Default)]
 struct Identifiers {
-    /// The URL of every schema an `$id` names, as the validator's resolver indexes it.
-    named: BTreeSet<String>,
+    /// The URL of every schema an `$id` names, as the validator's resolver indexes it, with
+    /// the address of the schema it names. A URL named twice names the later schema, as the
+    /// resolver's index keeps the last.
+    named: BTreeMap<String, *const Value>,
     /// The `$ref` of every schema built, with the URL the validator compiles it with, `None`
     /// when the reference is not a URL reference.
     references: Vec<(String, Option<Url>)>,
@@ -700,8 +704,8 @@ struct Identifiers {
 /// Refuses a schema in which a `$ref` the builder reached would be resolved by the JSON
 /// Schema validator to another schema than [`resolve_reference`] resolves it to: one whose
 /// URL, given against the `$id` above it, differs from its URL against `root_url`, or names
-/// a schema an `$id` names, which the validator resolves to before it follows the pointer.
-/// `built` holds every schema built, by address.
+/// a schema an `$id` names other than the one its pointer reaches, which the validator
+/// resolves to before it follows the pointer. `built` holds every schema built, by address.
 fn refuse_references_an_id_redirects(
     root: &Value,
     root_url: &Url,
@@ -720,8 +724,12 @@ fn refuse_references_an_id_redirects(
     for (reference, url) in &identifiers.references {
         let redirected = match url {
             Some(url) => {
+                let target = std::ptr::from_ref(resolve_reference(root, root_url, reference)?);
                 reference_url(root_url, reference).as_ref() != Some(url)
-                    || identifiers.named.contains(url.as_str())
+                    || identifiers
+                        .named
+                        .get(url.as_str())
+                        .is_some_and(|named| *named != target)
             }
             None => true,
         };
@@ -773,7 +781,9 @@ fn collect_identifiers(
                     if named.fragment() == Some("") {
                         named.set_fragment(None);
                     }
-                    identifiers.named.insert(named.to_string());
+                    identifiers
+                        .named
+                        .insert(named.to_string(), std::ptr::from_ref(schema));
                     named_here = Some(named);
                 }
                 compiled_here = Some(

@@ -1359,6 +1359,97 @@ fn should_build_a_reference_whose_uncompiled_copy_sits_below_an_absolute_id() {
 }
 
 #[test]
+fn should_build_a_reference_to_a_schema_whose_id_names_its_own_pointer() {
+    // The validator finds the schema by its `$id` before it follows the pointer, and both
+    // reach the same schema
+    let schema = build(platform_value!({
+        "type": "object",
+        "properties": { "user": { "$ref": "#/$defs/label" } },
+        "$defs": {
+            "label": { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
+        },
+    }));
+    assert_eq!(
+        string(&schema.references["#/$defs/label"]).max_length,
+        Some(1)
+    );
+}
+
+/// What the test above rests on: the existing validator holds the reference to the schema
+/// both its `$id` and its pointer reach.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_on_a_schema_whose_id_names_its_own_pointer() {
+    use crate::validation::JsonSchemaValidator;
+
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": { "user": { "$ref": "#/$defs/label" } },
+        "$defs": {
+            "label": { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
+        },
+    });
+    let accepts = |user: &str| {
+        JsonSchemaValidator::new()
+            .compile_and_validate(
+                &schema,
+                &serde_json::json!({ "user": user }),
+                PlatformVersion::latest(),
+            )
+            .expect("expected the schema to compile")
+            .is_valid()
+    };
+    assert!(accepts("a"));
+    assert!(!accepts("ab"));
+}
+
+#[test]
+fn should_read_no_identifiers_from_enum_and_const_values_but_from_properties_so_named() {
+    // `enum` and `const` values are data: the validator indexes no `$id` in them and
+    // compiles no `$ref`
+    let schema = build(platform_value!({
+        "type": "object",
+        "properties": {
+            "choice": {
+                "type": "object",
+                "enum": [{ "$id": "https://example.com/member", "$ref": "#/$defs/label" }],
+                "const": { "$id": "#/$defs/label" },
+            },
+            "user": { "$ref": "#/$defs/label" },
+        },
+        "$defs": { "label": { "type": "string", "maxLength": 10 } },
+    }));
+    assert_eq!(
+        string(&schema.references["#/$defs/label"]).max_length,
+        Some(10)
+    );
+
+    // but a property named `enum` is a schema, whose reference the validator compiles
+    let message = refusal(platform_value!({
+        "type": "object",
+        "properties": {
+            "named": { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
+            "enum": { "$ref": "#/$defs/label" },
+        },
+        "$defs": { "label": { "type": "string", "maxLength": 10 } },
+    }));
+    assert!(message.contains("an `$id` names"), "{message}");
+}
+
+#[test]
+fn should_refuse_a_platform_keyword_of_the_root_when_contains_reaches_the_root() {
+    // Matched against an element inside `contains`, the root's `maxBytes` bounds nothing
+    let message = refusal(platform_value!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string", "maxLength": 63, "maxBytes": 8 },
+            "names": containing_reference("#"),
+        },
+    }));
+    assert!(message.contains("inside `contains`"), "{message}");
+}
+
+#[test]
 fn should_refuse_a_reference_that_does_not_resolve() {
     let root = platform_value!({
         "type": "object",
