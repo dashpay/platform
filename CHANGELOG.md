@@ -1,3 +1,19 @@
+## [5.0.0-rc.5](https://github.com/dashpay/platform/compare/v5.0.0-rc.4...v5.0.0-rc.5) (2026-10-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform-wallet:** persist DashPay coreHeight backfill coverage so a relaunch resumes instead of rewinding again (#5026)
+
+### Bug Fixes
+
+* **drive-abci:** send ChainLocks to Core with the block hash in display order ([#5490](https://github.com/dashpay/platform/issues/5490))
+* **platform-wallet:** build version-3 ProUpServTx for Core v24 masternodes ([#5408](https://github.com/dashpay/platform/issues/5408))
+* **platform-wallet:** persist DashPay coreHeight backfill coverage so a relaunch resumes instead of rewinding again ([#5026](https://github.com/dashpay/platform/issues/5026))
+* **sdk:** read contested DPNS names as the bare labels Drive returns ([#5482](https://github.com/dashpay/platform/issues/5482))
+* **sdk:** verify no-limit proposer, distribution and group queries against the page Drive proves ([#5485](https://github.com/dashpay/platform/issues/5485))
+* **sdk:** verify no-limit vote queries against the page Drive proves ([#5483](https://github.com/dashpay/platform/issues/5483))
+
 ## [5.0.0-rc.4](https://github.com/dashpay/platform/compare/v5.0.0-rc.3...v5.0.0-rc.4) (2026-10-17)
 
 
@@ -2877,27 +2893,27 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 
 ### Features
 
-* add IdentityCreateFromShieldedPool state transition (shielded-pool-funded identity creation) ([#3816](undefined/undefined/undefined/issues/3816))
-* **drive:** shielded fees for Shield/ShieldFromAssetLock + shield credit conservation ([#3793](undefined/undefined/undefined/issues/3793))
-* **platform-wallet:** add platform-wallet-storage crate (sqlite persister) ([#3625](undefined/undefined/undefined/issues/3625))
-* shielded scan-based spend detection and OVK outgoing-note history ([#3819](undefined/undefined/undefined/issues/3819))
-* **swift-sdk:** iOS simluator writes logs to disk ([#3785](undefined/undefined/undefined/issues/3785))
+* add IdentityCreateFromShieldedPool state transition (shielded-pool-funded identity creation) ([#3816](https://github.com/dashpay/platform/issues/3816))
+* **drive:** shielded fees for Shield/ShieldFromAssetLock + shield credit conservation ([#3793](https://github.com/dashpay/platform/issues/3793))
+* **platform-wallet:** add platform-wallet-storage crate (sqlite persister) ([#3625](https://github.com/dashpay/platform/issues/3625))
+* shielded scan-based spend detection and OVK outgoing-note history ([#3819](https://github.com/dashpay/platform/issues/3819))
+* **swift-sdk:** iOS simluator writes logs to disk ([#3785](https://github.com/dashpay/platform/issues/3785))
 
 
 ### Bug Fixes
 
-* **dpp:** return error instead of panicking on storage-fee refund div-by-zero ([#3799](undefined/undefined/undefined/issues/3799))
-* **drive:** charge fees for unshield and shielded withdrawal ([#3800](undefined/undefined/undefined/issues/3800))
-* **drive:** correct fee/credit accounting on the address-funding asset-lock penalty path ([#3818](undefined/undefined/undefined/issues/3818))
-* **drive:** strict merged-query verification for unshield & shielded withdrawal proofs ([#3814](undefined/undefined/undefined/issues/3814))
-* **drive:** unify shielded pool genesis/upgrade construction to prevent state divergence ([#3801](undefined/undefined/undefined/issues/3801))
-* **platform-wallet:** zeroize private keys when freeing preview rows ([#3797](undefined/undefined/undefined/issues/3797))
-* **rs-sdk-ffi:** shrink signature allocation to len before leaking (capacity UB) ([#3798](undefined/undefined/undefined/issues/3798))
+* **dpp:** return error instead of panicking on storage-fee refund div-by-zero ([#3799](https://github.com/dashpay/platform/issues/3799))
+* **drive:** charge fees for unshield and shielded withdrawal ([#3800](https://github.com/dashpay/platform/issues/3800))
+* **drive:** correct fee/credit accounting on the address-funding asset-lock penalty path ([#3818](https://github.com/dashpay/platform/issues/3818))
+* **drive:** strict merged-query verification for unshield & shielded withdrawal proofs ([#3814](https://github.com/dashpay/platform/issues/3814))
+* **drive:** unify shielded pool genesis/upgrade construction to prevent state divergence ([#3801](https://github.com/dashpay/platform/issues/3801))
+* **platform-wallet:** zeroize private keys when freeing preview rows ([#3797](https://github.com/dashpay/platform/issues/3797))
+* **rs-sdk-ffi:** shrink signature allocation to len before leaking (capacity UB) ([#3798](https://github.com/dashpay/platform/issues/3798))
 
 
 ### Miscellaneous Chores
 
-* tidy follow-ups from the shielded withdrawal fee review ([#3802](undefined/undefined/undefined/issues/3802))
+* tidy follow-ups from the shielded withdrawal fee review ([#3802](https://github.com/dashpay/platform/issues/3802))
 
 ## [4.0.0-beta.3](https://github.com/dashpay/platform/compare/v4.0.0-beta.2...v4.0.0-beta.3) (2026-06-04)
 
@@ -2920,27 +2936,27 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 
 ### Features
 
-* add register-contract script to rs-scripts ([#3744](undefined/undefined/undefined/issues/3744))
-* **dashmate:** configure docker build args via config ([#3764](undefined/undefined/undefined/issues/3764))
-* **drive-abci:** gate shielded-pool seeding behind `shielded_test_data` feature ([#3774](undefined/undefined/undefined/issues/3774))
-* **drive:** add document history retrieval ([#3725](undefined/undefined/undefined/issues/3725))
-* **platform:** add GetShieldedNotesCount query for sync progress ([#3769](undefined/undefined/undefined/issues/3769))
-* seed Orchard shielded pool at genesis with fast, observable sync ([#3732](undefined/undefined/undefined/issues/3732))
+* add register-contract script to rs-scripts ([#3744](https://github.com/dashpay/platform/issues/3744))
+* **dashmate:** configure docker build args via config ([#3764](https://github.com/dashpay/platform/issues/3764))
+* **drive-abci:** gate shielded-pool seeding behind `shielded_test_data` feature ([#3774](https://github.com/dashpay/platform/issues/3774))
+* **drive:** add document history retrieval ([#3725](https://github.com/dashpay/platform/issues/3725))
+* **platform:** add GetShieldedNotesCount query for sync progress ([#3769](https://github.com/dashpay/platform/issues/3769))
+* seed Orchard shielded pool at genesis with fast, observable sync ([#3732](https://github.com/dashpay/platform/issues/3732))
 
 
 ### Bug Fixes
 
-* **dashmate:** prevent orphaned verification container blocking SSL renewal ([#3162](undefined/undefined/undefined/issues/3162))
-* **dpp:** block pre-programmed distribution changes on token update ([#3461](undefined/undefined/undefined/issues/3461))
-* **drive:** consolidate historical contract proof verification retry logic ([#3165](undefined/undefined/undefined/issues/3165))
-* **platform-wallet:** fix spv client deadlocking himself when trying to stop ([#3742](undefined/undefined/undefined/issues/3742))
-* **platform-wallet:** satisfy accessors clippy lints ([#3596](undefined/undefined/undefined/issues/3596))
+* **dashmate:** prevent orphaned verification container blocking SSL renewal ([#3162](https://github.com/dashpay/platform/issues/3162))
+* **dpp:** block pre-programmed distribution changes on token update ([#3461](https://github.com/dashpay/platform/issues/3461))
+* **drive:** consolidate historical contract proof verification retry logic ([#3165](https://github.com/dashpay/platform/issues/3165))
+* **platform-wallet:** fix spv client deadlocking himself when trying to stop ([#3742](https://github.com/dashpay/platform/issues/3742))
+* **platform-wallet:** satisfy accessors clippy lints ([#3596](https://github.com/dashpay/platform/issues/3596))
 
 
 ### Tests
 
-* **swift-sdk:** swift-sdk test updated and added to CI ([#3479](undefined/undefined/undefined/issues/3479))
-* **wasm-sdk:** fix flaky tokenPaymentInfo document balance assertions ([#3771](undefined/undefined/undefined/issues/3771))
+* **swift-sdk:** swift-sdk test updated and added to CI ([#3479](https://github.com/dashpay/platform/issues/3479))
+* **wasm-sdk:** fix flaky tokenPaymentInfo document balance assertions ([#3771](https://github.com/dashpay/platform/issues/3771))
 
 ## [3.1.0-dev.8](https://github.com/dashpay/platform/compare/v3.1.0-dev.7...v3.1.0-dev.8) (2026-05-28)
 
