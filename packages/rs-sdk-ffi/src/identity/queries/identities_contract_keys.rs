@@ -7,7 +7,6 @@ use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::identities_contract_keys_query::IdentitiesContractKeysQuery;
 use dash_sdk::platform::Fetch;
-use std::collections::BTreeSet;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
@@ -24,15 +23,16 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// - `contract_id`: Base58-encoded contract ID
 /// - `document_type_name`: Optional document type name (pass NULL if not needed; an empty name is
 ///   the same as NULL)
-/// - `purposes`: Comma-separated list of key purposes (0=Authentication, 1=Encryption, 2=Decryption, 3=Transfer). Repeated IDs and purposes are asked for once.
+/// - `purposes`: Comma-separated list of key purposes (0=Authentication, 1=Encryption, 2=Decryption, 3=Transfer). The SDK asks for a repeated ID or purpose once (`IdentitiesContractKeysQuery`).
 ///
 /// # Returns
 /// A JSON object read from a proved `getIdentitiesContractKeys` response. Each value is the key
 /// Drive's current-key reference names for the identity, contract (or document type) and purpose.
 /// What that reference holds depends on the contract's storage requirement for the purpose (as
 /// Drive writes it from protocol version 14):
-/// - `MultipleReferenceToLatest` (every bound authentication key): the key registered last. It
-///   stays the current one when it is disabled (`disabled_at` is then set).
+/// - `MultipleReferenceToLatest` (every bound authentication key): the key of the latest
+///   registration, and of the keys one identity update registers together, the one with the
+///   highest ID. It stays the current one when it is disabled (`disabled_at` is then set).
 /// - `Unique`: for a contract, the first key registered, also once it is disabled; for a document
 ///   type, the last.
 /// - `Multiple`: there is no reference, so the value is always `null`, whatever keys exist.
@@ -123,7 +123,7 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
         .collect();
 
     let identities_ids = match identities_ids {
-        Ok(ids) => unique(ids),
+        Ok(ids) => ids,
         Err(e) => return DashSDKResult::error(e),
     };
 
@@ -158,7 +158,7 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
         .collect();
 
     let purposes = match purposes {
-        Ok(p) => unique(p),
+        Ok(p) => p,
         Err(e) => return DashSDKResult::error(e),
     };
 
@@ -203,16 +203,6 @@ const PURPOSES: [(u8, Purpose, &str); 4] = [
     (2, Purpose::DECRYPTION, "decryption"),
     (3, Purpose::TRANSFER, "transfer"),
 ];
-
-/// `items` in their first order, each once. Drive sizes the proof by the number of identities
-/// times the number of purposes, so a repeat would only stretch that limit.
-fn unique<T: Ord + Clone>(items: Vec<T>) -> Vec<T> {
-    let mut seen = BTreeSet::new();
-    items
-        .into_iter()
-        .filter(|item| seen.insert(item.clone()))
-        .collect()
-}
 
 /// The JSON answer for the requested identities and purposes. Every requested identity is a
 /// key, and every requested purpose is a key under it: `null` when the proof shows no current-key
@@ -424,13 +414,13 @@ mod tests {
     #[test]
     fn should_leave_out_keys_that_were_not_requested() {
         let json = serde_json::Value::Object(contract_keys_json(
-            &[Identifier::new(IDENTITY_B)],
+            &[Identifier::new(IDENTITY_A)],
             &[(Purpose::DECRYPTION, "decryption")],
             Some(&proved_keys()),
         ));
         assert_eq!(
             json,
-            serde_json::json!({ base58(IDENTITY_B): { "decryption": null } })
+            serde_json::json!({ base58(IDENTITY_A): { "decryption": null } })
         );
     }
 

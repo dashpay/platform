@@ -5,12 +5,17 @@ use dpp::identity::Purpose;
 use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
 };
+use std::collections::BTreeSet;
 
 use crate::platform::query::Query;
 use crate::platform::Identifier;
 use crate::Error;
 
-/// Request that is used to query identities' contract keys
+/// Request that is used to query identities' contract keys.
+///
+/// A repeated identity or purpose is sent once, in the order it first appears: Drive sizes the
+/// proof by the number of identities times the number of purposes, so every caller sends, and the
+/// proof is verified against, the same request whatever repeats it was given.
 #[derive(Debug, Clone, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentitiesContractKeysQuery {
@@ -42,25 +47,42 @@ impl IdentitiesContractKeysQuery {
     }
 }
 
+/// `items` in the order they first appear, each once.
+fn first_of_each<T: Ord + Copy>(items: &[T]) -> Vec<T> {
+    let mut seen = BTreeSet::new();
+    items
+        .iter()
+        .copied()
+        .filter(|item| seen.insert(*item))
+        .collect()
+}
+
+impl IdentitiesContractKeysQuery {
+    /// The request this query sends, proved or not.
+    fn request(&self, prove: bool) -> GetIdentitiesContractKeysRequest {
+        GetIdentitiesContractKeysRequest {
+            version: Some(V0(GetIdentitiesContractKeysRequestV0 {
+                identities_ids: first_of_each(&self.identities_ids)
+                    .into_iter()
+                    .map(|id| id.to_vec())
+                    .collect(),
+                contract_id: self.contract_id.to_vec(),
+                document_type_name: self.document_type_name.clone(),
+                purposes: first_of_each(&self.purposes)
+                    .into_iter()
+                    .map(|purpose| purpose as i32)
+                    .collect(),
+                prove,
+            })),
+        }
+    }
+}
+
 impl TryFrom<IdentitiesContractKeysQuery> for GetIdentitiesContractKeysRequest {
     type Error = Error;
     fn try_from(dapi_request: IdentitiesContractKeysQuery) -> Result<Self, Self::Error> {
-        let IdentitiesContractKeysQuery {
-            identities_ids,
-            contract_id,
-            document_type_name,
-            purposes,
-        } = dapi_request;
         //todo: transform this into PlatformVersionedTryFrom
-        Ok(GetIdentitiesContractKeysRequest {
-            version: Some(V0(GetIdentitiesContractKeysRequestV0 {
-                identities_ids: identities_ids.into_iter().map(|a| a.to_vec()).collect(),
-                contract_id: contract_id.to_vec(),
-                document_type_name,
-                purposes: purposes.into_iter().map(|purpose| purpose as i32).collect(),
-                prove: true,
-            })),
-        })
+        Ok(dapi_request.request(true))
     }
 }
 
@@ -69,22 +91,7 @@ impl Query<GetIdentitiesContractKeysRequest> for IdentitiesContractKeysQuery {
         &self,
         settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentitiesContractKeysRequest, Error> {
-        let prove = settings.prove;
-        let IdentitiesContractKeysQuery {
-            identities_ids,
-            contract_id,
-            document_type_name,
-            purposes,
-        } = self;
-        Ok(GetIdentitiesContractKeysRequest {
-            version: Some(V0(GetIdentitiesContractKeysRequestV0 {
-                identities_ids: identities_ids.iter().map(|a| a.to_vec()).collect(),
-                contract_id: contract_id.to_vec(),
-                document_type_name: document_type_name.clone(),
-                purposes: purposes.iter().map(|purpose| *purpose as i32).collect(),
-                prove,
-            })),
-        })
+        Ok(self.request(settings.prove))
     }
 }
 
@@ -125,6 +132,49 @@ impl TransportRequest for IdentitiesContractKeysQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform::QuerySettings;
+    use dpp::version::PlatformVersion;
+    use rs_dapi_client::RequestSettings;
+
+    #[test]
+    fn should_send_each_identity_and_purpose_once_in_first_order() {
+        let a = Identifier::from([1; 32]);
+        let b = Identifier::from([2; 32]);
+        let query = IdentitiesContractKeysQuery::new(
+            vec![b, a, b, a],
+            Identifier::from([3; 32]),
+            None,
+            vec![
+                Purpose::DECRYPTION,
+                Purpose::ENCRYPTION,
+                Purpose::DECRYPTION,
+            ],
+        )
+        .expect("valid query");
+        let expected = GetIdentitiesContractKeysRequest {
+            version: Some(V0(GetIdentitiesContractKeysRequestV0 {
+                identities_ids: vec![b.to_vec(), a.to_vec()],
+                contract_id: vec![3; 32],
+                document_type_name: None,
+                purposes: vec![Purpose::DECRYPTION as i32, Purpose::ENCRYPTION as i32],
+                prove: true,
+            })),
+        };
+
+        // The request sent and the one the proof is verified against are the same.
+        assert_eq!(
+            GetIdentitiesContractKeysRequest::try_from(query.clone()).expect("request"),
+            expected
+        );
+        let request_settings = RequestSettings::default();
+        let settings = QuerySettings {
+            request_settings: &request_settings,
+            protocol_version: PlatformVersion::latest(),
+            prove: true,
+        };
+        let sent: GetIdentitiesContractKeysRequest = query.query(&settings).expect("request");
+        assert_eq!(sent, expected);
+    }
 
     #[test]
     fn should_name_nothing_like_the_request_it_sends() {
