@@ -124,9 +124,15 @@ sealed class DashSdkError(
         /**
          * `ErrorCoreFundsAwaitingNetwork` (native code 61). The payment or
          * asset lock (identity registration and top-up, invitation, shielded
-         * and platform-address funding) is covered only by coins the network has not confirmed yet (neither
-         * InstantSend-locked nor mined); they become spendable once their
-         * transaction is. Not a shortfall — retry once they are confirmed.
+         * and platform-address funding) is covered only by coins the network
+         * has not confirmed yet (neither InstantSend-locked nor mined); they
+         * become spendable once their transaction is. Not a shortfall: tell
+         * the user the money is waiting on the network and let them try again
+         * later. Not [isRetryable]: nothing guarantees the coins ever confirm
+         * (the change of a send the network dropped never does), so an
+         * automatic retry loop could spin forever. The Android analog of
+         * Swift's `PlatformWalletError.coreFundsAwaitingNetwork`
+         * (`PlatformWalletResult.swift`).
          */
         class CoreFundsAwaitingNetwork(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
@@ -769,7 +775,6 @@ sealed class DashSdkError(
             20 -> PlatformWallet.TransactionBroadcastUnconfirmed(message, cause) // ErrorTransactionBroadcastUnconfirmed
             42 -> PlatformWallet.MasternodeWithdrawalUnconfirmed(message, cause) // ErrorMasternodeWithdrawalUnconfirmed
             22 -> PlatformWallet.CoreInsufficientFunds(message, cause) // ErrorCoreInsufficientFunds
-            61 -> PlatformWallet.CoreFundsAwaitingNetwork(message, cause) // ErrorCoreFundsAwaitingNetwork
             23 -> PlatformWallet.AssetLockNotTracked(message, cause) // ErrorAssetLockNotTracked
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
@@ -847,6 +852,7 @@ sealed class DashSdkError(
             56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
             57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
             59 -> PlatformWallet.SpvProcessRestartRequired(message, cause) // ErrorSpvProcessRestartRequired
+            61 -> PlatformWallet.CoreFundsAwaitingNetwork(message, cause) // ErrorCoreFundsAwaitingNetwork
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

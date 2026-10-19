@@ -603,6 +603,12 @@ pub enum PlatformWalletFFIResultCode {
     /// Platform returned no balance for a managed identity. Retrying this read
     /// is safe; this does not imply missing ownership or require registration.
     ErrorIdentityBalanceUnavailable = 58,
+
+    /// Maps `PlatformWalletError::SpvProcessRestartRequired`: SPV startup or
+    /// teardown panicked. Not retryable, unlike
+    /// [`Self::ErrorShutdownIncomplete`]: restart the host process.
+    ErrorSpvProcessRestartRequired = 59,
+
     /// A Core payment or asset lock (identity registration and top-up,
     /// invitation, shielded and platform-address funding) the balance covers
     /// only with coins the network has not confirmed yet — neither
@@ -613,11 +619,6 @@ pub enum PlatformWalletFFIResultCode {
     /// say the money is waiting on the network and offer a retry later — not
     /// "insufficient funds".
     ErrorCoreFundsAwaitingNetwork = 61,
-
-    /// Maps `PlatformWalletError::SpvProcessRestartRequired`: SPV startup or
-    /// teardown panicked. Not retryable, unlike
-    /// [`Self::ErrorShutdownIncomplete`]: restart the host process.
-    ErrorSpvProcessRestartRequired = 59,
 
     /// The named thing does not exist.
     ///

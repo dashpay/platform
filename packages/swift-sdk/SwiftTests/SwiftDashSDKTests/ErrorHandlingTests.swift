@@ -459,6 +459,20 @@ final class ErrorHandlingTests: XCTestCase {
         )
     }
 
+    func testShouldPreserveCoreFundsAwaitingNetworkFromFFI() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CORE_FUNDS_AWAITING_NETWORK
+        )
+        XCTAssertEqual(code, .errorCoreFundsAwaitingNetwork)
+        XCTAssertEqual(code.rawValue, 61)
+        let detail = "available 700000, waiting 599000, required 1000000"
+        let error = PlatformWalletError(code: code, message: detail)
+        guard case .coreFundsAwaitingNetwork(let message) = error else {
+            return XCTFail("lost typed funds-awaiting-network error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldPreserveShieldedIdentityDebitPendingFFIResult() {
         let code = PlatformWalletResultCode(
             ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_DEBIT_PENDING
