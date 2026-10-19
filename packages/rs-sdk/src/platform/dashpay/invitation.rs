@@ -1127,6 +1127,8 @@ where
 
 /// The identity carries exactly `expected` public keys — every field of each
 /// key equal, other than `disabled_at`, which is not part of identity creation.
+/// A key limit the owner raised after creation also reads as a mismatch, which
+/// reports the original rejection rather than adopting.
 /// Key data is what only our signer could have produced, so a match means the
 /// identity was created by our claim, not by a finder of the link; the other
 /// fields (purpose, security level, bounds, limits) are what we asked for.
@@ -1441,7 +1443,7 @@ mod tests {
     }
 
     /// The link carries the plaintext voucher WIF, so a bearer link must not be
-    /// accepted over cleartext `http`. Both mobile wallets emit only `https`.
+    /// accepted over cleartext `http`. Neither mobile wallet emits an `http` link.
     #[test]
     fn should_reject_an_applink_over_plain_http() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
@@ -1951,10 +1953,24 @@ mod tests {
         other_level.set_security_level(SecurityLevel::CRITICAL);
         let mut read_only = base.clone();
         read_only.set_read_only(true);
-        let limited = base.clone().with_limits(Some(1_000), None);
-        for differing in [other_purpose, other_level, read_only, limited] {
+        for differing in [other_purpose, other_level, read_only] {
             assert!(!identity_carries_keys(&with_key(differing), &ours));
         }
+
+        // Usage limits exist only on V1 keys: with ours V1 too, only the budget differs.
+        let mut ours_v1 = ours.clone();
+        ours_v1.insert(1, base.clone().with_limits(None, None));
+        let budgeted = base.clone().with_limits(Some(1_000), None);
+        assert!(identity_carries_keys(
+            &identity_with_keys(ours_v1.clone()),
+            &ours_v1
+        ));
+        let mut theirs = ours_v1.clone();
+        theirs.insert(1, budgeted);
+        assert!(!identity_carries_keys(
+            &identity_with_keys(theirs),
+            &ours_v1
+        ));
 
         let mut disabled = base;
         disabled.set_disabled_at(1);
