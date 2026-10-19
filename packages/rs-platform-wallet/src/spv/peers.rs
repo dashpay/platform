@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use dash_spv::network::NetworkEvent;
 use dash_spv::EventHandler;
@@ -49,28 +49,30 @@ pub(crate) struct PeerTracker {
 }
 
 impl PeerTracker {
-    /// Addresses from the latest `PeersUpdated` event.
-    pub(crate) fn snapshot(&self) -> Vec<SocketAddr> {
+    /// Lock the snapshot, recovering from poisoning: it is only cloned,
+    /// cleared or replaced whole, so a panicking holder cannot tear it.
+    fn connected(&self) -> MutexGuard<'_, Vec<SocketAddr>> {
         self.connected
             .lock()
-            .expect("peer tracker mutex poisoned")
-            .clone()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Addresses from the latest `PeersUpdated` event.
+    pub(crate) fn snapshot(&self) -> Vec<SocketAddr> {
+        self.connected().clone()
     }
 
     /// Forget all peers. Called when the SPV client stops so a stale
     /// snapshot can't outlive the connections it describes.
     pub(crate) fn clear(&self) {
-        self.connected
-            .lock()
-            .expect("peer tracker mutex poisoned")
-            .clear();
+        self.connected().clear();
     }
 }
 
 impl EventHandler for PeerTracker {
     fn on_network_event(&self, event: &NetworkEvent) {
         if let NetworkEvent::PeersUpdated { addresses, .. } = event {
-            *self.connected.lock().expect("peer tracker mutex poisoned") = addresses.clone();
+            *self.connected() = addresses.clone();
         }
     }
 }
@@ -139,7 +141,7 @@ mod tests {
     }
 
     fn masternode_list(entries: Vec<(SocketAddr, EntryMasternodeType)>) -> MasternodeList {
-        let masternodes = entries
+        let masternodes: dashcore::sml::masternode_list::MasternodeMap = entries
             .into_iter()
             .enumerate()
             .map(|(i, (service, mn_type))| {
@@ -156,12 +158,12 @@ mod tests {
                     is_valid: true,
                     mn_type,
                 };
-                (pro_tx_hash, entry.into())
+                (pro_tx_hash, std::sync::Arc::new(entry.into()))
             })
             .collect();
         MasternodeList::build(
             masternodes,
-            Default::default(),
+            std::collections::BTreeMap::new(),
             BlockHash::from_byte_array([0u8; 32]),
             0,
         )
@@ -228,6 +230,30 @@ mod tests {
             best_height: Some(100),
         });
         assert_eq!(tracker.snapshot(), vec![socket([2, 2, 2, 2], 9999)]);
+
+        tracker.clear();
+        assert!(tracker.snapshot().is_empty());
+    }
+
+    /// The tracker runs inside dash-spv's event dispatch, so a poisoned
+    /// mutex must not turn every later peer event into a panic there.
+    #[test]
+    fn should_keep_tracking_peers_after_the_mutex_is_poisoned() {
+        let tracker = std::sync::Arc::new(PeerTracker::default());
+        let poisoner = std::sync::Arc::clone(&tracker);
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoner.connected.lock().unwrap();
+            panic!("mock panic while holding the peer tracker mutex");
+        })
+        .join();
+        assert!(tracker.connected.is_poisoned());
+
+        tracker.on_network_event(&NetworkEvent::PeersUpdated {
+            connected_count: 1,
+            addresses: vec![socket([1, 1, 1, 1], 9999)],
+            best_height: Some(100),
+        });
+        assert_eq!(tracker.snapshot(), vec![socket([1, 1, 1, 1], 9999)]);
 
         tracker.clear();
         assert!(tracker.snapshot().is_empty());

@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1};
+use dashcore::secp256k1::{ecdsa, Message, PublicKey};
 use dashcore::BlockHash;
 #[cfg(test)]
 use dashcore::Txid;
@@ -33,6 +33,7 @@ use tokio::sync::RwLock;
 use crate::broadcast_probe::AcceptanceProbe;
 #[cfg(test)]
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use crate::changeset::PlatformWalletPersistence;
 use crate::events::PlatformEventHandler;
 use crate::manager::PlatformWalletManager;
 use crate::wallet::core::WalletGeneration;
@@ -138,25 +139,20 @@ impl Signer for WalletSigner {
         path: &DerivationPath,
         sighash: [u8; 32],
     ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
-        let secp = Secp256k1::new();
         let key = self
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
         let message = Message::from_digest(sighash);
-        Ok((
-            secp.sign_ecdsa(&message, &key),
-            PublicKey::from_secret_key(&secp, &key),
-        ))
+        Ok((key.sign_ecdsa(message), PublicKey::from_secret_key(&key)))
     }
 
     async fn public_key(&self, path: &DerivationPath) -> Result<PublicKey, Self::Error> {
-        let secp = Secp256k1::new();
         let key = self
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
-        Ok(PublicKey::from_secret_key(&secp, &key))
+        Ok(PublicKey::from_secret_key(&key))
     }
 }
 
@@ -259,6 +255,8 @@ pub async fn funded_wallet_manager_with_outputs(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -388,6 +386,8 @@ pub(crate) async fn funded_wallet_manager_dual_standard(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -491,6 +491,8 @@ pub(crate) async fn funded_wallet_manager_with_contact(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -568,6 +570,8 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -633,7 +637,7 @@ where
 /// that need a full [`PlatformWallet`] but no real persistence pipeline.
 pub struct NoopTestPersister;
 
-impl crate::changeset::PlatformWalletPersistence for NoopTestPersister {
+impl PlatformWalletPersistence for NoopTestPersister {
     fn store(
         &self,
         _wallet_id: WalletId,
@@ -671,16 +675,40 @@ pub async fn test_platform_wallet_manager() -> (
     Arc<crate::PlatformWalletManager<NoopTestPersister>>,
     WalletId,
 ) {
-    test_platform_wallet_manager_with(Arc::new(NoopTestEventHandler), None).await
+    test_platform_wallet_manager_with(Arc::new(NoopTestPersister)).await
+}
+
+/// [`test_platform_wallet_manager`] over a caller-supplied persister, for tests
+/// whose behaviour depends on what the backend attests.
+pub async fn test_platform_wallet_manager_with<P>(
+    persister: Arc<P>,
+) -> (Arc<crate::PlatformWalletManager<P>>, WalletId)
+where
+    P: PlatformWalletPersistence + 'static,
+{
+    build_test_platform_wallet_manager(persister, Arc::new(NoopTestEventHandler), None).await
 }
 
 /// [`test_platform_wallet_manager`] with the host's `event_handler` and,
 /// when given, the probe the broadcast resolver asks the network through
 /// (the DAPI one otherwise).
-pub(crate) async fn test_platform_wallet_manager_with(
+#[cfg(test)]
+pub(crate) async fn test_platform_wallet_manager_with_probe(
     event_handler: Arc<dyn PlatformEventHandler>,
     acceptance_probe: Option<Arc<dyn AcceptanceProbe>>,
 ) -> (Arc<PlatformWalletManager<NoopTestPersister>>, WalletId) {
+    build_test_platform_wallet_manager(Arc::new(NoopTestPersister), event_handler, acceptance_probe)
+        .await
+}
+
+async fn build_test_platform_wallet_manager<P>(
+    persister: Arc<P>,
+    event_handler: Arc<dyn PlatformEventHandler>,
+    acceptance_probe: Option<Arc<dyn AcceptanceProbe>>,
+) -> (Arc<PlatformWalletManager<P>>, WalletId)
+where
+    P: PlatformWalletPersistence + 'static,
+{
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
@@ -689,7 +717,6 @@ pub(crate) async fn test_platform_wallet_manager_with(
          abandon abandon abandon abandon abandon about";
 
     let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-    let persister = Arc::new(NoopTestPersister);
     let manager = Arc::new(match acceptance_probe {
         Some(probe) => {
             PlatformWalletManager::with_acceptance_probe(sdk, persister, event_handler, probe)
@@ -782,6 +809,8 @@ pub(crate) async fn mnemonic_wallet_manager(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);

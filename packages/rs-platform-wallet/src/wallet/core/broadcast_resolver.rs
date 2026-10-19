@@ -2869,6 +2869,17 @@ fn may_leave_work(event: &WalletEvent) -> bool {
         WalletEvent::TransactionDetected { .. }
         | WalletEvent::TransactionInstantLocked { .. }
         | WalletEvent::TransactionsSwept { .. } => true,
+        // A fork removed records from the blocks above its height, or moved
+        // them back to the mempool: a send built on one of them is unsettled
+        // again. Only the lossless channel delivers it (`recorded_work`):
+        // dash-spv stops the client before truncating and subscribes again
+        // after, so the fan-out never sees it. The restarted client then
+        // usually resumes with a forward step, and verdicts stand.
+        WalletEvent::ChainTruncated {
+            txids,
+            unconfirmed_txids,
+            ..
+        } => !txids.is_empty() || !unconfirmed_txids.is_empty(),
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => !inserted.is_empty() || !updated.is_empty(),
@@ -2888,6 +2899,10 @@ fn settled_or_gone(event: &WalletEvent) -> HashSet<Txid> {
             .collect(),
         WalletEvent::TransactionInstantLocked { txid, .. } => HashSet::from([*txid]),
         WalletEvent::TransactionsSwept { txids, .. } => txids.iter().copied().collect(),
+        // Never on the fan-out (see `may_leave_work`), and nothing to clear if
+        // it were: `txids` were in blocks, so already settled, and
+        // `unconfirmed_txids` are back in the mempool, unsettled.
+        WalletEvent::ChainTruncated { .. } => HashSet::new(),
         WalletEvent::BlockProcessed {
             inserted, updated, ..
         } => inserted
@@ -7106,6 +7121,24 @@ mod tests {
         );
         assert_eq!(settled_or_gone(&swept), HashSet::from([txid(2)]));
         assert!(settled_or_gone(&height).is_empty());
+        assert!(
+            settled_or_gone(&truncated()).is_empty(),
+            "a fork's dropped records were settled; its re-queued ones are not"
+        );
+    }
+
+    /// A fork that dropped records above `height = 99`: `txid(4)` removed,
+    /// `txid(5)` back in the mempool InstantSend-locked.
+    fn truncated() -> WalletEvent {
+        WalletEvent::ChainTruncated {
+            wallet_id: wallet(),
+            height: 99,
+            txids: vec![txid(4)],
+            unconfirmed_txids: vec![txid(5)],
+            restored_outpoints: Vec::new(),
+            balance: WalletCoreBalance::default(),
+            account_balances: BTreeMap::new(),
+        }
     }
 
     /// A step back (a rewind for a rescan) lowers a queued forced pass to the
@@ -8087,7 +8120,7 @@ mod tests {
     }
 
     /// Only a block that changed records (or a new, locked or swept
-    /// transaction) may leave work; a chain lock — about one per block for
+    /// transaction, or a fork's truncation) may leave work; a chain lock — about one per block for
     /// every wallet — only promotes what its block reported.
     #[test]
     fn should_wake_only_on_events_that_touched_records() {
@@ -8118,6 +8151,24 @@ mod tests {
             wallet_id: wallet(),
             height: 100,
         }));
+        assert!(
+            may_leave_work(&truncated()),
+            "a send built on a record the fork dropped is unsettled again"
+        );
+        let mut untouched = truncated();
+        if let WalletEvent::ChainTruncated {
+            txids,
+            unconfirmed_txids,
+            ..
+        } = &mut untouched
+        {
+            txids.clear();
+            unconfirmed_txids.clear();
+        }
+        assert!(
+            !may_leave_work(&untouched),
+            "a fork above no record of the wallet leaves nothing to probe"
+        );
     }
 
     #[test]

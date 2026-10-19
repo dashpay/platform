@@ -34,14 +34,17 @@ jobs:
       || !github.event.pull_request.draft
       || (github.event.pull_request.head.repo.full_name == github.repository
           && startsWith(github.head_ref, 'codex/freeze-swift-schema-v')) }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.DASH_LIGHT_RUNNER || 'ubuntu-24.04' }}
     outputs:
       has_ecr: ${{ steps.check.outputs.has_ecr }}
     steps:
       - name: Check if ECR credentials are available
         id: check
+        env:
+          HAS_AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
+          HAS_AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID != '' }}
         run: |
-          if [[ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" && -n "${{ secrets.AWS_ACCOUNT_ID }}" ]]; then
+          if [[ "$HAS_AWS_ACCESS_KEY_ID" == "true" && "$HAS_AWS_ACCOUNT_ID" == "true" ]]; then
             echo "has_ecr=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_ecr=false" >> "$GITHUB_OUTPUT"
@@ -538,7 +541,7 @@ jobs:
     name: Swift SDK frozen schema check
     needs: changes
     if: ${{ needs.changes.outputs.swift-sdk-changed == 'true' }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.DASH_LIGHT_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - name: Check out repo
@@ -581,7 +584,7 @@ jobs:
   js-deps-versions:
     name: JS dependency versions check
     if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || !github.event.pull_request.draft }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ vars.DASH_LIGHT_RUNNER || 'ubuntu-24.04' }}
     steps:
       - name: Check out repo
         uses: actions/checkout@v4

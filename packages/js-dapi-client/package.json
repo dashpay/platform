@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/dapi-client",
-  "version": "5.0.0-rc.2",
+  "version": "5.0.0-rc.4",
   "description": "Client library used to access Dash DAPI endpoints",
   "main": "lib/index.js",
   "contributors": [
@@ -72,7 +72,7 @@
     "webpack-cli": "^4.9.1"
   },
   "engines": {
-    "node": ">=18.18"
+    "node": ">=22"
   },
   "files": [
     "docs",
