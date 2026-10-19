@@ -433,6 +433,10 @@ pub(super) mod tests {
             })
         }
 
+        pub(crate) fn changeset_count(&self) -> usize {
+            self.0.lock().unwrap().len()
+        }
+
         pub(crate) fn clear(&self) {
             self.0.lock().unwrap().clear();
         }

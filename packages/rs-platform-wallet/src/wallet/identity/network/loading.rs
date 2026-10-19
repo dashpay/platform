@@ -259,7 +259,8 @@ impl IdentityWallet {
                 // stale key set (keys added from another device never
                 // appeared, and contact requests referencing them failed
                 // key-index validation). Same fold `refresh_identity`
-                // does: a fetch older than the cache is dropped. The
+                // does: a fetch older than the cache keeps the cache's
+                // revision, key set and disabled states. The
                 // `set_status` below persists the identity's scalar
                 // snapshot; the keys reach the store through `add_keys`.
                 let key_decisions = managed.key_decisions_for_fetch(&identity, key_decisions);
@@ -276,8 +277,7 @@ impl IdentityWallet {
                             "identity keys not persisted during load: {e}"
                         ))
                     })?;
-                // A dropped fetch returns the cache, with the keys it just
-                // took from the fetch.
+                // A fetch not taken whole returns the cache as folded.
                 if !taken {
                     identity = managed.identity.clone();
                 }
@@ -316,7 +316,8 @@ impl IdentityWallet {
     /// on-chain state (keys, balance, revision) is replaced with the latest
     /// version from Platform and the status is set to `Active`. A fetch at
     /// a lower revision than the cache's was answered before an update the
-    /// cache already holds, and leaves the cache as it is
+    /// cache already holds: the cache keeps its revision, key set and
+    /// disabled states, and takes the fetch's balance and key limits
     /// ([`ManagedIdentity::take_fetched_identity`]).
     ///
     /// Returns the identity the cache holds afterwards.

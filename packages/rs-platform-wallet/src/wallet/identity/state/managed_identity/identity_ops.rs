@@ -4,6 +4,7 @@ use super::key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus};
 use super::ManagedIdentity;
 use crate::changeset::{
     IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet, KeyWithBreadcrumb,
+    PersistenceError,
 };
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
@@ -486,18 +487,32 @@ impl ManagedIdentity {
     /// order-dependent watch-only-then-override). No-op on an empty list.
     pub fn add_keys(
         &mut self,
-        keys: Vec<crate::changeset::KeyWithBreadcrumb>,
+        keys: Vec<KeyWithBreadcrumb>,
         persister: &WalletPersister,
-    ) -> Result<(), crate::changeset::PersistenceError> {
-        use dpp::identity::accessors::IdentitySettersV0;
-
+    ) -> Result<(), PersistenceError> {
         if keys.is_empty() {
             return Ok(());
         }
+        let keys_cs = self.layer_keys(keys);
+        let cs = crate::changeset::PlatformWalletChangeSet {
+            identities: Some(self.snapshot_changeset()),
+            identity_keys: Some(keys_cs),
+            ..Default::default()
+        };
+        // Surface the persist failure — these rows carry the per-key
+        // derivation breadcrumb + verified scalar that make an imported /
+        // restored identity signable. Swallowing a failed store here would
+        // leave the keys in memory but absent from the client store, so the
+        // identity comes back watch-only after restart with no signal.
+        persister.store(cs)
+    }
+
+    /// Layer `keys` onto this identity in memory, returning their key rows.
+    fn layer_keys(&mut self, keys: Vec<KeyWithBreadcrumb>) -> IdentityKeysChangeSet {
         let identity_id = self.id();
         let mut current = self.identity.public_keys().clone();
         let mut keys_cs = IdentityKeysChangeSet::default();
-        for crate::changeset::KeyWithBreadcrumb {
+        for KeyWithBreadcrumb {
             key: public_key,
             breadcrumb,
         } in keys
@@ -528,18 +543,7 @@ impl ManagedIdentity {
             );
         }
         self.identity.set_public_keys(current);
-        let cs = crate::changeset::PlatformWalletChangeSet {
-            identities: Some(self.snapshot_changeset()),
-            identity_keys: Some(keys_cs),
-            ..Default::default()
-        };
-        // Surface the persist failure — these rows carry the per-key
-        // derivation breadcrumb + verified scalar that make an imported /
-        // restored identity signable. Swallowing a failed store here would
-        // leave the keys in memory but absent from the client store, so the
-        // identity comes back watch-only after restart with no signal.
-        persister.store(cs)?;
-        Ok(())
+        keys_cs
     }
 
     /// Replace one public key of the identity with `public_key`, the key as it is stored
@@ -621,22 +625,52 @@ impl ManagedIdentity {
         disabled_at: TimestampMillis,
         persister: &WalletPersister,
     ) {
-        if let Err(e) = self.try_disable_keys(key_ids, disabled_at, persister) {
+        let keys_cs = self.stamp_disabled(key_ids, disabled_at);
+        // Nothing matched — leave state untouched rather than churning a
+        // no-op changeset.
+        if keys_cs.upserts.is_empty() {
+            return;
+        }
+        let cs = crate::changeset::PlatformWalletChangeSet {
+            identities: Some(self.snapshot_changeset()),
+            identity_keys: Some(keys_cs),
+            ..Default::default()
+        };
+        if let Err(e) = persister.store(cs) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
     }
 
-    /// [`Self::disable_keys`], returning the store's failure instead of
-    /// logging it.
-    pub fn try_disable_keys(
+    /// Apply a landed identity update's keys in memory, `added` layered and
+    /// `disabled` stamped, and store them with the identity's scalar
+    /// snapshot (the landed revision included) as one changeset, even when
+    /// no key row matched. The store's failure is returned; memory holds the
+    /// whole update either way.
+    pub fn apply_landed_keys(
+        &mut self,
+        added: Vec<KeyWithBreadcrumb>,
+        disabled: &[KeyID],
+        disabled_at: TimestampMillis,
+        persister: &WalletPersister,
+    ) -> Result<(), PersistenceError> {
+        let mut keys_cs = self.layer_keys(added);
+        keys_cs
+            .upserts
+            .extend(self.stamp_disabled(disabled, disabled_at).upserts);
+        persister.store(crate::changeset::PlatformWalletChangeSet {
+            identities: Some(self.snapshot_changeset()),
+            identity_keys: Some(keys_cs),
+            ..Default::default()
+        })
+    }
+
+    /// Stamp `disabled_at` on the matching keys in memory, returning their
+    /// key rows (none when nothing matched).
+    fn stamp_disabled(
         &mut self,
         key_ids: &[KeyID],
         disabled_at: TimestampMillis,
-        persister: &WalletPersister,
-    ) -> Result<(), crate::changeset::PersistenceError> {
-        use dpp::identity::accessors::IdentitySettersV0;
-        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
-
+    ) -> IdentityKeysChangeSet {
         let identity_id = self.id();
 
         // Reconstruct the derivation breadcrumb from the cached
@@ -687,40 +721,23 @@ impl ManagedIdentity {
             );
         }
 
-        // Nothing matched — leave state untouched rather than churning a
-        // no-op changeset.
-        if keys_cs.upserts.is_empty() {
-            return Ok(());
+        if !keys_cs.upserts.is_empty() {
+            self.identity.set_public_keys(keys);
         }
-
-        self.identity.set_public_keys(keys);
-
-        let cs = crate::changeset::PlatformWalletChangeSet {
-            identities: Some(self.snapshot_changeset()),
-            identity_keys: Some(keys_cs),
-            ..Default::default()
-        };
-        persister.store(cs)
-    }
-
-    /// Store the identity's scalar snapshot (revision, balance, status…)
-    /// on its own, returning the store's failure.
-    pub fn store_snapshot(
-        &self,
-        persister: &WalletPersister,
-    ) -> Result<(), crate::changeset::PersistenceError> {
-        persister.store(self.snapshot_changeset().into())
+        keys_cs
     }
 }
 
-/// `fetched`'s copy of a key with `cached`'s disabled state: the key's
-/// limits change without a revision bump, its disabled state does not.
+/// `fetched`'s copy of a key with the disabled state the two copies agree
+/// on: the key's limits change without a revision bump, while a disable is
+/// permanent on Platform, so either copy showing one keeps it (the cache's
+/// timestamp first).
 fn with_disabled_state_of(
     fetched: &IdentityPublicKey,
     cached: &IdentityPublicKey,
 ) -> IdentityPublicKey {
     let mut key = fetched.clone();
-    match cached.disabled_at() {
+    match cached.disabled_at().or(fetched.disabled_at()) {
         Some(disabled_at) => key.set_disabled_at(disabled_at),
         None => key.remove_disabled_at(),
     }
@@ -838,6 +855,12 @@ mod tests {
         assert_eq!(managed.identity, at(6, 20, vec![limited(3, 500, Some(9))]));
         assert_eq!(managed.identity.public_keys()[&3].total_budget(), Some(500));
 
+        // A disable is permanent: one the older fetch shows sticks even
+        // when the cache's copy is live.
+        let mut live = ManagedIdentity::new(at(6, 10, vec![limited(3, 100, None)]), 0);
+        assert!(!live.take_fetched_identity(&at(5, 10, vec![limited(3, 100, Some(4))])));
+        assert_eq!(live.identity.public_keys()[&3].disabled_at(), Some(4));
+
         let same = at(6, 30, vec![limited(3, 600, Some(9)), limited(4, 1, None)]);
         assert!(managed.take_fetched_identity(&same));
         assert_eq!(managed.identity, same);
@@ -871,11 +894,11 @@ mod tests {
         };
         let decisions = || {
             vec![
-                crate::changeset::KeyWithBreadcrumb {
+                KeyWithBreadcrumb {
                     key: key(3),
                     breadcrumb: None,
                 },
-                crate::changeset::KeyWithBreadcrumb {
+                KeyWithBreadcrumb {
                     key: key(4),
                     breadcrumb: None,
                 },
@@ -892,6 +915,9 @@ mod tests {
         );
     }
 
+    /// A batch of fetched names lands as one snapshot carrying every name,
+    /// skips labels already held, and persists nothing when all are known.
+    /// One snapshot per name made the first read as the complete owned set.
     #[test]
     fn merge_dpns_names_persists_one_complete_snapshot() {
         let identity = Identity::V0(IdentityV0 {
