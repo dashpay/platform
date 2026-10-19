@@ -717,6 +717,11 @@ fn reverse_txid_hex(txid_hex: &str) -> Result<String, InvitationError> {
     let mut bytes = hex::decode(txid_hex).map_err(|e| {
         InvitationError::Invalid(format!("invitation funding txid is not valid hex: {e}"))
     })?;
+    if bytes.len() != 32 {
+        return Err(InvitationError::Invalid(
+            "invitation funding txid must contain exactly 32 bytes".to_string(),
+        ));
+    }
     bytes.reverse();
     Ok(hex::encode(bytes))
 }
@@ -2259,6 +2264,40 @@ mod tests {
             .await;
             let recorded = calls.lock().expect("calls").clone();
             (result, recorded, delays.load(Ordering::SeqCst))
+        }
+
+        /// A txid that is hex but not 32 bytes is an invalid link, not a
+        /// propagation miss: it fails after the first lookup with no retries.
+        #[tokio::test]
+        async fn should_reject_a_short_txid_instead_of_retrying() {
+            let (queue, calls, delays) = harness(vec![Ok(None)]);
+            let (queue_f, calls_f, delays_f) =
+                (Arc::clone(&queue), Arc::clone(&calls), Arc::clone(&delays));
+            let result = fetch_funding_tx_with_retry(
+                "aa",
+                move |txid| {
+                    let queue = Arc::clone(&queue_f);
+                    let calls = Arc::clone(&calls_f);
+                    async move {
+                        calls.lock().expect("calls").push(txid);
+                        queue
+                            .lock()
+                            .expect("script")
+                            .pop_front()
+                            .expect("one lookup")
+                    }
+                },
+                move || {
+                    let delays = Arc::clone(&delays_f);
+                    async move {
+                        delays.fetch_add(1, Ordering::SeqCst);
+                    }
+                },
+            )
+            .await;
+            assert!(matches!(result, Err(InvitationError::Invalid(_))));
+            assert_eq!(calls.lock().expect("calls").len(), 1);
+            assert_eq!(delays.load(Ordering::SeqCst), 0);
         }
 
         /// A first-call canonical hit returns immediately: one lookup, no
