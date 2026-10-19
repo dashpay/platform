@@ -1,12 +1,12 @@
 //! Multiple identities contract keys query operations
 
+use dash_sdk::dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::Purpose;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
-// We need to implement the query directly since it's not publicly exposed
-use dash_sdk::Sdk;
-use std::collections::BTreeMap;
+use dash_sdk::platform::identities_contract_keys_query::IdentitiesContractKeysQuery;
+use dash_sdk::platform::Fetch;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
@@ -24,7 +24,23 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// - `purposes`: Comma-separated list of key purposes (0=Authentication, 1=Encryption, 2=Decryption, 3=Withdraw)
 ///
 /// # Returns
-/// JSON string containing identity IDs mapped to their contract keys by purpose
+/// A JSON object read from a proved `getIdentitiesContractKeys` response. Each key is the current
+/// key Drive keeps for the identity, contract (or document type) and purpose: the newest key
+/// registered for it, which stays the current one when it is disabled (`disabled_at` is then set).
+///
+/// Every requested identity ID (Base58) is a top-level key, and every requested purpose
+/// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`) is a key under it. A purpose
+/// the proof shows the identity has no key for is `null`. A missing identity or purpose is never a
+/// valid answer, so a caller can treat one as malformed:
+///
+/// ```json
+/// { "<identity id>": {
+///     "encryption": { "id": 5, "type": 0, "data": "<hex>", "purpose": 1,
+///                     "security_level": 2, "read_only": false, "disabled_at": null },
+///     "decryption": null } }
+/// ```
+///
+/// A failed or unprovable query returns an error, never an empty object.
 ///
 /// # Safety
 /// - `sdk_handle`, `identity_ids`, `contract_id`, and `purposes` must be valid, non-null pointers.
@@ -124,54 +140,18 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
     };
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
-        // Execute the query directly using SDK
-        let response = execute_identities_contract_keys_query(
-            &wrapper.sdk,
-            identities_ids,
+        let query = IdentitiesContractKeysQuery::new(
+            identities_ids.clone(),
             contract_id,
             document_type_name,
-            purposes,
+            purposes.clone(),
         )
-        .await?;
-
-        // Convert to JSON string
-        let mut json_obj = serde_json::Map::new();
-
-        for (identity_id, keys_by_purpose) in response {
-            let mut purpose_obj = serde_json::Map::new();
-
-            for (purpose, key_opt) in keys_by_purpose {
-                let purpose_str = match purpose {
-                    Purpose::AUTHENTICATION => "authentication",
-                    Purpose::ENCRYPTION => "encryption",
-                    Purpose::DECRYPTION => "decryption",
-                    Purpose::TRANSFER => "transfer",
-                    _ => "unknown",
-                };
-
-                if let Some(key) = key_opt {
-                    let key_json = serde_json::json!({
-                        "id": key.id(),
-                        "type": key.key_type() as u8,
-                        "data": hex::encode(key.data().as_slice()),
-                        "purpose": purpose as u8,
-                        "security_level": key.security_level() as u8,
-                        "read_only": key.read_only(),
-                        "disabled_at": key.disabled_at(),
-                    });
-                    purpose_obj.insert(purpose_str.to_string(), key_json);
-                } else {
-                    purpose_obj.insert(purpose_str.to_string(), serde_json::Value::Null);
-                }
-            }
-
-            json_obj.insert(
-                identity_id.to_string(Encoding::Base58),
-                serde_json::Value::Object(purpose_obj),
-            );
-        }
-
-        serde_json::to_string(&json_obj).map_err(|e| FFIError::InternalError(e.to_string()))
+        .map_err(FFIError::from)?;
+        let keys = IdentitiesContractKeys::fetch(&wrapper.sdk, query)
+            .await
+            .map_err(FFIError::from)?;
+        let json = contract_keys_json(&identities_ids, &purposes, keys.as_ref());
+        serde_json::to_string(&json).map_err(|e| FFIError::InternalError(e.to_string()))
     });
 
     match result {
@@ -190,40 +170,51 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
     }
 }
 
-/// Helper function to execute the identities contract keys query
-async fn execute_identities_contract_keys_query(
-    sdk: &Sdk,
-    identities_ids: Vec<Identifier>,
-    contract_id: Identifier,
-    document_type_name: Option<String>,
-    purposes: Vec<Purpose>,
-) -> Result<
-    BTreeMap<Identifier, BTreeMap<Purpose, Option<dash_sdk::platform::IdentityPublicKey>>>,
-    FFIError,
-> {
-    use dash_sdk::dapi_client::{DapiRequest, RequestSettings};
-    use dash_sdk::platform::proto;
-    use dash_sdk::platform::proto::get_identities_contract_keys_request::{
-        GetIdentitiesContractKeysRequestV0, Version,
-    };
+fn purpose_name(purpose: Purpose) -> &'static str {
+    match purpose {
+        Purpose::AUTHENTICATION => "authentication",
+        Purpose::ENCRYPTION => "encryption",
+        Purpose::DECRYPTION => "decryption",
+        Purpose::TRANSFER => "transfer",
+        _ => "unknown",
+    }
+}
 
-    // Create the gRPC request directly
-    let grpc_request = proto::GetIdentitiesContractKeysRequest {
-        version: Some(Version::V0(GetIdentitiesContractKeysRequestV0 {
-            identities_ids: identities_ids.into_iter().map(|id| id.to_vec()).collect(),
-            contract_id: contract_id.to_vec(),
-            document_type_name,
-            purposes: purposes.into_iter().map(|p| p as i32).collect(),
-            prove: true,
-        })),
-    };
-
-    let _response = grpc_request
-        .execute(sdk, RequestSettings::default())
-        .await
-        .map_err(|e| FFIError::InternalError(format!("Request execution failed: {}", e)))?;
-
-    // For now, we'll return an empty map since parse_proof is private
-    // In a real implementation, you would need to parse the proof response
-    Ok(BTreeMap::new())
+/// The JSON answer for the requested identities and purposes. Every requested identity is a
+/// key, and every requested purpose is a key under it: `null` when the proof shows the identity
+/// has no current key of that purpose for the contract. Keys the proof carries for anything not
+/// requested are left out.
+fn contract_keys_json(
+    identities_ids: &[Identifier],
+    purposes: &[Purpose],
+    keys: Option<&IdentitiesContractKeys>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut json_obj = serde_json::Map::new();
+    for identity_id in identities_ids {
+        let keys_by_purpose = keys.and_then(|keys| keys.get(identity_id));
+        let mut purpose_obj = serde_json::Map::new();
+        for purpose in purposes {
+            let key = keys_by_purpose
+                .and_then(|keys_by_purpose| keys_by_purpose.get(purpose))
+                .and_then(Option::as_ref);
+            let value = match key {
+                Some(key) => serde_json::json!({
+                    "id": key.id(),
+                    "type": key.key_type() as u8,
+                    "data": hex::encode(key.data().as_slice()),
+                    "purpose": key.purpose() as u8,
+                    "security_level": key.security_level() as u8,
+                    "read_only": key.read_only(),
+                    "disabled_at": key.disabled_at(),
+                }),
+                None => serde_json::Value::Null,
+            };
+            purpose_obj.insert(purpose_name(*purpose).to_string(), value);
+        }
+        json_obj.insert(
+            identity_id.to_string(Encoding::Base58),
+            serde_json::Value::Object(purpose_obj),
+        );
+    }
+    json_obj
 }
