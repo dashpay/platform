@@ -16,10 +16,9 @@ use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::Handle;
+use crate::panic_guard::catch_panic_to_code;
 use crate::runtime::block_on_worker;
-use crate::shielded_send::{
-    catch_funding_panic, catch_panic_to_code, resolve_wallet_and_coordinator,
-};
+use crate::shielded_send::{catch_funding_panic, resolve_wallet_and_coordinator};
 
 use std::sync::Arc;
 

@@ -34,6 +34,7 @@ use crate::handle::*;
 use crate::identity_registration_with_signer::{
     decode_contract_bounds, key_with_row_limits, IdentityPubkeyFFI,
 };
+use crate::panic_guard::catch_panic_to_code;
 use crate::runtime::block_on_worker;
 use crate::types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
@@ -377,8 +378,53 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer_at_revision
     )
 }
 
+/// Post-panic guidance for the identity update exports. A panic can strike
+/// after the transition was broadcast, so the outcome is ambiguous.
+const UPDATE_PANIC_GUIDANCE: &str = "The update may or may not have been broadcast: refresh the \
+     identity before deciding again. An update asked at a revision cannot land twice there.";
+
+/// The shared body of both update exports, under `catch_unwind`: a panic
+/// (most concretely `block_on_worker`'s `.expect` on a panicking worker)
+/// must not reach the `extern "C"` frame, where it would abort the process.
+/// It surfaces as `ErrorUnknown`, never as a definitive pre-broadcast
+/// failure, since the transition may already be on Platform.
 #[allow(clippy::too_many_arguments)]
 unsafe fn update_identity_with_signer(
+    wallet_handle: Handle,
+    identity_id: *const u8,
+    add_public_keys: *const IdentityPubkeyFFI,
+    add_public_keys_count: usize,
+    disable_public_key_ids: *const u32,
+    disable_public_key_ids_count: usize,
+    revision: Option<u64>,
+    signer_handle: *mut SignerHandle,
+) -> PlatformWalletFFIResult {
+    guard_update(|| {
+        update_identity_with_signer_unguarded(
+            wallet_handle,
+            identity_id,
+            add_public_keys,
+            add_public_keys_count,
+            disable_public_key_ids,
+            disable_public_key_ids_count,
+            revision,
+            signer_handle,
+        )
+    })
+}
+
+/// `body` under the update exports' panic guard.
+fn guard_update(body: impl FnOnce() -> PlatformWalletFFIResult) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        "identity update",
+        PlatformWalletFFIResultCode::ErrorUnknown,
+        UPDATE_PANIC_GUIDANCE,
+        body,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn update_identity_with_signer_unguarded(
     wallet_handle: Handle,
     identity_id: *const u8,
     add_public_keys: *const IdentityPubkeyFFI,
@@ -476,6 +522,26 @@ mod tests {
     use dpp::serialization::PlatformSerializable;
     use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+
+    /// A panic in an update body comes back as `ErrorUnknown` with the
+    /// ambiguous-outcome guidance, not as a definitive failure, and never
+    /// unwinds into the C frame.
+    #[test]
+    fn should_report_a_panicking_update_as_an_ambiguous_outcome() {
+        let result = guard_update(|| panic!("worker gone"));
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            message.contains("identity update panicked: worker gone"),
+            "{message}"
+        );
+        assert!(message.contains(UPDATE_PANIC_GUIDANCE), "{message}");
+
+        let ok = guard_update(PlatformWalletFFIResult::ok);
+        assert_eq!(ok.code, PlatformWalletFFIResultCode::Success);
+    }
 
     const YAPPR_TAGLESS_IDENTITY_UPDATE_FIXTURE_HEX: &str = concat!(
         "0089fd6ddba75136a4fea02dc7d89ef0ca5bcc32ccf12fb8da6a1a03740567ae72",

@@ -20,7 +20,7 @@ use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
-use crate::changeset::KeyWithBreadcrumb;
+use crate::changeset::{KeyWithBreadcrumb, PersistenceError};
 use crate::error::PlatformWalletError;
 
 use super::signing_key::AvailableSigningKey;
@@ -316,7 +316,6 @@ impl IdentityWallet {
                     breadcrumb: identity_index.map(|idx| (self.wallet_id, idx, id)),
                 });
             }
-            let stores_an_added_key = !added_keys.is_empty();
             for &id in disabled_ids.iter().filter(|id| !added_ids.contains(id)) {
                 let Some(key) = managed.identity.public_keys().get(&id) else {
                     tracing::warn!(
@@ -331,55 +330,57 @@ impl IdentityWallet {
                     breadcrumb: slot.map(|(wallet_id, idx)| (wallet_id, idx, id)),
                 });
             }
-            // A failure to store an added key is an error, as on the path
-            // below; one for disabled keys only is logged, as
-            // `disable_keys` does.
-            return match managed.add_keys(keys, &self.persister) {
-                Err(e) if stores_an_added_key => Err(PlatformWalletError::Persistence(format!(
-                    "identity key not persisted after update: {e}"
-                ))),
-                Err(e) => {
-                    tracing::error!("Failed to persist changeset: {}", e);
-                    Ok(())
-                }
-                Ok(()) => Ok(()),
-            };
+            return managed
+                .add_keys(keys, &self.persister)
+                .map_err(landed_but_not_stored);
         }
 
         // The identity is at the transition's revision now, so a
         // subsequent update must not reuse the pre-broadcast value.
         managed.identity.set_revision(transition_revision);
 
-        for key in added_keys {
-            let breadcrumb = identity_index.map(|idx| (self.wallet_id, idx, key.id()));
-            managed
-                .add_key(key, breadcrumb, &self.persister)
-                .map_err(|e| {
-                    PlatformWalletError::Persistence(format!(
-                        "identity key not persisted after update: {e}"
-                    ))
-                })?;
+        // Each step below applies in memory before it stores, so the cache
+        // takes the whole update even when a store fails; the first failure
+        // is returned once every step ran.
+        let mut failure = None;
+        let added = added_keys
+            .into_iter()
+            .map(|key| {
+                let breadcrumb = identity_index.map(|idx| (self.wallet_id, idx, key.id()));
+                KeyWithBreadcrumb { key, breadcrumb }
+            })
+            .collect();
+        if let Err(e) = managed.add_keys(added, &self.persister) {
+            failure.get_or_insert(e);
         }
 
         if !disabled_ids.is_empty() {
-            // Disable-side counterpart to the `add_key` loop
-            // above: stamp `disabled_at` on the matching cached
-            // keys and fire the persister so the Swift
-            // `PersistentPublicKey.disabledAt` rows flip without
-            // a network re-fetch. The local wall-clock timestamp
-            // is a placeholder — the next Platform refresh
-            // reconciles it to the authoritative on-chain block
-            // time. `disable_keys` rebuilds the derivation breadcrumb
-            // from the managed identity's own wallet slot, so the
-            // disabled key keeps its private-key linkage.
+            // Disable-side counterpart to `add_keys` above: stamp
+            // `disabled_at` on the matching cached keys and fire the
+            // persister so the Swift `PersistentPublicKey.disabledAt` rows
+            // flip without a network re-fetch. The local wall-clock
+            // timestamp is a placeholder — the next Platform refresh
+            // reconciles it to the authoritative on-chain block time.
+            // `try_disable_keys` rebuilds the derivation breadcrumb from the
+            // managed identity's own wallet slot, so the disabled key keeps
+            // its private-key linkage.
             let disabled_at = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or_default();
-            managed.disable_keys(&disabled_ids, disabled_at, &self.persister);
+            if let Err(e) = managed.try_disable_keys(&disabled_ids, disabled_at, &self.persister) {
+                failure.get_or_insert(e);
+            }
         }
 
-        Ok(())
+        // The steps above store the revision only alongside a key row they
+        // write, and a payload whose keys the cache lacks writes none: the
+        // revision is stored on its own as well.
+        if let Err(e) = managed.store_snapshot(&self.persister) {
+            failure.get_or_insert(e);
+        }
+
+        failure.map_or(Ok(()), |e| Err(landed_but_not_stored(e)))
     }
 
     /// Update an identity using an externally-provided identity and signer.
@@ -469,6 +470,14 @@ fn update_revision(
         }),
         _ => Ok(next),
     }
+}
+
+/// The error for a landed update the wallet could not store: the update is
+/// on Platform either way, so the caller must not resubmit it.
+fn landed_but_not_stored(e: PersistenceError) -> PlatformWalletError {
+    PlatformWalletError::Persistence(format!(
+        "identity update landed, but the wallet could not store it: {e}"
+    ))
 }
 
 #[cfg(test)]
@@ -772,21 +781,17 @@ mod update_identity_at_revision_tests {
         );
     }
 
-    /// A cache at or past the transition stores the touched keys. A store
-    /// failure is an error when it held an added key, as on the path that
-    /// applies the payload, and only logged for disabled keys, as
-    /// `disable_keys` does: the update is on chain either way.
+    /// A store failure after a landed update is returned on both paths,
+    /// as an update that landed but was not stored, and the cache keeps the
+    /// whole update in memory.
     #[tokio::test]
-    async fn should_report_a_store_failure_only_for_an_added_key() {
+    async fn should_report_a_store_failure_after_a_landed_update() {
         let identity_id = Identifier::default();
+        // The cache behind the transition takes the payload.
         let store = Arc::new(FailingStore::default());
-        let wallet = wallet_at_revision_on(6, store.clone()).await;
+        let wallet = wallet_at_revision_on(4, store.clone()).await;
         let wallet = wallet.identity();
         store.arm();
-        wallet
-            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![1])
-            .await
-            .unwrap();
         let error = wallet
             .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], vec![1])
             .await
@@ -795,6 +800,42 @@ mod update_identity_at_revision_tests {
             matches!(error, PlatformWalletError::Persistence(_)),
             "{error:?}"
         );
+        let identity = cached_identity(wallet, &identity_id).await;
+        assert_eq!(identity.revision(), 5);
+        assert_eq!(identity.public_keys().get(&3), Some(&key_3()));
+        assert!(identity.public_keys()[&1].disabled_at().is_some());
+
+        // A cache at or past it only stores, and a disabled-only failure is
+        // reported too.
+        let store = Arc::new(FailingStore::default());
+        let wallet = wallet_at_revision_on(6, store.clone()).await;
+        let wallet = wallet.identity();
+        store.arm();
+        let error = wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![1])
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::Persistence(_)),
+            "{error:?}"
+        );
+    }
+
+    /// The landed revision reaches the store even when the update writes no
+    /// key row: here it disables a key the cache does not have.
+    #[tokio::test]
+    async fn should_store_the_landed_revision_on_its_own() {
+        let identity_id = Identifier::default();
+        let store = Arc::new(CapturingStore::default());
+        let wallet = wallet_at_revision_on(4, store.clone()).await;
+        let wallet = wallet.identity();
+        store.clear();
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![7])
+            .await
+            .unwrap();
+        assert!(store.key_rows().is_empty());
+        assert_eq!(store.stored_revision(identity_id), Some(5));
     }
 
     /// A cache at the transition's revision that lacks a key the update

@@ -64,6 +64,7 @@ pub mod masternode_update_service;
 pub mod masternode_withdrawal;
 pub mod memory_explorer;
 pub mod mnemonic_words;
+pub(crate) mod panic_guard;
 pub mod parse_state_transition;
 pub mod persistence;
 pub mod platform_address_sync;

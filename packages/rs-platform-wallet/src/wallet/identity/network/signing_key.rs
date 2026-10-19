@@ -419,6 +419,20 @@ pub(super) mod tests {
                 .find(|row| row.identity_id == identity_id && row.key_id == key_id)
         }
 
+        /// The last revision stored for `identity_id`.
+        pub(crate) fn stored_revision(&self, identity_id: Identifier) -> Option<u64> {
+            self.0.lock().unwrap().iter().rev().find_map(|changeset| {
+                Some(
+                    changeset
+                        .identities
+                        .as_ref()?
+                        .identities
+                        .get(&identity_id)?
+                        .revision,
+                )
+            })
+        }
+
         pub(crate) fn clear(&self) {
             self.0.lock().unwrap().clear();
         }
