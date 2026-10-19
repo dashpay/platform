@@ -132,9 +132,6 @@ pub enum FormatKeyword {
     Format,
     /// `byteArray`: Platform's keyword for an array whose elements are bytes.
     ByteArray,
-    /// `contentMediaType`: a string keyword in JSON Schema, which Platform writes only on
-    /// byte arrays, where it marks an identifier.
-    ContentMediaType,
     /// `encryptedFor`: the byte array is ciphertext made with a named scheme, for a
     /// recipient other properties name. JSON Schema leaves it unchecked; the validation of a
     /// create or replace checks that the bytes have a length the scheme produces.
@@ -192,6 +189,11 @@ pub enum MetaKeyword {
     Position,
     /// `requiredSince`: the contract version from which the property is required.
     RequiredSince,
+    /// `contentMediaType`: on a byte array, `application/x.dash.dpp.identifier` makes the
+    /// property an identifier, a type the document type parser reads. JSON Schema draft
+    /// 2020-12, which the document validator compiles, holds it an annotation and checks
+    /// nothing for it.
+    ContentMediaType,
 }
 
 impl SchemaKeyword {

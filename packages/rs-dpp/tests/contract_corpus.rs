@@ -121,19 +121,29 @@ fn validation_keywords_of(schema: &Value) -> Value {
     )
 }
 
-/// A schema with its maps sorted by key and every integer widened, so two schemas compare
-/// by what they say rather than by key order or integer width.
+/// A schema as the JSON Schema validator reads it (converted to JSON, so a repeated key
+/// keeps its last value and bytes are arrays of integers), with its maps sorted by key and
+/// every integer widened, so two schemas compare by what they say rather than by key order
+/// or integer width.
 fn normalized(value: &Value) -> Value {
+    widened(&Value::from(
+        value
+            .try_to_validating_json()
+            .expect("expected a schema the validator reads"),
+    ))
+}
+
+fn widened(value: &Value) -> Value {
     match value {
         Value::Map(map) => {
             let mut map: Vec<_> = map
                 .iter()
-                .map(|(key, value)| (key.clone(), normalized(value)))
+                .map(|(key, value)| (key.clone(), widened(value)))
                 .collect();
             map.sort_by(|(left, _), (right, _)| left.as_text().cmp(&right.as_text()));
             Value::Map(map)
         }
-        Value::Array(elements) => Value::Array(elements.iter().map(normalized).collect()),
+        Value::Array(elements) => Value::Array(elements.iter().map(widened).collect()),
         value if value.is_integer() => Value::I128(value.as_integer().expect("an integer")),
         value => value.clone(),
     }

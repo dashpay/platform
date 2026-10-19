@@ -181,10 +181,13 @@ fn should_keep_every_validation_keyword_of_a_node() {
 
     let key = property(root, "key");
     assert_eq!(format(key).byte_array, Some(true));
-    assert_eq!(
-        format(key).content_media_type.as_deref(),
-        Some("application/x.dash.dpp.identifier")
-    );
+    // `contentMediaType` makes it an identifier, which constrains no value
+    assert!(!key
+        .to_value()
+        .as_map()
+        .expect("expected a map")
+        .iter()
+        .any(|(name, _)| name.as_text() == Some("contentMediaType")));
 
     let message = property(root, "message");
     let encrypted_for = format(message)
@@ -1079,6 +1082,282 @@ fn should_hold_platform_keywords_exactly_where_document_validation_checks_them()
     }
 }
 
+/// A document schema with the one property `value`.
+fn with_value(value: Value) -> Value {
+    platform_value!({ "type": "object", "properties": { "value": value } })
+}
+
+#[test]
+fn should_keep_enum_const_and_bounds_as_the_validator_compares_them() {
+    let text = |text: &str| Value::Text(text.to_string());
+    let schema = build(with_value(Value::Map(vec![
+        (text("type"), text("array")),
+        (text("enum"), Value::Bytes(vec![1, 2, 3])),
+        (
+            text("const"),
+            Value::Map(vec![
+                (text("a"), Value::U8(1)),
+                (text("id"), Value::Identifier([7; 32])),
+                (text("a"), Value::I32(2)),
+            ]),
+        ),
+        (text("minimum"), Value::I8(-1)),
+    ])));
+
+    let value = property(&schema.root, "value");
+    // Bytes are an array of integers, as the validator reads them
+    assert_eq!(
+        value.enum_values,
+        Some(vec![Value::U64(1), Value::U64(2), Value::U64(3)])
+    );
+    // A repeated key keeps its last value, and an identifier is an array of integers
+    assert_eq!(
+        value.constant,
+        Some(Value::Map(vec![
+            (text("a"), Value::U64(2)),
+            (text("id"), Value::Array(vec![Value::U64(7); 32])),
+        ]))
+    );
+    assert_eq!(number(value).minimum, Some(Value::I64(-1)));
+
+    // What the conversion cannot represent the validator never compiles
+    for (case, bound) in [
+        ("NaN", Value::Float(f64::NAN)),
+        ("infinity", Value::Float(f64::INFINITY)),
+        ("beyond 64 bits", Value::U128(u128::MAX)),
+    ] {
+        let message = refusal(with_value(Value::Map(vec![
+            (text("type"), text("number")),
+            (text("maximum"), bound),
+        ])));
+        assert!(message.contains("not a JSON value"), "{case}: {message}");
+    }
+}
+
+#[test]
+fn should_read_a_repeated_encrypted_for_key_by_its_last_entry() {
+    let text = |text: &str| Value::Text(text.to_string());
+    let schema = build(with_value(platform_value!({
+        "type": "array",
+        "byteArray": true,
+        "maxItems": 1040,
+        "encryptedFor": Value::Map(vec![
+            (text("recipient"), text("key")),
+            (text("recipientKey"), text("recipientKeyId")),
+            (text("senderKey"), text("senderKeyId")),
+            (text("scheme"), text("not-a-scheme")),
+            (text("scheme"), text("ecdh-secp256k1-aes256-cbc")),
+        ]),
+    })));
+    let encrypted_for = format(property(&schema.root, "value"))
+        .encrypted_for
+        .as_ref()
+        .expect("expected encryptedFor");
+    assert_eq!(encrypted_for.scheme.as_str(), "ecdh-secp256k1-aes256-cbc");
+}
+
+#[test]
+fn should_refuse_a_format_the_validator_does_not_know() {
+    let schema = build(with_value(
+        platform_value!({ "type": "string", "maxLength": 64, "format": "date-time" }),
+    ));
+    assert_eq!(
+        format(property(&schema.root, "value")).format.as_deref(),
+        Some("date-time")
+    );
+
+    for root in [
+        with_value(platform_value!({ "type": "string", "maxLength": 36, "format": "uuid" })),
+        platform_value!({
+            "type": "object",
+            "properties": { "value": { "$ref": "#/$defs/uid" } },
+            "$defs": { "uid": { "type": "string", "maxLength": 36, "format": "uuid" } },
+        }),
+    ] {
+        let message = refusal(root);
+        assert!(message.contains("knows no format `uuid`"), "{message}");
+    }
+}
+
+/// What the test above rests on: the existing validator compiles a referenced schema when a
+/// value first reaches it, and one naming an unknown format refuses every value then.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_on_an_unknown_format_a_reference_reaches() {
+    use crate::validation::JsonSchemaValidator;
+
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": { "uid": { "$ref": "#/$defs/uid" } },
+        "$defs": { "uid": { "type": "string", "maxLength": 36, "format": "uuid" } },
+    });
+    let accepts = |document: serde_json::Value| {
+        JsonSchemaValidator::new()
+            .compile_and_validate(&schema, &document, PlatformVersion::latest())
+            .is_ok_and(|result| result.is_valid())
+    };
+    assert!(accepts(serde_json::json!({})));
+    assert!(!accepts(
+        serde_json::json!({ "uid": "123e4567-e89b-12d3-a456-426614174000" })
+    ));
+}
+
+#[test]
+fn should_ignore_what_the_validator_ignores_in_a_system_property_and_at_the_root() {
+    // Every document meta-schema admits any schema for a system property
+    let schema = build(platform_value!({
+        "type": "object",
+        "documentsMutable": false,
+        "properties": {
+            "$createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "default": 0,
+                "deprecated": false,
+                "position": 0,
+            },
+            "name": { "type": "string", "maxLength": 8, "position": 1 },
+        },
+    }));
+    assert_eq!(
+        number(property(&schema.root, "$createdAt"))
+            .minimum
+            .as_ref()
+            .and_then(|minimum| minimum.as_integer::<i64>()),
+        Some(0)
+    );
+
+    // but a keyword the validator compiles and the validation schema does not hold is
+    // refused there and at the root
+    for root in [
+        platform_value!({
+            "type": "object",
+            "properties": { "$createdAt": { "type": "integer", "not": { "minimum": 10 } } },
+        }),
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "a": { "type": "string", "maxLength": 8 },
+                "b": { "type": "string", "maxLength": 8 },
+            },
+            "not": { "required": ["a", "b"] },
+        }),
+    ] {
+        let message = refusal(root);
+        assert!(
+            message.contains("the JSON Schema validator checks `not`"),
+            "{message}"
+        );
+    }
+    // An ordinary property's schema still refuses any key it does not classify
+    let message = refusal(with_value(
+        platform_value!({ "type": "string", "default": "x" }),
+    ));
+    assert!(
+        message.contains("does not support the keyword `default`"),
+        "{message}"
+    );
+}
+
+/// What the test above rests on: the existing validator applies an applicator written at
+/// the root.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_on_an_applicator_at_the_root() {
+    use crate::validation::JsonSchemaValidator;
+
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "a": { "type": "string", "maxLength": 8 },
+            "b": { "type": "string", "maxLength": 8 },
+        },
+        "not": { "required": ["a", "b"] },
+    });
+    let accepts = |document: serde_json::Value| {
+        JsonSchemaValidator::new()
+            .compile_and_validate(&schema, &document, PlatformVersion::latest())
+            .expect("expected the schema to compile")
+            .is_valid()
+    };
+    assert!(accepts(serde_json::json!({ "a": "x" })));
+    assert!(!accepts(serde_json::json!({ "a": "x", "b": "y" })));
+}
+
+#[test]
+fn should_resolve_references_against_an_absolute_id_at_the_root() {
+    for id in ["https://example.com/item", "json-schema:///item"] {
+        let schema = build(platform_value!({
+            "$id": id,
+            "type": "object",
+            "properties": { "label": { "$ref": "#/$defs/label" } },
+            "$defs": { "label": { "type": "string", "maxLength": 1 } },
+        }));
+        assert_eq!(
+            string(&schema.references["#/$defs/label"]).max_length,
+            Some(1),
+            "{id}"
+        );
+    }
+
+    let message = refusal(platform_value!({
+        "$id": "item",
+        "type": "object",
+        "properties": { "label": { "$ref": "#/$defs/label" } },
+        "$defs": { "label": { "type": "string" } },
+    }));
+    assert!(message.contains("is not an absolute URL"), "{message}");
+}
+
+/// What the test above rests on: the existing validator resolves the references of a
+/// document schema with an absolute `$id` to that schema.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_in_resolving_against_an_id_at_the_root() {
+    use crate::validation::JsonSchemaValidator;
+
+    let schema = serde_json::json!({
+        "$id": "https://example.com/item",
+        "type": "object",
+        "properties": { "label": { "$ref": "#/$defs/label" } },
+        "$defs": { "label": { "type": "string", "maxLength": 1 } },
+    });
+    let accepts = |label: &str| {
+        JsonSchemaValidator::new()
+            .compile_and_validate(
+                &schema,
+                &serde_json::json!({ "label": label }),
+                PlatformVersion::latest(),
+            )
+            .expect("expected the schema to compile")
+            .is_valid()
+    };
+    assert!(accepts("a"));
+    assert!(!accepts("ab"));
+}
+
+#[test]
+fn should_build_a_reference_whose_uncompiled_copy_sits_below_an_absolute_id() {
+    // The validator never compiles `examples`, so the copy there names a schema but is
+    // resolved by nothing
+    let schema = build(platform_value!({
+        "type": "object",
+        "properties": {
+            "note": {
+                "type": "string",
+                "maxLength": 8,
+                "examples": [{ "$id": "https://example.com/copy", "$ref": "#/$defs/label" }],
+            },
+            "user": { "$ref": "#/$defs/label" },
+        },
+        "$defs": { "label": { "type": "string", "maxLength": 10 } },
+    }));
+    assert_eq!(
+        string(&schema.references["#/$defs/label"]).max_length,
+        Some(10)
+    );
+}
+
 #[test]
 fn should_refuse_a_reference_that_does_not_resolve() {
     let root = platform_value!({
@@ -1168,7 +1447,7 @@ fn should_name_every_keyword_once_and_read_it_back() {
             "multipleOf",
         ),
         (
-            SchemaKeyword::Format(FormatKeyword::ContentMediaType),
+            SchemaKeyword::Meta(MetaKeyword::ContentMediaType),
             "contentMediaType",
         ),
         (
