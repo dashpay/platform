@@ -387,6 +387,11 @@ impl ManagedIdentity {
     /// (one applied locally after it landed, or a newer refresh), and
     /// taking it would put the cache back. Returns whether it was taken.
     ///
+    /// The revision orders keys, not the balance, which moves without it:
+    /// a fetch at the cache's revision is taken whole, as before, and a
+    /// dropped one takes no balance with it. Balances read by height go
+    /// through their own watermark.
+    ///
     /// Only the in-memory identity changes here; the caller persists.
     pub fn take_fetched_identity(&mut self, fetched: &Identity) -> bool {
         if fetched.revision() < self.identity.revision() {

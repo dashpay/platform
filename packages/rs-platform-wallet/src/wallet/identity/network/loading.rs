@@ -260,8 +260,8 @@ impl IdentityWallet {
                 // appeared, and contact requests referencing them failed
                 // key-index validation). Same fold `refresh_identity`
                 // does: a fetch older than the cache is dropped. The
-                // `set_status` below persists the full snapshot changeset,
-                // so the updated keys reach the store.
+                // `set_status` below persists the identity's scalar
+                // snapshot; the keys reach the store through `add_keys`.
                 let key_decisions = if managed.take_fetched_identity(&identity) {
                     key_decisions
                 } else {
@@ -556,7 +556,11 @@ mod tests {
                 .expect_fetch(identity_id, Some(answer))
                 .await
                 .unwrap();
-            let wallet = wallet_with_signing_keys_on(sdk).await;
+            let wallet = wallet_with_signing_keys_on(
+                sdk,
+                std::sync::Arc::new(crate::wallet::persister::NoPlatformPersistence),
+            )
+            .await;
             let wallet = wallet.identity();
             {
                 let mut wm = wallet.wallet_manager.write().await;

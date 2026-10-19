@@ -365,16 +365,23 @@ pub(super) mod tests {
     }
 
     pub(crate) async fn wallet_with_signing_keys() -> std::sync::Arc<crate::PlatformWallet> {
-        wallet_with_signing_keys_on(dash_sdk::SdkBuilder::new_mock().build().unwrap()).await
+        wallet_with_signing_keys_on(
+            dash_sdk::SdkBuilder::new_mock().build().unwrap(),
+            std::sync::Arc::new(crate::wallet::persister::NoPlatformPersistence),
+        )
+        .await
     }
 
-    /// [`wallet_with_signing_keys`] on a given SDK, for a test that sets
-    /// mock expectations on it first.
-    pub(crate) async fn wallet_with_signing_keys_on(
+    /// [`wallet_with_signing_keys`] on a given SDK and store, for a test
+    /// that sets mock expectations first or reads what was persisted.
+    pub(crate) async fn wallet_with_signing_keys_on<P>(
         sdk: dash_sdk::Sdk,
-    ) -> std::sync::Arc<crate::PlatformWallet> {
+        persistence: std::sync::Arc<P>,
+    ) -> std::sync::Arc<crate::PlatformWallet>
+    where
+        P: crate::changeset::PlatformWalletPersistence + 'static,
+    {
         use crate::events::{EventHandler, PlatformEventHandler};
-        use crate::wallet::persister::NoPlatformPersistence;
         use crate::PlatformWalletManager;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use std::sync::Arc;
@@ -382,11 +389,7 @@ pub(super) mod tests {
         struct Events;
         impl EventHandler for Events {}
         impl PlatformEventHandler for Events {}
-        let manager = PlatformWalletManager::new(
-            Arc::new(sdk),
-            Arc::new(NoPlatformPersistence),
-            Arc::new(Events),
-        );
+        let manager = PlatformWalletManager::new(Arc::new(sdk), persistence, Arc::new(Events));
         let wallet = manager
             .create_wallet_from_seed_bytes(
                 key_wallet::Network::Testnet,
