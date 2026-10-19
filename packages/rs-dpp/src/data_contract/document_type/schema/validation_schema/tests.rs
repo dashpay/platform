@@ -433,16 +433,134 @@ fn should_read_a_repeated_key_by_its_last_entry_in_the_place_of_its_first() {
 }
 
 #[test]
-fn should_refuse_a_reference_in_a_schema_that_names_a_subschema() {
-    let root = platform_value!({
+fn should_resolve_a_reference_through_the_schema_an_id_names() {
+    // The validator looks a reference's URL up among the schemas an `$id` names before it
+    // follows the pointer, and so does the builder
+    let schema = build(platform_value!({
+        "type": "object",
+        "properties": {
+            "named": { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
+            "users": containing_reference("#/$defs/label"),
+        },
+        "$defs": { "label": { "type": "string", "maxLength": 10 } },
+    }));
+    assert_eq!(
+        string(&schema.references["#/$defs/label"]).max_length,
+        Some(1)
+    );
+
+    // A property's `$ref` is refused, since the parser follows the pointer instead
+    let message = refusal(platform_value!({
         "type": "object",
         "properties": {
             "named": { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
             "user": { "$ref": "#/$defs/label" },
         },
         "$defs": { "label": { "type": "string", "maxLength": 10 } },
+    }));
+    assert!(
+        message.contains("the document type parser resolves"),
+        "{message}"
+    );
+}
+
+#[test]
+fn should_resolve_a_location_independent_reference_through_the_schema_its_id_names() {
+    let schema = build(platform_value!({
+        "type": "object",
+        "properties": { "labels": containing_reference("#label") },
+        "$defs": { "label": { "$id": "#label", "type": "string", "maxLength": 1 } },
+    }));
+    assert_eq!(string(&schema.references["#label"]).max_length, Some(1));
+}
+
+/// What the test above rests on: the existing validator resolves `#label` through the
+/// schema whose `$id` it is.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_on_a_location_independent_reference() {
+    use crate::validation::JsonSchemaValidator;
+
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "labels": {
+                "type": "array",
+                "maxItems": 4,
+                "items": { "type": "string", "maxLength": 16 },
+                "contains": { "$ref": "#label" },
+            },
+        },
+        "$defs": { "label": { "$id": "#label", "type": "string", "maxLength": 1 } },
     });
-    assert!(ValidationSchema::try_from_root(&root).is_err());
+    let accepts = |labels: serde_json::Value| {
+        JsonSchemaValidator::new()
+            .compile_and_validate(
+                &schema,
+                &serde_json::json!({ "labels": labels }),
+                PlatformVersion::latest(),
+            )
+            .expect("expected the schema to compile")
+            .is_valid()
+    };
+    assert!(accepts(serde_json::json!(["long", "a"])));
+    assert!(!accepts(serde_json::json!(["long"])));
+}
+
+#[test]
+fn should_not_index_an_id_below_a_member_named_enum_or_const() {
+    // The validator's resolver skips every member named `enum` or `const`, a property so
+    // named included, so its `$id` names nothing and the reference follows its pointer
+    for name in ["enum", "const"] {
+        let schema = build(platform_value!({
+            "type": "object",
+            "properties": {
+                name: { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
+                "users": containing_reference("#/$defs/label"),
+            },
+            "$defs": { "label": { "type": "string", "maxLength": 10 } },
+        }));
+        assert_eq!(
+            string(&schema.references["#/$defs/label"]).max_length,
+            Some(10),
+            "{name}"
+        );
+    }
+}
+
+/// What the test above rests on: the existing validator does not index an `$id` below a
+/// property named `enum` or `const`.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_on_an_id_below_a_member_named_enum_or_const() {
+    use crate::validation::JsonSchemaValidator;
+
+    for name in ["enum", "const"] {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                name: { "$id": "#/$defs/label", "type": "string", "maxLength": 1 },
+                "users": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": { "type": "string", "maxLength": 16 },
+                    "contains": { "$ref": "#/$defs/label" },
+                },
+            },
+            "$defs": { "label": { "type": "string", "maxLength": 10 } },
+        });
+        let result = JsonSchemaValidator::new()
+            .compile_and_validate(
+                &schema,
+                &serde_json::json!({ "users": ["hello"] }),
+                PlatformVersion::latest(),
+            )
+            .expect("expected the schema to compile");
+        assert!(
+            result.is_valid(),
+            "{name}: the definition's maxLength of 10 holds, not the unindexed one of 1"
+        );
+    }
 }
 
 #[test]
@@ -471,32 +589,41 @@ fn should_build_a_schema_whose_only_ids_are_outside_its_nodes_and_not_fragments(
 }
 
 #[test]
-fn should_refuse_a_reference_in_a_schema_holding_a_fragment_id_anywhere() {
-    let root = platform_value!({
+fn should_refuse_a_property_reference_a_fragment_id_anywhere_names() {
+    // The validator's resolver indexes an `$id` in any map, a document type keyword's too,
+    // so the reference reaches the `where` map, where the parser follows the pointer
+    let message = refusal(platform_value!({
         "type": "object",
         "ownerRefersTo": { "where": { "$id": "#/$defs/id" } },
         "properties": { "repoId": { "$ref": "#/$defs/id", "position": 0 } },
         "$defs": { "id": { "type": "string" } },
-    });
-    assert!(ValidationSchema::try_from_root(&root).is_err());
+    }));
+    assert!(
+        message.contains("the document type parser resolves"),
+        "{message}"
+    );
 }
 
 #[test]
-fn should_refuse_a_reference_an_absolute_id_names() {
+fn should_resolve_a_reference_through_the_schema_an_absolute_id_names() {
     // An `examples` value is searched for identifiers too, and an absolute `$id` resolving to
     // the reference's URL names the schema the reference reaches.
-    let root = platform_value!({
+    let schema = build(platform_value!({
         "type": "object",
         "properties": {
             "note": {
                 "type": "string",
+                "maxLength": 8,
                 "examples": [{ "$id": "json-schema:///#/$defs/label", "maxLength": 1 }],
             },
-            "user": { "$ref": "#/$defs/label" },
+            "users": containing_reference("#/$defs/label"),
         },
         "$defs": { "label": { "type": "string", "maxLength": 10 } },
-    });
-    assert!(ValidationSchema::try_from_root(&root).is_err());
+    }));
+    assert_eq!(
+        string(&schema.references["#/$defs/label"]).max_length,
+        Some(1)
+    );
 }
 
 #[test]
@@ -554,7 +681,10 @@ fn should_refuse_a_reference_an_absolute_id_above_it_rescopes() {
         },
         "$defs": { "label": { "type": "string" } },
     }));
-    assert!(message.contains("an `$id` names"), "{message}");
+    assert!(
+        message.contains("given another URL by an `$id`"),
+        "{message}"
+    );
 }
 
 /// What the two tests above rest on: the existing validator resolves a reference below a
@@ -1424,7 +1554,8 @@ fn should_read_no_identifiers_from_enum_and_const_values_but_from_properties_so_
         Some(10)
     );
 
-    // but a property named `enum` is a schema, whose reference the validator compiles
+    // but a property named `enum` is a schema, whose reference the validator compiles: one
+    // the parser resolves elsewhere is refused there as anywhere
     let message = refusal(platform_value!({
         "type": "object",
         "properties": {
@@ -1433,7 +1564,10 @@ fn should_read_no_identifiers_from_enum_and_const_values_but_from_properties_so_
         },
         "$defs": { "label": { "type": "string", "maxLength": 10 } },
     }));
-    assert!(message.contains("an `$id` names"), "{message}");
+    assert!(
+        message.contains("the document type parser resolves"),
+        "{message}"
+    );
 }
 
 #[test]

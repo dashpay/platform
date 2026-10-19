@@ -32,7 +32,7 @@
 //! Every schema a `$ref` reaches is built once and kept by the reference as written, so
 //! references between definitions, cyclic ones included, stay references. A reference is
 //! resolved as the JSON Schema validator resolves it, from the URL it parses the reference
-//! into.
+//! into: through the schemas an `$id` names first, then by its JSON pointer.
 //!
 //! Nothing reads it yet at any protocol version.
 
@@ -243,13 +243,20 @@ impl ValidationSchema {
     /// JSON Schema validator compiles; a `format` it does not know; `maxBytes`,
     /// `encryptedFor` or `byteArray` where consensus does not check it (see the module
     /// documentation); a `$ref` that does not resolve within the schema; a property's `$ref`
-    /// the document type parser resolves to another schema; and a schema that reaches a
-    /// `$ref` while an `$id` could redirect it (see [`MetaKeyword::Id`]).
+    /// the document type parser resolves to another schema; and a `$ref` an `$id` above it
+    /// rescopes (see [`MetaKeyword::Id`]).
     pub fn try_from_root(root: &Value) -> Result<Self, DataContractError> {
         let root_url = document_url(root)?;
         let mut reached = Reached::default();
         let root_node = build_node(root, OtherKeys::Document, Reading::Document, &mut reached)?;
         let mut references = BTreeMap::new();
+        if reached.pending.is_empty() {
+            return Ok(Self {
+                root: root_node,
+                references,
+            });
+        }
+        let identifiers = Identifiers::of(root)?;
         // A schema reached in several readings is built in each, for the keywords each
         // refuses, and kept once: the readings build the same node.
         let mut visited = BTreeSet::new();
@@ -257,7 +264,7 @@ impl ValidationSchema {
             if !visited.insert((reference.clone(), reading)) {
                 continue;
             }
-            let target = resolve_reference(root, &root_url, &reference)?;
+            let target = resolve_reference(root, &root_url, &identifiers.named, &reference)?;
             if reading == Reading::ReferencedProperty {
                 refuse_a_property_reference_the_parser_resolves_elsewhere(
                     root, &reference, target,
@@ -275,9 +282,7 @@ impl ValidationSchema {
             let node = build_node(target, other_keys, reading, &mut reached)?;
             references.entry(reference).or_insert(node);
         }
-        if !references.is_empty() {
-            refuse_references_an_id_redirects(root, &root_url, &reached.schemas)?;
-        }
+        refuse_references_an_id_rescopes(&identifiers, &root_url, &reached.schemas)?;
         Ok(Self {
             root: root_node,
             references,
@@ -690,153 +695,126 @@ fn refuse_a_property_reference_the_parser_resolves_elsewhere(
 }
 
 /// What the JSON Schema validator reads of a schema's identifiers.
-#[derive(Default)]
-struct Identifiers {
-    /// The URL of every schema an `$id` names, as the validator's resolver indexes it, with
-    /// the address of the schema it names. A URL named twice names the later schema, as the
-    /// resolver's index keeps the last.
-    named: BTreeMap<String, *const Value>,
-    /// The `$ref` of every schema built, with the URL the validator compiles it with, `None`
-    /// when the reference is not a URL reference.
-    references: Vec<(String, Option<Url>)>,
+struct Identifiers<'a> {
+    /// Every schema an `$id` names, by the URL the validator's resolver indexes it at. A URL
+    /// named twice names the later schema, as the resolver's index keeps the last.
+    named: BTreeMap<String, &'a Value>,
+    /// Every `$ref`, with the address of the schema holding it and the URL the validator
+    /// compiles it with there, `None` when the reference is not a URL reference.
+    references: Vec<(*const Value, &'a str, Option<Url>)>,
 }
 
-/// Refuses a schema in which a `$ref` the builder reached would be resolved by the JSON
-/// Schema validator to another schema than [`resolve_reference`] resolves it to: one whose
-/// URL, given against the `$id` above it, differs from its URL against `root_url`, or names
-/// a schema an `$id` names other than the one its pointer reaches, which the validator
-/// resolves to before it follows the pointer. `built` holds every schema built, by address.
-fn refuse_references_an_id_redirects(
-    root: &Value,
+impl<'a> Identifiers<'a> {
+    /// The identifiers of the document schema `root`.
+    fn of(root: &'a Value) -> Result<Self, DataContractError> {
+        let default_url = default_url()?;
+        let mut identifiers = Identifiers {
+            named: BTreeMap::new(),
+            references: Vec::new(),
+        };
+        identifiers.collect(root, Some(&default_url), None, &default_url)?;
+        Ok(identifiers)
+    }
+
+    /// Collects the identifiers of `schema` as the JSON Schema validator reads them.
+    ///
+    /// Its resolver indexes every map carrying an `$id` at the URL the `$id` resolves to
+    /// against `named_scope`, the URL the nearest `$id` above names (an empty fragment
+    /// dropped). It skips the value of every member named `enum` or `const`, a property so
+    /// named included, where `named_scope` is `None`.
+    ///
+    /// Its compiler gives a `$ref` the URL it resolves to against `compile_scope`, the URL
+    /// the nearest `$id` above resolves to, or `default_url` when there is none or that URL
+    /// is a `json-schema:` one, where `compile_scope` is `None`. A relative `$id` therefore
+    /// never changes the URL of a reference below it.
+    fn collect(
+        &mut self,
+        schema: &'a Value,
+        named_scope: Option<&Url>,
+        compile_scope: Option<&Url>,
+        default_url: &Url,
+    ) -> Result<(), DataContractError> {
+        match schema {
+            Value::Map(map) => {
+                let entries = last_wins(map)?;
+                let mut named_here = None;
+                let mut compiled_here = None;
+                if let Some(id) = entries
+                    .iter()
+                    .find(|(key, _)| *key == "$id")
+                    .and_then(|(_, id)| id.as_text())
+                {
+                    let not_a_url = |error: url::ParseError| {
+                        structure_error(format!("`$id` `{id}` is not a URL reference: {error}"))
+                    };
+                    if let Some(scope) = named_scope {
+                        let mut named = scope.join(id).map_err(not_a_url)?;
+                        if named.fragment() == Some("") {
+                            named.set_fragment(None);
+                        }
+                        self.named.insert(named.to_string(), schema);
+                        named_here = Some(named);
+                    }
+                    compiled_here = Some(
+                        compile_scope
+                            .unwrap_or(default_url)
+                            .join(id)
+                            .map_err(not_a_url)?,
+                    );
+                }
+                let named_scope = match named_here.as_ref() {
+                    Some(named) => Some(named),
+                    None => named_scope,
+                };
+                let compile_scope = match compiled_here.as_ref() {
+                    Some(compiled) if compiled.scheme() == DEFAULT_ROOT_SCHEME => None,
+                    Some(compiled) => Some(compiled),
+                    None => compile_scope,
+                };
+                for (key, value) in entries {
+                    if key == "$ref" {
+                        if let Some(reference) = value.as_text() {
+                            let url =
+                                reference_url(compile_scope.unwrap_or(default_url), reference);
+                            self.references
+                                .push((std::ptr::from_ref(schema), reference, url));
+                        }
+                    }
+                    let named_scope = match key {
+                        "enum" | "const" => None,
+                        _ => named_scope,
+                    };
+                    self.collect(value, named_scope, compile_scope, default_url)?;
+                }
+                Ok(())
+            }
+            Value::Array(elements) => elements.iter().try_for_each(|element| {
+                self.collect(element, named_scope, compile_scope, default_url)
+            }),
+            _ => Ok(()),
+        }
+    }
+}
+
+/// Refuses a schema in which the JSON Schema validator gives a `$ref` the builder reached
+/// another URL than [`resolve_reference`] resolves: one below an absolute `$id`, which
+/// rescopes it, as the validation schema does not represent. `built` holds every schema
+/// built, by address, so a copy of a reference the validator never compiles, in `examples`
+/// say, is not read.
+fn refuse_references_an_id_rescopes(
+    identifiers: &Identifiers,
     root_url: &Url,
     built: &BTreeSet<*const Value>,
 ) -> Result<(), DataContractError> {
-    let default_url = default_url()?;
-    let mut identifiers = Identifiers::default();
-    collect_identifiers(
-        root,
-        Some(&default_url),
-        None,
-        &default_url,
-        built,
-        &mut identifiers,
-    )?;
-    for (reference, url) in &identifiers.references {
-        let redirected = match url {
-            Some(url) => {
-                let target = std::ptr::from_ref(resolve_reference(root, root_url, reference)?);
-                reference_url(root_url, reference).as_ref() != Some(url)
-                    || identifiers
-                        .named
-                        .get(url.as_str())
-                        .is_some_and(|named| *named != target)
-            }
-            None => true,
-        };
-        if redirected {
+    for (schema, reference, url) in &identifiers.references {
+        if built.contains(schema) && (url.is_none() || reference_url(root_url, reference) != *url) {
             return Err(structure_error(format!(
-                "`$ref` `{reference}` resolves through the schemas an `$id` names, which the \
+                "`$ref` `{reference}` is given another URL by an `$id` above it, which the \
                  validation schema does not represent"
             )));
         }
     }
     Ok(())
-}
-
-/// Collects the identifiers of `schema` as the JSON Schema validator reads them.
-///
-/// Its resolver indexes every map carrying an `$id` at the URL the `$id` resolves to
-/// against `named_scope`, the URL the nearest `$id` above names (an empty fragment
-/// dropped), and skips `enum` and `const` values, where `named_scope` is `None`.
-///
-/// Its compiler gives a `$ref` the URL it resolves to against `compile_scope`, the URL the
-/// nearest `$id` above resolves to, or `default_url` when there is none or that URL is a
-/// `json-schema:` one, where `compile_scope` is `None`. A relative `$id` therefore never
-/// changes the URL of a reference below it. Only the references of schemas in `built` are
-/// collected: the schemas the validator compiles, and no copy of one elsewhere, in
-/// `examples` say, which it never compiles.
-fn collect_identifiers(
-    schema: &Value,
-    named_scope: Option<&Url>,
-    compile_scope: Option<&Url>,
-    default_url: &Url,
-    built: &BTreeSet<*const Value>,
-    identifiers: &mut Identifiers,
-) -> Result<(), DataContractError> {
-    match schema {
-        Value::Map(map) => {
-            let entries = last_wins(map)?;
-            let mut named_here = None;
-            let mut compiled_here = None;
-            if let Some(id) = entries
-                .iter()
-                .find(|(key, _)| *key == "$id")
-                .and_then(|(_, id)| id.as_text())
-            {
-                let not_a_url = |error: url::ParseError| {
-                    structure_error(format!("`$id` `{id}` is not a URL reference: {error}"))
-                };
-                if let Some(scope) = named_scope {
-                    let mut named = scope.join(id).map_err(not_a_url)?;
-                    if named.fragment() == Some("") {
-                        named.set_fragment(None);
-                    }
-                    identifiers
-                        .named
-                        .insert(named.to_string(), std::ptr::from_ref(schema));
-                    named_here = Some(named);
-                }
-                compiled_here = Some(
-                    compile_scope
-                        .unwrap_or(default_url)
-                        .join(id)
-                        .map_err(not_a_url)?,
-                );
-            }
-            let named_scope = match named_here.as_ref() {
-                Some(named) => Some(named),
-                None => named_scope,
-            };
-            let compile_scope = match compiled_here.as_ref() {
-                Some(compiled) if compiled.scheme() == DEFAULT_ROOT_SCHEME => None,
-                Some(compiled) => Some(compiled),
-                None => compile_scope,
-            };
-            let compiled = built.contains(&std::ptr::from_ref(schema));
-            for (key, value) in entries {
-                if compiled && key == "$ref" {
-                    if let Some(reference) = value.as_text() {
-                        let url = reference_url(compile_scope.unwrap_or(default_url), reference);
-                        identifiers.references.push((reference.to_string(), url));
-                    }
-                }
-                let named_scope = match key {
-                    "enum" | "const" => None,
-                    _ => named_scope,
-                };
-                collect_identifiers(
-                    value,
-                    named_scope,
-                    compile_scope,
-                    default_url,
-                    built,
-                    identifiers,
-                )?;
-            }
-            Ok(())
-        }
-        Value::Array(elements) => elements.iter().try_for_each(|element| {
-            collect_identifiers(
-                element,
-                named_scope,
-                compile_scope,
-                default_url,
-                built,
-                identifiers,
-            )
-        }),
-        _ => Ok(()),
-    }
 }
 
 /// The entries of a schema map as the JSON Schema validator reads them: a map converts to
@@ -1110,16 +1088,20 @@ fn reference_url(base: &Url, reference: &str) -> Option<Url> {
     base.join(reference).ok()
 }
 
-/// Resolves a `$ref` to the schema the JSON Schema validator reaches through it, short of an
-/// `$id` redirecting it, which [`refuse_references_an_id_redirects`] refuses. The reference's
-/// URL against the root ([`reference_url`]) must name the schema itself; its fragment is
-/// percent-decoded as a whole, so an encoded `/` (`%2F`) separates segments, and followed as
-/// a JSON pointer: in each segment `~1` is `/` and `~0` is `~`, an array index has no sign or
-/// leading zero, and a segment naming a repeated map key reaches its last entry, as
-/// [`last_wins`] reads the map.
+/// Resolves a `$ref` to the schema the JSON Schema validator reaches through it, from its URL
+/// against the root ([`reference_url`]), short of an `$id` above the reference rescoping it,
+/// which [`refuse_references_an_id_rescopes`] refuses. As the validator does, it looks the
+/// URL up among the schemas an `$id` names (`named`) first, so a location-independent
+/// `#label` resolves; then takes the document the URL without its fragment names, the
+/// schema itself at [`DEFAULT_ROOT_URL`] whatever its `$id`, or a schema an `$id` names;
+/// and follows the fragment there, percent-decoded as a whole so an encoded `/` (`%2F`)
+/// separates segments, as a JSON pointer: in each segment `~1` is `/` and `~0` is `~`, an
+/// array index has no sign or leading zero, and a segment naming a repeated map key reaches
+/// its last entry, as [`last_wins`] reads the map.
 fn resolve_reference<'a>(
     root: &'a Value,
     root_url: &Url,
+    named: &BTreeMap<String, &'a Value>,
     reference: &str,
 ) -> Result<&'a Value, DataContractError> {
     let unresolved = || {
@@ -1128,25 +1110,27 @@ fn resolve_reference<'a>(
         ))
     };
     let url = reference_url(root_url, reference).ok_or_else(unresolved)?;
-    let mut document = url.clone();
-    document.set_fragment(None);
-    // The validator resolves the default URL to the schema whatever its `$id`, and the
-    // URL that `$id` names, an empty fragment dropped, to the schema it names
-    let mut named_root = root_url.clone();
-    if named_root.fragment() == Some("") {
-        named_root.set_fragment(None);
+    if let Some(schema) = named.get(url.as_str()) {
+        return Ok(schema);
     }
-    if document != named_root && document.as_str() != DEFAULT_ROOT_URL {
-        return Err(unresolved());
-    }
+    let mut document_url = url.clone();
+    document_url.set_fragment(None);
+    let document = if document_url.as_str() == DEFAULT_ROOT_URL {
+        root
+    } else {
+        named
+            .get(document_url.as_str())
+            .copied()
+            .ok_or_else(unresolved)?
+    };
     let pointer = percent_decode_str(url.fragment().unwrap_or_default())
         .decode_utf8()
         .map_err(|_| unresolved())?;
     if pointer.is_empty() {
-        return Ok(root);
+        return Ok(document);
     }
     let pointer = pointer.strip_prefix('/').ok_or_else(unresolved)?;
-    let mut target = root;
+    let mut target = document;
     for segment in pointer.split('/') {
         let segment = segment.replace("~1", "/").replace("~0", "~");
         target = match target {
