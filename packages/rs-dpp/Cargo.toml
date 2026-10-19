@@ -66,8 +66,8 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_repr = { version = "0.1.7" }
 sha2 = { version = "0.10" }
 thiserror = { version = "2.0.17" }
-url = { version = "2.5" }
-percent-encoding = { version = "2.3" }
+url = { version = "2.5", optional = true }
+percent-encoding = { version = "2.3", optional = true }
 data-contracts = { path = "../data-contracts", optional = true, default-features = false }
 platform-value = { path = "../rs-platform-value" }
 platform-version = { path = "../rs-platform-version" }
@@ -207,6 +207,7 @@ abci = [
 cbor = ["ciborium"]
 validation = [
   "json-schema-validation",
+  "validation-schema",
   "value-conversion",
   "ed25519-dalek",
 ]
@@ -220,6 +221,9 @@ json-schema-validation = [
   "platform-value-json",
   "dep:json-schema-compatibility-validator",
 ]
+# The typed validation schema of a document type, apart from the JSON Schema validator it
+# mirrors, whose URL and percent-encoding crates it shares
+validation-schema = ["platform-value-json", "dep:url", "dep:percent-encoding"]
 json-object = ["platform-value", "platform-value-json"]
 platform-value = []
 identity-hashing = ["identity-serialization"]

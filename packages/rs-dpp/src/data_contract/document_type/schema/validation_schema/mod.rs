@@ -34,7 +34,10 @@
 //! resolved as the JSON Schema validator resolves it, from the URL it parses the reference
 //! into: through the schemas an `$id` names first, then by its JSON pointer.
 //!
-//! Nothing reads it yet at any protocol version.
+//! Nothing reads it yet at any protocol version. It is built with the `validation-schema`
+//! feature, which `validation` enables, and does not need the JSON Schema validator it
+//! mirrors, only the `url` and `percent-encoding` crates that validator resolves references
+//! with.
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
