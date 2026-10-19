@@ -252,7 +252,14 @@ extension SDK {
         return try processJSONResult(result)
     }
 
-    /// Get identities contract keys
+    /// Get identities contract keys: the current key Platform keeps for each identity, the
+    /// contract (or `documentType` of it) and each purpose, read from a proved response.
+    ///
+    /// Every requested identity id is a key of the result, and every requested purpose
+    /// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`) a key under it, `NSNull`
+    /// when the identity has no such key. A key's value holds `id`, `type`, `data` (hex),
+    /// `purpose`, `security_level`, `read_only` and `disabled_at`; the current key stays the
+    /// current one when it is disabled.
     public func identityGetContractKeys(
         identityIds: [String],
         contractId: String,
