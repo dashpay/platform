@@ -8,12 +8,12 @@ use crate::event_handler::{
 };
 use crate::handle::*;
 use crate::persistence::{
-    FFIPersister, FreeTrackedMasternodesFn, LoadIdentityBalanceBlockTimeFn,
-    LoadTrackedMasternodesFn, PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn,
-    PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
-    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
-    PersistWalletDashPayBackfillFn, PersistenceCallbacks, PersistenceCallbacksExtension,
-    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    FFIPersister, FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn,
+    LoadIdentityBalanceBlockTimeFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    PersistDpnsNameStatesFn, PersistIdentityBalanceBlockTimeFn, PersistTrackedMasternodesFn,
+    PersistWalletChangesetChainLockHeightFn, PersistWalletChangesetSweepsFn,
+    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
+    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
     PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
@@ -281,6 +281,14 @@ unsafe fn persistence_extension_callbacks(
         wallet_dashpay_backfill: slot!(
             on_persist_wallet_dashpay_backfill_fn,
             PersistWalletDashPayBackfillFn
+        ),
+        persist_asset_lock_operation_id: slot!(
+            on_persist_asset_lock_operation_id_fn,
+            PersistAssetLockOperationIdFn
+        ),
+        load_asset_lock_operation_id: slot!(
+            on_load_asset_lock_operation_id_fn,
+            LoadAssetLockOperationIdFn
         ),
     }
 }
@@ -1353,6 +1361,49 @@ mod tests {
         let parsed = unsafe { persistence_extension_callbacks(&ext) };
         assert!(parsed.persist_identity_balance_block_time.is_none());
         assert!(parsed.load_identity_balance_block_time.is_none());
+    }
+
+    #[test]
+    fn should_size_gate_asset_lock_operation_id_slots_independently() {
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *const u8,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *mut bool,
+            _: *mut u8,
+        ) -> i32 {
+            0
+        }
+        let mut ext = PersistenceCallbacksExtension {
+            on_persist_asset_lock_operation_id_fn: Some(persist),
+            on_load_asset_lock_operation_id_fn: Some(load),
+            ..Default::default()
+        };
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_asset_lock_operation_id.is_some());
+        assert!(parsed.load_asset_lock_operation_id.is_some());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_load_asset_lock_operation_id_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_asset_lock_operation_id.is_some());
+        assert!(parsed.load_asset_lock_operation_id.is_none());
+        ext.struct_size = std::mem::offset_of!(
+            PersistenceCallbacksExtension,
+            on_persist_asset_lock_operation_id_fn
+        );
+        let parsed = unsafe { persistence_extension_callbacks(&ext) };
+        assert!(parsed.persist_asset_lock_operation_id.is_none());
+        assert!(parsed.load_asset_lock_operation_id.is_none());
     }
 
     /// A host whose `struct_size` stops right after the chainlock-height

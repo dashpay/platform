@@ -7889,6 +7889,7 @@ mod tests {
         asset_locks.asset_locks.insert(
             out_point,
             AssetLockEntry {
+                operation_id: None,
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,
