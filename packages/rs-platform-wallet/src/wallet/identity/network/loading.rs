@@ -262,12 +262,8 @@ impl IdentityWallet {
                 // does: a fetch older than the cache is dropped. The
                 // `set_status` below persists the identity's scalar
                 // snapshot; the keys reach the store through `add_keys`.
-                let key_decisions = if is_new || managed.take_fetched_identity(&identity) {
-                    key_decisions
-                } else {
-                    identity = managed.identity.clone();
-                    managed.key_decisions_on_cached_keys(key_decisions)
-                };
+                let key_decisions = managed.key_decisions_for_fetch(&identity, key_decisions);
+                let taken = is_new || managed.take_fetched_identity(&identity);
                 managed.set_status(IdentityStatus::Active, &self.persister);
                 managed.wallet_id = Some(wallet_id);
                 // Breadcrumbs for every re-derivable key (was MASTER-only). A
@@ -280,6 +276,11 @@ impl IdentityWallet {
                             "identity keys not persisted during load: {e}"
                         ))
                     })?;
+                // A dropped fetch returns the cache, with the keys it just
+                // took from the fetch.
+                if !taken {
+                    identity = managed.identity.clone();
+                }
             }
         }
 
@@ -522,7 +523,8 @@ mod tests {
     use dash_sdk::platform::types::identity::PublicKeyHash;
     use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::Identifier;
     use key_wallet::bip32::ExtendedPrivKey;
     use key_wallet::mnemonic::Mnemonic;
@@ -607,6 +609,17 @@ mod tests {
                 KeyType::ECDSA_SECP256K1,
             );
             answer.set_revision(answered);
+            // Key 4 is on the identity, but the cache does not have it.
+            let key_4: IdentityPublicKey = IdentityPublicKeyV0 {
+                id: 4,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::MEDIUM,
+                key_type: KeyType::ECDSA_SECP256K1,
+                data: vec![4; KeyType::ECDSA_SECP256K1.default_size()].into(),
+                ..Default::default()
+            }
+            .into();
+            answer.add_public_key(key_4.clone());
             let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
             sdk.mock()
                 .expect_fetch(PublicKeyHash(probe), Some(answer))
@@ -652,13 +665,23 @@ mod tests {
                 .unwrap()
                 .identity;
             assert_eq!(held, &returned);
+            assert_eq!(
+                returned.public_keys().get(&4),
+                Some(&key_4),
+                "answered at {answered}"
+            );
             // It stored key rows, each carrying the key the cache holds.
             let rows = store.key_rows();
             assert!(!rows.is_empty(), "answered at {answered}");
             for entry in rows {
+                let level = if entry.key_id == 4 {
+                    SecurityLevel::MEDIUM
+                } else {
+                    expected
+                };
                 assert_eq!(
                     entry.public_key.security_level(),
-                    expected,
+                    level,
                     "answered at {answered}"
                 );
             }

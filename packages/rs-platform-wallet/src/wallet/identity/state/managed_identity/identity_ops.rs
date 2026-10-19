@@ -404,16 +404,21 @@ impl ManagedIdentity {
         true
     }
 
-    /// `decisions` built from a fetch older than the cache, carried on the
-    /// cache's copies of their keys instead, so storing their breadcrumbs
-    /// (a key's derivation never changes) does not take back what the cache
-    /// holds newer. A key the cache lacks keeps the fetch's copy: Platform
-    /// never removes a key, so it is on the identity, and storing it adds it
-    /// to the cache too.
-    pub fn key_decisions_on_cached_keys(
+    /// The key decisions to store for `decisions` built from `fetched`. A
+    /// fetch older than the cache has them carried on the cache's copies of
+    /// their keys, so storing their breadcrumbs (a key's derivation never
+    /// changes) does not take back what the cache holds newer; a key the
+    /// cache lacks keeps the fetch's copy, since Platform never removes a
+    /// key, and storing it adds it to the cache too. Any other fetch's
+    /// decisions are stored as they are.
+    pub fn key_decisions_for_fetch(
         &self,
+        fetched: &Identity,
         decisions: Vec<KeyWithBreadcrumb>,
     ) -> Vec<KeyWithBreadcrumb> {
+        if fetched.revision() >= self.identity.revision() {
+            return decisions;
+        }
         decisions
             .into_iter()
             .map(|mut decision| {
@@ -423,6 +428,12 @@ impl ManagedIdentity {
                 decision
             })
             .collect()
+    }
+
+    /// The wallet slot `(wallet_id, identity_index)` a wallet-owned
+    /// identity's key breadcrumbs are built from, or `None` out of wallet.
+    pub fn wallet_slot(&self) -> Option<(crate::wallet::platform_wallet::WalletId, u32)> {
+        self.wallet_id.zip(self.identity_index)
     }
 
     /// Layer an `IdentityPublicKey` onto this identity's
@@ -607,10 +618,7 @@ impl ManagedIdentity {
         // wallet/identity slot. Wallet-owned identities carry both
         // halves; out-of-wallet ones have neither (and no private key
         // to preserve), so they fall through to a watch-only entry.
-        let breadcrumb = match (self.wallet_id, self.identity_index) {
-            (Some(wallet_id), Some(identity_index)) => Some((wallet_id, identity_index)),
-            _ => None,
-        };
+        let breadcrumb = self.wallet_slot();
 
         // Operate on a clone of the key map, mirroring `add_key`, then
         // write it back once all matching keys have been stamped.

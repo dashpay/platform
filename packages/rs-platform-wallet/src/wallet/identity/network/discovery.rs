@@ -474,12 +474,8 @@ impl IdentityWallet {
                             // restart, so surface it (matching `add_identity` above).
                             // A fetch older than a known identity's cache carries
                             // its breadcrumbs on the cache's newer keys.
-                            let key_decisions = if identity.revision() < managed.identity.revision()
-                            {
-                                managed.key_decisions_on_cached_keys(key_decisions)
-                            } else {
-                                key_decisions
-                            };
+                            let key_decisions =
+                                managed.key_decisions_for_fetch(&identity, key_decisions);
                             managed
                                 .add_keys(key_decisions, &self.persister)
                                 .map_err(|e| {

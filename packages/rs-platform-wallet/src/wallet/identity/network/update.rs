@@ -84,8 +84,8 @@ impl IdentityWallet {
     /// `apply_landed_update`): the cached revision moves to the
     /// transition's and the added and disabled keys are applied, so a
     /// follow-up update needs no refresh in between. A cache already
-    /// refreshed to the transition or past it keeps its keys, and only
-    /// stores them. A refresh that
+    /// refreshed to the transition or past it keeps its keys and stores
+    /// them, taking from the update only an added key it lacks. A refresh that
     /// fetched the identity before the update landed and finishes after
     /// this step does not take the cache back: a fetched identity at a
     /// lower revision than the cache's is dropped. When the call fails
@@ -269,7 +269,9 @@ impl IdentityWallet {
     ///
     /// A cache already refreshed to `transition_revision` or past it
     /// holds the update as Platform has it: the payload is not applied,
-    /// and only the cache's copies of the touched keys are stored.
+    /// and the touched keys are stored from the cache's copies (an added
+    /// key the cache lacks from the payload, taken into the cache too). A
+    /// failure to store an added key is an error, as on the other path.
     async fn apply_landed_update(
         &self,
         identity_id: &Identifier,
@@ -298,7 +300,7 @@ impl IdentityWallet {
         // `disable_keys` builds it.
         if managed.identity.revision() >= transition_revision {
             let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
-            let slot = managed.wallet_id.zip(managed.identity_index);
+            let slot = managed.wallet_slot();
             let mut keys = Vec::new();
             // An added key the cache lacks is stored, and taken into the
             // cache, as the update registered it.
@@ -314,14 +316,20 @@ impl IdentityWallet {
                     breadcrumb: identity_index.map(|idx| (self.wallet_id, idx, id)),
                 });
             }
-            let stores_an_added_key = !keys.is_empty();
+            let stores_an_added_key = !added_keys.is_empty();
             for &id in disabled_ids.iter().filter(|id| !added_ids.contains(id)) {
-                if let Some(key) = managed.identity.public_keys().get(&id) {
-                    keys.push(KeyWithBreadcrumb {
-                        key: key.clone(),
-                        breadcrumb: slot.map(|(wallet_id, idx)| (wallet_id, idx, id)),
-                    });
-                }
+                let Some(key) = managed.identity.public_keys().get(&id) else {
+                    tracing::warn!(
+                        identity = %identity_id,
+                        key_id = id,
+                        "landed update: a disabled key id is not on the cached identity; skipping",
+                    );
+                    continue;
+                };
+                keys.push(KeyWithBreadcrumb {
+                    key: key.clone(),
+                    breadcrumb: slot.map(|(wallet_id, idx)| (wallet_id, idx, id)),
+                });
             }
             // A failure to store an added key is an error, as on the path
             // below; one for disabled keys only is logged, as
