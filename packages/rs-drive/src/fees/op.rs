@@ -467,10 +467,11 @@ impl LowLevelDriveOperation {
     ///
     /// This is the generation `Drive::calculate_fee` v1 selects. It differs
     /// from `consume_to_fees_v0` in one arm (the ephemeral TTL'd-subtree
-    /// arm is the same): a `SectionedStorageRemoval`
-    /// always consults `previous_fee_versions` and returns
+    /// arm is the same): a `SectionedStorageRemoval` with owner-attributed
+    /// bytes always consults `previous_fee_versions` and returns
     /// `CorruptedCodeExecution` when none is given, on every fee version
-    /// number. v0 priced fee version number 1 against an empty history, so a
+    /// number. A removal of only unowned flagged bytes (the system bucket)
+    /// prices no refund and needs no history, as in v0. v0 priced fee version number 1 against an empty history, so a
     /// caller that forgot the history silently refunded at the first
     /// generation's storage rates; from protocol version 15 that omission is
     /// an error, never a fallback to a schedule.
@@ -580,6 +581,18 @@ impl LowLevelDriveOperation {
                                 let system_amount = removal_per_epoch_by_identifier
                                     .remove(&Identifier::default())
                                     .map_or(0, |a| a.values().sum());
+                                // Bytes flagged with an epoch but no owner are system bytes
+                                // and never refunded, so a removal of nothing else prices no
+                                // refund and needs no history.
+                                if removal_per_epoch_by_identifier.is_empty() {
+                                    return Ok(FeeResult {
+                                        storage_fee,
+                                        processing_fee,
+                                        fee_refunds: FeeRefunds::default(),
+                                        removed_bytes_from_system: system_amount,
+                                        lifetime_storage_fees: Default::default(),
+                                    });
+                                }
                                 let previous_fee_versions = previous_fee_versions.ok_or(
                                     Error::Drive(DriveError::CorruptedCodeExecution(
                                         "a storage refund needs the fee history of the block that removes the bytes",
@@ -3238,12 +3251,34 @@ mod tests {
         }
 
         #[test]
-        fn should_reject_a_removal_of_unowned_flagged_bytes_without_fee_history_in_v1() {
+        fn should_not_need_fee_history_in_v1_for_a_removal_of_only_unowned_flagged_bytes() {
             // Bytes flagged with an epoch but no owner land in the system
-            // bucket; they are never refunded, but the removal is still
-            // sectioned and the rule is deliberately uniform: every
-            // sectioned removal carries the history of the removing block.
+            // bucket and are never refunded, so a removal of only those
+            // bytes prices no refund and needs no history.
             let operations = vec![sectioned_removal(&[(Identifier::default(), &[(3, 1000)])])];
+
+            let fee_results = LowLevelDriveOperation::consume_to_fees_v1(
+                operations,
+                &epoch(5),
+                DEFAULT_EPOCHS_PER_ERA,
+                &FEE_VERSION1,
+                None,
+            )
+            .expect("system bytes are removed without a refund to price");
+
+            assert_eq!(fee_results.len(), 1);
+            assert_eq!(fee_results[0].removed_bytes_from_system, 1000);
+            assert_eq!(fee_results[0].fee_refunds, FeeRefunds::default());
+        }
+
+        #[test]
+        fn should_reject_a_removal_of_unowned_and_owned_flagged_bytes_without_fee_history_in_v1() {
+            // The owner's share is refunded, so the system share riding
+            // along does not exempt the removal from the history.
+            let operations = vec![sectioned_removal(&[
+                (Identifier::default(), &[(3, 1000)]),
+                (OWNER, &[(3, 1000)]),
+            ])];
 
             let result = LowLevelDriveOperation::consume_to_fees_v1(
                 operations,
