@@ -5,13 +5,16 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
 use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
 
+use super::signing_key::first_available;
 use crate::util::now_ms;
 
 /// The first AUTHENTICATION key of `identity` at one of `security_levels`, of one of
-/// `key_types`, that can sign a `document_type_name` document of `contract_id` now.
+/// `key_types`, that can sign a `document_type_name` document of `contract_id` now
+/// AND that `signer` reports it can sign with.
 ///
 /// A key bound to another contract, or to another document type of this contract, cannot
 /// authorize the write and is skipped. A key without limits is preferred: a key with a budget
@@ -19,13 +22,17 @@ use crate::util::now_ms;
 /// key is skipped, and so is a key whose expiry has passed the wall clock (the block time
 /// trails it by seconds at most). What is left of a budget is not known offline; a spent key
 /// is refused by Platform.
+///
+/// `Ok(None)` means no key is eligible at all; `Err` means at least one eligible key exists
+/// but the signer cannot reach any of them.
 pub(crate) fn usable_authentication_key<'a>(
     identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
     contract_id: Identifier,
     document_type_name: &str,
     security_levels: &[SecurityLevel],
     key_types: &[KeyType],
-) -> Option<&'a IdentityPublicKey> {
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     let now = now_ms();
     let qualifies = |key: &IdentityPublicKey| {
         key.purpose() == Purpose::AUTHENTICATION
@@ -36,9 +43,13 @@ pub(crate) fn usable_authentication_key<'a>(
             && !key.is_expired_at(now)
     };
     let keys = identity.public_keys();
-    keys.values()
-        .find(|key| qualifies(key) && !key.has_limits())
-        .or_else(|| keys.values().find(|key| qualifies(key)))
+    let unlimited = keys
+        .values()
+        .filter(|key| qualifies(key) && !key.has_limits());
+    let limited = keys
+        .values()
+        .filter(|key| qualifies(key) && key.has_limits());
+    first_available(unlimited.chain(limited), signer)
 }
 
 /// Whether a key carrying `bounds` may sign a `document_type_name` document of `contract_id`.
@@ -64,7 +75,9 @@ fn bounds_cover(
 
 #[cfg(test)]
 mod tests {
+    use super::super::signing_key::tests::{available, KeyFilter};
     use super::*;
+    use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::KeyID;
@@ -112,11 +125,13 @@ mod tests {
     fn pick(identity: &Identity) -> Option<&IdentityPublicKey> {
         usable_authentication_key(
             identity,
+            &KeyFilter(|_| true),
             Identifier::from(CONTRACT),
             DOCUMENT_TYPE,
             &LEVELS,
             &TYPES,
         )
+        .unwrap()
     }
 
     const LEVELS: [SecurityLevel; 2] = [SecurityLevel::HIGH, SecurityLevel::CRITICAL];
@@ -231,6 +246,78 @@ mod tests {
         assert!(
             pick(&identity(vec![group])).is_none(),
             "group membership is state the wallet does not hold"
+        );
+    }
+
+    fn pick_with_signer(
+        identity: &Identity,
+        ids: &[KeyID],
+    ) -> Result<Option<KeyID>, dash_sdk::Error> {
+        usable_authentication_key(
+            identity,
+            &available(ids),
+            Identifier::from(CONTRACT),
+            DOCUMENT_TYPE,
+            &LEVELS,
+            &TYPES,
+        )
+        .map(|key| key.map(|k| k.id()))
+    }
+
+    fn bound_elsewhere(id: KeyID) -> IdentityPublicKey {
+        bound_key(
+            id,
+            SecurityLevel::HIGH,
+            Some(ContractBounds::SingleContract {
+                id: Identifier::from(OTHER_CONTRACT),
+            }),
+        )
+    }
+
+    #[test]
+    fn falls_back_past_an_unavailable_unlimited_key_to_an_available_limited_one() {
+        let subject = identity(vec![
+            key(1, SecurityLevel::CRITICAL),
+            bound_elsewhere(2),
+            key(3, SecurityLevel::HIGH).with_limits(Some(1_000), None),
+        ]);
+        assert_eq!(
+            pick_with_signer(&subject, &[2, 3]).unwrap(),
+            Some(3),
+            "unavailable key 1 is skipped, and key 2 is not usable here even though \
+             the signer holds it"
+        );
+    }
+
+    #[test]
+    fn errs_naming_the_eligible_key_when_only_ineligible_keys_are_available() {
+        let subject = identity(vec![
+            bound_elsewhere(1),
+            key(2, SecurityLevel::HIGH).with_limits(Some(1_000), None),
+            key(3, SecurityLevel::CRITICAL).with_limits(None, Some(1)),
+        ]);
+        let err = pick_with_signer(&subject, &[1, 3]).unwrap_err().to_string();
+        assert!(
+            err.contains(SIGNER_KEY_UNAVAILABLE_PREFIX),
+            "must surface as signer-unavailable: {err}"
+        );
+        assert!(
+            err.contains("Signing key 2 "),
+            "only key 2 is eligible, so it is the one reported: {err}"
+        );
+    }
+
+    #[test]
+    fn answers_none_rather_than_err_when_no_key_is_eligible_at_all() {
+        let subject = identity(vec![
+            key(0, SecurityLevel::MASTER),
+            bound_elsewhere(1),
+            key(2, SecurityLevel::HIGH).with_limits(None, Some(1)),
+        ]);
+        assert_eq!(
+            pick_with_signer(&subject, &[]).unwrap(),
+            None,
+            "unavailable but ineligible keys must not turn `None` into a signer error"
         );
     }
 }
