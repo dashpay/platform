@@ -28,6 +28,7 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::ASSET_LOCK_FUNDING_SOURCES;
 
 use super::manager::{AssetLockManager, DEFAULT_FEE_PER_KB};
+use super::orchestration::AssetLockBuiltObserver;
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
 
 // ---------------------------------------------------------------------------
@@ -811,6 +812,28 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         identity_index: u32,
         signer: &S,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
+        self.create_funded_asset_lock_proof_observed(
+            amount_duffs,
+            account_index,
+            funding_type,
+            identity_index,
+            signer,
+            None,
+        )
+        .await
+    }
+
+    /// [`Self::create_funded_asset_lock_proof`] that reports the built lock's
+    /// outpoint to `on_built` (see [`AssetLockBuiltObserver`]).
+    pub(super) async fn create_funded_asset_lock_proof_observed<S: ExtendedPubKeySigner>(
+        &self,
+        amount_duffs: u64,
+        account_index: u32,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        signer: &S,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.create_funded_asset_lock_proof_pooled(
             AssetLockBuildAmount::Exact(amount_duffs),
             &ASSET_LOCK_FUNDING_SOURCES,
@@ -818,6 +841,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_type,
             identity_index,
             signer,
+            on_built,
         )
         .await
     }
@@ -836,6 +860,30 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         identity_index: u32,
         signer: &S,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
+        self.create_funded_asset_lock_proof_with_funding_observed(
+            amount,
+            funding_account,
+            funding_type,
+            identity_index,
+            signer,
+            None,
+        )
+        .await
+    }
+
+    /// [`Self::create_funded_asset_lock_proof_with_funding`] that reports the
+    /// built lock's outpoint to `on_built` (see [`AssetLockBuiltObserver`]).
+    pub(super) async fn create_funded_asset_lock_proof_with_funding_observed<
+        S: ExtendedPubKeySigner,
+    >(
+        &self,
+        amount: AssetLockBuildAmount,
+        funding_account: AssetLockFundingAccount,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        signer: &S,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.create_funded_asset_lock_proof_pooled(
             amount,
             &[AccountTypePreference::from(funding_account)],
@@ -843,6 +891,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_type,
             identity_index,
             signer,
+            on_built,
         )
         .await
     }
@@ -850,6 +899,11 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Source-list form of [`Self::create_funded_asset_lock_proof`] — same
     /// build → broadcast → proof pipeline with the pooled funding and amount
     /// semantics of [`Self::build_asset_lock_transaction_with_funding`].
+    ///
+    /// `on_built` receives the new lock's outpoint once the lock is tracked,
+    /// before its row is persisted or it is broadcast (see
+    /// [`AssetLockBuiltObserver`]).
+    #[allow(clippy::too_many_arguments)]
     async fn create_funded_asset_lock_proof_pooled<S: ExtendedPubKeySigner>(
         &self,
         amount: AssetLockBuildAmount,
@@ -858,6 +912,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_type: AssetLockFundingType,
         identity_index: u32,
         signer: &S,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         let (path, out_point) = self
             .broadcast_funded_asset_lock_with_funding(
@@ -867,6 +922,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 funding_type,
                 identity_index,
                 signer,
+                on_built,
             )
             .await?;
         let proof = self
@@ -899,11 +955,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_type,
             identity_index,
             signer,
+            None,
         )
         .await
     }
 
     /// Funding-parameterized form of [`Self::broadcast_funded_asset_lock`].
+    /// `on_built` receives the new lock's outpoint once the lock is tracked,
+    /// before its row is persisted or it is broadcast (see
+    /// [`AssetLockBuiltObserver`]).
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn broadcast_funded_asset_lock_with_funding<S: ExtendedPubKeySigner>(
         &self,
@@ -913,6 +973,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_type: AssetLockFundingType,
         identity_index: u32,
         signer: &S,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
         // Serialize build→persist so a concurrent build cannot interleave its
         // pool snapshot with ours. The snapshot is collected from live wallet
@@ -1107,6 +1168,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 proof: None,
             })
             .await;
+        // Hand the outpoint to the caller before the row is persisted, so a
+        // caller that watches persisted rows never sees this lock unowned.
+        // Nothing is awaited between here and the persist below, so once the
+        // caller has the outpoint the lock is tracked and its row is queued
+        // (the persist itself is best-effort: a failed store is only logged).
+        if cs_built.asset_locks.contains_key(&out_point) {
+            if let Some(on_built) = on_built {
+                on_built(out_point);
+            }
+        }
         self.queue_asset_lock_changeset(cs_built);
 
         tracing::debug!(
@@ -1475,6 +1546,17 @@ mod tests {
                 .flat_map(|al| al.removed.iter().copied())
                 .collect()
         }
+
+        /// Outpoints of asset-lock rows stored across all changesets.
+        fn stored_outpoints(&self) -> Vec<OutPoint> {
+            self.stored
+                .lock()
+                .expect("capturing persistence mutex")
+                .iter()
+                .filter_map(|cs| cs.asset_locks.as_ref())
+                .flat_map(|al| al.asset_locks.keys().copied())
+                .collect()
+        }
     }
 
     impl PlatformWalletPersistence for CapturingPersistence {
@@ -1732,6 +1814,7 @@ mod tests {
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
                 &signer,
+                None,
             )
             .await;
         let err = result.expect_err("undersized drain must be refused");
@@ -1773,6 +1856,7 @@ mod tests {
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
                 &signer,
+                None,
             )
             .await
             .expect("follow-up drain must reselect the released inputs");
@@ -1781,6 +1865,170 @@ mod tests {
             1,
             "the follow-up drain should broadcast exactly once"
         );
+    }
+
+    /// The built-lock observer sees the new outpoint exactly once, once the
+    /// lock is tracked but before its row is stored or anything has reached
+    /// the broadcaster, and the outpoint it sees is the one the build returns.
+    #[tokio::test]
+    async fn should_report_the_built_outpoint_before_persisting_or_broadcast() {
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer, persistence) =
+            coinjoin_funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| {
+            let tracked = manager
+                .wallet_manager
+                .try_read()
+                .expect("the build holds no wallet-manager lock while observing")
+                .get_wallet_and_info(&manager.wallet_id)
+                .is_some_and(|(_, info)| info.tracked_asset_locks.contains_key(&out_point));
+            let stored = persistence.stored_outpoints().contains(&out_point);
+            seen.lock()
+                .unwrap()
+                .push((out_point, tracked, stored, broadcaster.calls()));
+        };
+
+        let (_, out_point) = manager
+            .broadcast_funded_asset_lock_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: Some(1),
+                },
+                &[AccountTypePreference::CoinJoin],
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                Some(&observer),
+            )
+            .await
+            .expect("drain must broadcast");
+
+        assert_eq!(
+            seen.into_inner().unwrap(),
+            vec![(out_point, true, false, 0)]
+        );
+        assert_eq!(broadcaster.calls(), 1);
+        assert!(persistence.stored_outpoints().contains(&out_point));
+    }
+
+    /// Broadcaster that refuses every transaction definitively.
+    struct RejectingBroadcaster;
+
+    #[async_trait]
+    impl TransactionBroadcaster for RejectingBroadcaster {
+        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            Err(BroadcastError::Rejected {
+                reason: "simulated rejection".to_owned(),
+            })
+        }
+    }
+
+    /// Broadcaster whose every send ends without a verdict.
+    struct MaybeSentBroadcaster;
+
+    #[async_trait]
+    impl TransactionBroadcaster for MaybeSentBroadcaster {
+        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            Err(BroadcastError::MaybeSent {
+                reason: "simulated timeout".to_owned(),
+            })
+        }
+    }
+
+    /// A lock whose broadcast ends without a verdict was reported to the
+    /// observer, and its row stays tracked and stored, so the caller can
+    /// resume it by the outpoint it was given.
+    #[tokio::test]
+    async fn should_keep_a_reported_lock_whose_broadcast_may_have_been_sent() {
+        let (manager, signer, persistence) =
+            coinjoin_funded_asset_lock_manager(Arc::new(MaybeSentBroadcaster)).await;
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        manager
+            .broadcast_funded_asset_lock_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: Some(1),
+                },
+                &[AccountTypePreference::CoinJoin],
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                Some(&observer),
+            )
+            .await
+            .expect_err("an unconfirmed broadcast must fail the call");
+
+        let seen = seen.into_inner().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert!(persistence.removed_outpoints().is_empty());
+        assert!(persistence.stored_outpoints().contains(&seen[0]));
+        let wm = manager.wallet_manager.read().await;
+        let (_, info) = wm
+            .get_wallet_and_info(&manager.wallet_id)
+            .expect("wallet still present");
+        assert!(info.tracked_asset_locks.contains_key(&seen[0]));
+    }
+
+    /// A lock whose broadcast is rejected was still reported to the observer,
+    /// which ran before the broadcast; the call then returns the rejection and
+    /// the lock's row is removed again.
+    #[tokio::test]
+    async fn should_report_a_lock_whose_broadcast_is_then_rejected() {
+        let (manager, signer, persistence) =
+            coinjoin_funded_asset_lock_manager(Arc::new(RejectingBroadcaster)).await;
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        manager
+            .broadcast_funded_asset_lock_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: Some(1),
+                },
+                &[AccountTypePreference::CoinJoin],
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                Some(&observer),
+            )
+            .await
+            .expect_err("a rejected broadcast must fail the call");
+
+        let seen = seen.into_inner().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(persistence.removed_outpoints(), seen);
+    }
+
+    /// A build abandoned before tracking never reaches the observer: there is
+    /// no lock for the caller to own.
+    #[tokio::test]
+    async fn should_not_report_an_outpoint_for_an_abandoned_build() {
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let (manager, signer, _persistence) =
+            coinjoin_funded_asset_lock_manager(Arc::clone(&broadcaster)).await;
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        manager
+            .broadcast_funded_asset_lock_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: Some(u64::MAX),
+                },
+                &[AccountTypePreference::CoinJoin],
+                0,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                &signer,
+                Some(&observer),
+            )
+            .await
+            .expect_err("undersized drain must be refused");
+
+        assert!(seen.into_inner().unwrap().is_empty());
+        assert_eq!(broadcaster.calls(), 0);
     }
 
     /// A whole-account drain that finds nothing selectable must report the
@@ -2684,6 +2932,7 @@ mod tests {
                 AssetLockFundingType::IdentityRegistration,
                 0,
                 &signer,
+                None,
             )
             .await;
         match refused {
@@ -2713,6 +2962,7 @@ mod tests {
                     reclaim_target,
                     0,
                     &signer,
+                    None,
                 ),
             )
             .await;

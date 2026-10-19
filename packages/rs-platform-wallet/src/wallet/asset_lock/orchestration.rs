@@ -48,6 +48,8 @@ use crate::error::{
 };
 use crate::wallet::asset_lock::manager::AssetLockManager;
 
+use super::build::AssetLockBuildAmount;
+
 // ---------------------------------------------------------------------------
 // Timeout policy
 // ---------------------------------------------------------------------------
@@ -135,6 +137,28 @@ pub(crate) const CL_HEIGHT_RETRY_DELAY: Duration = Duration::from_secs(15);
 /// rejection error carries Platform's `current_core_chain_locked_height`
 /// each round so logs name the laggard node's reported tip explicitly.
 pub(crate) const CL_HEIGHT_RETRY_BUDGET: Duration = Duration::from_secs(210);
+
+/// Callback that receives the outpoint of an asset lock built for a
+/// [`AssetLockFunding::FromWalletBalance`] or
+/// [`AssetLockFunding::DrainAccountBalance`] request. It runs synchronously
+/// once the transaction is signed and the lock is tracked in memory, before
+/// the lock's row is persisted or the lock is broadcast, so it must not
+/// block. A caller that watches persisted lock rows uses it to tell its own
+/// new lock apart from rows the wallet re-inserts during recovery; it must
+/// record the outpoint before returning. The ordering covers persisted rows
+/// only: in-memory listings of tracked locks can show the lock just before
+/// the callback runs, and the row is persisted best-effort.
+///
+/// It runs at most once per call and must not panic: it runs between
+/// tracking the lock and queueing its row, and an unwind there leaves the
+/// lock tracked in memory only. It does not run for
+/// [`AssetLockFunding::FromExistingAssetLock`], whose outpoint the caller
+/// already holds, nor when the build itself fails, is abandoned before
+/// tracking, or finds the wallet gone when it tracks the lock. It does run
+/// for a lock whose broadcast then fails: after a definite rejection the lock
+/// is removed again, otherwise it stays tracked and can be resumed by its
+/// outpoint.
+pub type AssetLockBuiltObserver<'a> = dyn Fn(OutPoint) + Send + Sync + 'a;
 
 // ---------------------------------------------------------------------------
 // Funding choice
@@ -651,12 +675,16 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// carries the *exact* outpoint that timed out (no
     /// `find_tracked_unproven_lock` BTreeMap walk needed), so the
     /// `IsTimeout` outcome is built directly from the error payload.
+    ///
+    /// `on_built` receives the outpoint of a newly built lock; see
+    /// [`AssetLockBuiltObserver`].
     pub(crate) async fn resolve_funding_with_is_timeout_fallback<AS>(
         &self,
         funding: AssetLockFunding,
         funding_type: AssetLockFundingType,
         destination_index: u32,
         asset_lock_signer: &AS,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<FundingResolution, PlatformWalletError>
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
@@ -667,12 +695,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 account_index,
             } => {
                 match self
-                    .create_funded_asset_lock_proof(
+                    .create_funded_asset_lock_proof_observed(
                         amount_duffs,
                         account_index,
                         funding_type,
                         destination_index,
                         asset_lock_signer,
+                        on_built,
                     )
                     .await
                 {
@@ -700,12 +729,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // Same pipeline as `FromWalletBalance`, with drain amount
                 // semantics and the caller-picked funding account family.
                 match self
-                    .create_funded_asset_lock_proof_with_funding(
-                        super::build::AssetLockBuildAmount::DrainAll { minimum_lock_duffs },
+                    .create_funded_asset_lock_proof_with_funding_observed(
+                        AssetLockBuildAmount::DrainAll { minimum_lock_duffs },
                         account,
                         funding_type,
                         destination_index,
                         asset_lock_signer,
+                        on_built,
                     )
                     .await
                 {
