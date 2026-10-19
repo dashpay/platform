@@ -3,7 +3,7 @@
 use std::slice;
 
 use dashcore::secp256k1::ecdh::shared_secret_point;
-use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+use dashcore::secp256k1::{PublicKey, SecretKey};
 use zeroize::Zeroizing;
 
 use crate::error::*;
@@ -34,14 +34,14 @@ fn parse_secret_key(
         )));
     }
 
-    // `SecretKey::from_slice` converts the slice into an unguarded local
-    // `[u8; 32]` on its way to the returned key, so parsing straight from the
-    // caller's slice would leave a second, unscrubbed copy of the scalar on
-    // the stack. Staging it here keeps every copy this side owns wiped.
+    // Converting the caller's slice straight into the `[u8; 32]`
+    // `SecretKey::from_secret_bytes` takes would leave an unguarded copy of
+    // the scalar on the stack. Staging it here keeps every copy this side
+    // owns wiped.
     let mut staged = Zeroizing::new([0u8; 32]);
     staged.copy_from_slice(unsafe { slice::from_raw_parts(private_key, private_key_len) });
 
-    SecretKey::from_byte_array(&staged)
+    SecretKey::from_secret_bytes(*staged)
         .map(WipingSecretKey)
         .map_err(|error| invalid_parameter(format!("Invalid secp256k1 private key: {error}")))
 }
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn platform_wallet_secp256k1_compressed_public_key(
     check_ptr!(out_pubkey);
 
     let secret_key = unwrap_result_or_return!(parse_secret_key(seckey, seckey_len));
-    let compressed = PublicKey::from_secret_key(&Secp256k1::new(), &secret_key.0).serialize();
+    let compressed = PublicKey::from_secret_key(&secret_key.0).serialize();
     std::ptr::copy_nonoverlapping(compressed.as_ptr(), out_pubkey, compressed.len());
     PlatformWalletFFIResult::ok()
 }

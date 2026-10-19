@@ -38,6 +38,16 @@ pub enum PlatformWalletError {
     #[error("failed to persist wallet changeset: {0}")]
     PersisterStore(#[source] crate::changeset::PersistenceError),
 
+    /// A persister `flush` failed: the commit of rounds a backend whose
+    /// `store` only buffers was still holding. It keeps the flush's own
+    /// classification, which means something different from a store's:
+    /// `Transient` says the buffer survived and another `flush` may commit
+    /// it, `Constraint` that the buffered data was rejected, and `Fatal` that
+    /// the buffered rounds were discarded. See [`Self::PersisterLoad`] for why
+    /// the typed cause is carried.
+    #[error("failed to commit buffered wallet changesets: {0}")]
+    PersisterFlush(#[source] crate::changeset::PersistenceError),
+
     /// Restoring persisted platform-address state into a freshly registered
     /// wallet failed. Boxed to break the recursion; the inner variant and its
     /// `#[source]` chain survive intact.
@@ -66,6 +76,15 @@ pub enum PlatformWalletError {
 
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
+
+    /// A DashPay invitation link's voucher key is for the other network (a
+    /// testnet link opened in a mainnet wallet, or the reverse). Definitive:
+    /// the claim refuses the link before any network work.
+    #[error("invitation is for the {invitation:?} network but this wallet is on {wallet:?}")]
+    InvitationNetworkMismatch {
+        invitation: Network,
+        wallet: Network,
+    },
 
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
@@ -853,6 +872,15 @@ pub enum PlatformWalletError {
     #[error("SPV error: {0}")]
     SpvError(String),
 
+    /// SPV startup or teardown panicked and may have left background work
+    /// running. Not retryable: restart the process.
+    /// FFI mirror: `PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired`.
+    #[error(
+        "SPV startup or teardown panicked and may have left background work \
+         running; restart the process before using SPV again: {0}"
+    )]
+    SpvProcessRestartRequired(String),
+
     #[error("Token operation failed: {0}")]
     TokenError(String),
 
@@ -993,6 +1021,8 @@ pub enum PlatformWalletError {
     /// fail-closed. The wedged pass may still fire persistence / event
     /// callbacks; the host must keep its callback context alive and must
     /// not commit any wipe it was about to pair with this call.
+    /// Also returned by SPV start, stop and storage clear while an SPV
+    /// teardown is still running: stop SPV again.
     /// FFI mirror: `PlatformWalletFFIResultCode::ErrorShutdownIncomplete`.
     #[error("Background sync did not quiesce: {0}")]
     ShutdownIncomplete(String),
@@ -1082,6 +1112,16 @@ impl PlatformWalletError {
             _ => source,
         };
         Self::PersisterStore(source)
+    }
+
+    /// A persister `flush` failed. Unlike
+    /// [`from_store_failure`](Self::from_store_failure) the classification is
+    /// kept as the backend reported it: a transient flush failure is retried
+    /// with another `flush`, which the store-side reissue attestation says
+    /// nothing about. See [`Self::from_load_failure`] for why no blanket
+    /// conversion exists.
+    pub fn from_flush_failure(source: crate::changeset::PersistenceError) -> Self {
+        Self::PersisterFlush(source)
     }
 
     /// Restoring persisted platform-address state failed. Boxes `source`, so

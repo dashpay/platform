@@ -99,9 +99,10 @@ impl WasmSdk {
         }
 
         if let Some(contract_id) = contract_id_to_refresh(state_transition) {
-            // This runs after the transition is broadcast, so a fetch that fails must not
-            // discard a result the network may already have accepted: a copy the provider
-            // holds is what is left to verify against, and it is right unless the team changed.
+            // Keep a resolvable contract when refresh fails: a separate wait may follow
+            // a broadcast the network already accepted. Combined calls prepare this
+            // context before broadcasting. Verification still checks the result against
+            // the available contract, which may be stale if the team changed.
             if let Err(error) = self.refresh_contract(contract_id).await {
                 if !self.can_resolve_contract(contract_id) {
                     return Err(error);
@@ -124,11 +125,9 @@ impl WasmSdk {
                 continue;
             }
 
-            // Only an unresolvable contract reaches the network. This runs
-            // after the transition is broadcast, where refetching what we
-            // already hold would let one transient failure discard a result
-            // the network already accepted. A contract that can be neither
-            // resolved nor fetched stays fatal: the proof needs it.
+            // Only an unresolvable contract reaches the network. Proof verification
+            // needs a definition, so a contract that cannot be resolved or fetched
+            // stays fatal, including for a separate wait after submission.
             self.refresh_contract(contract_id).await?;
         }
 
@@ -170,10 +169,13 @@ impl WasmSdk {
     ///
     /// Note: This differs from `waitForStateTransitionResult` which takes a hash string.
     /// This method takes the full state transition object and performs proof verification.
+    /// It succeeds only when the proof establishes execution of this specific transition.
+    /// An authenticated affected-state snapshot returns `ExecutionNotProved`; use
+    /// `waitForAffectedState` when a snapshot is the intended result.
     ///
     /// @param stateTransition - The state transition that was broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
-    /// @returns The verified state transition result
+    /// @returns The execution-proved state transition result
     #[wasm_bindgen(js_name = "waitForResponse")]
     pub async fn wait_for_response(
         &self,
@@ -199,14 +201,17 @@ impl WasmSdk {
 
     /// Broadcasts a state transition and waits for the result.
     ///
-    /// This method prepares proof context, broadcasts the transition, and waits
-    /// for confirmation from the network. Returns once the transition has been
-    /// processed or fails. Unlike separate broadcast and wait calls, proof
-    /// context preparation happens before broadcasting.
+    /// This method prepares proof context before broadcasting, then waits for
+    /// proof that this specific transition executed. `ExecutionNotProved` means
+    /// the accepted broadcast was followed by an authenticated affected-state
+    /// snapshot; it establishes neither execution nor failure of this transition.
+    /// To wait for an authenticated snapshot, call `waitForAffectedState` on
+    /// the submitted transition without broadcasting it again; the new wait
+    /// may observe a later block.
     ///
     /// @param stateTransition - The state transition to broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
-    /// @returns The verified state transition result
+    /// @returns The execution-proved state transition result
     #[wasm_bindgen(js_name = "broadcastAndWait")]
     pub async fn broadcast_and_wait(
         &self,
@@ -223,10 +228,11 @@ impl WasmSdk {
         let (outcome, _metadata) = st
             .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
+            .map_err(|e| {
+                WasmSdkError::with_context("Failed to wait for state transition result", e)
+            })?;
         let owner_balance = outcome.owner_balance();
-        let result = require_execution_proved(outcome)
-            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
+        let result = require_execution_proved(outcome).map_err(WasmSdkError::from)?;
 
         with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
@@ -240,9 +246,10 @@ impl WasmSdk {
     /// address funds movements, shields, no-history token operations, key
     /// limits updates, contract updates, contract moderation and fee claims,
     /// and creates and deletes of indexOnly documents). This method accepts
-    /// those outcomes instead. The result is a verified,
-    /// height-pinned snapshot of the affected state — NOT evidence that this
-    /// specific transition executed.
+    /// those outcomes, as well as execution-proved outcomes. A snapshot
+    /// authenticates state at the proof's block; it does not prove this specific
+    /// transition executed. The generic JavaScript result does not expose the
+    /// proof height.
     ///
     /// @param stateTransition - The state transition that was broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
@@ -292,7 +299,9 @@ impl WasmSdk {
         let (outcome, _metadata) = st
             .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
+            .map_err(|e| {
+                WasmSdkError::with_context("Failed to wait for state transition result", e)
+            })?;
         let owner_balance = outcome.owner_balance();
         let result = outcome.into_result();
 
@@ -320,7 +329,7 @@ fn with_owner_balance(
 
 #[cfg(test)]
 mod tests {
-    use dash_sdk::dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dash_sdk::dpp::bls::SecretKey;
     use super::*;
     use crate::context_provider::WasmTrustedContext;
     use crate::sdk::WasmSdkBuilder;
@@ -361,9 +370,10 @@ mod tests {
     }
 
     fn rotated_quorum_key() -> [u8; 48] {
-        let key = SecretKey::<Bls12381G2Impl>::from_hash(b"rotated-quorum-fixture").public_key();
-        let bytes: Vec<u8> = (&key).into();
-        bytes.try_into().expect("BLS public key is 48 bytes")
+        SecretKey::from_ikm(b"rotated-quorum-fixture-keying-material")
+            .expect("at least 32 bytes of keying material")
+            .public_key()
+            .to_bytes()
     }
 
     fn spawn_rotated_quorum_endpoint() -> (String, thread::JoinHandle<()>) {

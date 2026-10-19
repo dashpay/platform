@@ -205,13 +205,13 @@ Spending only final coins brings these Rust source and behaviour changes:
   refusal too, where it used to return `CoreInsufficientFunds` /
   `CorePooledInsufficientFunds`. An exhaustive `match` needs an arm for it.
 - `PlatformWalletError` gains `CoreFundsAwaitingNetwork { available, waiting,
-  required, outpoint }` (FFI code 59): the build's final coins fall short, but
+  required, outpoint }` (FFI code 61): the build's final coins fall short, but
   key-wallet would build it if the coins that are not yet confirmed or
   InstantSend-locked were final. An exhaustive `match` needs an arm for it.
 - The asset-lock builds (identity registration and top-up, invitations,
   shielded and platform-address funding) return `CoreFundsAwaitingNetwork`
   for the same condition, where they returned `AssetLockInsufficientFunds`
-  (FFI code 29): a caller that matched 29 to offer "add funds" should treat 59
+  (FFI code 29): a caller that matched 29 to offer "add funds" should treat 61
   as "wait". A drain reports it when the build itself fails (no final coin
   it can select, or too little to leave more than dust after the fee) and the
   lock its waiting coins would complete, every coin less the fee, reaches the

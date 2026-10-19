@@ -978,10 +978,10 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
 /// "wallet account not found" has a code of its own). One owned is refused by
 /// name, in the finalizer's order: unspendable — a locked coin, or an immature
 /// coinbase output (spendable once it matures, 100 blocks after its block;
-/// neither is cured by the InstantSend lock or confirmation code 59 waits for)
+/// neither is cured by the InstantSend lock or confirmation code 61 waits for)
 /// — (`ErrorInvalidParameter`, "not spendable"), pinned by an in-flight
 /// broadcast (input mid-broadcast; `ErrorUnknown` until it has a code of its
-/// own, the outpoint in the message), then not final yet (code 59). Nothing is
+/// own, the outpoint in the message), then not final yet (code 61). Nothing is
 /// recorded unless every outpoint passes.
 ///
 /// The finalizers look each recorded outpoint up again, in the accounts THEY
@@ -989,7 +989,7 @@ pub unsafe extern "C" fn core_wallet_tx_builder_set_special_payload(
 /// it is then. A chosen coin is never dropped silently: one those accounts
 /// don't hold (chosen from another account, or spent since) fails the build
 /// by name, with or without `core_wallet_tx_builder_use_only_added_inputs`;
-/// one that lost its final status fails with code 59, one an in-flight
+/// one that lost its final status fails with code 61, one an in-flight
 /// broadcast pins with an input-mid-broadcast error. The one exception: a coin
 /// another in-flight build holds reserved (a pending deferred payment, say)
 /// is left out by the reservation filter, as reservations are not readable
@@ -1259,10 +1259,10 @@ mod pooled_balance_handle_tests {
     /// The app's Send right after a send whose broadcast outcome is unknown:
     /// the wallet's only coin is that send's change, not final yet. A second
     /// payment built the way the app builds it — one `add_output`, default
-    /// rate, the pooled `AllSpendable` sources — is refused with code 59 and
+    /// rate, the pooled `AllSpendable` sources — is refused with code 61 and
     /// builds nothing.
     #[test]
-    fn should_refuse_a_second_payment_on_an_unknown_sends_change_with_code_59() {
+    fn should_refuse_a_second_payment_on_an_unknown_sends_change_with_code_61() {
         let change = 8_999_774;
         let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
             StandardAccountType::BIP44Account,
@@ -1291,7 +1291,7 @@ mod pooled_balance_handle_tests {
 
     /// 900,000 final + 101,000 waiting against a 1,000,000 payment. At the
     /// rate the builder set, 10,000 duffs/kB, the waiting coin nets too little
-    /// once its input and the fee are paid: insufficient funds, not code 59.
+    /// once its input and the fee are paid: insufficient funds, not code 61.
     /// The same build at the default rate would be covered by waiting.
     #[test]
     fn should_price_a_waiting_shortfall_at_the_fee_rate_the_builder_set() {
@@ -1417,7 +1417,7 @@ mod pooled_balance_handle_tests {
     /// Two non-final outputs of one transaction, 2,467 and 600 duffs, drained
     /// at 10,000 duffs/kB: once they confirm (together) the two-input
     /// transaction's 3,400-duff fee alone exceeds their 3,067 duffs —
-    /// insufficient funds, not code 59. Coin by coin, net of each input's fee
+    /// insufficient funds, not code 61. Coin by coin, net of each input's fee
     /// (987 + 0 against a 986-duff one-output reserve), it looked covered.
     #[test]
     fn should_judge_a_drain_by_the_gross_value_of_every_coin() {
@@ -1438,7 +1438,7 @@ mod pooled_balance_handle_tests {
 
     /// key-wallet checks a drain's inputs against its placeholder amount
     /// before draining: a 1,000,000-duff placeholder over one non-final
-    /// 100,000-duff coin is insufficient funds, not code 59.
+    /// 100,000-duff coin is insufficient funds, not code 61.
     #[test]
     fn should_hold_a_drain_to_its_placeholder_amount() {
         let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
@@ -1487,8 +1487,8 @@ mod pooled_balance_handle_tests {
 
     /// An asset lock spends what its credit outputs burn, set through the
     /// payload setter with no explicit output. With every coin not final
-    /// (500,000 duffs), a burn beyond them is insufficient funds, not code 59;
-    /// one they cover is code 59.
+    /// (500,000 duffs), a burn beyond them is insufficient funds, not code 61;
+    /// one they cover is code 61.
     #[test]
     fn should_size_an_asset_lock_shortfall_by_its_burn() {
         for (burn, waiting) in [(5_000_000, false), (100_000, true)] {
@@ -1529,7 +1529,7 @@ mod pooled_balance_handle_tests {
     }
 
     /// An input recorded on the builder is finalized from the wallet's copy as
-    /// it is then: one not final by that time is refused by name (code 59),
+    /// it is then: one not final by that time is refused by name (code 61),
     /// with and without `use_only_added_inputs`.
     #[test]
     fn should_refuse_a_recorded_input_that_is_not_final_when_finalized() {
@@ -1570,7 +1570,7 @@ mod pooled_balance_handle_tests {
 
     /// An explicit zero rate is the rate the build pays, not "unset": 900,000
     /// final + 100,100 waiting fund a 1,000,000 payment for free once the
-    /// waiting coin confirms — code 59. Left unset, the default rate makes the
+    /// waiting coin confirms — code 61. Left unset, the default rate makes the
     /// same build short.
     #[test]
     fn should_price_an_explicit_zero_fee_rate_as_zero() {
@@ -1657,7 +1657,7 @@ mod pooled_balance_handle_tests {
     }
 
     /// With no coin final, the trial decides: a payment the waiting coins
-    /// could never cover is insufficient funds, one they cover is code 59.
+    /// could never cover is insufficient funds, one they cover is code 61.
     #[test]
     fn should_call_a_payment_beyond_every_coin_insufficient_with_no_final_coin() {
         let (core, signer) = runtime().block_on(funded_spv_core_wallet_with_outputs(
@@ -1997,7 +1997,7 @@ mod real_finalizer_tests {
     /// A locked coin that is not final either: confirmation would not make
     /// it usable, so naming it is the native finalizer's refusal
     /// (`ChosenInputUnavailable::NotSpendable`, `ErrorInvalidParameter`), not
-    /// code 59.
+    /// code 61.
     #[test]
     fn should_refuse_a_locked_coin_as_unspendable_before_finality() {
         let (manager, wallet_id) = runtime().block_on(test_platform_wallet_manager());
@@ -2120,7 +2120,7 @@ mod real_finalizer_tests {
 
     /// A coin an in-flight broadcast pins is refused when it is named, as the
     /// finalizer would refuse it (input mid-broadcast, which crosses as
-    /// `ErrorUnknown`) — final or not: the fence comes before code 59, since
+    /// `ErrorUnknown`) — final or not: the fence comes before code 61, since
     /// waiting would not clear it. Not recorded.
     #[test]
     fn should_refuse_a_coin_pinned_by_an_in_flight_broadcast() {
@@ -2170,9 +2170,9 @@ mod real_finalizer_tests {
 
     /// The app's shape through `core_wallet_tx_builder_finalize`: the only
     /// coin is the change of a send whose broadcast outcome is unknown (not
-    /// final), and a second payment is code 59, with no handle published.
+    /// final), and a second payment is code 61, with no handle published.
     #[test]
-    fn should_return_code_59_from_the_real_finalizer_for_the_apps_second_payment() {
+    fn should_return_code_61_from_the_real_finalizer_for_the_apps_second_payment() {
         let (wallet, _release) = wallet_with_coin(8_999_774, false);
         let resolver = unsafe {
             dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), resolve, noop_destroy)
@@ -2198,7 +2198,7 @@ mod real_finalizer_tests {
 
     /// The same through the deferred finalizer, which shares the plumbing.
     #[test]
-    fn should_return_code_59_from_the_deferred_finalizer_too() {
+    fn should_return_code_61_from_the_deferred_finalizer_too() {
         let _registry = registry_test_guard();
         let (wallet, _release) = wallet_with_coin(8_999_774, false);
         let resolver = unsafe {

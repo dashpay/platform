@@ -349,6 +349,11 @@ impl WasmTrustedContext {
         self.inner.add_known_contract(contract);
     }
 
+    /// Keep the strictly newer contract, preserving the existing body on ties.
+    pub(crate) fn add_known_contract_if_newer(&self, contract: DataContract) -> Arc<DataContract> {
+        self.inner.add_known_contract_if_newer(contract)
+    }
+
     /// Get a data contract from the known contracts cache
     pub fn get_known_contract(&self, id: &Identifier) -> Option<Arc<DataContract>> {
         self.inner.get_known_contract(id)
@@ -397,16 +402,17 @@ impl WasmTrustedContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dash_sdk::dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dash_sdk::dpp::bls::SecretKey;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
     use std::thread;
     use std::time::{Duration, Instant};
 
     fn quorum_key(seed: u8) -> [u8; 48] {
-        let key = SecretKey::<Bls12381G2Impl>::from_hash(&[seed]).public_key();
-        let bytes: Vec<u8> = (&key).into();
-        bytes.try_into().expect("BLS public key is 48 bytes")
+        SecretKey::from_ikm(&[seed; 32])
+            .expect("32 bytes of keying material")
+            .public_key()
+            .to_bytes()
     }
 
     fn quorums_body(hash: u8, key: u8) -> String {

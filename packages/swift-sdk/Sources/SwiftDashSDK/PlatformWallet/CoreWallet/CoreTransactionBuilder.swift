@@ -205,16 +205,16 @@ public final class CoreTransactionBuilder {
     /// Add a chosen subset of the account's UTXOs (as returned by
     /// `PlatformWalletManager.accountUtxos`) as inputs. Each must belong to
     /// the account, be spendable (a locked coin, or a coinbase output not yet
-    /// matured — 100 blocks — is refused as an invalid parameter, not code 59),
+    /// matured — 100 blocks — is refused as an invalid parameter, not code 61),
     /// not be pinned by an in-flight broadcast (refused as an unknown error
     /// naming the coin, until that refusal has a code of its own), and be
-    /// final (code 59 otherwise).
+    /// final (code 61 otherwise).
     ///
     /// The finalizer looks each one up again in the accounts it funds from
     /// (its own `accountType` and index) and never drops a chosen coin
     /// silently: one those accounts don't hold (another account's, or spent
     /// since) fails the build by name, one no longer final fails with code
-    /// 59, one an in-flight broadcast pins as mid-broadcast. The one
+    /// 61, one an in-flight broadcast pins as mid-broadcast. The one
     /// exception: a coin another in-flight build holds reserved (a pending
     /// deferred payment) is left out.
     @discardableResult

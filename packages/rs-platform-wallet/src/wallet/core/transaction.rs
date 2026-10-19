@@ -106,7 +106,7 @@ pub(crate) fn is_final(utxo: &Utxo) -> bool {
 /// any unspendable first (a locked coin, or an immature coinbase output
 /// until it matures — not what the network's confirmation of the coin
 /// cures), then any pinned by an in-flight broadcast (`pinned`; the build
-/// would refuse it after selection anyway), then any not final (code 59, the
+/// would refuse it after selection anyway), then any not final (code 61, the
 /// only refusal waiting cures).
 pub(crate) fn check_chosen_inputs<'a>(
     utxos: impl IntoIterator<Item = &'a Utxo> + Clone,
@@ -193,7 +193,7 @@ fn resolve_chosen_inputs(
     Ok((seeds, pinned))
 }
 
-/// Code 59 for a coin the caller chose as an input that is not final: it
+/// Code 61 for a coin the caller chose as an input that is not final: it
 /// names the coin, and `waiting` is its value.
 pub(crate) fn input_awaiting_network(utxo: &Utxo) -> PlatformWalletError {
     PlatformWalletError::CoreFundsAwaitingNetwork {
@@ -557,7 +557,7 @@ pub(crate) fn awaiting_network(
     }
 }
 
-/// Code 59 for a shortfall the waiting coins would fund.
+/// Code 61 for a shortfall the waiting coins would fund.
 fn funds_awaiting_network(
     available: Option<u64>,
     required: Option<u64>,
@@ -3084,7 +3084,7 @@ mod tests {
         }
     }
 
-    /// The trial leaves nothing behind: after a code 59, every standard
+    /// The trial leaves nothing behind: after a code 61, every standard
     /// account's next change address is the one it was, and the final coin
     /// the trial selected is free at once — a payment it covers builds.
     #[tokio::test]
@@ -3282,7 +3282,7 @@ mod tests {
     /// the factory seeds a final 700,000-duff BIP32 coin while only BIP44
     /// (one waiting 700,000-duff coin) funds a 1,000,000 payment. The trial
     /// would spend both, but the build refuses the BIP32 input, so
-    /// confirmation would not help: not code 59, but the typed refusal naming
+    /// confirmation would not help: not code 61, but the typed refusal naming
     /// the seeded coin.
     #[tokio::test]
     async fn should_not_report_waiting_on_a_trial_input_outside_the_funding_accounts() {
@@ -3362,7 +3362,7 @@ mod tests {
     /// A factory that seeds the same final coin twice: 2 × 400,000 duffs
     /// (BIP32) plus one waiting 300,000-duff BIP44 coin would look like
     /// 1,100,000 to a trial, but the wallet holds 700,000 and the build
-    /// refuses the duplicate input — the trial does too, instead of code 59.
+    /// refuses the duplicate input — the trial does too, instead of code 61.
     #[tokio::test]
     async fn should_not_report_waiting_on_a_trial_that_spends_a_seed_twice() {
         let (core, signer, manager, wallet_id) = dual_core(&[300_000], &[400_000]).await;
@@ -3508,7 +3508,7 @@ mod tests {
     }
 
     /// With nothing final at all key-wallet names no requirement, and the
-    /// trial over the waiting coin funds the payment: code 59, with the coin
+    /// trial over the waiting coin funds the payment: code 61, with the coin
     /// the trial spends as waiting and no invented requirement.
     #[tokio::test]
     async fn should_report_waiting_when_no_coin_is_final() {
@@ -3549,8 +3549,8 @@ mod tests {
     /// A high fee rate: 900,000 final + 101,000 waiting against 1,000,000 at
     /// 10,000 duffs/kB. Confirmation could not fund it (1,001,000 is short of
     /// the payment plus even the 3,400-duff no-change fee): insufficient funds,
-    /// not code 59 — through a plain builder (no trial) and through the trial
-    /// alike. At the default rate the trial builds: code 59.
+    /// not code 61 — through a plain builder (no trial) and through the trial
+    /// alike. At the default rate the trial builds: code 61.
     #[tokio::test]
     async fn should_not_report_waiting_for_a_build_it_cannot_price() {
         let (core, signer, manager, wallet_id) = dual_core(&[101_000], &[900_000]).await;
@@ -3947,7 +3947,7 @@ mod tests {
     /// The waiting-coins trial applies the build's spendability refusal to
     /// the coins it would sign: a BIP32 coin seeded while unlocked and locked
     /// since, which a waiting BIP44 coin would otherwise complete, is refused
-    /// as unspendable — not code 59, since waiting would not clear the lock.
+    /// as unspendable — not code 61, since waiting would not clear the lock.
     #[tokio::test]
     async fn should_not_report_waiting_on_a_trial_that_needs_a_locked_seed() {
         let (core, signer, manager, wallet_id) = dual_core(&[400_000], &[700_000]).await;

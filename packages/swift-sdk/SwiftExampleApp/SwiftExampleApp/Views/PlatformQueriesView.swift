@@ -234,7 +234,8 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getGroupInfo", label: "Get Group Info", description: "Get information about a group"),
                 QueryDefinition(name: "getGroupInfos", label: "Get Group Infos", description: "Get information about multiple groups"),
                 QueryDefinition(name: "getGroupActions", label: "Get Group Actions", description: "Get actions for a group"),
-                QueryDefinition(name: "getGroupActionSigners", label: "Get Group Action Signers", description: "Get signers for a group action")
+                QueryDefinition(name: "getGroupActionSigners", label: "Get Group Action Signers", description: "Get signers for a group action"),
+                QueryDefinition(name: "getContractGroupInfo", label: "Get Contract Group Info", description: "Get the owner, admins, name and description of a contract group")
             ]
 
         case .system:

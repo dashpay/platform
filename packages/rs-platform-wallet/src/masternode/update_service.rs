@@ -22,15 +22,14 @@ use dashcore::blockdata::transaction::special_transaction::{
     SpecialTransactionBasePayloadEncodable, TransactionPayload,
 };
 use dashcore::bls_sig_utils::BLSSignature;
-use dashcore::blsful::{Bls12381G2Impl, SecretKey as BlsSecretKey, SignatureSchemes};
 use dashcore::hash_types::InputsHash;
 use dashcore::hashes::Hash;
 use dashcore::platform_node_id::PlatformNodeId;
 use dashcore::{Address as DashAddress, Network, Transaction, Txid};
+use dpp::bls::SecretKey as BlsSecretKey;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
-use std::net::{IpAddr, SocketAddr};
 use zeroize::Zeroizing;
 
 use super::list::MasternodeListSummary;
@@ -286,8 +285,6 @@ pub(crate) fn prepare_update_service_placeholder(
                 .to_string(),
         )
     })?;
-    let (ip_address, port) = service_payload_fields(service);
-
     // The platform triplet is serialized only when mn_type is HighPerformance,
     // so the evonode/regular split must be explicit here — a missing mn_type
     // would silently drop the platform fields on the wire.
@@ -332,8 +329,7 @@ pub(crate) fn prepare_update_service_placeholder(
     Ok(ProviderUpdateServicePayload::new(
         mn_type,
         Txid::from_byte_array(entry.pro_tx_hash),
-        ip_address,
-        port,
+        service,
         script_payout,
         InputsHash::all_zeros(),
         platform_node_id,
@@ -341,17 +337,6 @@ pub(crate) fn prepare_update_service_placeholder(
         platform_http_port,
         BLSSignature::from([0u8; 96]),
     ))
-}
-
-/// A service socket address as the payload encodes it: the IPv6 (or
-/// IPv4-mapped-IPv6) octets as a little-endian `u128`, and the port in host
-/// order (the payload serializer byte-swaps it on the wire).
-pub(crate) fn service_payload_fields(service: SocketAddr) -> (u128, u16) {
-    let octets = match service.ip() {
-        IpAddr::V4(v4) => v4.to_ipv6_mapped().octets(),
-        IpAddr::V6(v6) => v6.octets(),
-    };
-    (u128::from_le_bytes(octets), service.port())
 }
 
 /// The funding builder for a ProUpServTx: the placeholder payload, the
@@ -407,25 +392,13 @@ pub(crate) fn finalize_update_service_payload(
     let mut finalized = placeholder.clone();
     finalized.inputs_hash = unsigned.hash_inputs();
 
-    let secret = Option::<BlsSecretKey<Bls12381G2Impl>>::from(
-        BlsSecretKey::<Bls12381G2Impl>::from_be_bytes(operator_secret),
-    )
-    .ok_or_else(|| {
+    let secret = BlsSecretKey::from_be_bytes(operator_secret).ok_or_else(|| {
         BuilderError::SigningFailed("the operator key is not a valid BLS secret".into())
     })?;
     let signature = secret
-        .sign(
-            SignatureSchemes::Basic,
-            finalized.base_payload_hash().as_byte_array(),
-        )
+        .sign(finalized.base_payload_hash().as_byte_array())
         .map_err(|e| BuilderError::SigningFailed(format!("BLS payload signing failed: {e}")))?;
-    let signature_bytes: [u8; 96] = signature
-        .to_bytes_with_mode(dashcore::blsful::SerializationFormat::Modern)
-        .as_slice()
-        .try_into()
-        .map_err(|_| {
-            BuilderError::SigningFailed("BLS signature did not serialize to 96 bytes".into())
-        })?;
+    let signature_bytes = signature.to_bytes();
     finalized.payload_sig = BLSSignature::from(signature_bytes);
     Ok(TransactionPayload::ProviderUpdateServicePayloadType(
         finalized,
@@ -449,7 +422,7 @@ where
     S: TransactionSigner + ?Sized + Sync,
 {
     // Made again on a shortfall, so a fee only unconfirmed coins would cover
-    // is reported as waiting on the network (code 59).
+    // is reported as waiting on the network (code 61).
     // The factory owns the one long-lived copy of the operator secret and is
     // dropped before the signer runs (`finalize_transaction_from`).
     let make = move || update_service_builder(placeholder.clone(), operator_secret.clone());
@@ -477,7 +450,8 @@ mod tests {
     use crate::test_support::{
         funded_wallet_manager, funded_wallet_manager_with_outputs, WalletSigner,
     };
-    use dashcore::blsful::{PublicKey as BlsPublicKey, Signature as BlsSignature};
+    use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
+    use dpp::bls::{PublicKey as BlsPublicKey, Signature as BlsSignature};
     use key_wallet::account::StandardAccountType;
     use std::sync::{Arc, Mutex};
 
@@ -542,16 +516,17 @@ mod tests {
         prepare_update_service_placeholder(&entry, None, ScriptBuf::new()).expect("placeholder")
     }
 
-    /// The IPv4-mapped little-endian encoding, pinned against the known
-    /// testnet ProUpServTx vector in dashcore's own payload tests
-    /// (52.36.64.148:19999).
+    /// The placeholder re-asserts the list entry's address as a pre-v3
+    /// (legacy) entry; its wire encoding is dashcore's.
     #[test]
-    fn service_fields_match_the_known_testnet_vector() {
-        let service: SocketAddr = "52.36.64.148:19999".parse().expect("socket address");
-        let (ip_address, port) = service_payload_fields(service);
-        let expected: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 52, 36, 64, 148];
-        assert_eq!(ip_address.to_le_bytes(), expected);
-        assert_eq!(port, 19999);
+    fn should_carry_the_entry_address_as_a_legacy_entry() {
+        let entry = operator_entry(0x44, false);
+        let payload = prepare_update_service_placeholder(&entry, None, ScriptBuf::new())
+            .expect("placeholder");
+        assert_eq!(
+            payload.service_address,
+            MasternodeNetInfo::Legacy(entry.service_address.expect("entry address")),
+        );
     }
 
     #[test]
@@ -687,7 +662,9 @@ mod tests {
                         txid: Txid::all_zeros(),
                         vout: 0,
                     },
-                    service_address: "10.0.0.1:9999".parse().expect("socket address"),
+                    service_address: MasternodeNetInfo::Legacy(
+                        "10.0.0.1:9999".parse().expect("socket address"),
+                    ),
                     owner_key_hash: PubkeyHash::from_byte_array([1; 20]),
                     operator_public_key: BLSPublicKey::from([2; 48]),
                     voting_key_hash: PubkeyHash::from_byte_array([3; 20]),
@@ -698,6 +675,8 @@ mod tests {
                     platform_node_id: None,
                     platform_p2p_port: None,
                     platform_http_port: None,
+                    payouts: None,
+                    shared_collateral: None,
                 },
             )),
         }
@@ -811,14 +790,9 @@ mod tests {
         // The payload signature verifies under the basic scheme against the
         // operator public key, over base_payload_hash — the exact convention
         // `verify_message_digest` checks real mainnet signatures with.
-        let secret = Option::<BlsSecretKey<Bls12381G2Impl>>::from(
-            BlsSecretKey::<Bls12381G2Impl>::from_be_bytes(&OPERATOR_SECRET),
-        )
-        .expect("valid test scalar");
+        let secret = BlsSecretKey::from_be_bytes(&OPERATOR_SECRET).expect("valid test scalar");
         let public_key = BlsPublicKey::from(&secret);
-        let signature: BlsSignature<Bls12381G2Impl> = payload
-            .payload_sig
-            .try_into()
+        let signature = BlsSignature::from_compressed(payload.payload_sig.as_bytes())
             .expect("compressed signature decodes");
         signature
             .verify(&public_key, payload.base_payload_hash().as_byte_array())
@@ -902,7 +876,7 @@ mod tests {
 
     /// The build is described to the shortfall rules: when the only coin is
     /// not final yet, a fee it would cover is waiting on the network (code
-    /// 59), and one it would not cover stays insufficient funds.
+    /// 61), and one it would not cover stays insufficient funds.
     #[tokio::test]
     async fn should_report_waiting_when_only_an_unconfirmed_coin_would_pay_the_fee() {
         for (coin, waiting) in [(100_000, true), (200, false)] {

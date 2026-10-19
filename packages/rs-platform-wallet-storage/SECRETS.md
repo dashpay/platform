@@ -536,7 +536,7 @@ respectively (`Io`'s inner OS error boxed as the source).
 `keyring_core::Error` is safe to `Display` (`{ }`-format), but
 `{:?}`-format embeds `BadEncoding(Vec<u8>)` / `BadDataFormat(Vec<u8>, _)`
 payloads — those variants are NEVER constructed by our backends with
-secret bytes, and `tests/secrets_guard.rs` enforces that no debug-format
+secret bytes, and `tests/integration/secrets_guard.rs` enforces that no debug-format
 pairs with `keyring_core::Error` inside `src/secrets/`.
 
 ## What the SQLite backend WILL refuse to store
@@ -549,21 +549,21 @@ secret-free.
 
 ## Audit hooks
 
-- **`tests/secrets_scan.rs`**: greps every file under
+- **`tests/integration/secrets_scan.rs`**: greps every file under
   `src/sqlite/schema/` and `migrations/` for the substrings `private`,
   `mnemonic`, `seed`, `xpriv`, `secret`. A new column, blob field, or
   comment that uses any of those words breaks the test — forcing the
   author to either rename, or add their phrase to the file's
   allow-list with a rationale. The `src/secrets/` directory is exempt
   by design (its own positive guard below covers it).
-- **`tests/secrets_guard.rs`**: positive secret-leak guard for
+- **`tests/integration/secrets_guard.rs`**: positive secret-leak guard for
   `src/secrets/`. Forbids logging/formatting sinks that pair with
   `expose_secret(...)` on the same logical statement, AND forbids
   `{:?}`-debug-format paired with `keyring_core::Error`.
-- **`tests/secrets_api.rs`**: shape guards — `CredentialApi::get_secret`
+- **`tests/integration/secrets_api.rs`**: shape guards — `CredentialApi::get_secret`
   re-wraps through `SecretBytes::new`, redacting `Debug` on
   `SecretBytes`/`SecretString`, no `Box<dyn Error>` in `src/secrets/`.
-- **`tests/secrets_default_on_compiles.rs`**: build-time guard
+- **`tests/integration/secrets_default_on_compiles.rs`**: build-time guard
   (gated `#![cfg(feature = "secrets")]`) that the default feature set
   exposes the secrets surface as public re-exports. It names
   `EncryptedFileStore`, `SecretBytes`, `SecretString`,
@@ -575,7 +575,7 @@ secret-free.
   alone. No test file and **no CI job** cover it: that invocation is a
   local/manual check, so a regression in the off-state build reaches
   `main` unnoticed.
-- **`tests/sqlite_persist_roundtrip.rs::tc082_no_box_dyn_error_in_src`**:
+- **`tests/integration/sqlite_persist_roundtrip.rs::tc082_no_box_dyn_error_in_src`**:
   all public method signatures use concrete error types
   (`WalletStorageError`, `PersistenceError`) — never
   `Box<dyn Error>` — so a future leak is caught by `grep`.

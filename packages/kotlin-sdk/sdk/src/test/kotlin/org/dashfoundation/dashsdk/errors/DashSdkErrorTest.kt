@@ -130,7 +130,7 @@ class DashSdkErrorTest {
         assertTrue(coreInsufficientFunds is DashSdkError.PlatformWallet.CoreInsufficientFunds)
 
         val awaitingNetwork =
-            DashSdkError.fromNative(DashSDKException(offset + 59, "funds awaiting network"))
+            DashSdkError.fromNative(DashSDKException(offset + 61, "funds awaiting network"))
         assertTrue(awaitingNetwork is DashSdkError.PlatformWallet.CoreFundsAwaitingNetwork)
 
         // The asset-lock coin-selection shortfall (29) must reach callers as its
@@ -229,6 +229,28 @@ class DashSdkErrorTest {
         assertEquals(99, (mapped as DashSdkError.PlatformWallet.Generic).nativeCode)
         assertEquals("boom", mapped.message)
         assertFalse("Generic platform-wallet errors are not retryable", mapped.isRetryable)
+    }
+
+    @Test
+    fun spvTeardownCodes27And59MapTypedWithOppositeRetryability() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+
+        val incomplete =
+            DashSdkError.fromNative(DashSDKException(offset + 27, "SPV teardown timed out"))
+        assertTrue(incomplete is DashSdkError.PlatformWallet.ShutdownIncomplete)
+        assertEquals("SPV teardown timed out", incomplete.message)
+        assertTrue("a tracked teardown completes on a repeated stop", incomplete.isRetryable)
+
+        val panicDetail = "teardown task 12 panicked with message \"boom\""
+        val restart = DashSdkError.fromNative(DashSDKException(offset + 59, panicDetail))
+        assertTrue(restart is DashSdkError.PlatformWallet.SpvProcessRestartRequired)
+        assertEquals(panicDetail, restart.message)
+        assertFalse("no retry recovers a panicked teardown", restart.isRetryable)
+        assertEquals(
+            "the panic detail is diagnostic and must not be the displayed text",
+            "Sync could not be stopped cleanly. Restart the app to use it again.",
+            restart.userMessage,
+        )
     }
 
     @Test

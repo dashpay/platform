@@ -25,6 +25,8 @@ use dpp::data_contract::document_type::DocumentPropertyType;
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::{typed_array_property, where_list_elements};
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentType, Index, PreallocationBinding};
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::DataContract;
@@ -42,6 +44,8 @@ use dpp::version::PlatformVersion;
 use grovedb::element::reference_path::ReferencePathType::UpstreamRootHeightReference;
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::Element;
+#[cfg(any(feature = "server", feature = "verify"))]
+use std::collections::BTreeSet;
 
 #[cfg(feature = "server")]
 mod delete;
@@ -153,11 +157,13 @@ pub use index_only_entry_payload::{
 };
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use index_only_row_commitment::index_only_row_commitment;
-#[cfg(feature = "server")]
-pub use index_only_row_commitment::index_only_row_commitment_with_preimage_size;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use index_only_row_commitment::INDEX_ONLY_ITEM_ESTIMATED_VALUE_SIZE;
 pub use index_only_row_commitment::INDEX_ONLY_ROW_COMMITMENT_SIZE;
+#[cfg(feature = "server")]
+pub use index_only_row_commitment::{
+    index_only_row_commitment_max_preimage_size, index_only_row_commitment_with_preimage_size,
+};
 
 /// How many document history entries to fetch at once. This mirrors contract history
 /// and prevents unbounded history reads.
@@ -289,6 +295,72 @@ pub(crate) fn referenced_tree_key_for_referring_property(
         &key_in_generation_0,
         platform_version,
     )?)
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+/// The keys a level keyed by the elements of the typed array
+/// `referring_property` of `referring` takes when a preallocated index binds
+/// it to `document`'s typed array `referenced_property` (an equality between
+/// two lists): each distinct element of `document`'s list, keyed as
+/// `referring` keys an element of its property, sorted. A referring document
+/// agreeing with `document` holds that list exactly, so its entries sit under
+/// exactly these keys. Empty for an empty, null or absent list, which every
+/// index naming the array skips. `None` when no referring document can agree:
+/// the value is no list (it then equals none, `where_list_elements`); it holds
+/// fewer elements than the referring array's `minItems` or more than its
+/// `maxItems`, or repeats an element where the referring array declares
+/// `uniqueItems` (a list equality compares the lists element by element, so a
+/// referring list would have to be exactly as long and repeat the same
+/// elements); or an element keys as empty, the null layout's key, or wider than
+/// an element of the referring array can be, as
+/// [`bound_value_fits_referring_property`] judges a single value. The bound on
+/// the length keeps the paths a referenced document preallocates within the
+/// elements one referring document can hold.
+/// Shared by the preallocation path and `drive::document::cost`.
+pub(crate) fn referenced_list_tree_keys_for_referring_property(
+    document: &Document,
+    referenced_property: &str,
+    referring: DocumentTypeRef,
+    referring_property: &str,
+    platform_version: &PlatformVersion,
+) -> Result<Option<Vec<Vec<u8>>>, Error> {
+    let Some(elements) = where_list_elements(
+        document
+            .properties()
+            .get_optional_at_path(referenced_property)?,
+    ) else {
+        return Ok(None);
+    };
+    let referring_list = typed_array_property(referring.flattened_properties(), referring_property)
+        .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
+            "a property a preallocated index keys by list elements must be a typed array",
+        )))?;
+    if elements.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    if elements.len() > usize::from(referring_list.max_items)
+        || referring_list
+            .min_items
+            .is_some_and(|min_items| elements.len() < usize::from(min_items))
+    {
+        return Ok(None);
+    }
+    let max_width = referring_list
+        .item_type
+        .saturating_max_byte_size(platform_version)?;
+    let mut keys = BTreeSet::new();
+    for element in elements {
+        let key =
+            referring.serialize_value_for_key(referring_property, element, platform_version)?;
+        if key.is_empty() || max_width.is_some_and(|max_width| key.len() > usize::from(max_width)) {
+            return Ok(None);
+        }
+        keys.insert(key);
+    }
+    if referring_list.unique_items && keys.len() < elements.len() {
+        return Ok(None);
+    }
+    Ok(Some(keys.into_iter().collect()))
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]

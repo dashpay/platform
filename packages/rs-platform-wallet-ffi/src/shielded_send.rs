@@ -814,7 +814,7 @@ fn catch_funding_panic(
 ///   `ErrorWalletOperation` (6) catch-all below, hiding a typed error behind
 ///   the code every unclassified failure already uses and forcing hosts back
 ///   to substring-matching the Display text.
-/// - `CoreFundsAwaitingNetwork` -> `ErrorCoreFundsAwaitingNetwork` (59): the
+/// - `CoreFundsAwaitingNetwork` -> `ErrorCoreFundsAwaitingNetwork` (61): the
 ///   same shortfall when the coins that are not final yet would fund the lock.
 ///   Waiting cures it, which adding funds or a smaller amount does not, so a
 ///   host must be able to tell it from 29.
@@ -3220,7 +3220,7 @@ mod tests {
     }
 
     /// A shortfall that the coins not final yet would fund crosses as code
-    /// 59, as it does from a plain send, with its message verbatim.
+    /// 61, as it does from a plain send, with its message verbatim.
     #[test]
     fn should_keep_funds_awaiting_network_typed_through_the_funding_helper() {
         let err = PlatformWalletError::CoreFundsAwaitingNetwork {
@@ -3236,7 +3236,7 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorCoreFundsAwaitingNetwork
         );
-        assert_eq!(result.code as i32, 59);
+        assert_eq!(result.code as i32, 61);
         assert_eq!(message_of(&result), rendered);
     }
 
