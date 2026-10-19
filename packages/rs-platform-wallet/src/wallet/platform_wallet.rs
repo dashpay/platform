@@ -296,6 +296,20 @@ pub struct PlatformWalletInfo {
     /// host-side persister mirror fed by
     /// [`DpnsNameStateChangeSet`](crate::changeset::DpnsNameStateChangeSet).
     pub dpns_name_states: BTreeMap<Identifier, crate::changeset::DpnsNameStateEntry>,
+    /// Durable half of the DashPay coreHeight backfill guard: which receival
+    /// contacts the historical rescan already covers, from which height each,
+    /// and how far the rescan reached. Restored at load from
+    /// [`ClientWalletStartState::dashpay_backfill`](crate::changeset::ClientWalletStartState::dashpay_backfill)
+    /// and written by `reconcile_dashpay_rescan` on the round that lowers the
+    /// cursor. The in-memory half is `DashPayState::rescan_triggered`; see
+    /// [`DashPayBackfillRecord`](crate::changeset::DashPayBackfillRecord)
+    /// for how the two compose.
+    pub dashpay_backfill: crate::changeset::DashPayBackfillRecord,
+    /// Orders this wallet's queued `SyncHeightAdvanced` events against
+    /// in-memory rewinds of its scan cursor; see
+    /// [`RewindBarrier`](crate::changeset::core_bridge::RewindBarrier). In
+    /// memory only.
+    pub rewind_barrier: crate::changeset::core_bridge::RewindBarrier,
 }
 
 /// A platform wallet that combines core UTXO functionality with identity management.
@@ -661,6 +675,9 @@ impl PlatformWallet {
     /// Construct a PlatformWallet from a WalletManager that already contains
     /// the wallet. The wallet must have been inserted into the WalletManager
     /// before calling this.
+    // Every argument is a shared handle the manager owns; a builder would
+    // only move the same nine names behind a struct.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         sdk: Arc<dash_sdk::Sdk>,
         wallet_id: WalletId,
@@ -669,6 +686,8 @@ impl PlatformWallet {
         lock_notify: Arc<tokio::sync::Notify>,
         persister: Arc<dyn PlatformWalletPersistence>,
         broadcaster: Arc<SpvBroadcaster>,
+        sync_fault: Arc<std::sync::atomic::AtomicBool>,
+        durable_cursors: crate::changeset::DurableCursors,
     ) -> Self {
         // Build the per-wallet persister handle once and share it with
         // the sub-wallets that need to queue their own changesets
@@ -714,6 +733,8 @@ impl PlatformWallet {
             wallet_id,
             asset_locks: Arc::clone(&asset_locks),
             persister: wallet_persister.clone(),
+            sync_fault,
+            durable_cursors,
             broadcaster: dashpay_broadcaster,
             // DashPay write helper: forwards to the live SDK, erasing its
             // generic write signatures behind concrete by-value methods.

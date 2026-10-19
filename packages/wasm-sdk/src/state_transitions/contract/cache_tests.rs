@@ -147,8 +147,7 @@ fn identity_key_with_seed(seed: u8) -> IdentityPublicKey {
         security_level: SecurityLevel::CRITICAL,
         key_type: KeyType::ECDSA_SECP256K1,
         data: secp256k1::PublicKey::from_secret_key(
-            &secp256k1::Secp256k1::new(),
-            &secp256k1::SecretKey::from_slice(&[seed; 32]).expect("identity secret"),
+            &secp256k1::SecretKey::from_secret_bytes([seed; 32]).expect("identity secret"),
         )
         .serialize()
         .to_vec()

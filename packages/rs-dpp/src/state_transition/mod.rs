@@ -2213,7 +2213,7 @@ impl StateTransition {
     ///    returned public key (libsecp256k1 normalises both signing paths to
     ///    low-s form so the 64-byte `r||s` payload is bit-identical).
     /// 4. Serialise as a 65-byte compact recoverable signature with the
-    ///    `compressed` prefix convention used by `CompactSignature` — i.e.
+    ///    `compressed` prefix convention used by `MessageSignature` — i.e.
     ///    `[recovery_id + 27 + 4, r (32) || s (32)]`.
     ///
     /// # Errors
@@ -2235,8 +2235,9 @@ impl StateTransition {
         signer: &S,
     ) -> Result<(), ProtocolError> {
         use dashcore::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-        use dashcore::secp256k1::{Message, Secp256k1};
-        use dashcore::signer::{double_sha, CompactSignature};
+        use dashcore::secp256k1::Message;
+        use dashcore::sign_message::MessageSignature;
+        use dashcore::signer::double_sha;
 
         let data = self.signable_bytes()?;
         // Pre-image transform matches `dashcore::signer::sign`: double-SHA256
@@ -2260,7 +2261,6 @@ impl StateTransition {
         // `r||s` payload is bit-identical to what `dashcore::signer::sign`
         // produces.
         let compact_64 = signature.serialize_compact();
-        let secp = Secp256k1::new();
         let msg = Message::from_digest(digest);
 
         let mut found: Option<RecoverableSignature> = None;
@@ -2273,7 +2273,7 @@ impl StateTransition {
                 Ok(s) => s,
                 Err(_) => continue,
             };
-            if let Ok(recovered) = secp.recover_ecdsa(&msg, &candidate) {
+            if let Ok(recovered) = candidate.recover_ecdsa(msg) {
                 if recovered == public_key {
                     found = Some(candidate);
                     break;
@@ -2295,7 +2295,7 @@ impl StateTransition {
         // always passes `true` regardless of the underlying key encoding. The
         // signer's `sign_ecdsa` returns the compressed `secp256k1::PublicKey`,
         // so this is consistent.
-        let compact_65 = recoverable.to_compact_signature(true);
+        let compact_65 = MessageSignature::new(recoverable, true).serialize();
 
         if !self.set_signature(compact_65.to_vec().into()) {
             return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
@@ -4678,9 +4678,7 @@ mod tests {
     #[tokio::test]
     async fn sign_with_core_signer_matches_sign_by_private_key_byte_for_byte() {
         use async_trait::async_trait;
-        use dashcore::secp256k1::{
-            ecdsa, rand::rngs::OsRng, Message, PublicKey, Secp256k1, SecretKey,
-        };
+        use dashcore::secp256k1::{self, ecdsa, rand, Message, PublicKey, SecretKey};
         use key_wallet::bip32::{DerivationPath, ExtendedPubKey};
         use key_wallet::signer::{ExtendedPubKeySigner, Signer as KwSigner, SignerMethod};
 
@@ -4707,9 +4705,8 @@ mod tests {
                 _path: &DerivationPath,
                 sighash: [u8; 32],
             ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
-                let secp = Secp256k1::new();
                 let msg = Message::from_digest(sighash);
-                let sig = secp.sign_ecdsa(&msg, &self.secret);
+                let sig = self.secret.sign_ecdsa(msg);
                 Ok((sig, self.public))
             }
 
@@ -4732,9 +4729,8 @@ mod tests {
         // load-bearing: the legacy path signs raw bytes, the signer path
         // derives + signs inside the trust boundary. If the digest pre-image
         // or compact-encoding differs, the bytes will diverge.
-        let secp = Secp256k1::new();
-        let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
-        let private_key_bytes = secret_key.secret_bytes();
+        let (secret_key, public_key) = secp256k1::generate_keypair(&mut rand::rng());
+        let private_key_bytes = secret_key.to_secret_bytes();
 
         let signer = FixedKeySigner {
             secret: secret_key,

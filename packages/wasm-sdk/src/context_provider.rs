@@ -402,16 +402,17 @@ impl WasmTrustedContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dash_sdk::dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dash_sdk::dpp::bls::SecretKey;
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
     use std::thread;
     use std::time::{Duration, Instant};
 
     fn quorum_key(seed: u8) -> [u8; 48] {
-        let key = SecretKey::<Bls12381G2Impl>::from_hash(&[seed]).public_key();
-        let bytes: Vec<u8> = (&key).into();
-        bytes.try_into().expect("BLS public key is 48 bytes")
+        SecretKey::from_ikm(&[seed; 32])
+            .expect("32 bytes of keying material")
+            .public_key()
+            .to_bytes()
     }
 
     fn quorums_body(hash: u8, key: u8) -> String {
