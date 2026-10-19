@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError::CorruptedCodeExecution;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::identity_update::added_key_proofs_of_possession::IdentityUpdateAddedKeyProofsOfPossessionValidation;
+use crate::execution::validation::state_transition::identity_update::added_key_proofs_of_possession::v0::IdentityUpdateAddedKeyProofsOfPossessionValidationV0;
 use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::identity::PartialIdentity;
@@ -64,7 +64,7 @@ impl IdentityUpdateStateTransitionIdentityAndSignaturesValidationV1 for Identity
         }
 
         let validation_result =
-            self.validate_added_key_proofs_of_possession(&signable_bytes, execution_context);
+            self.validate_added_key_proofs_of_possession_v0(&signable_bytes, execution_context);
 
         if validation_result.is_valid() {
             Ok(ConsensusValidationResult::new())

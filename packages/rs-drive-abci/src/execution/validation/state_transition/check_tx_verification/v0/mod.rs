@@ -38,7 +38,7 @@ use crate::execution::validation::state_transition::processor::state::StateTrans
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::execution::validation::state_transition::processor::traits::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
 use crate::execution::validation::state_transition::batch::BatchTransitionCheckTxStateValidatingTransformer;
-use crate::execution::validation::state_transition::identity_update::added_key_proofs_of_possession::IdentityUpdateAddedKeyProofsOfPossessionValidation;
+use crate::execution::validation::state_transition::identity_update::added_key_proofs_of_possession::v0::IdentityUpdateAddedKeyProofsOfPossessionValidationV0;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 use dpp::address_funds::PlatformAddress;
@@ -318,8 +318,10 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             // estimate as it does in a block. Only the proofs: an update queued behind another of
             // the same identity carries a revision the state does not hold yet, so the revision is
             // left to the block. Admission is not consensus, so every protocol version gets this.
+            // They are verified by generation 0, the generation identity update advanced structure
+            // validation 1 uses, so admission refuses the same proofs such a block refuses.
             if let StateTransition::IdentityUpdate(identity_update) = state_transition {
-                let result = identity_update.validate_added_key_proofs_of_possession(
+                let result = identity_update.validate_added_key_proofs_of_possession_v0(
                     &state_transition.signable_bytes()?,
                     &mut state_transition_execution_context,
                 );
