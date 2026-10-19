@@ -263,10 +263,10 @@ extension SDK {
     ///
     /// What the reference holds depends on the contract's storage requirement for the purpose.
     /// Under `MultipleReferenceToLatest` it is the key registered last, and it stays that key
-    /// when the key is disabled. Under `Unique` it is, for a contract, the first key registered,
-    /// and for a document type the last. Under `Multiple` there is no reference, so the answer is
-    /// always `NSNull`, as it is for `"transfer"` (such keys cannot be bound to a contract) and
-    /// for a contract or document type that does not exist. See
+    /// when the key is disabled. Under `Unique` it is, for a contract, the first key registered
+    /// (also once it is disabled), and for a document type the last. Under `Multiple` there is no
+    /// reference, so the answer is always `NSNull`, as it is for `"transfer"` (such keys cannot be
+    /// bound to a contract) and for a contract or document type that does not exist. See
     /// `dash_sdk_identities_fetch_contract_keys`. No identity ids answer an empty dictionary.
     public func identityGetContractKeys(
         identityIds: [String],
@@ -277,7 +277,6 @@ extension SDK {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-        if identityIds.isEmpty { return [:] }
 
         // Join identity IDs with commas
         let identityIdsStr = identityIds.joined(separator: ",")

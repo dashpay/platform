@@ -19,9 +19,9 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Parameters
 /// - `sdk_handle`: SDK handle
-/// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs
+/// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs; an empty string answers `{}`
 /// - `contract_id`: Base58-encoded contract ID
-/// - `document_type_name`: Optional document type name (pass NULL if not needed)
+/// - `document_type_name`: Optional document type name (pass NULL if not needed; an empty name is refused)
 /// - `purposes`: Comma-separated list of key purposes (0=Authentication, 1=Encryption, 2=Decryption, 3=Transfer). Repeated IDs and purposes are asked for once.
 ///
 /// # Returns
@@ -30,14 +30,16 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// What that reference holds depends on the contract's storage requirement for the purpose:
 /// - `MultipleReferenceToLatest` (every bound authentication key): the key registered last. It
 ///   stays the current one when it is disabled (`disabled_at` is then set).
-/// - `Unique`: for a contract, the first key registered; for a document type, the last.
+/// - `Unique`: for a contract, the first key registered, also once it is disabled; for a document
+///   type, the last.
 /// - `Multiple`: there is no reference, so the value is always `null`, whatever keys exist.
 ///
 /// Only authentication, encryption and decryption keys can be bound to a contract, so
 /// `"transfer"` is always `null`. A contract or document type that does not exist answers `null`
 /// too.
 ///
-/// Every requested identity ID (Base58) is a top-level key, and every requested purpose
+/// Every requested identity ID is a top-level key, in its Base58 form with any whitespace around it
+/// dropped, and every requested purpose
 /// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`) is a key under it. A purpose
 /// the proof shows no current-key reference for is `null`. A missing identity or purpose is never
 /// a valid answer, so a caller can treat one as malformed:
@@ -88,9 +90,11 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
         Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
     };
 
-    // Parse comma-separated identity IDs
+    // Parse comma-separated identity IDs; an empty list asks for nothing
+    let ids_str = ids_str.trim();
     let identities_ids: Result<Vec<Identifier>, DashSDKError> = ids_str
         .split(',')
+        .filter(|_| !ids_str.is_empty())
         .map(|id_str| {
             Identifier::from_string(id_str.trim(), Encoding::Base58).map_err(|e| {
                 DashSDKError::new(
@@ -106,7 +110,7 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
         Err(e) => return DashSDKResult::error(e),
     };
 
-    let contract_id = match Identifier::from_string(contract_id_str, Encoding::Base58) {
+    let contract_id = match Identifier::from_string(contract_id_str.trim(), Encoding::Base58) {
         Ok(id) => id,
         Err(e) => {
             return DashSDKResult::error(DashSDKError::new(
@@ -121,6 +125,14 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
         None
     } else {
         match CStr::from_ptr(document_type_name).to_str() {
+            // Drive appends the name to the contract id, so an empty one would ask for the
+            // contract's own keys.
+            Ok("") => {
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    "Document type name is empty".to_string(),
+                ))
+            }
             Ok(s) => Some(s.to_string()),
             Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
         }
@@ -129,8 +141,9 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
     // Parse comma-separated purposes
     let purposes: Result<Vec<RequestedPurpose>, DashSDKError> = purposes_str
         .split(',')
+        .map(str::trim)
         .map(|purpose_str| {
-            let number = purpose_str.trim().parse::<u8>().ok();
+            let number = purpose_str.parse::<u8>().ok();
             PURPOSES
                 .iter()
                 .find(|(n, _, _)| Some(*n) == number)
@@ -146,6 +159,10 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
         Ok(p) => unique(p),
         Err(e) => return DashSDKResult::error(e),
     };
+
+    if identities_ids.is_empty() {
+        return DashSDKResult::success_string(c"{}".to_owned().into_raw());
+    }
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
         let query = IdentitiesContractKeysQuery::new(
@@ -493,6 +510,30 @@ mod tests {
             );
         }
         destroy_mock_sdk_handle(handle);
+    }
+
+    #[test]
+    fn should_answer_no_identities_with_an_empty_object() {
+        let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
+        let json = unsafe { json_of(fetch_with(handle, "", CONTRACT, None, "1")) };
+        destroy_mock_sdk_handle(handle);
+        assert_eq!(json, serde_json::json!({}));
+    }
+
+    #[test]
+    fn should_refuse_an_empty_document_type() {
+        let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
+        let code = unsafe {
+            error_code_of(fetch_with(
+                handle,
+                &base58(IDENTITY_A),
+                CONTRACT,
+                Some(""),
+                "1",
+            ))
+        };
+        destroy_mock_sdk_handle(handle);
+        assert_eq!(code, DashSDKErrorCode::InvalidParameter);
     }
 
     #[test]
