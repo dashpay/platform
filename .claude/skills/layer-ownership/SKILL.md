@@ -11,7 +11,7 @@ changes or comments.
 
 ## Workflow
 
-1. Read `book/src/contributing/coding-conventions.md` completely.
+1. Read `book/src/contributing/coding-conventions.md` completely from the `dashpay/platform` checkout.
 2. For planning, map each planned responsibility to its owner before naming
    files. Inspect only the minimal existing boundary, callers, dependency
    manifests, and owned `dashpay` repositories needed to settle placement.
