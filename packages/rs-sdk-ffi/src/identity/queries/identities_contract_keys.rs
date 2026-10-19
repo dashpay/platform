@@ -30,8 +30,9 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// Drive's current-key reference names for the identity, contract (or document type) and purpose.
 /// What that reference holds depends on the contract's storage requirement for the purpose (as
 /// Drive writes it from protocol version 14):
-/// - `MultipleReferenceToLatest` (every bound authentication key, and a bound encryption or
-///   decryption key when the contract asks for it): the key of the latest registration, and of
+/// - `MultipleReferenceToLatest` (every bound authentication key, a bound encryption or
+///   decryption key when the contract asks for it, and every key bound to a contract group, whose
+///   ID can be passed as `contract_id`): the key of the latest registration, and of
 ///   the keys one identity create or update registers together, the one with the highest ID. It
 ///   stays the current one when it is disabled (`disabled_at` is then set).
 /// - `Unique`: for a contract, the first key registered, also once it is disabled; for a document

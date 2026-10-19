@@ -262,7 +262,8 @@ extension SDK {
     /// `purpose`, `security_level`, `read_only` and `disabled_at`.
     ///
     /// What the reference holds depends on the contract's storage requirement for the purpose
-    /// (as Drive writes it from protocol version 14).
+    /// (as Drive writes it from protocol version 14); a key bound to a contract group, whose id can
+    /// be passed as `contractId`, is always under `MultipleReferenceToLatest`.
     /// Under `MultipleReferenceToLatest` it is the key of the latest registration (of the keys
     /// one identity create or update registers together, the one with the highest id), and it
     /// stays that key when the key is disabled. Under `Unique` it is, for a contract, the first key registered
