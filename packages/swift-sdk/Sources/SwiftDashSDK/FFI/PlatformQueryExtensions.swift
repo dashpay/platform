@@ -252,7 +252,29 @@ extension SDK {
         return try processJSONResult(result)
     }
 
-    /// Get identities contract keys
+    /// Get identities contract keys: the key Platform's current-key reference names for each
+    /// identity, the contract (or `documentType` of it) and each purpose, read from a proved
+    /// response.
+    ///
+    /// Every requested identity id is a key of the result, and every requested purpose
+    /// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`) a key under it, `NSNull`
+    /// when the proof shows no reference. A key's value holds `id`, `type`, `data` (hex),
+    /// `purpose`, `security_level`, `read_only` and `disabled_at`.
+    ///
+    /// What the reference holds depends on the contract's storage requirement for the purpose
+    /// (as Drive writes it from protocol version 14); a key bound to a contract group, whose id can
+    /// be passed as `contractId`, is always under `MultipleReferenceToLatest`.
+    /// Under `MultipleReferenceToLatest` it is the key of the latest registration (of the keys
+    /// one identity create or update registers together, the one with the highest id), and it
+    /// stays that key when the key is disabled. Under `Unique` it is, for a contract, the first key registered
+    /// (also once it is disabled), and for a document type the last. Under `Multiple` there is no
+    /// reference, so the answer is always `NSNull`, as it is for `"transfer"` (such keys cannot be
+    /// bound to a contract) and for a contract or document type that does not exist. See
+    /// `dash_sdk_identities_fetch_contract_keys`.
+    ///
+    /// `purposes` takes the numbers `"0"` (authentication) to `"3"` (transfer); `nil` asks for all
+    /// four, and an empty array throws. An empty `documentType` is the same as `nil`. No identity
+    /// ids answer an empty dictionary.
     public func identityGetContractKeys(
         identityIds: [String],
         contractId: String,
