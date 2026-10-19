@@ -261,7 +261,8 @@ extension SDK {
     /// when the proof shows no reference. A key's value holds `id`, `type`, `data` (hex),
     /// `purpose`, `security_level`, `read_only` and `disabled_at`.
     ///
-    /// What the reference holds depends on the contract's storage requirement for the purpose.
+    /// What the reference holds depends on the contract's storage requirement for the purpose
+    /// (as Drive writes it from protocol version 14).
     /// Under `MultipleReferenceToLatest` it is the key registered last, and it stays that key
     /// when the key is disabled. Under `Unique` it is, for a contract, the first key registered
     /// (also once it is disabled), and for a document type the last. Under `Multiple` there is no
@@ -270,8 +271,8 @@ extension SDK {
     /// `dash_sdk_identities_fetch_contract_keys`.
     ///
     /// `purposes` takes the numbers `"0"` (authentication) to `"3"` (transfer); `nil` asks for all
-    /// four. An empty `documentType` is the same as `nil`. No identity ids answer an empty
-    /// dictionary.
+    /// four, and an empty array throws. An empty `documentType` is the same as `nil`. No identity
+    /// ids answer an empty dictionary.
     public func identityGetContractKeys(
         identityIds: [String],
         contractId: String,

@@ -29,7 +29,8 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// # Returns
 /// A JSON object read from a proved `getIdentitiesContractKeys` response. Each value is the key
 /// Drive's current-key reference names for the identity, contract (or document type) and purpose.
-/// What that reference holds depends on the contract's storage requirement for the purpose:
+/// What that reference holds depends on the contract's storage requirement for the purpose (as
+/// Drive writes it from protocol version 14):
 /// - `MultipleReferenceToLatest` (every bound authentication key): the key registered last. It
 ///   stays the current one when it is disabled (`disabled_at` is then set).
 /// - `Unique`: for a contract, the first key registered, also once it is disabled; for a document
@@ -92,6 +93,16 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
         Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
     };
 
+    let contract_id = match Identifier::from_string(contract_id_str.trim(), Encoding::Base58) {
+        Ok(id) => id,
+        Err(e) => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Invalid contract ID: {}", e),
+            ))
+        }
+    };
+
     // An empty list asks for nothing
     let ids_str = ids_str.trim();
     if ids_str.is_empty() {
@@ -114,16 +125,6 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
     let identities_ids = match identities_ids {
         Ok(ids) => unique(ids),
         Err(e) => return DashSDKResult::error(e),
-    };
-
-    let contract_id = match Identifier::from_string(contract_id_str.trim(), Encoding::Base58) {
-        Ok(id) => id,
-        Err(e) => {
-            return DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                format!("Invalid contract ID: {}", e),
-            ))
-        }
     };
 
     // Parse optional document type name
@@ -517,7 +518,21 @@ mod tests {
             let json = unsafe { json_of(fetch_with(handle, ids, CONTRACT, None, "")) };
             assert_eq!(json, serde_json::json!({}));
         }
+        // The contract id is still checked.
+        let ids = CString::new("").unwrap();
+        let contract = CString::new("not-base58!!").unwrap();
+        let purposes = CString::new("1").unwrap();
+        let code = unsafe {
+            error_code_of(dash_sdk_identities_fetch_contract_keys(
+                handle,
+                ids.as_ptr(),
+                contract.as_ptr(),
+                std::ptr::null(),
+                purposes.as_ptr(),
+            ))
+        };
         destroy_mock_sdk_handle(handle);
+        assert_eq!(code, DashSDKErrorCode::InvalidParameter);
     }
 
     #[test]
