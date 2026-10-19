@@ -472,8 +472,8 @@ impl IdentityWallet {
                             // CRITICAL authentication keys. A failed persist here
                             // would silently leave the identity watch-only after
                             // restart, so surface it (matching `add_identity` above).
-                            // A fetch older than a known identity's cache carries
-                            // its breadcrumbs on the cache's newer keys.
+                            // A fetch older than a known identity's cache stores
+                            // only the keys the cache has, with their disables.
                             let key_decisions =
                                 managed.key_decisions_for_fetch(&identity, key_decisions);
                             managed

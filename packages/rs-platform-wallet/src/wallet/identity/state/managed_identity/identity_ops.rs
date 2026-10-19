@@ -3,13 +3,16 @@
 use super::key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus};
 use super::ManagedIdentity;
 use crate::changeset::{
-    IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet, KeyWithBreadcrumb,
+    IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
+    IdentityKeysChangeSet, KeyWithBreadcrumb, PersistenceError, PlatformWalletChangeSet,
 };
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::Identity;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::identity::{KeyID, TimestampMillis};
 use dpp::prelude::Identifier;
 use dpp::util::hash::ripemd160_sha256;
@@ -384,34 +387,45 @@ impl ManagedIdentity {
         }
     }
 
-    /// Take an identity fetched from Platform as the cached one, unless the
-    /// cache is at a higher revision. Revisions only grow on Platform, so
-    /// such a fetch was answered before an update the cache already holds
-    /// (one applied locally after it landed, or a newer refresh), and
-    /// taking it would put the cache back. Returns whether it was taken.
+    /// Fold an identity fetched from Platform into the cached one.
     ///
-    /// The revision orders the keys an identity update adds and disables.
-    /// It does not order a key-limits update or the balance, which change
-    /// without it: a fetch at the cache's revision is taken whole, as
-    /// before, and a dropped one takes no balance with it. Balances read by
-    /// height go through their own watermark.
+    /// A fetch at the cache's revision or above is taken whole, as before.
+    /// Revisions only grow on Platform, so a fetch at a lower revision was
+    /// answered before an update the cache already holds (one applied
+    /// locally after it landed, or a newer refresh). The revision orders
+    /// only the keys an identity update adds and disables, so such a fetch
+    /// is folded per field: the cache keeps its revision and key set, each
+    /// shared key is disabled when either copy is (Platform's timestamp
+    /// first), and the cache takes the fetch's balance and each shared
+    /// key's limits, which change without a revision bump (as a whole
+    /// fetch set them before). Returns whether it was taken whole.
     ///
     /// Only the in-memory identity changes here; the caller persists.
     pub fn take_fetched_identity(&mut self, fetched: &Identity) -> bool {
-        if fetched.revision() < self.identity.revision() {
-            return false;
+        if fetched.revision() >= self.identity.revision() {
+            self.identity = fetched.clone();
+            return true;
         }
-        self.identity = fetched.clone();
-        true
+        self.identity.set_balance(fetched.balance());
+        let mut keys = self.identity.public_keys().clone();
+        for (key_id, cached) in keys.iter_mut() {
+            if let Some(fetched_key) = fetched.public_keys().get(key_id) {
+                *cached = with_disabled_state_of(fetched_key, cached);
+            }
+        }
+        self.identity.set_public_keys(keys);
+        false
     }
 
-    /// The key decisions to store for `decisions` built from `fetched`. A
-    /// fetch older than the cache has them carried on the cache's copies of
-    /// their keys, so storing their breadcrumbs (a key's derivation never
-    /// changes) does not take back what the cache holds newer; a key the
-    /// cache lacks keeps the fetch's copy, since Platform never removes a
-    /// key, and storing it adds it to the cache too. Any other fetch's
-    /// decisions are stored as they are.
+    /// The key decisions to store for `decisions` built from `fetched`.
+    /// Any fetch at the cache's revision or above has its decisions stored
+    /// as they are. For an older fetch each key is folded as
+    /// [`Self::take_fetched_identity`] folds it (disabled when either copy
+    /// is, the fetch's limits), so storing its breadcrumb (a key's derivation
+    /// never changes) does not take back a disable the cache holds; a key
+    /// the cache lacks is left out, since an older answer cannot show
+    /// whether a later update disabled it, and a fetch at least as new will
+    /// bring it.
     pub fn key_decisions_for_fetch(
         &self,
         fetched: &Identity,
@@ -422,11 +436,10 @@ impl ManagedIdentity {
         }
         decisions
             .into_iter()
-            .map(|mut decision| {
-                if let Some(cached) = self.identity.public_keys().get(&decision.key.id()) {
-                    decision.key = cached.clone();
-                }
-                decision
+            .filter_map(|mut decision| {
+                let cached = self.identity.public_keys().get(&decision.key.id())?;
+                decision.key = with_disabled_state_of(&decision.key, cached);
+                Some(decision)
             })
             .collect()
     }
@@ -475,18 +488,32 @@ impl ManagedIdentity {
     /// order-dependent watch-only-then-override). No-op on an empty list.
     pub fn add_keys(
         &mut self,
-        keys: Vec<crate::changeset::KeyWithBreadcrumb>,
+        keys: Vec<KeyWithBreadcrumb>,
         persister: &WalletPersister,
-    ) -> Result<(), crate::changeset::PersistenceError> {
-        use dpp::identity::accessors::IdentitySettersV0;
-
+    ) -> Result<(), PersistenceError> {
         if keys.is_empty() {
             return Ok(());
         }
+        let keys_cs = self.layer_keys(keys);
+        let cs = PlatformWalletChangeSet {
+            identities: Some(self.snapshot_changeset()),
+            identity_keys: Some(keys_cs),
+            ..Default::default()
+        };
+        // Surface the persist failure — these rows carry the per-key
+        // derivation breadcrumb + verified scalar that make an imported /
+        // restored identity signable. Swallowing a failed store here would
+        // leave the keys in memory but absent from the client store, so the
+        // identity comes back watch-only after restart with no signal.
+        persister.store(cs)
+    }
+
+    /// Layer `keys` onto this identity in memory, returning their key rows.
+    fn layer_keys(&mut self, keys: Vec<KeyWithBreadcrumb>) -> IdentityKeysChangeSet {
         let identity_id = self.id();
         let mut current = self.identity.public_keys().clone();
         let mut keys_cs = IdentityKeysChangeSet::default();
-        for crate::changeset::KeyWithBreadcrumb {
+        for KeyWithBreadcrumb {
             key: public_key,
             breadcrumb,
         } in keys
@@ -497,7 +524,7 @@ impl ManagedIdentity {
             let (wallet_id, derivation_indices) = match breadcrumb {
                 Some((wallet_id, identity_index, key_index)) => (
                     Some(wallet_id),
-                    Some(crate::changeset::IdentityKeyDerivationIndices {
+                    Some(IdentityKeyDerivationIndices {
                         identity_index,
                         key_index,
                     }),
@@ -517,18 +544,7 @@ impl ManagedIdentity {
             );
         }
         self.identity.set_public_keys(current);
-        let cs = crate::changeset::PlatformWalletChangeSet {
-            identities: Some(self.snapshot_changeset()),
-            identity_keys: Some(keys_cs),
-            ..Default::default()
-        };
-        // Surface the persist failure — these rows carry the per-key
-        // derivation breadcrumb + verified scalar that make an imported /
-        // restored identity signable. Swallowing a failed store here would
-        // leave the keys in memory but absent from the client store, so the
-        // identity comes back watch-only after restart with no signal.
-        persister.store(cs)?;
-        Ok(())
+        keys_cs
     }
 
     /// Replace one public key of the identity with `public_key`, the key as it is stored
@@ -603,16 +619,81 @@ impl ManagedIdentity {
     /// the authoritative on-chain block time.
     ///
     /// Does **not** touch the identity revision — the caller bumps it
-    /// alongside the update transition.
+    /// alongside the update transition. A store failure is logged, not
+    /// returned; a landed update goes through [`Self::apply_landed_keys`],
+    /// which returns it and stores the revision too.
     pub fn disable_keys(
         &mut self,
         key_ids: &[KeyID],
         disabled_at: TimestampMillis,
         persister: &WalletPersister,
     ) {
-        use dpp::identity::accessors::IdentitySettersV0;
-        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+        let keys_cs = self.stamp_disabled(key_ids, disabled_at);
+        // Nothing matched — leave state untouched rather than churning a
+        // no-op changeset.
+        if keys_cs.upserts.is_empty() {
+            return;
+        }
+        let cs = PlatformWalletChangeSet {
+            identities: Some(self.snapshot_changeset()),
+            identity_keys: Some(keys_cs),
+            ..Default::default()
+        };
+        if let Err(e) = persister.store(cs) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+    }
 
+    /// Apply a landed identity update's keys in memory, `added` layered and
+    /// `disabled` stamped, and store them with the identity's scalar
+    /// snapshot (the landed revision included) as one changeset, even when
+    /// no key row matched. The store's failure is returned; memory holds the
+    /// whole update either way.
+    pub fn apply_landed_keys(
+        &mut self,
+        added: Vec<KeyWithBreadcrumb>,
+        disabled: &[KeyID],
+        disabled_at: TimestampMillis,
+        persister: &WalletPersister,
+    ) -> Result<(), PersistenceError> {
+        let mut keys_cs = self.layer_keys(added);
+        keys_cs
+            .upserts
+            .extend(self.stamp_disabled(disabled, disabled_at).upserts);
+        self.store_with_snapshot(keys_cs, persister)
+    }
+
+    /// Layer `keys` in memory and store them with the identity's scalar
+    /// snapshot as one changeset, even when `keys` is empty. The store's
+    /// failure is returned.
+    pub fn store_keys_with_snapshot(
+        &mut self,
+        keys: Vec<KeyWithBreadcrumb>,
+        persister: &WalletPersister,
+    ) -> Result<(), PersistenceError> {
+        let keys_cs = self.layer_keys(keys);
+        self.store_with_snapshot(keys_cs, persister)
+    }
+
+    fn store_with_snapshot(
+        &self,
+        keys_cs: IdentityKeysChangeSet,
+        persister: &WalletPersister,
+    ) -> Result<(), PersistenceError> {
+        persister.store(PlatformWalletChangeSet {
+            identities: Some(self.snapshot_changeset()),
+            identity_keys: Some(keys_cs),
+            ..Default::default()
+        })
+    }
+
+    /// Stamp `disabled_at` on the matching keys in memory, returning their
+    /// key rows (none when nothing matched).
+    fn stamp_disabled(
+        &mut self,
+        key_ids: &[KeyID],
+        disabled_at: TimestampMillis,
+    ) -> IdentityKeysChangeSet {
         let identity_id = self.id();
 
         // Reconstruct the derivation breadcrumb from the cached
@@ -631,7 +712,7 @@ impl ManagedIdentity {
                 tracing::warn!(
                     identity = %identity_id,
                     key_id,
-                    "disable_keys: key id not present on identity; skipping",
+                    "stamping disabled keys: key id not present on identity; skipping",
                 );
                 continue;
             };
@@ -642,7 +723,7 @@ impl ManagedIdentity {
             let (wallet_id, derivation_indices) = match breadcrumb {
                 Some((wallet_id, identity_index)) => (
                     Some(wallet_id),
-                    Some(crate::changeset::IdentityKeyDerivationIndices {
+                    Some(IdentityKeyDerivationIndices {
                         identity_index,
                         key_index: key_id,
                     }),
@@ -663,23 +744,27 @@ impl ManagedIdentity {
             );
         }
 
-        // Nothing matched — leave state untouched rather than churning a
-        // no-op changeset.
-        if keys_cs.upserts.is_empty() {
-            return;
+        if !keys_cs.upserts.is_empty() {
+            self.identity.set_public_keys(keys);
         }
-
-        self.identity.set_public_keys(keys);
-
-        let cs = crate::changeset::PlatformWalletChangeSet {
-            identities: Some(self.snapshot_changeset()),
-            identity_keys: Some(keys_cs),
-            ..Default::default()
-        };
-        if let Err(e) = persister.store(cs) {
-            tracing::error!("Failed to persist changeset: {}", e);
-        }
+        keys_cs
     }
+}
+
+/// `fetched`'s copy of a key, disabled when either copy is: the key's limits
+/// change without a revision bump, while a disable is permanent on Platform.
+/// The fetch's timestamp is Platform's own, so it wins over the cache's,
+/// which may be a local placeholder.
+fn with_disabled_state_of(
+    fetched: &IdentityPublicKey,
+    cached: &IdentityPublicKey,
+) -> IdentityPublicKey {
+    let mut key = fetched.clone();
+    match fetched.disabled_at().or(cached.disabled_at()) {
+        Some(disabled_at) => key.set_disabled_at(disabled_at),
+        None => key.remove_disabled_at(),
+    }
+    key
 }
 
 #[cfg(test)]
@@ -691,9 +776,12 @@ mod tests {
     use crate::wallet::identity::PaymentEntry;
     use crate::wallet::platform_wallet::WalletId;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+    use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::identity_public_key::v1::IdentityPublicKeyV1;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
     use std::collections::BTreeMap;
     use std::sync::Mutex;
 
@@ -753,29 +841,108 @@ mod tests {
     }
 
     /// A fetch at a lower revision than the cache's was answered before an
-    /// update the cache holds, and must not take it back; one at the same
-    /// revision or higher replaces it.
+    /// update the cache holds: the cache keeps its revision and key set, a
+    /// key is disabled when either copy is (Platform's timestamp first), and
+    /// the cache takes the fetch's balance and key limits, which change
+    /// without a revision. A fetch at the same revision or higher replaces
+    /// the cache.
     #[test]
-    fn should_take_a_fetched_identity_only_when_it_is_not_older() {
-        fn at(revision: u64, disabled: bool) -> Identity {
-            let mut key = key(3);
-            if disabled {
-                key.set_disabled_at(1);
-            }
+    fn should_take_a_fetched_identity_whole_only_when_it_is_not_older() {
+        fn limited(id: KeyID, budget: u64, disabled_at: Option<u64>) -> IdentityPublicKey {
+            IdentityPublicKey::V1(IdentityPublicKeyV1 {
+                id,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(vec![id as u8; 33]),
+                disabled_at,
+                total_budget: Some(budget),
+                expires_at: None,
+            })
+        }
+        fn at(revision: u64, balance: u64, keys: Vec<IdentityPublicKey>) -> Identity {
             Identity::V0(IdentityV0 {
                 id: Identifier::from([1u8; 32]),
-                public_keys: BTreeMap::from([(3, key)]),
-                balance: revision,
+                public_keys: keys.into_iter().map(|key| (key.id(), key)).collect(),
+                balance,
                 revision,
             })
         }
-        // The cache took an update at 6 that disabled key 3.
-        let mut managed = ManagedIdentity::new(at(6, true), 0);
-        assert!(!managed.take_fetched_identity(&at(5, false)));
-        assert_eq!(managed.identity, at(6, true));
-        assert!(managed.take_fetched_identity(&at(6, true)));
-        assert!(managed.take_fetched_identity(&at(7, true)));
-        assert_eq!(managed.identity, at(7, true));
+        // The cache took an update at 6 that disabled key 3; the fetch at 5
+        // still shows key 3 live, a raised budget, a newer balance and key
+        // 4, which the cache never saw.
+        let cache = at(6, 10, vec![limited(3, 100, Some(9))]);
+        let older = at(5, 20, vec![limited(3, 500, None), limited(4, 1, None)]);
+        let mut managed = ManagedIdentity::new(cache, 0);
+        assert!(!managed.take_fetched_identity(&older));
+        assert_eq!(managed.identity, at(6, 20, vec![limited(3, 500, Some(9))]));
+        assert_eq!(managed.identity.public_keys()[&3].total_budget(), Some(500));
+
+        // A disable is permanent: one the older fetch shows sticks even
+        // when the cache's copy is live.
+        let mut live = ManagedIdentity::new(at(6, 10, vec![limited(3, 100, None)]), 0);
+        assert!(!live.take_fetched_identity(&at(5, 10, vec![limited(3, 100, Some(4))])));
+        assert_eq!(live.identity.public_keys()[&3].disabled_at(), Some(4));
+        // Both disabled: the fetch's timestamp is Platform's, the cache's
+        // may be a local placeholder.
+        let mut stamped = ManagedIdentity::new(at(6, 10, vec![limited(3, 100, Some(99))]), 0);
+        assert!(!stamped.take_fetched_identity(&at(5, 10, vec![limited(3, 100, Some(4))])));
+        assert_eq!(stamped.identity.public_keys()[&3].disabled_at(), Some(4));
+
+        let same = at(6, 30, vec![limited(3, 600, Some(9)), limited(4, 1, None)]);
+        assert!(managed.take_fetched_identity(&same));
+        assert_eq!(managed.identity, same);
+        let newer = at(7, 40, vec![limited(3, 600, Some(9))]);
+        assert!(managed.take_fetched_identity(&newer));
+        assert_eq!(managed.identity, newer);
+    }
+
+    /// An older fetch's key decisions carry the cache's disabled state and
+    /// the fetch's limits, and a key only the fetch has is left out.
+    #[test]
+    fn should_fold_an_older_fetch_s_key_decisions_into_the_cache_s_keys() {
+        let mut disabled = key(3);
+        disabled.set_disabled_at(9);
+        let managed = ManagedIdentity::new(
+            Identity::V0(IdentityV0 {
+                id: Identifier::from([1u8; 32]),
+                public_keys: BTreeMap::from([(3, disabled.clone())]),
+                balance: 0,
+                revision: 6,
+            }),
+            0,
+        );
+        let fetched = |revision| {
+            Identity::V0(IdentityV0 {
+                id: Identifier::from([1u8; 32]),
+                public_keys: BTreeMap::from([(3, key(3)), (4, key(4))]),
+                balance: 0,
+                revision,
+            })
+        };
+        let decisions = || {
+            vec![
+                KeyWithBreadcrumb {
+                    key: key(3),
+                    breadcrumb: None,
+                },
+                KeyWithBreadcrumb {
+                    key: key(4),
+                    breadcrumb: None,
+                },
+            ]
+        };
+        let folded = managed.key_decisions_for_fetch(&fetched(5), decisions());
+        assert_eq!(folded.len(), 1);
+        assert_eq!(folded[0].key, disabled);
+        assert_eq!(
+            managed
+                .key_decisions_for_fetch(&fetched(6), decisions())
+                .len(),
+            2
+        );
     }
 
     /// A batch of fetched names lands as one snapshot carrying every name,
