@@ -998,14 +998,14 @@ where
     D: FnMut() -> DFut,
     DFut: std::future::Future<Output = ()>,
 {
+    // A malformed txid is an invalid link; reject it before any request so a
+    // node's error for it never surfaces in place of `Invalid`.
+    let reversed = reverse_txid_hex(funding_txid)?;
     for attempt in 0..CLAIM_FETCH_MAX_ATTEMPTS {
         if let Some(tx) = fetch(funding_txid.to_string()).await? {
             return Ok(tx);
         }
-        // Reversed lookup is computed lazily on a canonical miss, so a hit
-        // never depends on the txid being reversible hex.
-        let reversed = reverse_txid_hex(funding_txid)?;
-        if let Some(tx) = fetch(reversed).await? {
+        if let Some(tx) = fetch(reversed.clone()).await? {
             return Ok(tx);
         }
         if attempt + 1 < CLAIM_FETCH_MAX_ATTEMPTS {
@@ -2267,10 +2267,10 @@ mod tests {
         }
 
         /// A txid that is hex but not 32 bytes is an invalid link, not a
-        /// propagation miss: it fails after the first lookup with no retries.
+        /// propagation miss: it fails before any lookup.
         #[tokio::test]
         async fn should_reject_a_short_txid_instead_of_retrying() {
-            let (queue, calls, delays) = harness(vec![Ok(None)]);
+            let (queue, calls, delays) = harness(vec![]);
             let (queue_f, calls_f, delays_f) =
                 (Arc::clone(&queue), Arc::clone(&calls), Arc::clone(&delays));
             let result = fetch_funding_tx_with_retry(
@@ -2296,7 +2296,7 @@ mod tests {
             )
             .await;
             assert!(matches!(result, Err(InvitationError::Invalid(_))));
-            assert_eq!(calls.lock().expect("calls").len(), 1);
+            assert!(calls.lock().expect("calls").is_empty());
             assert_eq!(delays.load(Ordering::SeqCst), 0);
         }
 
