@@ -5768,6 +5768,121 @@ mod one_way_contact_tests {
         );
     }
 
+    /// An established contact whose external account was built but whose
+    /// receiving build never completed (budget spent, locked signer, process
+    /// death mid-drain). The external row survives a relaunch and the queue
+    /// does not, and the regular candidates skip any contact with an external
+    /// account, so only the receiving gate can recover it. The external
+    /// account carries a marker matching the incoming reference, so the
+    /// sweep's stale-account teardown leaves it alone and cannot mask the
+    /// case. The sweep must queue exactly `RegisterReceiving`, and the drain
+    /// must add the receiving account and keep the external one.
+    #[tokio::test]
+    async fn should_recover_receiving_account_when_only_external_survives() {
+        use key_wallet::account::AccountType;
+        use key_wallet::managed_account::ManagedCoreFundsAccount;
+
+        let owner = id(0xAA);
+        let contact = id(0xBB);
+        let sdk = sdk_with_no_new_contact_requests(owner).await;
+        let (_manager, iw) = wallet_with_owner(sdk, owner).await;
+        seed_requests(
+            &iw,
+            &owner,
+            &[request(owner, contact, 100)],
+            &[request(contact, owner, 100)],
+        )
+        .await;
+
+        // Any valid xpub will do: only the account's presence matters to the
+        // gates under test.
+        let provider = SeedCryptoProvider::from_seed(SEED, Network::Testnet);
+        let external_type = AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: owner.to_buffer(),
+            friend_identity_id: contact.to_buffer(),
+        };
+        let xpub = provider
+            .receiving_xpub(
+                &external_type
+                    .derivation_path(Network::Testnet)
+                    .expect("external path"),
+            )
+            .await
+            .expect("xpub");
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let (wallet, info) = wm
+                .get_wallet_mut_and_info_mut(&iw.wallet_id)
+                .expect("wallet");
+            let account = key_wallet::Account {
+                parent_wallet_id: Some(wallet.wallet_id),
+                account_type: external_type,
+                network: Network::Testnet,
+                account_xpub: xpub,
+                is_watch_only: true,
+            };
+            wallet
+                .add_account(external_type, Some(xpub))
+                .expect("add external account");
+            info.core_wallet
+                .accounts
+                .insert_funds_bearing_account(ManagedCoreFundsAccount::from_account(&account))
+                .expect("insert external account");
+            let established = info
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .expect("managed")
+                .established_contact_mut(&contact)
+                .expect("established");
+            established.external_account_reference =
+                Some(established.incoming_request.account_reference);
+
+            assert!(
+                DashPayView::<SpvBroadcaster>::collect_account_build_candidates(info, &owner)
+                    .is_empty(),
+                "the regular gate skips a contact that has its external account"
+            );
+        }
+
+        let report = iw
+            .dashpay()
+            .sync_contact_requests_reporting()
+            .await
+            .expect("sweep");
+        assert_eq!(
+            report.failed_identities,
+            Vec::<Identifier>::new(),
+            "received fetch"
+        );
+        assert_eq!(
+            report.degraded_identities,
+            Vec::<Identifier>::new(),
+            "sent fetch"
+        );
+        assert_eq!(
+            queued_kinds(&iw, &owner, &contact).await,
+            vec![PendingContactCryptoKind::RegisterReceiving],
+            "only the missing receiving account is queued"
+        );
+
+        let drained = iw
+            .dashpay()
+            .drain_pending_contact_crypto_until(&provider, None)
+            .await;
+        assert_eq!(drained, 1);
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&iw.wallet_id).expect("info");
+        assert!(has_receival_account(info, &owner, &contact));
+        assert!(
+            info.core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .contains_key(&receival_key(&owner, &contact)),
+            "the surviving external account is kept"
+        );
+    }
+
     /// **The one-way receival gap, through the sweep's public entry point.**
     /// A wallet that learned of its sent request from Platform (restore from
     /// seed, a second device) holds it in `sent_contact_requests` with no
