@@ -646,5 +646,6 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,
+        evidence: None,
     },
 };

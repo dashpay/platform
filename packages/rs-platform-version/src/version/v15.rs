@@ -1,4 +1,4 @@
-use crate::version::consensus_versions::ConsensusVersions;
+use crate::version::consensus_versions::{ConsensusEvidenceParams, ConsensusVersions};
 use crate::version::dpp_versions::dpp_asset_lock_versions::v1::DPP_ASSET_LOCK_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_contract_versions::v6::CONTRACT_VERSIONS_V6;
 use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
@@ -15,7 +15,7 @@ use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VE
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
-use crate::version::drive_abci_versions::drive_abci_method_versions::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
+use crate::version::drive_abci_versions::drive_abci_method_versions::v11::DRIVE_ABCI_METHOD_VERSIONS_V11;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v2::DRIVE_ABCI_QUERY_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIVE_ABCI_STRUCTURE_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
@@ -30,17 +30,13 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 
-/// Introduced as the activation gate for the consensus changes of the 4.3
-/// line. Functionally identical to v14 at introduction: the same component
-/// version structs, no behavior change. Each change that needs this gate
-/// lands in its own follow-up and bumps the component table it consumes here;
-/// keeping v15 == v14 until then lets mixed-version validators agree.
+/// Activates the consensus changes of the 4.3 line, including a zero evidence byte budget.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V9,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V10,
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11,
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
@@ -67,5 +63,10 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     system_limits: SYSTEM_LIMITS_V4,
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
+        evidence: Some(ConsensusEvidenceParams {
+            max_bytes: 0,
+            max_age_num_blocks: 100_000,
+            max_age_duration_seconds: 172_800,
+        }),
     },
 };
