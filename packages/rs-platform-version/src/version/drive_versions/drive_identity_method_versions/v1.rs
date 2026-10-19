@@ -119,7 +119,7 @@ pub const DRIVE_IDENTITY_METHOD_VERSIONS_V1: DriveIdentityMethodVersions =
             remove_from_identity_balance: 0,
             refresh_identity_key_reference_operations: 0,
             update_identity_key_limits: None,
-            credit_storage_refunds_to_owners: None,
+            credit_storage_refunds_to_owners: None, // backfill: the method is new and inactive here (VersionNotActive), nothing at these versions calls it
         },
         insert: DriveIdentityInsertMethodVersions {
             add_new_identity: 0,
