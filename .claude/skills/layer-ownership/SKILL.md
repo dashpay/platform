@@ -1,26 +1,30 @@
 ---
 name: layer-ownership
-description: Check whether each PR change belongs in the correct Dash system layer, crate, or module. Use during PR reviews focused on architecture, ownership, dependency direction, duplicated validation, or business logic in bindings; do not expand into general correctness, style, security, or test review.
+description: Place Dash changes in the correct system layer, crate, or module. Use when planning or implementing code and during PR reviews to check architecture, ownership, dependency direction, duplicated validation, and business logic in bindings; keep review output limited to placement.
 ---
 
 # Layer Ownership
 
-Review only whether each changed responsibility is in the correct system layer,
-crate, and module. Treat every repository in `dashpay` as an owned layer.
-Reviews are read-only unless the user requests changes or comments.
+Use during planning, implementation, and PR reviews. Treat every repository in
+`dashpay` as an owned layer. Reviews are read-only unless the user requests
+changes or comments.
 
 ## Workflow
 
-1. Resolve exact base and head SHAs.
-2. Read `book/src/contributing/coding-conventions.md` completely.
-3. Inspect the changed paths and diff. Do not rescan unchanged subsystems;
-   inspect only the minimal callers, dependency manifests, and owned `dashpay`
-   repositories needed to settle uncertain placement.
-4. Classify every changed path against the conventions, but report only
-   misplaced responsibilities. The conventions are authoritative.
+1. Read `book/src/contributing/coding-conventions.md` completely.
+2. For planning, map each planned responsibility to its owner before naming
+   files. Inspect only the minimal existing boundary, callers, dependency
+   manifests, and owned `dashpay` repositories needed to settle placement.
+3. During implementation, apply that placement and recheck the actual changed
+   paths before handoff.
+4. For a PR, resolve exact base and head SHAs, then classify every changed path.
+   Report only misplaced responsibilities, not unrelated issues.
+
+Do not rescan unchanged subsystems. The conventions are authoritative.
 
 ## Output
 
-Lead with `pass` or `changes requested`. For each finding give the changed
-file/line, misplaced responsibility, correct owner, and smallest move. State
-the reviewed SHAs and any unavailable evidence. Do not report unrelated issues.
+In plans, name the owner when placement is not obvious. For PRs, lead with
+`pass` or `changes requested`; each finding gives the file/line, misplaced
+responsibility, correct owner, and smallest move. State reviewed SHAs and any
+unavailable evidence.
