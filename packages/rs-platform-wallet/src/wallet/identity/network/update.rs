@@ -89,7 +89,7 @@ impl IdentityWallet {
     /// fetched the identity before the update landed and finishes after
     /// this step does not take the cache back: a fetched identity at a
     /// lower revision than the cache's keeps the cache's revision, key set
-    /// and disabled states (see `ManagedIdentity::take_fetched_identity`).
+    /// and every disable (see `ManagedIdentity::take_fetched_identity`).
     /// When the call fails after the broadcast (the proof wait timed out,
     /// say), the update may have landed without this step: refresh before
     /// the next update. A `Persistence` error means it landed and is in the
@@ -301,8 +301,15 @@ impl IdentityWallet {
         // copies, with the breadcrumbs the path below would give them: an
         // added key the caller's, a disabled key the wallet slot's, as
         // `disable_keys` builds it.
+        // A key the update both adds and disables is taken as added, on
+        // both paths.
+        let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
+        let disabled: Vec<u32> = disabled_ids
+            .into_iter()
+            .filter(|id| !added_ids.contains(id))
+            .collect();
+
         if managed.identity.revision() >= transition_revision {
-            let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
             let slot = managed.wallet_slot();
             let mut keys = Vec::new();
             // An added key the cache lacks is stored, and taken into the
@@ -319,7 +326,7 @@ impl IdentityWallet {
                     breadcrumb: identity_index.map(|idx| (self.wallet_id, idx, id)),
                 });
             }
-            for &id in disabled_ids.iter().filter(|id| !added_ids.contains(id)) {
+            for &id in &disabled {
                 let Some(key) = managed.identity.public_keys().get(&id) else {
                     tracing::warn!(
                         identity = %identity_id,
@@ -336,7 +343,7 @@ impl IdentityWallet {
             // Stored with the identity's snapshot even when no touched key
             // is in the cache, so the revision reaches the store too.
             return managed
-                .apply_landed_keys(keys, &[], 0, &self.persister)
+                .store_keys_with_snapshot(keys, &self.persister)
                 .map_err(landed_but_not_stored);
         }
 
@@ -347,14 +354,10 @@ impl IdentityWallet {
         // The added and disabled keys and the landed revision go to the
         // store as one changeset, which holds the revision even when no key
         // row matched. Disabled keys get the wallet slot's breadcrumb and a
-        // local wall-clock `disabled_at` placeholder, which the next
-        // Platform refresh reconciles to the on-chain block time. Memory
-        // holds the whole update even when the store fails.
-        let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
-        let disabled: Vec<u32> = disabled_ids
-            .into_iter()
-            .filter(|id| !added_ids.contains(id))
-            .collect();
+        // local wall-clock `disabled_at` placeholder: a later fetch brings
+        // the on-chain block time into memory, and a load or discovery of
+        // the identity into the store. Memory holds the whole update even
+        // when the store fails.
         let added = added_keys
             .into_iter()
             .map(|key| {
@@ -462,7 +465,8 @@ fn update_revision(
 
 /// The error for a landed update the wallet could not store. The update is
 /// on Platform and in the cache either way, so the caller must not resubmit
-/// it; the next refresh or load stores the identity again.
+/// it. A load or discovery of the identity stores its key rows again; a
+/// refresh stores only its scalar snapshot.
 fn landed_but_not_stored(e: PersistenceError) -> PlatformWalletError {
     PlatformWalletError::Persistence(format!(
         "identity update landed on Platform and is in the wallet's cache, but the wallet could not \

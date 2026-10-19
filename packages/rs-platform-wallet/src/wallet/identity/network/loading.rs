@@ -260,7 +260,7 @@ impl IdentityWallet {
                 // appeared, and contact requests referencing them failed
                 // key-index validation). Same fold `refresh_identity`
                 // does: a fetch older than the cache keeps the cache's
-                // revision, key set and disabled states. The
+                // revision, key set and every disable. The
                 // `set_status` below persists the identity's scalar
                 // snapshot; the keys reach the store through `add_keys`.
                 let key_decisions = managed.key_decisions_for_fetch(&identity, key_decisions);
@@ -316,8 +316,8 @@ impl IdentityWallet {
     /// on-chain state (keys, balance, revision) is replaced with the latest
     /// version from Platform and the status is set to `Active`. A fetch at
     /// a lower revision than the cache's was answered before an update the
-    /// cache already holds: the cache keeps its revision, key set and
-    /// disabled states, and takes the fetch's balance and key limits
+    /// cache already holds: the cache keeps its revision, key set and every
+    /// disable, and takes the fetch's balance and key limits
     /// ([`ManagedIdentity::take_fetched_identity`]).
     ///
     /// Returns the identity the cache holds afterwards.
@@ -592,7 +592,7 @@ mod tests {
 
     /// A refresh answered before an update the cache already took (the
     /// cache at 6, Platform's answer at 5) keeps the cache's revision, key
-    /// set and disabled states, and takes the answer's balance; an answer
+    /// set and every disable, and takes the answer's balance; an answer
     /// at 6 or above replaces the cache. Either way the call returns what
     /// the cache holds afterwards.
     #[tokio::test]

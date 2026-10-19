@@ -3,8 +3,8 @@
 use super::key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus};
 use super::ManagedIdentity;
 use crate::changeset::{
-    IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet, KeyWithBreadcrumb,
-    PersistenceError, PlatformWalletChangeSet,
+    IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
+    IdentityKeysChangeSet, KeyWithBreadcrumb, PersistenceError, PlatformWalletChangeSet,
 };
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
@@ -394,10 +394,11 @@ impl ManagedIdentity {
     /// answered before an update the cache already holds (one applied
     /// locally after it landed, or a newer refresh). The revision orders
     /// only the keys an identity update adds and disables, so such a fetch
-    /// is folded per field: the cache keeps its revision, its key set and
-    /// each key's disabled state, and takes the fetch's balance and each
-    /// shared key's limits, which change without a revision bump (as a
-    /// whole fetch set them before). Returns whether it was taken whole.
+    /// is folded per field: the cache keeps its revision and key set, each
+    /// shared key is disabled when either copy is (Platform's timestamp
+    /// first), and the cache takes the fetch's balance and each shared
+    /// key's limits, which change without a revision bump (as a whole
+    /// fetch set them before). Returns whether it was taken whole.
     ///
     /// Only the in-memory identity changes here; the caller persists.
     pub fn take_fetched_identity(&mut self, fetched: &Identity) -> bool {
@@ -419,8 +420,8 @@ impl ManagedIdentity {
     /// The key decisions to store for `decisions` built from `fetched`.
     /// Any fetch at the cache's revision or above has its decisions stored
     /// as they are. For an older fetch each key is folded as
-    /// [`Self::take_fetched_identity`] folds it (the cache's disabled state,
-    /// the fetch's limits), so storing its breadcrumb (a key's derivation
+    /// [`Self::take_fetched_identity`] folds it (disabled when either copy
+    /// is, the fetch's limits), so storing its breadcrumb (a key's derivation
     /// never changes) does not take back a disable the cache holds; a key
     /// the cache lacks is left out, since an older answer cannot show
     /// whether a later update disabled it, and a fetch at least as new will
@@ -523,7 +524,7 @@ impl ManagedIdentity {
             let (wallet_id, derivation_indices) = match breadcrumb {
                 Some((wallet_id, identity_index, key_index)) => (
                     Some(wallet_id),
-                    Some(crate::changeset::IdentityKeyDerivationIndices {
+                    Some(IdentityKeyDerivationIndices {
                         identity_index,
                         key_index,
                     }),
@@ -659,6 +660,26 @@ impl ManagedIdentity {
         keys_cs
             .upserts
             .extend(self.stamp_disabled(disabled, disabled_at).upserts);
+        self.store_with_snapshot(keys_cs, persister)
+    }
+
+    /// Layer `keys` in memory and store them with the identity's scalar
+    /// snapshot as one changeset, even when `keys` is empty. The store's
+    /// failure is returned.
+    pub fn store_keys_with_snapshot(
+        &mut self,
+        keys: Vec<KeyWithBreadcrumb>,
+        persister: &WalletPersister,
+    ) -> Result<(), PersistenceError> {
+        let keys_cs = self.layer_keys(keys);
+        self.store_with_snapshot(keys_cs, persister)
+    }
+
+    fn store_with_snapshot(
+        &self,
+        keys_cs: IdentityKeysChangeSet,
+        persister: &WalletPersister,
+    ) -> Result<(), PersistenceError> {
         persister.store(PlatformWalletChangeSet {
             identities: Some(self.snapshot_changeset()),
             identity_keys: Some(keys_cs),
@@ -702,7 +723,7 @@ impl ManagedIdentity {
             let (wallet_id, derivation_indices) = match breadcrumb {
                 Some((wallet_id, identity_index)) => (
                     Some(wallet_id),
-                    Some(crate::changeset::IdentityKeyDerivationIndices {
+                    Some(IdentityKeyDerivationIndices {
                         identity_index,
                         key_index: key_id,
                     }),
@@ -820,10 +841,11 @@ mod tests {
     }
 
     /// A fetch at a lower revision than the cache's was answered before an
-    /// update the cache holds: the cache keeps its revision, key set and
-    /// disabled states, and takes the fetch's balance and key limits, which
-    /// change without a revision. A fetch at the same revision or higher
-    /// replaces the cache.
+    /// update the cache holds: the cache keeps its revision and key set, a
+    /// key is disabled when either copy is (Platform's timestamp first), and
+    /// the cache takes the fetch's balance and key limits, which change
+    /// without a revision. A fetch at the same revision or higher replaces
+    /// the cache.
     #[test]
     fn should_take_a_fetched_identity_whole_only_when_it_is_not_older() {
         fn limited(id: KeyID, budget: u64, disabled_at: Option<u64>) -> IdentityPublicKey {
