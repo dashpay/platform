@@ -242,7 +242,8 @@ impl IdentityWallet {
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
-            if info.identity_manager.identity(&identity_id).is_none() {
+            let is_new = info.identity_manager.identity(&identity_id).is_none();
+            if is_new {
                 info.identity_manager.add_identity(
                     identity.clone(),
                     identity_index,
@@ -261,7 +262,7 @@ impl IdentityWallet {
                 // does: a fetch older than the cache is dropped. The
                 // `set_status` below persists the identity's scalar
                 // snapshot; the keys reach the store through `add_keys`.
-                let key_decisions = if managed.take_fetched_identity(&identity) {
+                let key_decisions = if is_new || managed.take_fetched_identity(&identity) {
                     key_decisions
                 } else {
                     identity = managed.identity.clone();

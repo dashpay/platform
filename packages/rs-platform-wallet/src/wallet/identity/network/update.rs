@@ -300,17 +300,17 @@ impl IdentityWallet {
             let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
             let slot = managed.wallet_id.zip(managed.identity_index);
             let mut keys = Vec::new();
-            for &id in &added_ids {
-                let Some(key) = managed.identity.public_keys().get(&id) else {
-                    tracing::warn!(
-                        identity = %identity_id,
-                        key_id = id,
-                        "landed update: an added key is missing from a cache at its revision; not stored",
-                    );
-                    continue;
-                };
+            // An added key the cache lacks is stored, and taken into the
+            // cache, as the update registered it.
+            for key in &added_keys {
+                let id = key.id();
                 keys.push(KeyWithBreadcrumb {
-                    key: key.clone(),
+                    key: managed
+                        .identity
+                        .public_keys()
+                        .get(&id)
+                        .unwrap_or(key)
+                        .clone(),
                     breadcrumb: identity_index.map(|idx| (self.wallet_id, idx, id)),
                 });
             }
@@ -684,6 +684,16 @@ mod update_identity_at_revision_tests {
         for cached in [5, 6] {
             let wallet = wallet_at_revision(cached).await;
             let wallet = wallet.identity();
+            {
+                let mut wm = wallet.wallet_manager.write().await;
+                wm.get_wallet_info_mut(&wallet.wallet_id)
+                    .unwrap()
+                    .identity_manager
+                    .managed_identity_mut(&identity_id)
+                    .unwrap()
+                    .identity
+                    .add_public_key(added.clone());
+            }
             let before = cached_identity(wallet, &identity_id).await;
             wallet
                 .apply_landed_update(&identity_id, Some(0), 5, vec![added.clone()], vec![1])
@@ -769,22 +779,6 @@ mod update_identity_at_revision_tests {
             .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![1])
             .await
             .unwrap();
-        // An added key the cache lacks is not stored, so the batch holds
-        // disabled keys only.
-        wallet
-            .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], vec![1])
-            .await
-            .unwrap();
-        {
-            let mut wm = wallet.wallet_manager.write().await;
-            wm.get_wallet_info_mut(&wallet.wallet_id)
-                .unwrap()
-                .identity_manager
-                .managed_identity_mut(&identity_id)
-                .unwrap()
-                .identity
-                .add_public_key(key_3());
-        }
         let error = wallet
             .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], vec![1])
             .await
@@ -792,6 +786,32 @@ mod update_identity_at_revision_tests {
         assert!(
             matches!(error, PlatformWalletError::Persistence(_)),
             "{error:?}"
+        );
+    }
+
+    /// A cache at the transition's revision that lacks a key the update
+    /// added takes the update's copy, in memory and in the store, with its
+    /// breadcrumb: Platform has it either way.
+    #[tokio::test]
+    async fn should_store_an_added_key_a_cache_at_its_revision_lacks() {
+        let identity_id = Identifier::default();
+        let store = Arc::new(CapturingStore::default());
+        let wallet = wallet_at_revision_on(5, store.clone()).await;
+        let wallet = wallet.identity();
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], vec![])
+            .await
+            .unwrap();
+        let identity = cached_identity(wallet, &identity_id).await;
+        assert_eq!(identity.revision(), 5);
+        assert_eq!(identity.public_keys().get(&3), Some(&key_3()));
+        let stored = store.stored_key(identity_id, 3).expect("key 3 stored");
+        assert_eq!(stored.public_key, key_3());
+        assert_eq!(
+            stored
+                .derivation_indices
+                .map(|indices| (indices.identity_index, indices.key_index)),
+            Some((0, 3))
         );
     }
 

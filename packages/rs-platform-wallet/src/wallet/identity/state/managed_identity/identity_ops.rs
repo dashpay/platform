@@ -2,7 +2,9 @@
 
 use super::key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus};
 use super::ManagedIdentity;
-use crate::changeset::{IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet};
+use crate::changeset::{
+    IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet, KeyWithBreadcrumb,
+};
 use crate::wallet::persister::WalletPersister;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -405,16 +407,20 @@ impl ManagedIdentity {
     /// `decisions` built from a fetch older than the cache, carried on the
     /// cache's copies of their keys instead, so storing their breadcrumbs
     /// (a key's derivation never changes) does not take back what the cache
-    /// holds newer. A key the cache lacks is left out.
+    /// holds newer. A key the cache lacks keeps the fetch's copy: Platform
+    /// never removes a key, so it is on the identity, and storing it adds it
+    /// to the cache too.
     pub fn key_decisions_on_cached_keys(
         &self,
-        decisions: Vec<crate::changeset::KeyWithBreadcrumb>,
-    ) -> Vec<crate::changeset::KeyWithBreadcrumb> {
+        decisions: Vec<KeyWithBreadcrumb>,
+    ) -> Vec<KeyWithBreadcrumb> {
         decisions
             .into_iter()
-            .filter_map(|mut decision| {
-                decision.key = self.identity.public_keys().get(&decision.key.id())?.clone();
-                Some(decision)
+            .map(|mut decision| {
+                if let Some(cached) = self.identity.public_keys().get(&decision.key.id()) {
+                    decision.key = cached.clone();
+                }
+                decision
             })
             .collect()
     }
@@ -675,6 +681,7 @@ mod tests {
     };
     use crate::wallet::identity::PaymentEntry;
     use crate::wallet::platform_wallet::WalletId;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
@@ -742,7 +749,6 @@ mod tests {
     #[test]
     fn should_take_a_fetched_identity_only_when_it_is_not_older() {
         fn at(revision: u64, disabled: bool) -> Identity {
-            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
             let mut key = key(3);
             if disabled {
                 key.set_disabled_at(1);
