@@ -8,7 +8,7 @@ use dapi_grpc::platform::v0::{
 };
 use dpp::address_funds::AddressWitness;
 use dpp::block::block_info::BlockInfo;
-use dpp::bls_signatures::{Bls12381G2Impl, SecretKey, SignatureSchemes};
+use dpp::bls::SecretKey;
 use dpp::dashcore::{secp256k1, signer};
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -75,8 +75,8 @@ impl Signer<IdentityPublicKey> for CountingSigner {
     }
 }
 
-fn quorum_secret() -> SecretKey<Bls12381G2Impl> {
-    SecretKey::from_hash(b"authenticated contract update regression")
+fn quorum_secret() -> SecretKey {
+    SecretKey::from_ikm(b"authenticated contract update regression").expect("quorum secret")
 }
 
 fn contract(version: u32) -> DataContract {
@@ -128,8 +128,7 @@ fn identity_key_with_seed(seed: u8) -> IdentityPublicKey {
         security_level: SecurityLevel::CRITICAL,
         key_type: KeyType::ECDSA_SECP256K1,
         data: secp256k1::PublicKey::from_secret_key(
-            &secp256k1::Secp256k1::new(),
-            &secp256k1::SecretKey::from_slice(&[seed; 32]).expect("identity secret"),
+            &secp256k1::SecretKey::from_secret_bytes([seed; 32]).expect("identity secret"),
         )
         .serialize()
         .to_vec()
@@ -187,10 +186,9 @@ fn signed_proof(drive: &Drive, bytes: Vec<u8>, metadata: &ResponseMetadata) -> P
         grovedb_proof: bytes,
         quorum_hash: vec![0x46; 32],
         signature: quorum_secret()
-            .sign(SignatureSchemes::Basic, &digest)
+            .sign(&digest)
             .expect("BLS signature")
-            .as_raw_value()
-            .to_compressed()
+            .to_bytes()
             .to_vec(),
         round: 0,
         block_id_hash: vote.block_id,
@@ -437,7 +435,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
     );
     assert_eq!(responses.len(), 9);
-    let public_key: Vec<u8> = (&quorum_secret().public_key()).into();
+    let public_key: Vec<u8> = quorum_secret().public_key().to_bytes().to_vec();
     let fixture = json!({
         "fixture_format_version": 1,
         "protocol_version": pv.protocol_version,

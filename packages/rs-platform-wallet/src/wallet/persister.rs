@@ -56,15 +56,59 @@ impl Drop for TransientMissTally {
 pub struct WalletPersister {
     wallet_id: WalletId,
     inner: Arc<dyn PlatformWalletPersistence>,
+    contact_payment_gate: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl WalletPersister {
     pub fn new(wallet_id: WalletId, inner: Arc<dyn PlatformWalletPersistence>) -> Self {
-        Self { wallet_id, inner }
+        Self {
+            wallet_id,
+            inner,
+            contact_payment_gate: Arc::new(tokio::sync::Mutex::new(())),
+        }
     }
 
-    pub(crate) fn store(&self, changeset: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
+    /// Keep contact-pool snapshots in reservation order across Core and
+    /// withdrawal sends, including a Core broadcast rejection's pool rollback.
+    ///
+    /// The gate is shared by clones of this handle, not by every handle for
+    /// the same `wallet_id`: each [`Self::new`] mints its own. Ordering holds
+    /// because the only lockers (the DashPay payment paths) run on the handle
+    /// `PlatformWallet::new` builds once per wallet. Any new writer of DashPay
+    /// external-account pool snapshots must lock through a clone of that
+    /// handle; a separately constructed one (such as the incoming-payment
+    /// hook's) would silently bypass the ordering.
+    pub(crate) async fn lock_contact_payments(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.contact_payment_gate.lock().await
+    }
+
+    /// Store `changeset` for this wallet.
+    ///
+    /// On a backend that cannot keep outbound-account markers durably (see
+    /// [`persists_outbound_account_markers`](crate::changeset::persists_outbound_account_markers)),
+    /// every established-contact row is written without its marker: a marker
+    /// that reached disk without its account — through a buffered round that
+    /// was later dropped, or a host that skips account writes — would be
+    /// trusted on restart beside the previous account. The in-memory marker is
+    /// untouched, so the running process keeps its rotation self-heal.
+    pub(crate) fn store(
+        &self,
+        mut changeset: PlatformWalletChangeSet,
+    ) -> Result<(), PersistenceError> {
+        if !self.persists_outbound_account_markers() {
+            if let Some(contacts) = changeset.contacts.as_mut() {
+                for established in contacts.established.values_mut() {
+                    established.external_account_reference = None;
+                }
+            }
+        }
         self.inner.store(self.wallet_id, changeset)
+    }
+
+    /// Whether the backend keeps outbound-account markers durably (see
+    /// [`persists_outbound_account_markers`](crate::changeset::persists_outbound_account_markers)).
+    pub(crate) fn persists_outbound_account_markers(&self) -> bool {
+        crate::changeset::persists_outbound_account_markers(self.inner.as_ref())
     }
 
     /// Preserve backend failure kinds, granting retry only when the backend
@@ -79,6 +123,12 @@ impl WalletPersister {
 
     pub(crate) fn store_commits_inline(&self) -> bool {
         self.inner.store_commits_inline()
+    }
+
+    /// Whether the backend can hold a durable DashPay backfill record (see
+    /// [`persists_backfill_coverage`](crate::changeset::persists_backfill_coverage)).
+    pub(crate) fn persists_backfill_coverage(&self) -> bool {
+        crate::changeset::persists_backfill_coverage(self.inner.as_ref())
     }
 
     /// Feature-specific persistence contracts exposed by the backend.

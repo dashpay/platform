@@ -515,7 +515,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: super::ContactCryptoProvider + Sync,
     {
-        use dashcore::secp256k1::rand::{thread_rng, RngCore};
+        use dashcore::secp256k1::rand::{rng, RngCore};
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
 
         // Build the decrypted-payload struct once: it is both the local
@@ -542,7 +542,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let dashpay_contract = super::dashpay_contract()?;
 
         // 1. Local state first — works offline and feeds SwiftData.
-        let (established_count, identity_index, signing_key, root_key_id) = {
+        let (established_count, identity_index, identity, root_key_id) = {
             let mut wm = self.wallet_manager.write().await;
             let info = wm
                 .get_wallet_info_mut(&self.wallet_id)
@@ -565,14 +565,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
             let established_count = managed.dashpay().established_contacts().len();
             let identity_index = managed.identity_index;
-            let signing_key = super::usable_authentication_key(
-                &managed.identity,
-                dashpay_contract.id(),
-                "contactInfo",
-                &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
-                &[KeyType::ECDSA_SECP256K1],
-            )
-            .cloned();
+            // The signing key is chosen below, after the lock: signer callbacks must not hold it.
+            let identity = managed.identity.clone();
             // Shared own-ECDH-root selector (same policy as the
             // contact-request send path); `Option` preserved — a missing
             // key defers the publish rather than erroring here.
@@ -582,7 +576,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )
                 .ok()
                 .map(|k| k.id());
-            (established_count, identity_index, signing_key, root_key_id)
+            (established_count, identity_index, identity, root_key_id)
         };
 
         // 2. DIP-15 privacy gate.
@@ -603,7 +597,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             );
             return Ok(ContactInfoPublishOutcome::SkippedWatchOnly);
         };
-        let signing_key = signing_key.ok_or_else(|| {
+        let signing_key = super::usable_authentication_key(
+            &identity,
+            signer,
+            dashpay_contract.id(),
+            "contactInfo",
+            &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+            &[KeyType::ECDSA_SECP256K1],
+        )?
+        .cloned()
+        .ok_or_else(|| {
             PlatformWalletError::InvalidIdentityData(
                 "No HIGH or CRITICAL authentication key found on identity \
                  (required for document state transitions)"
@@ -697,7 +700,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             write_root_id,
         )?;
         let mut iv = [0u8; 16];
-        thread_rng().fill_bytes(&mut iv);
+        rng().fill_bytes(&mut iv);
         let sealed = crypto
             .contact_info_seal(
                 &root_path,

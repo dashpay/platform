@@ -41,7 +41,9 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::events::{build_event_extension, build_event_vtable, KotlinEventCtx};
-use crate::persistence::{build_extension, build_vtable, KotlinPersistenceCtx};
+use crate::persistence::{
+    build_extension, build_vtable, restrict_account_writers, KotlinPersistenceCtx,
+};
 use crate::support::{guard, take_pwffi_error, throw_pwffi_result, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JObject, JObjectArray, JString, JValue};
 use jni::sys::{
@@ -154,7 +156,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_n
         };
         let persistence_ctx =
             Box::into_raw(Box::new(KotlinPersistenceCtx::new(persistence_global)));
-        let persistence: PersistenceCallbacks = build_vtable(persistence_ctx as *mut c_void);
+        let mut persistence: PersistenceCallbacks = build_vtable(persistence_ctx as *mut c_void);
+        restrict_account_writers(env, &persistence_bridge, &mut persistence);
         let persistence_extension = build_extension(env, &persistence_bridge);
         let persistence_capabilities = PersistenceCapabilitiesFFI {
             version: declared_capabilities_version,

@@ -139,7 +139,9 @@ mod tests {
     use dpp::consensus::codes::ErrorWithCode;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
-    use dpp::dashcore::key::{Keypair, Secp256k1};
+    use dpp::dashcore::key::Keypair;
+    use dpp::dashcore::secp256k1::rand::rngs::StdRng as SecpStdRng;
+    use dpp::dashcore::secp256k1::rand::SeedableRng as _;
     use dpp::dashcore::signer;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identifier::Identifier;
@@ -257,11 +259,9 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(292);
 
-        let mut rng = StdRng::seed_from_u64(292);
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -294,7 +294,7 @@ mod tests {
 
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -540,9 +540,8 @@ mod tests {
             document_type_name: "profile".into(),
         };
         let platform_state = platform.state.load();
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(292);
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let mut rng = SecpStdRng::seed_from_u64(292);
+        let new_key_pair = Keypair::new(&mut rng);
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
             purpose: Purpose::AUTHENTICATION,
@@ -567,11 +566,13 @@ mod tests {
             .into()
         };
         let signable_bytes = build(new_key.clone()).signable_bytes().unwrap();
-        new_key.signature =
-            signer::sign(&signable_bytes, &new_key_pair.secret_key().secret_bytes())
-                .unwrap()
-                .to_vec()
-                .into();
+        new_key.signature = signer::sign(
+            &signable_bytes,
+            &new_key_pair.secret_key().to_secret_bytes(),
+        )
+        .unwrap()
+        .to_vec()
+        .into();
         let mut update_transition = build(new_key);
         update_transition
             .set_signature(signer.sign(&key, signable_bytes.as_slice()).await.unwrap());
@@ -749,9 +750,8 @@ mod tests {
             id: contract_group_id,
         };
         let platform_state = platform.state.load();
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(293);
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let mut rng = SecpStdRng::seed_from_u64(293);
+        let new_key_pair = Keypair::new(&mut rng);
         let build =
             |revision: u64, nonce: u64, add: Vec<IdentityPublicKeyInCreationV0>, disable| {
                 StateTransition::from(IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
@@ -783,11 +783,13 @@ mod tests {
             let signable_bytes = build(revision, nonce, vec![new_key.clone()], vec![])
                 .signable_bytes()
                 .unwrap();
-            new_key.signature =
-                signer::sign(&signable_bytes, &new_key_pair.secret_key().secret_bytes())
-                    .unwrap()
-                    .to_vec()
-                    .into();
+            new_key.signature = signer::sign(
+                &signable_bytes,
+                &new_key_pair.secret_key().to_secret_bytes(),
+            )
+            .unwrap()
+            .to_vec()
+            .into();
             let mut update = build(revision, nonce, vec![new_key], vec![]);
             update.set_signature(signer.sign(&key, signable_bytes.as_slice()).await.unwrap());
             signed_updates.push(update);
@@ -1107,11 +1109,10 @@ mod tests {
             .load_dashpay(version)
             .unwrap();
         let bounds = ContractBounds::SingleContract { id: dashpay.id() };
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(292);
+        let mut rng = SecpStdRng::seed_from_u64(292);
         let pairs: BTreeMap<u32, Keypair> = [2u32, 3, 4]
             .into_iter()
-            .map(|id| (id, Keypair::new(&secp, &mut rng)))
+            .map(|id| (id, Keypair::new(&mut rng)))
             .collect();
         let bound_key = |id: u32| IdentityPublicKeyInCreationV0 {
             id,
@@ -1226,7 +1227,7 @@ mod tests {
         let mut adds = vec![bound_key(3), bound_key(2)];
         let signable = unsigned(1, adds.clone(), vec![]).signable_bytes().unwrap();
         for key in &mut adds {
-            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().secret_bytes())
+            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().to_secret_bytes())
                 .unwrap()
                 .to_vec()
                 .into();
@@ -1241,7 +1242,7 @@ mod tests {
         let mut adds = vec![bound_key(4)];
         let signable = unsigned(2, adds.clone(), vec![3]).signable_bytes().unwrap();
         for key in &mut adds {
-            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().secret_bytes())
+            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().to_secret_bytes())
                 .unwrap()
                 .to_vec()
                 .into();
@@ -1673,11 +1674,9 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let mut rng = StdRng::seed_from_u64(1292);
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -1862,11 +1861,9 @@ mod tests {
         )
         .await;
 
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let mut rng = StdRng::seed_from_u64(1292);
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -1902,7 +1899,7 @@ mod tests {
         // Sign the new key with its own private key
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -2147,14 +2144,13 @@ mod tests {
         let bounds = ContractBounds::SingleContract {
             id: data_contract.id(),
         };
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(1292);
+        let mut rng = SecpStdRng::seed_from_u64(1292);
         // Two encryption keys, the newer one listed first: both write the encryption
         // current-key alias, and the one naming the highest key id must win.
         let pairs: Vec<(u32, Purpose, Keypair)> = vec![
-            (4, Purpose::ENCRYPTION, Keypair::new(&secp, &mut rng)),
-            (2, Purpose::ENCRYPTION, Keypair::new(&secp, &mut rng)),
-            (3, Purpose::DECRYPTION, Keypair::new(&secp, &mut rng)),
+            (4, Purpose::ENCRYPTION, Keypair::new(&mut rng)),
+            (2, Purpose::ENCRYPTION, Keypair::new(&mut rng)),
+            (3, Purpose::DECRYPTION, Keypair::new(&mut rng)),
         ];
         let mut adds: Vec<IdentityPublicKeyInCreationV0> = pairs
             .iter()
@@ -2270,7 +2266,7 @@ mod tests {
             .signable_bytes()
             .expect("expected signable bytes");
         for (key, (_, _, pair)) in adds.iter_mut().zip(&pairs) {
-            key.signature = signer::sign(&signable, &pair.secret_key().secret_bytes())
+            key.signature = signer::sign(&signable, &pair.secret_key().to_secret_bytes())
                 .expect("expected to sign")
                 .to_vec()
                 .into();
@@ -2637,11 +2633,9 @@ mod tests {
         )
         .await;
 
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let mut rng = StdRng::seed_from_u64(1292);
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -2678,7 +2672,7 @@ mod tests {
         // Sign the new key with its own private key
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -3011,9 +3005,8 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(292);
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let mut rng = SecpStdRng::seed_from_u64(292);
+        let new_key_pair = Keypair::new(&mut rng);
 
         // Add a key with id 2 and also disable key id 2 in the same transition
         let new_key = IdentityPublicKeyInCreationV0 {
@@ -3241,9 +3234,8 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(292);
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let mut rng = SecpStdRng::seed_from_u64(292);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let signable_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: identity.id(),
@@ -3276,7 +3268,7 @@ mod tests {
         // Sign the new key
         let secret = new_key_pair.secret_key();
         let key_sig =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 1, // existing key ID
@@ -3377,9 +3369,8 @@ mod tests {
                 setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
             let platform_state = platform.state.load();
 
-            let secp = Secp256k1::new();
-            let mut rng = StdRng::seed_from_u64(292);
-            let new_key_pair = Keypair::new(&secp, &mut rng);
+            let mut rng = SecpStdRng::seed_from_u64(292);
+            let new_key_pair = Keypair::new(&mut rng);
             let mut new_key = IdentityPublicKeyInCreationV1 {
                 id: NEW_KEY_ID,
                 purpose: added_key.purpose,
@@ -3413,11 +3404,13 @@ mod tests {
             let signable_bytes = transition_adding(new_key.clone())
                 .signable_bytes()
                 .expect("expected signable bytes");
-            new_key.signature =
-                signer::sign(&signable_bytes, &new_key_pair.secret_key().secret_bytes())
-                    .expect("expected to sign")
-                    .to_vec()
-                    .into();
+            new_key.signature = signer::sign(
+                &signable_bytes,
+                &new_key_pair.secret_key().to_secret_bytes(),
+            )
+            .expect("expected to sign")
+            .to_vec()
+            .into();
 
             let mut update_transition = transition_adding(new_key);
             update_transition.set_signature(
@@ -3554,6 +3547,226 @@ mod tests {
                 matches!(&execution, StateTransitionExecutionResult::UnpaidConsensusError(error) if error.code() == INVALID_IDENTITY_PUBLIC_KEY_BUDGET),
                 "{execution:?}"
             );
+        }
+    }
+
+    mod hash_key_data {
+        use super::*;
+        use crate::execution::check_tx::CheckTxLevel;
+        use crate::platform_types::platform::PlatformRef;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::consensus::basic::BasicError;
+        use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
+        use simple_signer::signer::SimpleSigner;
+        use std::collections::BTreeMap;
+
+        const HASH_KEY_ID: u32 = 1;
+
+        /// A platform at `platform_version` holding an identity with only a master key, and an
+        /// identity update, signed by that key, adding a hash key of `key_type` whose data has
+        /// `data_len` bytes. Hash keys carry no proof of possession, so the key data is all that
+        /// can be wrong with it.
+        async fn identity_update_adding_a_hash_key(
+            key_type: KeyType,
+            data_len: usize,
+            platform_version: &PlatformVersion,
+        ) -> (TempPlatform<MockCoreRPCLike>, StateTransition) {
+            let platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(platform_version.protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let mut rng = StdRng::seed_from_u64(417);
+            let (master_key, master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+            let mut signer = SimpleSigner::default();
+            signer.add_identity_public_key(master_key.clone(), master_private_key);
+            let identity: Identity = IdentityV0 {
+                id: Identifier::random_with_rng(&mut rng),
+                public_keys: BTreeMap::from([(master_key.id(), master_key.clone())]),
+                balance: dash_to_credits!(0.1),
+                revision: 0,
+            }
+            .into();
+            platform
+                .drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add a new identity");
+
+            let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![IdentityPublicKeyInCreationV0 {
+                    id: HASH_KEY_ID,
+                    key_type,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    contract_bounds: None,
+                    read_only: false,
+                    data: vec![0x5a; data_len].into(),
+                    signature: Default::default(),
+                }
+                .into()],
+                disable_public_keys: vec![],
+                user_fee_increase: 0,
+                signature_public_key_id: master_key.id(),
+                signature: Default::default(),
+            }
+            .into();
+            let mut transition: StateTransition = update_transition.into();
+            let signable_bytes = transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+            transition.set_signature(
+                signer
+                    .sign(&master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+            (platform, transition)
+        }
+
+        fn check_tx(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) -> Vec<ConsensusError> {
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            platform
+                .check_tx(
+                    &transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize"),
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("expected to check tx")
+                .errors
+        }
+
+        fn process_block(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) -> StateTransitionExecutionResult {
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize")],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+            processing_result.execution_results()[0].clone()
+        }
+
+        /// A hash key's data is the hash itself, so from protocol version 14 an identity update
+        /// adding one whose data is not 20 bytes fails basic structure validation: check_tx
+        /// refuses it with a consensus error, and a block refuses it unpaid, like any other
+        /// basic structure failure.
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_identity_update_adding_a_hash_key_of_the_wrong_size() {
+            let platform_version = PlatformVersion::latest();
+            for (key_type, data_len) in [
+                (KeyType::ECDSA_HASH160, 0),
+                (KeyType::ECDSA_HASH160, 19),
+                (KeyType::ECDSA_HASH160, 21),
+                (KeyType::BIP13_SCRIPT_HASH, 19),
+                (KeyType::EDDSA_25519_HASH160, 19),
+            ] {
+                let (platform, transition) =
+                    identity_update_adding_a_hash_key(key_type, data_len, platform_version).await;
+
+                let errors = check_tx(&platform, &transition, platform_version);
+                assert_matches!(
+                    errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::InvalidIdentityPublicKeyDataError(error)
+                    )] if error.public_key_id() == HASH_KEY_ID,
+                    "{key_type} with {data_len} bytes: {errors:?}"
+                );
+
+                let execution = process_block(&platform, &transition, platform_version);
+                assert_matches!(
+                    execution,
+                    StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(BasicError::InvalidIdentityPublicKeyDataError(
+                            _
+                        ))
+                    ),
+                    "{key_type} with {data_len} bytes"
+                );
+            }
+        }
+
+        /// Protocol version 13 does not check the size of a hash key's data, so such a key fails
+        /// once its hash is taken, as an internal error that keeps the transition out of every
+        /// block; that history replays unchanged.
+        #[tokio::test]
+        async fn should_fail_an_identity_update_adding_a_hash_key_of_the_wrong_size_internally_at_protocol_version_13(
+        ) {
+            let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+            let (platform, transition) =
+                identity_update_adding_a_hash_key(KeyType::ECDSA_HASH160, 19, platform_version)
+                    .await;
+            assert_matches!(
+                process_block(&platform, &transition, platform_version),
+                StateTransitionExecutionResult::InternalError(_)
+            );
+        }
+
+        /// The same identity update with 20 bytes of hash key data adds the key, so the refusals
+        /// above come from the key data alone.
+        #[tokio::test]
+        async fn should_add_a_hash_key_of_20_bytes_at_protocol_versions_13_and_14() {
+            for platform_version in [
+                PlatformVersion::get(13).expect("expected protocol version 13"),
+                PlatformVersion::latest(),
+            ] {
+                let (platform, transition) =
+                    identity_update_adding_a_hash_key(KeyType::ECDSA_HASH160, 20, platform_version)
+                        .await;
+                assert_matches!(
+                    process_block(&platform, &transition, platform_version),
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    "at protocol version {}",
+                    platform_version.protocol_version
+                );
+            }
         }
     }
 }

@@ -21,6 +21,7 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::error::PlatformWalletError;
 
+use super::signing_key::AvailableSigningKey;
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs` for the same pattern.
@@ -136,14 +137,14 @@ impl IdentityWallet {
         // Pick the MASTER signing key — DPP requires identity update
         // transitions to be authorized by MASTER specifically.
         let master_key_id = identity
-            .public_keys()
-            .iter()
-            .find(|(_, key)| {
-                key.purpose() == Purpose::AUTHENTICATION
-                    && key.security_level() == SecurityLevel::MASTER
-                    && key.key_type() == KeyType::ECDSA_SECP256K1
-            })
-            .map(|(id, _)| *id)
+            .available_signing_key(
+                signer,
+                Purpose::AUTHENTICATION,
+                &[SecurityLevel::MASTER],
+                &[KeyType::ECDSA_SECP256K1],
+                true,
+            )?
+            .map(|key| key.id())
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
                     "No signable master key found on identity".to_string(),
@@ -270,6 +271,17 @@ impl IdentityWallet {
     /// Unlike [`Self::update_identity_with_external_signer`], this method does
     /// **not** look up the identity in the internal `IdentityManager`. The
     /// caller supplies the `Identity`, master key ID, and a `Signer` directly.
+    ///
+    /// Keys in `add_public_keys` may be `IdentityPublicKey::V1` carrying a
+    /// `total_budget` and/or `expires_at` (protocol version 14). The
+    /// transition builder turns each key into the matching
+    /// `IdentityPublicKeyInCreation` version, so a V1 key is registered
+    /// with its limits inside the signed bytes and a V0 key is registered
+    /// exactly as before. The consensus rules on limits (AUTHENTICATION
+    /// purpose and a level below MASTER, non-zero budget, expiry in the
+    /// future) are not re-checked here: Platform validates them and the
+    /// caller receives the chain's error. See
+    /// `docs/protocol/authentication-key-limits.md`.
     ///
     /// Returns the [`StateTransitionProofResult`] from the broadcast so callers
     /// can inspect proof-verified outcomes (e.g. updated keys, balance).

@@ -40,7 +40,7 @@ module.exports = {
     ],
   },
   local: {
-    dapiAddresses: ['127.0.0.1'],
+    dapiAddresses: ['127.0.0.1:2443:self-signed'],
     network: 'regtest',
   },
   mainnet: {
