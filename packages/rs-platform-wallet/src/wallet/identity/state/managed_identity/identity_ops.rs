@@ -2,8 +2,11 @@
 
 use super::key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus};
 use super::ManagedIdentity;
-use crate::changeset::{IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet};
+use crate::changeset::{
+    IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet, KeyWithBreadcrumb,
+};
 use crate::wallet::persister::WalletPersister;
+use crate::wallet::platform_wallet::WalletId;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
@@ -381,6 +384,59 @@ impl ManagedIdentity {
         }
     }
 
+    /// Take an identity fetched from Platform as the cached one, unless the
+    /// cache is at a higher revision. Revisions only grow on Platform, so
+    /// such a fetch was answered before an update the cache already holds
+    /// (one applied locally after it landed, or a newer refresh), and
+    /// taking it would put the cache back. Returns whether it was taken.
+    ///
+    /// The revision orders the keys an identity update adds and disables.
+    /// It does not order a key-limits update or the balance, which change
+    /// without it: a fetch at the cache's revision is taken whole, as
+    /// before, and a dropped one takes no balance with it. Balances read by
+    /// height go through their own watermark.
+    ///
+    /// Only the in-memory identity changes here; the caller persists.
+    pub fn take_fetched_identity(&mut self, fetched: &Identity) -> bool {
+        if fetched.revision() < self.identity.revision() {
+            return false;
+        }
+        self.identity = fetched.clone();
+        true
+    }
+
+    /// The key decisions to store for `decisions` built from `fetched`. A
+    /// fetch older than the cache has them carried on the cache's copies of
+    /// their keys, so storing their breadcrumbs (a key's derivation never
+    /// changes) does not take back what the cache holds newer; a key the
+    /// cache lacks keeps the fetch's copy, since Platform never removes a
+    /// key, and storing it adds it to the cache too. Any other fetch's
+    /// decisions are stored as they are.
+    pub fn key_decisions_for_fetch(
+        &self,
+        fetched: &Identity,
+        decisions: Vec<KeyWithBreadcrumb>,
+    ) -> Vec<KeyWithBreadcrumb> {
+        if fetched.revision() >= self.identity.revision() {
+            return decisions;
+        }
+        decisions
+            .into_iter()
+            .map(|mut decision| {
+                if let Some(cached) = self.identity.public_keys().get(&decision.key.id()) {
+                    decision.key = cached.clone();
+                }
+                decision
+            })
+            .collect()
+    }
+
+    /// The wallet slot `(wallet_id, identity_index)` a wallet-owned
+    /// identity's key breadcrumbs are built from, or `None` out of wallet.
+    pub fn wallet_slot(&self) -> Option<(WalletId, u32)> {
+        self.wallet_id.zip(self.identity_index)
+    }
+
     /// Layer an `IdentityPublicKey` onto this identity's
     /// `public_keys` map and emit a single-key
     /// [`IdentityKeysChangeSet`] upsert carrying the full derivation
@@ -563,10 +619,7 @@ impl ManagedIdentity {
         // wallet/identity slot. Wallet-owned identities carry both
         // halves; out-of-wallet ones have neither (and no private key
         // to preserve), so they fall through to a watch-only entry.
-        let breadcrumb = match (self.wallet_id, self.identity_index) {
-            (Some(wallet_id), Some(identity_index)) => Some((wallet_id, identity_index)),
-            _ => None,
-        };
+        let breadcrumb = self.wallet_slot();
 
         // Operate on a clone of the key map, mirroring `add_key`, then
         // write it back once all matching keys have been stamped.
@@ -637,6 +690,7 @@ mod tests {
     };
     use crate::wallet::identity::PaymentEntry;
     use crate::wallet::platform_wallet::WalletId;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
@@ -696,6 +750,32 @@ mod tests {
             data: dpp::platform_value::BinaryData::new(vec![0x02; 33]),
             disabled_at: None,
         })
+    }
+
+    /// A fetch at a lower revision than the cache's was answered before an
+    /// update the cache holds, and must not take it back; one at the same
+    /// revision or higher replaces it.
+    #[test]
+    fn should_take_a_fetched_identity_only_when_it_is_not_older() {
+        fn at(revision: u64, disabled: bool) -> Identity {
+            let mut key = key(3);
+            if disabled {
+                key.set_disabled_at(1);
+            }
+            Identity::V0(IdentityV0 {
+                id: Identifier::from([1u8; 32]),
+                public_keys: BTreeMap::from([(3, key)]),
+                balance: revision,
+                revision,
+            })
+        }
+        // The cache took an update at 6 that disabled key 3.
+        let mut managed = ManagedIdentity::new(at(6, true), 0);
+        assert!(!managed.take_fetched_identity(&at(5, false)));
+        assert_eq!(managed.identity, at(6, true));
+        assert!(managed.take_fetched_identity(&at(6, true)));
+        assert!(managed.take_fetched_identity(&at(7, true)));
+        assert_eq!(managed.identity, at(7, true));
     }
 
     /// A batch of fetched names lands as one snapshot carrying every name,

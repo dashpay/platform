@@ -241,6 +241,15 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorIdentityRevisionMismatch` (native code 62). An identity update
+         * asked for a revision the cached identity would not give it. Nothing
+         * was signed or broadcast; the expected and actual revisions are in
+         * [message]. Not retryable as is: refresh the identity and decide again.
+         */
+        class IdentityRevisionMismatch(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
          * could not be built against a Platform-recorded anchor because the
          * local commitment tree is mid-block. Nothing was broadcast and the
@@ -768,6 +777,7 @@ sealed class DashSdkError(
             27 -> PlatformWallet.ShutdownIncomplete(message, cause) // ErrorShutdownIncomplete
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
             60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
+            62 -> PlatformWallet.IdentityRevisionMismatch(message, cause) // ErrorIdentityRevisionMismatch
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds

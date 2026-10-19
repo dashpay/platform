@@ -14,11 +14,13 @@ use dpp::identity::SecurityLevel;
 use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use dpp::ProtocolError;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
+use crate::changeset::KeyWithBreadcrumb;
 use crate::error::PlatformWalletError;
 
 use super::signing_key::AvailableSigningKey;
@@ -77,21 +79,59 @@ impl IdentityWallet {
     /// in the typical case). The signer here only signs the update
     /// transition itself; it does not derive the new keys.
     ///
-    /// CACHE INVARIANT: this function does NOT refresh the in-process
-    /// `IdentityManager` after a successful broadcast. The local
-    /// cached `Identity` keeps the pre-update revision and key set
-    /// until the caller invokes [`Self::refresh_identity`] (or the
-    /// next sync round). A subsequent call to this function for the
-    /// same identity without an intervening refresh will reuse the
-    /// stale revision and Platform will reject the duplicate. It is
-    /// documented here rather than fixed because the refresh requires
-    /// a wallet-manager write lock that may already be held higher in
-    /// the call stack.
+    /// CACHE: after a successful broadcast the in-process
+    /// `IdentityManager` takes the update locally (see
+    /// `apply_landed_update`): the cached revision moves to the
+    /// transition's and the added and disabled keys are applied, so a
+    /// follow-up update needs no refresh in between. A cache already
+    /// refreshed to the transition or past it keeps its keys and stores
+    /// them, taking from the update only an added key it lacks. A refresh that
+    /// fetched the identity before the update landed and finishes after
+    /// this step does not take the cache back: a fetched identity at a
+    /// lower revision than the cache's is dropped. When the call fails
+    /// after the broadcast (the proof wait timed out, say), the update may
+    /// have landed without this step: refresh before the next update.
     pub async fn update_identity_with_external_signer<S>(
         &self,
         identity_id: &Identifier,
         add_public_keys: Vec<IdentityPublicKey>,
         disable_public_keys: Vec<u32>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(), PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        self.update_identity_with_external_signer_at_revision(
+            identity_id,
+            add_public_keys,
+            disable_public_keys,
+            None,
+            signer,
+            settings,
+        )
+        .await
+    }
+
+    /// [`Self::update_identity_with_external_signer`], with the revision
+    /// the transition must carry.
+    ///
+    /// The transition takes the cached identity's revision plus one, read
+    /// when the update starts. A caller that records the revision before
+    /// submitting (to tell later whether the update can still land: Drive
+    /// takes an identity update only at one above the identity's revision)
+    /// cannot see that read, and a refresh in between moves it. With
+    /// `revision` set, an update that would carry another one fails with
+    /// [`PlatformWalletError::IdentityRevisionMismatch`] before anything is
+    /// signed or broadcast, so the revision the caller recorded is the only
+    /// one this update can land at. `None` takes whatever the cache gives,
+    /// as [`Self::update_identity_with_external_signer`] does.
+    pub async fn update_identity_with_external_signer_at_revision<S>(
+        &self,
+        identity_id: &Identifier,
+        add_public_keys: Vec<IdentityPublicKey>,
+        disable_public_keys: Vec<u32>,
+        revision: Option<u64>,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(), PlatformWalletError>
@@ -110,7 +150,7 @@ impl IdentityWallet {
         let (mut identity, identity_index) = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
+                PlatformWalletError::WalletNotFound(
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
@@ -131,8 +171,8 @@ impl IdentityWallet {
         };
 
         // Increment revision for the update transition.
-        let original_revision = identity.revision();
-        identity.set_revision(original_revision + 1);
+        let transition_revision = update_revision(identity_id, identity.revision(), revision)?;
+        identity.set_revision(transition_revision);
 
         // Pick the MASTER signing key — DPP requires identity update
         // transitions to be authorized by MASTER specifically.
@@ -195,72 +235,148 @@ impl IdentityWallet {
                 ))
             })?;
 
-        // Post-broadcast local apply.
-        //
-        // Drive accepted the transition, so the on-chain identity
-        // now carries the new keys / disabled flags. If we leave
-        // the local `ManagedIdentity` cache untouched here:
-        //   - The next state transition for this identity reuses
-        //     the stale revision and Platform rejects it as a
-        //     duplicate.
-        //   - The Swift `PersistentPublicKey` rows never receive
-        //     the new keys (rows arrive via the
-        //     `IdentityKeysChangeSet` persister callback that
-        //     `add_key` fires).
-        //   - The Identity Keys list in the iOS app keeps showing
-        //     only the pre-update key set.
-        //
-        // `ManagedIdentity::add_key` handles both the in-memory
-        // mutation AND the `IdentityKeysChangeSet` upsert. Run it
-        // on each new key under a write lock; the breadcrumb lets
-        // the iOS Keychain re-derive the matching private bytes
-        // from the wallet seed + DIP-9 path.
-        if !added_keys_for_local_apply.is_empty() || !disabled_ids_for_local_apply.is_empty() {
-            let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                // Bump the cached revision so a subsequent update
-                // doesn't reuse the pre-broadcast value.
-                let cached_revision = managed.identity.revision();
-                managed.identity.set_revision(cached_revision + 1);
+        self.apply_landed_update(
+            identity_id,
+            identity_index,
+            transition_revision,
+            added_keys_for_local_apply,
+            disabled_ids_for_local_apply,
+        )
+        .await
+    }
 
-                for key in added_keys_for_local_apply {
-                    let breadcrumb = identity_index.map(|idx| (self.wallet_id, idx, key.id()));
-                    managed
-                        .add_key(key, breadcrumb, &self.persister)
-                        .map_err(|e| {
-                            PlatformWalletError::Persistence(format!(
-                                "identity key not persisted after update: {e}"
-                            ))
-                        })?;
-                }
+    /// Post-broadcast local apply of an update Drive accepted at
+    /// `transition_revision`.
+    ///
+    /// Drive accepted the transition, so the on-chain identity
+    /// now carries the new keys / disabled flags. If we leave
+    /// the local `ManagedIdentity` cache untouched here:
+    ///   - The next state transition for this identity reuses
+    ///     the stale revision and Platform rejects it as a
+    ///     duplicate.
+    ///   - The Swift `PersistentPublicKey` rows never receive
+    ///     the new keys (rows arrive via the
+    ///     `IdentityKeysChangeSet` persister callback that
+    ///     `add_key` fires).
+    ///   - The Identity Keys list in the iOS app keeps showing
+    ///     only the pre-update key set.
+    ///
+    /// `ManagedIdentity::add_key` handles both the in-memory
+    /// mutation AND the `IdentityKeysChangeSet` upsert. Run it
+    /// on each new key under a write lock; the breadcrumb lets
+    /// the iOS Keychain re-derive the matching private bytes
+    /// from the wallet seed + DIP-9 path.
+    ///
+    /// A cache already refreshed to `transition_revision` or past it
+    /// holds the update as Platform has it: the payload is not applied,
+    /// and the touched keys are stored from the cache's copies (an added
+    /// key the cache lacks from the payload, taken into the cache too). A
+    /// failure to store an added key is an error, as on the other path.
+    async fn apply_landed_update(
+        &self,
+        identity_id: &Identifier,
+        identity_index: Option<u32>,
+        transition_revision: u64,
+        added_keys: Vec<IdentityPublicKey>,
+        disabled_ids: Vec<u32>,
+    ) -> Result<(), PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(
+                "Wallet info not found in wallet manager".to_string(),
+            )
+        })?;
+        let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
+            return Ok(());
+        };
 
-                if !disabled_ids_for_local_apply.is_empty() {
-                    // Disable-side counterpart to the `add_key` loop
-                    // above: stamp `disabled_at` on the matching cached
-                    // keys and fire the persister so the Swift
-                    // `PersistentPublicKey.disabledAt` rows flip without
-                    // a network re-fetch. The local wall-clock timestamp
-                    // is a placeholder — the next Platform refresh
-                    // reconciles it to the authoritative on-chain block
-                    // time. `disable_keys` reuses the same derivation
-                    // breadcrumb `add_key` carries, so the disabled key
-                    // keeps its private-key linkage.
-                    let disabled_at = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis() as u64)
-                        .unwrap_or_default();
-                    managed.disable_keys(
-                        &disabled_ids_for_local_apply,
-                        disabled_at,
-                        &self.persister,
-                    );
-                }
+        // A cache refreshed to the transition or past it already holds
+        // this update's keys as Platform has them (on-chain `disabled_at`
+        // included) and whatever later updates did to them: applying the
+        // payload would take those back. A refresh persists no keys,
+        // though, so the touched keys are stored here from the cache's own
+        // copies, with the breadcrumbs the path below would give them: an
+        // added key the caller's, a disabled key the wallet slot's, as
+        // `disable_keys` builds it.
+        if managed.identity.revision() >= transition_revision {
+            let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
+            let slot = managed.wallet_slot();
+            let mut keys = Vec::new();
+            // An added key the cache lacks is stored, and taken into the
+            // cache, as the update registered it.
+            for key in &added_keys {
+                let id = key.id();
+                keys.push(KeyWithBreadcrumb {
+                    key: managed
+                        .identity
+                        .public_keys()
+                        .get(&id)
+                        .unwrap_or(key)
+                        .clone(),
+                    breadcrumb: identity_index.map(|idx| (self.wallet_id, idx, id)),
+                });
             }
+            let stores_an_added_key = !added_keys.is_empty();
+            for &id in disabled_ids.iter().filter(|id| !added_ids.contains(id)) {
+                let Some(key) = managed.identity.public_keys().get(&id) else {
+                    tracing::warn!(
+                        identity = %identity_id,
+                        key_id = id,
+                        "landed update: a disabled key id is not on the cached identity; skipping",
+                    );
+                    continue;
+                };
+                keys.push(KeyWithBreadcrumb {
+                    key: key.clone(),
+                    breadcrumb: slot.map(|(wallet_id, idx)| (wallet_id, idx, id)),
+                });
+            }
+            // A failure to store an added key is an error, as on the path
+            // below; one for disabled keys only is logged, as
+            // `disable_keys` does.
+            return match managed.add_keys(keys, &self.persister) {
+                Err(e) if stores_an_added_key => Err(PlatformWalletError::Persistence(format!(
+                    "identity key not persisted after update: {e}"
+                ))),
+                Err(e) => {
+                    tracing::error!("Failed to persist changeset: {}", e);
+                    Ok(())
+                }
+                Ok(()) => Ok(()),
+            };
+        }
+
+        // The identity is at the transition's revision now, so a
+        // subsequent update must not reuse the pre-broadcast value.
+        managed.identity.set_revision(transition_revision);
+
+        for key in added_keys {
+            let breadcrumb = identity_index.map(|idx| (self.wallet_id, idx, key.id()));
+            managed
+                .add_key(key, breadcrumb, &self.persister)
+                .map_err(|e| {
+                    PlatformWalletError::Persistence(format!(
+                        "identity key not persisted after update: {e}"
+                    ))
+                })?;
+        }
+
+        if !disabled_ids.is_empty() {
+            // Disable-side counterpart to the `add_key` loop
+            // above: stamp `disabled_at` on the matching cached
+            // keys and fire the persister so the Swift
+            // `PersistentPublicKey.disabledAt` rows flip without
+            // a network re-fetch. The local wall-clock timestamp
+            // is a placeholder — the next Platform refresh
+            // reconciles it to the authoritative on-chain block
+            // time. `disable_keys` rebuilds the derivation breadcrumb
+            // from the managed identity's own wallet slot, so the
+            // disabled key keeps its private-key linkage.
+            let disabled_at = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or_default();
+            managed.disable_keys(&disabled_ids, disabled_at, &self.persister);
         }
 
         Ok(())
@@ -330,5 +446,393 @@ impl IdentityWallet {
             .await?;
 
         Ok(result)
+    }
+}
+
+/// The revision an update of an identity cached at `cached` carries: one
+/// above it. With `expected` set, any other value is refused.
+fn update_revision(
+    identity_id: &Identifier,
+    cached: u64,
+    expected: Option<u64>,
+) -> Result<u64, PlatformWalletError> {
+    let next = cached.checked_add(1).ok_or_else(|| {
+        PlatformWalletError::InvalidIdentityData(format!(
+            "identity {identity_id} is at the last revision"
+        ))
+    })?;
+    match expected {
+        Some(expected) if expected != next => Err(PlatformWalletError::IdentityRevisionMismatch {
+            identity_id: *identity_id,
+            expected,
+            actual: next,
+        }),
+        _ => Ok(next),
+    }
+}
+
+#[cfg(test)]
+mod update_revision_tests {
+    use super::*;
+
+    #[test]
+    fn should_carry_one_above_the_cached_revision() {
+        let id = Identifier::from([7u8; 32]);
+        assert_eq!(update_revision(&id, 4, None).unwrap(), 5);
+        assert_eq!(update_revision(&id, 4, Some(5)).unwrap(), 5);
+    }
+
+    #[test]
+    fn should_refuse_an_update_asked_for_another_revision() {
+        let id = Identifier::from([7u8; 32]);
+        // The cache moved past the revision the caller read.
+        match update_revision(&id, 5, Some(5)) {
+            Err(PlatformWalletError::IdentityRevisionMismatch {
+                expected, actual, ..
+            }) => assert_eq!((expected, actual), (5, 6)),
+            other => panic!("unexpected: {other:?}"),
+        }
+        assert!(matches!(
+            update_revision(&id, 3, Some(5)),
+            Err(PlatformWalletError::IdentityRevisionMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn should_refuse_an_identity_at_the_last_revision() {
+        let id = Identifier::from([7u8; 32]);
+        assert!(matches!(
+            update_revision(&id, u64::MAX, None),
+            Err(PlatformWalletError::InvalidIdentityData(_))
+        ));
+    }
+}
+
+#[cfg(test)]
+mod update_identity_at_revision_tests {
+    use super::super::signing_key::tests::{
+        wallet_with_signing_keys_on, CapturingStore, FailingStore,
+    };
+    use super::*;
+    use crate::changeset::PlatformWalletPersistence;
+    use crate::wallet::persister::NoPlatformPersistence;
+    use crate::PlatformWallet;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    /// Counts every call the update makes into it.
+    #[derive(Debug, Default)]
+    struct RecordingSigner(AtomicUsize);
+
+    #[async_trait]
+    impl Signer<IdentityPublicKey> for RecordingSigner {
+        async fn sign(&self, _: &IdentityPublicKey, _: &[u8]) -> Result<BinaryData, ProtocolError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err(ProtocolError::Generic("recording signer".to_string()))
+        }
+        async fn sign_create_witness(
+            &self,
+            _: &IdentityPublicKey,
+            _: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err(ProtocolError::Generic("recording signer".to_string()))
+        }
+        fn can_sign_with(&self, _: &IdentityPublicKey) -> bool {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            true
+        }
+    }
+
+    async fn cached_identity(wallet: &IdentityWallet, identity_id: &Identifier) -> Identity {
+        let wm = wallet.wallet_manager.read().await;
+        wm.get_wallet_info(&wallet.wallet_id)
+            .unwrap()
+            .identity_manager
+            .identity(identity_id)
+            .unwrap()
+            .identity
+            .clone()
+    }
+
+    /// A wallet whose cached identity is at `revision` and also holds a
+    /// signable MASTER key (id 0), so an update that got past the revision
+    /// check would consult the signer and reach the mock SDK.
+    async fn wallet_at_revision(revision: u64) -> Arc<PlatformWallet> {
+        wallet_at_revision_on(revision, Arc::new(NoPlatformPersistence)).await
+    }
+
+    /// [`wallet_at_revision`] over a given store.
+    async fn wallet_at_revision_on<P: PlatformWalletPersistence + 'static>(
+        revision: u64,
+        persistence: Arc<P>,
+    ) -> Arc<PlatformWallet> {
+        let wallet = wallet_with_signing_keys_on(
+            dash_sdk::SdkBuilder::new_mock().build().unwrap(),
+            persistence,
+        )
+        .await;
+        {
+            let identity_wallet = wallet.identity();
+            let mut wm = identity_wallet.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&identity_wallet.wallet_id)
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&Identifier::default())
+                .unwrap();
+            managed.identity.add_public_key(
+                IdentityPublicKeyV0 {
+                    id: 0,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::MASTER,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    data: vec![0; KeyType::ECDSA_SECP256K1.default_size()].into(),
+                    ..Default::default()
+                }
+                .into(),
+            );
+            managed.identity.set_revision(revision);
+        }
+        wallet
+    }
+
+    /// The mock SDK has no expectations, so the update fails if it gets as
+    /// far as the nonce fetch; the refusal must come before it and before
+    /// the signer is consulted.
+    #[tokio::test]
+    async fn should_refuse_another_revision_before_signing_or_reaching_platform() {
+        let identity_id = Identifier::default();
+        // Cache moved past the recorded revision (5 → 6), or is behind it (3 → 4).
+        for (cached, expected, actual) in [(5, 5, 6), (3, 5, 4)] {
+            let wallet = wallet_at_revision(cached).await;
+            let wallet = wallet.identity();
+            let before = cached_identity(wallet, &identity_id).await;
+            let signer = RecordingSigner::default();
+            let error = wallet
+                .update_identity_with_external_signer_at_revision(
+                    &identity_id,
+                    vec![],
+                    vec![1],
+                    Some(expected),
+                    &signer,
+                    None,
+                )
+                .await
+                .unwrap_err();
+            match error {
+                PlatformWalletError::IdentityRevisionMismatch {
+                    identity_id: id,
+                    expected: e,
+                    actual: a,
+                } => assert_eq!((id, e, a), (identity_id, expected, actual)),
+                other => panic!("unexpected: {other:?}"),
+            }
+            assert_eq!(signer.0.load(Ordering::SeqCst), 0);
+            assert_eq!(cached_identity(wallet, &identity_id).await, before);
+        }
+
+        // Control: at the matching revision the same update gets past the
+        // check, consults the signer and then fails at the mock SDK, so the
+        // zero count above comes from the refusal, not from the fixture.
+        let wallet = wallet_at_revision(4).await;
+        let signer = RecordingSigner::default();
+        let error = wallet
+            .identity()
+            .update_identity_with_external_signer_at_revision(
+                &identity_id,
+                vec![],
+                vec![1],
+                Some(5),
+                &signer,
+                Some(PutSettings {
+                    request_settings: dash_sdk::RequestSettings {
+                        retries: Some(0),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, PlatformWalletError::Sdk(_)), "{error:?}");
+        assert!(signer.0.load(Ordering::SeqCst) > 0);
+    }
+
+    #[tokio::test]
+    async fn should_take_a_landed_update_only_into_a_cache_behind_it() {
+        let identity_id = Identifier::default();
+        let added = key_3();
+        // A transition at 5 landed and the cache is still at 4: it takes
+        // the revision and the payload.
+        let wallet = wallet_at_revision(4).await;
+        let wallet = wallet.identity();
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![added.clone()], vec![])
+            .await
+            .unwrap();
+        let identity = cached_identity(wallet, &identity_id).await;
+        assert_eq!(identity.revision(), 5);
+        assert_eq!(identity.public_keys().get(&3), Some(&added));
+
+        let wallet = wallet_at_revision(4).await;
+        let wallet = wallet.identity();
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![1])
+            .await
+            .unwrap();
+        let identity = cached_identity(wallet, &identity_id).await;
+        assert_eq!(identity.revision(), 5);
+        assert!(identity.public_keys()[&1].disabled_at().is_some());
+
+        // A cache refreshed to 5 or past it already holds the update and
+        // what came after, and is left as it is.
+        for cached in [5, 6] {
+            let wallet = wallet_at_revision(cached).await;
+            let wallet = wallet.identity();
+            {
+                let mut wm = wallet.wallet_manager.write().await;
+                wm.get_wallet_info_mut(&wallet.wallet_id)
+                    .unwrap()
+                    .identity_manager
+                    .managed_identity_mut(&identity_id)
+                    .unwrap()
+                    .identity
+                    .add_public_key(added.clone());
+            }
+            let before = cached_identity(wallet, &identity_id).await;
+            wallet
+                .apply_landed_update(&identity_id, Some(0), 5, vec![added.clone()], vec![1])
+                .await
+                .unwrap();
+            assert_eq!(
+                cached_identity(wallet, &identity_id).await,
+                before,
+                "cached at {cached}"
+            );
+        }
+    }
+
+    /// An update at 5 added key 3, a later one at 6 disabled it, and the
+    /// cache was refreshed to 6 before the confirmation of 5 came back:
+    /// key 3 stays disabled, and is stored that way with its breadcrumb (a
+    /// refresh stores no keys). A key the update disabled is stored as the
+    /// refresh has it, with the on-chain `disabled_at` and the wallet
+    /// slot's breadcrumb.
+    #[tokio::test]
+    async fn should_store_the_newer_cache_keys_instead_of_an_older_landed_payload() {
+        let identity_id = Identifier::default();
+        let added = key_3();
+        let store = Arc::new(CapturingStore::default());
+        let wallet = wallet_at_revision_on(6, store.clone()).await;
+        let wallet = wallet.identity();
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&identity_id)
+                .unwrap();
+            let mut disabled = added.clone();
+            disabled.set_disabled_at(1);
+            managed.identity.add_public_key(disabled);
+            let mut key_1 = managed.identity.public_keys()[&1].clone();
+            key_1.set_disabled_at(2);
+            managed.identity.add_public_key(key_1);
+        }
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![added], vec![1])
+            .await
+            .unwrap();
+        let identity = cached_identity(wallet, &identity_id).await;
+        assert_eq!(identity.revision(), 6);
+        assert_eq!(identity.public_keys()[&3].disabled_at(), Some(1));
+        assert_eq!(identity.public_keys()[&1].disabled_at(), Some(2));
+
+        let stored = store.stored_key(identity_id, 3).expect("key 3 stored");
+        assert_eq!(stored.public_key.disabled_at(), Some(1));
+        assert_eq!(stored.wallet_id, Some(wallet.wallet_id));
+        assert_eq!(
+            stored
+                .derivation_indices
+                .map(|indices| (indices.identity_index, indices.key_index)),
+            Some((0, 3))
+        );
+        let stored = store.stored_key(identity_id, 1).expect("key 1 stored");
+        assert_eq!(stored.public_key.disabled_at(), Some(2));
+        assert_eq!(
+            stored
+                .derivation_indices
+                .map(|indices| (indices.identity_index, indices.key_index)),
+            Some((0, 1)),
+            "the wallet slot's breadcrumb, as disable_keys gives it"
+        );
+    }
+
+    /// A cache at or past the transition stores the touched keys. A store
+    /// failure is an error when it held an added key, as on the path that
+    /// applies the payload, and only logged for disabled keys, as
+    /// `disable_keys` does: the update is on chain either way.
+    #[tokio::test]
+    async fn should_report_a_store_failure_only_for_an_added_key() {
+        let identity_id = Identifier::default();
+        let store = Arc::new(FailingStore::default());
+        let wallet = wallet_at_revision_on(6, store.clone()).await;
+        let wallet = wallet.identity();
+        store.arm();
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![], vec![1])
+            .await
+            .unwrap();
+        let error = wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], vec![1])
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::Persistence(_)),
+            "{error:?}"
+        );
+    }
+
+    /// A cache at the transition's revision that lacks a key the update
+    /// added takes the update's copy, in memory and in the store, with its
+    /// breadcrumb: Platform has it either way.
+    #[tokio::test]
+    async fn should_store_an_added_key_a_cache_at_its_revision_lacks() {
+        let identity_id = Identifier::default();
+        let store = Arc::new(CapturingStore::default());
+        let wallet = wallet_at_revision_on(5, store.clone()).await;
+        let wallet = wallet.identity();
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![key_3()], vec![])
+            .await
+            .unwrap();
+        let identity = cached_identity(wallet, &identity_id).await;
+        assert_eq!(identity.revision(), 5);
+        assert_eq!(identity.public_keys().get(&3), Some(&key_3()));
+        let stored = store.stored_key(identity_id, 3).expect("key 3 stored");
+        assert_eq!(stored.public_key, key_3());
+        assert_eq!(
+            stored
+                .derivation_indices
+                .map(|indices| (indices.identity_index, indices.key_index)),
+            Some((0, 3))
+        );
+    }
+
+    /// The key the landed-update tests add.
+    fn key_3() -> IdentityPublicKey {
+        IdentityPublicKeyV0 {
+            id: 3,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: KeyType::ECDSA_SECP256K1,
+            data: vec![3; KeyType::ECDSA_SECP256K1.default_size()].into(),
+            ..Default::default()
+        }
+        .into()
     }
 }
