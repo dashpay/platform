@@ -508,7 +508,7 @@ pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, InvitationErr
         INVITATION_SCHEME => {
             parts.host == INVITATION_SCHEME_HOST && (parts.path.is_empty() || parts.path == "/")
         }
-        "https" | "http" => {
+        "https" => {
             parts.host == INVITATION_APPLINK_HOST
                 && parts.path.trim_end_matches('/') == INVITATION_APPLINK_PATH
         }
@@ -1429,6 +1429,19 @@ mod tests {
             Some("carol")
         );
         assert_eq!(parsed.funding_txid, "aabb");
+    }
+
+    /// The link carries the plaintext voucher WIF, so a bearer link must not be
+    /// accepted over cleartext `http`. Both mobile wallets emit only `https`.
+    #[test]
+    fn should_reject_an_applink_over_plain_http() {
+        let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
+        let uri =
+            format!("http://invitations.dashpay.io/applink?du=carol&assetlocktx=aabb&pk={wif}");
+        assert!(matches!(
+            parse_invitation_uri(&uri),
+            Err(InvitationError::Invalid(_))
+        ));
     }
 
     /// `islock` present / absent / `"null"`: only a real hex value yields
