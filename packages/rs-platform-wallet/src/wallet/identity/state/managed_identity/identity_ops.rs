@@ -6,8 +6,10 @@ use crate::changeset::{
     IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices, IdentityKeyEntry,
     IdentityKeysChangeSet, KeyWithBreadcrumb, PersistenceError, PlatformWalletChangeSet,
 };
+use crate::error::PlatformWalletError;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
+use crate::BlockTime;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -387,40 +389,54 @@ impl ManagedIdentity {
         }
     }
 
-    /// Fold an identity fetched from Platform into the cached one.
+    /// Fold an identity fetched from Platform, at `block_time` (its proof's
+    /// block), into the cached one.
     ///
-    /// A fetch at the cache's revision or above is taken whole, as before.
-    /// Revisions only grow on Platform, so a fetch at a lower revision was
-    /// answered before an update the cache already holds (one applied
-    /// locally after it landed, or a newer refresh). Nothing in such a
-    /// fetch is known to be newer than the cache: the revision does not
-    /// order the balance or a key's limits, which change without a revision
-    /// bump. The cache keeps its revision, balance, key set and each key's
-    /// limits; it takes only a disable the fetch shows (permanent on
-    /// Platform, and the fetch's timestamp is Platform's own). Returns
+    /// The balance is ordered by proof height, not by revision (it changes
+    /// without a revision bump), as every verified balance is: the fetch's
+    /// balance replaces the cache's only when its block is above the cache's
+    /// balance watermark, and is then queued for the next store (see
+    /// `store_keys_and_balance`).
+    ///
+    /// A fetch at the cache's revision or above is otherwise taken whole,
+    /// except that a key the cache holds disabled stays disabled (a disable
+    /// is permanent on Platform). Revisions only grow on Platform, so a fetch
+    /// at a lower revision was answered before an update the cache already
+    /// holds (one applied locally after it landed, or a newer refresh):
+    /// the cache keeps its revision, key set and each key's limits, which
+    /// the revision does not order either; it takes only a disable the
+    /// fetch shows (the fetch's timestamp is Platform's own). Returns
     /// whether it was taken whole.
     ///
     /// Only the in-memory identity changes here; the caller persists.
-    pub fn take_fetched_identity(&mut self, fetched: &Identity) -> bool {
-        if fetched.revision() >= self.identity.revision() {
+    pub fn take_fetched_identity(&mut self, fetched: &Identity, block_time: BlockTime) -> bool {
+        let balance = self.identity.balance();
+        let cached = self.identity.public_keys().clone();
+        let taken = fetched.revision() >= self.identity.revision();
+        let mut keys = if taken {
             self.identity = fetched.clone();
-            return true;
-        }
-        let mut keys = self.identity.public_keys().clone();
-        for (key_id, cached) in keys.iter_mut() {
+            self.identity.set_balance(balance);
+            fetched.public_keys().clone()
+        } else {
+            cached.clone()
+        };
+        for (key_id, key) in keys.iter_mut() {
             if let Some(fetched_key) = fetched.public_keys().get(key_id) {
-                *cached = with_disable_from(cached, fetched_key);
+                if let Some(folded) = fold_fetched_key(cached.get(key_id), fetched_key, taken) {
+                    *key = folded;
+                }
             }
         }
         self.identity.set_public_keys(keys);
-        false
+        self.take_fetched_balance(fetched.balance(), block_time);
+        taken
     }
 
     /// The disables an older `fetched` brings to keys the cache holds — what
     /// [`Self::take_fetched_identity`] changes in a key — so a caller that
     /// stores no key rows of its own can store them (see
-    /// [`Self::disable_keys`]). Empty for a fetch at the cache's revision or
-    /// above, which is taken whole.
+    /// [`Self::store_fetched_disables`]). Empty for a fetch at the cache's
+    /// revision or above, which is taken whole.
     pub fn disables_from_older_fetch(&self, fetched: &Identity) -> Vec<(KeyID, TimestampMillis)> {
         if fetched.revision() >= self.identity.revision() {
             return Vec::new();
@@ -436,28 +452,67 @@ impl ManagedIdentity {
             .collect()
     }
 
-    /// The key decisions to store for `decisions` built from `fetched`.
-    /// Any fetch at the cache's revision or above has its decisions stored
-    /// as they are. For an older fetch each key is folded as
-    /// [`Self::take_fetched_identity`] folds it (the cache's copy, disabled
-    /// when the fetch shows a disable), so storing its breadcrumb (a key's
-    /// derivation never changes) neither takes back a disable nor older
-    /// limits the cache holds; a key the cache lacks is left out, since an
-    /// older answer cannot show whether a later update disabled it, and a
-    /// fetch at least as new will bring it.
+    /// Stamp the disables an older fetch brought (see
+    /// [`Self::disables_from_older_fetch`]) and store their key rows, with
+    /// the wallet slot's breadcrumb as [`Self::disable_keys`] gives them, and
+    /// the identity's scalar snapshot as one changeset (see
+    /// `store_keys_and_balance`). The store's failure is returned; memory
+    /// holds the fold either way, as for a landed update.
+    pub fn store_fetched_disables(
+        &mut self,
+        disables: &[(KeyID, TimestampMillis)],
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
+        let mut keys_cs = IdentityKeysChangeSet::default();
+        for &(key_id, disabled_at) in disables {
+            keys_cs
+                .upserts
+                .extend(self.stamp_disabled(&[key_id], disabled_at).upserts);
+        }
+        self.store_keys_and_balance(keys_cs, persister)
+    }
+
+    /// Fold `fetched` (see [`Self::take_fetched_identity`]) with the key
+    /// `decisions` derived for it, and store the folded keys with their
+    /// breadcrumbs and the identity's scalar snapshot as one changeset (see
+    /// `store_keys_and_balance`). Used where a fetch comes with derived
+    /// breadcrumbs (loading and discovery); an identity added from this
+    /// fetch just before takes its balance watermark from it. The store's
+    /// failure is returned; memory holds the fold either way, as for a
+    /// landed update.
+    pub fn store_fetched_identity_keys(
+        &mut self,
+        fetched: &Identity,
+        decisions: Vec<KeyWithBreadcrumb>,
+        block_time: BlockTime,
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
+        let decisions = self.key_decisions_for_fetch(fetched, decisions);
+        self.take_fetched_identity(fetched, block_time);
+        let keys_cs = self.layer_keys(decisions);
+        self.store_keys_and_balance(keys_cs, persister)
+    }
+
+    /// The key decisions to store for `decisions` built from `fetched`, each
+    /// key folded as [`Self::take_fetched_identity`] folds it, so storing its
+    /// breadcrumb (a key's derivation never changes) never takes back a
+    /// disable the cache holds. For a fetch at the cache's revision or above
+    /// that is the fetched key, disabled when the cache's copy is. For an
+    /// older fetch it is the cache's copy, disabled when the fetch shows a
+    /// disable, so older limits are not stored either; a key the cache lacks
+    /// is left out, since an older answer cannot show whether a later update
+    /// disabled it, and a fetch at least as new will bring it.
     pub fn key_decisions_for_fetch(
         &self,
         fetched: &Identity,
         decisions: Vec<KeyWithBreadcrumb>,
     ) -> Vec<KeyWithBreadcrumb> {
-        if fetched.revision() >= self.identity.revision() {
-            return decisions;
-        }
+        let taken = fetched.revision() >= self.identity.revision();
         decisions
             .into_iter()
             .filter_map(|mut decision| {
-                let cached = self.identity.public_keys().get(&decision.key.id())?;
-                decision.key = with_disable_from(cached, &decision.key);
+                let cached = self.identity.public_keys().get(&decision.key.id());
+                decision.key = fold_fetched_key(cached, &decision.key, taken)?;
                 Some(decision)
             })
             .collect()
@@ -694,7 +749,7 @@ impl ManagedIdentity {
         self.store_with_snapshot(keys_cs, persister)
     }
 
-    fn store_with_snapshot(
+    pub(super) fn store_with_snapshot(
         &self,
         keys_cs: IdentityKeysChangeSet,
         persister: &WalletPersister,
@@ -768,6 +823,29 @@ impl ManagedIdentity {
         }
         keys_cs
     }
+}
+
+/// How a fetched key lands in the cache, the one rule the identity fold and
+/// its key decisions share. From a fetch taken whole (`taken`) it is the
+/// fetched key, disabled when the cache's copy is (a disable is permanent
+/// on Platform; Platform's timestamp first). From an older fetch it is the
+/// cache's copy with the fetch's disable, or nothing for a key the cache
+/// lacks.
+fn fold_fetched_key(
+    cached: Option<&IdentityPublicKey>,
+    fetched: &IdentityPublicKey,
+    taken: bool,
+) -> Option<IdentityPublicKey> {
+    if !taken {
+        return cached.map(|cached| with_disable_from(cached, fetched));
+    }
+    let mut key = fetched.clone();
+    if key.disabled_at().is_none() {
+        if let Some(disabled_at) = cached.and_then(|cached| cached.disabled_at()) {
+            key.set_disabled_at(disabled_at);
+        }
+    }
+    Some(key)
 }
 
 /// The cache's copy of a key, disabled when an older fetch's copy is: a
@@ -856,10 +934,11 @@ mod tests {
     }
 
     /// A fetch at a lower revision than the cache's was answered before an
-    /// update the cache holds: the cache keeps its revision, balance, key set
-    /// and key limits (the revision does not order those), and takes only a
-    /// disable the fetch shows (Platform's timestamp first). A fetch at the
-    /// same revision or higher replaces the cache.
+    /// update the cache holds: the cache keeps its revision, key set and key
+    /// limits (the revision does not order those), and takes only a disable
+    /// the fetch shows (Platform's timestamp first). A fetch at the same
+    /// revision or higher replaces the cache but never takes back a disable.
+    /// Either way the balance follows the proof's block, not the revision.
     #[test]
     fn should_take_a_fetched_identity_whole_only_when_it_is_not_older() {
         fn limited(id: KeyID, budget: u64, disabled_at: Option<u64>) -> IdentityPublicKey {
@@ -876,6 +955,9 @@ mod tests {
                 expires_at: None,
             })
         }
+        fn block(height: u64) -> BlockTime {
+            BlockTime::new(height, 1, height)
+        }
         fn at(revision: u64, balance: u64, keys: Vec<IdentityPublicKey>) -> Identity {
             Identity::V0(IdentityV0 {
                 id: Identifier::from([1u8; 32]),
@@ -884,39 +966,56 @@ mod tests {
                 revision,
             })
         }
-        // The cache took an update at 6 that disabled key 3; the fetch at 5
-        // still shows key 3 live, another budget, another balance and key 4,
-        // which the cache never saw. A delayed answer cannot prove its
-        // balance or budget newer than the cache's.
+        // The cache took an update at 6 that disabled key 3, and holds a
+        // balance proved at block 9; the fetch at 5 still shows key 3 live,
+        // another budget and key 4, which the cache never saw. A delayed
+        // answer cannot prove its budget newer than the cache's, and its
+        // balance is no newer than the cache's proof.
         let cache = at(6, 10, vec![limited(3, 100, Some(9))]);
         let older = at(5, 20, vec![limited(3, 500, None), limited(4, 1, None)]);
         let mut managed = ManagedIdentity::new(cache.clone(), 0);
-        assert!(!managed.take_fetched_identity(&older));
-        assert_eq!(managed.identity, cache);
+        managed.last_updated_balance_block_time = Some(block(9));
+        for height in [8, 9] {
+            assert!(!managed.take_fetched_identity(&older, block(height)));
+            assert_eq!(managed.identity, cache);
+        }
+        // A balance proved at a later block is taken whatever the revision.
+        assert!(!managed.take_fetched_identity(&older, block(10)));
+        assert_eq!(managed.identity, at(6, 20, vec![limited(3, 100, Some(9))]));
+        assert_eq!(managed.last_updated_balance_block_time, Some(block(10)));
 
         // A disable is permanent: one the older fetch shows sticks even
         // when the cache's copy is live, and the cache keeps its limits.
         let mut live = ManagedIdentity::new(at(6, 10, vec![limited(3, 100, None)]), 0);
+        live.last_updated_balance_block_time = Some(block(9));
         let disabling = at(5, 20, vec![limited(3, 500, Some(4))]);
-        assert_eq!(live.disables_from_older_fetch(&disabling), vec![(3, 4)]);
-        assert!(!live.take_fetched_identity(&disabling));
+        assert!(!live.take_fetched_identity(&disabling, block(9)));
         assert_eq!(live.identity, at(6, 10, vec![limited(3, 100, Some(4))]));
-        assert!(
-            live.disables_from_older_fetch(&disabling).is_empty(),
-            "nothing left to bring"
-        );
         // Both disabled: the fetch's timestamp is Platform's, the cache's
         // may be a local placeholder.
         let mut stamped = ManagedIdentity::new(at(6, 10, vec![limited(3, 100, Some(99))]), 0);
-        assert!(!stamped.take_fetched_identity(&at(5, 10, vec![limited(3, 100, Some(4))])));
+        assert!(
+            !stamped.take_fetched_identity(&at(5, 10, vec![limited(3, 100, Some(4))]), block(9))
+        );
         assert_eq!(stamped.identity.public_keys()[&3].disabled_at(), Some(4));
 
-        let same = at(6, 30, vec![limited(3, 600, Some(9)), limited(4, 1, None)]);
-        assert!(managed.take_fetched_identity(&same));
+        // An answer at the cache's revision or above is taken whole...
+        let same = at(6, 30, vec![limited(3, 600, Some(7)), limited(4, 1, None)]);
+        assert!(managed.take_fetched_identity(&same, block(11)));
         assert_eq!(managed.identity, same);
-        let newer = at(7, 40, vec![limited(3, 600, Some(9))]);
-        assert!(managed.take_fetched_identity(&newer));
+        assert_eq!(managed.last_updated_balance_block_time, Some(block(11)));
+        let newer = at(7, 40, vec![limited(3, 600, Some(7))]);
+        assert!(managed.take_fetched_identity(&newer, block(12)));
         assert_eq!(managed.identity, newer);
+
+        // ...except for a balance its proof does not order after the cache's,
+        // and a disable the cache holds and the answer lacks.
+        let delayed = at(7, 35, vec![limited(3, 700, None)]);
+        for height in [11, 12] {
+            assert!(managed.take_fetched_identity(&delayed, block(height)));
+            assert_eq!(managed.identity, at(7, 40, vec![limited(3, 700, Some(7))]));
+            assert_eq!(managed.last_updated_balance_block_time, Some(block(12)));
+        }
     }
 
     /// An older fetch's key decisions carry the cache's copy of each key

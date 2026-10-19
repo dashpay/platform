@@ -6,6 +6,7 @@ use key_wallet::bip32::ExtendedPrivKey;
 
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::network::contact_requests::budget_spent;
+use crate::BlockTime;
 
 use super::*;
 
@@ -415,10 +416,13 @@ impl IdentityWallet {
 
                 // Query Platform for an identity registered with this key
                 // hash. No locks are held during this network call.
-                let fetch_result = Identity::fetch(&self.sdk, PublicKeyHash(key_hash_array)).await;
+                let fetch_result =
+                    Identity::fetch_with_metadata(&self.sdk, PublicKeyHash(key_hash_array), None)
+                        .await;
 
                 match fetch_result {
-                    Ok(Some(identity)) => {
+                    Ok((Some(identity), metadata)) => {
+                        let block_time = BlockTime::from(metadata);
                         let identity_id = identity.id();
 
                         // Derive + verify a candidate for every on-chain key
@@ -462,7 +466,7 @@ impl IdentityWallet {
                             .identity_manager
                             .managed_identity_mut(&identity_id)
                         {
-                            managed.set_status(IdentityStatus::Active, &self.persister);
+                            managed.status = IdentityStatus::Active;
                             managed.wallet_id = Some(wallet_id);
                             // Breadcrumbs for every re-derivable key (not just the
                             // MASTER key) so the client (iOS Keychain) can
@@ -474,15 +478,16 @@ impl IdentityWallet {
                             // restart, so surface it (matching `add_identity` above).
                             // A fetch older than a known identity's cache stores
                             // only the keys the cache has, with their disables.
-                            let key_decisions =
-                                managed.key_decisions_for_fetch(&identity, key_decisions);
-                            managed
-                                .add_keys(key_decisions, &self.persister)
-                                .map_err(|e| {
-                                    PlatformWalletError::Persistence(format!(
-                                        "identity keys not persisted during discovery: {e}"
-                                    ))
-                                })?;
+                            // A known identity is folded as loading and refresh
+                            // fold it (a newer fetch's revision and keys, the
+                            // balance by proof block), stored with its keys, so
+                            // an update is not built from a stale revision.
+                            managed.store_fetched_identity_keys(
+                                &identity,
+                                key_decisions,
+                                block_time,
+                                &self.persister,
+                            )?;
                         }
                         drop(wm_guard);
 
@@ -491,7 +496,7 @@ impl IdentityWallet {
                         }
                         tally.record_sighting();
                     }
-                    Ok(None) => {
+                    Ok((None, _)) => {
                         tally.record_miss();
                     }
                     Err(e) => {
