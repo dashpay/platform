@@ -47,6 +47,7 @@ use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use dpp::consensus::basic::BasicError;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::prelude::AddressNonce;
 
 #[allow(clippy::too_many_arguments)]
@@ -320,18 +321,31 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             // left to the block. Admission is not consensus, so every protocol version gets this.
             // They are verified by generation 0, the generation identity update advanced structure
             // validation 1 uses, so admission refuses the same proofs such a block refuses.
+            // The verification holds node-local check_tx proof capacity, weighted by the number of
+            // added keys, so admission cannot take the capacity block processing needs; when none
+            // is free the update is answered busy and may be resubmitted. An update adding no key
+            // verifies no proof and takes none.
             if let StateTransition::IdentityUpdate(identity_update) = state_transition {
-                let result = identity_update.validate_added_key_proofs_of_possession_v0(
-                    &state_transition.signable_bytes()?,
-                    &mut state_transition_execution_context,
-                );
-
-                if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
+                let added_keys = identity_update.public_keys_to_add().len();
+                if added_keys > 0 {
+                    let _permit =
+                        proof_verifier
+                            .try_acquire(added_keys)
+                            .ok_or(Error::Execution(
+                                ExecutionError::CheckTxProofVerificationBusy,
+                            ))?;
+                    let result = identity_update.validate_added_key_proofs_of_possession_v0(
+                        &state_transition.signable_bytes()?,
+                        &mut state_transition_execution_context,
                     );
+
+                    if !result.is_valid() {
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
+                    }
                 }
             }
 

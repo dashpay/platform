@@ -3773,6 +3773,8 @@ mod tests {
 
     mod proofs_of_possession_of_added_keys {
         use super::*;
+        use crate::error::execution::ExecutionError;
+        use crate::error::Error;
         use crate::execution::check_tx::CheckTxLevel;
         use crate::execution::types::execution_event::ExecutionEvent;
         use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
@@ -3782,6 +3784,7 @@ mod tests {
         };
         use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
         use crate::execution::validation::state_transition::processor::advanced_structure_without_state::StateTransitionAdvancedStructureValidationV0;
+        use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
         use crate::platform_types::platform::PlatformRef;
         use crate::platform_types::platform_state::PlatformStateV0Methods;
         use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
@@ -4042,6 +4045,89 @@ mod tests {
                 )
                 .expect("expected to check tx")
                 .errors
+        }
+
+        /// check_tx's first check of the transition at the latest protocol version, with its
+        /// proofs verified under `proof_verifier`'s capacity.
+        fn check_tx_under(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            proof_verifier: &CheckTxProofVerifier,
+        ) -> Result<Vec<ConsensusError>, Error> {
+            let state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            state_transition_to_execution_event_for_check_tx(
+                &platform_ref,
+                transition,
+                CheckTxLevel::FirstTimeCheck,
+                proof_verifier,
+                PlatformVersion::latest(),
+            )
+            .map(|result| result.errors)
+        }
+
+        /// An identity update at revision 1 and nonce 1 adding `key_count` ECDSA authentication
+        /// keys, each with its proof of possession, signed by the owner's master key.
+        async fn update_adding_ecdsa_keys(owner: &Owner, key_count: usize) -> StateTransition {
+            let mut rng = SecpStdRng::seed_from_u64(517);
+            let key_pairs: Vec<Keypair> = (0..key_count).map(|_| Keypair::new(&mut rng)).collect();
+            let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                identity_id: owner.identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: key_pairs
+                    .iter()
+                    .zip(1..)
+                    .map(|(key_pair, id)| {
+                        IdentityPublicKeyInCreationV0 {
+                            id,
+                            purpose: Purpose::AUTHENTICATION,
+                            security_level: SecurityLevel::HIGH,
+                            key_type: ECDSA_SECP256K1,
+                            read_only: false,
+                            data: key_pair.public_key().serialize().to_vec().into(),
+                            signature: Default::default(),
+                            contract_bounds: None,
+                        }
+                        .into()
+                    })
+                    .collect(),
+                disable_public_keys: vec![],
+                user_fee_increase: 0,
+                signature_public_key_id: owner.master_key.id(),
+                signature: Default::default(),
+            }
+            .into();
+            let mut transition: StateTransition = update_transition.into();
+            let signable_bytes = transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+
+            let StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(update_v0)) =
+                &mut transition
+            else {
+                panic!("expected an identity update v0 transition");
+            };
+            for (key, key_pair) in update_v0.add_public_keys.iter_mut().zip(&key_pairs) {
+                let proof_of_possession =
+                    signer::sign(&signable_bytes, &key_pair.secret_key().to_secret_bytes())
+                        .expect("expected to sign");
+                key.set_signature(proof_of_possession.to_vec().into());
+            }
+
+            transition.set_signature(
+                owner
+                    .signer
+                    .sign(&owner.master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+            transition
         }
 
         /// Processes the transition as a block and commits it.
@@ -4452,6 +4538,150 @@ mod tests {
                     identity_before
                 );
             }
+        }
+
+        /// check_tx verifies the proofs of an identity update's added keys under the node's
+        /// check_tx proof capacity. While that capacity is in use the update is answered busy, an
+        /// answer a client may retry, rather than refused; once it is free the update is admitted.
+        #[tokio::test]
+        async fn should_answer_busy_at_check_tx_an_identity_update_adding_keys_while_the_proof_capacity_is_in_use(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version.protocol_version);
+            let owner = owner(&platform, platform_version);
+            let transition = update(&owner, None, 1, 1).await;
+            let proof_verifier = CheckTxProofVerifier::new(1);
+
+            let in_use = proof_verifier
+                .try_acquire(1)
+                .expect("expected the proof capacity to be free");
+            assert_matches!(
+                check_tx_under(&platform, &transition, &proof_verifier),
+                Err(Error::Execution(
+                    ExecutionError::CheckTxProofVerificationBusy
+                ))
+            );
+            drop(in_use);
+
+            assert_eq!(
+                check_tx_under(&platform, &transition, &proof_verifier)
+                    .expect("expected to check tx"),
+                vec![]
+            );
+        }
+
+        /// The proof capacity an identity update's check takes is given back when the check is
+        /// done, whether it refuses or admits the update, so a node whose whole capacity one
+        /// update needs keeps admitting updates one after another.
+        #[tokio::test]
+        async fn should_give_back_the_proof_capacity_at_check_tx_after_verifying_an_identity_update_s_added_keys(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version.protocol_version);
+            let owner = owner(&platform, platform_version);
+            let proof_verifier = CheckTxProofVerifier::new(1);
+
+            let errors = check_tx_under(
+                &platform,
+                &update(&owner, Some(Fault::InvalidProofOfPossession), 1, 1).await,
+                &proof_verifier,
+            )
+            .expect("expected to check tx");
+            assert_matches!(
+                errors.as_slice(),
+                [error] if Fault::InvalidProofOfPossession.is_reported_by(error),
+                "{errors:?}"
+            );
+            let transition = update(&owner, None, 1, 1).await;
+            for submission in 0..2 {
+                assert_eq!(
+                    check_tx_under(&platform, &transition, &proof_verifier)
+                        .expect("expected to check tx"),
+                    vec![],
+                    "submission {submission}"
+                );
+            }
+            assert!(proof_verifier.try_acquire(usize::MAX).is_some());
+        }
+
+        /// An identity update adding no key verifies no proof of possession, so check_tx admits
+        /// it while the whole proof capacity is in use.
+        #[tokio::test]
+        async fn should_take_no_proof_capacity_at_check_tx_for_an_identity_update_adding_no_keys() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = new_platform(platform_version.protocol_version);
+            let (identity, signer, key_to_disable, master_key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+            let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![],
+                disable_public_keys: vec![key_to_disable.id()],
+                user_fee_increase: 0,
+                signature_public_key_id: master_key.id(),
+                signature: Default::default(),
+            }
+            .into();
+            let mut transition: StateTransition = update_transition.into();
+            let signable_bytes = transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+            transition.set_signature(
+                signer
+                    .sign(&master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+            let proof_verifier = CheckTxProofVerifier::new(1);
+
+            let _in_use = proof_verifier
+                .try_acquire(usize::MAX)
+                .expect("expected the proof capacity to be free");
+            assert_eq!(
+                check_tx_under(&platform, &transition, &proof_verifier)
+                    .expect("expected to check tx"),
+                vec![]
+            );
+        }
+
+        /// The capacity an identity update's check takes is bounded by the node's whole proof
+        /// capacity, so an update adding the most keys an update may add is admitted even by a
+        /// node with the smallest capacity, rather than answered busy forever.
+        #[tokio::test]
+        async fn should_admit_at_check_tx_an_identity_update_adding_the_most_keys_allowed_under_the_smallest_proof_capacity(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version.protocol_version);
+            let owner = owner(&platform, platform_version);
+            let most_keys = platform_version
+                .dpp
+                .state_transitions
+                .identities
+                .max_public_keys_in_creation as usize;
+            let proof_verifier = CheckTxProofVerifier::new(1);
+
+            assert_eq!(
+                check_tx_under(
+                    &platform,
+                    &update_adding_ecdsa_keys(&owner, most_keys).await,
+                    &proof_verifier,
+                )
+                .expect("expected to check tx"),
+                vec![]
+            );
+            assert_matches!(
+                check_tx_under(
+                    &platform,
+                    &update_adding_ecdsa_keys(&owner, most_keys + 1).await,
+                    &proof_verifier,
+                )
+                .expect("expected to check tx")
+                .as_slice(),
+                [ConsensusError::StateError(
+                    StateError::MaxIdentityPublicKeyLimitReachedError(_)
+                )]
+            );
         }
     }
 }
