@@ -1,5 +1,5 @@
 {
-  "_about": "Golden TXO-reconcile transport payloads, read by rs-unified-sdk-jni (wallet_manager::tests) and the Kotlin PlatformWalletPersistenceHandlerTest. inventoryPage is exactly what walletManagerUtxosPageJson emits for the four accessor entries the Rust test builds; outpointQueries is exactly what the Kotlin reconcile sends walletManagerClassifyOutpoints for the same four coins. Change both sides together.",
+  "_about": "Golden TXO-reconcile transport payloads, read by rs-unified-sdk-jni (wallet_manager::tests) and the Kotlin PlatformWalletPersistenceHandlerTest. inventoryPage is exactly what walletManagerTxoHealPageJson emits for the four heal-page rows the Rust test builds; outpointQueries is exactly what the Kotlin reconcile sends walletManagerClassifyOutpoints for the same four coins. Change both sides together.",
   "inventoryPage": {
     "utxos": [
       {
@@ -17,7 +17,8 @@
         "isConfirmed": true,
         "isInstantlocked": false,
         "isCoinbase": false,
-        "isLocked": false
+        "isLocked": false,
+        "healVerdict": 2
       },
       {
         "typeTag": 0,
@@ -34,7 +35,8 @@
         "isConfirmed": true,
         "isInstantlocked": true,
         "isCoinbase": true,
-        "isLocked": true
+        "isLocked": true,
+        "healVerdict": 2
       },
       {
         "typeTag": 3,
@@ -51,7 +53,8 @@
         "isConfirmed": false,
         "isInstantlocked": false,
         "isCoinbase": false,
-        "isLocked": false
+        "isLocked": false,
+        "healVerdict": 0
       },
       {
         "typeTag": 12,
@@ -70,7 +73,8 @@
         "isConfirmed": true,
         "isInstantlocked": true,
         "isCoinbase": false,
-        "isLocked": false
+        "isLocked": false,
+        "healVerdict": 1
       }
     ],
     "cursor": "{\"typeTag\":12,\"standardTag\":0,\"index\":1,\"registrationIndex\":0,\"keyClass\":0,\"userIdentityId\":\"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\",\"friendIdentityId\":\"b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\",\"txid\":\"606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f\",\"vout\":3}",

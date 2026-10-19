@@ -145,22 +145,72 @@ internal object WalletManagerNative {
         gapLimit: Int,
     )
 
+    // ── TXO-store reconcile (dashpay/platform#4638) ─────────────────────
+    //
+    // One export = one `platform-wallet` call. The schedule, the start
+    // gates, the heal verdicts and the stale-page retry limit all live in
+    // `platform_wallet::manager::txo_reconcile`; Kotlin pages its own Room
+    // rows, resolves owners and writes.
+
+    /** [walletManagerTxoReconcileBegin]: the run may start
+     *  (`TXO_RECONCILE_GATE_RUN`). */
+    const val TXO_RECONCILE_GATE_RUN = 0
+
+    /**
+     * The wallets whose reconcile is due now, as concatenated 32-byte ids
+     * (`platform_wallet_manager_txo_reconcile_due_wallets`). Called on every
+     * SPV progress poll, running or not: the poll is the schedule's clock,
+     * and the native side detects the steady-state edge and applies the
+     * cadence. Each returned wallet counts as scheduled now.
+     */
+    external fun walletManagerTxoReconcileDueWallets(managerHandle: Long): ByteArray?
+
+    /**
+     * Claim [walletId] for one reconcile run and check that it may start
+     * (`platform_wallet_manager_txo_reconcile_begin`). Returns
+     * [TXO_RECONCILE_GATE_RUN] or a `TXO_RECONCILE_SKIP_*` reason (see
+     * [org.dashfoundation.dashsdk.wallet.TxoReconcileSkipReason.fromGateCode]);
+     * on [TXO_RECONCILE_GATE_RUN] `outTipHeight[0]` is the scan tip to pass
+     * to [walletManagerTxoHealPageJson], and the claim holds until
+     * [walletManagerTxoReconcileFinish]. [outTipHeight] is an `IntArray(1)`.
+     */
+    external fun walletManagerTxoReconcileBegin(
+        managerHandle: Long,
+        walletId: ByteArray,
+        outTipHeight: IntArray,
+    ): Int
+
+    /**
+     * Release the claim a [TXO_RECONCILE_GATE_RUN] from
+     * [walletManagerTxoReconcileBegin] granted; [ran] is whether the run went
+     * ahead, which restarts the wallet's cadence
+     * (`platform_wallet_manager_txo_reconcile_finish`).
+     */
+    external fun walletManagerTxoReconcileFinish(managerHandle: Long, walletId: ByteArray, ran: Boolean)
+
+    /**
+     * Whether a reconcile run classifies a page again after it came back
+     * stale for the [staleInARow]-th time in a row, or stops incomplete
+     * (`platform_wallet_txo_reconcile_retry_stale_page`, which holds the
+     * limit).
+     */
+    external fun txoReconcileRetryStalePage(staleInARow: Int): Boolean
+
     /**
      * One bounded page of the engine's UTXO inventory for one wallet,
-     * across every funds account, as JSON
-     * `{"utxos":[...],"cursor":<string|null>,"hasMore":<bool>}` — the
-     * source of truth the TXO-store reconciler
-     * ([PlatformWalletManager.reconcileTxoStore]) diffs against the Room
-     * `txos` mirror. A serialization shim over one Rust call
-     * (`platform_wallet_wallet_utxos_page`): account ordering, cursor
-     * semantics, the page bound and the address rendering all live in
-     * `platform-wallet`, so the Swift host walks the identical inventory.
+     * across every funds account, each row with the engine's heal verdict
+     * at [tipHeight] (the tip [walletManagerTxoReconcileBegin] returned), as
+     * JSON `{"utxos":[...],"cursor":<string|null>,"hasMore":<bool>}`. A
+     * serialization shim over one Rust call
+     * (`platform_wallet_txo_reconcile_heal_page`): account ordering, cursor
+     * semantics, the page bound, the address rendering and the verdicts all
+     * live in `platform-wallet`.
      *
      * Paged, not swept whole: a wallet's UTXO count is chain-controlled
      * (anyone who knows a watched address can keep sending dust to it), so
      * a full-inventory read would let a remote party decide how much this
-     * process allocates on every steady-state transition and every
-     * 30-minute pass. Pass [cursor] `null` to start, then hand back the returned
+     * process allocates on every steady-state transition and every cadence
+     * pass. Pass [cursor] `null` to start, then hand back the returned
      * `cursor` verbatim while `hasMore` is true — a cursor this export did
      * not produce throws. [limit] caps the rows in one page; non-positive
      * asks for the engine's own default, and the engine clamps its own
@@ -176,14 +226,16 @@ internal object WalletManagerNative {
      * changeset path hands the handler (so hex→bytes reproduces the
      * `txos.txid` blob), vout, amount (duffs), the engine's own
      * Base58Check address (empty when the script has no address form),
-     * scriptHex, height, and the engine's own `isConfirmed` /
-     * `isInstantLocked` / `isCoinbase` / `isLocked` flags.
+     * scriptHex, height, the engine's own `isConfirmed` /
+     * `isInstantLocked` / `isCoinbase` / `isLocked` flags, and its
+     * `healVerdict` (`TXO_HEAL_VERDICT_*`).
      */
-    external fun walletManagerUtxosPageJson(
+    external fun walletManagerTxoHealPageJson(
         managerHandle: Long,
         walletId: ByteArray,
         cursor: String?,
         limit: Int,
+        tipHeight: Int,
     ): String?
 
     /**
@@ -213,20 +265,6 @@ internal object WalletManagerNative {
         walletId: ByteArray,
         queriesJson: String,
     ): ByteArray?
-
-    /**
-     * The wallet's core scan watermark as the ENGINE holds it
-     * (`platform_wallet_core_wallet_state`'s `synced_height`) — the value the
-     * TXO-store reconcile gates on, as Swift's does. The persisted
-     * `syncedHeight` in Room trails it by up to one persistence round, which
-     * is exactly the window the SYNCED transition lands in. Throws
-     * [org.dashfoundation.dashsdk.errors.DashSdkError] `NotFound` when the
-     * manager does not hold the wallet.
-     */
-    external fun walletManagerCoreWalletSyncedHeight(
-        managerHandle: Long,
-        walletId: ByteArray,
-    ): Long
 
     // ── Core transaction builder (1:1 over `core_wallet_tx_builder_*`) ─
     //

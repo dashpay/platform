@@ -2663,43 +2663,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
     })
 }
 
-/// The wallet's core scan watermark as the ENGINE holds it
-/// (`platform_wallet_core_wallet_state`'s `synced_height`) — the value the
-/// TXO-store reconcile gates on, as Swift's does. The persisted copy in the
-/// host store trails it by up to one persistence round, which is exactly
-/// the window the SYNCED transition lands in. Throws `NotFound` when the
-/// manager does not hold the wallet. Backs
-/// `PlatformWalletManager.reconcileTxoStore`.
-#[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerCoreWalletSyncedHeight(
-    mut env: JNIEnv,
-    _class: JClass,
-    manager_handle: jlong,
-    wallet_id: JByteArray,
-) -> jlong {
-    guard(&mut env, -1, |env| {
-        let Some(wid) = read_id32(env, &wallet_id) else {
-            return -1;
-        };
-        let mut state = platform_wallet_ffi::CoreWalletStateFFI {
-            synced_height: 0,
-            last_processed_height: 0,
-            monitor_revision: 0,
-        };
-        let result = unsafe {
-            platform_wallet_ffi::platform_wallet_core_wallet_state(
-                manager_handle as Handle,
-                wid.as_ptr(),
-                &mut state as *mut platform_wallet_ffi::CoreWalletStateFFI,
-            )
-        };
-        if take_pwffi_error(env, result) {
-            return -1;
-        }
-        jlong::from(state.synced_height)
-    })
-}
-
 #[cfg(feature = "shielded")]
 sync_start_stop!(
     Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedSyncStart,
@@ -3258,15 +3221,18 @@ fn core_selection_strategy(
     }
 }
 
-// ── TXO-store reconcile transport ─────────────────────────────────────
+// ── TXO-store reconcile ───────────────────────────────────────────────
 //
-// Two exports, each a serialization shim over exactly ONE platform-wallet
-// call: `platform_wallet_wallet_utxos_page` and
-// `platform_wallet_classify_outpoints`. The account ordering, the cursor
-// semantics, the page bound and every classification rule live in
-// `platform-wallet`, so the Swift host walks the identical inventory and
-// gets the identical verdicts. Nothing here decides anything; it moves
-// serde-shaped JSON in and out.
+// Each export bridges exactly ONE platform-wallet call: the schedule
+// (`platform_wallet_manager_txo_reconcile_due_wallets`), the start gate and
+// its release (`…_txo_reconcile_begin` / `…_finish`), the heal page
+// (`platform_wallet_txo_reconcile_heal_page`), the outpoint classifier
+// (`platform_wallet_classify_outpoints`) and the stale-page retry
+// (`platform_wallet_txo_reconcile_retry_stale_page`). The cadence, the
+// gates, the account ordering, the cursor semantics, the page bound, the
+// heal verdicts and every classification rule live in `platform-wallet`.
+// Nothing here decides anything; it moves values and serde-shaped JSON in
+// and out.
 
 /// The account tuple that owns one inventory row — the raw `AccountSpecFFI`
 /// tag layout minus the xpub, in the field names the Kotlin `EngineUtxoRow`
@@ -3317,12 +3283,13 @@ impl UtxoAccountTuple {
     }
 }
 
-/// One row of an inventory page — the typed contract the Kotlin
+/// One row of a heal page — the typed contract the Kotlin
 /// `EngineUtxoRow` decodes, strictly (an unknown or missing key throws
 /// there rather than healing a defaulted row). `txid` is lower hex in the
 /// same byte order the changeset path hands Kotlin, so hex→bytes
 /// reproduces the `txos.txid` blob; `address` is the engine's own
-/// Base58Check rendering, empty when the script has no address form.
+/// Base58Check rendering, empty when the script has no address form;
+/// `healVerdict` is the engine's `TXO_HEAL_VERDICT_*` for the row.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UtxoPageRow {
@@ -3338,18 +3305,20 @@ struct UtxoPageRow {
     is_instantlocked: bool,
     is_coinbase: bool,
     is_locked: bool,
+    heal_verdict: u8,
 }
 
 impl UtxoPageRow {
-    /// The row for one accessor entry, carrying the engine's own address
-    /// and flags.
+    /// The row for one heal-page entry, carrying the engine's own address,
+    /// flags and verdict.
     ///
     /// # Safety
     ///
-    /// `e.address` must be null or a valid NUL-terminated string, and
-    /// `e.script_pubkey` null or valid for `e.script_pubkey_len` bytes —
-    /// the accessor's contract for every entry it returns.
-    unsafe fn from_entry(e: &platform_wallet_ffi::WalletUtxoEntryFFI) -> Self {
+    /// `r.utxo.address` must be null or a valid NUL-terminated string, and
+    /// `r.utxo.script_pubkey` null or valid for `r.utxo.script_pubkey_len`
+    /// bytes — the heal page's contract for every row it returns.
+    unsafe fn from_heal_row(r: &platform_wallet_ffi::TxoHealRowFFI) -> Self {
+        let e = &r.utxo;
         let script: &[u8] = if e.script_pubkey.is_null() || e.script_pubkey_len == 0 {
             &[]
         } else {
@@ -3375,6 +3344,7 @@ impl UtxoPageRow {
             is_instantlocked: e.is_instantlocked,
             is_coinbase: e.is_coinbase,
             is_locked: e.is_locked,
+            heal_verdict: r.verdict,
         }
     }
 }
@@ -3407,7 +3377,7 @@ impl UtxoPage {
 }
 
 /// Where a paged inventory sweep left off — the last row's account tuple
-/// and outpoint, which is exactly what `platform_wallet_wallet_utxos_page`
+/// and outpoint, which is exactly what `platform_wallet_txo_reconcile_heal_page`
 /// resumes from. Serialized as JSON and handed to the host as an opaque
 /// string; the host only ever gives back what a previous page returned.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -3502,19 +3472,140 @@ impl OutpointQuery {
     }
 }
 
+/// The wallets whose TXO-store reconcile is due now, as a flat `byte[]` of
+/// concatenated 32-byte ids. Bridges
+/// `platform_wallet_manager_txo_reconcile_due_wallets`: the steady-state
+/// edge and the 30-minute cadence live there. Called on every SPV progress
+/// poll, running or not. Backs `PlatformWalletManager`'s progress poll.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileDueWallets(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let mut out = IdentifierArray {
+            items: ptr::null_mut(),
+            count: 0,
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_txo_reconcile_due_wallets(
+                manager_handle as Handle,
+                &mut out as *mut IdentifierArray,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        identifier_array_to_flat(env, out)
+    })
+}
+
+/// Claim one wallet for a TXO-store reconcile run and check that it may
+/// start. Returns `TXO_RECONCILE_GATE_RUN` (0) or a `TXO_RECONCILE_SKIP_*`
+/// reason; on 0, `outTipHeight[0]` is the scan tip to pass to
+/// `walletManagerTxoHealPageJson`, and the claim holds until
+/// `walletManagerTxoReconcileFinish`. Bridges
+/// `platform_wallet_manager_txo_reconcile_begin`, where every gate lives.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileBegin(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    out_tip_height: jni::sys::jintArray,
+) -> jint {
+    guard(&mut env, -1, |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return -1;
+        };
+        if out_tip_height.is_null() {
+            throw_sdk_exception(env, 1, "outTipHeight must be an IntArray(1)");
+            return -1;
+        }
+        let mut gate = 0u8;
+        let mut tip_height = 0u32;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_txo_reconcile_begin(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                &mut gate as *mut u8,
+                &mut tip_height as *mut u32,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return -1;
+        }
+        // SAFETY: Kotlin allocates `outTipHeight` as an IntArray(1).
+        let out = unsafe { jni::objects::JIntArray::from_raw(out_tip_height) };
+        // A tip past i32::MAX cannot cross as a jint; no Dash height is near it.
+        let tip = jint::try_from(tip_height).unwrap_or(jint::MAX);
+        if env.set_int_array_region(&out, 0, &[tip]).is_err() {
+            return -1;
+        }
+        jint::from(gate)
+    })
+}
+
+/// Release the claim a 0 from `walletManagerTxoReconcileBegin` granted;
+/// [ran] is whether the run went ahead. Bridges
+/// `platform_wallet_manager_txo_reconcile_finish`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoReconcileFinish(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    ran: jboolean,
+) {
+    guard(&mut env, (), |env| {
+        let Some(wid) = read_id32(env, &wallet_id) else {
+            return;
+        };
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_txo_reconcile_finish(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                ran != JNI_FALSE,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Whether a TXO-store reconcile run classifies a page again after it came
+/// back stale for the `staleInARow`-th time in a row. Bridges
+/// `platform_wallet_txo_reconcile_retry_stale_page`, which holds the limit.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_txoReconcileRetryStalePage(
+    mut env: JNIEnv,
+    _class: JClass,
+    stale_in_a_row: jint,
+) -> jboolean {
+    guard(&mut env, JNI_FALSE, |_env| {
+        let count = u32::try_from(stale_in_a_row).unwrap_or(0);
+        if platform_wallet_ffi::platform_wallet_txo_reconcile_retry_stale_page(count) {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
+    })
+}
+
 /// One bounded page of the engine's UTXO inventory across every funds
-/// account of one wallet — the source of truth
-/// `PlatformWalletManager.reconcileTxoStore` diffs against the Room `txos`
-/// mirror (dropped change outputs of CoinJoin-funded sends leave the
-/// mirror short; the engine reloads from that mirror on restart, so an
-/// un-reconciled hole becomes a fund loss).
+/// account of one wallet, each row with the engine's heal verdict at
+/// `tipHeight` — the source of truth `PlatformWalletManager.reconcileTxoStore`
+/// diffs against the Room `txos` mirror (dropped change outputs of
+/// CoinJoin-funded sends leave the mirror short; the engine reloads from
+/// that mirror on restart, so an un-reconciled hole becomes a fund loss).
+/// Bridges `platform_wallet_txo_reconcile_heal_page`.
 ///
 /// Paged rather than swept whole because inventory size is
 /// chain-controlled: anyone who knows a watched address can keep sending
 /// dust outputs to it, and a periodic full-inventory read would let them
-/// decide how much a phone allocates at every SYNCED transition and every
-/// 30-minute pass. Nothing bigger than one page is ever formatted, copied
-/// across JNI, or parsed.
+/// decide how much a phone allocates at every steady-state transition and
+/// every cadence pass. Nothing bigger than one page is ever formatted,
+/// copied across JNI, or parsed.
 ///
 /// Returns a JSON object `{"utxos":[...],"cursor":<string|null>,"hasMore":<bool>}`.
 /// `cursor` is opaque: hand it back verbatim on the next call
@@ -3523,23 +3614,29 @@ impl OutpointQuery {
 /// with an SDK exception rather than silently restarting the sweep.
 /// `limit` caps the rows in one page; non-positive passes 0, which means
 /// the engine's own default, and the engine clamps its own maximum — this
-/// layer holds no copy of either bound.
+/// layer holds no copy of either bound. `tipHeight` is the tip
+/// `walletManagerTxoReconcileBegin` returned.
 ///
-/// Rows carry the engine's own address and flags. Nothing is derived
-/// here: an address computed in this shim could disagree with the one the
-/// engine credited the coin under, and the store keys its address rows by
-/// that string.
+/// Rows carry the engine's own address, flags and verdict. Nothing is
+/// derived here: an address computed in this shim could disagree with the
+/// one the engine credited the coin under, and the store keys its address
+/// rows by that string.
 #[no_mangle]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerUtxosPageJson(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletManagerTxoHealPageJson(
     mut env: JNIEnv,
     _class: JClass,
     manager_handle: jlong,
     wallet_id: JByteArray,
     cursor: JString,
-    limit: jni::sys::jint,
+    limit: jint,
+    tip_height: jint,
 ) -> jni::sys::jstring {
     guard(&mut env, ptr::null_mut(), |env| {
         let Some(wid) = read_id32(env, &wallet_id) else {
+            return ptr::null_mut();
+        };
+        let Ok(tip_height) = u32::try_from(tip_height) else {
+            throw_sdk_exception(env, 1, "tipHeight must be non-negative");
             return ptr::null_mut();
         };
         // 0 means "the engine's default page"; the engine also clamps its
@@ -3571,15 +3668,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             }
         };
 
-        let mut entries: *const platform_wallet_ffi::WalletUtxoEntryFFI = ptr::null();
+        let mut entries: *const platform_wallet_ffi::TxoHealRowFFI = ptr::null();
         let mut count: usize = 0;
         let mut has_more = false;
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_wallet_utxos_page(
+            platform_wallet_ffi::platform_wallet_txo_reconcile_heal_page(
                 manager_handle as Handle,
                 wid.as_ptr(),
                 resume.as_ref().map_or(ptr::null(), |c| c as *const _),
                 page_limit,
+                tip_height,
                 &mut entries,
                 &mut count,
                 &mut has_more,
@@ -3591,14 +3689,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
         let mut rows: Vec<UtxoPageRow> = Vec::with_capacity(count);
         if !entries.is_null() && count > 0 {
             let items = unsafe { std::slice::from_raw_parts(entries, count) };
-            for e in items {
-                // SAFETY: every entry the accessor returns satisfies the
-                // pointer contract `from_entry` documents.
-                rows.push(unsafe { UtxoPageRow::from_entry(e) });
+            for r in items {
+                // SAFETY: every row the heal page returns satisfies the
+                // pointer contract `from_heal_row` documents.
+                rows.push(unsafe { UtxoPageRow::from_heal_row(r) });
             }
             unsafe {
-                platform_wallet_ffi::platform_wallet_wallet_utxos_page_free(
-                    entries as *mut platform_wallet_ffi::WalletUtxoEntryFFI,
+                platform_wallet_ffi::platform_wallet_txo_reconcile_heal_page_free(
+                    entries as *mut platform_wallet_ffi::TxoHealRowFFI,
                     count,
                 )
             };
@@ -4513,7 +4611,10 @@ mod tests {
     //! silently.
 
     use super::*;
-    use platform_wallet_ffi::{AccountTypeTagFFI, StandardAccountTypeTagFFI, WalletUtxoEntryFFI};
+    use platform_wallet_ffi::{
+        AccountTypeTagFFI, StandardAccountTypeTagFFI, TxoHealRowFFI, WalletUtxoEntryFFI,
+        TXO_HEAL_VERDICT_ELIGIBLE, TXO_HEAL_VERDICT_IMMATURE, TXO_HEAL_VERDICT_INVALID,
+    };
     use std::ffi::CString;
 
     /// The checked-in transport payloads, shared byte-for-byte with the
@@ -4541,11 +4642,17 @@ mod tests {
         script
     }
 
-    /// One accessor entry plus the buffers it points into, kept alive with it.
+    /// One heal-page row plus the buffers it points into, kept alive with it.
     struct Coin {
-        entry: WalletUtxoEntryFFI,
+        row: TxoHealRowFFI,
         _address: CString,
         script: Vec<u8>,
+    }
+
+    impl Coin {
+        fn entry(&self) -> &WalletUtxoEntryFFI {
+            &self.row.utxo
+        }
     }
 
     struct CoinSpec {
@@ -4563,6 +4670,7 @@ mod tests {
         height: u32,
         /// confirmed, instantlocked, coinbase, locked.
         flags: [bool; 4],
+        heal_verdict: u8,
     }
 
     impl CoinSpec {
@@ -4597,7 +4705,10 @@ mod tests {
                 is_locked: self.flags[3],
             };
             Coin {
-                entry,
+                row: TxoHealRowFFI {
+                    utxo: entry,
+                    verdict: self.heal_verdict,
+                },
                 _address: address,
                 script,
             }
@@ -4626,6 +4737,7 @@ mod tests {
                 script: p2pkh(0x5b),
                 height: 1_534_921,
                 flags: [true, false, false, false],
+                heal_verdict: TXO_HEAL_VERDICT_ELIGIBLE,
             }
             .build(),
             CoinSpec {
@@ -4642,6 +4754,7 @@ mod tests {
                 script: p2pkh(0xc3),
                 height: 1_400_000,
                 flags: [true, true, true, true],
+                heal_verdict: TXO_HEAL_VERDICT_ELIGIBLE,
             }
             .build(),
             CoinSpec {
@@ -4658,6 +4771,7 @@ mod tests {
                 script: Vec::new(),
                 height: 0,
                 flags: [false, false, false, false],
+                heal_verdict: TXO_HEAL_VERDICT_INVALID,
             }
             .build(),
             CoinSpec {
@@ -4674,6 +4788,7 @@ mod tests {
                 script: p2pkh(0xd4),
                 height: 1_534_000,
                 flags: [true, true, false, false],
+                heal_verdict: TXO_HEAL_VERDICT_IMMATURE,
             }
             .build(),
         ]
@@ -4684,7 +4799,7 @@ mod tests {
             .iter()
             // SAFETY: every pointer in a `Coin` entry points into that coin's
             // own live buffers.
-            .map(|c| unsafe { UtxoPageRow::from_entry(&c.entry) })
+            .map(|c| unsafe { UtxoPageRow::from_heal_row(&c.row) })
             .collect()
     }
 
@@ -4718,7 +4833,7 @@ mod tests {
     #[test]
     fn the_golden_cursor_resumes_after_the_last_row() {
         let coins = golden_coins();
-        let last = &coins.last().expect("golden coins").entry;
+        let last = coins.last().expect("golden coins").entry();
         let raw = golden()["inventoryPage"]["cursor"]
             .as_str()
             .expect("golden cursor is a string")
@@ -4753,6 +4868,7 @@ mod tests {
             script: p2pkh(0x01),
             height: 2,
             flags: [false, true, false, true],
+            heal_verdict: TXO_HEAL_VERDICT_IMMATURE,
         }
         .build();
         let row = rows(std::slice::from_ref(&coin)).remove(0);
@@ -4760,7 +4876,7 @@ mod tests {
 
         let resume = UtxoPageCursor::decode(&raw).expect("own cursor decodes");
 
-        let e = &coin.entry;
+        let e = coin.entry();
         assert_eq!(
             (
                 resume.type_tag,
@@ -4831,7 +4947,7 @@ mod tests {
         assert_eq!(parsed.len(), coins.len());
 
         for (q, coin) in parsed.iter().zip(&coins) {
-            let e = &coin.entry;
+            let e = coin.entry();
             // The tuple the store sends is the tuple the inventory emitted.
             assert_eq!(q.account, UtxoAccountTuple::from_entry(e));
             let (ffi, script) = q.to_ffi().expect("golden query converts");
