@@ -6,6 +6,12 @@
 //! checks two keywords of that schema that bound one value but that JSON Schema leaves
 //! alone: `maxBytes` on a string, which the document validator checks right after, and
 //! `encryptedFor` on a byte array, which the validation of a create or replace checks.
+//! Both are read from the property the document type parser builds, so only where the
+//! parser reads a schema as a property: not beside a property's `$ref`, whose referenced
+//! schema the parser reads in its place, and not inside `contains`. Platform's `byteArray`
+//! keyword, which the JSON Schema validator checks, constrains nothing inside `contains`
+//! either. The builder refuses each of these three keywords where consensus does not check
+//! it.
 //! [`ValidationSchema`] holds exactly the keywords of that schema that constrain a value on
 //! its own, both kinds, one typed field per keyword, so the schema can be read without the
 //! raw `Value` it came from.
@@ -22,7 +28,9 @@
 //!   are kept, where the parser has no property to put them on.
 //!
 //! Every schema a `$ref` reaches is built once and kept by the reference as written, so
-//! references between definitions, cyclic ones included, stay references.
+//! references between definitions, cyclic ones included, stay references. A reference is
+//! resolved as the JSON Schema validator resolves it, from the URL it parses the reference
+//! into.
 //!
 //! Nothing reads it yet at any protocol version.
 
@@ -33,7 +41,9 @@ use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
+use crate::util::json_schema::resolve_uri;
 use crate::ProtocolError;
+use percent_encoding::percent_decode_str;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -154,7 +164,8 @@ pub struct ArrayConstraints {
     /// `contains` from JSON Schema's applicator vocabulary, which admits any schema: a
     /// boolean, or composition keywords such as `not` or `anyOf`. The builder holds a
     /// `contains` schema made of [`SchemaKeyword`]s only and refuses any other; no contract
-    /// on mainnet or testnet declares `contains` at all.
+    /// on mainnet or testnet declares `contains` at all. Nothing inside it carries
+    /// `maxBytes`, `encryptedFor` or `byteArray`, which constrain nothing there.
     pub contains: Option<Box<SchemaNode>>,
     /// `minItems`.
     pub min_items: Option<u64>,
@@ -171,7 +182,8 @@ pub struct StringConstraints {
     pub min_length: Option<u64>,
     /// `maxLength`.
     pub max_length: Option<u64>,
-    /// `maxBytes`.
+    /// `maxBytes`, held only where the document type parser reads it: on a schema it reads
+    /// as a property, and on the items of one, the elements of a typed array.
     pub max_bytes: Option<u64>,
     /// `pattern`.
     pub pattern: Option<String>,
@@ -198,11 +210,11 @@ pub struct FormatConstraints {
     /// `format`.
     pub format: Option<String>,
     /// `byteArray`, Platform's keyword for an array of bytes, with the value it was
-    /// written with.
+    /// written with. Never inside `contains`.
     pub byte_array: Option<bool>,
     /// `contentMediaType`.
     pub content_media_type: Option<String>,
-    /// `encryptedFor`.
+    /// `encryptedFor`, held only on a schema the document type parser reads as a property.
     pub encrypted_for: Option<EncryptedFor>,
 }
 
@@ -224,28 +236,36 @@ impl ValidationSchema {
     /// property type shorthands expanded.
     ///
     /// Refuses a key below the root that is not a [`SchemaKeyword`], a keyword value of the
-    /// wrong shape, a `$ref` that does not resolve, and a schema that reaches a `$ref` while
-    /// an `$id` could redirect it (see [`MetaKeyword::Id`]).
+    /// wrong shape, `maxBytes`, `encryptedFor` or `byteArray` where consensus does not check
+    /// it (see the module documentation), a `$ref` that does not resolve within the schema,
+    /// a property's `$ref` the document type parser resolves to another schema, and a schema
+    /// that reaches a `$ref` while an `$id` could redirect it (see [`MetaKeyword::Id`]).
     pub fn try_from_root(root: &Value) -> Result<Self, DataContractError> {
+        let root_url = Url::parse(DEFAULT_ROOT_URL)
+            .map_err(|error| structure_error(format!("invalid default schema URL: {error}")))?;
         let mut pending = VecDeque::new();
-        let root_node = build_node(root, true, &mut pending)?;
+        let root_node = build_node(root, true, Reading::Document, &mut pending)?;
         let mut references = BTreeMap::new();
-        while let Some(reference) = pending.pop_front() {
-            if references.contains_key(&reference) {
+        // A schema reached in several readings is built in each, for the keywords each
+        // refuses, and kept once: the readings build the same node.
+        let mut built = BTreeSet::new();
+        while let Some((reference, reading)) = pending.pop_front() {
+            if !built.insert((reference.clone(), reading)) {
                 continue;
             }
-            // `#` is the root itself, already built: rebuilt as a nested schema, its
-            // `$schema` and `$defs` would be refused.
-            let node = if reference == "#" {
-                root_node.clone()
-            } else {
-                let target = resolve_pointer(root, &reference)?;
-                build_node(target, false, &mut pending)?
-            };
-            references.insert(reference, node);
+            let target = resolve_reference(root, &root_url, &reference)?;
+            if reading == Reading::ReferencedProperty {
+                refuse_a_property_reference_the_parser_resolves_elsewhere(
+                    root, &reference, target,
+                )?;
+            }
+            // The root reached by a reference keeps the document type keywords beside its
+            // own, which a nested schema would refuse.
+            let node = build_node(target, std::ptr::eq(target, root), reading, &mut pending)?;
+            references.entry(reference).or_insert(node);
         }
         if !references.is_empty() {
-            refuse_references_an_id_redirects(root, &references)?;
+            refuse_references_an_id_redirects(root, &root_url, &references)?;
         }
         Ok(Self {
             root: root_node,
@@ -424,96 +444,217 @@ fn structure_error(message: String) -> DataContractError {
 /// another.
 const DEFAULT_ROOT_URL: &str = "json-schema:///";
 
-/// What the JSON Schema validator's resolver reads of a schema's identifiers.
+/// The scheme of [`DEFAULT_ROOT_URL`]. An `$id` resolving to a URL of this scheme leaves
+/// the JSON Schema validator compiling the schemas below it against the default URL.
+const DEFAULT_ROOT_SCHEME: &str = "json-schema";
+
+/// How consensus reads a schema node, for the three keywords of a document schema that the
+/// JSON Schema validator does not check on its own: `maxBytes` and `encryptedFor`, which the
+/// document type parser reads into the properties it builds, and `byteArray`, Platform's
+/// custom keyword. The validator checks `byteArray` where it reports errors, but inside
+/// `contains` it only asks whether an element matches, and `byteArray` says every element
+/// does. The builder refuses each keyword where consensus does not check it, so every one
+/// the validation schema holds bounds the value where it is held.
+///
+/// The parser read is protocol version 14's: every `properties` entry of the document
+/// schema and, below it, of an object property is a property; a property's `$ref` is
+/// resolved once, and the referenced schema read in the property's place; the `items` of a
+/// property are the element schema of a typed array; and `contains` is never read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Reading {
+    /// The document schema: the parser reads its `properties` as properties.
+    Document,
+    /// A `properties` entry the parser reads as a property. With a `$ref`, it reads the
+    /// referenced schema in its place, and neither the entry's own keywords nor the
+    /// schemas below them.
+    Property,
+    /// The schema a property's `$ref` reaches, which the parser reads as the property, as
+    /// it is: it does not follow the schema's own `$ref`.
+    ReferencedProperty,
+    /// The `items` of a property, which the parser reads as the element schema of a typed
+    /// array, for its `maxBytes`.
+    Items,
+    /// A schema only the JSON Schema validator reads.
+    Schema,
+    /// A schema inside `contains`.
+    Contains,
+}
+
+impl Reading {
+    /// Whether consensus checks `keyword` on a node read this way, `has_reference` when the
+    /// node carries a `$ref`.
+    fn checks(self, keyword: SchemaKeyword, has_reference: bool) -> bool {
+        let parsed_as_property = match self {
+            Reading::Property => !has_reference,
+            Reading::ReferencedProperty => true,
+            _ => false,
+        };
+        match keyword {
+            SchemaKeyword::String(StringKeyword::MaxBytes) => {
+                parsed_as_property || self == Reading::Items
+            }
+            SchemaKeyword::Format(FormatKeyword::EncryptedFor) => parsed_as_property,
+            SchemaKeyword::Format(FormatKeyword::ByteArray) => self != Reading::Contains,
+            _ => true,
+        }
+    }
+
+    /// How consensus reads the schema `keyword` holds on a node read this way,
+    /// `has_reference` when the node carries a `$ref`.
+    fn below(self, keyword: SchemaKeyword, has_reference: bool) -> Reading {
+        let parsed = match self {
+            Reading::Document | Reading::ReferencedProperty => true,
+            Reading::Property => !has_reference,
+            Reading::Items | Reading::Schema | Reading::Contains => false,
+        };
+        match keyword {
+            _ if self == Reading::Contains => Reading::Contains,
+            SchemaKeyword::Array(ArrayKeyword::Contains) => Reading::Contains,
+            SchemaKeyword::Object(ObjectKeyword::Properties) if parsed => Reading::Property,
+            SchemaKeyword::Array(ArrayKeyword::Items) if parsed && self != Reading::Document => {
+                Reading::Items
+            }
+            SchemaKeyword::Any(AnyKeyword::Ref) if self == Reading::Property => {
+                Reading::ReferencedProperty
+            }
+            _ => Reading::Schema,
+        }
+    }
+}
+
+/// Refuses a property's `$ref` that the document type parser resolves to another schema
+/// than `target`, the one the JSON Schema validator reaches: the parser reads that other
+/// schema's `maxBytes` and `encryptedFor` as the property's.
+fn refuse_a_property_reference_the_parser_resolves_elsewhere(
+    root: &Value,
+    reference: &str,
+    target: &Value,
+) -> Result<(), DataContractError> {
+    match resolve_uri(root, reference) {
+        Ok(parsed) if std::ptr::eq(parsed, target) => Ok(()),
+        _ => Err(structure_error(format!(
+            "the document type parser resolves `$ref` `{reference}` to another schema than \
+             the JSON Schema validator does"
+        ))),
+    }
+}
+
+/// What the JSON Schema validator reads of a schema's identifiers.
 #[derive(Default)]
 struct Identifiers {
-    /// The canonical URL of every schema an `$id` names.
+    /// The URL of every schema an `$id` names, as the validator's resolver indexes it.
     named: BTreeSet<String>,
-    /// Every `$ref`, with the URL it is resolved against.
-    references: Vec<(Url, String)>,
+    /// Every `$ref`, with the URL the validator gives it where it would compile it, `None`
+    /// when the reference is not a URL reference.
+    references: Vec<(String, Option<Url>)>,
 }
 
 /// Refuses a schema in which a `$ref` the builder reached would be resolved by the JSON
-/// Schema validator to another schema than the one its pointer reaches from the root: one
-/// whose URL, resolved against the `$id` above it, differs from its URL resolved against
-/// the root, or names a schema an `$id` names, which the validator resolves to before it
-/// follows the pointer.
+/// Schema validator to another schema than [`resolve_reference`] resolves it to: one whose
+/// URL, given against the `$id` above it, differs from its URL against the root, or names
+/// a schema an `$id` names, which the validator resolves to before it follows the pointer.
 fn refuse_references_an_id_redirects(
     root: &Value,
+    root_url: &Url,
     reached: &BTreeMap<String, SchemaNode>,
 ) -> Result<(), DataContractError> {
-    let redirected = |reference: &str| {
-        structure_error(format!(
-            "`$ref` `{reference}` resolves through the schemas an `$id` names, which the \
-             validation schema does not represent"
-        ))
-    };
-    let root_url = Url::parse(DEFAULT_ROOT_URL)
-        .map_err(|error| structure_error(format!("invalid default schema URL: {error}")))?;
     let mut identifiers = Identifiers::default();
-    collect_identifiers(root, &root_url, &mut identifiers)?;
-    for (scope, reference) in &identifiers.references {
+    collect_identifiers(root, Some(root_url), None, root_url, &mut identifiers)?;
+    for (reference, url) in &identifiers.references {
         if !reached.contains_key(reference) {
             continue;
         }
-        let url = scope.join(reference).map_err(|_| redirected(reference))?;
-        let from_root = root_url
-            .join(reference)
-            .map_err(|_| redirected(reference))?;
-        if url != from_root || identifiers.named.contains(url.as_str()) {
-            return Err(redirected(reference));
+        let redirected = match url {
+            Some(url) => {
+                reference_url(root_url, reference).as_ref() != Some(url)
+                    || identifiers.named.contains(url.as_str())
+            }
+            None => true,
+        };
+        if redirected {
+            return Err(structure_error(format!(
+                "`$ref` `{reference}` resolves through the schemas an `$id` names, which the \
+                 validation schema does not represent"
+            )));
         }
     }
     Ok(())
 }
 
-/// Collects the identifiers of `schema` the way the JSON Schema validator's resolver indexes
-/// them: every map carrying an `$id` names a schema at the URL the `$id` resolves to against
-/// its enclosing scope (an empty fragment dropped), and sets the scope of everything below
-/// it. Every value is searched but those of `enum` and `const`, so including the document
-/// type's own keywords and `examples`.
+/// Collects the identifiers of `schema` as the JSON Schema validator reads them.
+///
+/// Its resolver indexes every map carrying an `$id` at the URL the `$id` resolves to
+/// against `named_scope`, the URL the nearest `$id` above names (an empty fragment
+/// dropped), and skips `enum` and `const` values, where `named_scope` is `None`.
+///
+/// Its compiler gives a `$ref` the URL it resolves to against `compile_scope`, the URL the
+/// nearest `$id` above resolves to, or the root's URL when there is none or that URL is a
+/// `json-schema:` one, where `compile_scope` is `None`. A relative `$id` therefore never
+/// changes the URL of a reference below it. References are collected from every value,
+/// the document type's own keywords, `examples`, `enum` and `const` included, so one is
+/// checked wherever the validator could compile it.
 fn collect_identifiers(
     schema: &Value,
-    scope: &Url,
+    named_scope: Option<&Url>,
+    compile_scope: Option<&Url>,
+    root_url: &Url,
     identifiers: &mut Identifiers,
 ) -> Result<(), DataContractError> {
     match schema {
         Value::Map(map) => {
             let entries = last_wins(map)?;
-            let mut scope = scope.clone();
+            let mut named_here = None;
+            let mut compiled_here = None;
             if let Some(id) = entries
                 .iter()
                 .find(|(key, _)| *key == "$id")
                 .and_then(|(_, id)| id.as_text())
             {
-                let mut named = scope.join(id).map_err(|error| {
+                let not_a_url = |error: url::ParseError| {
                     structure_error(format!("`$id` `{id}` is not a URL reference: {error}"))
-                })?;
-                if named.fragment() == Some("") {
-                    named.set_fragment(None);
-                }
-                identifiers.named.insert(named.to_string());
-                scope = named;
-            }
-            for (key, value) in entries {
-                match key {
-                    "enum" | "const" => continue,
-                    "$ref" => {
-                        if let Some(reference) = value.as_text() {
-                            identifiers
-                                .references
-                                .push((scope.clone(), reference.to_string()));
-                        }
+                };
+                if let Some(scope) = named_scope {
+                    let mut named = scope.join(id).map_err(not_a_url)?;
+                    if named.fragment() == Some("") {
+                        named.set_fragment(None);
                     }
-                    _ => {}
+                    identifiers.named.insert(named.to_string());
+                    named_here = Some(named);
                 }
-                collect_identifiers(value, &scope, identifiers)?;
+                compiled_here = Some(
+                    compile_scope
+                        .unwrap_or(root_url)
+                        .join(id)
+                        .map_err(not_a_url)?,
+                );
+            }
+            let named_scope = match named_here.as_ref() {
+                Some(named) => Some(named),
+                None => named_scope,
+            };
+            let compile_scope = match compiled_here.as_ref() {
+                Some(compiled) if compiled.scheme() == DEFAULT_ROOT_SCHEME => None,
+                Some(compiled) => Some(compiled),
+                None => compile_scope,
+            };
+            for (key, value) in entries {
+                if key == "$ref" {
+                    if let Some(reference) = value.as_text() {
+                        let url = reference_url(compile_scope.unwrap_or(root_url), reference);
+                        identifiers.references.push((reference.to_string(), url));
+                    }
+                }
+                let named_scope = match key {
+                    "enum" | "const" => None,
+                    _ => named_scope,
+                };
+                collect_identifiers(value, named_scope, compile_scope, root_url, identifiers)?;
             }
             Ok(())
         }
-        Value::Array(elements) => elements
-            .iter()
-            .try_for_each(|element| collect_identifiers(element, scope, identifiers)),
+        Value::Array(elements) => elements.iter().try_for_each(|element| {
+            collect_identifiers(element, named_scope, compile_scope, root_url, identifiers)
+        }),
         _ => Ok(()),
     }
 }
@@ -588,16 +729,21 @@ fn types(value: &Value) -> Result<JsonTypes, DataContractError> {
     }
 }
 
+/// Builds the node of `schema`, read by consensus as `reading`, and queues every `$ref` it
+/// holds, with the reading of the schema the reference reaches.
 fn build_node(
     schema: &Value,
     is_root: bool,
-    pending: &mut VecDeque<String>,
+    reading: Reading,
+    pending: &mut VecDeque<(String, Reading)>,
 ) -> Result<SchemaNode, DataContractError> {
     let map = schema
         .as_map()
         .ok_or_else(|| structure_error("a schema must be an object".to_string()))?;
+    let entries = last_wins(map)?;
+    let has_reference = entries.iter().any(|(name, _)| *name == "$ref");
     let mut node = SchemaNode::default();
-    for (name, value) in last_wins(map)? {
+    for (name, value) in entries {
         let Some(keyword) = SchemaKeyword::from_name(name) else {
             // The root also carries the document type's own keywords, `$schema` and `$defs`.
             if is_root {
@@ -607,11 +753,25 @@ fn build_node(
                 "a document schema does not support the keyword `{name}`"
             )));
         };
+        if !reading.checks(keyword, has_reference) {
+            let place = match reading {
+                Reading::Contains => "inside `contains`, where it constrains nothing",
+                Reading::Property => {
+                    "beside a property's `$ref`, whose referenced schema the document type \
+                     parser reads in its place"
+                }
+                _ => "where the document type parser does not read it",
+            };
+            return Err(structure_error(format!(
+                "`{name}` is declared {place}, so consensus does not check it there"
+            )));
+        }
+        let below = reading.below(keyword, has_reference);
         match keyword {
             SchemaKeyword::Any(keyword) => match keyword {
                 AnyKeyword::Ref => {
                     let reference = text(value, name)?.to_string();
-                    pending.push_back(reference.clone());
+                    pending.push_back((reference.clone(), below));
                     node.reference = Some(reference);
                 }
                 AnyKeyword::Type => node.types = Some(types(value)?),
@@ -636,7 +796,7 @@ fn build_node(
                         .map(|(property_name, property)| {
                             Ok((
                                 property_name.to_string(),
-                                build_node(property, false, pending)?,
+                                build_node(property, false, below, pending)?,
                             ))
                         })
                         .collect::<Result<_, DataContractError>>()?;
@@ -669,10 +829,10 @@ fn build_node(
                 let array = node.array.get_or_insert_with(Default::default);
                 match keyword {
                     ArrayKeyword::Items => {
-                        array.items = Some(Box::new(build_node(value, false, pending)?))
+                        array.items = Some(Box::new(build_node(value, false, below, pending)?))
                     }
                     ArrayKeyword::Contains => {
-                        array.contains = Some(Box::new(build_node(value, false, pending)?))
+                        array.contains = Some(Box::new(build_node(value, false, below, pending)?))
                     }
                     ArrayKeyword::MinItems => array.min_items = Some(count(value, name)?),
                     ArrayKeyword::MaxItems => array.max_items = Some(count(value, name)?),
@@ -723,15 +883,39 @@ fn build_node(
     Ok(node)
 }
 
-/// Resolves a `$ref` against the schema it appears in: a fragment-only URI holding a JSON
-/// pointer. As the JSON Schema validator does, the whole fragment is percent-decoded first,
-/// so an encoded `/` (`%2F`) separates segments, and then each segment is unescaped (`~1`
-/// is `/`, `~0` is `~`). A segment naming a repeated map key reaches its last entry, as
+/// The URL the JSON Schema validator parses a `$ref` into, against `base`: the parse drops
+/// tabs and newlines anywhere in the reference and trims the spaces and control characters
+/// that lead or trail it. `None` when the reference is not a URL reference.
+fn reference_url(base: &Url, reference: &str) -> Option<Url> {
+    base.join(reference).ok()
+}
+
+/// Resolves a `$ref` to the schema the JSON Schema validator reaches through it, short of an
+/// `$id` redirecting it, which [`refuse_references_an_id_redirects`] refuses. The reference's
+/// URL against the root ([`reference_url`]) must name the schema itself; its fragment is
+/// percent-decoded as a whole, so an encoded `/` (`%2F`) separates segments, and followed as
+/// a JSON pointer: in each segment `~1` is `/` and `~0` is `~`, an array index has no sign or
+/// leading zero, and a segment naming a repeated map key reaches its last entry, as
 /// [`last_wins`] reads the map.
-fn resolve_pointer<'a>(root: &'a Value, reference: &str) -> Result<&'a Value, DataContractError> {
-    let unresolved = || structure_error(format!("`$ref` `{reference}` does not resolve"));
-    let fragment = reference.strip_prefix('#').ok_or_else(unresolved)?;
-    let pointer = percent_decode(fragment).ok_or_else(unresolved)?;
+fn resolve_reference<'a>(
+    root: &'a Value,
+    root_url: &Url,
+    reference: &str,
+) -> Result<&'a Value, DataContractError> {
+    let unresolved = || {
+        structure_error(format!(
+            "`$ref` `{reference}` does not resolve within the document schema"
+        ))
+    };
+    let url = reference_url(root_url, reference).ok_or_else(unresolved)?;
+    let mut document = url.clone();
+    document.set_fragment(None);
+    if document != *root_url {
+        return Err(unresolved());
+    }
+    let pointer = percent_decode_str(url.fragment().unwrap_or_default())
+        .decode_utf8()
+        .map_err(|_| unresolved())?;
     if pointer.is_empty() {
         return Ok(root);
     }
@@ -746,9 +930,7 @@ fn resolve_pointer<'a>(root: &'a Value, reference: &str) -> Result<&'a Value, Da
                 .find(|(key, _)| key.as_text() == Some(segment.as_str()))
                 .map(|(_, value)| value)
                 .ok_or_else(unresolved)?,
-            Value::Array(elements) => segment
-                .parse::<usize>()
-                .ok()
+            Value::Array(elements) => array_index(&segment)
                 .and_then(|index| elements.get(index))
                 .ok_or_else(unresolved)?,
             _ => return Err(unresolved()),
@@ -757,29 +939,12 @@ fn resolve_pointer<'a>(root: &'a Value, reference: &str) -> Result<&'a Value, Da
     Ok(target)
 }
 
-/// Decodes every `%` followed by two hex digits into the byte they name, leaving any other
-/// `%` as written, as the `percent-encoding` crate the JSON Schema validator uses does.
-/// `None` when the decoded bytes are not UTF-8.
-fn percent_decode(encoded: &str) -> Option<String> {
-    let bytes = encoded.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        let escaped = (bytes[index] == b'%')
-            .then(|| encoded.get(index + 1..index + 3))
-            .flatten()
-            .filter(|hex| hex.bytes().all(|byte| byte.is_ascii_hexdigit()))
-            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
-        match escaped {
-            Some(byte) => {
-                decoded.push(byte);
-                index += 3;
-            }
-            None => {
-                decoded.push(bytes[index]);
-                index += 1;
-            }
-        }
+/// An array index in a JSON pointer segment, as the JSON Schema validator reads one: decimal
+/// digits with no sign and no leading zero.
+fn array_index(segment: &str) -> Option<usize> {
+    if segment.starts_with('+') || (segment.starts_with('0') && segment.len() != 1) {
+        None
+    } else {
+        segment.parse().ok()
     }
-    String::from_utf8(decoded).ok()
 }

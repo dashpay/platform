@@ -1,5 +1,11 @@
 use super::*;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property_constraints::DocumentSystemValues;
+#[cfg(feature = "validation")]
+use crate::data_contract::methods::validate_document::DataContractDocumentValidationMethodsV0;
 use crate::tests::fixtures::get_dashpay_contract_fixture;
+#[cfg(feature = "validation")]
+use crate::tests::fixtures::get_data_contract_fixture;
 use platform_value::platform_value;
 use std::collections::BTreeSet;
 
@@ -36,6 +42,29 @@ fn property<'a>(node: &'a SchemaNode, name: &str) -> &'a SchemaNode {
         .find(|(property_name, _)| property_name == name)
         .map(|(_, node)| node)
         .unwrap_or_else(|| panic!("expected a property `{name}`"))
+}
+
+/// An array property whose `contains` holds `contains`. The document type parser never
+/// reads `contains`, so a `$ref` there is resolved by the JSON Schema validator alone.
+fn containing(contains: Value) -> Value {
+    platform_value!({
+        "type": "array",
+        "maxItems": 4,
+        "items": { "type": "string", "maxLength": 16 },
+        "contains": contains,
+    })
+}
+
+/// An array property whose `contains` is `{ "$ref": reference }`.
+fn containing_reference(reference: &str) -> Value {
+    containing(platform_value!({ "$ref": reference }))
+}
+
+/// The error the builder refuses `root` with.
+fn refusal(root: Value) -> String {
+    ValidationSchema::try_from_root(&root)
+        .expect_err("expected the schema to be refused")
+        .to_string()
 }
 
 #[test]
@@ -257,9 +286,9 @@ fn should_resolve_escaped_and_percent_encoded_pointers() {
     let schema = build(platform_value!({
         "type": "object",
         "properties": {
-            "slash": { "$ref": "#/$defs/a~1b" },
-            "tilde": { "$ref": "#/$defs/c~0d" },
-            "space": { "$ref": "#/$defs/e%20f" },
+            "slash": containing_reference("#/$defs/a~1b"),
+            "tilde": containing_reference("#/$defs/c~0d"),
+            "space": containing_reference("#/$defs/e%20f"),
         },
         "$defs": {
             "a/b": { "maxLength": 1 },
@@ -289,9 +318,9 @@ fn should_decode_the_whole_fragment_before_splitting_it() {
     let schema = build(platform_value!({
         "type": "object",
         "properties": {
-            "encodedSeparators": { "$ref": "#/$defs/wrapper%2Fproperties%2Flabel" },
-            "encodedLeadingSlash": { "$ref": "#%2F$defs%2Fwrapper" },
-            "lonePercent": { "$ref": "#/$defs/100%" },
+            "encodedSeparators": containing_reference("#/$defs/wrapper%2Fproperties%2Flabel"),
+            "encodedLeadingSlash": containing_reference("#%2F$defs%2Fwrapper"),
+            "lonePercent": containing_reference("#/$defs/100%"),
         },
         "$defs": {
             "wrapper": {
@@ -334,7 +363,7 @@ fn should_reuse_the_root_for_a_reference_to_it() {
     let schema = build(platform_value!({
         "$schema": "https://example.com/meta",
         "type": "object",
-        "properties": { "child": { "$ref": "#" } },
+        "properties": { "child": containing_reference("#") },
         "$defs": { "unused": { "type": "string" } },
     }));
 
@@ -358,10 +387,10 @@ fn should_read_a_repeated_key_by_its_last_entry_in_the_place_of_its_first() {
                 ),
                 (
                     text("label"),
-                    Value::Map(vec![
+                    containing(Value::Map(vec![
                         (text("$ref"), text("#/$defs/missing")),
                         (text("$ref"), text("#/$defs/label")),
-                    ]),
+                    ])),
                 ),
             ]),
         ),
@@ -382,8 +411,12 @@ fn should_read_a_repeated_key_by_its_last_entry_in_the_place_of_its_first() {
         .collect();
     assert_eq!(names, ["value", "other", "label"]);
     assert_eq!(string(property(&schema.root, "value")).max_length, Some(10));
+    let label = property(&schema.root, "label");
     assert_eq!(
-        property(&schema.root, "label").reference.as_deref(),
+        array(label)
+            .contains
+            .as_ref()
+            .and_then(|contains| contains.reference.as_deref()),
         Some("#/$defs/label")
     );
     assert_eq!(
@@ -485,8 +518,10 @@ fn should_build_a_reference_no_id_names_or_rescopes() {
 }
 
 #[test]
-fn should_refuse_a_reference_an_id_above_it_rescopes() {
-    let root = platform_value!({
+fn should_build_a_reference_below_a_relative_id() {
+    // A relative `$id` resolves to a `json-schema:` URL, under which the existing validator
+    // gives a reference the root's URL, as if no `$id` were above it.
+    let schema = build(platform_value!({
         "type": "object",
         "properties": {
             "scoped": {
@@ -495,9 +530,82 @@ fn should_refuse_a_reference_an_id_above_it_rescopes() {
                 "properties": { "user": { "$ref": "#/$defs/label" } },
             },
         },
+        "$defs": { "label": { "type": "string", "maxLength": 1 } },
+    }));
+    assert_eq!(
+        string(&schema.references["#/$defs/label"]).max_length,
+        Some(1)
+    );
+}
+
+#[test]
+fn should_refuse_a_reference_an_absolute_id_above_it_rescopes() {
+    let message = refusal(platform_value!({
+        "type": "object",
+        "properties": {
+            "scoped": {
+                "$id": "https://example.com/scoped",
+                "type": "object",
+                "properties": { "user": { "$ref": "#/$defs/label" } },
+            },
+        },
         "$defs": { "label": { "type": "string" } },
+    }));
+    assert!(message.contains("an `$id` names"), "{message}");
+}
+
+/// What the two tests above rest on: the existing validator resolves a reference below a
+/// relative `$id` from the root, and one below an absolute `$id` within the schema that
+/// `$id` names.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_in_scoping_a_reference_below_an_id() {
+    use crate::validation::JsonSchemaValidator;
+
+    let valid = |schema: &serde_json::Value, user: &str| {
+        JsonSchemaValidator::new()
+            .compile_and_validate(
+                schema,
+                &serde_json::json!({ "scoped": { "user": user } }),
+                PlatformVersion::latest(),
+            )
+            .expect("expected the schema to compile")
+            .is_valid()
+    };
+
+    let relative = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "scoped": {
+                "$id": "elsewhere",
+                "type": "object",
+                "properties": { "user": { "$ref": "#/$defs/label" } },
+            },
+        },
+        "$defs": { "label": { "type": "string", "maxLength": 1 } },
     });
-    assert!(ValidationSchema::try_from_root(&root).is_err());
+    assert!(valid(&relative, "a"));
+    assert!(
+        !valid(&relative, "ab"),
+        "the root's label holds `user` to a maxLength of 1"
+    );
+
+    let absolute = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "scoped": {
+                "$id": "https://example.com/scoped",
+                "type": "object",
+                "properties": { "user": { "$ref": "#/$defs/label" } },
+                "$defs": { "label": { "type": "string", "maxLength": 1 } },
+            },
+        },
+        "$defs": { "label": { "type": "string", "maxLength": 10 } },
+    });
+    assert!(
+        !valid(&absolute, "ab"),
+        "the scoped schema's label holds `user`, not the root's"
+    );
 }
 
 /// The divergence the refusal above guards: the existing validator checks a `$ref` against
@@ -573,6 +681,401 @@ fn should_match_the_existing_validator_in_resolving_a_reference_through_an_id() 
             )
             .expect("expected the schema to compile");
         assert_eq!(result.is_valid(), valid, "{user}");
+    }
+}
+
+#[test]
+fn should_resolve_a_reference_from_the_url_the_validator_parses_it_into() {
+    // The URL parse drops a tab and trims a trailing space, so both references reach `label`,
+    // not the keys written as they are.
+    let helper = platform_value!({
+        "type": "integer",
+        "examples": [{
+            "label": { "maximum": 1 },
+            "la\tbel": { "maximum": 10 },
+            "label ": { "maximum": 20 },
+        }],
+    });
+    let schema = build(platform_value!({
+        "type": "object",
+        "properties": {
+            "tab": containing_reference("#/$defs/helper/examples/0/la\tbel"),
+            "trailingSpace": containing_reference("#/$defs/helper/examples/0/label "),
+            "absolute": containing_reference("json-schema:///#/$defs/helper/examples/0/label"),
+        },
+        "$defs": { "helper": helper.clone() },
+    }));
+    for reference in [
+        "#/$defs/helper/examples/0/la\tbel",
+        "#/$defs/helper/examples/0/label ",
+        "json-schema:///#/$defs/helper/examples/0/label",
+    ] {
+        assert_eq!(
+            number(&schema.references[reference])
+                .maximum
+                .as_ref()
+                .and_then(|maximum| maximum.as_integer::<i64>()),
+            Some(1),
+            "{reference:?}"
+        );
+    }
+
+    // An index with a sign or a leading zero, and a URL naming another document, do not
+    // resolve.
+    for reference in [
+        "#/$defs/helper/examples/+0/label",
+        "#/$defs/helper/examples/00/label",
+        "other#/$defs/helper",
+    ] {
+        let message = refusal(platform_value!({
+            "type": "object",
+            "properties": { "value": containing_reference(reference) },
+            "$defs": { "helper": helper.clone() },
+        }));
+        assert!(
+            message.contains("does not resolve"),
+            "{reference:?}: {message}"
+        );
+    }
+}
+
+/// What the test above rests on: the existing validator resolves a reference from the URL
+/// it parses it into.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_in_resolving_a_reference_from_its_url() {
+    use crate::validation::JsonSchemaValidator;
+
+    let valid = |reference: &str, bytes: serde_json::Value| {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "bytes": {
+                    "type": "array",
+                    "byteArray": true,
+                    "maxItems": 4,
+                    "contains": { "$ref": reference },
+                },
+            },
+            "$defs": {
+                "helper": {
+                    "type": "integer",
+                    "examples": [{
+                        "label": { "maximum": 1 },
+                        "la\tbel": { "maximum": 10 },
+                        "label ": { "maximum": 20 },
+                    }],
+                },
+            },
+        });
+        JsonSchemaValidator::new()
+            .compile_and_validate(
+                &schema,
+                &serde_json::json!({ "bytes": bytes }),
+                PlatformVersion::latest(),
+            )
+            .expect("expected the schema to compile")
+            .is_valid()
+    };
+    for reference in [
+        "#/$defs/helper/examples/0/la\tbel",
+        "#/$defs/helper/examples/0/label ",
+    ] {
+        assert!(valid(reference, serde_json::json!([0])), "{reference:?}");
+        assert!(
+            !valid(reference, serde_json::json!([5])),
+            "{reference:?}: the existing validator holds an element to `label`'s maximum of 1"
+        );
+    }
+    // A reference that does not resolve matches no element.
+    assert!(!valid(
+        "#/$defs/helper/examples/00/label",
+        serde_json::json!([0])
+    ));
+}
+
+#[test]
+fn should_keep_platform_keywords_where_consensus_checks_them() {
+    let schema = build(platform_value!({
+        "type": "object",
+        "properties": {
+            "note": { "type": "string", "maxLength": 63, "maxBytes": 8 },
+            "name": { "$ref": "#/$defs/label" },
+            "tags": {
+                "type": "array",
+                "maxItems": 4,
+                "items": { "type": "string", "maxLength": 16, "maxBytes": 4 },
+            },
+            "meta": {
+                "type": "object",
+                "properties": { "tag": { "type": "string", "maxLength": 8, "maxBytes": 2 } },
+            },
+            "blob": { "$ref": "#/$defs/blob", "byteArray": true },
+        },
+        "$defs": {
+            "label": { "type": "string", "maxLength": 63, "maxBytes": 16 },
+            "blob": { "type": "array", "maxItems": 8 },
+        },
+    }));
+
+    let root = &schema.root;
+    assert_eq!(string(property(root, "note")).max_bytes, Some(8));
+    assert_eq!(
+        string(&schema.references["#/$defs/label"]).max_bytes,
+        Some(16)
+    );
+    let tags = property(root, "tags");
+    assert_eq!(
+        string(array(tags).items.as_deref().expect("expected items")).max_bytes,
+        Some(4)
+    );
+    assert_eq!(
+        string(property(property(root, "meta"), "tag")).max_bytes,
+        Some(2)
+    );
+    // The JSON Schema validator checks `byteArray` beside a `$ref`
+    assert_eq!(format(property(root, "blob")).byte_array, Some(true));
+}
+
+#[test]
+fn should_refuse_platform_keywords_where_consensus_does_not_check_them() {
+    let encrypted_for = platform_value!({
+        "recipient": "key",
+        "recipientKey": "recipientKeyId",
+        "senderKey": "senderKeyId",
+        "scheme": "ecdh-secp256k1-aes256-cbc",
+    });
+    let defs = platform_value!({
+        "label": { "type": "string", "maxLength": 63 },
+        "bounded": { "type": "string", "maxLength": 63, "maxBytes": 4 },
+        "alias": { "$ref": "#/$defs/bounded" },
+        "blob": { "type": "array", "byteArray": true, "maxItems": 64 },
+        "record": { "type": "object", "properties": { "tag": { "type": "string" } } },
+    });
+    for (case, value, place) in [
+        (
+            "maxBytes beside a property's $ref",
+            platform_value!({ "$ref": "#/$defs/label", "type": "string", "maxBytes": 4 }),
+            "beside a property's `$ref`",
+        ),
+        (
+            "encryptedFor beside a property's $ref",
+            platform_value!({ "$ref": "#/$defs/blob", "encryptedFor": encrypted_for.clone() }),
+            "beside a property's `$ref`",
+        ),
+        (
+            "maxBytes below the keywords beside a property's $ref",
+            platform_value!({
+                "$ref": "#/$defs/record",
+                "properties": { "tag": { "type": "string", "maxBytes": 4 } },
+            }),
+            "does not read it",
+        ),
+        (
+            "maxBytes reached through the $ref of a referenced property",
+            platform_value!({ "$ref": "#/$defs/alias" }),
+            "does not read it",
+        ),
+        (
+            "encryptedFor on the items of an array",
+            platform_value!({
+                "type": "array",
+                "maxItems": 4,
+                "items": { "type": "array", "byteArray": true, "encryptedFor": encrypted_for.clone() },
+            }),
+            "does not read it",
+        ),
+        (
+            "maxBytes inside contains",
+            containing(platform_value!({ "type": "string", "maxBytes": 4 })),
+            "inside `contains`",
+        ),
+        (
+            "byteArray inside contains",
+            containing(platform_value!({ "byteArray": true })),
+            "inside `contains`",
+        ),
+        (
+            "maxBytes a reference inside contains reaches",
+            containing_reference("#/$defs/bounded"),
+            "inside `contains`",
+        ),
+    ] {
+        let message = refusal(platform_value!({
+            "type": "object",
+            "properties": { "value": value },
+            "$defs": defs.clone(),
+        }));
+        assert!(message.contains(place), "{case}: {message}");
+    }
+
+    // A definition a property reaches, where its `maxBytes` is checked, and `contains`
+    // reaches too, where it is not
+    let message = refusal(platform_value!({
+        "type": "object",
+        "properties": {
+            "name": { "$ref": "#/$defs/bounded" },
+            "names": containing_reference("#/$defs/bounded"),
+        },
+        "$defs": defs,
+    }));
+    assert!(message.contains("inside `contains`"), "{message}");
+}
+
+#[test]
+fn should_refuse_a_property_reference_the_parser_resolves_to_another_schema() {
+    // The parser follows a property's `$ref` as a dotted path below `#/`, unescaped, and
+    // reads the first entry of a repeated key, where the JSON Schema validator reads the
+    // last.
+    let text = |text: &str| Value::Text(text.to_string());
+    let repeated = Value::Map(vec![
+        (text("type"), text("object")),
+        (
+            text("properties"),
+            platform_value!({ "value": { "$ref": "#/$defs/label" } }),
+        ),
+        (
+            text("$defs"),
+            Value::Map(vec![
+                (
+                    text("label"),
+                    platform_value!({ "type": "string", "maxBytes": 1 }),
+                ),
+                (text("label"), platform_value!({ "type": "string" })),
+            ]),
+        ),
+    ]);
+    for (case, root) in [
+        (
+            "escaped",
+            platform_value!({
+                "type": "object",
+                "properties": { "value": { "$ref": "#/$defs/a~1b" } },
+                "$defs": { "a/b": { "type": "string" } },
+            }),
+        ),
+        (
+            "the root",
+            platform_value!({
+                "type": "object",
+                "properties": { "value": { "$ref": "#" } },
+            }),
+        ),
+        ("a repeated definition", repeated),
+    ] {
+        let message = refusal(root);
+        assert!(
+            message.contains("the document type parser resolves"),
+            "{case}: {message}"
+        );
+    }
+}
+
+/// A contract holding a document type `item`, whose properties are `properties`, with
+/// `defs` added to its `$defs`, registered with full validation at the latest protocol
+/// version.
+#[cfg(feature = "validation")]
+fn registered(properties: Value, defs: Value) -> DataContract {
+    let platform_version = PlatformVersion::latest();
+    let mut contract =
+        get_data_contract_fixture(None, 0, platform_version.protocol_version).data_contract_owned();
+    let mut all_defs = contract.schema_defs().cloned().unwrap_or_default();
+    all_defs.extend(defs.into_btree_string_map().expect("expected a map"));
+    contract
+        .set_schema_defs(Some(all_defs), true, &mut Vec::new(), platform_version)
+        .expect("expected the definitions to register");
+    contract
+        .set_document_schema(
+            "item",
+            platform_value!({
+                "type": "object",
+                "properties": properties,
+                "additionalProperties": false,
+            }),
+            true,
+            &mut Vec::new(),
+            platform_version,
+        )
+        .expect("expected the document type to register");
+    contract
+}
+
+/// Whether document validation, the JSON Schema validation and the `maxBytes` check that
+/// follows it, accepts `properties` as an `item`.
+#[cfg(feature = "validation")]
+fn accepts(contract: &DataContract, properties: Value) -> bool {
+    contract
+        .validate_document_properties(
+            "item",
+            properties,
+            &DocumentSystemValues::default(),
+            PlatformVersion::latest(),
+        )
+        .expect("expected document validation to run")
+        .is_valid()
+}
+
+/// The ground truth for the two tests above: document validation checks `maxBytes` on the
+/// definition a property's `$ref` reaches, where the validation schema holds it, and
+/// neither `maxBytes` beside that `$ref` nor `maxBytes` and `byteArray` inside `contains`,
+/// which the validation schema refuses.
+#[cfg(feature = "validation")]
+#[test]
+fn should_hold_platform_keywords_exactly_where_document_validation_checks_them() {
+    let platform_version = PlatformVersion::latest();
+    let defs = platform_value!({
+        "label": { "type": "string", "maxLength": 63, "maxBytes": 4 },
+        "wide": { "type": "string", "maxLength": 63 },
+    });
+
+    let contract = registered(
+        platform_value!({ "name": { "$ref": "#/$defs/label", "position": 0 } }),
+        defs.clone(),
+    );
+    assert!(accepts(&contract, platform_value!({ "name": "abcd" })));
+    assert!(!accepts(&contract, platform_value!({ "name": "abcde" })));
+    let schema = contract
+        .document_type_validation_schema("item", platform_version)
+        .expect("expected the schema to build");
+    assert_eq!(
+        string(&schema.references["#/$defs/label"]).max_bytes,
+        Some(4)
+    );
+
+    let contract = registered(
+        platform_value!({
+            "name": { "$ref": "#/$defs/wide", "type": "string", "maxBytes": 4, "position": 0 },
+        }),
+        defs.clone(),
+    );
+    assert!(accepts(
+        &contract,
+        platform_value!({ "name": "hello world" })
+    ));
+    assert!(contract
+        .document_type_validation_schema("item", platform_version)
+        .is_err());
+
+    for contains in [
+        platform_value!({ "type": "string", "maxBytes": 1 }),
+        platform_value!({ "byteArray": true }),
+    ] {
+        let contract = registered(
+            platform_value!({
+                "tags": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": { "type": "string", "maxLength": 16 },
+                    "contains": contains,
+                    "position": 0,
+                },
+            }),
+            defs.clone(),
+        );
+        assert!(accepts(&contract, platform_value!({ "tags": ["hello"] })));
+        assert!(contract
+            .document_type_validation_schema("item", platform_version)
+            .is_err());
     }
 }
 
