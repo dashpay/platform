@@ -244,8 +244,11 @@ fn should_refuse_arrays_of_arrays() {
     }
 }
 
+/// An index keys a typed array by its elements (see `indexed_array_tests`),
+/// and holds the array to at most 16 of them: the 64 reasons of a charter are
+/// too many to index.
 #[test]
-fn should_refuse_an_index_on_a_typed_array_property() {
+fn should_refuse_an_index_on_a_typed_array_of_more_than_16_elements() {
     let mut schema = schema_with_list(reasons_list());
     schema
         .set_value(
@@ -262,45 +265,11 @@ fn should_refuse_an_index_on_a_typed_array_property() {
             Err(ProtocolError::ConsensusError(boxed))
                 if matches!(
                     **boxed,
-                    ConsensusError::BasicError(BasicError::InvalidIndexPropertyTypeError(_))
+                    ConsensusError::BasicError(BasicError::InvalidIndexedPropertyConstraintError(_))
                 )
         ),
-        "an index on a typed array should be refused as an invalid index property type, got \
+        "an index on a typed array of 64 elements should be refused for its maxItems, got \
          {result:?}"
-    );
-}
-
-/// The ranked key-length check runs before the index property-type check and
-/// would otherwise size the whole list as a key, so it skips a typed array:
-/// the type error is the one reported.
-#[test]
-fn should_refuse_a_typed_array_in_an_index_with_a_ranked_axis_as_an_invalid_index_type() {
-    let mut schema = schema_with_list(reasons_list());
-    schema
-        .set_value(
-            "indices",
-            platform_value!([{
-                "name": "byList",
-                "properties": [{ "list": "asc" }],
-                "rangeCountable": true,
-                "rankedCountable": true
-            }]),
-        )
-        .expect("indices apply");
-
-    let result = parse_dispatched(schema, PlatformVersion::latest(), true);
-
-    assert!(
-        matches!(
-            &result,
-            Err(ProtocolError::ConsensusError(boxed))
-                if matches!(
-                    **boxed,
-                    ConsensusError::BasicError(BasicError::InvalidIndexPropertyTypeError(_))
-                )
-        ),
-        "a ranked index on a typed array should be refused as an invalid index property type, \
-         got {result:?}"
     );
 }
 

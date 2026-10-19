@@ -95,7 +95,9 @@ pub use proof::{FromProof, Length};
 // Re-export context provider types from dash-context-provider
 #[cfg(feature = "mocks")]
 pub use dash_context_provider::MockContextProvider;
-pub use dash_context_provider::{ContextProvider, ContextProviderError, DataContractProvider};
+pub use dash_context_provider::{
+    ContextProvider, ContextProviderError, DataContractProvider, QuorumKeyFuture,
+};
 
 /// From Request
 pub mod from_request;

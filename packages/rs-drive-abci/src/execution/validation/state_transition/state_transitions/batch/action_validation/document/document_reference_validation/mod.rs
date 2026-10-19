@@ -3,6 +3,7 @@ pub mod v0;
 use std::collections::{BTreeMap, BTreeSet};
 
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
 use dpp::data_contract::document_type::DocumentPropertyReferenceTarget;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
@@ -104,18 +105,29 @@ pub(crate) trait DocumentReferenceValidation {
     /// the document its reference points at, which this validation fetched: Drive keys the
     /// new document by them without reading those documents again. A value whose document it
     /// did not fetch is left out, for Drive to read.
+    ///
+    /// `referring_system` holds the system values of the document being written (its owner,
+    /// times and heights, as a `propertyConstraints` rule judges it), which a `where` entry
+    /// bounded by a time or height reads. A reference the type's `propertyConstraints` rules
+    /// read through (`{ "referenced": [reference, field] }`) is checked on every replace, and
+    /// an accepted write records in `referenced_documents`, under the reference property, the
+    /// values those rules read of the document its check found (or of its removal record),
+    /// for the caller to judge the rules on without another read. A reference left out
+    /// records nothing.
     #[allow(clippy::too_many_arguments)]
     fn validate_document_references(
         &self,
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
         creator_id: Option<Identifier>,
+        referring_system: &DocumentSystemValues,
         changed_fields: Option<&BTreeSet<String>>,
         stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
         derived_index_values: Option<&mut BTreeMap<String, Value>>,
+        referenced_documents: &mut BTreeMap<String, Value>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -163,12 +175,14 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
         document_data: &BTreeMap<String, Value>,
         owner_id: Identifier,
         creator_id: Option<Identifier>,
+        referring_system: &DocumentSystemValues,
         changed_fields: Option<&BTreeSet<String>>,
         stored_values: Option<&BTreeMap<String, Value>>,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         consumed_documents: &mut Vec<ConsumedLookupDocument>,
         derived_index_values: Option<&mut BTreeMap<String, Value>>,
+        referenced_documents: &mut BTreeMap<String, Value>,
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -184,12 +198,14 @@ impl DocumentReferenceValidation for DocumentBaseTransitionAction {
                 document_data,
                 owner_id,
                 creator_id,
+                referring_system,
                 changed_fields,
                 stored_values,
                 platform,
                 block_info,
                 consumed_documents,
                 derived_index_values,
+                referenced_documents,
                 transaction,
                 execution_context,
                 platform_version,

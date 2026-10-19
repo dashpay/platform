@@ -1,0 +1,121 @@
+{
+  "hash": "69bf772133b0ed53979dce7927104fcc3577180137aacb283e8a282ecb86bf85",
+  "height": 1112,
+  "deployments": {
+    "bip34": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "bip66": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "bip65": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "bip147": {
+      "type": "buried",
+      "active": true,
+      "height": 0
+    },
+    "csv": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "dip0001": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "dip0003": {
+      "type": "buried",
+      "active": true,
+      "height": 432
+    },
+    "dip0008": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "dip0020": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "dip0024": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "realloc": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "v19": {
+      "type": "buried",
+      "active": true,
+      "height": 1
+    },
+    "v20": {
+      "type": "buried",
+      "active": true,
+      "height": 432
+    },
+    "mn_rr": {
+      "type": "buried",
+      "active": true,
+      "height": 1000
+    },
+    "withdrawals": {
+      "type": "buried",
+      "active": true,
+      "height": 600
+    },
+    "v24": {
+      "type": "bip9",
+      "active": false,
+      "bip9": {
+        "start_time": 0,
+        "timeout": 9223372036854775807,
+        "ehf": true,
+        "min_activation_height": 0,
+        "status": "defined",
+        "since": 0,
+        "status_next": "defined"
+      }
+    },
+    "evo_shares": {
+      "type": "bip9",
+      "active": false,
+      "bip9": {
+        "start_time": 0,
+        "timeout": 9223372036854775807,
+        "ehf": true,
+        "min_activation_height": 0,
+        "status": "defined",
+        "since": 0,
+        "status_next": "defined"
+      }
+    },
+    "testdummy": {
+      "type": "bip9",
+      "height": 432,
+      "active": true,
+      "bip9": {
+        "start_time": 0,
+        "timeout": 9223372036854775807,
+        "ehf": false,
+        "min_activation_height": 0,
+        "status": "active",
+        "since": 432,
+        "status_next": "active"
+      }
+    }
+  }
+}

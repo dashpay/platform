@@ -1,3 +1,6 @@
+use crate::drive::group::paths::{
+    group_path_vec, GROUP_ACTIVE_ACTIONS_KEY, GROUP_CLOSED_ACTIONS_KEY,
+};
 use crate::drive::Drive;
 use grovedb::Element::SumItem;
 
@@ -13,6 +16,21 @@ use dpp::identifier::Identifier;
 use grovedb::{Element, GroveDb, TreeFeatureType, VerifyOptions};
 use platform_version::version::PlatformVersion;
 
+fn proof_entry_matches(
+    path: &[Vec<u8>],
+    key: &[u8],
+    parent: &[Vec<u8>],
+    expected_key: &[u8],
+) -> bool {
+    // Legacy proofs append a nonempty terminal tree's key to its path; both shapes name
+    // the same location authenticated by the query.
+    key == expected_key
+        && (path == parent
+            || path
+                .split_last()
+                .is_some_and(|(last, prefix)| prefix == parent && last.as_slice() == expected_key))
+}
+
 impl Drive {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn verify_action_signers_total_power_v0(
@@ -25,15 +43,36 @@ impl Drive {
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, GroupActionStatus, GroupSumPower), Error> {
+        let mut inferred_root = None;
         let action_status = match action_status {
             Some(action_status) => action_status,
             None => {
-                // We don't actually know the action status, we need to look it up from the proof
+                // This client verifier is not called by block validation or execution. Status
+                // discovery must refer to the action, since both group branches may hold actions.
+                let signer_query = Drive::group_active_and_closed_action_single_signer_query(
+                    contract_id.to_buffer(),
+                    group_contract_position,
+                    action_id.to_buffer(),
+                    action_signer_id.to_buffer(),
+                );
+                let canonical_root = GroveDb::verify_query_with_options(
+                    proof,
+                    &signer_query,
+                    VerifyOptions {
+                        absence_proofs_for_non_existing_searched_keys: false,
+                        verify_proof_succinctness: !verify_subset_of_proof,
+                        include_empty_trees_in_result: false,
+                    },
+                    &platform_version.drive.grove_version,
+                )?
+                .0;
                 let path_query = Drive::group_active_or_closed_action_query(
                     contract_id.to_buffer(),
                     group_contract_position,
                 );
-                let mut proved_key_values = GroveDb::verify_query_with_options(
+                // Terminal projection authenticates empty branch claims even in legacy proofs,
+                // whose subquery verifier can otherwise skip them without binding their bytes.
+                let (group_root, proved_key_values) = GroveDb::verify_query_with_options(
                     proof,
                     &path_query,
                     VerifyOptions {
@@ -42,8 +81,13 @@ impl Drive {
                         include_empty_trees_in_result: true,
                     },
                     &platform_version.drive.grove_version,
-                )?
-                .1;
+                )?;
+
+                if group_root != canonical_root {
+                    return Err(Error::Proof(ProofError::CorruptedProof(
+                        "group branch proof root does not match signer proof root".to_string(),
+                    )));
+                }
 
                 if proved_key_values.len() != 2 {
                     return Err(Error::Proof(ProofError::CorruptedProof(format!(
@@ -52,31 +96,103 @@ impl Drive {
                     ))));
                 }
 
-                let Some(Element::Tree(active_root, _)) = proved_key_values.remove(0).2 else {
+                let group_path = group_path_vec(contract_id.as_bytes(), group_contract_position);
+                let branch_keys = [GROUP_ACTIVE_ACTIONS_KEY, GROUP_CLOSED_ACTIONS_KEY];
+                let mut group_roots = [None, None];
+                for (path, key, element) in proved_key_values {
+                    let branch = branch_keys
+                        .iter()
+                        .position(|expected_key| {
+                            proof_entry_matches(&path, &key, &group_path, expected_key.as_slice())
+                        })
+                        .ok_or_else(|| {
+                            Error::Proof(ProofError::CorruptedProof(
+                                "unexpected group branch in proof".to_string(),
+                            ))
+                        })?;
+                    let Some(Element::Tree(root, _)) = element else {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "group action branch must be a tree".to_string(),
+                        )));
+                    };
+                    if group_roots[branch].replace(root.is_some()).is_some() {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "duplicate group branch in proof".to_string(),
+                        )));
+                    }
+                }
+                let [Some(active_nonempty), Some(closed_nonempty)] = group_roots else {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "group active action should be returned".to_string(),
+                        "proof must contain both group branches".to_string(),
                     )));
                 };
-                let Some(Element::Tree(closed_root, _)) = proved_key_values.remove(0).2 else {
+
+                let action_query = Drive::group_active_and_closed_action_query(
+                    contract_id.to_buffer(),
+                    group_contract_position,
+                    action_id.to_buffer(),
+                );
+                let (action_root, actions) = GroveDb::verify_query_with_options(
+                    proof,
+                    &action_query,
+                    VerifyOptions {
+                        absence_proofs_for_non_existing_searched_keys: false,
+                        verify_proof_succinctness: false,
+                        include_empty_trees_in_result: true,
+                    },
+                    &platform_version.drive.grove_version,
+                )?;
+                if action_root != canonical_root {
                     return Err(Error::Proof(ProofError::CorruptedProof(
-                        "group closed action should be returned".to_string(),
-                    )));
-                };
-                if active_root.is_some() && closed_root.is_some() {
-                    return Err(Error::Proof(ProofError::CorruptedProof(
-                        "group action should be either active or closed, but was both".to_string(),
+                        "action proof root does not match signer proof root".to_string(),
                     )));
                 }
-                if active_root.is_none() && closed_root.is_none() {
-                    return Err(Error::Proof(ProofError::CorruptedProof(
-                        "group action should be either active or closed, but was neither"
-                            .to_string(),
-                    )));
+                let action_parents = branch_keys.map(|key| {
+                    let mut path = group_path.clone();
+                    path.push(key.to_vec());
+                    path
+                });
+                let group_nonempty = [active_nonempty, closed_nonempty];
+                let mut action_present = [false, false];
+                for (path, key, element) in actions {
+                    let branch = action_parents
+                        .iter()
+                        .position(|parent| {
+                            proof_entry_matches(&path, &key, parent, action_id.as_bytes())
+                        })
+                        .ok_or_else(|| {
+                            Error::Proof(ProofError::CorruptedProof(
+                                "unexpected action in proof".to_string(),
+                            ))
+                        })?;
+                    if !matches!(element, Some(Element::Tree(Some(_), _))) {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "group action must be a nonempty tree".to_string(),
+                        )));
+                    }
+                    if !group_nonempty[branch] || action_present[branch] {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "inconsistent group action branch in proof".to_string(),
+                        )));
+                    }
+                    action_present[branch] = true;
                 }
-                if active_root.is_some() {
-                    GroupActionStatus::ActionActive
-                } else {
-                    GroupActionStatus::ActionClosed
+                inferred_root = Some(canonical_root);
+                match action_present {
+                    [true, false] => GroupActionStatus::ActionActive,
+                    [false, true] => GroupActionStatus::ActionClosed,
+                    [true, true] => {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "group action should be either active or closed, but was both"
+                                .to_string(),
+                        )))
+                    }
+                    [false, false] => {
+                        return Err(Error::Proof(ProofError::CorruptedProof(
+                            "group action should be either active or closed, but was neither"
+                                .to_string(),
+                        )))
+                    }
                 }
             }
         };
@@ -88,19 +204,28 @@ impl Drive {
             action_signer_id.to_buffer(),
         );
 
-        let (root_hash, tree_feature, mut proved_key_values) = if verify_subset_of_proof {
-            GroveDb::verify_subset_query_get_parent_tree_info(
-                proof,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
-        } else {
-            GroveDb::verify_query_get_parent_tree_info(
-                proof,
-                &path_query,
-                &platform_version.drive.grove_version,
-            )?
-        };
+        // An inferred status has already checked strictness on the full two-branch query.
+        // The selected signer is a narrower projection of those same authenticated bytes.
+        let (root_hash, tree_feature, mut proved_key_values) =
+            if verify_subset_of_proof || inferred_root.is_some() {
+                GroveDb::verify_subset_query_get_parent_tree_info(
+                    proof,
+                    &path_query,
+                    &platform_version.drive.grove_version,
+                )?
+            } else {
+                GroveDb::verify_query_get_parent_tree_info(
+                    proof,
+                    &path_query,
+                    &platform_version.drive.grove_version,
+                )?
+            };
+
+        if inferred_root.is_some_and(|expected| expected != root_hash) {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "signer aggregate proof root does not match action proof root".to_string(),
+            )));
+        }
 
         if proved_key_values.len() != 1 {
             return Err(Error::Proof(ProofError::CorruptedProof(format!(
@@ -131,6 +256,9 @@ impl Drive {
         }
     }
 }
+
+#[cfg(all(test, feature = "full"))]
+mod status_tests;
 
 #[cfg(test)]
 mod tests {

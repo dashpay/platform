@@ -14,6 +14,7 @@ use crate::execution::validation::state_transition::common::validate_document_no
 use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 use crate::execution::validation::state_transition::state_transitions::batch::{
     fetch_document_with_id, read_property_constraint_aggregates_for_moderator_change,
+    read_property_constraint_aggregates_for_restore,
 };
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -52,7 +53,9 @@ use dpp::data_contract::config::moderation::{
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
-use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
+use dpp::data_contract::document_type::property_constraints::{
+    DocumentSystemValues, StoredDocument, StoredSystemValues, StoredVersion, SystemChange,
+};
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
@@ -1362,9 +1365,10 @@ fn document_deletion_context<C: CoreRPCLike>(
 /// the contract (see [`Moderators`]: a seated team must also hold `changeDocumentFields` on the
 /// type) for a reason a seated team's proposal lists, the document exists and has not expired,
 /// and the document as changed is still one of its type: its schema, the shapes of its
-/// `encryptedFor` properties, its `distinctFrom` properties, its `propertyConstraints` with the
-/// totals they read, and its unique indexes. Every refusal is paid for by bumping the signer's
-/// contract nonce.
+/// `encryptedFor` properties, its `distinctFrom` properties, the rules of its
+/// `propertyConstraints` the change can break (those reading a field it changes, of either
+/// version, `$revision` or a total, the totals read as they will be), and its unique indexes.
+/// Every refusal is paid for by bumping the signer's contract nonce.
 ///
 /// The fields are the moderators', not the document's owner's, so whoever owns the document,
 /// the contract owner and the moderators included, is no protection. Nothing the document type
@@ -1572,8 +1576,11 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
     changed.set_moderated_by(Some(moderator_id));
 
     // The changed document is judged as a replace judges one: the owner is the document's, the
-    // times and heights are the ones it keeps, and the `countOf` and `sumOf` totals are read as
-    // they will be once it is stored in place of the one read.
+    // times and heights are the ones it keeps, its revision the next, the `countOf` and `sumOf`
+    // totals are read as they will be once it is stored in place of the one read, and a path
+    // through `$old.` reads the one read. Only the rules reading a field the change writes,
+    // `$revision` or a total are judged: every other rule reads what the document held when its
+    // owner last wrote it, and gave its verdict then, as rules never change once registered.
     let aggregates = read_property_constraint_aggregates_for_moderator_change(
         platform.drive,
         contract,
@@ -1585,18 +1592,15 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
         tx,
         platform_version,
     )?;
+    // The document read is not needed again, so its properties move into the stored version
     let system = DocumentSystemValues {
-        owner_id: Some(changed.owner_id()),
-        created_at: changed.created_at(),
-        updated_at: changed.updated_at(),
-        transferred_at: changed.transferred_at(),
-        created_at_block_height: changed.created_at_block_height(),
-        updated_at_block_height: changed.updated_at_block_height(),
-        transferred_at_block_height: changed.transferred_at_block_height(),
-        created_at_core_block_height: changed.created_at_core_block_height(),
-        updated_at_core_block_height: changed.updated_at_core_block_height(),
-        transferred_at_core_block_height: changed.transferred_at_core_block_height(),
         aggregates: Some(aggregates),
+        consensus: true,
+        stored: Some(StoredVersion::Present(Box::new(
+            StoredDocument::of_owned_document(stored),
+        ))),
+        changed_fields: Some(changed_fields.clone()),
+        ..DocumentSystemValues::of_document(&changed)
     };
     // Each check runs only on a document the previous ones passed, as a replace's do: the later
     // two read values the schema check makes well formed.
@@ -1665,8 +1669,10 @@ fn transform_document_fields_change_v0<C: CoreRPCLike>(
 /// under the type, the type keeps removal records and the document has one that is not yet
 /// restored, block time is within the restore window after the removal, the bytes hash to what
 /// the record holds, the removal is no deletion the seated team approved together (those
-/// stand), and no other document holds a value of one of the type's unique indexes. Every refusal is paid
-/// for by bumping the signer's contract nonce.
+/// stand), no other document holds a value of one of the type's unique indexes, and the
+/// restored document meets the rules of its type's `propertyConstraints` reading a total,
+/// with the totals after its insertion: the others read only what it held when last written.
+/// Every refusal in a block is paid for by bumping the signer's contract nonce.
 ///
 /// The action carries the contract, the decoded document and the record marked restored, so
 /// Drive puts the document back and marks the record without reading again. Nothing the
@@ -1917,6 +1923,47 @@ fn transform_document_restore_v0<C: CoreRPCLike>(
             return Ok(ConsensusValidationResult::new_with_data_and_errors(
                 bump_action(),
                 uniqueness.errors,
+            ));
+        }
+    }
+
+    // Contract moderation is inactive before protocol version 14, so this check cannot
+    // alter earlier blocks. The hash pins the document's retained values, but other writes
+    // may have changed the totals its rules read while it was absent from the live trees: the
+    // rules reading one are judged again, a path through `$old.` reading the document as it
+    // comes back. Every other rule reads only what the document held when it was last written,
+    // and gave its verdict then, as rules never change once registered.
+    if !document_type.property_constraints().is_empty() {
+        let aggregates = read_property_constraint_aggregates_for_restore(
+            platform.drive,
+            contract,
+            document_type_name,
+            &document,
+            block_info,
+            execution_context,
+            tx,
+            platform_version,
+        )?;
+        // A restore writes no property: `$old.` reads the document itself, the judging
+        // reading its properties from those written, so none is copied
+        let system = DocumentSystemValues {
+            aggregates: Some(aggregates),
+            consensus: true,
+            stored: Some(StoredVersion::without_properties(
+                StoredSystemValues::of_document(&document),
+            )),
+            ..DocumentSystemValues::of_document(&document)
+        };
+        let result = document_type.validate_property_constraints_for_system_change(
+            document.properties(),
+            &system,
+            SystemChange::Restore,
+            platform_version,
+        )?;
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                bump_action(),
+                result.errors,
             ));
         }
     }

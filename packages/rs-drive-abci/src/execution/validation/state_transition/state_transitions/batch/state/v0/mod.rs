@@ -42,6 +42,7 @@ use crate::execution::validation::state_transition::batch::action_validation::to
 use crate::execution::validation::state_transition::batch::action_validation::token::token_claim_to_pool_transition_action::TokenClaimToPoolTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::token::token_direct_purchase_to_pool_transition_action::TokenDirectPurchaseToPoolTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::data_triggers::{data_trigger_bindings_list, DataTriggerExecutionContext, DataTriggerExecutor};
+use crate::execution::validation::state_transition::batch::state::v0::accepted_token_pool_nullifiers::{AcceptedTokenPoolNullifiers, TokenPoolNullifiers};
 use crate::execution::validation::state_transition::batch::state::v0::added_moderator_cap::AddedModeratorCap;
 use crate::execution::validation::state_transition::batch::state::v0::consumed_documents::ConsumedDocuments;
 use crate::execution::validation::state_transition::batch::state::v0::index_only_batch_entries::IndexOnlyBatchEntries;
@@ -54,6 +55,7 @@ use crate::execution::validation::state_transition::state_transitions::batch::tr
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
+mod accepted_token_pool_nullifiers;
 mod added_moderator_cap;
 mod consumed_documents;
 pub mod fetch_contender;
@@ -101,6 +103,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
         let owner_id = state_transition_action.owner_id();
 
         let mut validated_transitions = vec![];
+        let mut accepted_token_pool_nullifiers = AcceptedTokenPoolNullifiers::default();
 
         let data_trigger_bindings = if platform.config.execution.use_document_triggers {
             data_trigger_bindings_list(platform_version)?
@@ -432,6 +435,19 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                 }
             }
 
+            // Every production version selecting this generation caps batches at one before
+            // block state validation. Comparing only with earlier accepted writers therefore
+            // sees an empty set there and adds no action, error or billed operation.
+            let pool_nullifiers = transition_validation_result
+                .is_valid()
+                .then(|| TokenPoolNullifiers::for_transition(&transition))
+                .flatten();
+            if let Some(candidate) = &pool_nullifiers {
+                if let Some(error) = accepted_token_pool_nullifiers.check(candidate) {
+                    transition_validation_result.add_error(error);
+                }
+            }
+
             if !transition_validation_result.is_valid() {
                 // If a state transition isn't valid we still need to bump the identity data contract nonce
                 validation_result.add_errors(transition_validation_result.errors);
@@ -619,6 +635,9 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                 platform_version,
             )?;
 
+            if let Some(candidate) = pool_nullifiers {
+                accepted_token_pool_nullifiers.record(candidate);
+            }
             validated_transitions.push(transition);
         }
 

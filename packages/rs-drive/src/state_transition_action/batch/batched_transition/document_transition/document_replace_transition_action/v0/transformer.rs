@@ -207,7 +207,7 @@ impl DocumentReplaceTransitionActionV0 {
                     creator_id: original_creator_id,
                     moderated_at: original_moderated_at,
                     moderated_by: original_moderated_by,
-                    property_constraint_aggregates: Default::default(),
+                    property_constraint_reads: Default::default(),
                 }
                 .into(),
             ))

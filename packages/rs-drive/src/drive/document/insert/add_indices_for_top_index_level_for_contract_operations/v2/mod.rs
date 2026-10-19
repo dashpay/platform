@@ -21,7 +21,7 @@ use dpp::version::PlatformVersion;
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::index_level_tree_types::{
     bucket_index_keys, index_level_tree_types_with_continuation_demotion,
-    index_only_level_skips_when_absent, level_reaches_entry,
+    index_only_level_skips_when_absent, level_keys, level_reaches_entry, LevelKeys,
 };
 use crate::drive::document::paths::contract_document_type_path_vec;
 use grovedb::batch::KeyInfoPath;
@@ -184,6 +184,7 @@ impl Drive {
             if !level_reaches_entry(
                 sub_level,
                 &document_and_contract_info.owned_document_info.document_info,
+                document_and_contract_info.document_type,
             )? {
                 continue;
             }
@@ -232,35 +233,73 @@ impl Drive {
                 .map(|bucketing| bucketing.source())
                 .unwrap_or(name.as_str());
 
-            // with the example of the dashpay contract's first index
-            // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
-            let document_top_field = match document_and_contract_info
-                .owned_document_info
-                .document_info
-                .get_raw_for_document_type(
-                    property_name,
-                    document_type,
-                    document_and_contract_info.owned_document_info.owner_id,
-                    Some((sub_level, event_id)),
-                    platform_version,
-                )? {
-                Some(document_top_field) => document_top_field,
-                // An unrequired property on an indexOnly type is a skip
-                // property of every index that holds it (the parser admits
-                // no other optional property), so every index through this
-                // branch skips the document and `level_reaches_entry` has
-                // already passed it by. Kept as the defensive arm: an absent
-                // value here writes NOTHING, never a null key the type has
-                // no layout for. The timestamp of a bucketed level can never
-                // land here (its source is `$createdAt`, required whenever
-                // indexed).
-                None if index_only_level_skips_when_absent(document_type, property_name) => {
-                    continue;
+            // An indexed typed array (protocol version 14) enters the document once per
+            // distinct element, each element keyed as a value of the element's type: the
+            // document holds one value tree per element here, with everything below it. The
+            // branch is only reached for a document holding at least one element (the array
+            // is in the skip set of every index naming it), and an element is never null.
+            let (index_keys, any_fields_null): (Vec<DriveKeyInfo>, bool) = match level_keys(
+                &document_and_contract_info.owned_document_info.document_info,
+                sub_level,
+                property_name,
+                document_type,
+                document_and_contract_info.owned_document_info.owner_id,
+                Some((sub_level, event_id)),
+                platform_version,
+            )? {
+                LevelKeys::Elements(element_keys) => (element_keys, false),
+                // with the example of the dashpay contract's first index
+                // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId
+                LevelKeys::Value(value) => {
+                    let document_top_field = match value {
+                        Some(document_top_field) => document_top_field,
+                        // An unrequired property on an indexOnly type is a skip
+                        // property of every index that holds it (the parser admits
+                        // no other optional property), so every index through this
+                        // branch skips the document and `level_reaches_entry` has
+                        // already passed it by. Kept as the defensive arm: an absent
+                        // value here writes NOTHING, never a null key the type has
+                        // no layout for. The timestamp of a bucketed level can never
+                        // land here (its source is `$createdAt`, required whenever
+                        // indexed).
+                        None if index_only_level_skips_when_absent(
+                            document_type,
+                            property_name,
+                        ) =>
+                        {
+                            continue;
+                        }
+                        // A stored type's absent value keeps its null-layout empty
+                        // key.
+                        None => DriveKeyInfo::default(),
+                    };
+
+                    let any_fields_null = document_top_field.is_empty();
+
+                    // A bucketed (time- or integer-range) first-property node
+                    // expands the document's single value into one index entry per
+                    // containing window (the window *start*, encoded exactly like
+                    // the value). A normal property keeps its single key. The
+                    // entry-key rule (null keeps its single null entry, undecodable
+                    // values keep their raw key) lives in ONE place —
+                    // [`IndexBucketing::entry_keys_for_raw`] — shared with the
+                    // delete and update walkers so the three can never disagree.
+                    let bucket_keys = bucket_index_keys(
+                        sub_level.bucketing(),
+                        document_top_field,
+                        // A validated contract cannot exceed this; the clamp only
+                        // bounds estimation work for unvalidated transforms. The
+                        // `unwrap_or(1)` arm is a protocol version without
+                        // time-range indexes, where no transform can exist.
+                        platform_version
+                            .system_limits
+                            .max_time_range_overlap_factor
+                            .unwrap_or(1),
+                    );
+                    (bucket_keys, any_fields_null)
                 }
-                // A stored type's absent value keeps its null-layout empty
-                // key.
-                None => DriveKeyInfo::default(),
             };
+            let all_fields_null = any_fields_null;
 
             // here we are inserting the value tree (per distinct property value)
             // under the top-level property-name tree. The top-level property-name
@@ -315,30 +354,6 @@ impl Drive {
                 );
             }
 
-            let any_fields_null = document_top_field.is_empty();
-            let all_fields_null = document_top_field.is_empty();
-
-            // A bucketed (time- or integer-range) first-property node
-            // expands the document's single value into one index entry per
-            // containing window (the window *start*, encoded exactly like
-            // the value). A normal property keeps its single key. The
-            // entry-key rule (null keeps its single null entry, undecodable
-            // values keep their raw key) lives in ONE place —
-            // [`IndexBucketing::entry_keys_for_raw`] — shared with the
-            // delete and update walkers so the three can never disagree.
-            let index_keys: Vec<DriveKeyInfo> = bucket_index_keys(
-                sub_level.bucketing(),
-                document_top_field,
-                // A validated contract cannot exceed this; the clamp only
-                // bounds estimation work for unvalidated transforms. The
-                // `unwrap_or(1)` arm is a protocol version without
-                // time-range indexes, where no transform can exist.
-                platform_version
-                    .system_limits
-                    .max_time_range_overlap_factor
-                    .unwrap_or(1),
-            );
-
             let bucket_count = index_keys.len();
             for (bucket, index_key) in index_keys.into_iter().enumerate() {
                 // The zero will not matter here, because the PathKeyInfo is variable
@@ -361,8 +376,8 @@ impl Drive {
                 )?;
 
                 // The final bucket takes ownership of `index_path`; earlier
-                // buckets (only a time-range fan-out has more than one)
-                // clone it.
+                // keys (a window or an array's elements fan out to more
+                // than one) clone it.
                 let own_index_path = if bucket + 1 == bucket_count {
                     std::mem::take(&mut index_path)
                 } else {

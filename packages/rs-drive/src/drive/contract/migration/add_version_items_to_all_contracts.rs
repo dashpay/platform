@@ -2,8 +2,8 @@ use crate::drive::contract::paths::{
     contract_other_path, contract_root_path, CONTRACT_OTHER_KEY, CONTRACT_VERSION_KEY,
 };
 use crate::drive::contract::version_item::encode_contract_version;
+use crate::drive::contract::DataContractFetchInfo;
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::storage_flags::StorageFlags;
@@ -26,25 +26,18 @@ impl Drive {
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let mut start_at = None;
-        let mut contract_count = 0usize;
-
-        loop {
-            let page =
-                self.fetch_contract_ids(start_at, u16::MAX, Some(transaction), platform_version)?;
-
-            for contract_id in &page {
-                self.add_version_item_to_contract(*contract_id, transaction, platform_version)?;
-            }
-            contract_count += page.len();
-
-            match page.last() {
-                Some(last_id) if page.len() == u16::MAX as usize => {
-                    start_at = Some((*last_id, false));
-                }
-                _ => break,
-            }
-        }
+        let contract_count = self.for_each_contract_in_state(
+            |contract_id, fetch_info| {
+                self.add_version_item_to_contract(
+                    contract_id,
+                    fetch_info,
+                    transaction,
+                    platform_version,
+                )
+            },
+            transaction,
+            platform_version,
+        )?;
 
         tracing::info!(
             contract_count,
@@ -57,24 +50,10 @@ impl Drive {
     fn add_version_item_to_contract(
         &self,
         contract_id: [u8; 32],
+        fetch_info: &DataContractFetchInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let fetch_info = self
-            .fetch_contract_and_add_operations(
-                contract_id,
-                None,
-                Some(transaction),
-                &mut vec![],
-                platform_version,
-            )?
-            .ok_or_else(|| {
-                Error::Drive(DriveError::CorruptedDriveState(format!(
-                    "contract {} is listed under the contracts root but can not be fetched",
-                    hex::encode(contract_id)
-                )))
-            })?;
-
         let element_flags = fetch_info
             .storage_flags
             .as_ref()
@@ -125,8 +104,12 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
     use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::data_contract::DataContract;
+    use dpp::platform_value::{platform_value, to_value, Identifier, Value};
     use dpp::tests::json_document::json_document_to_contract;
     use dpp::version::PlatformVersion;
     use grovedb_epoch_based_storage_flags::StorageFlags;
@@ -263,6 +246,87 @@ mod tests {
             root_hash_after_first,
             "repeating the backfill changes nothing"
         );
+        for contract in &contracts {
+            assert_eq!(stored_version(&drive, contract), Some(contract.version()));
+        }
+    }
+
+    /// Contracts protocol version 13 registers although they hold a value in the shape of a
+    /// protocol version 14 property type shorthand where no reader looks: the definitions of
+    /// a contract without document types, and a property entry a repeated key shadows.
+    fn contracts_with_unread_shorthands() -> Vec<DataContract> {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+        let text = |text: &str| Value::Text(text.to_string());
+        let token = to_value(TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive(),
+        ))
+        .expect("expected the token configuration to convert");
+        let repeated_property = Value::Map(vec![
+            (text("type"), text("object")),
+            (
+                text("properties"),
+                Value::Map(vec![
+                    (
+                        text("value"),
+                        platform_value!({ "type": "bytes", "position": 0 }),
+                    ),
+                    (
+                        text("value"),
+                        platform_value!({ "type": "string", "maxLength": 10, "position": 0 }),
+                    ),
+                ]),
+            ),
+            (text("additionalProperties"), Value::Bool(false)),
+        ]);
+        [
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::new([21; 32]),
+                "ownerId": Identifier::new([8; 32]),
+                "version": 1,
+                "documentSchemas": {},
+                "schemaDefs": { "unused": { "type": "bytes" } },
+                "tokens": { "0": token },
+            }),
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::new([22; 32]),
+                "ownerId": Identifier::new([8; 32]),
+                "version": 1,
+                "documentSchemas": { "note": repeated_property },
+            }),
+        ]
+        .into_iter()
+        .map(|value| {
+            DataContract::from_value(value, true, platform_version)
+                .expect("expected protocol version 13 to register the contract")
+        })
+        .collect()
+    }
+
+    /// The upgrade to protocol version 14 reads every stored contract to write its version
+    /// item. A contract stored before it that holds a shorthand-shaped value no reader looks
+    /// at must still read back, or the first block of the version could not be built.
+    #[test]
+    fn should_read_back_contracts_holding_unread_shorthands_when_writing_the_items() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version_13 = PlatformVersion::get(13).expect("expected protocol version 13");
+        let platform_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+        let contracts = contracts_with_unread_shorthands();
+        for contract in &contracts {
+            apply(&drive, contract, platform_version_13);
+        }
+
+        let transaction = drive.grove.start_transaction();
+        drive
+            .add_version_items_to_all_contracts(&transaction, platform_version_14)
+            .expect("expected the backfill to read every contract");
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit");
+
         for contract in &contracts {
             assert_eq!(stored_version(&drive, contract), Some(contract.version()));
         }
