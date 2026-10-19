@@ -192,8 +192,15 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.update_synced_height(current_height);
     }
 
+    /// Forwarded, then noted like any other in-memory rewind (see
+    /// `note_in_memory_rewind`) when it lowered the scan cursor: the persister
+    /// does not mirror `ChainTruncated`, so the host still holds the replaced
+    /// branch's cursor. A refused truncation changes nothing and notes nothing.
     fn truncate_above(&mut self, height: CoreBlockHeight) -> Result<Truncation, key_wallet::Error> {
-        self.core_wallet.truncate_above(height)
+        let before = self.core_wallet.metadata.synced_height;
+        let truncation = self.core_wallet.truncate_above(height)?;
+        self.note_in_memory_rewind(before);
+        Ok(truncation)
     }
 
     fn matured_coinbase_records(
@@ -317,7 +324,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
     ) -> key_wallet::Result<()> {
         let before = self.core_wallet.metadata.synced_height;
         let added = self.core_wallet.add_managed_account(wallet, account_type);
-        self.note_account_add_rewind(before);
+        self.note_in_memory_rewind(before);
         added
     }
 
@@ -330,7 +337,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         let added = self
             .core_wallet
             .add_managed_account_from_xpub(account_type, account_xpub);
-        self.note_account_add_rewind(before);
+        self.note_in_memory_rewind(before);
         added
     }
 
@@ -344,7 +351,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         let added = self
             .core_wallet
             .add_managed_bls_account(wallet, account_type);
-        self.note_account_add_rewind(before);
+        self.note_in_memory_rewind(before);
         added
     }
 
@@ -358,7 +365,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         let added = self
             .core_wallet
             .add_managed_bls_account_from_public_key(account_type, bls_public_key);
-        self.note_account_add_rewind(before);
+        self.note_in_memory_rewind(before);
         added
     }
 
@@ -372,7 +379,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         let added = self
             .core_wallet
             .add_managed_eddsa_account(wallet, account_type);
-        self.note_account_add_rewind(before);
+        self.note_in_memory_rewind(before);
         added
     }
 
@@ -386,21 +393,22 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         let added = self
             .core_wallet
             .add_managed_eddsa_account_from_public_key(account_type, ed25519_public_key);
-        self.note_account_add_rewind(before);
+        self.note_in_memory_rewind(before);
         added
     }
 }
 
 impl PlatformWalletInfo {
-    /// key-wallet's account-add API rewinds the scan cursor to just below
-    /// wallet birth (the new account has no filter coverage). That lowering
-    /// emits nothing and is not persisted here, so treat it like any other
-    /// in-memory rewind: advances queued before it must not be stored after
-    /// it, and the next DashPay backfill record round owes the host the
-    /// lowered cursor — otherwise a record-only round could store coverage
-    /// beside a host cursor that never came down (dashpay/platform#4302
-    /// review).
-    fn note_account_add_rewind(&mut self, before: u32) {
+    /// key-wallet lowers the scan cursor on its own: an account add rewinds
+    /// it to just below wallet birth (the new account has no filter
+    /// coverage), a chain truncation to the fork height. Neither lowering
+    /// reaches the persister (an account add emits nothing, and
+    /// `ChainTruncated` projects to an empty changeset), so treat it like any
+    /// other in-memory rewind: advances emitted before it must not be stored
+    /// after it, and the next DashPay backfill record round owes the host the
+    /// lowered cursor — otherwise a round could store coverage beside a host
+    /// cursor that never came down.
+    fn note_in_memory_rewind(&mut self, before: u32) {
         let after = self.core_wallet.metadata.synced_height;
         if after < before {
             self.rewind_barrier.arm();
@@ -479,5 +487,31 @@ mod tests {
             observed.contains_key(&open_spend),
             "a spend at height 150 is above synced height 100"
         );
+    }
+
+    /// Following a fork can lower the scan cursor in memory, and only a
+    /// truncation that lowered it is a rewind to account for: it arms the
+    /// barrier and owes the host the fork height. A truncation refused below
+    /// the chain lock, or one above the cursor, leaves both untouched.
+    #[test]
+    fn should_note_a_truncation_only_when_it_lowers_the_scan_cursor() {
+        let wallet = Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::None)
+            .expect("test wallet");
+        let mut info = PlatformWalletInfo::from_wallet(&wallet, 0);
+        info.core_wallet.metadata.last_processed_height = 1_000;
+        info.core_wallet.update_synced_height(1_000);
+        info.apply_chain_lock(ChainLock::dummy(950));
+
+        assert!(info.truncate_above(949).is_err(), "below the chain lock");
+        info.truncate_above(1_000).expect("a fork at the cursor");
+        assert_eq!(info.synced_height(), 1_000);
+        assert_eq!(info.rewind_barrier.epoch(), 0);
+        assert_eq!(info.dashpay_backfill.unpersisted_cursor, None);
+
+        info.truncate_above(960).expect("a fork below the cursor");
+        assert_eq!(info.synced_height(), 960);
+        assert_eq!(info.rewind_barrier.epoch(), 1);
+        assert_eq!(info.dashpay_backfill.unpersisted_cursor, Some(960));
+        assert_eq!(info.dashpay_backfill.unpersisted_cursor_epoch, Some(1));
     }
 }
