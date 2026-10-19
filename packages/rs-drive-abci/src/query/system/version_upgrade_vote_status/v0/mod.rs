@@ -40,6 +40,12 @@ impl<C> Platform<C> {
             }
         };
 
+        if count == 0 {
+            return Ok(QueryValidationResult::new_with_error(
+                QueryError::InvalidArgument("count must be at least 1".to_string()),
+            ));
+        }
+
         if count >= u16::MAX as u32 {
             return Ok(QueryValidationResult::new_with_error(
                 QueryError::InvalidArgument(format!("count too high, received {}", count)),
@@ -100,7 +106,7 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::setup_platform;
+    use crate::query::tests::{assert_invalid_argument_status, setup_platform};
     use dpp::dashcore::Network;
     use drive::drive::protocol_upgrade::{
         desired_version_for_validators_path, desired_version_for_validators_path_vec,
@@ -489,5 +495,22 @@ mod tests {
                 metadata: Some(_),
             }) if version_signals.is_empty()
         ));
+    }
+
+    #[test]
+    fn should_refuse_a_zero_count_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        for prove in [false, true] {
+            let request = GetProtocolVersionUpgradeVoteStatusRequestV0 {
+                start_pro_tx_hash: vec![],
+                count: 0,
+                prove,
+            };
+
+            assert_invalid_argument_status(
+                platform.query_version_upgrade_vote_status_v0(request, &state, version),
+            );
+        }
     }
 }

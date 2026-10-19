@@ -270,6 +270,10 @@ extension SDK {
   ///   Distinguishing "no contest" from "empty contest" is not possible at
   ///   this layer, so the absence is surfaced as `nil` rather than as an
   ///   empty state that reads like a live contest with zero votes.
+  ///
+  /// - Important: Synchronous and main-actor isolated, so it blocks the main
+  ///   thread for the whole network round trip. Prefer
+  ///   ``dpnsContestVoteStateOffMain(normalizedLabel:limit:)``.
   public func dpnsContestVoteState(
     normalizedLabel: String,
     limit: UInt32 = 100
@@ -277,7 +281,31 @@ extension SDK {
     guard let handle = handle else {
       throw SDKError.invalidState("SDK not initialized")
     }
+    return try Self.fetchContestVoteState(
+      handle: handle, normalizedLabel: normalizedLabel, limit: limit)
+  }
 
+  /// ``dpnsContestVoteState(normalizedLabel:limit:)`` without blocking the
+  /// caller's actor: the FFI call runs on the shared Platform query queue
+  /// (see ``SDK/performBlockingQuery(_:)``) and the caller only awaits it.
+  public nonisolated func dpnsContestVoteStateOffMain(
+    normalizedLabel: String,
+    limit: UInt32 = 100
+  ) async throws -> DPNSContestVoteState? {
+    try await performBlockingQuery { handle in
+      try Self.fetchContestVoteState(
+        handle: handle, normalizedLabel: normalizedLabel, limit: limit)
+    }
+  }
+
+  /// The blocking half shared by both vote-state reads. Every C-string
+  /// argument is bridged for the duration of the FFI call, and the returned
+  /// JSON is copied and freed here, so only Swift values leave this function.
+  nonisolated private static func fetchContestVoteState(
+    handle: OpaquePointer,
+    normalizedLabel: String,
+    limit: UInt32
+  ) throws -> DPNSContestVoteState? {
     let indexValues = DPNSVotePoll.indexValues(normalizedLabel: normalizedLabel)
     let indexValuesData = try JSONSerialization.data(withJSONObject: indexValues)
     guard let indexValuesJson = String(data: indexValuesData, encoding: .utf8) else {
@@ -387,8 +415,21 @@ extension SDK {
   /// instead. Implemented over ``dpnsContestVoteState(normalizedLabel:limit:)``
   /// (one round trip) because that query distinguishes all three states the
   /// caller cares about: no poll (`nil`), resolved, and open.
+  ///
+  /// - Important: Synchronous and main-actor isolated, so it blocks the main
+  ///   thread for the whole network round trip. Prefer
+  ///   ``dpnsContestIsOpenOffMain(normalizedLabel:)``.
   public func dpnsContestIsOpen(normalizedLabel: String) throws -> Bool {
     guard let state = try dpnsContestVoteState(normalizedLabel: normalizedLabel, limit: 1)
+    else { return false }
+    return !state.isResolved
+  }
+
+  /// ``dpnsContestIsOpen(normalizedLabel:)`` without blocking the caller's
+  /// actor; same single round trip, run on the shared Platform query queue.
+  public nonisolated func dpnsContestIsOpenOffMain(normalizedLabel: String) async throws -> Bool {
+    guard let state = try await dpnsContestVoteStateOffMain(
+      normalizedLabel: normalizedLabel, limit: 1)
     else { return false }
     return !state.isResolved
   }

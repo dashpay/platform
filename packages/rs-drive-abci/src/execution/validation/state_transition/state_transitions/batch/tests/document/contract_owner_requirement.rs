@@ -20,6 +20,7 @@
 use super::*;
 
 mod contract_owner_requirement_tests {
+    use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use super::super::reference_test_setup::{
         assert_successful, process_and_commit, register_contract_at,
     };
@@ -520,6 +521,7 @@ mod contract_owner_requirement_tests {
                 writer,
                 // Neither fixture declares a creator reference
                 None,
+                &DocumentSystemValues::default(),
                 Some(&changed_fields),
                 // Nor a changed typed array, whose stored list this would
                 // hold
@@ -528,6 +530,7 @@ mod contract_owner_requirement_tests {
                 &BlockInfo::default(),
                 &mut Vec::new(),
                 None,
+                &mut BTreeMap::new(),
                 None,
                 &mut execution_context,
                 platform_version,

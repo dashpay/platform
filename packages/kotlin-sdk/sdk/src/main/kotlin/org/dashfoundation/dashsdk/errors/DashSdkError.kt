@@ -14,6 +14,10 @@ private const val PERSISTER_UNREADABLE_USER_MESSAGE =
 private const val PERSISTER_UNSAVED_USER_MESSAGE =
     "The wallet data could not be saved and may need to be restored."
 
+// Display text for a panicked SPV teardown; the native message is the panic text.
+private const val SPV_PROCESS_RESTART_REQUIRED_USER_MESSAGE =
+    "Sync could not be stopped cleanly. Restart the app to use it again."
+
 /**
  * Public error hierarchy of the Kotlin SDK — the Android analog of the
  * Swift SDK's `UserFacingError`/`SDKError` split, keyed off the native
@@ -230,6 +234,10 @@ sealed class DashSdkError(
          * when the pooled funding sources cannot cover the requested lock.
          */
         class AssetLockInsufficientFunds(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /** Code 60: the full drain exceeds the input cap; no partial drain was submitted. */
+        class AssetLockTooManyInputs(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
         /**
@@ -616,6 +624,26 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorShutdownIncomplete` (native code 27). A sync pass or an SPV
+         * teardown was still running; nothing was wiped. Retry the stop or
+         * clear. An SPV start refused with this needs an SPV stop first.
+         */
+        class ShutdownIncomplete(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorSpvProcessRestartRequired` (native code 59). SPV startup or
+         * teardown panicked. Not retryable: restart the app process.
+         * [message] is the panic detail; display [userMessage].
+         */
+        class SpvProcessRestartRequired(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val userMessage: String get() = SPV_PROCESS_RESTART_REQUIRED_USER_MESSAGE
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -737,7 +765,9 @@ sealed class DashSdkError(
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
             26 -> PlatformWallet.TransactionBroadcastRejected(message, cause) // ErrorTransactionBroadcastRejected
+            27 -> PlatformWallet.ShutdownIncomplete(message, cause) // ErrorShutdownIncomplete
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
+            60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds
@@ -808,6 +838,7 @@ sealed class DashSdkError(
             55 -> PlatformWallet.ShieldedIdentityDebitPending(message, cause)
             56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
             57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
+            59 -> PlatformWallet.SpvProcessRestartRequired(message, cause) // ErrorSpvProcessRestartRequired
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

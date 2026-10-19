@@ -74,7 +74,8 @@ choices are a contender or abstain. A Lock vote is refused with `VoteChoiceNotAl
 A contest without locking ends when its join window closes while it still has a single contender,
 so that contender is awarded the value without a vote window. Its end-date entry is written at the
 end of the join window when the contest opens; the first additional contender moves it to the full
-poll duration, which opens the vote window. `getVotePollsByEndDate` shows whichever end applies.
+poll duration, which opens the vote window, and removes the join window's end date when no other
+contest ends then. `getVotePollsByEndDate` shows whichever end applies.
 
 The moderation charters contract uses this resolution to elect moderation teams.
 
@@ -123,4 +124,5 @@ A block ends at most `maximum_vote_polls_to_process` contests (a drive-abci `eve
 value, two at protocol version 14), the earliest end date first, so contests due together may end
 over several blocks. The cleanup removes each ended contest's
 end-date entry, and removes an end date only once none of its contests remain under it; the rest
-end in the next blocks.
+end in the next blocks. Before that read, a block removes any end date among the first due that
+holds no contest, since each would take a place in the read and end nothing.

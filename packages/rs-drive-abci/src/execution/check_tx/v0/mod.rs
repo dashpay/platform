@@ -296,7 +296,6 @@ mod tests {
     use simple_signer::signer::SimpleSigner;
 
     use dpp::consensus::ConsensusError;
-    use dpp::dashcore::secp256k1::Secp256k1;
     use dpp::dashcore::{key::Keypair, signer, Network, PrivateKey};
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -339,6 +338,8 @@ mod tests {
     use assert_matches::assert_matches;
     use dpp::consensus::state::state_error::StateError;
     use dpp::dash_to_credits;
+    use dpp::dashcore::secp256k1::rand::rngs::StdRng as SecpStdRng;
+    use dpp::dashcore::secp256k1::rand::SeedableRng as _;
     use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
     use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
     use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
@@ -3649,9 +3650,33 @@ mod tests {
         }
         .into();
 
-        let mut identity_create_transition: StateTransition =
+        // An identity without a master key fails the key structure check. The asset lock key
+        // signs the keys, so that failure is charged to the asset lock, which is then partially
+        // used
+        let (critical_key_in_place_of_master, critical_private_key_in_place_of_master) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                0,
+                Some(23),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_identity_public_key(
+            critical_key_in_place_of_master.clone(),
+            critical_private_key_in_place_of_master,
+        );
+
+        let identity_without_master_key: Identity = IdentityV0 {
+            id: identifier,
+            public_keys: BTreeMap::from([(0, critical_key_in_place_of_master), (1, key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+        .into();
+
+        let identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
-                &identity,
+                &identity_without_master_key,
                 asset_lock_proof.clone(),
                 pk.as_slice(),
                 &signer,
@@ -3661,21 +3686,6 @@ mod tests {
             )
             .await
             .expect("expected an identity create transition");
-
-        let valid_identity_create_transition = identity_create_transition.clone();
-
-        // let's add an error so this fails on state validation
-
-        if let StateTransition::IdentityCreate(identity_create_transition_inner) =
-            &mut identity_create_transition
-        {
-            // let's create a new key that isn't signed
-            let master_key = identity_create_transition_inner
-                .public_keys_mut()
-                .get_mut(0)
-                .expect("expected master key");
-            master_key.set_signature(vec![].into());
-        };
 
         let identity_create_serialized_transition = identity_create_transition
             .serialize_to_bytes()
@@ -3689,7 +3699,7 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(identity_create_serialized_transition, &transaction)
+            .execute_tx(identity_create_serialized_transition.clone(), &transaction)
             .expect("expected to execute identity_create tx");
         assert!(matches!(validation_result, UnsuccessfulPaidExecution(..)));
 
@@ -3700,33 +3710,20 @@ mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        // now lets try to recreate the valid identity
-
-        // This one will use the balance from the transaction outpoint that was already saved
-
-        let valid_identity_create_serialized_transition = valid_identity_create_transition
-            .serialize_to_bytes()
-            .expect("serialized state transition");
-
+        // The same signed bytes again are a replay, so this is unpaid
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(valid_identity_create_serialized_transition, &transaction)
+            .execute_tx(identity_create_serialized_transition, &transaction)
             .expect("expected to execute identity_create tx");
 
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("expected to commit transaction");
-
-        // this is unpaid because it will look like a replay attack
         assert!(matches!(
             validation_result,
             UnpaidConsensusExecutionError(..)
         ));
 
+        // The valid identity's keys differ from the refused one's, so its signable bytes are not
+        // a replay; it uses the balance left in the partially used asset lock
         let valid_identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
@@ -3734,7 +3731,7 @@ mod tests {
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
-                1,
+                0,
                 platform_version,
             )
             .await
@@ -3750,7 +3747,6 @@ mod tests {
             .execute_tx(valid_identity_create_serialized_transition, &transaction)
             .expect("expected to execute identity_create tx");
 
-        // the user fee increase changed, so this is now passing
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
         platform
@@ -3907,15 +3903,13 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        let mut rng = StdRng::seed_from_u64(433);
+        let mut rng = SecpStdRng::seed_from_u64(433);
 
         let platform_state = platform.state.load();
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let secp = Secp256k1::new();
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -3933,7 +3927,7 @@ mod tests {
             .expect("expected to get signable bytes");
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -4011,13 +4005,11 @@ mod tests {
         let (identity, signer, _, key) =
             setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
 
-        let mut rng = StdRng::seed_from_u64(1);
-
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1);
 
         let platform_state = platform.state.load();
 
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let new_key = IdentityPublicKeyInCreationV0 {
             id: 2,

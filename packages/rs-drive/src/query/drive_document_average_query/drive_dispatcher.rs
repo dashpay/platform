@@ -57,7 +57,8 @@ use crate::query::drive_document_sum_query::index_picker::{
 };
 use crate::query::drive_document_sum_query::{is_range_operator, DriveDocumentSumQuery};
 use crate::query::{
-    validate_and_canonicalize_where_clauses, validate_resolved_time_range_clause_shapes,
+    key_array_element_clauses, validate_and_canonicalize_where_clauses,
+    validate_resolved_time_range_clause_shapes,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -91,6 +92,15 @@ impl Drive {
         validate_resolved_time_range_clause_shapes(
             &request.where_clauses,
             &request.resolved_time_ranges,
+        )?;
+        // A typed array's elements are keyed first, for both paths: several
+        // only when the request answers per element (see
+        // [`key_array_element_clauses`]).
+        request.where_clauses = key_array_element_clauses(
+            std::mem::take(&mut request.where_clauses),
+            request.document_type,
+            matches!(request.mode, AverageMode::GroupByIn),
+            platform_version,
         )?;
         if request.prove {
             // The no-prove path canonicalizes inside the joint dispatcher;

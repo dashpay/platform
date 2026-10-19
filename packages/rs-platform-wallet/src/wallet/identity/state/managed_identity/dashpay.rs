@@ -148,24 +148,23 @@ pub struct DashPayState {
     /// `sync_contact_profiles`; public-data only (never `contactInfo`-derived).
     pub contact_profiles: BTreeMap<Identifier, ContactProfileEntry>,
 
-    /// Contacts whose receival account's historical L1 rescan has already been
-    /// scheduled this process lifetime (DIP-15 §12.6 backfill). Registering the
-    /// account, or the rescan reconcile lowering the wallet's SPV
-    /// `synced_height` to the account's scan checkpoint, records the contact
-    /// here so the recurring sweep does not re-lower the height every pass —
-    /// which would reset the in-flight backfill and prevent it from ever
-    /// completing. Only a change to OUR outgoing requests (the sole input of
-    /// that checkpoint) clears the mark: a new outgoing request, or a sweep
-    /// finding an older sent doc than the checkpoint already applied. The
-    /// contact's own requests never clear it.
+    /// Contacts handled by this process's historical-payment reconciliation.
+    /// Only outgoing request changes clear the mark. Durable coverage decides
+    /// whether to rewind; a process-local mark alone never certifies a scan.
     ///
-    /// In-memory only (never persisted): a relaunch clears it, and because
-    /// `synced_height` is restored at its monotonic high-water, an interrupted
-    /// backfill is re-triggered on the next launch — self-healing. The cost of
-    /// that reset is one historical re-match per launch while any contact's
-    /// checkpoint is below the tip; the compact filters are reused from disk (not
-    /// re-downloaded), so it is cheap. A persisted breadcrumb could make the
-    /// backfill durable across a crash if that ever becomes necessary.
+    /// This set is the in-memory half of the guard and is never persisted: a
+    /// relaunch clears it. Its durable half is the wallet's
+    /// [`DashPayBackfillRecord`](crate::changeset::DashPayBackfillRecord),
+    /// which the rescan reconcile writes on the same persistence round as the
+    /// lowered cursor and consults on the next launch — the cursor it lowers
+    /// is durable too (the host persists every height the rescan climbs
+    /// through), so without the record every fresh process restored a cursor
+    /// inside the climb and rewound again (dashpay/platform#4302). The two
+    /// compose per contact: a mark here says "handled this process", an entry
+    /// there says "covered from this height"; the request-state transitions
+    /// that clear a mark here leave the record alone, and the reconcile
+    /// re-arms a recorded contact only when its checkpoint has dropped below
+    /// the height it was recorded at.
     pub rescan_triggered: BTreeSet<Identifier>,
 
     /// DashPay contact-crypto ops the unattended background sweep enqueued for

@@ -338,6 +338,13 @@ pub enum LayoutNote {
         /// The most windows one value falls in.
         windows: u64,
     },
+    /// A level keyed by the elements of a typed array: a document lands
+    /// under each distinct element of its list, up to this many, and an empty
+    /// list writes nothing here.
+    ArrayElements {
+        /// The most elements one list holds (its `maxItems`).
+        max_items: u16,
+    },
     /// A `summableOffCountIndex` index's counter: one sum item per value,
     /// holding how many entries the source index keeps for it, in place of
     /// the value tree and its entries.
@@ -360,6 +367,7 @@ impl LayoutNote {
             LayoutNote::TimeRangeOverlap { .. } => "timeRangeOverlap",
             LayoutNote::TimeRangeTtl { .. } => "timeRangeTtl",
             LayoutNote::IntegerRangeOverlap { .. } => "integerRangeOverlap",
+            LayoutNote::ArrayElements { .. } => "arrayElements",
             LayoutNote::SummableOffCountIndex { .. } => "summableOffCountIndex",
         }
     }
@@ -407,6 +415,10 @@ impl LayoutNote {
             LayoutNote::IntegerRangeOverlap { windows } => {
                 format!("a document lands in every window containing its value: up to {windows}")
             }
+            LayoutNote::ArrayElements { max_items } => format!(
+                "a document lands under each distinct element of its list: up to {max_items}; \
+                 an empty list writes nothing here"
+            ),
             LayoutNote::SummableOffCountIndex { source } => format!(
                 "summableOffCountIndex: one sum item per value, holding how many entries \
                  {source} keeps for it; a create adds one and a delete takes one away"
@@ -731,6 +743,9 @@ fn value_node(
             property: level_key.to_string(),
         },
     };
+    if let Some(max_items) = level.indexed_array_max_items() {
+        notes.push(LayoutNote::ArrayElements { max_items });
+    }
 
     // A `summableOffCountIndex` index keeps its counter at the value
     // position, where another index grows a value tree, and nothing continues

@@ -150,6 +150,7 @@ impl DocumentCreateTransitionActionStructureValidationV1 for DocumentCreateTrans
                 self.data().into(),
                 &DocumentSystemValues {
                     aggregates: Some(self.property_constraint_aggregates().clone()),
+                    consensus: true,
                     ..DocumentSystemValues::created_in_block(owner_id, &self.block_info())
                 },
                 platform_version,
@@ -313,7 +314,7 @@ mod tests {
             prefunded_voting_balance,
             current_store_contest_info: None,
             should_store_contest_info: None,
-            property_constraint_aggregates: Default::default(),
+            property_constraint_reads: Default::default(),
             moderated: false,
             consumed_documents: Vec::new(),
             derived_index_values: None,
@@ -593,7 +594,7 @@ mod tests {
             prefunded_voting_balance,
             current_store_contest_info: None,
             should_store_contest_info: None,
-            property_constraint_aggregates: Default::default(),
+            property_constraint_reads: Default::default(),
             moderated: false,
             consumed_documents: Vec::new(),
             derived_index_values: None,

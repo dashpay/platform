@@ -765,6 +765,10 @@ struct QueryDetailView: View {
                 actionId: actionId
             )
 
+        case "getContractGroupInfo":
+            let contractGroupId = queryInputs["contractGroupId"] ?? ""
+            return try await sdk.getContractGroupInfo(contractGroupId: contractGroupId)
+
         // System Queries
         case "getStatus":
             return try await sdk.getStatus()
@@ -1136,6 +1140,11 @@ struct QueryDetailView: View {
                 QueryInput(name: "groupContractPosition", label: "Group Contract Position", required: true),
                 QueryInput(name: "status", label: "Status", required: true, placeholder: "ACTIVE or CLOSED"),
                 QueryInput(name: "actionId", label: "Action ID", required: true)
+            ]
+
+        case "getContractGroupInfo":
+            return [
+                QueryInput(name: "contractGroupId", label: "Contract Group ID", required: true, placeholder: "Base58 encoded ID")
             ]
 
         // System Queries

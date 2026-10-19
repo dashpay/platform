@@ -33,7 +33,7 @@ use dashcore::OutPoint;
 use platform_version::version::PlatformVersion;
 
 use async_trait::async_trait;
-use dashcore::secp256k1::{ecdsa, Message, PublicKey, Secp256k1, SecretKey};
+use dashcore::secp256k1::{ecdsa, Message, PublicKey, SecretKey};
 use key_wallet::bip32::{DerivationPath, ExtendedPubKey};
 use key_wallet::signer::{ExtendedPubKeySigner, Signer as KwSigner, SignerMethod};
 
@@ -50,9 +50,8 @@ struct FixedKeySigner {
 
 impl FixedKeySigner {
     fn new(seed: [u8; 32]) -> Self {
-        let secp = Secp256k1::new();
-        let secret = SecretKey::from_byte_array(&seed).expect("valid secret");
-        let public = PublicKey::from_secret_key(&secp, &secret);
+        let secret = SecretKey::from_secret_bytes(seed).expect("valid secret");
+        let public = PublicKey::from_secret_key(&secret);
         Self { secret, public }
     }
 }
@@ -70,9 +69,8 @@ impl KwSigner for FixedKeySigner {
         _path: &DerivationPath,
         sighash: [u8; 32],
     ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
-        let secp = Secp256k1::new();
         let msg = Message::from_digest(sighash);
-        Ok((secp.sign_ecdsa(&msg, &self.secret), self.public))
+        Ok((self.secret.sign_ecdsa(msg), self.public))
     }
 
     async fn public_key(&self, _path: &DerivationPath) -> Result<PublicKey, Self::Error> {

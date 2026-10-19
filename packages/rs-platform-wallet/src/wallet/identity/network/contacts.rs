@@ -5,10 +5,6 @@ use dpp::identity::Identity;
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
-use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use key_wallet::Wallet;
-use platform_encryption::account_reference_version;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
@@ -17,6 +13,8 @@ use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::dashpay::established_contact::EstablishedContact;
 use crate::wallet::identity::types::dashpay::payment::DashpayAddressMatch;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use platform_encryption::account_reference_version;
 
 /// Return the last Core height already covered for our new receiving account.
 ///
@@ -32,11 +30,9 @@ use crate::wallet::platform_wallet::PlatformWalletInfo;
 /// unless it is a rotation (non-zero `accountReference` version): the
 /// original request's height is then unknown.
 ///
-/// `H` must come from Platform, never from a client-written field: the caller
-/// raises `synced_height` to it, and `update_synced_height` prunes spend state
-/// up to that height. It is also bounded by the previous checkpoint (see
-/// [`add_managed_receiving_account`]), so it never exceeds a range already
-/// scanned.
+/// Only Platform-assigned heights can establish coverage. Reconciliation
+/// lowers the cursor only when this checkpoint precedes it, preserving any
+/// deeper scan already in progress.
 ///
 /// Falls back to the wallet birth floor when the owner is unknown, or no
 /// earliest height is known and the tracked request is missing or rotated.
@@ -61,32 +57,6 @@ pub(super) fn receiving_scan_checkpoint(
         (None, _) => return birth_checkpoint,
     };
     checkpoint.max(birth_checkpoint)
-}
-
-/// Add a `DashpayReceivingFunds` managed account and apply its scan checkpoint.
-///
-/// Upstream `add_managed_account` inserts the account, bumps the wallet's
-/// filter-scan generation (so no in-flight batch scanned without the new
-/// scripts can certify coverage) and rewinds `synced_height` to wallet birth.
-/// This then restores `min(previous, scan_checkpoint)`: only the range already
-/// certified for the new account, preserving any deeper pending scan. The
-/// caller must hold the manager write lock across the whole call so no scan
-/// commit interleaves.
-///
-/// Receiving accounts only. A `DashpayExternalAccount` is outbound and never
-/// receives, so it must not rewind the wallet or invalidate in-flight scans;
-/// it is inserted with `insert_funds_bearing_account` instead.
-fn add_managed_receiving_account(
-    info: &mut PlatformWalletInfo,
-    wallet: &Wallet,
-    account_type: AccountType,
-    scan_checkpoint: u32,
-) -> key_wallet::Result<()> {
-    let previous_checkpoint = info.core_wallet.synced_height();
-    info.add_managed_account(wallet, account_type)?;
-    info.core_wallet
-        .update_synced_height(previous_checkpoint.min(scan_checkpoint));
-    Ok(())
 }
 
 /// Build the persistence round for a newly registered DashPay account
@@ -162,6 +132,10 @@ pub enum ExternalAccountRegistration {
     /// An account row already existed for the `(index, user, friend)` key;
     /// nothing was decrypted or replaced.
     AlreadyExisted,
+    /// The contact's live incoming request no longer carries the supplied
+    /// encrypted xpub — a rotation landed after the caller read it. Nothing
+    /// was persisted or inserted; the sweep rebuilds from the live request.
+    Superseded,
 }
 
 impl RegisterExternalError {
@@ -222,15 +196,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     ///
     /// Creates a `DashpayReceivingFunds` managed account with address pools
     /// so the SPV adapter monitors incoming payments from this contact.
-    /// Call this as soon as our outgoing request is known (sent or
-    /// established): it publishes our receiving xpub, so the contact may pay
-    /// before reciprocating.
-    ///
-    /// Rewinds the filter scan to the account's contact scan checkpoint
-    /// (`receiving_scan_checkpoint`; never above the current checkpoint) and
-    /// marks the contact in
-    /// [`DashPayState::rescan_triggered`](crate::wallet::identity::DashPayState)
-    /// so [`Self::reconcile_dashpay_rescan`] does not rewind a second time.
+    /// A sent request already exposes this account, even before reciprocation.
     ///
     /// No-op if the account already exists for this contact relationship.
     pub async fn register_contact_account(
@@ -286,9 +252,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             is_watch_only: false,
         };
 
-        // Build the initial funds-bearing state for persistence. The live
-        // insertion below goes through `ManagedAccountOperations` so upstream
-        // also invalidates the wallet's prior filter-scan generation.
+        // DashPay accounts are funds-bearing; use the typed
+        // `insert_funds_bearing_account` API exposed by the post-split
+        // collection rather than wrapping in `OwnedManagedCoreAccount`.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
 
         // Persist the registration BEFORE the in-memory inserts: a store
@@ -310,7 +276,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let (wallet, info) = wm
             .get_wallet_mut_and_info_mut(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let scan_checkpoint = receiving_scan_checkpoint(info, our_identity_id, contact_identity_id);
 
         // Mirror the restored shape: the immutable `wallet.accounts`
         // collection holds the Account (like `build_wallet_start_state`
@@ -323,22 +288,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     "Failed to add contact account to wallet: {e}"
                 ))
             })?;
-        add_managed_receiving_account(info, wallet, account_type, scan_checkpoint).map_err(
-            |e| {
+        info.core_wallet
+            .accounts
+            .insert_funds_bearing_account(managed)
+            .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
                     "Failed to register contact account: {e}"
                 ))
-            },
-        )?;
-        // The checkpoint just applied already schedules this account's
-        // backfill, pending or established alike. Mark it so the next
-        // `reconcile_dashpay_rescan` does not rewind over the same range again;
-        // a later change to our outgoing request clears the mark.
-        if let Some(managed) = info.identity_manager.managed_identity_mut(our_identity_id) {
-            managed
-                .dashpay_rescan_triggered_mut()
-                .insert(*contact_identity_id);
-        }
+            })?;
+        // A filter batch in flight right now was scanned without this
+        // account's scripts: bump the account generation so the pipeline does
+        // not certify it, and the range is rescanned with the account watched.
+        info.rewind_barrier.note_account_registered();
 
         tracing::info!(
             our_identity = %our_identity_id,
@@ -494,16 +455,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// tell a real (re)build from an already-existed no-op — only the former
     /// may stamp the rotation self-heal marker (see the enum docs).
     ///
-    /// **Never wrap this call in a timeout.** Unlike its sibling
-    /// [`Self::register_contact_account`], which persists inside the write lock
-    /// it already holds, this one persists *before* acquiring the lock — so
-    /// there is a genuine `.await` between the durable write and the in-memory
-    /// inserts. A future dropped in that window leaves an account on disk that
-    /// no in-memory collection knows about for the rest of the process's life;
-    /// a real crash reloads it from disk, an in-process cancellation does not.
-    /// (The next drain does re-register it idempotently, so this is a landmine
-    /// rather than data loss — but the asymmetry with the sibling is not
-    /// something to rediscover by analogy.)
+    /// The absence check, the durable write and the in-memory inserts run
+    /// under ONE wallet-manager write guard, so registrations of the same
+    /// account are serialized: a registration that decrypted a payload and
+    /// then lost the race to another one finds the account present and
+    /// returns [`ExternalAccountRegistration::AlreadyExisted`], instead of
+    /// overwriting the newer account's durable xpub and pool. Under the same
+    /// guard the payload is checked against the contact's LIVE incoming
+    /// request, and a stale one returns
+    /// [`ExternalAccountRegistration::Superseded`] without writing anything.
+    /// When the contact is established and the backend's rounds are inline
+    /// and atomic, the account and the contact's outbound-account marker are
+    /// written in the same store round, so the durable marker always names
+    /// the request the durable account was built from. Any other backend
+    /// gets no marker from this round; the caller stamps it once the account
+    /// is stored (dashpay/platform#4302 review).
     pub async fn register_external_contact_account(
         &self,
         our_identity_id: &Identifier,
@@ -626,26 +592,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             is_watch_only: true,
         };
 
-        // DashpayExternalAccount is funds-bearing; insert via the typed
-        // `insert_funds_bearing_account` API after the upstream split.
+        // DashpayExternalAccount is funds-bearing; insert via the
+        // typed `insert_funds` API after the upstream split.
         let managed = key_wallet::managed_account::ManagedCoreFundsAccount::from_account(&account);
 
-        // Persist the registration BEFORE the in-memory inserts (same
-        // rationale as `register_contact_account`): without this round
-        // the account vanishes on relaunch and `send_payment` loses its
-        // xpub + derived-address state until the next sweep rebuilds it.
-        self.persister
-            .store(dashpay_account_registration_changeset(
-                account_type,
-                contact_xpub,
-                &managed,
-            ))
-            .map_err(|e| {
-                Transient(PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to persist external contact account registration: {e}"
-                )))
-            })?;
-
+        #[cfg(test)]
+        registration_rendezvous::wait(&contact_identity_id).await;
         let mut wm = self.wallet_manager.write().await;
         let (wallet, info) = wm
             .get_wallet_mut_and_info_mut(&self.wallet_id)
@@ -654,6 +606,81 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     self.wallet_id,
                 )))
             })?;
+
+        // Re-check under the guard that serializes registrations: the early
+        // check above ran under a read guard that was released for the
+        // decrypt, and another registration may have built the account since.
+        let key = key_wallet::account::account_collection::DashpayAccountKey {
+            index: account_index,
+            user_identity_id: our_identity_id.to_buffer(),
+            friend_identity_id: contact_identity_id.to_buffer(),
+        };
+        if info
+            .core_wallet
+            .accounts
+            .dashpay_external_accounts
+            .contains_key(&key)
+        {
+            return Ok(ExternalAccountRegistration::AlreadyExisted);
+        }
+
+        // The payload must still be the contact's live request. The durable
+        // marker is bound to it in the same round as the account only where
+        // the backend keeps markers durably at all
+        // (`persists_outbound_account_markers`: an inline, atomic round that
+        // writes accounts and pools). A backend without that guarantee could
+        // reject or drop the account and pool yet keep the contact row,
+        // leaving the live request's marker beside the previous account —
+        // which a restart would trust. There the marker stays in memory only:
+        // the caller stamps it once this round succeeded, and every contact
+        // row written to that backend omits it (dashpay/platform#4302 review).
+        let binds_marker = self.persister.persists_outbound_account_markers();
+        let bound_contact = match info
+            .identity_manager
+            .managed_identity(our_identity_id)
+            .and_then(|managed| managed.established_contact(&contact_identity_id))
+        {
+            Some(contact)
+                if contact.incoming_request.encrypted_public_key != contact_encrypted_xpub =>
+            {
+                tracing::warn!(
+                    our_identity = %our_identity_id,
+                    contact = %contact_identity_id,
+                    "external account payload superseded by a rotation before registration; \
+                     nothing written, the sweep rebuilds from the live request"
+                );
+                return Ok(ExternalAccountRegistration::Superseded);
+            }
+            Some(contact) if binds_marker => {
+                let mut bound = contact.clone();
+                bound.external_account_reference = Some(contact.incoming_request.account_reference);
+                Some(bound)
+            }
+            Some(_) | None => None,
+        };
+
+        // Persist the registration BEFORE the in-memory inserts (same
+        // rationale as `register_contact_account`): without this round
+        // the account vanishes on relaunch and `send_payment` loses its
+        // xpub + derived-address state until the next sweep rebuilds it.
+        let mut changeset =
+            dashpay_account_registration_changeset(account_type, contact_xpub, &managed);
+        if let Some(bound) = &bound_contact {
+            let mut contacts = crate::changeset::ContactChangeSet::default();
+            contacts.established.insert(
+                crate::changeset::SentContactRequestKey {
+                    owner_id: *our_identity_id,
+                    recipient_id: contact_identity_id,
+                },
+                bound.clone(),
+            );
+            changeset.contacts = Some(contacts);
+        }
+        self.persister.store(changeset).map_err(|e| {
+            Transient(PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to persist external contact account registration: {e}"
+            )))
+        })?;
 
         // (a) Insert Account into the immutable wallet account collection so the
         //     xpub is accessible by `send_payment`.
@@ -666,15 +693,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )))
             })?;
 
-        // (b) Insert ManagedCoreFundsAccount for address-pool tracking. Unlike
-        //     the receiving account, this neither rewinds the filter scan nor
-        //     bumps the account generation: the contact controls when this
-        //     account is rebuilt (by rotating their request), so doing either
-        //     would let them force rescans of our wallet. Nothing is lost by
-        //     skipping it. External accounts are watch-only and excluded from
-        //     balance and coin selection, so the #649 spend pruning cannot
-        //     touch our funds through them. Our payments to the contact spend
-        //     our own inputs, so they are matched anyway.
+        // (b) Insert ManagedCoreFundsAccount for address-pool tracking.
         info.core_wallet
             .accounts
             .insert_funds_bearing_account(managed)
@@ -685,6 +704,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 )))
             })?;
 
+        if let Some(bound) = bound_contact {
+            if let Some(contact) = info
+                .identity_manager
+                .managed_identity_mut(our_identity_id)
+                .and_then(|managed| managed.established_contact_mut(&contact_identity_id))
+            {
+                contact.external_account_reference = bound.external_account_reference;
+            }
+        }
+
         tracing::info!(
             our_identity = %our_identity_id,
             contact = %contact_identity_id,
@@ -692,5 +721,42 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         );
 
         Ok(ExternalAccountRegistration::Built)
+    }
+}
+
+/// Test-only rendezvous between [`IdentityWallet::register_external_contact_account`]'s
+/// early absence check and its write-guard acquisition, so a test can hold
+/// several registrations of one contact at exactly that point and release
+/// them together. Keyed by contact id, so registrations of every other
+/// contact — and every other test — pass straight through.
+#[cfg(test)]
+pub(crate) mod registration_rendezvous {
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+
+    use dpp::prelude::Identifier;
+    use tokio::sync::Barrier;
+
+    static BARRIERS: Mutex<BTreeMap<Identifier, Arc<Barrier>>> = Mutex::new(BTreeMap::new());
+
+    /// Hold `parties` registrations of `contact` at the rendezvous until all
+    /// of them have arrived.
+    pub(crate) fn install(contact: Identifier, parties: usize) {
+        BARRIERS
+            .lock()
+            .unwrap()
+            .insert(contact, Arc::new(Barrier::new(parties)));
+    }
+
+    /// Stop holding registrations of `contact`.
+    pub(crate) fn remove(contact: &Identifier) {
+        BARRIERS.lock().unwrap().remove(contact);
+    }
+
+    pub(crate) async fn wait(contact: &Identifier) {
+        let barrier = BARRIERS.lock().unwrap().get(contact).cloned();
+        if let Some(barrier) = barrier {
+            barrier.wait().await;
+        }
     }
 }

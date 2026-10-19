@@ -1,4 +1,4 @@
-use dpp::data_contract::document_type::property_constraints::{DocumentSystemValues, SystemChange};
+use dpp::data_contract::document_type::property_constraints::{DocumentSystemValues, StoredVersion, SystemChange};
 use dpp::consensus::basic::document::{InvalidDocumentTransitionActionError, InvalidDocumentTypeError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -84,12 +84,21 @@ impl DocumentPurchaseTransitionActionStructureValidationV0 for DocumentPurchaseT
         // `propertyConstraints` that read them: the stored properties met every rule when
         // they were written, and these are all this action changes that a rule reads. A
         // `countOf` or `sumOf` that depends on the owner reads the total the action read
-        // from state, as it will be once the document changes hands.
+        // from state, as it will be once the document changes hands. A path through `$old.`
+        // reads the document before the purchase: the same properties, its seller, previous
+        // transfer and revision, which the transformer attached when a rule the change can
+        // break reads them. The properties are the written ones, which the judging reads
+        // there, so none is copied
         document_type
             .validate_property_constraints_for_system_change(
                 self.document().properties(),
                 &DocumentSystemValues {
                     aggregates: Some(self.property_constraint_aggregates().clone()),
+                    consensus: true,
+                    stored: self
+                        .stored_system_values()
+                        .cloned()
+                        .map(StoredVersion::without_properties),
                     ..DocumentSystemValues::of_document(self.document())
                 },
                 SystemChange::Transfer,
