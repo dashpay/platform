@@ -748,6 +748,47 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             );
         }
 
+        // The DashPay sync above ran its rescan sweep BEFORE the drain created
+        // the receival accounts, so it saw none of them. Run it once more now:
+        // with `synced_height == 0` (this sequence runs before SPV starts) the
+        // sweep marks every registered receival contact as covered by the
+        // coming full scan, instead of leaving it for the first post-scan
+        // sweep to rewind for.
+        //
+        // Budgeted, because it is not free: it waits for the cursor and
+        // manager locks, and on a backend that persists backfill coverage it
+        // stores the record inline. `within_budget` is safe here: the sweep's
+        // only await points are those two lock acquisitions, taken before it
+        // changes anything, and everything after them (the store included)
+        // runs to completion without yielding, so a drop can only land before
+        // the pass begins. Skipping it costs a scan, never a payment: the
+        // contact stays uncovered, and the first sweep after SPV starts
+        // rewinds to its funding height instead.
+        if drained > 0 {
+            match within_budget(
+                deadline,
+                identity_wallet.dashpay().reconcile_dashpay_rescan(),
+            )
+            .await
+            {
+                Some(Ok(_)) => {}
+                Some(Err(e)) => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "startup: post-drain DashPay rescan sweep failed"
+                    );
+                }
+                None => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        "startup: budget spent before the post-drain DashPay rescan sweep; \
+                         the first sweep after SPV starts will backfill the drained contacts"
+                    );
+                }
+            }
+        }
+
         Ok(tally.into_outcome(started.elapsed()))
     }
 
@@ -1404,12 +1445,26 @@ mod tests {
         std::sync::Arc<crate::PlatformWalletManager<crate::test_support::NoopTestPersister>>,
         WalletId,
     ) {
+        manager_with_queued_contact_crypto_on(std::sync::Arc::new(
+            crate::test_support::NoopTestPersister,
+        ))
+        .await
+    }
+
+    /// [`manager_with_queued_contact_crypto`] over a caller-supplied backend.
+    async fn manager_with_queued_contact_crypto_on<P>(
+        backend: std::sync::Arc<P>,
+    ) -> (std::sync::Arc<crate::PlatformWalletManager<P>>, WalletId)
+    where
+        P: crate::changeset::PlatformWalletPersistence + 'static,
+    {
         use crate::changeset::{
             upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
         };
         use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
 
-        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let (manager, wallet_id) =
+            crate::test_support::test_platform_wallet_manager_with(backend).await;
         let persister = WalletPersister::new(wallet_id, std::sync::Arc::new(NoPlatformPersistence));
 
         let mut wm = manager.wallet_manager.write().await;
@@ -1541,6 +1596,307 @@ mod tests {
             1,
             "the contact receiving account must exist after a verified drain"
         );
+    }
+
+    /// The drain creates the receival accounts AFTER the DashPay sync has
+    /// already run its rescan sweep, so that sweep saw none of them. Startup
+    /// therefore runs the sweep once more once the drain has produced
+    /// something. This pins the consequence: the freshly drained contact is
+    /// marked covered while `synced_height` is still 0, so when the full
+    /// historical scan later advances past its funding height the recurring
+    /// sweep does not rewind mid-session to backfill a contact the scan had
+    /// already covered.
+    #[tokio::test]
+    async fn the_post_drain_sweep_marks_the_drained_contact_covered() {
+        use crate::wallet::identity::network::SeedCryptoProvider;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let owner = Identifier::from([1u8; 32]);
+        let contact = Identifier::from([2u8; 32]);
+        let (manager, wallet_id) = manager_with_queued_contact_crypto().await;
+        establish_queued_contact(&manager, wallet_id).await;
+        let owning =
+            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+
+        let outcome = manager
+            .start_wallet_subsystems(
+                &wallet_id,
+                None,
+                Some(&owning),
+                None::<&UnusedSigner>,
+                WalletStartupOptions::default(),
+            )
+            .await
+            .expect("bring-up reports rather than raises");
+        assert_eq!(outcome.contact_accounts_drained, 1);
+
+        {
+            let wm = manager.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("wallet info");
+            assert_eq!(
+                info.core_wallet.synced_height(),
+                0,
+                "bring-up runs before SPV starts; the sweep must not have rewound anything"
+            );
+            assert!(
+                info.identity_manager
+                    .managed_identity(&owner)
+                    .expect("managed identity")
+                    .dashpay()
+                    .rescan_triggered
+                    .contains(&contact),
+                "the post-drain sweep must mark the drained contact covered by the coming scan"
+            );
+        }
+
+        // Advance the scan past the contact's funding height. The mark must
+        // hold: no rewind, because the full scan already covered it.
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.core_wallet.update_synced_height(200);
+        }
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        assert_eq!(
+            wallet
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("sweep"),
+            None,
+            "a contact covered by the full historical scan must never trigger a rewind"
+        );
+        let wm = manager.wallet_manager.read().await;
+        assert_eq!(
+            wm.get_wallet_info(&wallet_id)
+                .expect("wallet info")
+                .core_wallet
+                .synced_height(),
+            200
+        );
+    }
+
+    /// Give the queued contact both requests, ours and its reply (funded at
+    /// 100), so the pair auto-establishes the relationship. The rescan sweep
+    /// only handles an ESTABLISHED contact, from its request pair's height.
+    async fn establish_queued_contact<P>(
+        manager: &crate::PlatformWalletManager<P>,
+        wallet_id: WalletId,
+    ) where
+        P: crate::changeset::PlatformWalletPersistence + 'static,
+    {
+        use crate::wallet::identity::ContactRequest;
+        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+
+        let owner = Identifier::from([1u8; 32]);
+        let contact = Identifier::from([2u8; 32]);
+        let persister = WalletPersister::new(wallet_id, std::sync::Arc::new(NoPlatformPersistence));
+        let mut wm = manager.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&wallet_id)
+            .expect("wallet info")
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("managed identity");
+        managed
+            .add_sent_contact_request(
+                ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0),
+                &persister,
+            )
+            .expect("sent request persists");
+        managed
+            .add_incoming_contact_request(
+                ContactRequest::new(contact, owner, 0, 0, 0, vec![0u8; 96], 100, 0),
+                &persister,
+            )
+            .expect("incoming request persists");
+        assert!(
+            managed
+                .dashpay()
+                .established_contacts()
+                .contains_key(&contact),
+            "the request pair establishes the contact the sweep handles"
+        );
+    }
+
+    /// A backend that persists backfill coverage, so the post-drain sweep
+    /// stores inline rather than staying in memory: inline commits, atomic
+    /// rounds and account writers, plus the backfill slot. Records the
+    /// coverage each round carried, and can hold the drain's account round
+    /// past the startup deadline — a slow host transaction.
+    #[derive(Default)]
+    struct DurableStartupBackend {
+        /// Coverage carried by each stored round that had a backfill record.
+        backfill_rounds: std::sync::Mutex<Vec<crate::changeset::DashPayBackfillRecord>>,
+        /// Whether a round carrying an account registration was stored.
+        account_round_stored: std::sync::atomic::AtomicBool,
+        /// When set, the next account round blocks this long before
+        /// committing.
+        stall_account_round: std::sync::Mutex<Option<Duration>>,
+    }
+
+    impl crate::changeset::PlatformWalletPersistence for DurableStartupBackend {
+        fn store_commits_inline(&self) -> bool {
+            true
+        }
+
+        fn stores_dashpay_backfill(&self) -> bool {
+            true
+        }
+
+        fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
+            use crate::changeset::PersistenceCapabilities as C;
+            C::ATOMIC_CHANGESETS.union(C::ACCOUNT_ADDRESS_POOLS)
+        }
+
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            if !changeset.account_registrations.is_empty() {
+                if let Some(stall) = self.stall_account_round.lock().unwrap().take() {
+                    std::thread::sleep(stall);
+                }
+                self.account_round_stored
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            if let Some(record) = changeset.dashpay_backfill {
+                self.backfill_rounds.lock().unwrap().push(record);
+            }
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(crate::changeset::ClientStartState::default())
+        }
+    }
+
+    fn rounds_covering(backend: &DurableStartupBackend, contact: Identifier) -> usize {
+        backend
+            .backfill_rounds
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|record| {
+                record
+                    .covered()
+                    .iter()
+                    .any(|entry| entry.contact == contact)
+            })
+            .count()
+    }
+
+    /// On a backend that persists coverage, the post-drain sweep is a real
+    /// store, not a memory-only pass: the drained contact reaches the host as
+    /// covered on the same bring-up.
+    #[tokio::test]
+    async fn the_post_drain_sweep_stores_coverage_on_a_durable_backend() {
+        use crate::wallet::identity::network::SeedCryptoProvider;
+
+        let contact = Identifier::from([2u8; 32]);
+        let backend = std::sync::Arc::new(DurableStartupBackend::default());
+        let (manager, wallet_id) = manager_with_queued_contact_crypto_on(backend.clone()).await;
+        establish_queued_contact(&manager, wallet_id).await;
+        let owning =
+            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+
+        let outcome = manager
+            .start_wallet_subsystems(
+                &wallet_id,
+                None,
+                Some(&owning),
+                None::<&UnusedSigner>,
+                WalletStartupOptions::default(),
+            )
+            .await
+            .expect("bring-up reports rather than raises");
+
+        assert_eq!(outcome.contact_accounts_drained, 1);
+        assert_eq!(
+            rounds_covering(&backend, contact),
+            1,
+            "the post-drain sweep must store the drained contact's coverage"
+        );
+    }
+
+    /// The post-drain sweep stores inline on a durable backend, so it must
+    /// respect the startup budget like every other step that can block. A
+    /// drain whose last host write ran past the deadline still completes and
+    /// is counted, but no further store is started: bring-up returns, and the
+    /// contact is left for the first sweep after SPV starts.
+    #[tokio::test]
+    async fn the_post_drain_sweep_starts_no_store_once_the_budget_is_spent() {
+        use crate::wallet::identity::network::SeedCryptoProvider;
+
+        let owner = Identifier::from([1u8; 32]);
+        let contact = Identifier::from([2u8; 32]);
+        let budget = Duration::from_secs(1);
+        let backend = std::sync::Arc::new(DurableStartupBackend::default());
+        let (manager, wallet_id) = manager_with_queued_contact_crypto_on(backend.clone()).await;
+        establish_queued_contact(&manager, wallet_id).await;
+        *backend.stall_account_round.lock().unwrap() = Some(budget + Duration::from_millis(500));
+        let owning =
+            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+
+        let outcome = manager
+            .start_wallet_subsystems(
+                &wallet_id,
+                None,
+                Some(&owning),
+                None::<&UnusedSigner>,
+                WalletStartupOptions {
+                    budget,
+                    ..WalletStartupOptions::default()
+                },
+            )
+            .await
+            .expect("bring-up reports rather than raises");
+
+        assert!(
+            backend
+                .account_round_stored
+                .load(std::sync::atomic::Ordering::SeqCst),
+            "the drain's account round is the write held past the deadline"
+        );
+        assert_eq!(outcome.contact_accounts_drained, 1);
+        assert_eq!(
+            rounds_covering(&backend, contact),
+            0,
+            "no coverage store may start once the budget is spent"
+        );
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        {
+            let wm = manager.wallet_manager.read().await;
+            assert!(
+                !wm.get_wallet_info(&wallet_id)
+                    .expect("wallet info")
+                    .identity_manager
+                    .managed_identity(&owner)
+                    .expect("managed identity")
+                    .dashpay()
+                    .rescan_triggered
+                    .contains(&contact),
+                "a skipped sweep leaves the contact unhandled"
+            );
+        }
+
+        // The next sweep picks it up.
+        wallet
+            .identity()
+            .dashpay()
+            .reconcile_dashpay_rescan()
+            .await
+            .expect("sweep");
+        assert_eq!(rounds_covering(&backend, contact), 1);
     }
 
     /// The gate is paid for only when there is something to protect. An empty
@@ -1842,6 +2198,7 @@ mod tests {
                     identity_manager: crate::changeset::IdentityManagerStartState::default(),
                     unused_asset_locks: std::collections::BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
+                    dashpay_backfill: Default::default(),
                 },
             );
             Ok(crate::changeset::ClientStartState {

@@ -93,6 +93,8 @@ required-features = ["shielded"]
 
 [dev-dependencies]
 tempfile = "3.27.0"
+# `tests::fixtures` for the state transition summary tests.
+dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 # In-process Signer<IdentityPublicKey> for the manual testnet
 # verification example (`examples/dpns_marketplace_testnet.rs`).
 simple-signer = { path = "../simple-signer", features = ["state-transitions"] }

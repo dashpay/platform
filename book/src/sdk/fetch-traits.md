@@ -188,26 +188,28 @@ where a contract was updated but the local cache still has the old version.
 `Query` converts user-friendly search criteria into gRPC request messages:
 
 ```rust
-pub trait Query<T: TransportRequest + Mockable>: Send + Debug + Clone {
-    fn query(self, prove: bool) -> Result<T, Error>;
+pub trait Query<T: Mockable>: Send + Debug + Clone {
+    fn query(&self, settings: &QuerySettings<'_>) -> Result<T, Error>;
 }
 ```
 
-The simplest implementation: any `TransportRequest` is a query for itself:
+Wire requests opt into `WireQuery` and serve as queries for themselves:
 
 ```rust
 impl<T> Query<T> for T
 where
-    T: TransportRequest + Sized + Send + Sync + Clone + Debug,
+    T: TransportRequest + WireQuery + Sized + Send + Sync + Clone + Debug,
+    T::Response: Send + Sync + Debug,
 {
-    fn query(self, prove: bool) -> Result<T, Error> {
-        if !prove {
-            unimplemented!("queries without proofs are not supported");
-        }
-        Ok(self)
+    fn query(&self, _settings: &QuerySettings<'_>) -> Result<T, Error> {
+        Ok(self.clone())
     }
 }
 ```
+
+Proof-only query builders return `Error::Config` for unsupported proof modes before
+transport. Raw wire requests keep the proof mode encoded in the request; normal
+`Fetch` still requires a proof response, while `FetchUnproved` parses raw responses.
 
 But you can also implement `Query` for more ergonomic types. For example, `Identifier`
 implements `Query<GetIdentityRequest>`, so you can write:
