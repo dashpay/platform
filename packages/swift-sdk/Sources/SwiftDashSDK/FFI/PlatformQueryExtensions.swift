@@ -267,7 +267,11 @@ extension SDK {
     /// (also once it is disabled), and for a document type the last. Under `Multiple` there is no
     /// reference, so the answer is always `NSNull`, as it is for `"transfer"` (such keys cannot be
     /// bound to a contract) and for a contract or document type that does not exist. See
-    /// `dash_sdk_identities_fetch_contract_keys`. No identity ids answer an empty dictionary.
+    /// `dash_sdk_identities_fetch_contract_keys`.
+    ///
+    /// `purposes` takes the numbers `"0"` (authentication) to `"3"` (transfer); `nil` asks for all
+    /// four. An empty `documentType` is the same as `nil`. No identity ids answer an empty
+    /// dictionary.
     public func identityGetContractKeys(
         identityIds: [String],
         contractId: String,

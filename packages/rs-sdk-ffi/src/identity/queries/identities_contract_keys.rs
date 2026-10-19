@@ -19,9 +19,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Parameters
 /// - `sdk_handle`: SDK handle
-/// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs; an empty string answers `{}`
+/// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs; an empty list answers `{}`
+///   without a query
 /// - `contract_id`: Base58-encoded contract ID
-/// - `document_type_name`: Optional document type name (pass NULL if not needed; an empty name is refused)
+/// - `document_type_name`: Optional document type name (pass NULL if not needed; an empty name is
+///   the same as NULL)
 /// - `purposes`: Comma-separated list of key purposes (0=Authentication, 1=Encryption, 2=Decryption, 3=Transfer). Repeated IDs and purposes are asked for once.
 ///
 /// # Returns
@@ -90,11 +92,15 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
         Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
     };
 
-    // Parse comma-separated identity IDs; an empty list asks for nothing
+    // An empty list asks for nothing
     let ids_str = ids_str.trim();
+    if ids_str.is_empty() {
+        return DashSDKResult::success_string(c"{}".to_owned().into_raw());
+    }
+
+    // Parse comma-separated identity IDs
     let identities_ids: Result<Vec<Identifier>, DashSDKError> = ids_str
         .split(',')
-        .filter(|_| !ids_str.is_empty())
         .map(|id_str| {
             Identifier::from_string(id_str.trim(), Encoding::Base58).map_err(|e| {
                 DashSDKError::new(
@@ -124,15 +130,10 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
     let document_type_name = if document_type_name.is_null() {
         None
     } else {
-        match CStr::from_ptr(document_type_name).to_str() {
-            // Drive appends the name to the contract id, so an empty one would ask for the
-            // contract's own keys.
-            Ok("") => {
-                return DashSDKResult::error(DashSDKError::new(
-                    DashSDKErrorCode::InvalidParameter,
-                    "Document type name is empty".to_string(),
-                ))
-            }
+        match CStr::from_ptr(document_type_name).to_str().map(str::trim) {
+            // Drive appends the name to the contract id, so an empty one reads the contract's
+            // own keys: say so in the query.
+            Ok("") => None,
             Ok(s) => Some(s.to_string()),
             Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
         }
@@ -159,10 +160,6 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
         Ok(p) => unique(p),
         Err(e) => return DashSDKResult::error(e),
     };
-
-    if identities_ids.is_empty() {
-        return DashSDKResult::success_string(c"{}".to_owned().into_raw());
-    }
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
         let query = IdentitiesContractKeysQuery::new(
@@ -515,25 +512,43 @@ mod tests {
     #[test]
     fn should_answer_no_identities_with_an_empty_object() {
         let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
-        let json = unsafe { json_of(fetch_with(handle, "", CONTRACT, None, "1")) };
+        for ids in ["", "  "] {
+            // Purposes are not looked at when no identity is asked for.
+            let json = unsafe { json_of(fetch_with(handle, ids, CONTRACT, None, "")) };
+            assert_eq!(json, serde_json::json!({}));
+        }
         destroy_mock_sdk_handle(handle);
-        assert_eq!(json, serde_json::json!({}));
     }
 
     #[test]
-    fn should_refuse_an_empty_document_type() {
+    fn should_read_an_empty_document_type_as_none() {
+        // The mock knows only `query()`, which has no document type.
         let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
-        let code = unsafe {
-            error_code_of(fetch_with(
+        let ids = format!("{},{}", base58(IDENTITY_A), base58(IDENTITY_B));
+        let json = unsafe { json_of(fetch_with(handle, &ids, CONTRACT, Some(" "), "1,2")) };
+        destroy_mock_sdk_handle(handle);
+        assert_eq!(json[base58(IDENTITY_A)]["encryption"]["id"], 9);
+    }
+
+    #[test]
+    fn should_key_padded_ids_by_their_base58_form() {
+        let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
+        let ids = format!(" {} , {}\n", base58(IDENTITY_A), base58(IDENTITY_B));
+        let contract = CString::new(format!(" {} ", base58(CONTRACT))).unwrap();
+        let ids = CString::new(ids).unwrap();
+        let purposes = CString::new("1, 2").unwrap();
+        let json = unsafe {
+            json_of(dash_sdk_identities_fetch_contract_keys(
                 handle,
-                &base58(IDENTITY_A),
-                CONTRACT,
-                Some(""),
-                "1",
+                ids.as_ptr(),
+                contract.as_ptr(),
+                std::ptr::null(),
+                purposes.as_ptr(),
             ))
         };
         destroy_mock_sdk_handle(handle);
-        assert_eq!(code, DashSDKErrorCode::InvalidParameter);
+        assert_eq!(json[base58(IDENTITY_A)]["encryption"]["id"], 9);
+        assert_eq!(json[base58(IDENTITY_B)], all_null());
     }
 
     #[test]
