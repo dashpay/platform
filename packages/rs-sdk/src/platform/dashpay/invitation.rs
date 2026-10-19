@@ -423,7 +423,12 @@ pub fn encode_invitation_uri(
     };
 
     // WIF, compressed (the default for `PrivateKey::new`), network-correct.
-    let wif = PrivateKey::new(*voucher_key, network).to_wif();
+    // `PrivateKey` is `Copy` and not zeroized on drop, so wipe this copy.
+    let mut private_key = PrivateKey::new(*voucher_key, network);
+    let mut wif = String::with_capacity(52);
+    let wif_result = private_key.fmt_wif(&mut wif);
+    private_key.inner.non_secure_erase();
+    wif_result.map_err(|_| invalid("failed to encode invitation voucher key"))?;
 
     let mut query = String::new();
     let mut push = |key: &str, val: &str| {
