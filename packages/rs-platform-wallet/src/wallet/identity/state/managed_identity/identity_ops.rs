@@ -6,6 +6,7 @@ use crate::changeset::{
     IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet, KeyWithBreadcrumb,
 };
 use crate::wallet::persister::WalletPersister;
+use crate::wallet::platform_wallet::WalletId;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
@@ -432,7 +433,7 @@ impl ManagedIdentity {
 
     /// The wallet slot `(wallet_id, identity_index)` a wallet-owned
     /// identity's key breadcrumbs are built from, or `None` out of wallet.
-    pub fn wallet_slot(&self) -> Option<(crate::wallet::platform_wallet::WalletId, u32)> {
+    pub fn wallet_slot(&self) -> Option<(WalletId, u32)> {
         self.wallet_id.zip(self.identity_index)
     }
 

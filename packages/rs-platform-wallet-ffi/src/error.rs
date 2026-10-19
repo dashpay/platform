@@ -619,7 +619,7 @@ pub enum PlatformWalletFFIResultCode {
     /// Refused before signing; nothing was broadcast. The host's recorded
     /// revision is stale (or the cache is): refresh the identity and decide
     /// again, instead of retrying the same call. `expected` and `actual`
-    /// are in the message. 61 is held by an open PR (#5395).
+    /// are in the message.
     ErrorIdentityRevisionMismatch = 62,
 
     /// The named thing does not exist.

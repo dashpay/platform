@@ -123,6 +123,7 @@ pub(super) mod tests {
     };
     use crate::wallet::persister::NoPlatformPersistence;
     use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWallet;
     use async_trait::async_trait;
     use dpp::address_funds::AddressWitness;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
@@ -131,6 +132,8 @@ pub(super) mod tests {
     use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
     use dpp::version::PlatformVersion;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
 
     /// Test signer that can sign with the keys `F` accepts; selection must never sign.
     pub(crate) struct KeyFilter<F: Fn(&IdentityPublicKey) -> bool>(pub F);
@@ -373,7 +376,7 @@ pub(super) mod tests {
 
     /// Records every changeset, so a test can read what reached the store.
     #[derive(Default)]
-    pub(crate) struct CapturingStore(std::sync::Mutex<Vec<PlatformWalletChangeSet>>);
+    pub(crate) struct CapturingStore(Mutex<Vec<PlatformWalletChangeSet>>);
 
     impl PlatformWalletPersistence for CapturingStore {
         fn store(
@@ -423,17 +426,17 @@ pub(super) mod tests {
 
     /// Takes every changeset until armed, then refuses each.
     #[derive(Default)]
-    pub(crate) struct FailingStore(std::sync::atomic::AtomicBool);
+    pub(crate) struct FailingStore(AtomicBool);
 
     impl FailingStore {
         pub(crate) fn arm(&self) {
-            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            self.0.store(true, Ordering::SeqCst);
         }
     }
 
     impl PlatformWalletPersistence for FailingStore {
         fn store(&self, _: WalletId, _: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
-            if self.0.load(std::sync::atomic::Ordering::SeqCst) {
+            if self.0.load(Ordering::SeqCst) {
                 return Err(PersistenceError::backend("store armed to fail"));
             }
             Ok(())
@@ -446,10 +449,10 @@ pub(super) mod tests {
         }
     }
 
-    pub(crate) async fn wallet_with_signing_keys() -> std::sync::Arc<crate::PlatformWallet> {
+    pub(crate) async fn wallet_with_signing_keys() -> Arc<PlatformWallet> {
         wallet_with_signing_keys_on(
             dash_sdk::SdkBuilder::new_mock().build().unwrap(),
-            std::sync::Arc::new(NoPlatformPersistence),
+            Arc::new(NoPlatformPersistence),
         )
         .await
     }
@@ -458,15 +461,14 @@ pub(super) mod tests {
     /// that sets mock expectations first or reads what was persisted.
     pub(crate) async fn wallet_with_signing_keys_on<P>(
         sdk: dash_sdk::Sdk,
-        persistence: std::sync::Arc<P>,
-    ) -> std::sync::Arc<crate::PlatformWallet>
+        persistence: Arc<P>,
+    ) -> Arc<PlatformWallet>
     where
         P: PlatformWalletPersistence + 'static,
     {
         use crate::events::{EventHandler, PlatformEventHandler};
         use crate::PlatformWalletManager;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-        use std::sync::Arc;
 
         struct Events;
         impl EventHandler for Events {}
