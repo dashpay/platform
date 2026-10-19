@@ -314,12 +314,17 @@ impl IdentityWallet {
     /// The identity must already exist in the [`IdentityManager`]. Its
     /// on-chain state (keys, revision) is replaced with the latest version
     /// from Platform and the status is set to `Active`; a disable the cache
-    /// holds stays. The balance, at any revision, is taken only when the
-    /// fetch's proof is at a block above the cache's balance watermark. A
-    /// fetch at a lower revision than the cache's was answered before an
-    /// update the cache already holds: the cache keeps its revision, key set,
-    /// key limits and every disable, and takes only a disable the fetch shows
-    /// ([`ManagedIdentity::take_fetched_identity`]).
+    /// holds stays, and so does a key limit the cache holds higher. The
+    /// balance, at any revision, is taken only when the fetch's proof is at a
+    /// block above the cache's balance watermark. A fetch at a lower revision
+    /// than the cache's was answered before an update the cache already
+    /// holds: the cache keeps its revision, key set and every disable, and
+    /// takes only a disable or a raised limit the fetch shows
+    /// ([`ManagedIdentity::take_fetched_identity`]). The rows of keys the
+    /// fetch disables are stored with the scalar snapshot; when that store
+    /// fails, the error is returned and those keys keep the disabled state
+    /// they had, so the next refresh stores the disable again
+    /// ([`ManagedIdentity::store_fetched_identity`]).
     ///
     /// Returns the identity the cache holds afterwards.
     ///
@@ -375,14 +380,8 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                // An older answer only changes keys by disabling them; their
-                // rows are stored here with the folded scalar snapshot, since
-                // nothing else here stores keys, and a failed store is
-                // returned rather than logged.
-                let disables = managed.disables_from_older_fetch(&identity);
-                managed.take_fetched_identity(&identity, block_time);
                 managed.status = IdentityStatus::Active;
-                managed.store_fetched_disables(&disables, &self.persister)?;
+                managed.store_fetched_identity(&identity, block_time, &self.persister)?;
                 // The cache as folded.
                 identity = managed.identity.clone();
             }
@@ -706,6 +705,62 @@ mod tests {
         }
     }
 
+    /// A load whose store fails returns the failure and leaves the keys the
+    /// answer disables as they were in memory, so a refresh finds the
+    /// disable again and stores its row; the rest of the fold stays.
+    #[tokio::test]
+    async fn should_leave_a_load_s_disable_for_a_refresh_when_its_store_fails() {
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &[7; 64]).unwrap();
+        let probe = derive_load_probe_hash(
+            ResolvedLoadKeyHashSource::Master(&master),
+            Network::Testnet,
+            0,
+        )
+        .unwrap();
+        let mut answer = answer_at(7);
+        let mut key_2 = answer.public_keys()[&2].clone();
+        key_2.set_disabled_at(4);
+        answer.add_public_key(key_2);
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        sdk.mock()
+            .expect_fetch(PublicKeyHash(probe), Some(answer.clone()))
+            .await
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(Identifier::default(), Some(answer))
+            .await
+            .unwrap();
+        let store = Arc::new(FailingStore::default());
+        let wallet = wallet_with_signing_keys_on(sdk, store.clone()).await;
+        let wallet = wallet.identity();
+        cache_at_6_with_key_1_disabled(wallet).await;
+        store.arm();
+
+        let result = wallet.load_identity_by_index_from_master(0, &master).await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::PersisterStore(_))),
+            "{result:?}"
+        );
+        let after = held(wallet).await;
+        assert_eq!(after.public_keys()[&2].disabled_at(), None);
+        assert_eq!(after.revision(), 7);
+        assert!(after.public_keys().contains_key(&4));
+
+        store.disarm();
+        wallet
+            .refresh_identity(&Identifier::default())
+            .await
+            .unwrap();
+        assert_eq!(held(wallet).await.public_keys()[&2].disabled_at(), Some(4));
+        assert_eq!(
+            store
+                .taken()
+                .stored_key(Identifier::default(), 2)
+                .map(|row| row.public_key.disabled_at()),
+            Some(Some(4))
+        );
+    }
+
     /// A same-revision answer whose proof is not above the cache's balance
     /// watermark (mock answers are at height 0) takes the answer's keys but
     /// keeps the cache's balance, which the revision does not order.
@@ -739,54 +794,86 @@ mod tests {
         assert!(returned.public_keys()[&1].is_disabled());
     }
 
-    /// A disable an older refresh brings is stored with its key row, and a
-    /// store that refuses it fails the refresh instead of reporting a
-    /// success the store does not hold.
+    /// A disable a refresh brings, from an answer older or newer than the
+    /// cache, is stored with its key row. A store that refuses it fails the
+    /// refresh and leaves those keys as they were in memory, so the next
+    /// refresh finds the disable again instead of holding one in memory the
+    /// store lacks.
     #[tokio::test]
-    async fn should_fail_a_refresh_whose_older_disable_is_not_stored() {
+    async fn should_store_a_refresh_s_disable_or_leave_the_cache_as_it_was() {
         let identity_id = Identifier::default();
-        let mut answer = answer_at(5);
-        let mut key_2 = answer.public_keys()[&2].clone();
-        key_2.set_disabled_at(4);
-        answer.add_public_key(key_2);
-        for fails in [false, true] {
-            let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
-            sdk.mock()
-                .expect_fetch(identity_id, Some(answer.clone()))
-                .await
-                .unwrap();
+        for revision in [5, 7] {
+            let mut answer = answer_at(revision);
+            let mut key_2 = answer.public_keys()[&2].clone();
+            key_2.set_disabled_at(4);
+            answer.add_public_key(key_2);
+            // Key 1 is disabled in the cache at 9, a placeholder; Platform's
+            // timestamp is 3.
+            let mut key_1 = answer.public_keys()[&1].clone();
+            key_1.set_disabled_at(3);
+            answer.add_public_key(key_1);
+            let mock = || async {
+                let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+                sdk.mock()
+                    .expect_fetch(identity_id, Some(answer.clone()))
+                    .await
+                    .unwrap();
+                sdk
+            };
+
             let store = Arc::new(FailingStore::default());
-            let wallet = wallet_with_signing_keys_on(sdk, store.clone()).await;
+            let wallet = wallet_with_signing_keys_on(mock().await, store.clone()).await;
             let wallet = wallet.identity();
             cache_at_6_with_key_1_disabled(wallet).await;
-            if fails {
-                store.arm();
+            assert_ne!(held(wallet).await.balance(), 777);
+            store.arm();
+            let result = wallet.refresh_identity(&identity_id).await;
+            assert!(
+                matches!(result, Err(PlatformWalletError::PersisterStore(_))),
+                "answered at {revision}: {result:?}"
+            );
+            // Key 2 is live as it was; the rest of the fold stays: the
+            // revision, and the answer's balance (the cache holds no
+            // watermark), queued for the next store.
+            let after = held(wallet).await;
+            assert_eq!(after.public_keys()[&2].disabled_at(), None);
+            assert_eq!(after.public_keys()[&1].disabled_at(), Some(9));
+            assert_eq!(after.revision(), revision.max(6), "answered at {revision}");
+            assert_eq!(after.balance(), 777);
+            store.disarm();
+            store.taken().clear();
+            wallet.refresh_identity(&identity_id).await.unwrap();
+            let after = held(wallet).await;
+            for (key_id, disabled_at) in [(1, 3), (2, 4)] {
+                assert_eq!(
+                    after.public_keys()[&key_id].disabled_at(),
+                    Some(disabled_at)
+                );
+                assert_eq!(
+                    store
+                        .taken()
+                        .stored_key(identity_id, key_id)
+                        .map(|row| row.public_key.disabled_at()),
+                    Some(Some(disabled_at)),
+                    "key {key_id} retried at {revision}"
+                );
             }
 
-            let result = wallet.refresh_identity(&identity_id).await;
-            assert_eq!(
-                matches!(result, Err(PlatformWalletError::PersisterStore(_))),
-                fails,
-                "{result:?}"
-            );
-            assert_eq!(held(wallet).await.public_keys()[&2].disabled_at(), Some(4));
+            let store = Arc::new(CapturingStore::default());
+            let wallet = wallet_with_signing_keys_on(mock().await, store.clone()).await;
+            let wallet = wallet.identity();
+            cache_at_6_with_key_1_disabled(wallet).await;
+            wallet.refresh_identity(&identity_id).await.unwrap();
+            for (key_id, disabled_at) in [(1, 3), (2, 4)] {
+                assert_eq!(
+                    store
+                        .stored_key(identity_id, key_id)
+                        .map(|row| row.public_key.disabled_at()),
+                    Some(Some(disabled_at)),
+                    "key {key_id} answered at {revision}"
+                );
+            }
         }
-        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
-        sdk.mock()
-            .expect_fetch(identity_id, Some(answer))
-            .await
-            .unwrap();
-        let store = Arc::new(CapturingStore::default());
-        let wallet = wallet_with_signing_keys_on(sdk, store.clone()).await;
-        let wallet = wallet.identity();
-        cache_at_6_with_key_1_disabled(wallet).await;
-        wallet.refresh_identity(&identity_id).await.unwrap();
-        assert_eq!(
-            store
-                .stored_key(identity_id, 2)
-                .map(|row| row.public_key.disabled_at()),
-            Some(Some(4))
-        );
     }
 
     /// Discovery folds an identity it already knows the way loading does: an

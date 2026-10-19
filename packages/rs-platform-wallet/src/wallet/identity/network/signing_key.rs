@@ -442,22 +442,36 @@ pub(super) mod tests {
         }
     }
 
-    /// Takes every changeset until armed, then refuses each.
+    /// Takes every changeset until armed, then refuses each; what it takes is
+    /// recorded as [`CapturingStore`] records it.
     #[derive(Default)]
-    pub(crate) struct FailingStore(AtomicBool);
+    pub(crate) struct FailingStore(AtomicBool, CapturingStore);
 
     impl FailingStore {
+        /// What the store took, while disarmed.
+        pub(crate) fn taken(&self) -> &CapturingStore {
+            &self.1
+        }
+
         pub(crate) fn arm(&self) {
             self.0.store(true, Ordering::SeqCst);
+        }
+
+        pub(crate) fn disarm(&self) {
+            self.0.store(false, Ordering::SeqCst);
         }
     }
 
     impl PlatformWalletPersistence for FailingStore {
-        fn store(&self, _: WalletId, _: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
+        fn store(
+            &self,
+            wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
             if self.0.load(Ordering::SeqCst) {
                 return Err(PersistenceError::backend("store armed to fail"));
             }
-            Ok(())
+            self.1.store(wallet_id, changeset)
         }
         fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
             Ok(())
