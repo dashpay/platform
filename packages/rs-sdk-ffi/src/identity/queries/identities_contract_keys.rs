@@ -7,6 +7,7 @@ use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::identities_contract_keys_query::IdentitiesContractKeysQuery;
 use dash_sdk::platform::Fetch;
+use std::collections::BTreeSet;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
@@ -29,8 +30,12 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// What that reference holds depends on the contract's storage requirement for the purpose:
 /// - `MultipleReferenceToLatest` (every bound authentication key): the key registered last. It
 ///   stays the current one when it is disabled (`disabled_at` is then set).
-/// - `Unique`: the key written when the identity's first key of the purpose was registered.
+/// - `Unique`: for a contract, the first key registered; for a document type, the last.
 /// - `Multiple`: there is no reference, so the value is always `null`, whatever keys exist.
+///
+/// Only authentication, encryption and decryption keys can be bound to a contract, so
+/// `"transfer"` is always `null`. A contract or document type that does not exist answers `null`
+/// too.
 ///
 /// Every requested identity ID (Base58) is a top-level key, and every requested purpose
 /// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`) is a key under it. A purpose
@@ -186,14 +191,12 @@ const PURPOSES: [(u8, Purpose, &str); 4] = [
 
 /// `items` in their first order, each once. Drive sizes the proof by the number of identities
 /// times the number of purposes, so a repeat would only stretch that limit.
-fn unique<T: PartialEq>(items: Vec<T>) -> Vec<T> {
-    let mut seen = Vec::with_capacity(items.len());
-    for item in items {
-        if !seen.contains(&item) {
-            seen.push(item);
-        }
-    }
-    seen
+fn unique<T: Ord + Clone>(items: Vec<T>) -> Vec<T> {
+    let mut seen = BTreeSet::new();
+    items
+        .into_iter()
+        .filter(|item| seen.insert(item.clone()))
+        .collect()
 }
 
 /// The JSON answer for the requested identities and purposes. Every requested identity is a
@@ -295,6 +298,14 @@ mod tests {
 
     /// Mock SDK handle that answers `query()` with `keys`.
     fn create_mock_sdk_handle_with_keys(keys: Option<IdentitiesContractKeys>) -> *mut SDKHandle {
+        create_mock_sdk_handle_answering(query(), keys)
+    }
+
+    /// Mock SDK handle that answers `query` with `keys`.
+    fn create_mock_sdk_handle_answering(
+        query: IdentitiesContractKeysQuery,
+        keys: Option<IdentitiesContractKeys>,
+    ) -> *mut SDKHandle {
         let mut wrapper = Box::new(SDKWrapper::new_mock());
         // The FFI entry point blocks on its own runtime, so this one must be gone first.
         let setup_runtime = tokio::runtime::Runtime::new().expect("create setup runtime");
@@ -302,7 +313,7 @@ mod tests {
             wrapper
                 .sdk
                 .mock()
-                .expect_fetch::<IdentitiesContractKeys, _>(query(), keys)
+                .expect_fetch::<IdentitiesContractKeys, _>(query, keys)
                 .await
                 .expect("register contract keys expectation");
         });
@@ -312,25 +323,37 @@ mod tests {
 
     unsafe fn fetch(handle: *mut SDKHandle, contract: [u8; 32]) -> DashSDKResult {
         let ids = format!("{},{}", base58(IDENTITY_A), base58(IDENTITY_B));
-        fetch_with(handle, &ids, contract, "1,2")
+        fetch_with(handle, &ids, contract, None, "1,2")
     }
 
     unsafe fn fetch_with(
         handle: *mut SDKHandle,
         ids: &str,
         contract: [u8; 32],
+        document_type: Option<&str>,
         purposes: &str,
     ) -> DashSDKResult {
         let ids = CString::new(ids).unwrap();
         let contract = CString::new(base58(contract)).unwrap();
+        let document_type = document_type.map(|name| CString::new(name).unwrap());
         let purposes = CString::new(purposes).unwrap();
         dash_sdk_identities_fetch_contract_keys(
             handle,
             ids.as_ptr(),
             contract.as_ptr(),
-            std::ptr::null(),
+            document_type
+                .as_ref()
+                .map_or(std::ptr::null(), |name| name.as_ptr()),
             purposes.as_ptr(),
         )
+    }
+
+    unsafe fn error_code_of(result: DashSDKResult) -> DashSDKErrorCode {
+        assert!(result.data.is_null());
+        assert!(!result.error.is_null(), "the call must fail");
+        let code = (*result.error).code;
+        dash_sdk_error_free(result.error);
+        code
     }
 
     unsafe fn json_of(result: DashSDKResult) -> serde_json::Value {
@@ -420,11 +443,56 @@ mod tests {
             base58(IDENTITY_B),
             base58(IDENTITY_A)
         );
-        let json = unsafe { json_of(fetch_with(handle, &ids, CONTRACT, "1,2,1")) };
+        let json = unsafe { json_of(fetch_with(handle, &ids, CONTRACT, None, "1,2,1")) };
         destroy_mock_sdk_handle(handle);
         assert_eq!(json.as_object().map(|o| o.len()), Some(2));
         assert_eq!(json[base58(IDENTITY_A)]["encryption"]["id"], 9);
         assert_eq!(json[base58(IDENTITY_B)], all_null());
+    }
+
+    #[test]
+    fn should_ask_for_the_document_type_it_was_given() {
+        let query = IdentitiesContractKeysQuery::new(
+            vec![Identifier::new(IDENTITY_A)],
+            Identifier::new(CONTRACT),
+            Some("note".to_string()),
+            vec![Purpose::ENCRYPTION],
+        )
+        .expect("query");
+        let handle = create_mock_sdk_handle_answering(query, Some(proved_keys()));
+        let json = unsafe {
+            json_of(fetch_with(
+                handle,
+                &base58(IDENTITY_A),
+                CONTRACT,
+                Some("note"),
+                "1",
+            ))
+        };
+        destroy_mock_sdk_handle(handle);
+        assert_eq!(json[base58(IDENTITY_A)]["encryption"]["id"], 9);
+    }
+
+    #[test]
+    fn should_refuse_a_purpose_it_does_not_take() {
+        let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
+        for purposes in ["4", "1,x", ""] {
+            let code = unsafe {
+                error_code_of(fetch_with(
+                    handle,
+                    &base58(IDENTITY_A),
+                    CONTRACT,
+                    None,
+                    purposes,
+                ))
+            };
+            assert_eq!(
+                code,
+                DashSDKErrorCode::InvalidParameter,
+                "purposes {purposes:?}"
+            );
+        }
+        destroy_mock_sdk_handle(handle);
     }
 
     #[test]
@@ -442,19 +510,14 @@ mod tests {
     fn should_fail_rather_than_answer_empty_when_the_fetch_fails() {
         // The mock knows only `query()`, so a request for another contract fails.
         let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
-        let result = unsafe { fetch(handle, [4u8; 32]) };
-        assert!(result.data.is_null());
-        assert!(!result.error.is_null(), "the call must fail");
-        unsafe { dash_sdk_error_free(result.error) };
+        let code = unsafe { error_code_of(fetch(handle, [4u8; 32])) };
         destroy_mock_sdk_handle(handle);
+        assert_ne!(code, DashSDKErrorCode::InvalidParameter);
     }
 
     #[test]
     fn should_refuse_a_null_handle() {
-        let result = unsafe { fetch(std::ptr::null_mut(), CONTRACT) };
-        assert!(!result.error.is_null());
-        let code = unsafe { (*result.error).code };
-        unsafe { dash_sdk_error_free(result.error) };
+        let code = unsafe { error_code_of(fetch(std::ptr::null_mut(), CONTRACT)) };
         assert_eq!(code, DashSDKErrorCode::InvalidParameter);
     }
 }
