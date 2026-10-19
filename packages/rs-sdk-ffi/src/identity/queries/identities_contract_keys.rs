@@ -423,6 +423,16 @@ mod tests {
             json,
             serde_json::json!({ base58(IDENTITY_A): { "decryption": null } })
         );
+        // Nor does an identity the proof carries but nobody asked for.
+        let json = serde_json::Value::Object(contract_keys_json(
+            &[Identifier::new(IDENTITY_B)],
+            &[(Purpose::ENCRYPTION, "encryption")],
+            Some(&proved_keys()),
+        ));
+        assert_eq!(
+            json,
+            serde_json::json!({ base58(IDENTITY_B): { "encryption": null } })
+        );
     }
 
     #[test]

@@ -156,7 +156,9 @@ mod tests {
             })),
         };
 
-        // The request sent and the one the proof is verified against are the same.
+        // The transport and names_nothing build it through `request`; the request sent and the
+        // one the proof is verified against are the same.
+        assert_eq!(query.request(true), expected);
         assert_eq!(
             GetIdentitiesContractKeysRequest::try_from(query.clone()).expect("request"),
             expected
