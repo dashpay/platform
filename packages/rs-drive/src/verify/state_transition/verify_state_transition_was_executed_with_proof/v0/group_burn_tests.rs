@@ -1,4 +1,6 @@
 use super::*;
+use crate::util::batch::drive_op_batch::GroupOperationType;
+use crate::util::batch::DriveOperation;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
@@ -10,6 +12,7 @@ use dpp::data_contract::group::v0::GroupV0;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::v1::DataContractV1;
 use dpp::data_contract::DataContract;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::group::action_event::GroupActionEvent;
 use dpp::group::group_action::v0::GroupActionV0;
 use dpp::group::group_action::GroupAction;
@@ -23,6 +26,7 @@ use dpp::state_transition::batch_transition::token_burn_transition::v0::TokenBur
 use dpp::state_transition::batch_transition::token_burn_transition::TokenBurnTransition;
 use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
 use dpp::tokens::token_event::TokenEvent;
+use dpp::version::fee::FeeVersion;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -176,19 +180,30 @@ impl Fixture {
             )
             .expect("record proposal");
         if !signer_is_proposer {
+            // A closing co-signature moves signer-flagged items out of the
+            // active tree, and pricing that removal needs the fee history of
+            // the removing block, so it goes through the production funnel
+            // that carries it.
+            let fee_history: CachedEpochIndexFeeVersions =
+                BTreeMap::from([(0, FeeVersion::first())]);
             drive
-                .add_group_action(
-                    CONTRACT.into(),
-                    0,
-                    None,
-                    closed,
-                    action_id,
-                    COSIGNER.into(),
-                    5,
-                    &BlockInfo::default(),
+                .apply_drive_operations(
+                    vec![DriveOperation::GroupOperation(
+                        GroupOperationType::AddGroupAction {
+                            contract_id: CONTRACT.into(),
+                            group_contract_position: 0,
+                            initialize_with_insert_action_info: None,
+                            action_id,
+                            signer_identity_id: COSIGNER.into(),
+                            signer_power: 5,
+                            closes_group_action: closed,
+                        },
+                    )],
                     true,
+                    &BlockInfo::default(),
                     None,
                     platform_version,
+                    Some(&fee_history),
                 )
                 .expect("record co-signature");
         }

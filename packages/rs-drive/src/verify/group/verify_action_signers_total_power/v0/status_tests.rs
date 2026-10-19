@@ -2,6 +2,8 @@ use super::*;
 use crate::drive::group::paths::{
     group_active_action_root_path_vec, group_path_vec, GROUP_CLOSED_ACTIONS_KEY,
 };
+use crate::util::batch::drive_op_batch::GroupOperationType;
+use crate::util::batch::DriveOperation;
 use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
@@ -12,11 +14,13 @@ use dpp::data_contract::group::v0::GroupV0;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::v1::DataContractV1;
 use dpp::data_contract::DataContract;
+use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::group::action_event::GroupActionEvent;
 use dpp::group::group_action::v0::GroupActionV0;
 use dpp::group::group_action::GroupAction;
 use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::tokens::token_event::TokenEvent;
+use dpp::version::fee::FeeVersion;
 use grovedb::operations::proof::{GroveDBProof, ProofBytes};
 use grovedb::{MerkProofDecoder, MerkProofNode, MerkProofOp, PathQuery};
 use grovedb_merk::proofs::encoding::encode_into;
@@ -105,19 +109,30 @@ fn fixture(platform_version: &PlatformVersion, active: bool, closed: bool) -> Dr
             )
             .expect("record proposing signer");
         if action_id == CLOSED_ACTION {
+            // Closing moves signer-flagged items out of the active tree, and
+            // pricing that removal needs the fee history of the removing
+            // block, so the close goes through the production funnel that
+            // carries it.
+            let fee_history: CachedEpochIndexFeeVersions =
+                BTreeMap::from([(0, FeeVersion::first())]);
             drive
-                .add_group_action(
-                    CONTRACT.into(),
-                    0,
-                    None,
+                .apply_drive_operations(
+                    vec![DriveOperation::GroupOperation(
+                        GroupOperationType::AddGroupAction {
+                            contract_id: CONTRACT.into(),
+                            group_contract_position: 0,
+                            initialize_with_insert_action_info: None,
+                            action_id: action_id.into(),
+                            signer_identity_id: SECOND_SIGNER.into(),
+                            signer_power: 5,
+                            closes_group_action: true,
+                        },
+                    )],
                     true,
-                    action_id.into(),
-                    SECOND_SIGNER.into(),
-                    5,
                     &BlockInfo::default(),
-                    true,
                     None,
                     platform_version,
+                    Some(&fee_history),
                 )
                 .expect("close action after second signature");
         }
