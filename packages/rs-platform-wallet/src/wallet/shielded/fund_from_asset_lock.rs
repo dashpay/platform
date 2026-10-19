@@ -30,6 +30,7 @@
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
+use dashcore::OutPoint;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
 use dpp::asset_lock::StoredAssetLockInfo;
 use dpp::balances::credits::CREDITS_PER_DUFF;
@@ -45,7 +46,9 @@ use crate::wallet::asset_lock::AssetLockOperationState;
 
 use std::time::Duration;
 
-use crate::error::is_instant_lock_proof_invalid;
+use crate::broadcaster::TransactionBroadcaster;
+use crate::error::{is_asset_lock_already_consumed, is_instant_lock_proof_invalid};
+use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
     ResolvedFunding,
@@ -69,6 +72,41 @@ use crate::PlatformWalletError;
 /// With `dummy_outputs == 0` this returns `2`, the historical single-output count.
 pub(crate) fn shield_from_asset_lock_num_actions(dummy_outputs: usize) -> usize {
     (1 + dummy_outputs).max(2)
+}
+
+impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Drain-aware form of [`Self::reconcile_asset_lock_submit_result`].
+    ///
+    /// A drain's lock is single-use and only this wallet holds its key, so
+    /// Platform's exact-outpoint "already consumed" verdict on an
+    /// operation-tagged lock means an earlier Type18 for the same lock landed:
+    /// the drain is completed and `Ok(None)` is returned (nothing landed in
+    /// THIS call, so the caller records no history; the scan surfaces the
+    /// note). Every other outcome, and every lock without an operation,
+    /// defers to the generic reconciliation unchanged.
+    async fn settle_asset_lock_submit_result<T>(
+        &self,
+        result: Result<T, dash_sdk::Error>,
+        out_point: &OutPoint,
+        effective_proof: &AssetLockProof,
+        chain_lock_timeout: Option<Duration>,
+        drain_operation_id: Option<[u8; 16]>,
+    ) -> Result<Option<T>, PlatformWalletError> {
+        if let (Err(error), Some(operation_id)) = (&result, drain_operation_id) {
+            if is_asset_lock_already_consumed(error, out_point) {
+                self.complete_wallet_drain(*out_point, operation_id).await?;
+                return Ok(None);
+            }
+        }
+        self.reconcile_asset_lock_submit_result(
+            result,
+            out_point,
+            effective_proof,
+            chain_lock_timeout,
+        )
+        .await
+        .map(Some)
+    }
 }
 
 impl PlatformWallet {

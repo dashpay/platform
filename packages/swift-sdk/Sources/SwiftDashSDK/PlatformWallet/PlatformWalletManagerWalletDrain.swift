@@ -138,10 +138,14 @@ extension PlatformWalletManager {
         walletId: Data,
         operationId: UUID,
         fundingAccountIndex: UInt32 = 0,
-        recipients: [ShieldedFundFromAssetLockRecipient]
+        recipientRaw43: Data
     ) async -> WalletDrainOutcome {
         do {
-            try shieldedFundFromAssetLockPreflight(walletId: walletId, recipients: recipients)
+            try walletDrainReadPreflight(walletId: walletId)
+            guard recipientRaw43.count == 43 else {
+                throw PlatformWalletError.invalidParameter(
+                    "recipientRaw43 must be exactly 43 bytes (was \(recipientRaw43.count))")
+            }
             try admitNativeOp("shieldedFundFromWalletDrain")
         } catch {
             // The ID may belong to an earlier call. Local validation cannot
@@ -162,12 +166,11 @@ extension PlatformWalletManager {
                 Self.walletDrainCalls.removeValue(forKey: callIdentity)
             }
         }
-        let recipient = recipients[0].recipientRaw43
         let coreSigner = MnemonicResolver()
         return await Task.detached(priority: .userInitiated) {
             do {
                 return try Self.withWalletDrainIDs(walletId, operationId: operationId) { walletPtr, operationPtr in
-                    try recipient.withUnsafeBytes { raw in
+                    try recipientRaw43.withUnsafeBytes { raw in
                         guard let recipientPtr = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
                             throw PlatformWalletError.invalidParameter("recipient baseAddress is nil")
                         }

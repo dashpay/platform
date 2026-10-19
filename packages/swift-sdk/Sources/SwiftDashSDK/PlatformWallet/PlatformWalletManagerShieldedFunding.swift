@@ -458,7 +458,7 @@ extension PlatformWalletManager {
     /// produces a synchronous, type-specific error before paying
     /// for the `Task.detached` setup, the resolver allocation, and
     /// the (potentially long-running) Halo 2 proof build.
-    func shieldedFundFromAssetLockPreflight(
+    private func shieldedFundFromAssetLockPreflight(
         walletId: Data,
         recipients: [ShieldedFundFromAssetLockRecipient]
     ) throws {

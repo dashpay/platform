@@ -454,8 +454,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// so it cannot prove that the requested operation completed. Promote the
     /// lock to an SPV-backed ChainLock proof, durably retain it as
     /// consumption-unknown, and preserve the typed host signal. Successful and
-    /// unrelated results pass through unchanged. Wallet drains settle through
-    /// [`Self::settle_asset_lock_submit_result`] instead.
+    /// unrelated results pass through unchanged.
     ///
     /// `chain_lock_timeout` bounds the IS→CL promotion. `None` does **not**
     /// mean "wait forever" here: it selects
@@ -537,40 +536,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         }
 
         Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point))
-    }
-
-    /// Drain-aware form of [`Self::reconcile_asset_lock_submit_result`].
-    ///
-    /// A drain's lock is single-use and only this wallet holds its key, so
-    /// Platform's exact-outpoint "already consumed" verdict on an
-    /// operation-tagged lock means an earlier Type18 for the same lock landed:
-    /// the drain is completed and `Ok(None)` is returned (nothing landed in
-    /// THIS call, so the caller records no history; the scan surfaces the
-    /// note). Every other outcome, and every lock without an operation,
-    /// defers to the generic reconciliation unchanged.
-    #[cfg(any(feature = "shielded", test))]
-    pub(crate) async fn settle_asset_lock_submit_result<T>(
-        &self,
-        result: Result<T, dash_sdk::Error>,
-        out_point: &OutPoint,
-        effective_proof: &AssetLockProof,
-        chain_lock_timeout: Option<Duration>,
-        drain_operation_id: Option<[u8; 16]>,
-    ) -> Result<Option<T>, PlatformWalletError> {
-        if let (Err(error), Some(operation_id)) = (&result, drain_operation_id) {
-            if is_asset_lock_already_consumed(error, out_point) {
-                self.complete_wallet_drain(*out_point, operation_id).await?;
-                return Ok(None);
-            }
-        }
-        self.reconcile_asset_lock_submit_result(
-            result,
-            out_point,
-            effective_proof,
-            chain_lock_timeout,
-        )
-        .await
-        .map(Some)
     }
 
     /// Rebuild a ChainLock proof for a lock whose IS-lock never propagated,

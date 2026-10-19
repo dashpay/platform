@@ -62,7 +62,7 @@ final class WalletDrainTests: XCTestCase {
         let outcome = await manager.shieldedFundFromWalletDrain(
             walletId: Data(repeating: 1, count: 32),
             operationId: UUID(),
-            recipients: [ShieldedFundFromAssetLockRecipient(recipientRaw43: Data(repeating: 2, count: 43))]
+            recipientRaw43: Data(repeating: 2, count: 43)
         )
         XCTAssertEqual(outcome.state, .pending, "local validation cannot disprove an earlier dispatch of this UUID")
         XCTAssertNil(outcome.outpoint)
