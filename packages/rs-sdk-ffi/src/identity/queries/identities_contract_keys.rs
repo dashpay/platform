@@ -218,3 +218,197 @@ fn contract_keys_json(
     }
     json_obj
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::test_utils::destroy_mock_sdk_handle;
+    use crate::DashSDKResultDataType;
+    use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, SecurityLevel};
+    use dash_sdk::dpp::platform_value::BinaryData;
+    use std::collections::BTreeMap;
+
+    const IDENTITY_A: [u8; 32] = [1u8; 32];
+    const IDENTITY_B: [u8; 32] = [2u8; 32];
+    const CONTRACT: [u8; 32] = [3u8; 32];
+
+    fn base58(bytes: [u8; 32]) -> String {
+        bs58::encode(bytes).into_string()
+    }
+
+    fn encryption_key(id: u32, disabled_at: Option<u64>) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::ENCRYPTION,
+            security_level: SecurityLevel::MEDIUM,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![id as u8; 33]),
+            disabled_at,
+            contract_bounds: None,
+        })
+    }
+
+    /// Identity A's current encryption key is 9, disabled; it has no decryption key.
+    fn proved_keys() -> IdentitiesContractKeys {
+        let mut by_purpose = BTreeMap::new();
+        by_purpose.insert(Purpose::ENCRYPTION, Some(encryption_key(9, Some(1_700))));
+        by_purpose.insert(Purpose::DECRYPTION, None);
+        let mut keys = BTreeMap::new();
+        keys.insert(Identifier::new(IDENTITY_A), by_purpose);
+        keys
+    }
+
+    fn requested_purposes() -> Vec<Purpose> {
+        vec![Purpose::ENCRYPTION, Purpose::DECRYPTION]
+    }
+
+    fn query() -> IdentitiesContractKeysQuery {
+        IdentitiesContractKeysQuery::new(
+            vec![Identifier::new(IDENTITY_A), Identifier::new(IDENTITY_B)],
+            Identifier::new(CONTRACT),
+            None,
+            requested_purposes(),
+        )
+        .expect("query")
+    }
+
+    /// Mock SDK handle that answers `query()` with `keys`.
+    fn create_mock_sdk_handle_with_keys(keys: Option<IdentitiesContractKeys>) -> *mut SDKHandle {
+        let mut wrapper = Box::new(SDKWrapper::new_mock());
+        // The FFI entry point blocks on its own runtime, so this one must be gone first.
+        let setup_runtime = tokio::runtime::Runtime::new().expect("create setup runtime");
+        setup_runtime.block_on(async {
+            wrapper
+                .sdk
+                .mock()
+                .expect_fetch::<IdentitiesContractKeys, _>(query(), keys)
+                .await
+                .expect("register contract keys expectation");
+        });
+        drop(setup_runtime);
+        Box::into_raw(wrapper) as *mut SDKHandle
+    }
+
+    unsafe fn fetch(handle: *mut SDKHandle, contract: [u8; 32]) -> DashSDKResult {
+        let ids = CString::new(format!("{},{}", base58(IDENTITY_A), base58(IDENTITY_B))).unwrap();
+        let contract = CString::new(base58(contract)).unwrap();
+        let purposes = CString::new("1,2").unwrap();
+        dash_sdk_identities_fetch_contract_keys(
+            handle,
+            ids.as_ptr(),
+            contract.as_ptr(),
+            std::ptr::null(),
+            purposes.as_ptr(),
+        )
+    }
+
+    unsafe fn json_of(result: DashSDKResult) -> serde_json::Value {
+        assert!(result.error.is_null(), "the call must succeed");
+        assert_eq!(result.data_type, DashSDKResultDataType::String);
+        let json = CString::from_raw(result.data as *mut c_char)
+            .into_string()
+            .expect("utf-8 json");
+        serde_json::from_str(&json).expect("valid json")
+    }
+
+    fn all_null() -> serde_json::Value {
+        serde_json::json!({ "encryption": null, "decryption": null })
+    }
+
+    #[test]
+    fn should_list_every_requested_identity_and_purpose() {
+        let json = serde_json::Value::Object(contract_keys_json(
+            &[Identifier::new(IDENTITY_A), Identifier::new(IDENTITY_B)],
+            &requested_purposes(),
+            Some(&proved_keys()),
+        ));
+        assert_eq!(
+            json,
+            serde_json::json!({
+                base58(IDENTITY_A): {
+                    "encryption": {
+                        "id": 9,
+                        "type": KeyType::ECDSA_SECP256K1 as u8,
+                        "data": hex::encode([9u8; 33]),
+                        "purpose": Purpose::ENCRYPTION as u8,
+                        "security_level": SecurityLevel::MEDIUM as u8,
+                        "read_only": false,
+                        "disabled_at": 1_700,
+                    },
+                    "decryption": null,
+                },
+                base58(IDENTITY_B): all_null(),
+            })
+        );
+    }
+
+    #[test]
+    fn should_list_every_requested_purpose_when_the_proof_holds_nothing() {
+        let json = serde_json::Value::Object(contract_keys_json(
+            &[Identifier::new(IDENTITY_A)],
+            &requested_purposes(),
+            None,
+        ));
+        assert_eq!(json, serde_json::json!({ base58(IDENTITY_A): all_null() }));
+    }
+
+    #[test]
+    fn should_leave_out_keys_that_were_not_requested() {
+        let json = serde_json::Value::Object(contract_keys_json(
+            &[Identifier::new(IDENTITY_B)],
+            &[Purpose::DECRYPTION],
+            Some(&proved_keys()),
+        ));
+        assert_eq!(
+            json,
+            serde_json::json!({ base58(IDENTITY_B): { "decryption": null } })
+        );
+    }
+
+    #[test]
+    fn should_return_the_fetched_keys() {
+        let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
+        let json = unsafe { json_of(fetch(handle, CONTRACT)) };
+        destroy_mock_sdk_handle(handle);
+        assert_eq!(json[base58(IDENTITY_A)]["encryption"]["id"], 9);
+        assert_eq!(json[base58(IDENTITY_A)]["encryption"]["disabled_at"], 1_700);
+        assert_eq!(
+            json[base58(IDENTITY_A)]["decryption"],
+            serde_json::Value::Null
+        );
+        assert_eq!(json[base58(IDENTITY_B)], all_null());
+    }
+
+    #[test]
+    fn should_return_nulls_when_nothing_is_found() {
+        let handle = create_mock_sdk_handle_with_keys(None);
+        let json = unsafe { json_of(fetch(handle, CONTRACT)) };
+        destroy_mock_sdk_handle(handle);
+        assert_eq!(
+            json,
+            serde_json::json!({ base58(IDENTITY_A): all_null(), base58(IDENTITY_B): all_null() })
+        );
+    }
+
+    #[test]
+    fn should_fail_rather_than_answer_empty_when_the_fetch_fails() {
+        // The mock knows only `query()`, so a request for another contract fails.
+        let handle = create_mock_sdk_handle_with_keys(Some(proved_keys()));
+        let result = unsafe { fetch(handle, [4u8; 32]) };
+        assert!(result.data.is_null());
+        assert!(!result.error.is_null(), "the call must fail");
+        unsafe { crate::dash_sdk_error_free(result.error) };
+        destroy_mock_sdk_handle(handle);
+    }
+
+    #[test]
+    fn should_refuse_a_null_handle() {
+        let result = unsafe { fetch(std::ptr::null_mut(), CONTRACT) };
+        assert!(!result.error.is_null());
+        let code = unsafe { (*result.error).code };
+        unsafe { crate::dash_sdk_error_free(result.error) };
+        assert_eq!(code, DashSDKErrorCode::InvalidParameter);
+    }
+}
