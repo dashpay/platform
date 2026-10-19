@@ -14,8 +14,10 @@ use crate::Error;
 /// Request that is used to query identities' contract keys.
 ///
 /// A repeated identity or purpose is sent once, in the order it first appears: Drive sizes the
-/// proof by the number of identities times the number of purposes, so every caller sends, and the
-/// proof is verified against, the same request whatever repeats it was given.
+/// proof by the number of identities times the number of purposes, so every caller of this query
+/// sends, and has the proof verified against, the same request whatever repeats it was given. A
+/// `GetIdentitiesContractKeysRequest` built by hand goes out as it is; Drive and the proof check
+/// then both read it as sent.
 #[derive(Debug, Clone, dash_platform_macros::Mockable)]
 #[cfg_attr(feature = "mocks", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentitiesContractKeysQuery {
@@ -45,19 +47,7 @@ impl IdentitiesContractKeysQuery {
             purposes,
         })
     }
-}
 
-/// `items` in the order they first appear, each once.
-fn first_of_each<T: Ord + Copy>(items: &[T]) -> Vec<T> {
-    let mut seen = BTreeSet::new();
-    items
-        .iter()
-        .copied()
-        .filter(|item| seen.insert(*item))
-        .collect()
-}
-
-impl IdentitiesContractKeysQuery {
     /// The request this query sends, proved or not.
     fn request(&self, prove: bool) -> GetIdentitiesContractKeysRequest {
         GetIdentitiesContractKeysRequest {
@@ -76,6 +66,16 @@ impl IdentitiesContractKeysQuery {
             })),
         }
     }
+}
+
+/// `items` in the order they first appear, each once.
+fn first_of_each<T: Ord + Copy>(items: &[T]) -> Vec<T> {
+    let mut seen = BTreeSet::new();
+    items
+        .iter()
+        .copied()
+        .filter(|item| seen.insert(*item))
+        .collect()
 }
 
 impl TryFrom<IdentitiesContractKeysQuery> for GetIdentitiesContractKeysRequest {
@@ -112,9 +112,7 @@ impl TransportRequest for IdentitiesContractKeysQuery {
     }
 
     fn names_nothing(&self) -> Option<&'static str> {
-        GetIdentitiesContractKeysRequest::try_from(self.clone())
-            .ok()
-            .and_then(|request| request.names_nothing())
+        self.request(true).names_nothing()
     }
 
     fn execute_transport<'c>(
@@ -122,10 +120,7 @@ impl TransportRequest for IdentitiesContractKeysQuery {
         client: &'c mut Self::Client,
         settings: &AppliedRequestSettings,
     ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
-        let request: GetIdentitiesContractKeysRequest = self
-            .try_into()
-            .expect("IdentitiesContractKeysQuery should always be valid");
-        request.execute_transport(client, settings)
+        self.request(true).execute_transport(client, settings)
     }
 }
 

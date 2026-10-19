@@ -264,8 +264,8 @@ extension SDK {
     /// What the reference holds depends on the contract's storage requirement for the purpose
     /// (as Drive writes it from protocol version 14).
     /// Under `MultipleReferenceToLatest` it is the key of the latest registration (of the keys
-    /// one identity update registers together, the one with the highest id), and it stays that
-    /// key when the key is disabled. Under `Unique` it is, for a contract, the first key registered
+    /// one identity create or update registers together, the one with the highest id), and it
+    /// stays that key when the key is disabled. Under `Unique` it is, for a contract, the first key registered
     /// (also once it is disabled), and for a document type the last. Under `Multiple` there is no
     /// reference, so the answer is always `NSNull`, as it is for `"transfer"` (such keys cannot be
     /// bound to a contract) and for a contract or document type that does not exist. See

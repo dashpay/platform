@@ -19,20 +19,21 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// # Parameters
 /// - `sdk_handle`: SDK handle
 /// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs; an empty list answers `{}`
-///   without a query
+///   without a query. The SDK asks for a repeated ID once (`IdentitiesContractKeysQuery`).
 /// - `contract_id`: Base58-encoded contract ID
 /// - `document_type_name`: Optional document type name (pass NULL if not needed; an empty name is
 ///   the same as NULL)
-/// - `purposes`: Comma-separated list of key purposes (0=Authentication, 1=Encryption, 2=Decryption, 3=Transfer). The SDK asks for a repeated ID or purpose once (`IdentitiesContractKeysQuery`).
+/// - `purposes`: Comma-separated list of key purposes (0=Authentication, 1=Encryption, 2=Decryption, 3=Transfer). The SDK asks for a repeated purpose once.
 ///
 /// # Returns
 /// A JSON object read from a proved `getIdentitiesContractKeys` response. Each value is the key
 /// Drive's current-key reference names for the identity, contract (or document type) and purpose.
 /// What that reference holds depends on the contract's storage requirement for the purpose (as
 /// Drive writes it from protocol version 14):
-/// - `MultipleReferenceToLatest` (every bound authentication key): the key of the latest
-///   registration, and of the keys one identity update registers together, the one with the
-///   highest ID. It stays the current one when it is disabled (`disabled_at` is then set).
+/// - `MultipleReferenceToLatest` (every bound authentication key, and a bound encryption or
+///   decryption key when the contract asks for it): the key of the latest registration, and of
+///   the keys one identity create or update registers together, the one with the highest ID. It
+///   stays the current one when it is disabled (`disabled_at` is then set).
 /// - `Unique`: for a contract, the first key registered, also once it is disabled; for a document
 ///   type, the last.
 /// - `Multiple`: there is no reference, so the value is always `null`, whatever keys exist.
