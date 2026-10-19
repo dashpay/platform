@@ -365,6 +365,14 @@ pub(super) mod tests {
     }
 
     pub(crate) async fn wallet_with_signing_keys() -> std::sync::Arc<crate::PlatformWallet> {
+        wallet_with_signing_keys_on(dash_sdk::SdkBuilder::new_mock().build().unwrap()).await
+    }
+
+    /// [`wallet_with_signing_keys`] on a given SDK, for a test that sets
+    /// mock expectations on it first.
+    pub(crate) async fn wallet_with_signing_keys_on(
+        sdk: dash_sdk::Sdk,
+    ) -> std::sync::Arc<crate::PlatformWallet> {
         use crate::events::{EventHandler, PlatformEventHandler};
         use crate::wallet::persister::NoPlatformPersistence;
         use crate::PlatformWalletManager;
@@ -375,7 +383,7 @@ pub(super) mod tests {
         impl EventHandler for Events {}
         impl PlatformEventHandler for Events {}
         let manager = PlatformWalletManager::new(
-            Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap()),
+            Arc::new(sdk),
             Arc::new(NoPlatformPersistence),
             Arc::new(Events),
         );

@@ -381,6 +381,21 @@ impl ManagedIdentity {
         }
     }
 
+    /// Take an identity fetched from Platform as the cached one, unless the
+    /// cache is at a higher revision. Revisions only grow on Platform, so
+    /// such a fetch was answered before an update the cache already holds
+    /// (one applied locally after it landed, or a newer refresh), and
+    /// taking it would put the cache back. Returns whether it was taken.
+    ///
+    /// Only the in-memory identity changes here; the caller persists.
+    pub fn take_fetched_identity(&mut self, fetched: &Identity) -> bool {
+        if fetched.revision() < self.identity.revision() {
+            return false;
+        }
+        self.identity = fetched.clone();
+        true
+    }
+
     /// Layer an `IdentityPublicKey` onto this identity's
     /// `public_keys` map and emit a single-key
     /// [`IdentityKeysChangeSet`] upsert carrying the full derivation
@@ -696,6 +711,33 @@ mod tests {
             data: dpp::platform_value::BinaryData::new(vec![0x02; 33]),
             disabled_at: None,
         })
+    }
+
+    /// A fetch at a lower revision than the cache's was answered before an
+    /// update the cache holds, and must not take it back; one at the same
+    /// revision or higher replaces it.
+    #[test]
+    fn should_take_a_fetched_identity_only_when_it_is_not_older() {
+        fn at(revision: u64, disabled: bool) -> Identity {
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+            let mut key = key(3);
+            if disabled {
+                key.set_disabled_at(1);
+            }
+            Identity::V0(IdentityV0 {
+                id: Identifier::from([1u8; 32]),
+                public_keys: BTreeMap::from([(3, key)]),
+                balance: revision,
+                revision,
+            })
+        }
+        // The cache took an update at 6 that disabled key 3.
+        let mut managed = ManagedIdentity::new(at(6, true), 0);
+        assert!(!managed.take_fetched_identity(&at(5, false)));
+        assert_eq!(managed.identity, at(6, true));
+        assert!(managed.take_fetched_identity(&at(6, true)));
+        assert!(managed.take_fetched_identity(&at(7, true)));
+        assert_eq!(managed.identity, at(7, true));
     }
 
     /// A batch of fetched names lands as one snapshot carrying every name,

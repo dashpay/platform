@@ -1,6 +1,7 @@
 //! Load identities by HD index / DPNS name, refresh state.
 
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;
@@ -206,7 +207,7 @@ impl IdentityWallet {
         };
 
         // Query Platform for an identity registered with this key hash.
-        let identity = match Identity::fetch(&self.sdk, PublicKeyHash(key_hash_array)).await {
+        let mut identity = match Identity::fetch(&self.sdk, PublicKeyHash(key_hash_array)).await {
             Ok(Some(identity)) => identity,
             Ok(None) => return Ok(None),
             Err(e) => {
@@ -257,10 +258,25 @@ impl IdentityWallet {
                 // new ones, and without this a re-load kept serving the
                 // stale key set (keys added from another device never
                 // appeared, and contact requests referencing them failed
-                // key-index validation). Same replace `refresh_identity`
-                // does; the `set_status` below persists the full snapshot
-                // changeset, so the updated keys reach the store.
-                managed.identity = identity.clone();
+                // key-index validation). Same fold `refresh_identity`
+                // does: a fetch older than the cache is dropped. The
+                // `set_status` below persists the full snapshot changeset,
+                // so the updated keys reach the store.
+                let key_decisions = if managed.take_fetched_identity(&identity) {
+                    key_decisions
+                } else {
+                    // The breadcrumbs still hold (a key's derivation never
+                    // changes), but each rides on the cache's newer key so
+                    // its upsert does not take that key back either.
+                    identity = managed.identity.clone();
+                    key_decisions
+                        .into_iter()
+                        .filter_map(|mut decision| {
+                            decision.key = identity.public_keys().get(&decision.key.id())?.clone();
+                            Some(decision)
+                        })
+                        .collect()
+                };
                 managed.set_status(IdentityStatus::Active, &self.persister);
                 managed.wallet_id = Some(wallet_id);
                 // Breadcrumbs for every re-derivable key (was MASTER-only). A
@@ -306,9 +322,12 @@ impl IdentityWallet {
     ///
     /// The identity must already exist in the [`IdentityManager`]. Its
     /// on-chain state (keys, balance, revision) is replaced with the latest
-    /// version from Platform and the status is set to `Active`.
+    /// version from Platform and the status is set to `Active`. A fetch at
+    /// a lower revision than the cache's was answered before an update the
+    /// cache already holds, and leaves the cache as it is
+    /// ([`ManagedIdentity::take_fetched_identity`]).
     ///
-    /// Returns the refreshed identity.
+    /// Returns the identity the cache holds afterwards.
     ///
     /// # Errors
     ///
@@ -337,7 +356,7 @@ impl IdentityWallet {
         }
 
         // Fetch the latest state from Platform.
-        let identity = Identity::fetch(&self.sdk, *identity_id)
+        let mut identity = Identity::fetch(&self.sdk, *identity_id)
             .await
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
@@ -361,7 +380,9 @@ impl IdentityWallet {
                 )
             })?;
             if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                managed.identity = identity.clone();
+                if !managed.take_fetched_identity(&identity) {
+                    identity = managed.identity.clone();
+                }
                 managed.set_status(IdentityStatus::Active, &self.persister);
             }
         }
@@ -510,6 +531,56 @@ mod tests {
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
+
+    /// A refresh answered before an update the cache already took (the
+    /// cache at 6, Platform's answer at 5) must not take the cache back; a
+    /// newer answer replaces it. Either way the call returns what the cache
+    /// holds afterwards.
+    #[tokio::test]
+    async fn should_not_take_the_cache_back_with_an_older_refresh() {
+        use super::super::signing_key::tests::{identity, wallet_with_signing_keys_on};
+        use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+        use dpp::identity::{KeyType, Purpose, SecurityLevel};
+        use dpp::prelude::Identifier;
+
+        let identity_id = Identifier::default();
+        for (cached, answered, settled) in [(6, 5, 6), (6, 6, 6), (6, 7, 7)] {
+            let mut answer = identity(
+                Purpose::AUTHENTICATION,
+                SecurityLevel::HIGH,
+                KeyType::ECDSA_SECP256K1,
+            );
+            answer.set_revision(answered);
+            let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+            sdk.mock()
+                .expect_fetch(identity_id, Some(answer))
+                .await
+                .unwrap();
+            let wallet = wallet_with_signing_keys_on(sdk).await;
+            let wallet = wallet.identity();
+            {
+                let mut wm = wallet.wallet_manager.write().await;
+                wm.get_wallet_info_mut(&wallet.wallet_id)
+                    .unwrap()
+                    .identity_manager
+                    .managed_identity_mut(&identity_id)
+                    .unwrap()
+                    .identity
+                    .set_revision(cached);
+            }
+            let returned = wallet.refresh_identity(&identity_id).await.unwrap();
+            let wm = wallet.wallet_manager.read().await;
+            let held = &wm
+                .get_wallet_info(&wallet.wallet_id)
+                .unwrap()
+                .identity_manager
+                .identity(&identity_id)
+                .unwrap()
+                .identity;
+            assert_eq!(held.revision(), settled, "answered at {answered}");
+            assert_eq!(&returned, held);
+        }
+    }
 
     /// English BIP-39 test vector (all-zero entropy). Same fixture the
     /// FFI-side derive tests and the `identity_handle` tests use, so the

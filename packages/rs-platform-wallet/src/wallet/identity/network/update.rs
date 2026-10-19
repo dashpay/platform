@@ -81,11 +81,12 @@ impl IdentityWallet {
     /// CACHE: after a successful broadcast the in-process
     /// `IdentityManager` takes the update locally (see
     /// `apply_landed_update`): the cached revision moves to the
-    /// higher of its own and the transition's, and the added and disabled
-    /// keys are applied, so a follow-up update needs no refresh in
-    /// between. A refresh that fetched the identity before the update
-    /// landed and writes it after this step still puts the cache back
-    /// to the pre-update state until the next refresh. When the call fails
+    /// transition's and the added and disabled keys are applied, so a
+    /// follow-up update needs no refresh in between. A cache already
+    /// refreshed past the transition is left as it is. A refresh that
+    /// fetched the identity before the update landed and finishes after
+    /// this step does not take the cache back: a fetched identity at a
+    /// lower revision than the cache's is dropped. When the call fails
     /// after the broadcast (the proof wait timed out, say), the update may
     /// have landed without this step: refresh before the next update.
     pub async fn update_identity_with_external_signer<S>(
@@ -283,13 +284,16 @@ impl IdentityWallet {
 
         // The identity is at the transition's revision now, so a
         // subsequent update must not reuse the pre-broadcast value.
-        // The cache may have been refreshed since the snapshot (to
-        // this revision or past it), so it takes the higher of the
-        // two instead of adding one to whatever it holds.
-        let cached_revision = managed.identity.revision();
-        managed
-            .identity
-            .set_revision(cached_revision.max(transition_revision));
+        // A cache refreshed past the transition already holds its keys
+        // and whatever later updates did to them: applying this payload
+        // would take those back, so it is left as it is. A cache still
+        // below the transition, or refreshed to exactly it, takes the
+        // transition's revision and payload (applying a payload the
+        // refresh already holds changes nothing).
+        if managed.identity.revision() > transition_revision {
+            return Ok(());
+        }
+        managed.identity.set_revision(transition_revision);
 
         for key in added_keys {
             let breadcrumb = identity_index.map(|idx| (self.wallet_id, idx, key.id()));
@@ -588,27 +592,27 @@ mod update_identity_at_revision_tests {
     #[tokio::test]
     async fn should_leave_the_cache_at_the_higher_of_its_revision_and_the_landed_one() {
         let identity_id = Identifier::default();
-        // A transition at 5 landed; the cache is still at 4, was refreshed
-        // to 5, or was refreshed past it to 6.
-        for (cached, settled) in [(4, 5), (5, 5), (6, 6)] {
+        let added: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 3,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: KeyType::ECDSA_SECP256K1,
+            data: vec![3; KeyType::ECDSA_SECP256K1.default_size()].into(),
+            ..Default::default()
+        }
+        .into();
+        // A transition at 5 landed; the cache is still at 4 or was
+        // refreshed to 5: it takes the revision and the payload.
+        for cached in [4, 5] {
             // An update that only added a key.
             let wallet = wallet_at_revision(cached).await;
             let wallet = wallet.identity();
-            let added: IdentityPublicKey = IdentityPublicKeyV0 {
-                id: 3,
-                purpose: Purpose::AUTHENTICATION,
-                security_level: SecurityLevel::HIGH,
-                key_type: KeyType::ECDSA_SECP256K1,
-                data: vec![3; KeyType::ECDSA_SECP256K1.default_size()].into(),
-                ..Default::default()
-            }
-            .into();
             wallet
                 .apply_landed_update(&identity_id, Some(0), 5, vec![added.clone()], vec![])
                 .await
                 .unwrap();
             let identity = cached_identity(wallet, &identity_id).await;
-            assert_eq!(identity.revision(), settled);
+            assert_eq!(identity.revision(), 5);
             assert_eq!(identity.public_keys().get(&3), Some(&added));
 
             // An update that only disabled a key.
@@ -619,8 +623,59 @@ mod update_identity_at_revision_tests {
                 .await
                 .unwrap();
             let identity = cached_identity(wallet, &identity_id).await;
-            assert_eq!(identity.revision(), settled);
+            assert_eq!(identity.revision(), 5);
             assert!(identity.public_keys()[&1].disabled_at().is_some());
         }
+
+        // Refreshed past it to 6: the cache already holds this update and
+        // what came after, and is left as it is.
+        let wallet = wallet_at_revision(6).await;
+        let wallet = wallet.identity();
+        let before = cached_identity(wallet, &identity_id).await;
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![added.clone()], vec![1])
+            .await
+            .unwrap();
+        assert_eq!(cached_identity(wallet, &identity_id).await, before);
+    }
+
+    /// An update at 5 added key 3, a later one at 6 disabled it, and the
+    /// cache was refreshed to 6 before the confirmation of 5 came back:
+    /// key 3 stays disabled.
+    #[tokio::test]
+    async fn should_not_take_back_a_newer_cache_with_an_older_landed_payload() {
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
+
+        let identity_id = Identifier::default();
+        let added: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 3,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: KeyType::ECDSA_SECP256K1,
+            data: vec![3; KeyType::ECDSA_SECP256K1.default_size()].into(),
+            ..Default::default()
+        }
+        .into();
+        let wallet = wallet_at_revision(6).await;
+        let wallet = wallet.identity();
+        {
+            let mut wm = wallet.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&identity_id)
+                .unwrap();
+            let mut disabled = added.clone();
+            disabled.set_disabled_at(1);
+            managed.identity.add_public_key(disabled);
+        }
+        wallet
+            .apply_landed_update(&identity_id, Some(0), 5, vec![added], vec![])
+            .await
+            .unwrap();
+        let identity = cached_identity(wallet, &identity_id).await;
+        assert_eq!(identity.revision(), 6);
+        assert_eq!(identity.public_keys()[&3].disabled_at(), Some(1));
     }
 }
