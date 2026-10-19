@@ -462,6 +462,14 @@ impl IdentityWallet {
                             .identity_manager
                             .managed_identity_mut(&identity_id)
                         {
+                            // A known identity takes the fetch as the loader does;
+                            // one older than its cache carries its breadcrumbs on
+                            // the cache's newer keys.
+                            let key_decisions = if managed.take_fetched_identity(&identity) {
+                                key_decisions
+                            } else {
+                                managed.key_decisions_on_cached_keys(key_decisions)
+                            };
                             managed.set_status(IdentityStatus::Active, &self.persister);
                             managed.wallet_id = Some(wallet_id);
                             // Breadcrumbs for every re-derivable key (not just the
@@ -472,14 +480,6 @@ impl IdentityWallet {
                             // CRITICAL authentication keys. A failed persist here
                             // would silently leave the identity watch-only after
                             // restart, so surface it (matching `add_identity` above).
-                            // A fetch older than a known identity's cache carries
-                            // its breadcrumbs on the cache's newer keys.
-                            let key_decisions = if identity.revision() < managed.identity.revision()
-                            {
-                                managed.key_decisions_on_cached_keys(key_decisions)
-                            } else {
-                                key_decisions
-                            };
                             managed
                                 .add_keys(key_decisions, &self.persister)
                                 .map_err(|e| {

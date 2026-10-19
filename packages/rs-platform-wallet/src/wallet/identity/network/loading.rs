@@ -515,12 +515,20 @@ mod tests {
     use super::super::identity_handle::{
         derive_identity_auth_key_hash, derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX,
     };
+    use super::super::signing_key::tests::{identity, wallet_with_signing_keys_on, CapturingStore};
     use super::{derive_load_probe_hash, ResolvedLoadKeyHashSource};
+    use crate::wallet::persister::NoPlatformPersistence;
+    use dash_sdk::platform::types::identity::PublicKeyHash;
+    use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::prelude::Identifier;
     use key_wallet::bip32::ExtendedPrivKey;
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
+    use std::sync::Arc;
 
     /// A refresh answered before an update the cache already took (the
     /// cache at 6, Platform's answer at 5) must not take the cache back; a
@@ -528,12 +536,6 @@ mod tests {
     /// holds afterwards.
     #[tokio::test]
     async fn should_not_take_the_cache_back_with_an_older_refresh() {
-        use super::super::signing_key::tests::{identity, wallet_with_signing_keys_on};
-        use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
-        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-        use dpp::identity::{KeyType, Purpose, SecurityLevel};
-        use dpp::prelude::Identifier;
-
         let identity_id = Identifier::default();
         for (cached, answered, settled) in [(6, 5, 6), (6, 6, 6), (6, 7, 7)] {
             let mut answer = identity(
@@ -547,11 +549,7 @@ mod tests {
                 .expect_fetch(identity_id, Some(answer))
                 .await
                 .unwrap();
-            let wallet = wallet_with_signing_keys_on(
-                sdk,
-                std::sync::Arc::new(crate::wallet::persister::NoPlatformPersistence),
-            )
-            .await;
+            let wallet = wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await;
             let wallet = wallet.identity();
             {
                 let mut wm = wallet.wallet_manager.write().await;
@@ -591,37 +589,6 @@ mod tests {
     /// the cache; an answer at the cache's revision is taken.
     #[tokio::test]
     async fn should_keep_a_newer_cache_when_a_load_answers_older() {
-        use super::super::signing_key::tests::{identity, wallet_with_signing_keys_on};
-        use crate::changeset::{
-            ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
-        };
-        use crate::wallet::platform_wallet::WalletId;
-        use dash_sdk::platform::types::identity::PublicKeyHash;
-        use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
-        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-        use dpp::identity::{KeyType, Purpose, SecurityLevel};
-        use dpp::prelude::Identifier;
-        use std::sync::{Arc, Mutex};
-
-        #[derive(Default)]
-        struct Store(Mutex<Vec<PlatformWalletChangeSet>>);
-        impl PlatformWalletPersistence for Store {
-            fn store(
-                &self,
-                _: WalletId,
-                changeset: PlatformWalletChangeSet,
-            ) -> Result<(), PersistenceError> {
-                self.0.lock().unwrap().push(changeset);
-                Ok(())
-            }
-            fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
-                Ok(())
-            }
-            fn load(&self) -> Result<ClientStartState, PersistenceError> {
-                Ok(ClientStartState::default())
-            }
-        }
-
         // The probe the loader sends for index 0 of the fixture's seed.
         let master = ExtendedPrivKey::new_master(Network::Testnet, &[7; 64]).unwrap();
         let probe = derive_load_probe_hash(
@@ -644,7 +611,7 @@ mod tests {
                 .expect_fetch(PublicKeyHash(probe), Some(answer))
                 .await
                 .unwrap();
-            let store = Arc::new(Store::default());
+            let store = Arc::new(CapturingStore::default());
             let wallet = wallet_with_signing_keys_on(sdk, store.clone()).await;
             let wallet = wallet.identity();
             {
@@ -657,7 +624,7 @@ mod tests {
                     .identity
                     .set_revision(6);
             }
-            store.0.lock().unwrap().clear();
+            store.clear();
 
             let returned = wallet
                 .load_identity_by_index_from_master(0, &master)
@@ -685,12 +652,7 @@ mod tests {
                 .identity;
             assert_eq!(held, &returned);
             // It stored key rows, each carrying the key the cache holds.
-            let stored = store.0.lock().unwrap();
-            let rows: Vec<_> = stored
-                .iter()
-                .flat_map(|changeset| changeset.identity_keys.iter())
-                .flat_map(|keys| keys.upserts.values())
-                .collect();
+            let rows = store.key_rows();
             assert!(!rows.is_empty(), "answered at {answered}");
             for entry in rows {
                 assert_eq!(

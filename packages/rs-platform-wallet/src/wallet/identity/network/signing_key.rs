@@ -117,10 +117,17 @@ pub(super) fn credit_signing_key<'a>(
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    use crate::changeset::{
+        ClientStartState, IdentityKeyEntry, PersistenceError, PlatformWalletChangeSet,
+        PlatformWalletPersistence,
+    };
+    use crate::wallet::persister::NoPlatformPersistence;
+    use crate::wallet::platform_wallet::WalletId;
     use async_trait::async_trait;
     use dpp::address_funds::AddressWitness;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::KeyID;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
     use dpp::version::PlatformVersion;
@@ -364,10 +371,85 @@ pub(super) mod tests {
         }
     }
 
+    /// Records every changeset, so a test can read what reached the store.
+    #[derive(Default)]
+    pub(crate) struct CapturingStore(std::sync::Mutex<Vec<PlatformWalletChangeSet>>);
+
+    impl PlatformWalletPersistence for CapturingStore {
+        fn store(
+            &self,
+            _: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.0.lock().unwrap().push(changeset);
+            Ok(())
+        }
+        fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    impl CapturingStore {
+        /// Every key row stored, oldest first.
+        pub(crate) fn key_rows(&self) -> Vec<IdentityKeyEntry> {
+            self.0
+                .lock()
+                .unwrap()
+                .iter()
+                .flat_map(|changeset| changeset.identity_keys.iter())
+                .flat_map(|keys| keys.upserts.values().cloned())
+                .collect()
+        }
+
+        /// The last key row stored for `key_id`.
+        pub(crate) fn stored_key(
+            &self,
+            identity_id: Identifier,
+            key_id: KeyID,
+        ) -> Option<IdentityKeyEntry> {
+            self.key_rows()
+                .into_iter()
+                .rev()
+                .find(|row| row.identity_id == identity_id && row.key_id == key_id)
+        }
+
+        pub(crate) fn clear(&self) {
+            self.0.lock().unwrap().clear();
+        }
+    }
+
+    /// Takes every changeset until armed, then refuses each.
+    #[derive(Default)]
+    pub(crate) struct FailingStore(std::sync::atomic::AtomicBool);
+
+    impl FailingStore {
+        pub(crate) fn arm(&self) {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    impl PlatformWalletPersistence for FailingStore {
+        fn store(&self, _: WalletId, _: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
+            if self.0.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(PersistenceError::backend("store armed to fail"));
+            }
+            Ok(())
+        }
+        fn flush(&self, _: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
     pub(crate) async fn wallet_with_signing_keys() -> std::sync::Arc<crate::PlatformWallet> {
         wallet_with_signing_keys_on(
             dash_sdk::SdkBuilder::new_mock().build().unwrap(),
-            std::sync::Arc::new(crate::wallet::persister::NoPlatformPersistence),
+            std::sync::Arc::new(NoPlatformPersistence),
         )
         .await
     }
@@ -379,7 +461,7 @@ pub(super) mod tests {
         persistence: std::sync::Arc<P>,
     ) -> std::sync::Arc<crate::PlatformWallet>
     where
-        P: crate::changeset::PlatformWalletPersistence + 'static,
+        P: PlatformWalletPersistence + 'static,
     {
         use crate::events::{EventHandler, PlatformEventHandler};
         use crate::PlatformWalletManager;
