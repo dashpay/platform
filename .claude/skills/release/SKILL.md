@@ -136,14 +136,14 @@ gh run rerun <release-run-id> --repo dashpay/platform --failed
 
 ## Rebuilding the dashmate deb of a published release
 
-The dashmate deb's Debian version comes from the tag: `5.1.0-1`, `5.1.0~rc.1-1`, `5.1.0~~dev.1-1` (`packages/dashmate/scripts/deb-version.mjs`). A rebuild from the same tag produces the same version, which apt reports as already installed, so operators never receive it. To ship a rebuilt deb:
+The dashmate deb's Debian version comes from the tag: `5.1.0-1`, `5.1.0~rc.1-1`, `5.1.0~~dev.1-1` (`packages/dashmate/scripts/deb-version.mjs`). A rebuild from the same tag produces the same version, which apt reports as already installed, so operators never receive it. A rebuild re-runs the release run's deb build, which needs the run's `js-build-<sha>` artifact, so it only works within 7 days of the release. To ship a rebuilt deb:
 
 1. Set the repository variable `DASHMATE_DEB_REVISION` to the next revision (`2`, then `3`, ...).
-2. Delete the release's old `dashmate_*_amd64.deb` and `dashmate_*_arm64.deb` assets: the new ones get different names, and the install docs and deploy tooling take the first matching asset.
-3. In the release's `release.yml` run, re-run the `Build Dashmate packages (deb, ubuntu-24.04)` job (`gh run rerun --job <job-id> --repo dashpay/platform`), then check that `Release Dashmate packages (deb, ubuntu-24.04)` ran after it and attached debs whose names carry the new revision (`dashmate_5.1.0-2_amd64.deb`); re-run that job too if it did not. The build job needs the run's `js-build-<sha>` artifact, which is kept for 7 days.
+2. In the release's `release.yml` run, re-run the `Build Dashmate packages (deb, ubuntu-24.04)` job (`gh run rerun --job <job-id> --repo dashpay/platform`), then check that `Release Dashmate packages (deb, ubuntu-24.04)` ran after it and attached debs whose names carry the new revision (`dashmate_5.1.0-2_amd64.deb`); re-run that job too if it did not.
+3. Delete the release's superseded `dashmate_*-1_amd64.deb` and `dashmate_*-1_arm64.deb` assets. The new debs have different names, so the old ones stay attached, and the install docs and deploy tooling take the first matching asset.
 4. Delete `DASHMATE_DEB_REVISION` again, so the next release starts at revision 1.
 
-Never set `DASHMATE_DEB_EPOCH` except to re-release a version that was published under oclif's old `<version>.<git sha>-1` scheme: once a package carries an epoch, every later package needs it too.
+Never set `DASHMATE_DEB_EPOCH` except to re-release a version that was published under oclif's old `<version>.<git sha>-1` scheme: once a package carries an epoch, every later package needs it too. Re-releasing that way also leaves the old `<version>.<git sha>-1` debs attached, so delete them the same way.
 
 ## Post-stable-release: graduate the dev branch
 

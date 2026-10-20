@@ -43,7 +43,7 @@ sudo apt install "./$(basename "$DASHMATE_DEB")"
 
 > **Note:** At the end of the installation process, apt may display an error due to installing a downloaded package.
 > You can ignore this error message:
-> N: Download is performed unsandboxed as root as file '/home/ubuntu/dashmate_4.1.0-1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
+> N: Download is performed unsandboxed as root as file '/home/ubuntu/dashmate_5.1.0-1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
 
 ### Node package
 
