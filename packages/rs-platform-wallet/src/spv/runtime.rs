@@ -719,6 +719,19 @@ impl SpvRuntime {
         stored_header_versions(&*bh, heights).await
     }
 
+    /// Height of the highest ChainLock the SPV client has validated against
+    /// its masternode list, which may lie above the header tip.
+    ///
+    /// Returns `None` if the SPV client isn't running or does not track
+    /// ChainLocks.
+    pub(crate) async fn best_chain_locked_height(&self) -> Option<u32> {
+        let progress = self.sync_progress().await?;
+        progress
+            .chainlocks()
+            .ok()
+            .map(|chainlocks| chainlocks.best_validated_height())
+    }
+
     /// Hash of the stored header at `height`.
     ///
     /// Returns `None` if the SPV client isn't running or the header store

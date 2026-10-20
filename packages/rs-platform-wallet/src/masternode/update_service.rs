@@ -117,10 +117,10 @@ pub async fn execute_masternode_update_service<S: TransactionSigner + ?Sized + S
 /// abandons it (`CoreWallet::abandon_transaction`) — dropping it without
 /// either strands the reservation until the TTL backstop reclaims it.
 ///
-/// Broadcast it promptly: its payload version is chosen for the next few
-/// blocks (see [`V24_ACTIVATION_MARGIN_BLOCKS`]), and an evonode's version-2
-/// payload held until Dash Core's V24 fork activates is refused by the
-/// network.
+/// Broadcast it promptly: its payload version is chosen for the blocks of
+/// about the next hour (see [`BROADCAST_ALLOWANCE_BLOCKS`]), and an evonode's
+/// version-2 payload held until Dash Core's V24 fork activates is refused by
+/// the network.
 pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + Sync>(
     wallet: &PlatformWallet,
     spv: &SpvRuntime,
@@ -191,29 +191,56 @@ pub(crate) fn update_service_target<'a>(
 /// (`CheckCbTx`).
 const V24_COINBASE_PAYLOAD_VERSION: u16 = 4;
 
-/// How old the SPV header tip may be for its pre-V24 coinbase to stand for
-/// the next block. A tip that old means the header chain has stalled, and V24
-/// may have activated in the blocks it has not seen.
+/// How old the SPV header tip may be, by its block time, for its pre-V24
+/// coinbase to stand for the next block. A tip that old means the header
+/// chain has stalled, and V24 may have activated in the blocks it has not
+/// seen.
 const MAX_PRE_V24_TIP_AGE_SECS: u64 = 60 * 60;
 
-/// How far past the local clock a block time may lie: Dash Core's
-/// `MAX_FUTURE_BLOCK_TIME`. A tip further ahead means the local clock is
-/// behind, and the tip's age cannot be judged from it.
+/// How far past its own clock Dash Core accepts a block time
+/// (`MAX_FUTURE_BLOCK_TIME`). A block may be stamped this much later than it
+/// was mined, so a tip that looks recent may be this much older.
 const MAX_FUTURE_BLOCK_TIME_SECS: u64 = 2 * 60 * 60;
+
+/// How far past the local clock the tip's block time may lie and still be
+/// read as just mined. Further ahead, the local clock is slow or the tip was
+/// stamped well after it was mined, and either way the clock cannot tell how
+/// long ago that was.
+const MAX_TIP_LEAD_SECS: u64 = 5 * 60;
+
+/// Dash's target block spacing (`nPowTargetSpacing`).
+const BLOCK_SPACING_SECS: u64 = 150;
+
+/// Blocks, about an hour's worth, for a run of blocks faster than the target
+/// spacing and the time a prepared transaction waits to be broadcast and
+/// mined.
+const BROADCAST_ALLOWANCE_BLOCKS: u64 = 24;
+
+/// About how many blocks the network may have mined past a tip whose block
+/// time makes it `tip_age_secs` old by the local clock: the tip may have been
+/// mined up to [`MAX_FUTURE_BLOCK_TIME_SECS`] before its block time, and the
+/// local clock is trusted to be slow by at most the [`MAX_TIP_LEAD_SECS`] a
+/// tip may lead it by (see [`v24_active_after_tip`]).
+const fn blocks_behind_tip(tip_age_secs: u64) -> u64 {
+    (MAX_FUTURE_BLOCK_TIME_SECS + MAX_TIP_LEAD_SECS + tip_age_secs).div_ceil(BLOCK_SPACING_SECS)
+}
 
 /// The block-version bit that signals DEPLOYMENT_V24.
 const V24_SIGNAL_BIT: u8 = 13;
 
 /// How close to a block where V24 may activate the wallet stops building
-/// payloads Core refuses after V24: 30 blocks, about 75 minutes at Dash's
-/// 2.5-minute block spacing, for the blocks a recent tip may lag behind the
-/// network and the time a prepared transaction waits before it is broadcast.
-const V24_ACTIVATION_MARGIN_BLOCKS: u32 = 30;
+/// payloads Core refuses after V24: the blocks that may hide behind a tip
+/// [`MAX_TIP_AGE_NEAR_V24_ACTIVATION_SECS`] old, plus
+/// [`BROADCAST_ALLOWANCE_BLOCKS`]. That is 80 blocks, about 3 hours 20
+/// minutes at Dash's 2.5-minute block spacing.
+const V24_ACTIVATION_MARGIN_BLOCKS: u32 =
+    (blocks_behind_tip(MAX_TIP_AGE_NEAR_V24_ACTIVATION_SECS) + BROADCAST_ALLOWANCE_BLOCKS) as u32;
 
-/// How old a pre-V24 tip may be while V24 may activate at the next period
-/// start. The margin above is counted from the tip, so the tip must be fresh
-/// enough that few blocks can hide behind it: about 6 in 15 minutes, against
-/// about 24 in the hour [`MAX_PRE_V24_TIP_AGE_SECS`] allows elsewhere.
+/// How old a pre-V24 tip may be, by its block time, while V24 may activate
+/// at the next period start. The margin above is counted from the tip, so
+/// the tip's age adds to the blocks that may hide behind it: about 6 in 15
+/// minutes, against about 24 in the hour [`MAX_PRE_V24_TIP_AGE_SECS`]
+/// allows elsewhere.
 const MAX_TIP_AGE_NEAR_V24_ACTIVATION_SECS: u64 = 15 * 60;
 
 /// DEPLOYMENT_V24's version-bits parameters on one network.
@@ -230,8 +257,11 @@ struct V24Deployment {
 /// DEPLOYMENT_V24's parameters in Dash Core v24.0.0-rc.4's
 /// `src/chainparams.cpp`. Regtest can override them with `-vbparams`, and a
 /// devnet keeps them but may change its block spacing (`-powtargetspacing`),
-/// which changes how long the activation margin lasts, so off mainnet and
-/// testnet the checks built on them are best-effort.
+/// which changes how long the activation margin lasts. The checks built on
+/// them also take a locked-in V24 to activate exactly one period later, as
+/// it does when no minimum activation height is set, and rc.4 sets none for
+/// V24; a regtest `-vbparams` that sets one can keep V24 locked in longer.
+/// So off mainnet and testnet those checks are best-effort.
 fn v24_deployment(network: Network) -> V24Deployment {
     let (period, min_threshold) = match network {
         Network::Mainnet => (4032, 2420),
@@ -299,7 +329,8 @@ async fn update_service_placeholder(
 /// Whether V24 is active for the block after the SPV header tip: the tip's
 /// block, fetched from DAPI, and the stored headers of the period whose
 /// signalling decides the next possible activation, read by
-/// [`v24_active_after_tip`].
+/// [`v24_active_after_tip`], and the highest ChainLock the SPV client has
+/// validated.
 async fn v24_active_at_spv_tip(
     wallet: &PlatformWallet,
     spv: &SpvRuntime,
@@ -313,6 +344,7 @@ async fn v24_active_at_spv_tip(
                 .await
         },
         |heights| spv.header_versions(heights),
+        || spv.best_chain_locked_height(),
         wallet.network(),
         now_secs,
     )
@@ -321,17 +353,22 @@ async fn v24_active_at_spv_tip(
 
 /// [`v24_active_at_spv_tip`] over its readers: `tip` is the SPV header tip,
 /// `fetch_block` fetches a block by hash, `header_versions` reads the stored
-/// headers' versions at some heights, and `now` reads the local clock once
-/// both are in.
+/// headers' versions at some heights, `now` reads the local clock once both
+/// are in, and `chain_locked_height` reads the height of the highest
+/// ChainLock the SPV client has validated (`None` when it tracks none) once
+/// the tip reads as pre-V24.
 ///
 /// No tip is [`PlatformWalletError::MasternodeListUnavailable`]: the SPV
 /// client is not running or holds no headers yet. A failed fetch or a block
 /// not served is a retryable refusal, like every other state the wallet
-/// cannot read V24 from.
-async fn v24_active_at_spv_tip_with<B, E, V>(
+/// cannot read V24 from. So is a pre-V24 tip below a validated ChainLock:
+/// the network has mined past the tip, and the header chain has not caught
+/// up with it.
+async fn v24_active_at_spv_tip_with<B, E, V, C>(
     tip: Option<SpvTip>,
     fetch_block: impl FnOnce(BlockHash) -> B,
     header_versions: impl FnOnce(Range<u32>) -> V,
+    chain_locked_height: impl FnOnce() -> C,
     network: Network,
     now: impl FnOnce() -> u64,
 ) -> Result<bool, PlatformWalletError>
@@ -339,6 +376,7 @@ where
     B: Future<Output = Result<Option<Block>, E>>,
     E: Display,
     V: Future<Output = Option<Vec<BlockVersion>>>,
+    C: Future<Output = Option<u32>>,
 {
     let tip = tip.ok_or(PlatformWalletError::MasternodeListUnavailable)?;
     let block = fetch_block(tip.hash)
@@ -349,7 +387,17 @@ where
         Some(heights) => header_versions(heights).await,
         None => None,
     };
-    v24_active_after_tip(&block, &tip, network, now(), signal_versions.as_deref())
+    if v24_active_after_tip(&block, &tip, network, now(), signal_versions.as_deref())? {
+        return Ok(true);
+    }
+    match chain_locked_height().await {
+        Some(height) if height > tip.height => Err(v24_unknown(format!(
+            "the SPV header tip at height {} is below the ChainLock at height {height}; \
+             wait for the SPV client to sync",
+            tip.height
+        ))),
+        _ => Ok(false),
+    }
 }
 
 /// Whether V24 is active for the block after `tip`, read from `block`, the
@@ -359,11 +407,27 @@ where
 ///
 /// A version-4 coinbase proves V24, since an active deployment never
 /// deactivates. A lower version proves only that V24 was not active at the
-/// tip, so it stands for the transaction being built only when the tip is
-/// recent by a local clock that agrees with it, and V24 cannot activate
-/// within [`V24_ACTIVATION_MARGIN_BLOCKS`]: either too few headers signalled
-/// for it to lock in, or the next period start is further away than that
-/// and the tip is fresh enough that few blocks hide behind it.
+/// tip, so it stands for the transaction being built only when V24 cannot
+/// activate in the blocks the network may have mined past the tip, plus
+/// [`BROADCAST_ALLOWANCE_BLOCKS`]. Nothing the SPV client holds shows that
+/// it has caught up with the network (peers report their height only when
+/// they connect), so those blocks are bounded from the tip's block time: it
+/// must lie at most [`MAX_TIP_LEAD_SECS`] past the local clock, and it may
+/// have been stamped up to Core's future limit after the tip was mined (see
+/// [`blocks_behind_tip`]). Then either too few headers signalled for V24 to
+/// lock in, which puts its earliest activation a whole period past the next
+/// period start, and every network's period holds at least the blocks that
+/// may hide behind a tip up to [`MAX_PRE_V24_TIP_AGE_SECS`] old plus the
+/// allowance; or the tip is at most [`MAX_TIP_AGE_NEAR_V24_ACTIVATION_SECS`]
+/// old and the next period start is further away than
+/// [`V24_ACTIVATION_MARGIN_BLOCKS`].
+/// The local clock is trusted for this. One slowed by as much as the tip is
+/// stale, as when a paused or restored virtual machine resumes with its
+/// header store and its clock where they stopped, shows a stale tip as
+/// fresh, and nothing read here tells the two apart. A tip below a ChainLock
+/// the SPV client validated is refused as well (see
+/// [`v24_active_at_spv_tip_with`]), which catches a header chain that stalls
+/// while ChainLocks still arrive, but not the time before the next one does.
 /// The SPV client does not follow the mined signal that starts the
 /// deployment, so it cannot tell a locked-in fork from one that merely had
 /// enough signalling; it treats both as about to activate. Without the
@@ -379,16 +443,18 @@ fn v24_active_after_tip(
         return Ok(true);
     }
     let tip_time = u64::from(tip.time);
-    if tip_time > now_secs.saturating_add(MAX_FUTURE_BLOCK_TIME_SECS) {
+    if tip_time > now_secs.saturating_add(MAX_TIP_LEAD_SECS) {
         return Err(v24_unknown(format!(
-            "the SPV header tip's block time is {}s past the local clock",
+            "the SPV header tip's block time is {}s past the local clock; check the \
+             device clock",
             tip_time - now_secs
         )));
     }
     let tip_age_secs = now_secs.saturating_sub(tip_time);
     if tip_age_secs > MAX_PRE_V24_TIP_AGE_SECS {
         return Err(v24_unknown(format!(
-            "the SPV header tip is {tip_age_secs}s old"
+            "the SPV header tip is {tip_age_secs}s old; check the device clock and that \
+             the SPV client is syncing"
         )));
     }
     let deployment = v24_deployment(network);
@@ -413,7 +479,7 @@ fn v24_active_after_tip(
     if tip_age_secs > MAX_TIP_AGE_NEAR_V24_ACTIVATION_SECS {
         return Err(v24_unknown(format!(
             "the SPV header tip is {tip_age_secs}s old and V24 may activate at height \
-             {next_period_start}"
+             {next_period_start}; check the device clock and that the SPV client is syncing"
         )));
     }
     Ok(false)
@@ -1747,12 +1813,12 @@ mod tests {
     }
 
     /// When enough headers signalled for V24 to lock in at the next period
-    /// start, a pre-V24 tip within 30 blocks of it may be behind a chain
-    /// that already activated V24, or the transaction may reach peers after
-    /// it, so the build is refused until the fork is seen. Further from the
-    /// period start the version-2 payload is still built.
+    /// start, a pre-V24 tip within the activation margin of it may be behind
+    /// a chain that already activated V24, or the transaction may reach peers
+    /// after it, so the build is refused until the fork is seen. Further from
+    /// the period start the version-2 payload is still built.
     #[test]
-    fn should_refuse_a_pre_v24_tip_within_30_blocks_of_a_period_v24_may_lock_in_for() {
+    fn should_refuse_a_pre_v24_tip_within_the_margin_of_a_period_v24_may_lock_in_for() {
         for network in [
             Network::Mainnet,
             Network::Testnet,
@@ -1830,7 +1896,7 @@ mod tests {
         }
     }
 
-    /// While V24 may lock in for the next period start, the 30-block margin
+    /// While V24 may lock in for the next period start, the activation margin
     /// is counted from the tip, so the tip must be at most 15 minutes old for
     /// few blocks to hide behind it. Without enough signalling the hour-long
     /// allowance stands, since the earliest activation is a period away.
@@ -1871,12 +1937,184 @@ mod tests {
         );
     }
 
+    /// The SPV client stalled on an ordinarily stamped tip 31 blocks before a
+    /// period start V24 may lock in for, mined 80 minutes ago, while the
+    /// local clock runs 90 minutes slow, so the tip lies ten minutes past
+    /// it. The network may already have mined through the period start, and
+    /// a timestamp past the local clock says nothing about how long ago the
+    /// tip was mined, so the build is refused rather than read as pre-V24.
+    /// The same holds beyond the activation margin: a tip 81 blocks before
+    /// the period start, mined 3 hours 25 minutes (82 blocks) ago, against a
+    /// clock 3 hours 35 minutes slow.
+    #[test]
+    fn should_refuse_a_stalled_tip_that_lies_past_a_slow_local_clock_while_v24_may_lock_in() {
+        let network = Network::Testnet;
+        let deployment = v24_deployment(network);
+        let period_start = deployment.period * 401;
+        let enough = signal_period(network, deployment.min_threshold);
+        let pre = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION - 1);
+        let mined_at = 1_792_470_316u32;
+
+        for (distance, mined_ago_mins, clock_slow_mins) in [(31, 80, 90), (81, 205, 215)] {
+            let network_time = u64::from(mined_at) + mined_ago_mins * 60;
+            let slow_clock = network_time - clock_slow_mins * 60;
+            let err = v24_active_after_tip(
+                &pre,
+                &tip_of(&pre, period_start - distance, mined_at),
+                network,
+                slow_clock,
+                Some(&enough),
+            )
+            .expect_err("a stalled tip past a slow local clock");
+            assert!(
+                matches!(&err, PlatformWalletError::TransactionBuild(message)
+                    if message.contains("600s past the local clock")
+                        && message.contains("check the device clock")),
+                "{distance} blocks before the period start: got {err:?}"
+            );
+        }
+    }
+
+    /// Core accepts a block stamped up to two hours past its own clock, so
+    /// by an accurate local clock a tip that looks 15 minutes old may have
+    /// been mined 2 hours 15 minutes ago, about 54 blocks back at Dash's
+    /// 2.5-minute spacing. While V24 may lock in for the next period start,
+    /// a pre-V24 tip that close to it, as at 31 blocks, is refused. With the
+    /// five minutes the local clock may be slow and the hour of blocks a
+    /// prepared transaction may take to be mined, the refusal reaches 80
+    /// blocks before the period start; at 81 the version-2 payload builds.
+    #[test]
+    fn should_count_cores_future_block_time_allowance_as_tip_age_while_v24_may_lock_in() {
+        let network = Network::Testnet;
+        let deployment = v24_deployment(network);
+        let period_start = deployment.period * 401;
+        let enough = signal_period(network, deployment.min_threshold);
+        let pre = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION - 1);
+        let mined_at = 1_792_470_316u64;
+        let stamped = mined_at + MAX_FUTURE_BLOCK_TIME_SECS;
+        let now = stamped + MAX_TIP_AGE_NEAR_V24_ACTIVATION_SECS;
+        let blocks_mined_since = 54;
+
+        let read = |distance: u32| {
+            v24_active_after_tip(
+                &pre,
+                &tip_of(&pre, period_start - distance, stamped as u32),
+                network,
+                now,
+                Some(&enough),
+            )
+        };
+
+        for distance in [31, blocks_mined_since, 80] {
+            let err = read(distance).expect_err("a tip stamped ahead of its mining");
+            assert!(
+                matches!(&err, PlatformWalletError::TransactionBuild(message)
+                    if message.contains(&format!("may activate at height {period_start}"))),
+                "{distance} blocks before the period start: got {err:?}"
+            );
+        }
+        assert!(!read(81).expect("beyond the margin"));
+    }
+
+    /// A fresh tip, even one lying within the tolerated lead past the local
+    /// clock, still decides a legacy evonode's payload on both sides of the
+    /// fork: version 2 while its coinbase is pre-V24 and V24 either cannot
+    /// lock in for the next period start, however close, or may but is
+    /// beyond the activation margin; version 3 once the coinbase shows V24.
+    #[tokio::test]
+    async fn should_build_from_a_fresh_tip_on_either_side_of_v24() {
+        let network = Network::Devnet;
+        let deployment = v24_deployment(network);
+        let period_start = deployment.period * 401;
+        let enough = signal_period(network, deployment.min_threshold);
+        let too_few = signal_period(network, deployment.min_threshold - 1);
+        let pre = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION - 1);
+        let post = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION);
+        let entry = legacy_core_evonode_entry("68.67.122.237:20001");
+        let now = 1_792_470_316u64;
+        let read = |block: &Block, height: u32, time: u64, signal_versions: &[BlockVersion]| {
+            v24_active_after_tip(
+                block,
+                &tip_of(block, height, time as u32),
+                network,
+                now,
+                Some(signal_versions),
+            )
+        };
+        let beyond_margin = period_start - V24_ACTIVATION_MARGIN_BLOCKS - 1;
+
+        for (height, time, signal_versions, case) in [
+            (
+                period_start - 1,
+                now - 120,
+                too_few.as_slice(),
+                "no lock-in, 2 minutes old",
+            ),
+            (
+                period_start - 1,
+                now + MAX_TIP_LEAD_SECS,
+                too_few.as_slice(),
+                "no lock-in, leading",
+            ),
+            (
+                beyond_margin,
+                now - 120,
+                enough.as_slice(),
+                "beyond the margin, 2 minutes old",
+            ),
+            (
+                beyond_margin,
+                now + MAX_TIP_LEAD_SECS,
+                enough.as_slice(),
+                "beyond the margin, leading",
+            ),
+        ] {
+            let tip_shows_v24 = read(&pre, height, time, signal_versions);
+            let placeholder = placeholder_for(&entry, false, Some(26656), async { tip_shows_v24 })
+                .await
+                .expect(case);
+            assert_eq!(placeholder.version, ProTxVersion::BasicBLS as u16, "{case}");
+        }
+
+        let tip_shows_v24 = read(&post, period_start, now - 120, &enough);
+        let placeholder = placeholder_for(&entry, false, Some(26656), async { tip_shows_v24 })
+            .await
+            .expect("the first V24 block");
+        assert_matches_core_v3_vector(placeholder);
+    }
+
+    /// With too few signalling headers for V24 to lock in at the next period
+    /// start, its earliest activation is a period after that, at least a
+    /// period and a block past the tip. On every network that is more than
+    /// the blocks that may hide behind a tip up to an hour old by its block
+    /// time, plus the broadcast allowance, so such a tip may still build the
+    /// version-2 payload without the activation margin.
+    #[test]
+    fn should_leave_v24_a_period_away_beyond_the_blocks_a_stalled_tip_may_hide() {
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Devnet,
+            Network::Regtest,
+        ] {
+            let period = u64::from(v24_deployment(network).period);
+            let reach = blocks_behind_tip(MAX_PRE_V24_TIP_AGE_SECS) + BROADCAST_ALLOWANCE_BLOCKS;
+            assert!(
+                reach <= period,
+                "{network:?}: {reach} blocks may pass before the transaction is mined, \
+                 more than the period of {period}"
+            );
+        }
+    }
+
     /// A tip older than an hour means the header chain has stalled, and V24
     /// may have activated in blocks the SPV client has not seen, so its
-    /// pre-V24 coinbase is not trusted. A tip more than Core's two-hour
-    /// future limit ahead of the local clock means the clock is behind and
-    /// cannot judge the tip's age. Both refusals are retryable. A version-4
-    /// coinbase proves V24 either way.
+    /// pre-V24 coinbase is not trusted. A tip more than five minutes past the
+    /// local clock means the clock is slow or the tip was stamped well after
+    /// it was mined, so the clock cannot judge the tip's age, even though
+    /// Core accepts blocks up to two hours ahead. Both refusals are
+    /// retryable, and stand even where V24 cannot lock in for the next period
+    /// start. A version-4 coinbase proves V24 either way.
     #[test]
     fn should_refuse_a_pre_v24_reading_from_a_stalled_spv_tip() {
         let time = 1_792_470_316u32;
@@ -1901,15 +2139,19 @@ mod tests {
             );
         };
         let stalled = u64::from(time) + MAX_PRE_V24_TIP_AGE_SECS + 1;
-        let clock_behind = u64::from(time) - MAX_FUTURE_BLOCK_TIME_SECS - 1;
+        let clock_behind = u64::from(time) - MAX_TIP_LEAD_SECS - 1;
 
         refused_with(stalled, "3601s old");
         assert!(!read(&pre, u64::from(time) + MAX_PRE_V24_TIP_AGE_SECS).expect("an hour old"));
-        refused_with(clock_behind, "past the local clock");
+        refused_with(clock_behind, "301s past the local clock");
+        refused_with(
+            u64::from(time) - MAX_FUTURE_BLOCK_TIME_SECS,
+            "7200s past the local clock",
+        );
         refused_with(0, "past the local clock");
         assert!(
-            !read(&pre, u64::from(time) - MAX_FUTURE_BLOCK_TIME_SECS).expect("within Core's limit"),
-            "a tip timestamped ahead within Core's future limit is recent"
+            !read(&pre, u64::from(time) - MAX_TIP_LEAD_SECS).expect("within the tolerated lead"),
+            "a tip at most five minutes past the local clock is recent"
         );
 
         assert!(read(&post, stalled).expect("a version-4 tip proves V24 however old"));
@@ -1976,6 +2218,12 @@ mod tests {
         panic!("no headers may be read without an SPV tip")
     }
 
+    /// A ChainLock read the wallet must not make: without a pre-V24 tip
+    /// reading there is nothing for it to refuse.
+    async fn chain_lock_not_read() -> Option<u32> {
+        panic!("the ChainLock height is read only for a pre-V24 tip")
+    }
+
     /// Without an SPV tip the SPV client is not running or holds no headers
     /// yet, the state an unavailable masternode list reports, and there is
     /// no block to ask DAPI for.
@@ -1985,6 +2233,7 @@ mod tests {
             None,
             block_not_fetched,
             headers_not_read,
+            chain_lock_not_read,
             Network::Testnet,
             || panic!("nothing is read, so the clock is not either"),
         )
@@ -2019,6 +2268,7 @@ mod tests {
                     async move { served }
                 },
                 |_| async { Some(signal_period(Network::Testnet, 0)) },
+                chain_lock_not_read,
                 Network::Testnet,
                 || now,
             )
@@ -2050,6 +2300,64 @@ mod tests {
         assert!(read(Ok(Some(block))).await.expect("the tip's block"));
     }
 
+    /// A validated ChainLock above the SPV tip shows that the network has
+    /// mined past it while the header chain has not caught up, so a pre-V24
+    /// tip below one is refused, retryably, however fresh its block time. A
+    /// ChainLock at or below the tip, or none, leaves the reading as it is,
+    /// and a version-4 tip proves V24 without the ChainLock being read.
+    #[tokio::test]
+    async fn should_refuse_a_pre_v24_tip_below_a_validated_chain_lock() {
+        let now = 1_792_470_316u64;
+        let height = 1_575_845;
+        let quiet = || async { Some(signal_period(Network::Testnet, 0)) };
+        let read = |chain_locked: Option<u32>| async move {
+            let block = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION - 1);
+            let tip = tip_of(&block, height, now as u32);
+            v24_active_at_spv_tip_with(
+                Some(tip),
+                |_| async move { Ok::<_, String>(Some(block)) },
+                |_| quiet(),
+                || async move { chain_locked },
+                Network::Testnet,
+                || now,
+            )
+            .await
+        };
+
+        let err = read(Some(height + 1))
+            .await
+            .expect_err("a tip below a ChainLock");
+        let reason = format!(
+            "tip at height {height} is below the ChainLock at height {}",
+            height + 1
+        );
+        assert!(
+            matches!(&err, PlatformWalletError::TransactionBuild(message)
+                if message.contains(&reason) && message.contains("try again")),
+            "got {err:?}"
+        );
+        for chain_locked in [Some(height), Some(height - 1), None] {
+            assert!(
+                !read(chain_locked).await.expect("not below a ChainLock"),
+                "{chain_locked:?}"
+            );
+        }
+
+        let post = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION);
+        let tip = tip_of(&post, height, now as u32);
+        let active = v24_active_at_spv_tip_with(
+            Some(tip),
+            |_| async move { Ok::<_, String>(Some(post)) },
+            |_| quiet(),
+            chain_lock_not_read,
+            Network::Testnet,
+            || now,
+        )
+        .await
+        .expect("a version-4 tip");
+        assert!(active);
+    }
+
     /// The pre-V24 reading for a fresh testnet tip at `height`, with the store
     /// holding `stored` as the signalling headers, and the heights they were
     /// read at.
@@ -2068,6 +2376,7 @@ mod tests {
                 reads.borrow_mut().push(heights);
                 async move { stored }
             },
+            || async { None },
             Network::Testnet,
             || now,
         )
@@ -2078,9 +2387,9 @@ mod tests {
     /// The headers read are those of the period whose signalling decides
     /// whether V24 can activate at the tip's next period start, and what
     /// they show reaches the activation rule: with too few signals a pre-V24
-    /// tip within 30 blocks of that start still builds, with enough or with
-    /// none read it is refused. A chain too short to have that period reads
-    /// no headers and only the margin decides.
+    /// tip within the activation margin of that start still builds, with
+    /// enough or with none read it is refused. A chain too short to have that
+    /// period reads no headers and only the margin decides.
     #[tokio::test]
     async fn should_read_the_signalling_period_that_decides_the_tips_next_period_start() {
         let network = Network::Testnet;
