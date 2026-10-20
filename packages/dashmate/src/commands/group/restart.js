@@ -1,7 +1,7 @@
 import { Listr } from 'listr2';
 import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
-import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
+import selectGroupBuildConfigs from '../../util/selectGroupBuildConfigs.js';
 
 export default class GroupRestartCommand extends GroupBaseCommand {
   static description = 'Restart group nodes';
@@ -39,9 +39,7 @@ export default class GroupRestartCommand extends GroupBaseCommand {
   ) {
     const groupName = configGroup[0].get('group');
 
-    // Each node's own config decides which of its services are built from local
-    // sources, so every node that builds any is built for
-    const buildConfigs = configGroup.filter(isServiceBuildRequired);
+    const buildConfigs = selectGroupBuildConfigs(configGroup);
 
     const tasks = new Listr(
       {

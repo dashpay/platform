@@ -110,6 +110,16 @@ describe('Group restart command', () => {
     expect(buildServicesTask.secondCall.calledBefore(stopNodeTask.firstCall)).to.be.true();
   });
 
+  // A development group copies one config to every node, and the images it builds
+  // are tagged by the config, so each node would only rebuild the same images
+  it('should build images that several nodes share only once', async () => {
+    configGroup.forEach(buildDriveFromSources);
+
+    await run();
+
+    expect(buildServicesTask).to.have.been.calledOnce();
+  });
+
   it('should not stop any node when a local image can not be built', async () => {
     buildDriveFromSources(configGroup[0]);
 

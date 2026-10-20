@@ -1,7 +1,7 @@
 import { Listr } from 'listr2';
 import DashCoreLib from '@dashevo/dashcore-lib';
 import { NETWORK_LOCAL } from '../../constants.js';
-import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
+import selectGroupBuildConfigs from '../../util/selectGroupBuildConfigs.js';
 
 const { PrivateKey } = DashCoreLib;
 const WAIT_FOR_NODES_TIMEOUT = 60 * 5 * 1000;
@@ -49,11 +49,7 @@ export default function startGroupNodesTaskFactory(
       minerConfig && minerConfig.get('network') === NETWORK_LOCAL
     );
 
-    // Each node's own config decides which of its services are built from local
-    // sources, so every node that builds any is built for
-    const buildConfigs = configGroup.filter((config) => (
-      isServiceBuildRequired(config)
-    ));
+    const buildConfigs = selectGroupBuildConfigs(configGroup);
 
     return new Listr([
       {
@@ -61,6 +57,7 @@ export default function startGroupNodesTaskFactory(
         // before it stops anything - says so, and the build is not repeated
         enabled: (ctx) => buildConfigs.length > 0 && !ctx.skipBuildServices,
         task: () => new Listr(buildConfigs.map((config) => ({
+          title: `Build ${config.getName()} services`,
           task: () => buildServicesTask(config),
         }))),
       },
