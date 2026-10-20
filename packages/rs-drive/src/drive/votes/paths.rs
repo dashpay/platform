@@ -12,7 +12,7 @@
 ///    |- Identifier Votes Query [key: "i"]
 /// ```
 ///
-/// Decisions are yes/no vote polls (protocol version 14). Each active poll is a tree keyed by
+/// Decisions are yes/no vote polls (protocol version 15). Each active poll is a tree keyed by
 /// the poll's unique id under the active polls tree:
 ///
 /// ```text
@@ -195,7 +195,7 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
         )
     }
 
-    fn contenders_path(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
+    fn contenders_path(&self, _platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
         let mut root = vote_contested_resource_contract_documents_indexes_path_vec(
             self.contract.as_ref().id_ref().as_slice(),
             self.document_type_name.as_str(),
@@ -215,8 +215,11 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
                 .iter()
                 .zip(self.index_values.iter())
                 .map(|(IndexProperty { name, .. }, value)| {
+                    // A poll keeps its generation-0 keys at every protocol version. Edited
+                    // in place: before protocol version 14 this is what
+                    // `serialize_value_for_key` wrote, so the path is the same there
                     document_type
-                        .serialize_value_for_key(name, value, platform_version)
+                        .serialize_value_for_vote_poll_key(name, value)
                         .map_err(Error::from)
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?,
@@ -288,7 +291,7 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllowBor
         )
     }
 
-    fn contenders_path(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
+    fn contenders_path(&self, _platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
         let mut root = vote_contested_resource_contract_documents_indexes_path_vec(
             self.contract.as_ref().id_ref().as_slice(),
             self.document_type_name.as_str(),
@@ -308,8 +311,11 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllowBor
                 .iter()
                 .zip(self.index_values.iter())
                 .map(|(IndexProperty { name, .. }, value)| {
+                    // A poll keeps its generation-0 keys at every protocol version. Edited
+                    // in place: before protocol version 14 this is what
+                    // `serialize_value_for_key` wrote, so the path is the same there
                     document_type
-                        .serialize_value_for_key(name, value, platform_version)
+                        .serialize_value_for_vote_poll_key(name, value)
                         .map_err(Error::from)
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?,

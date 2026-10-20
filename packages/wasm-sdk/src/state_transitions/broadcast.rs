@@ -30,16 +30,28 @@ fn referenced_contract_ids(state_transition: &StateTransition) -> BTreeSet<Ident
             .map(|transition| transition.data_contract_id())
             .collect(),
         // A ban's proof covers every list the contract keeps, which the verifier reads from
-        // the contract. The other moderations prove the one entry they edit, or for a document
-        // deletion the removal record it wrote, and need none.
-        StateTransition::ContractUserModeration(moderation)
-            if matches!(
-                moderation.action(),
-                ContractUserModerationAction::Ban { .. }
-            ) =>
-        {
-            BTreeSet::from([moderation.data_contract_id()])
-        }
+        // the contract. A restore's verifier decodes the document under the contract's document
+        // type, and a field change's reads the changed document back under it. A deletion's
+        // reads from the contract whether the type keeps removal records: one that keeps none
+        // is proved by the document's absence, read under the type. The other moderations
+        // prove the one list entry they edit, and a team action's proposal or approval the
+        // signer's approval of the action, read by a query rebuilt from the transition alone:
+        // they need none.
+        StateTransition::ContractUserModeration(moderation) => match moderation.action() {
+            ContractUserModerationAction::Ban { .. }
+            | ContractUserModerationAction::DeleteDocument { .. }
+            | ContractUserModerationAction::RestoreDocument { .. }
+            | ContractUserModerationAction::ChangeDocumentFields { .. } => {
+                BTreeSet::from([moderation.data_contract_id()])
+            }
+            ContractUserModerationAction::Unban { .. }
+            | ContractUserModerationAction::Suspend { .. }
+            | ContractUserModerationAction::Unsuspend { .. }
+            | ContractUserModerationAction::Warn { .. }
+            | ContractUserModerationAction::ClearWarnings { .. }
+            | ContractUserModerationAction::DeleteSettledDocument { .. }
+            | ContractUserModerationAction::ApproveTeamAction { .. } => BTreeSet::new(),
+        },
         _ => BTreeSet::new(),
     }
 }
@@ -87,9 +99,10 @@ impl WasmSdk {
         }
 
         if let Some(contract_id) = contract_id_to_refresh(state_transition) {
-            // This runs after the transition is broadcast, so a fetch that fails must not
-            // discard a result the network may already have accepted: a copy the provider
-            // holds is what is left to verify against, and it is right unless the team changed.
+            // Keep a resolvable contract when refresh fails: a separate wait may follow
+            // a broadcast the network already accepted. Combined calls prepare this
+            // context before broadcasting. Verification still checks the result against
+            // the available contract, which may be stale if the team changed.
             if let Err(error) = self.refresh_contract(contract_id).await {
                 if !self.can_resolve_contract(contract_id) {
                     return Err(error);
@@ -112,11 +125,9 @@ impl WasmSdk {
                 continue;
             }
 
-            // Only an unresolvable contract reaches the network. This runs
-            // after the transition is broadcast, where refetching what we
-            // already hold would let one transient failure discard a result
-            // the network already accepted. A contract that can be neither
-            // resolved nor fetched stays fatal: the proof needs it.
+            // Only an unresolvable contract reaches the network. Proof verification
+            // needs a definition, so a contract that cannot be resolved or fetched
+            // stays fatal, including for a separate wait after submission.
             self.refresh_contract(contract_id).await?;
         }
 
@@ -145,7 +156,7 @@ impl WasmSdk {
 
         st.broadcast(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
 
         Ok(())
     }
@@ -158,10 +169,13 @@ impl WasmSdk {
     ///
     /// Note: This differs from `waitForStateTransitionResult` which takes a hash string.
     /// This method takes the full state transition object and performs proof verification.
+    /// It succeeds only when the proof establishes execution of this specific transition.
+    /// An authenticated affected-state snapshot returns `ExecutionNotProved`; use
+    /// `waitForAffectedState` when a snapshot is the intended result.
     ///
     /// @param stateTransition - The state transition that was broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
-    /// @returns The verified state transition result
+    /// @returns The execution-proved state transition result
     #[wasm_bindgen(js_name = "waitForResponse")]
     pub async fn wait_for_response(
         &self,
@@ -187,14 +201,17 @@ impl WasmSdk {
 
     /// Broadcasts a state transition and waits for the result.
     ///
-    /// This method prepares proof context, broadcasts the transition, and waits
-    /// for confirmation from the network. Returns once the transition has been
-    /// processed or fails. Unlike separate broadcast and wait calls, proof
-    /// context preparation happens before broadcasting.
+    /// This method prepares proof context before broadcasting, then waits for
+    /// proof that this specific transition executed. `ExecutionNotProved` means
+    /// the accepted broadcast was followed by an authenticated affected-state
+    /// snapshot; it establishes neither execution nor failure of this transition.
+    /// To wait for an authenticated snapshot, call `waitForAffectedState` on
+    /// the submitted transition without broadcasting it again; the new wait
+    /// may observe a later block.
     ///
     /// @param stateTransition - The state transition to broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
-    /// @returns The verified state transition result
+    /// @returns The execution-proved state transition result
     #[wasm_bindgen(js_name = "broadcastAndWait")]
     pub async fn broadcast_and_wait(
         &self,
@@ -207,14 +224,15 @@ impl WasmSdk {
 
         st.broadcast(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
         let (outcome, _metadata) = st
             .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| {
+                WasmSdkError::with_context("Failed to wait for state transition result", e)
+            })?;
         let owner_balance = outcome.owner_balance();
-        let result = require_execution_proved(outcome)
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+        let result = require_execution_proved(outcome).map_err(WasmSdkError::from)?;
 
         with_owner_balance(convert_proof_result(result)?, owner_balance)
     }
@@ -226,9 +244,12 @@ impl WasmSdk {
     /// whose proofs cannot be bound to the execution of one specific
     /// transition (balance top-ups, credit transfers and withdrawals,
     /// address funds movements, shields, no-history token operations, key
-    /// limits updates). This method accepts those outcomes instead. The result is a verified,
-    /// height-pinned snapshot of the affected state — NOT evidence that this
-    /// specific transition executed.
+    /// limits updates, contract updates, contract moderation and fee claims,
+    /// and creates and deletes of indexOnly documents). This method accepts
+    /// those outcomes, as well as execution-proved outcomes. A snapshot
+    /// authenticates state at the proof's block; it does not prove this specific
+    /// transition executed. The generic JavaScript result does not expose the
+    /// proof height.
     ///
     /// @param stateTransition - The state transition that was broadcast
     /// @param settings - Optional put settings (retries, timeout, waitTimeoutMs)
@@ -247,7 +268,7 @@ impl WasmSdk {
             .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
             .map_err(|e| {
-                WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
+                WasmSdkError::with_context("Failed to wait for state transition result", e)
             })?;
         let owner_balance = outcome.owner_balance();
         let result = outcome.into_result();
@@ -274,11 +295,13 @@ impl WasmSdk {
 
         st.broadcast(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| WasmSdkError::with_context("Failed to broadcast", e))?;
         let (outcome, _metadata) = st
             .wait_for_outcome_with_metadata(self.as_ref(), put_settings)
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast: {}", e)))?;
+            .map_err(|e| {
+                WasmSdkError::with_context("Failed to wait for state transition result", e)
+            })?;
         let owner_balance = outcome.owner_balance();
         let result = outcome.into_result();
 
@@ -306,6 +329,7 @@ fn with_owner_balance(
 
 #[cfg(test)]
 mod tests {
+    use dash_sdk::dpp::bls::SecretKey;
     use super::*;
     use crate::context_provider::WasmTrustedContext;
     use crate::sdk::WasmSdkBuilder;
@@ -345,6 +369,13 @@ mod tests {
         }
     }
 
+    fn rotated_quorum_key() -> [u8; 48] {
+        SecretKey::from_ikm(b"rotated-quorum-fixture-keying-material")
+            .expect("at least 32 bytes of keying material")
+            .public_key()
+            .to_bytes()
+    }
+
     fn spawn_rotated_quorum_endpoint() -> (String, thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock quorum endpoint");
         listener
@@ -357,7 +388,7 @@ mod tests {
                 "success": true,
                 "data": [{
                     "quorum_hash": hex::encode([0x88; 32]),
-                    "key": hex::encode([0x98; 48]),
+                    "key": hex::encode(rotated_quorum_key()),
                     "height": 1,
                     "valid_members_count": 3
                 }]
@@ -442,50 +473,87 @@ mod tests {
     }
 
     #[test]
-    fn should_prepare_the_moderated_contract_of_a_ban_only() {
+    fn should_prepare_the_moderated_contract_of_each_moderation_whose_verifier_reads_it() {
+        use dash_sdk::dpp::platform_value::Value;
         use dash_sdk::dpp::state_transition::contract_user_moderation_transition::v0::ContractUserModerationTransitionV0;
         use dash_sdk::dpp::state_transition::contract_user_moderation_transition::ContractUserModerationTransition;
+        use std::collections::BTreeMap;
 
         let contract_id = Identifier::new([0x44; 32]);
-        let state_transition = StateTransition::ContractUserModeration(
-            ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
-                data_contract_id: contract_id,
-                ..Default::default()
-            }),
-        );
-
-        assert_eq!(
-            referenced_contract_ids(&state_transition)
-                .into_iter()
-                .collect::<Vec<_>>(),
-            vec![contract_id],
-        );
-
-        // Only a ban's proof is read against the contract.
-        let unban = StateTransition::ContractUserModeration(ContractUserModerationTransition::V0(
-            ContractUserModerationTransitionV0 {
-                data_contract_id: contract_id,
-                action: ContractUserModerationAction::Unban {
-                    identity_id: Identifier::new([0x55; 32]),
+        let identity_id = Identifier::new([0x55; 32]);
+        let document_id = Identifier::new([0x66; 32]);
+        let moderation = |action| {
+            StateTransition::ContractUserModeration(ContractUserModerationTransition::V0(
+                ContractUserModerationTransitionV0 {
+                    data_contract_id: contract_id,
+                    action,
+                    ..Default::default()
                 },
-                ..Default::default()
+            ))
+        };
+
+        // A ban's proof covers every barring list the contract keeps; a restore decodes the
+        // document under its type; a field change reads the document back under it; a deletion
+        // of a type that keeps no removal records is proved by the document's absence under it.
+        for action in [
+            ContractUserModerationAction::Ban {
+                identity_id,
+                reason: Default::default(),
             },
-        ));
-        assert!(referenced_contract_ids(&unban).is_empty());
+            ContractUserModerationAction::DeleteDocument {
+                document_type_name: "post".to_string(),
+                document_id,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::RestoreDocument {
+                document_type_name: "post".to_string(),
+                document: BinaryData::new(vec![0x77; 8]),
+            },
+            ContractUserModerationAction::ChangeDocumentFields {
+                document_type_name: "post".to_string(),
+                document_id,
+                fields: BTreeMap::from([("hidden".to_string(), Value::Bool(true))]),
+                reason: Default::default(),
+            },
+        ] {
+            assert_eq!(
+                referenced_contract_ids(&moderation(action.clone()))
+                    .into_iter()
+                    .collect::<Vec<_>>(),
+                vec![contract_id],
+                "{action}",
+            );
+        }
 
-        // A document deletion is proved by the removal record it wrote, contract unread.
-        let deletion = StateTransition::ContractUserModeration(
-            ContractUserModerationTransition::V0(ContractUserModerationTransitionV0 {
-                data_contract_id: contract_id,
-                action: ContractUserModerationAction::DeleteDocument {
-                    document_type_name: "post".to_string(),
-                    document_id: Identifier::new([0x66; 32]),
-                    reason: Default::default(),
-                },
-                ..Default::default()
-            }),
-        );
-        assert!(referenced_contract_ids(&deletion).is_empty());
+        // The other moderations prove the one list entry they edit, and a team action's proposal
+        // or approval the signer's approval of the action, contract unread.
+        for action in [
+            ContractUserModerationAction::Unban { identity_id },
+            ContractUserModerationAction::Suspend {
+                identity_id,
+                until: 1_000,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::Unsuspend { identity_id },
+            ContractUserModerationAction::Warn {
+                identity_id,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::ClearWarnings { identity_id },
+            ContractUserModerationAction::DeleteSettledDocument {
+                document_type_name: "post".to_string(),
+                document_id,
+                reason: Default::default(),
+            },
+            ContractUserModerationAction::ApproveTeamAction {
+                action_id: document_id,
+            },
+        ] {
+            assert!(
+                referenced_contract_ids(&moderation(action.clone())).is_empty(),
+                "{action}",
+            );
+        }
     }
 
     #[test]
@@ -545,7 +613,7 @@ mod tests {
             context
                 .get_quorum_public_key(1, [0x88; 32], 1)
                 .expect("rotated quorum must be available after preparation"),
-            [0x98; 48]
+            rotated_quorum_key()
         );
         server.join().expect("mock quorum server must finish");
     }

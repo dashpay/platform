@@ -1,3 +1,5 @@
+use dash_sdk::error::ContextProviderError;
+use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
 use dpp::consensus::ConsensusError;
@@ -38,6 +40,16 @@ pub enum PlatformWalletError {
     #[error("failed to persist wallet changeset: {0}")]
     PersisterStore(#[source] crate::changeset::PersistenceError),
 
+    /// A persister `flush` failed: the commit of rounds a backend whose
+    /// `store` only buffers was still holding. It keeps the flush's own
+    /// classification, which means something different from a store's:
+    /// `Transient` says the buffer survived and another `flush` may commit
+    /// it, `Constraint` that the buffered data was rejected, and `Fatal` that
+    /// the buffered rounds were discarded. See [`Self::PersisterLoad`] for why
+    /// the typed cause is carried.
+    #[error("failed to commit buffered wallet changesets: {0}")]
+    PersisterFlush(#[source] crate::changeset::PersistenceError),
+
     /// Restoring persisted platform-address state into a freshly registered
     /// wallet failed. Boxed to break the recursion; the inner variant and its
     /// `#[source]` chain survive intact.
@@ -66,6 +78,15 @@ pub enum PlatformWalletError {
 
     #[error("Invalid identity data: {0}")]
     InvalidIdentityData(String),
+
+    /// A DashPay invitation link's voucher key is for the other network (a
+    /// testnet link opened in a mainnet wallet, or the reverse). Definitive:
+    /// the claim refuses the link before any network work.
+    #[error("invitation is for the {invitation:?} network but this wallet is on {wallet:?}")]
+    InvitationNetworkMismatch {
+        invitation: Network,
+        wallet: Network,
+    },
 
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
@@ -581,6 +602,12 @@ pub enum PlatformWalletError {
     )]
     AssetLockInsufficientFunds { available: u64, required: u64 },
 
+    /// A whole-balance asset lock needs more inputs than an asset lock may
+    /// carry (`max_asset_lock_transaction_inputs`, 100: Dash Core relay policy
+    /// and Platform consensus alike). Nothing was built for the wire.
+    #[error("Asset lock requires {count} inputs, exceeding the limit of {max}")]
+    AssetLockTooManyInputs { count: usize, max: usize },
+
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
 
@@ -803,6 +830,34 @@ pub enum PlatformWalletError {
     #[error("SPV error: {0}")]
     SpvError(String),
 
+    /// dash-spv holds the quorum but has not verified it (status `Unknown` or
+    /// `Skipped`), so its key must not verify Platform proofs yet. Usually
+    /// transient: the status settles once the lists the check needs arrive.
+    /// Distinct from a missing quorum, which is [`Self::SpvError`]. See
+    /// [`Self::quorum_lookup_context_error`] for the SDK error class.
+    #[error(
+        "quorum {quorum_type}:{} is not verified by SPV yet ({status})",
+        hex::encode(quorum_hash)
+    )]
+    QuorumNotVerified {
+        /// The LLMQ type the lookup asked for.
+        quorum_type: u32,
+        /// The quorum hash as Platform names it.
+        quorum_hash: [u8; 32],
+        /// dash-spv's verification status for the quorum. Never `Verified`
+        /// or `Invalid`.
+        status: LLMQEntryVerificationStatus,
+    },
+
+    /// SPV startup or teardown panicked and may have left background work
+    /// running. Not retryable: restart the process.
+    /// FFI mirror: `PlatformWalletFFIResultCode::ErrorSpvProcessRestartRequired`.
+    #[error(
+        "SPV startup or teardown panicked and may have left background work \
+         running; restart the process before using SPV again: {0}"
+    )]
+    SpvProcessRestartRequired(String),
+
     #[error("Token operation failed: {0}")]
     TokenError(String),
 
@@ -943,6 +998,8 @@ pub enum PlatformWalletError {
     /// fail-closed. The wedged pass may still fire persistence / event
     /// callbacks; the host must keep its callback context alive and must
     /// not commit any wipe it was about to pair with this call.
+    /// Also returned by SPV start, stop and storage clear while an SPV
+    /// teardown is still running: stop SPV again.
     /// FFI mirror: `PlatformWalletFFIResultCode::ErrorShutdownIncomplete`.
     #[error("Background sync did not quiesce: {0}")]
     ShutdownIncomplete(String),
@@ -1012,6 +1069,16 @@ impl PlatformWalletError {
         Self::PersisterStore(source)
     }
 
+    /// A persister `flush` failed. Unlike
+    /// [`from_store_failure`](Self::from_store_failure) the classification is
+    /// kept as the backend reported it: a transient flush failure is retried
+    /// with another `flush`, which the store-side reissue attestation says
+    /// nothing about. See [`Self::from_load_failure`] for why no blanket
+    /// conversion exists.
+    pub fn from_flush_failure(source: crate::changeset::PersistenceError) -> Self {
+        Self::PersisterFlush(source)
+    }
+
     /// Restoring persisted platform-address state failed. Boxes `source`, so
     /// callers never write `Box::new`.
     pub fn from_restore_failure(source: PlatformWalletError) -> Self {
@@ -1044,6 +1111,27 @@ impl PlatformWalletError {
                 consensus_error_of(source)
             }
             _ => None,
+        }
+    }
+
+    /// The SDK error a [`ContextProvider::get_quorum_public_key`] backed by
+    /// [`SpvRuntime::get_quorum_public_key`] reports for this lookup failure.
+    ///
+    /// [`Self::QuorumNotVerified`] becomes
+    /// [`ContextProviderError::QuorumSourceUnavailable`]: the trusted source
+    /// cannot vouch for the key yet, which is not the responding node's fault,
+    /// so the SDK does not ban it. Every other error, a missing quorum
+    /// included, becomes [`ContextProviderError::Generic`], which the SDK
+    /// treats as a failed proof.
+    ///
+    /// [`ContextProvider::get_quorum_public_key`]: dash_sdk::platform::ContextProvider::get_quorum_public_key
+    /// [`SpvRuntime::get_quorum_public_key`]: crate::SpvRuntime::get_quorum_public_key
+    pub fn quorum_lookup_context_error(&self) -> ContextProviderError {
+        match self {
+            Self::QuorumNotVerified { .. } => {
+                ContextProviderError::QuorumSourceUnavailable(self.to_string())
+            }
+            _ => ContextProviderError::Generic(self.to_string()),
         }
     }
 }
@@ -1276,6 +1364,26 @@ pub fn promote_document_trade_error(error: &dash_sdk::Error) -> Option<PlatformW
                 actual: e.actual_price(),
             })
         }
+        ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(_)) => {
+            promote_identity_insufficient_balance(error)
+        }
+        _ => None,
+    }
+}
+
+/// Promote Platform's `IdentityInsufficientBalanceError` — the identity's
+/// balance cannot cover the amount plus the transition's minimum fee — to
+/// the typed [`PlatformWalletError::InsufficientIdentityCredits`], carrying
+/// Platform's own `required` / `available` figures.
+///
+/// Returns `None` for anything else, leaving the caller's fallback mapping
+/// in charge.
+pub fn promote_identity_insufficient_balance(
+    error: &dash_sdk::Error,
+) -> Option<PlatformWalletError> {
+    use dpp::consensus::state::state_error::StateError;
+
+    match consensus_error_of(error)? {
         ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(e)) => {
             Some(PlatformWalletError::InsufficientIdentityCredits {
                 identity_id: *e.identity_id(),
@@ -1285,6 +1393,20 @@ pub fn promote_document_trade_error(error: &dash_sdk::Error) -> Option<PlatformW
         }
         _ => None,
     }
+}
+
+/// Map an identity-funded credit transition's SDK error (withdrawal,
+/// transfer to addresses) to a [`PlatformWalletError`]: a balance refusal
+/// first ([`promote_identity_insufficient_balance`]), then the structured
+/// signer-key-unavailable preservation, then the caller's `wrap` fallback.
+pub fn promote_identity_insufficient_balance_or(
+    error: dash_sdk::Error,
+    wrap: impl FnOnce(dash_sdk::Error) -> PlatformWalletError,
+) -> PlatformWalletError {
+    if let Some(promoted) = promote_identity_insufficient_balance(&error) {
+        return promoted;
+    }
+    preserve_signer_key_unavailable_or(error, wrap)
 }
 
 /// Map a document-trade transition's SDK error to a [`PlatformWalletError`]:
@@ -1783,5 +1905,135 @@ mod asset_lock_already_consumed_tests {
             &unrelated_broadcast,
             &out_point()
         ));
+    }
+}
+
+#[cfg(test)]
+mod identity_insufficient_balance_tests {
+    use super::*;
+    use dash_sdk::error::StateTransitionBroadcastError;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+
+    const IDENTITY: [u8; 32] = [9u8; 32];
+
+    /// The refusal a Max identity withdrawal met on testnet: the amount plus
+    /// the 0.004 DASH minimum withdrawal fee against a balance 0.002 above it.
+    fn insufficient_balance() -> ConsensusError {
+        IdentityInsufficientBalanceError::new(
+            Identifier::from(IDENTITY),
+            24_818_360_000,
+            25_018_360_000,
+        )
+        .into()
+    }
+
+    fn assert_promoted(error: PlatformWalletError) {
+        match error {
+            PlatformWalletError::InsufficientIdentityCredits {
+                identity_id,
+                required,
+                available,
+            } => {
+                assert_eq!(identity_id, Identifier::from(IDENTITY));
+                assert_eq!(required, 25_018_360_000);
+                assert_eq!(available, 24_818_360_000);
+            }
+            other => panic!("expected InsufficientIdentityCredits, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn promotes_the_check_tx_shape() {
+        let err = dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(
+            insufficient_balance(),
+        )));
+        assert_promoted(promote_identity_insufficient_balance(&err).expect("must promote"));
+    }
+
+    #[test]
+    fn promotes_the_wait_stream_shape_through_the_or_wrapper() {
+        let cause = insufficient_balance();
+        let err = dash_sdk::Error::StateTransitionBroadcastError(StateTransitionBroadcastError {
+            code: cause.code(),
+            message: cause.to_string(),
+            cause: Some(cause),
+        });
+        assert_promoted(promote_identity_insufficient_balance_or(err, |_| {
+            panic!("a balance refusal must not reach the fallback")
+        }));
+    }
+
+    #[test]
+    fn leaves_other_errors_to_the_fallback() {
+        let err = dash_sdk::Error::Generic("boom".to_string());
+        assert!(promote_identity_insufficient_balance(&err).is_none());
+        let wrapped = promote_identity_insufficient_balance_or(err, |e| {
+            PlatformWalletError::InvalidIdentityData(format!("Failed to withdraw credits: {e}"))
+        });
+        assert!(matches!(
+            wrapped,
+            PlatformWalletError::InvalidIdentityData(_)
+        ));
+    }
+
+    /// The withdrawal and transfer-to-addresses call sites reach code 31
+    /// through this wrapper, so a key-unavailable signer failure must come
+    /// back under `Sdk`, not promoted and not handed to the fallback.
+    #[test]
+    fn keeps_a_key_unavailable_signer_failure_under_sdk() {
+        let err = dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+            "{SIGNER_KEY_UNAVAILABLE_PREFIX}no private key stored for 02abcd"
+        )));
+        assert!(promote_identity_insufficient_balance(&err).is_none());
+        let mapped = promote_identity_insufficient_balance_or(err, |_| {
+            panic!("a key-unavailable signer failure must not reach the fallback")
+        });
+        match mapped {
+            PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))) => {
+                assert!(s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX));
+            }
+            other => panic!("expected preserved Sdk(Protocol(Generic)), got {other:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod quorum_lookup_context_error_tests {
+    use super::*;
+    use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationSkipStatus;
+
+    /// An unverified key is the trusted source's gap, not the node's fault,
+    /// so it maps to the SDK's non-ban class and keeps its diagnostic text.
+    #[test]
+    fn should_map_an_unverified_quorum_to_quorum_source_unavailable() {
+        let error = PlatformWalletError::QuorumNotVerified {
+            quorum_type: 6,
+            quorum_hash: [0xab; 32],
+            status: LLMQEntryVerificationStatus::Skipped(
+                LLMQEntryVerificationSkipStatus::NotMarkedForVerification,
+            ),
+        };
+
+        match error.quorum_lookup_context_error() {
+            ContextProviderError::QuorumSourceUnavailable(reason) => {
+                assert_eq!(reason, error.to_string());
+                assert!(reason.contains(&hex::encode([0xab; 32])), "{reason}");
+                assert!(reason.contains("NotMarkedForVerification"), "{reason}");
+            }
+            other => panic!("expected QuorumSourceUnavailable, got {other:?}"),
+        }
+    }
+
+    /// A missing quorum keeps the failed-proof class: the node named a quorum
+    /// the trusted source does not hold.
+    #[test]
+    fn should_map_a_missing_quorum_to_a_generic_error() {
+        let error = PlatformWalletError::SpvError("Quorum not found".to_string());
+
+        match error.quorum_lookup_context_error() {
+            ContextProviderError::Generic(reason) => assert_eq!(reason, error.to_string()),
+            other => panic!("expected Generic, got {other:?}"),
+        }
     }
 }

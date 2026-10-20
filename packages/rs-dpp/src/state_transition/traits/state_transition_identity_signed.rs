@@ -106,11 +106,12 @@ pub trait StateTransitionIdentitySigned: StateTransitionLike {
 }
 
 pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], ProtocolError> {
-    let sk = RawSecretKey::from_slice(private_key)
+    let sk = <[u8; 32]>::try_from(private_key)
+        .map_err(|_| dashcore::secp256k1::Error::InvalidSecretKey)
+        .and_then(RawSecretKey::from_secret_bytes)
         .map_err(|e| anyhow!("Invalid ECDSA private key: {}", e))?;
 
-    let secp = dashcore::secp256k1::Secp256k1::new();
-    let public_key_compressed = RawPublicKey::from_secret_key(&secp, &sk).serialize();
+    let public_key_compressed = RawPublicKey::from_secret_key(&sk).serialize();
     Ok(public_key_compressed)
 }
 

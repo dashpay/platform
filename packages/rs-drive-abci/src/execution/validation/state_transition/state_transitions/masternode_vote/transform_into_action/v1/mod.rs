@@ -38,7 +38,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::master
 }
 
 impl MasternodeVoteStateTransitionTransformIntoActionValidationV1 for MasternodeVoteTransition {
-    /// Version 1 (protocol version 14) also transforms a vote on a yes/no poll. The same rules
+    /// Version 1 (protocol version 15) also transforms a vote on a yes/no poll. The same rules
     /// hold for both kinds: the same answer cannot be given twice, and a masternode may vote on a
     /// poll at most `votes_allowed_per_masternode` times, its first vote included.
     fn transform_into_action_v1<C>(

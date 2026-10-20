@@ -117,6 +117,8 @@ impl Drive {
                 index_level,
                 any_fields_null,
                 all_fields_null,
+                // No sibling has been seen yet, so both rules agree here.
+                any_fields_null,
                 parent_value_tree_type,
                 storage_flags,
                 previous_batch_operations,

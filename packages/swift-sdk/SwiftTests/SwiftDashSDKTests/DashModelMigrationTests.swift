@@ -78,8 +78,8 @@ final class DashModelMigrationTests: XCTestCase {
         XCTAssertTrue(log.contains("route=\"historical-v2-to-v3\""))
         XCTAssertTrue(log.contains("source_version=\"2.0.0\""))
         XCTAssertTrue(log.contains("source_checksum=\"\(sourceChecksum)\""))
-        XCTAssertTrue(log.contains("target_version=\"3.0.0\""))
-        XCTAssertTrue(log.contains("route=\"labelled-current-v3\""))
+        XCTAssertTrue(log.contains("target_version=\"4.0.0\""))
+        XCTAssertTrue(log.contains("route=\"labelled-current-v4\""))
         XCTAssertEqual(log.components(separatedBy: "event=store_open_succeeded").count - 1, 2)
         XCTAssertFalse(log.contains("event=store_open_failed"))
         XCTAssertFalse(log.contains(directory.path))
@@ -95,7 +95,7 @@ final class DashModelMigrationTests: XCTestCase {
         let updatedLog = try String(contentsOf: session.appendingPathComponent("swift/run.log"), encoding: .utf8)
         XCTAssertTrue(updatedLog.contains("route=\"new-store\""))
         let failure = try XCTUnwrap(updatedLog.split(separator: "\n").first { $0.contains("event=store_open_failed") })
-        XCTAssertTrue(failure.contains("target_version=\"3.0.0\""))
+        XCTAssertTrue(failure.contains("target_version=\"4.0.0\""))
         XCTAssertTrue(failure.contains("error_code="))
         XCTAssertFalse(updatedLog.contains(directory.path))
         XCTAssertFalse(updatedLog.contains("private-invalid-store-content"))
@@ -106,7 +106,7 @@ final class DashModelMigrationTests: XCTestCase {
     /// either way. Labels whose route is undecidable without that probe
     /// (accepted V1 versus the bridge, historical V2 versus a beta layout)
     /// keep failing closed, leaving the store untouched.
-    func testCurrentV3RouteNeverDependsOnTheSchemaIdentityProbe() throws {
+    func testCurrentV4RouteNeverDependsOnTheSchemaIdentityProbe() throws {
         struct ProbeUnavailable: Error {}
         let failingProbe: (any VersionedSchema.Type) throws -> DashLegacySchemaBridge.Identity = { _ in
             throw ProbeUnavailable()
@@ -117,7 +117,7 @@ final class DashModelMigrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let current = directory.appendingPathComponent("current.store")
         try autoreleasepool { _ = try DashModelContainer.create(url: current) }
-        XCTAssertEqual(try DashLegacySchemaBridge.identity(at: current).versions, ["3.0.0"])
+        XCTAssertEqual(try DashLegacySchemaBridge.identity(at: current).versions, ["4.0.0"])
         let plan = try DashModelContainer.migrationPlan(
             at: current, defaultPlan: DashMigrationPlan.self, identity: failingProbe)
         XCTAssertTrue(ObjectIdentifier(plan) == ObjectIdentifier(DashMigrationPlan.self))
@@ -513,7 +513,7 @@ final class DashModelMigrationTests: XCTestCase {
         try v1Container?.mainContext.save()
         v1Container = nil
 
-        let v2Schema = Schema(versionedSchema: DashSchemaV3.self)
+        let v2Schema = Schema(versionedSchema: DashSchemaV4.self)
         let v2Configuration = ModelConfiguration(
             "DashKeyLimitsMigrationTest",
             schema: v2Schema,
@@ -590,7 +590,7 @@ final class DashModelMigrationTests: XCTestCase {
         try v1Container?.mainContext.save()
         v1Container = nil
 
-        let v2Schema = Schema(versionedSchema: DashSchemaV3.self)
+        let v2Schema = Schema(versionedSchema: DashSchemaV4.self)
         let v2Configuration = ModelConfiguration(
             "DashContractBoundsKindMigrationTest",
             schema: v2Schema,
@@ -643,10 +643,11 @@ final class DashModelMigrationTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("historical-v2.store")
+        let workingURL = directory.appendingPathComponent("working.store")
         try autoreleasepool {
             let schema = Schema(versionedSchema: DashSchemaV2.self)
             let container = try ModelContainer(for: schema, configurations: [
-                ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+                ModelConfiguration(schema: schema, url: workingURL, cloudKitDatabase: .none)
             ])
             let context = container.mainContext
             let wallet = DashSchemaV2.PersistentWallet(
@@ -702,8 +703,12 @@ final class DashModelMigrationTests: XCTestCase {
                 networkRaw: Network.testnet.rawValue, proTxHash: Data(repeating: 7, count: 32),
                 label: "fixture", addedAt: 1, snapshotJSON: "{}"))
             try context.save()
+            // Snapshot committed data while SwiftData still owns the WAL store.
+            try withExtendedLifetime(container) {
+                try DashLegacyStoreSQLite.copy(from: workingURL, to: url)
+                try DashLegacyStoreSQLite.validatePreservation(from: workingURL, to: url)
+            }
         }
-        try DashLegacyStoreSQLite.checkpoint(url)
         let metadata = try DashSchemaFixtureSupport.describeStore(at: url, version: Schema.Version(2, 0, 0))
         XCTAssertEqual(metadata.entity_hashes.count, 35)
         XCTAssertEqual(metadata.model_checksum, "RrRj/iNbS9izgLQvNb2APed4iwaR7pftEE2+4tea7K8=")

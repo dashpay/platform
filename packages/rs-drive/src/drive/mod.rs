@@ -14,6 +14,8 @@ use dpp::prelude::{BlockHeight, TimestampMillis};
 #[cfg(any(feature = "server", feature = "verify"))]
 use grovedb::GroveDb;
 use std::fmt;
+#[cfg(feature = "full")]
+use tempfile::TempDir;
 
 #[cfg(feature = "server")]
 use crate::fees::op::LowLevelDriveOperation;
@@ -174,6 +176,15 @@ pub struct Drive {
     /// Drive Checkpoints
     #[cfg(feature = "server")]
     pub checkpoints: CheckpointsMap,
+
+    /// The temporary directory holding the database, when a test helper such as
+    /// [`setup_drive`](crate::util::test_helpers::setup::setup_drive) created one; `None` for a
+    /// Drive opened at a caller's path. RocksDB creates files in this directory for as long as
+    /// the database is open (memtable flushes, new log files, compactions), so the Drive owns
+    /// it and it is removed only when the Drive is dropped. Fields drop in declaration order,
+    /// so this one stays last: `grove` is dropped before the directory is removed.
+    #[cfg(feature = "full")]
+    pub(crate) temp_dir: Option<TempDir>,
 }
 
 // The root tree structure is very important!

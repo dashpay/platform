@@ -81,6 +81,11 @@ impl<C> Platform<C> {
                 SystemDataContract::AppConnect,
                 system_data_contracts.load_app_connect(platform_version)?,
             );
+            // The moderation charters contract activates with the same version and branch.
+            system_data_contract_types.insert(
+                SystemDataContract::ModerationCharters,
+                system_data_contracts.load_moderation_charters(platform_version)?,
+            );
         }
 
         for data_contract in system_data_contract_types.values() {
@@ -130,6 +135,7 @@ mod tests {
         use crate::test::helpers::setup::TestPlatformBuilder;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::data_contracts::SystemDataContract;
+        use dpp::prelude::Identifier;
         use drive::config::DriveConfig;
         use platform_version::version::{PlatformVersion, INITIAL_PROTOCOL_VERSION};
 
@@ -206,6 +212,52 @@ mod tests {
                         .document_type_for_name("loginKeyResponse")
                         .is_ok());
                     assert_eq!(stored.contract.document_types().len(), 1);
+                }
+            }
+        }
+
+        /// The moderation charters contract joins the genesis state at protocol version 14,
+        /// behind the same branch as the app-connect contract.
+        #[test]
+        pub fn should_register_the_moderation_charters_contract_only_from_protocol_version_14() {
+            let moderation_charters_id = SystemDataContract::ModerationCharters.id();
+
+            for (platform_version, expected) in [
+                (PlatformVersion::get(13).expect("protocol 13"), false),
+                (PlatformVersion::latest(), true),
+            ] {
+                let initial_protocol_version = platform_version.protocol_version;
+                let platform = TestPlatformBuilder::new()
+                    .with_initial_protocol_version(initial_protocol_version)
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let stored = platform
+                    .drive
+                    .fetch_contract(
+                        moderation_charters_id.to_buffer(),
+                        None,
+                        None,
+                        None,
+                        platform_version,
+                    )
+                    .value
+                    .expect("expected to query the moderation charters contract");
+
+                assert_eq!(
+                    stored.is_some(),
+                    expected,
+                    "moderation charters contract presence in a genesis state born at protocol version {initial_protocol_version}"
+                );
+
+                if let Some(stored) = stored {
+                    assert_eq!(stored.contract.id(), moderation_charters_id);
+                    assert_eq!(stored.contract.owner_id(), Identifier::from([0u8; 32]));
+                    assert!(stored
+                        .contract
+                        .document_type_for_name("electedCharter")
+                        .is_ok());
+                    assert_eq!(stored.contract.document_types().len(), 7);
                 }
             }
         }

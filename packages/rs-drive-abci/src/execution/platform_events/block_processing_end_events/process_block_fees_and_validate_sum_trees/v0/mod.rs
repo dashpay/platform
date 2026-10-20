@@ -205,8 +205,14 @@ mod tests {
     use rust_decimal::prelude::ToPrimitive;
 
     use crate::config::ExecutionConfig;
+    use crate::execution::types::block_fees::v0::BlockFeesV0;
     use crate::{config::PlatformConfig, test::helpers::setup::TestPlatformBuilder};
+    use dpp::fee::fee_result::LifetimeStorageFees;
+    use drive::drive::credit_pools::operations::update_lifetime_storage_fee_pool_operation;
+    use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use drive::util::batch::GroveDbOpBatch;
     use drive::util::test_helpers::test_utils::identities::create_test_masternode_identities;
+    use std::collections::BTreeMap;
 
     mod helpers {
         use super::*;
@@ -219,19 +225,16 @@ mod tests {
         use dpp::fee::epoch::{perpetual_storage_epochs, CreditsPerEpoch, GENESIS_EPOCH_INDEX};
         use platform_version::version::INITIAL_PROTOCOL_VERSION;
 
-        /// Process and validate block fees
-        pub fn process_and_validate_block_fees<C>(
+        /// The block at `block_height` in epoch `epoch_index`: its state info, its epoch info and
+        /// its execution context
+        pub fn block_execution_context<C>(
             platform: &Platform<C>,
             genesis_time_ms: u64,
             epoch_index: u16,
             block_height: u64,
             previous_block_time_ms: Option<u64>,
             proposer_pro_tx_hash: [u8; 32],
-            transaction: &Transaction,
-        ) -> BlockStateInfoV0 {
-            let current_epoch = Epoch::new(epoch_index).unwrap();
-            let platform_version = PlatformVersion::latest();
-
+        ) -> (BlockStateInfoV0, EpochInfo, BlockExecutionContext) {
             let block_time_ms = genesis_time_ms
                 + epoch_index as u64 * platform.config.execution.epoch_time_length_s * 1000
                 + block_height;
@@ -257,13 +260,6 @@ mod tests {
             .expect("should calculate epoch info")
             .into();
 
-            let block_fees: BlockFees = BlockFeesV0 {
-                storage_fee: 100000,
-                processing_fee: 10000,
-                refunds_per_epoch: CreditsPerEpoch::from_iter([(epoch_index, 100)]),
-            }
-            .into();
-
             let block_platform_state = PlatformState::default_with_protocol_versions(
                 INITIAL_PROTOCOL_VERSION,
                 INITIAL_PROTOCOL_VERSION,
@@ -280,9 +276,42 @@ mod tests {
                 block_address_balance_changes: Default::default(),
             };
 
+            (block_info, epoch_info, block_execution_context.into())
+        }
+
+        /// Process and validate block fees
+        pub fn process_and_validate_block_fees<C>(
+            platform: &Platform<C>,
+            genesis_time_ms: u64,
+            epoch_index: u16,
+            block_height: u64,
+            previous_block_time_ms: Option<u64>,
+            proposer_pro_tx_hash: [u8; 32],
+            transaction: &Transaction,
+        ) -> BlockStateInfoV0 {
+            let current_epoch = Epoch::new(epoch_index).unwrap();
+            let platform_version = PlatformVersion::latest();
+
+            let (block_info, epoch_info, block_execution_context) = block_execution_context(
+                platform,
+                genesis_time_ms,
+                epoch_index,
+                block_height,
+                previous_block_time_ms,
+                proposer_pro_tx_hash,
+            );
+
+            let block_fees: BlockFees = BlockFeesV0 {
+                storage_fee: 100000,
+                processing_fee: 10000,
+                refunds_per_epoch: CreditsPerEpoch::from_iter([(epoch_index, 100)]),
+                ..Default::default()
+            }
+            .into();
+
             let storage_fee_distribution_outcome = platform
                 .process_block_fees_and_validate_sum_trees_v0(
-                    &block_execution_context.into(),
+                    &block_execution_context,
                     block_fees.clone(),
                     transaction,
                     platform_version,
@@ -511,6 +540,131 @@ mod tests {
             Some(block_info.block_time_ms),
             proposers[4],
             &transaction,
+        );
+    }
+
+    #[test]
+    fn should_spread_the_last_epochs_lifetime_pools_and_fill_the_new_epochs_in_one_batch() {
+        // The first block of an epoch spreads and removes the lifetime storage fee pools of the
+        // epoch before and adds its own ttl storage fees to pools of the new epoch, a lifetime
+        // they share included, in the one batch the credits are checked after. The fixture's
+        // first block adds fees from nobody, so the test checks the credits of the epoch
+        // change itself instead of the platform checking every block.
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig {
+                execution: ExecutionConfig {
+                    verify_sum_trees: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .build_with_mock_rpc()
+            .set_genesis_state_with_activation_info(0, 1);
+        let transaction = platform.drive.grove.start_transaction();
+        platform.create_mn_shares_contract(Some(&transaction), platform_version);
+        let proposers = create_test_masternode_identities(
+            &platform.drive,
+            2,
+            Some(56),
+            Some(&transaction),
+            platform_version,
+        );
+        let genesis_time_ms = Utc::now()
+            .timestamp_millis()
+            .to_u64()
+            .expect("block time can not be before 1970");
+
+        // Epoch 0: its first block, and ttl storage fees it collected.
+        let block_info = helpers::process_and_validate_block_fees(
+            &platform,
+            genesis_time_ms,
+            GENESIS_EPOCH_INDEX,
+            1,
+            None,
+            proposers[0],
+            &transaction,
+        );
+        let mut batch = GroveDbOpBatch::new();
+        for (lifetime_epochs, credits) in [(2, 1_001), (40, 400)] {
+            batch.push(
+                update_lifetime_storage_fee_pool_operation(
+                    GENESIS_EPOCH_INDEX,
+                    lifetime_epochs,
+                    credits,
+                )
+                .expect("expected the pool operation"),
+            );
+        }
+        platform
+            .drive
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+            .expect("expected to fill the pools");
+
+        // The first block of epoch 1 and its own ttl storage fees. The fixture put credits in
+        // place outside a block and the block's fees come from nobody: count them all, so the
+        // credits are balanced before the block.
+        let block_fees: BlockFees = BlockFeesV0 {
+            storage_fee: 1_000,
+            processing_fee: 10_000,
+            lifetime_storage_fees: LifetimeStorageFees::from([(1, 300), (40, 500)]),
+            ..Default::default()
+        }
+        .into();
+        let credits = platform
+            .drive
+            .calculate_total_credits_balance(Some(&transaction), &platform_version.drive)
+            .expect("expected to total the credits");
+        platform
+            .drive
+            .add_to_system_credits(
+                credits
+                    .total_in_trees()
+                    .expect("expected the credits in trees")
+                    - credits.total_credits_in_platform
+                    + block_fees.storage_fee()
+                    + block_fees.processing_fee(),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to count the fixture's credits");
+        let (_, epoch_info, block_execution_context) = helpers::block_execution_context(
+            &platform,
+            genesis_time_ms,
+            GENESIS_EPOCH_INDEX + 1,
+            2,
+            Some(block_info.block_time_ms),
+            proposers[1],
+        );
+        assert!(epoch_info.is_epoch_change());
+
+        platform
+            .process_block_fees_and_validate_sum_trees_v0(
+                &block_execution_context,
+                block_fees,
+                &transaction,
+                platform_version,
+            )
+            .expect("should process the block fees");
+
+        assert_eq!(
+            platform
+                .drive
+                .fetch_lifetime_storage_fee_pools(Some(&transaction), platform_version)
+                .expect("expected to read the lifetime pools"),
+            BTreeMap::from([(
+                GENESIS_EPOCH_INDEX + 1,
+                LifetimeStorageFees::from([(1, 300), (40, 500)])
+            )]),
+            "epoch 0's pools are spread and removed, the block's wait in pools of epoch 1"
+        );
+        let credits = platform
+            .drive
+            .calculate_total_credits_balance(Some(&transaction), &platform_version.drive)
+            .expect("expected to total the credits");
+        assert!(
+            credits.ok().expect("expected to compare the credits"),
+            "{credits:?}"
         );
     }
 }

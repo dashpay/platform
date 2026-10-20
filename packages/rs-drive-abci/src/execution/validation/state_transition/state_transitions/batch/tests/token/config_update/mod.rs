@@ -1585,6 +1585,11 @@ mod token_config_update_tests {
         use super::*;
         use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
         use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
+        use dpp::group::action_event::GroupActionEvent;
+        use dpp::group::group_action::v0::GroupActionV0;
+        use dpp::group::group_action::GroupAction;
+        use dpp::tests::fixtures::get_token_conventions_with_localizations_fixture;
+        use dpp::tokens::token_event::TokenEvent;
 
         #[tokio::test]
         async fn test_token_config_update_by_group_member_changing_total_max_supply_not_using_group_gives_error(
@@ -3866,6 +3871,215 @@ mod token_config_update_tests {
                 .commit_transaction(transaction)
                 .unwrap()
                 .expect("expected to commit transaction");
+        }
+
+        /// A conventions change with 1,250 valid localizations encodes in
+        /// about 16 KB, but its localizations map claims 100,000 bytes at its
+        /// length prefix. Drive used to read the stored action under the
+        /// budget proofs decode under, so the second member's signature ended
+        /// in an internal error and the change could never be applied.
+        #[tokio::test]
+        async fn should_let_a_group_co_sign_a_conventions_change_with_1250_localizations() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(49853);
+
+            let platform_state = platform.state.load();
+
+            let (identity, signer, key) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (identity_2, signer_2, key_2) =
+                setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+            let (contract, token_id) = create_token_contract_with_owner_identity(
+                &mut platform,
+                identity.id(),
+                Some(|token_configuration: &mut TokenConfiguration| {
+                    token_configuration.set_conventions_change_rules(ChangeControlRules::V0(
+                        ChangeControlRulesV0 {
+                            authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                            admin_action_takers: AuthorizedActionTakers::NoOne,
+                            changing_authorized_action_takers_to_no_one_allowed: false,
+                            changing_admin_action_takers_to_no_one_allowed: false,
+                            self_changing_admin_action_takers_allowed: false,
+                        },
+                    ));
+                }),
+                None,
+                Some(
+                    [(
+                        0,
+                        Group::V0(GroupV0 {
+                            members: [(identity.id(), 1), (identity_2.id(), 1)].into(),
+                            required_power: 2,
+                        }),
+                    )]
+                    .into(),
+                ),
+                None,
+                platform_version,
+            );
+
+            let conventions = get_token_conventions_with_localizations_fixture(1_250);
+            let change = TokenConfigurationChangeItem::Conventions(conventions.clone());
+
+            let action_id = TokenConfigUpdateTransition::calculate_action_id_with_fields(
+                token_id.as_bytes(),
+                identity.id().as_bytes(),
+                2,
+                &change,
+                platform_version,
+            )
+            .expect("expected to calculate action id");
+
+            let proposal = BatchTransition::new_token_config_update_transition(
+                token_id,
+                identity.id(),
+                contract.id(),
+                0,
+                change.clone(),
+                None,
+                Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+                &key,
+                2,
+                0,
+                &signer,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition")
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[proposal],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // The proposal stored the action as it was proposed.
+            let stored = platform
+                .drive
+                .fetch_action_id_info_keep_serialized(
+                    contract.id(),
+                    0,
+                    action_id,
+                    None,
+                    platform_version,
+                )
+                .expect("expected the proposed action to be stored");
+            let proposed = GroupAction::V0(GroupActionV0 {
+                contract_id: contract.id(),
+                proposer_id: identity.id(),
+                token_contract_position: 0,
+                event: GroupActionEvent::TokenEvent(TokenEvent::ConfigUpdate(change.clone(), None)),
+            });
+            assert_eq!(
+                stored,
+                proposed
+                    .serialize_to_bytes()
+                    .expect("expected to encode the action")
+            );
+
+            let co_signature = BatchTransition::new_token_config_update_transition(
+                token_id,
+                identity_2.id(),
+                contract.id(),
+                0,
+                change,
+                None,
+                Some(
+                    GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                        GroupStateTransitionInfo {
+                            group_contract_position: 0,
+                            action_id,
+                            action_is_proposer: false,
+                        },
+                    ),
+                ),
+                &key_2,
+                2,
+                0,
+                &signer_2,
+                platform_version,
+                None,
+            )
+            .await
+            .expect("expect to create documents batch transition")
+            .serialize_to_bytes()
+            .expect("expected documents batch serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[co_signature],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let new_contract = platform
+                .drive
+                .fetch_contract(
+                    contract.id().to_buffer(),
+                    None,
+                    None,
+                    None,
+                    platform_version,
+                )
+                .unwrap()
+                .expect("expected to fetch contract")
+                .expect("expected contract");
+            let updated_token_config = new_contract
+                .contract
+                .expected_token_configuration(0)
+                .expect("expected token configuration");
+            assert_eq!(updated_token_config.conventions(), &conventions);
         }
 
         #[tokio::test]

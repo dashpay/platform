@@ -1,6 +1,8 @@
 //! DPNS name registration, resolution, search, and contest queries.
 
-use dpp::identity::accessors::IdentityGettersV0;
+use super::signing_key::AvailableSigningKey;
+
+use dpp::fee::Credits;
 
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
@@ -17,7 +19,9 @@ use dpp::address_funds::AddressWitness;
 use dpp::platform_value::BinaryData;
 
 use crate::error::PlatformWalletError;
-use crate::wallet::identity::types::key_storage::DpnsNameInfo;
+use crate::wallet::identity::types::key_storage::{DpnsFetch, DpnsNameInfo};
+
+use super::{DPNS_USERNAMES_MAX_PAGES, DPNS_USERNAMES_PAGE_LIMIT};
 
 use super::*;
 
@@ -131,12 +135,17 @@ impl IdentityWallet {
     /// `IdentityManager`. The caller supplies the `Identity`, the
     /// signing key, and a `Signer` directly.
     ///
+    /// `contest_fund` is the most the registration pays into the contest a contested name
+    /// joins (the fund to join doubles once a contest holds 250 contenders and again for every
+    /// 50 more); `None` states the fund to join read just before the domain is submitted.
+    ///
     /// Returns the full domain name (e.g. "alice.dash").
     pub async fn register_name_with_signer<S: Signer<IdentityPublicKey>>(
         &self,
         identity: Identity,
         name: &str,
         identity_public_key: IdentityPublicKey,
+        contest_fund: Option<Credits>,
         signer: S,
     ) -> Result<String, dash_sdk::Error> {
         use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
@@ -147,6 +156,7 @@ impl IdentityWallet {
             identity_public_key,
             signer,
             preorder_callback: None,
+            contest_fund,
         };
 
         let result = self.sdk.register_dpns_name(input).await?;
@@ -160,6 +170,9 @@ impl IdentityWallet {
     ///
     /// * `identity_id` - The identity to register the name for.
     /// * `name` - The desired username label (e.g., "alice").
+    /// * `contest_fund` - The most the registration pays into the contest a
+    ///   contested name joins; `None` states the fund to join read just
+    ///   before the domain is submitted.
     /// * `signer` - External `Signer<IdentityPublicKey>` for the
     ///   document state-transition signature — the architecturally
     ///   correct path per `swift-sdk/CLAUDE.md`.
@@ -177,6 +190,7 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
         name: &str,
+        contest_fund: Option<Credits>,
         signer: &S,
     ) -> Result<String, PlatformWalletError>
     where
@@ -206,6 +220,7 @@ impl IdentityWallet {
                 .identity(identity_id)
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            drop(wm);
             // DPNS name registration writes a document state transition,
             // which DPP requires to be signed by a HIGH-or-stricter
             // authentication key. MASTER is intentionally excluded —
@@ -214,12 +229,13 @@ impl IdentityWallet {
             // rejected by the protocol on document-side state
             // transitions.
             let key = identity
-                .get_first_public_key_matching(
+                .available_signing_key(
+                    signer,
                     Purpose::AUTHENTICATION,
-                    [SecurityLevel::HIGH, SecurityLevel::CRITICAL].into(),
-                    [KeyType::ECDSA_SECP256K1].into(),
+                    &[SecurityLevel::HIGH, SecurityLevel::CRITICAL],
+                    &[KeyType::ECDSA_SECP256K1],
                     false,
-                )
+                )?
                 .ok_or_else(|| {
                     PlatformWalletError::InvalidIdentityData(
                         "No HIGH or CRITICAL authentication key found on identity \
@@ -241,6 +257,7 @@ impl IdentityWallet {
             // over ownership / wrap in an Arc per call.
             signer: SignerRef(signer),
             preorder_callback: None,
+            contest_fund,
         };
 
         let result = self.sdk.register_dpns_name(input).await.map_err(|e| {
@@ -305,13 +322,53 @@ impl IdentityWallet {
         })
     }
 
-    /// Fetch all DPNS usernames owned by `identity_id` from Platform
-    /// and merge them into the local
+    /// Every DPNS username `identity_id` owns on Platform, paged, as
+    /// [`DpnsNameInfo`]s stamped with `acquired_at`, and whether that is the
+    /// whole owned set ([`DpnsFetch::Complete`]) or only a lower bound — see
+    /// [`Sdk::get_all_dpns_usernames_by_identity`] for when paging can prove
+    /// completeness. Every username fetch that feeds
+    /// `ManagedIdentity::apply_fetched_dpns_names` goes through here.
+    pub(super) async fn fetch_owned_dpns_names(
+        &self,
+        identity_id: Identifier,
+        acquired_at: Option<u64>,
+    ) -> Result<(Vec<DpnsNameInfo>, DpnsFetch), dash_sdk::Error> {
+        let (usernames, complete) = self
+            .sdk
+            .get_all_dpns_usernames_by_identity(
+                identity_id,
+                DPNS_USERNAMES_PAGE_LIMIT,
+                DPNS_USERNAMES_MAX_PAGES,
+            )
+            .await?;
+        let names = usernames
+            .into_iter()
+            .map(|username| DpnsNameInfo {
+                label: username.label,
+                acquired_at,
+            })
+            .collect();
+        let fetch = if complete {
+            DpnsFetch::Complete
+        } else {
+            DpnsFetch::Partial
+        };
+        Ok((names, fetch))
+    }
+
+    /// Fetch the DPNS usernames owned by `identity_id` from Platform
+    /// and reconcile the local
     /// [`ManagedIdentity.dpns_names`](crate::wallet::identity::ManagedIdentity)
-    /// cache.
+    /// cache with them.
     ///
-    /// Skips labels that are already in the cache, so repeated syncs
-    /// don't emit duplicate entries. New labels get an
+    /// The query pages until a page comes back short. For an identity the
+    /// wallet only watches, that complete owned set replaces the cache (names
+    /// that left drop out); a wallet-owned identity only gains labels, since
+    /// the marketplace sweep owns its departures. If the page bound is
+    /// reached first, or the platform version cannot continue a full page
+    /// (protocol version <= 13), the result is only a lower bound and is
+    /// merged — see `ManagedIdentity::apply_fetched_dpns_names`. Known labels keep their
+    /// timestamp; new labels get an
     /// `acquired_at` timestamp of best-effort wall-clock millis —
     /// DPNS documents carry their own `$createdAt` but
     /// `DpnsUsername` doesn't surface it on the query result today.
@@ -327,9 +384,12 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
     ) -> Result<u32, PlatformWalletError> {
-        let usernames = self
-            .sdk
-            .get_dpns_usernames_by_identity(*identity_id, None)
+        let acquired_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .ok();
+        let (names, fetch) = self
+            .fetch_owned_dpns_names(*identity_id, acquired_at)
             .await
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
@@ -337,16 +397,7 @@ impl IdentityWallet {
                 ))
             })?;
 
-        if usernames.is_empty() {
-            return Ok(0);
-        }
-
-        let acquired_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .ok();
-
-        let mut added = 0u32;
+        let added;
         {
             let mut wm = self.wallet_manager.write().await;
             let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
@@ -355,23 +406,8 @@ impl IdentityWallet {
             let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) else {
                 return Ok(0);
             };
-            for username in usernames {
-                if managed
-                    .dpns_names
-                    .iter()
-                    .any(|existing| existing.label == username.label)
-                {
-                    continue;
-                }
-                managed.add_dpns_name(
-                    DpnsNameInfo {
-                        label: username.label,
-                        acquired_at,
-                    },
-                    &self.persister,
-                );
-                added += 1;
-            }
+            // One snapshot for the whole fetch — see `apply_fetched_dpns_names`.
+            added = managed.apply_fetched_dpns_names(names, fetch, &self.persister);
         }
         Ok(added)
     }

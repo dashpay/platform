@@ -3,6 +3,7 @@ use versioned_feature_core::FeatureVersion;
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVoteMethodVersions {
@@ -12,11 +13,11 @@ pub struct DriveVoteMethodVersions {
     pub setup: DriveVoteSetupMethodVersions,
     pub storage_form: DriveVoteStorageFormMethodVersions,
     pub fetch: DriveVoteFetchMethodVersions,
-    /// Yes/no polls: the decision polls under the votes tree's `d` branch (protocol version 14).
+    /// Yes/no polls: the decision polls under the votes tree's `d` branch (protocol version 15).
     pub yes_no: DriveVoteYesNoMethodVersions,
 }
 
-/// The methods of the yes/no poll kind. All of them are new in protocol version 14 and
+/// The methods of the yes/no poll kind. All of them are new in protocol version 15 and
 /// unreachable before it: no yes/no poll can be opened or voted on earlier.
 #[derive(Clone, Debug, Default)]
 pub struct DriveVoteYesNoMethodVersions {
@@ -35,6 +36,8 @@ pub struct DriveVoteFetchMethodVersions {
     pub fetch_identities_voting_for_contenders: FeatureVersion,
     pub fetch_contested_document_vote_poll_stored_info: FeatureVersion,
     pub fetch_identity_contested_resource_vote: FeatureVersion,
+    /// Read by the contested document create state validation v2 (protocol version 14) only.
+    pub fetch_contested_document_vote_poll_contender_count: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -57,10 +60,10 @@ pub struct DriveVoteCleanupMethodVersions {
     pub remove_contested_resource_vote_poll_contenders_operations: FeatureVersion,
     pub remove_contested_resource_top_level_index_operations: FeatureVersion,
     pub remove_contested_resource_info_operations: FeatureVersion,
-    /// Removes every vote a removed masternode cast. Version 1 (protocol version 14) also
+    /// Removes every vote a removed masternode cast. Version 1 (protocol version 15) also
     /// sweeps its yes/no votes.
     pub remove_all_votes_given_by_identities: FeatureVersion,
-    /// Removes finished polls of every kind from the end date index (protocol version 14).
+    /// Removes finished polls of every kind from the end date index (protocol version 15).
     pub remove_vote_poll_end_date_query_operations: FeatureVersion,
 }
 

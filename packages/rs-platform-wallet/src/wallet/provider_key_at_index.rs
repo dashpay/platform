@@ -73,6 +73,8 @@
 //! The seed and any returned scalar are wrapped in [`Zeroizing`] so they
 //! are scrubbed when dropped.
 
+use dashcore::bls_sig_utils::BlsScheme;
+use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash, EddsaSecretKey};
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{AccountType, BLSAccount, EdDSAAccount};
 use key_wallet::bip32::{ChildNumber, ExtendedPrivKey};
@@ -154,12 +156,12 @@ pub fn derive_platform_node_public_keys(
                     "failed to derive Ed25519 platform-node key at index {index}: {e}"
                 ))
             })?;
-        let public_key: [u8; 32] = signing_key.verifying_key().to_bytes();
+        let public_key: [u8; 32] = EddsaSecretKey::from(&signing_key).public_key().to_bytes();
         // The 20-byte platform node id = SHA256(ed25519 pubkey)[..20] — the
         // Tenderdash/CometBFT convention (rust-dashcore #884) that a ProRegTx
         // `platform_node_id` field carries, NOT a hash160.
         let node_id: [u8; 20] =
-            dashcore::PlatformNodeId::from_ed25519_public_key(&public_key).to_byte_array();
+            EddsaPkHash::from(EddsaPkBytes::from_bytes(public_key)).to_canonical_bytes();
         out.push(ProviderPlatformNodePubKey {
             index,
             public_key,
@@ -376,14 +378,20 @@ fn checked_operator_private_bytes_at(
             "failed to derive BLS operator key at index {index}: {e}"
         ))
     })?;
-    if secret.public_key().to_bytes().as_slice() != xpub_modern {
+    if secret
+        .as_scheme(BlsScheme::Modern)
+        .public_key()
+        .map_err(|e| PlatformWalletError::KeyDerivation(e.to_string()))?
+        .as_bytes()
+        != xpub_modern
+    {
         return Err(PlatformWalletError::KeyDerivation(format!(
             "BLS operator key at index {index}: seed-derived public key does not match the \
              account xpub derivation — the wallet seed and its stored operator account xpub \
              disagree; refusing to return a mismatched key"
         )));
     }
-    Ok(include_private.then(|| Zeroizing::new(secret.to_be_bytes().to_vec())))
+    Ok(include_private.then(|| Zeroizing::new(secret.to_bytes().to_vec())))
 }
 
 impl PlatformWallet {
@@ -496,7 +504,11 @@ impl PlatformWallet {
                 let public_key_bytes = xpub.to_bytes().to_vec();
                 // Same G1 point in Dash legacy serialization (key-wallet
                 // #879) — for the "BLS Public Key (Legacy)" display row.
-                let legacy_public_key_bytes = Some(xpub.to_bytes_legacy().to_vec());
+                let legacy_public_key_bytes = Some(
+                    xpub.to_bytes_legacy()
+                        .map_err(|e| PlatformWalletError::KeyDerivation(e.to_string()))?
+                        .to_vec(),
+                );
 
                 let private_key = match &seed {
                     // Private reveal: the operator secret scalar from the
@@ -555,15 +567,16 @@ impl PlatformWallet {
                             "failed to derive Ed25519 platform-node key at index {index}: {e}"
                         ))
                     })?;
-                let verifying_bytes: [u8; 32] = signing_key.verifying_key().to_bytes();
+                let verifying_bytes: [u8; 32] =
+                    EddsaSecretKey::from(&signing_key).public_key().to_bytes();
                 let public_key_bytes = verifying_bytes.to_vec();
 
                 // The 20-byte platform node id = SHA256(ed25519 pubkey)[..20]
                 // — the Tenderdash/CometBFT convention (rust-dashcore #884)
                 // the ProRegTx `platform_node_id` field carries, NOT a hash160.
                 let node_id: [u8; 20] =
-                    dashcore::PlatformNodeId::from_ed25519_public_key(&verifying_bytes)
-                        .to_byte_array();
+                    EddsaPkHash::from(EddsaPkBytes::from_bytes(verifying_bytes))
+                        .to_canonical_bytes();
 
                 let private_key =
                     include_private.then(|| Zeroizing::new(signing_key.to_bytes().to_vec()));
@@ -635,7 +648,6 @@ impl PlatformWallet {
                                     "failed to build master xpriv: {e}"
                                 ))
                             })?;
-                        let secp = dashcore::key::Secp256k1::new();
                         // The ACCOUNT's own path, not `account_type.derivation_path(network)`.
                         // The public side above comes off `account.account_xpub`, built from
                         // this path using the ACCOUNT's network; resolving it again from the
@@ -654,11 +666,11 @@ impl PlatformWallet {
                             ))
                         })?;
                         let mut child_xpriv = master
-                            .derive_priv(&secp, &account_path)
+                            .derive_priv(&account_path)
                             .and_then(|acct| {
                                 let child_path: key_wallet::bip32::DerivationPath =
                                     vec![child].into();
-                                acct.derive_priv(&secp, &child_path)
+                                acct.derive_priv(&child_path)
                             })
                             .map_err(|e| {
                                 PlatformWalletError::KeyDerivation(format!(
@@ -666,7 +678,7 @@ impl PlatformWallet {
                                 ))
                             })?;
                         let mut private = child_xpriv.to_priv();
-                        let derived_public = private.public_key(&secp);
+                        let derived_public = private.public_key();
 
                         // Produce every output while the scalar is still live,
                         // then erase it. `dashcore::PrivateKey` is `Copy` and
@@ -677,7 +689,7 @@ impl PlatformWallet {
                         // the `PrivateKey` itself.
                         let outputs = if derived_public == public_key {
                             Some((
-                                Zeroizing::new(private.inner.secret_bytes().to_vec()),
+                                Zeroizing::new(private.inner.to_secret_bytes().to_vec()),
                                 Zeroizing::new(private.to_wif()),
                             ))
                         } else {
@@ -762,7 +774,7 @@ mod tests {
         for (i, k) in keys.iter().enumerate() {
             assert_eq!(k.index, i as u32, "index ordering");
             let expected_node_id: [u8; 20] =
-                dashcore::PlatformNodeId::from_ed25519_public_key(&k.public_key).to_byte_array();
+                EddsaPkHash::from(EddsaPkBytes::from_bytes(k.public_key)).to_canonical_bytes();
             assert_eq!(
                 k.node_id, expected_node_id,
                 "node_id must be SHA256(ed25519 pubkey)[..20] at index {i}"
@@ -776,7 +788,7 @@ mod tests {
                 .expect("platform_node_key_at");
             assert_eq!(
                 k.public_key,
-                via_api.verifying_key().to_bytes(),
+                EddsaSecretKey::from(&via_api).public_key().to_bytes(),
                 "snapshot pubkey must equal platform_node_key_at at {i}"
             );
         }
@@ -801,7 +813,7 @@ mod tests {
         // The snapshot's index-0 public key corresponds to that golden secret.
         assert_eq!(
             keys[0].public_key,
-            sk0.verifying_key().to_bytes(),
+            EddsaSecretKey::from(&sk0).public_key().to_bytes(),
             "snapshot index-0 pubkey must match the golden secret's public key"
         );
         // Golden pubkey + Tenderdash node-id (SHA256[..20]) for mainnet
@@ -840,7 +852,7 @@ mod tests {
         // account and on watch-only accounts alike).
         let xpub0 = account.operator_public_key_at(0).expect("operator public");
         assert_eq!(
-            hex::encode(xpub0.to_bytes_legacy()),
+            hex::encode(xpub0.to_bytes_legacy().expect("legacy public key")),
             "078cad04aae29eb76171937eb7101452b401b026efbc27db840f130374e6a9ec8443d917277f8921e0ba6678a7709875",
             "operator key0 legacy pubkey golden (dashbls reference)"
         );
@@ -854,14 +866,17 @@ mod tests {
         let sk0 = BLSAccount::operator_private_key_at(&seed, Network::Mainnet, 0)
             .expect("operator private");
         assert_eq!(
-            hex::encode(sk0.to_be_bytes()),
+            hex::encode(sk0.to_bytes()),
             "11122e1ad656d0610ce0f80d40da874d67ea656a3e66ed371c915ec3a488a43a",
             "operator key0 secret golden (dashbls reference)"
         );
         // The always-on cross-check the adapter runs: the seed-derived
         // secret's public key must equal the account-xpub-derived public.
         assert_eq!(
-            sk0.public_key().to_bytes(),
+            sk0.as_scheme(BlsScheme::Modern)
+                .public_key()
+                .expect("BLS public key")
+                .to_bytes(),
             xpub0.public_key.to_bytes(),
             "seed-derived operator pubkey must equal the account-xpub derivation"
         );
@@ -877,19 +892,23 @@ mod tests {
             .operator_public_key_at(0)
             .expect("operator public");
         assert_eq!(
-            hex::encode(xpub0_t.to_bytes_legacy()),
+            hex::encode(xpub0_t.to_bytes_legacy().expect("legacy public key")),
             "09d8beabae708de1638487f1aff44b38e8c07d9b09f22d76329d6c8ec01e2ad4d030b660bca40ddbd222373a72c5bcef",
             "testnet operator key0 legacy pubkey golden (dashbls reference)"
         );
         let sk0_t = BLSAccount::operator_private_key_at(&seed_t, Network::Testnet, 0)
             .expect("operator private");
         assert_eq!(
-            hex::encode(sk0_t.to_be_bytes()),
+            hex::encode(sk0_t.to_bytes()),
             "3346dfd71627f9f31cad3ee66fe7b673c32cb077b2eb38c621d7e61c30e46dbd",
             "testnet operator key0 secret golden (dashbls reference)"
         );
         assert_eq!(
-            sk0_t.public_key().to_bytes(),
+            sk0_t
+                .as_scheme(BlsScheme::Modern)
+                .public_key()
+                .expect("BLS public key")
+                .to_bytes(),
             xpub0_t.public_key.to_bytes(),
             "testnet seed-derived operator pubkey must equal the account-xpub derivation"
         );
@@ -1030,7 +1049,7 @@ mod tests {
             // scan recomputing SHA256[..20] from the pubkey maps back to
             // this index.
             let expected_node_id =
-                dashcore::PlatformNodeId::from_ed25519_public_key(&k.public_key).to_byte_array();
+                EddsaPkHash::from(EddsaPkBytes::from_bytes(k.public_key)).to_canonical_bytes();
             assert_eq!(
                 k.node_id, expected_node_id,
                 "node id must be the Tenderdash SHA256[..20]"
@@ -1096,7 +1115,6 @@ mod tests {
             let wallet = seed_bearing_wallet(network);
             let seed = wallet.wallet_seed_bytes().expect("resident seed");
             let master = ExtendedPrivKey::new_master(network, &seed).expect("master xpriv");
-            let secp = dashcore::key::Secp256k1::new();
 
             for (kind, family) in [
                 (ProviderKeyKind::Owner, "2'"),
@@ -1115,11 +1133,11 @@ mod tests {
                     let path =
                         DerivationPath::from_str(&format!("m/9'/{coin}/3'/{family}/{index}"))
                             .expect("explicit DIP-3 path");
-                    let expected = master.derive_priv(&secp, &path).expect("path derivation");
+                    let expected = master.derive_priv(&path).expect("path derivation");
 
                     assert_eq!(
-                        derived.inner.secret_bytes(),
-                        expected.private_key.secret_bytes(),
+                        derived.inner.to_secret_bytes(),
+                        expected.private_key.to_secret_bytes(),
                         "{kind:?} key at index {index} on {network:?} must come from \
                          m/9'/{coin}/3'/{family}/{index}"
                     );
@@ -1150,14 +1168,13 @@ mod tests {
         let master = ExtendedPrivKey::new_master(Network::Mainnet, &seed).expect("master");
         let doubled = master
             .derive_priv(
-                &dashcore::key::Secp256k1::new(),
                 &DerivationPath::from_str("m/9'/5'/3'/1'/9'/5'/3'/1'/19").expect("doubled path"),
             )
             .expect("doubled derivation");
 
         assert_ne!(
-            derived.inner.secret_bytes(),
-            doubled.private_key.secret_bytes(),
+            derived.inner.to_secret_bytes(),
+            doubled.private_key.to_secret_bytes(),
             "the account derivation path is being applied twice again"
         );
     }
@@ -1181,7 +1198,6 @@ mod tests {
 
         let wallet = seed_bearing_wallet(Network::Mainnet);
         let seed = wallet.wallet_seed_bytes().expect("resident seed");
-        let secp = dashcore::key::Secp256k1::new();
         let master = ExtendedPrivKey::new_master(Network::Mainnet, &seed).expect("master");
 
         for (kind, family) in [
@@ -1216,22 +1232,21 @@ mod tests {
             let child = ChildNumber::from_normal_idx(19).expect("child index");
             let child_path: DerivationPath = vec![child].into();
             let derived = master
-                .derive_priv(&secp, &account_path)
-                .and_then(|acct| acct.derive_priv(&secp, &child_path))
+                .derive_priv(&account_path)
+                .and_then(|acct| acct.derive_priv(&child_path))
                 .expect("gate-free derivation")
                 .to_priv();
 
             let expected = master
                 .derive_priv(
-                    &secp,
                     &DerivationPath::from_str(&format!("m/9'/5'/3'/{family}/19"))
                         .expect("explicit path"),
                 )
                 .expect("path derivation");
 
             assert_eq!(
-                derived.inner.secret_bytes(),
-                expected.private_key.secret_bytes(),
+                derived.inner.to_secret_bytes(),
+                expected.private_key.to_secret_bytes(),
                 "{kind:?} watch-only derivation must match m/9'/5'/3'/{family}/19"
             );
         }

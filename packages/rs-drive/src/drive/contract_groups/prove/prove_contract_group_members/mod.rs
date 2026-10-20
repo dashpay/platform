@@ -14,6 +14,21 @@ impl Drive {
     ///
     /// `limit` must be between 1 and the configured maximum query limit, so the proof cannot
     /// grow with the size of the group.
+    ///
+    /// # Parameters
+    ///
+    /// * `contract_group_id`: The group's id.
+    /// * `query`: The kind of member (contracts, document types or tokens) and the cursor to
+    ///   continue after.
+    /// * `limit`: The most entries the page holds.
+    /// * `transaction`: The GroveDB transaction.
+    /// * `platform_version`: The platform version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<u8>)` with the GroveDB proof of the page.
+    /// * `Err(Error)` when the method version is unknown, `limit` is out of range, or proving
+    ///   fails.
     pub fn prove_contract_group_members(
         &self,
         contract_group_id: Identifier,

@@ -102,7 +102,7 @@ impl MasternodeVoteStateTransitionStateValidationV0 for MasternodeVoteTransition
                     }
                 }
             }
-            // Unreachable for the same reason: no yes/no vote decodes before 14.
+            // Unreachable for the same reason: no yes/no vote decodes before 15.
             ResolvedVote::YesNoVote(_) => {
                 Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "yes/no votes need validate_state version 1",

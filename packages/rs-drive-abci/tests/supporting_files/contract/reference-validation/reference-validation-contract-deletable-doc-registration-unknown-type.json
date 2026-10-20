@@ -77,7 +77,7 @@
           "refersTo": {
             "type": "deletableDocument",
             "documentType": "draft",
-            "propertyAgreement": {
+            "where": {
               "$ownerId": "$ownerId"
             }
           }

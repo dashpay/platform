@@ -34,7 +34,7 @@ impl Drive {
     /// `WhereClauseOnNonIndexedProperty`. Same contract on both
     /// prove and no-proof paths — no silent fallback.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_count_point_lookup_proof(
+    pub(crate) fn execute_document_count_point_lookup_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
@@ -76,7 +76,7 @@ impl Drive {
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-                "prove count requires a `countable: true` index whose properties \
+                "prove count requires a `countable: true` (or summableOffCountIndex) index whose properties \
                  exactly match the where clause fields, a `rangeCountable: true` \
                  index they cover up to its last property, or `documentsCountable: \
                  true` on the document type for unfiltered total counts — same \

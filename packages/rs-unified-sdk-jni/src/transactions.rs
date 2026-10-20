@@ -516,13 +516,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 /// document type's requirement, so key selection never crosses JNI.
 /// `propertiesJson` is a JSON object keyed by property name (byte-array
 /// fields as hex, identifier fields as base58); pass `"{}"` for a type
-/// with no required properties.
+/// with no required properties. `maxContestFund` is the most, in
+/// credits, a contested document pays into the contest it joins; `0`
+/// states the fund to join read just before the document is submitted.
 ///
 /// Returns the confirmed document's canonical query-side JSON — the same
 /// shape a DOC-01 query returns, with the 32-byte id rendered as the
 /// base58 `$id` field, so Kotlin reads the id from there rather than a
 /// second return. Null after throwing on error.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_documentCreate(
     mut env: JNIEnv,
     _class: JClass,
@@ -531,9 +534,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     contract_id: JByteArray,
     document_type: JString,
     properties_json: JString,
+    max_contest_fund: jlong,
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
+        if max_contest_fund < 0 {
+            throw_sdk_exception(env, 1, "maxContestFund must be non-negative");
+            return ptr::null_mut();
+        }
         let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
             return ptr::null_mut();
         };
@@ -556,6 +564,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
                 contract.as_ptr(),
                 doc_type.as_ptr(),
                 props.as_ptr(),
+                max_contest_fund as u64,
                 signer_handle as *mut SignerHandle,
                 out_id.as_mut_ptr(),
                 &mut out_json as *mut *mut c_char,

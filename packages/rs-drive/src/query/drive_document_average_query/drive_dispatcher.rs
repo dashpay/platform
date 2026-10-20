@@ -52,11 +52,13 @@ use crate::query::drive_document_average_query::{
     AverageMode, DocumentAverageRequest, DocumentAverageResponse,
 };
 use crate::query::drive_document_sum_query::index_picker::{
-    find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
+    find_range_summable_index_with_counts_for_where_clauses,
+    find_summable_index_with_counts_for_where_clauses,
 };
 use crate::query::drive_document_sum_query::{is_range_operator, DriveDocumentSumQuery};
 use crate::query::{
-    validate_and_canonicalize_where_clauses, validate_resolved_time_range_clause_shapes,
+    key_array_element_clauses, validate_and_canonicalize_where_clauses,
+    validate_resolved_time_range_clause_shapes,
 };
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -90,6 +92,15 @@ impl Drive {
         validate_resolved_time_range_clause_shapes(
             &request.where_clauses,
             &request.resolved_time_ranges,
+        )?;
+        // A typed array's elements are keyed first, for both paths: several
+        // only when the request answers per element (see
+        // [`key_array_element_clauses`]).
+        request.where_clauses = key_array_element_clauses(
+            std::mem::take(&mut request.where_clauses),
+            request.document_type,
+            matches!(request.mode, AverageMode::GroupByIn),
+            platform_version,
         )?;
         if request.prove {
             // The no-prove path canonicalizes inside the joint dispatcher;
@@ -185,22 +196,20 @@ impl Drive {
         }
 
         // Range AVG: pick a PCPS-eligible index (range_countable
-        // AND range_summable) covering the where clauses. Mirror of
-        // sum's `find_range_summable_index_for_where_clauses` with
-        // an additional `range_countable` filter.
+        // AND range_summable) covering the where clauses. Sum's range
+        // picker restricted to `range_countable` indexes.
         if has_range
             && matches!(
                 request.mode,
                 AverageMode::Aggregate | AverageMode::GroupByIn
             )
         {
-            let index = find_range_summable_index_for_where_clauses(
+            let index = find_range_summable_index_with_counts_for_where_clauses(
                 request.document_type.indexes(),
                 &request.where_clauses,
                 &request.sum_property,
                 &request.resolved_time_ranges,
             )
-            .filter(|idx| idx.range_countable)
             .ok_or_else(|| {
                 Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                     "prove AVG requires an index that declares BOTH `rangeCountable: \
@@ -281,13 +290,12 @@ impl Drive {
                 AverageMode::GroupByRange | AverageMode::GroupByCompound
             )
         {
-            let index = find_range_summable_index_for_where_clauses(
+            let index = find_range_summable_index_with_counts_for_where_clauses(
                 request.document_type.indexes(),
                 &request.where_clauses,
                 &request.sum_property,
                 &request.resolved_time_ranges,
             )
-            .filter(|idx| idx.range_countable)
             .ok_or_else(|| {
                 Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                     "prove distinct AVG requires an index that declares BOTH \
@@ -370,13 +378,12 @@ impl Drive {
                 AverageMode::Aggregate | AverageMode::GroupByIn
             )
         {
-            let index = find_summable_index_for_where_clauses(
+            let index = find_summable_index_with_counts_for_where_clauses(
                 request.document_type.indexes(),
                 &request.where_clauses,
                 &request.sum_property,
                 &request.resolved_time_ranges,
             )
-            .filter(|idx| idx.countable.is_countable())
             .ok_or_else(|| {
                 Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
                     "prove point-lookup AVG requires an index that declares BOTH \
@@ -536,6 +543,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         }
         .into();
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -639,13 +648,12 @@ mod tests {
 
         // Reconstruct the path query the way the SDK verifier does
         // — anchored to DEFAULT_QUERY_LIMIT.
-        let index = find_range_summable_index_for_where_clauses(
+        let index = find_range_summable_index_with_counts_for_where_clauses(
             document_type.indexes(),
             std::slice::from_ref(&color_gt_blue),
             "amount",
             &[],
         )
-        .filter(|idx| idx.range_countable)
         .expect("byColor rangeAverageable index covers `color > blue`");
         let sum_query = DriveDocumentSumQuery {
             document_type,
@@ -2030,7 +2038,8 @@ mod tests {
                     step_seconds: 7_200,
                     phase_seconds: 0,
                     ttl_seconds: None,
-                },
+                }
+                .into(),
             }],
         };
 
@@ -2223,6 +2232,8 @@ mod tests {
                 updated_at_core_block_height: None,
                 transferred_at_core_block_height: None,
                 creator_id: None,
+                moderated_at: None,
+                moderated_by: None,
             }
             .into();
             let storage_flags = Some(std::borrow::Cow::Owned(StorageFlags::SingleEpoch(0)));

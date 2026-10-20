@@ -2,6 +2,8 @@
 
 pub(crate) mod grpc;
 #[cfg(not(target_arch = "wasm32"))]
+mod proxy;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod tonic_channel;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod wasm_channel;
@@ -15,6 +17,10 @@ use std::any;
 use std::fmt::Debug;
 use std::time::Duration;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) use proxy::PROXY_CONNECT_TIMEOUT;
+#[cfg(not(target_arch = "wasm32"))]
+pub use proxy::{ProxyEndpoint, ProxyError, Socks5Auth, Socks5Proxy};
 #[cfg(not(target_arch = "wasm32"))]
 pub use tonic_channel::{
     create_channel, CoreGrpcClient, PlatformGrpcClient, TokioBackonSleeper as BackonSleeper,
@@ -61,6 +67,16 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
     /// gRPC method name
     fn method_name(&self) -> &'static str;
 
+    /// When the request asks a proof of nothing (an empty id list), the INVALID_ARGUMENT
+    /// message every node refuses it with. [DapiClient](crate::DapiClient) then refuses it
+    /// the same way without sending it: a node released before that refusal answers with an
+    /// internal error, or with a proof of nothing the client cannot verify, and either one
+    /// gets the node banned and the request sent to the next. Without a proof, nodes answer
+    /// an empty list with an empty result, so the request is sent.
+    fn names_nothing(&self) -> Option<&'static str> {
+        None
+    }
+
     /// Perform transport request asynchronously.
     fn execute_transport<'c>(
         self,
@@ -85,17 +101,23 @@ pub enum TransportError {
 impl Clone for TransportError {
     fn clone(&self) -> Self {
         match self {
-            TransportError::Grpc(status) => {
-                // tonic::Status doesn't implement Clone, so we reconstruct it
-                // from its components. Note: this loses the original error source.
-                let cloned_status = dapi_grpc::tonic::Status::with_details_and_metadata(
-                    status.code(),
-                    status.message(),
-                    status.details().to_vec().into(),
-                    status.metadata().clone(),
-                );
-                TransportError::Grpc(cloned_status)
-            }
+            // Keeps the error source, which carries a [ProxyError].
+            TransportError::Grpc(status) => TransportError::Grpc(status.clone()),
+        }
+    }
+}
+
+impl TransportError {
+    /// Whether the request failed because the SOCKS5 proxy failed rather
+    /// than the node (a [ProxyError] is in the error's source chain). Such
+    /// a failure says nothing about the node, so it is neither retried nor
+    /// held against it.
+    pub fn is_proxy_failure(&self) -> bool {
+        match self {
+            #[cfg(not(target_arch = "wasm32"))]
+            TransportError::Grpc(status) => proxy::is_proxy_failure(status),
+            #[cfg(target_arch = "wasm32")]
+            TransportError::Grpc(_) => false,
         }
     }
 }
@@ -153,6 +175,24 @@ pub trait TransportClient: Send + Sized {
         settings: &AppliedRequestSettings,
         pool: &ConnectionPool,
     ) -> Result<Self, TransportError>;
+
+    /// Build client using node's url and [AppliedRequestSettings], together
+    /// with the pool generation of the connection it took (see
+    /// [ConnectionPool::generation]). When an attempt misses its deadline,
+    /// the executor evicts the node's connections up to that generation.
+    ///
+    /// The default reads the pool's generation after building the client, so
+    /// it can also cover a connection another thread pooled in between.
+    /// Clients that take their connection from `pool` override it with the
+    /// generation [ConnectionPool::get_or_create_with_generation] returns.
+    fn with_uri_and_settings_and_generation(
+        uri: Uri,
+        settings: &AppliedRequestSettings,
+        pool: &ConnectionPool,
+    ) -> Result<(Self, u64), TransportError> {
+        let client = Self::with_uri_and_settings(uri, settings, pool)?;
+        Ok((client, pool.generation()))
+    }
 }
 
 #[cfg(test)]

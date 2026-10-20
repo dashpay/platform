@@ -96,8 +96,19 @@ impl IndexOnlyBatchEntries {
         let document =
             Document::try_from_create_transition_action(create_action, owner_id, platform_version)?;
 
+        // Not an index whose entries outlive a delete: storage writes over
+        // such an entry, across batches as within one, and registration
+        // makes its key hold the key of an index claimed here, so two creates
+        // of one batch sharing its entry already collide on that one.
         let mut claimed = Vec::new();
-        for index in document_type.indexes().values() {
+        // A summableOffCountIndex index writes no entry to claim (it yields no
+        // paths): its counter is moved by whichever create the other entries
+        // admit.
+        for index in document_type
+            .indexes()
+            .values()
+            .filter(|index| !index.outlives_delete)
+        {
             let (paths, member_key) = Drive::index_only_entry_paths_and_key(
                 contract.id(),
                 document_type,

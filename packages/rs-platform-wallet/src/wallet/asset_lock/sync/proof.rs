@@ -994,7 +994,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///
     /// Wait for an asset lock proof by checking transaction context state.
     ///
-    /// Wakes on `lock_notify` (fired by `SpvEventForwarder` on InstantLock /
+    /// Wakes on `lock_notify` (fired by `LockNotifyHandler` on InstantLock /
     /// ChainLock events) and re-checks the transaction record context.
     ///
     /// Returns a properly-constructed `AssetLockProof` on success, or
@@ -2012,6 +2012,7 @@ mod chain_lock_wait_tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -2117,6 +2118,7 @@ mod chain_lock_wait_tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,

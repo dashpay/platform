@@ -1,8 +1,10 @@
 use crate::error::Error;
 use crate::execution::check_tx::{CheckTxLevel, CheckTxResult};
 use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
+use crate::execution::validation::state_transition::processor::traits::shielded_proof::ShieldedProofAdmissionKey;
 use crate::execution::validation::state_transition::processor::traits::shielded_proof::{
-    StateTransitionHasShieldedProofValidationV0, StateTransitionShieldedProofValidationV0,
+    validate_batch_token_pool_nullifiers_unspent, StateTransitionHasShieldedProofValidationV0,
+    StateTransitionShieldedProofValidationV0,
 };
 use crate::platform_types::check_tx_proof_verifier::IdentityProofVerification;
 
@@ -25,7 +27,6 @@ use crate::execution::types::state_transition_container::v0::{
 use crate::execution::validation::state_transition::processor::process_state_transition;
 #[cfg(test)]
 use dpp::serialization::PlatformDeserializableUntrusted;
-#[cfg(test)]
 use dpp::state_transition::StateTransition;
 use dpp::util::hash::hash_single;
 use dpp::validation::ValidationResult;
@@ -193,26 +194,61 @@ where
 
             check_tx_result.fee_result = Some(estimated_fee_result);
 
+            // A batch that spends a token shielded pool note the pool already records can only
+            // fail: block validation refuses it on that record. Reading the record costs a few
+            // key lookups against a pool tree; verifying the bundles the batch carries costs a
+            // Halo 2 verification per bundle, which the node would otherwise pay for before
+            // discovering the free reason to refuse. A batch needed this read of its own: the
+            // pool-paid transitions check their bundles against state in their own transformer,
+            // which runs here, while a batch's pool checks live in per-action state validation,
+            // which does not.
+            //
+            // Both levels read it. The first check keeps such a batch out; the re-check after
+            // every block is what evicts one that was admitted while its note was still unspent,
+            // and without it that batch sits in the mempool until a proposer spends a block slot
+            // on it. A batch's pool checks are in its per-action state validation, which a
+            // re-check does not run.
+            if errors.is_empty() {
+                if let StateTransition::Batch(batch) = &state_transition {
+                    let result = validate_batch_token_pool_nullifiers_unspent(
+                        batch,
+                        platform_ref.drive,
+                        platform_version,
+                    )?;
+                    errors.extend(result.errors);
+                }
+            }
+
             // Orchard verification is intentionally last.
             // The preliminary balance floor includes an identity-write allowance;
             // the execution-event fee check remains the authoritative check
             // against actual metered writes before expensive proof work.
             if errors.is_empty() && matches!(check_tx_level, CheckTxLevel::FirstTimeCheck) {
-                if let Some((identity_id, nonce)) =
+                if let Some(admission_key) =
                     state_transition.shielded_proof_identity_nonce_admission_key()
                 {
-                    let committed_nonce = platform_ref.drive.fetch_identity_nonce(
-                        identity_id,
-                        true,
-                        None,
-                        platform_version,
-                    )?;
+                    let committed_nonce = match admission_key {
+                        ShieldedProofAdmissionKey::Identity { identity_id, .. } => platform_ref
+                            .drive
+                            .fetch_identity_nonce(identity_id, true, None, platform_version)?,
+                        ShieldedProofAdmissionKey::IdentityContract {
+                            identity_id,
+                            contract_id,
+                            ..
+                        } => platform_ref.drive.fetch_identity_contract_nonce(
+                            identity_id,
+                            contract_id,
+                            true,
+                            None,
+                            platform_version,
+                        )?,
+                    };
                     let verification = self
                         .check_tx_proof_verifier
                         .try_acquire_identity_nonce(
-                            identity_id,
+                            admission_key.cache_key(),
                             committed_nonce,
-                            nonce,
+                            admission_key.nonce(),
                             hash_single(raw_tx),
                             state_transition.shielded_proof_action_count(),
                             platform_version.protocol_version,
@@ -246,18 +282,20 @@ where
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
+    use crate::execution::check_tx::CheckTxResult;
     use crate::platform_types::event_execution_result::EventExecutionResult::{
         SuccessfulPaidExecution, UnpaidConsensusExecutionError, UnsuccessfulPaidExecution,
     };
     use crate::platform_types::platform_state::PlatformStateV0Methods;
-    use crate::test::helpers::setup::TestPlatformBuilder;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::signature::SignatureError;
+    use dpp::validation::ValidationResult;
     use simple_signer::signer::SimpleSigner;
 
     use dpp::consensus::ConsensusError;
-    use dpp::dashcore::secp256k1::Secp256k1;
     use dpp::dashcore::{key::Keypair, signer, Network, PrivateKey};
 
     use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
@@ -289,7 +327,7 @@ mod tests {
         get_dashpay_contract_fixture, get_dpns_data_contract_fixture,
         instant_asset_lock_proof_fixture,
     };
-    use dpp::version::PlatformVersion;
+    use dpp::version::{PlatformVersion, ProtocolVersion};
 
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
     use crate::execution::validation::state_transition::tests::{
@@ -300,6 +338,8 @@ mod tests {
     use assert_matches::assert_matches;
     use dpp::consensus::state::state_error::StateError;
     use dpp::dash_to_credits;
+    use dpp::dashcore::secp256k1::rand::rngs::StdRng as SecpStdRng;
+    use dpp::dashcore::secp256k1::rand::SeedableRng as _;
     use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
     use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
     use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
@@ -3610,9 +3650,33 @@ mod tests {
         }
         .into();
 
-        let mut identity_create_transition: StateTransition =
+        // An identity without a master key fails the key structure check. The asset lock key
+        // signs the keys, so that failure is charged to the asset lock, which is then partially
+        // used
+        let (critical_key_in_place_of_master, critical_private_key_in_place_of_master) =
+            IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                0,
+                Some(23),
+                platform_version,
+            )
+            .expect("expected to get key pair");
+
+        signer.add_identity_public_key(
+            critical_key_in_place_of_master.clone(),
+            critical_private_key_in_place_of_master,
+        );
+
+        let identity_without_master_key: Identity = IdentityV0 {
+            id: identifier,
+            public_keys: BTreeMap::from([(0, critical_key_in_place_of_master), (1, key.clone())]),
+            balance: 1000000000,
+            revision: 0,
+        }
+        .into();
+
+        let identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
-                &identity,
+                &identity_without_master_key,
                 asset_lock_proof.clone(),
                 pk.as_slice(),
                 &signer,
@@ -3622,21 +3686,6 @@ mod tests {
             )
             .await
             .expect("expected an identity create transition");
-
-        let valid_identity_create_transition = identity_create_transition.clone();
-
-        // let's add an error so this fails on state validation
-
-        if let StateTransition::IdentityCreate(identity_create_transition_inner) =
-            &mut identity_create_transition
-        {
-            // let's create a new key that isn't signed
-            let master_key = identity_create_transition_inner
-                .public_keys_mut()
-                .get_mut(0)
-                .expect("expected master key");
-            master_key.set_signature(vec![].into());
-        };
 
         let identity_create_serialized_transition = identity_create_transition
             .serialize_to_bytes()
@@ -3650,7 +3699,7 @@ mod tests {
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(identity_create_serialized_transition, &transaction)
+            .execute_tx(identity_create_serialized_transition.clone(), &transaction)
             .expect("expected to execute identity_create tx");
         assert!(matches!(validation_result, UnsuccessfulPaidExecution(..)));
 
@@ -3661,33 +3710,20 @@ mod tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        // now lets try to recreate the valid identity
-
-        // This one will use the balance from the transaction outpoint that was already saved
-
-        let valid_identity_create_serialized_transition = valid_identity_create_transition
-            .serialize_to_bytes()
-            .expect("serialized state transition");
-
+        // The same signed bytes again are a replay, so this is unpaid
         let transaction = platform.drive.grove.start_transaction();
 
         let validation_result = platform
-            .execute_tx(valid_identity_create_serialized_transition, &transaction)
+            .execute_tx(identity_create_serialized_transition, &transaction)
             .expect("expected to execute identity_create tx");
 
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .expect("expected to commit transaction");
-
-        // this is unpaid because it will look like a replay attack
         assert!(matches!(
             validation_result,
             UnpaidConsensusExecutionError(..)
         ));
 
+        // The valid identity's keys differ from the refused one's, so its signable bytes are not
+        // a replay; it uses the balance left in the partially used asset lock
         let valid_identity_create_transition: StateTransition =
             IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
@@ -3695,7 +3731,7 @@ mod tests {
                 pk.as_slice(),
                 &signer,
                 &NativeBlsModule,
-                1,
+                0,
                 platform_version,
             )
             .await
@@ -3711,7 +3747,6 @@ mod tests {
             .execute_tx(valid_identity_create_serialized_transition, &transaction)
             .expect("expected to execute identity_create tx");
 
-        // the user fee increase changed, so this is now passing
         assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
 
         platform
@@ -3868,15 +3903,13 @@ mod tests {
             .build_with_mock_rpc()
             .set_genesis_state();
 
-        let mut rng = StdRng::seed_from_u64(433);
+        let mut rng = SecpStdRng::seed_from_u64(433);
 
         let platform_state = platform.state.load();
 
         let (identity, signer, key) = setup_identity(&mut platform, 958, dash_to_credits!(0.1));
 
-        let secp = Secp256k1::new();
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -3894,7 +3927,7 @@ mod tests {
             .expect("expected to get signable bytes");
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -3972,15 +4005,13 @@ mod tests {
         let (identity, signer, _, key) =
             setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
 
-        let mut rng = StdRng::seed_from_u64(1);
-
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1);
 
         let platform_state = platform.state.load();
 
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
-        let new_key = IdentityPublicKeyInCreationV0 {
+        let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
             purpose: Purpose::ENCRYPTION,
             security_level: SecurityLevel::MEDIUM,
@@ -3994,10 +4025,6 @@ mod tests {
             }),
         };
 
-        let _signable_bytes = new_key
-            .signable_bytes()
-            .expect("expected to get signable bytes");
-
         let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: identity.id(),
             revision: 1,
@@ -4010,11 +4037,33 @@ mod tests {
         }
         .into();
 
-        let mut update_transition: StateTransition = update_transition.into();
+        let update_transition: StateTransition = update_transition.into();
 
+        // The added key proves possession by signing the transition's signable bytes, which
+        // leave the key signatures out
         let data = update_transition
             .signable_bytes()
             .expect("expected signable bytes");
+        let secret = new_key_pair.secret_key();
+        new_key.signature = signer::sign(&data, &secret.to_secret_bytes())
+            .expect("expected to sign")
+            .to_vec()
+            .into();
+
+        let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+            identity_id: identity.id(),
+            revision: 1,
+            nonce: 1,
+            add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
+            disable_public_keys: vec![],
+            user_fee_increase: 0,
+            signature_public_key_id: key.id(),
+            signature: Default::default(),
+        }
+        .into();
+
+        let mut update_transition: StateTransition = update_transition.into();
+
         update_transition.set_signature(
             signer
                 .sign(&key, data.as_slice())
@@ -4542,5 +4591,184 @@ mod tests {
         )
         .expect("expected to check tx");
         assert!(recheck_result.is_valid());
+    }
+
+    /// A platform at `protocol_version` holding one identity, and that identity's serialized,
+    /// signed DashPay contract create.
+    fn platform_with_signed_data_contract_create(
+        protocol_version: ProtocolVersion,
+    ) -> (TempPlatform<MockCoreRPCLike>, Vec<u8>, Identifier) {
+        let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
+            .build_with_mock_rpc();
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected a platform version");
+
+        let (key, private_key) = IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+            1,
+            Some(1),
+            platform_version,
+        )
+        .expect("expected to get key pair");
+
+        platform
+            .drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create state structure");
+        let identity: Identity = IdentityV0 {
+            id: Identifier::new([7; 32]),
+            public_keys: BTreeMap::from([(1, key.clone())]),
+            balance: 25_000_000_000, // 0.25 Dash
+            revision: 0,
+        }
+        .into();
+        let identity_id = identity.id();
+
+        let dashpay = get_dashpay_contract_fixture(Some(identity_id), 1, protocol_version);
+        let mut create_contract_state_transition: StateTransition = dashpay
+            .try_into_platform_versioned(platform_version)
+            .expect("expected a state transition");
+        create_contract_state_transition
+            .sign(&key, private_key.as_slice(), &NativeBlsModule)
+            .expect("expected to sign transition");
+        let serialized = create_contract_state_transition
+            .serialize_to_bytes()
+            .expect("serialized state transition");
+        platform
+            .drive
+            .add_new_identity(
+                identity,
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        (platform, serialized, identity_id)
+    }
+
+    /// `raw` followed by `left_over` bytes.
+    fn with_left_over_bytes(raw: &[u8], left_over: usize) -> Vec<u8> {
+        let mut padded = raw.to_vec();
+        padded.extend(std::iter::repeat_n(0u8, left_over));
+        padded
+    }
+
+    /// Runs `raw` through `check_tx` and, in a transaction that is dropped afterwards, through
+    /// block processing, returning the check result, the execution result and the identity's
+    /// balance after processing.
+    fn check_and_process(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        raw: &[u8],
+        identity_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> (
+        ValidationResult<CheckTxResult, ConsensusError>,
+        StateTransitionExecutionResult,
+        u64,
+    ) {
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let check_result = platform
+            .check_tx(raw, FirstTimeCheck, &platform_ref, platform_version)
+            .expect("expected to check tx");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[raw.to_vec()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process state transition");
+        let balance = platform
+            .drive
+            .fetch_identity_balance(
+                identity_id.to_buffer(),
+                Some(&transaction),
+                platform_version,
+            )
+            .expect("expected to fetch the balance")
+            .expect("expected the identity to exist");
+
+        let [execution_result] = processing_result.execution_results().as_slice() else {
+            panic!("expected one execution result");
+        };
+        (check_result, execution_result.clone(), balance)
+    }
+
+    // Each variant gets its own platform: processing a create caches the contract in Drive's
+    // block cache, which outlives the dropped transaction.
+    #[test]
+    fn should_refuse_bytes_after_a_state_transition_unpaid_from_protocol_version_14() {
+        let platform_version = PlatformVersion::latest();
+        let (platform, serialized, identity_id) =
+            platform_with_signed_data_contract_create(platform_version.protocol_version);
+
+        let (check_result, execution_result, _) =
+            check_and_process(&platform, &serialized, identity_id, platform_version);
+        assert_eq!(check_result.errors.as_slice(), &[]);
+        assert_matches!(
+            execution_result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+
+        for left_over in [1, 100] {
+            let (platform, serialized, identity_id) =
+                platform_with_signed_data_contract_create(platform_version.protocol_version);
+            let padded = with_left_over_bytes(&serialized, left_over);
+            let (check_result, execution_result, balance) =
+                check_and_process(&platform, &padded, identity_id, platform_version);
+
+            assert_matches!(
+                check_result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::SerializedObjectParsingError(_)
+                )]
+            );
+            assert_eq!(check_result.data.expect("check tx data").fee_result, None);
+            assert_matches!(
+                execution_result,
+                StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::SerializedObjectParsingError(_)
+                ))
+            );
+            assert_eq!(balance, 25_000_000_000, "nothing is charged");
+        }
+    }
+
+    /// Protocol version 13 keeps decoding a transition with bytes after it as the transition
+    /// alone, and executes it.
+    #[test]
+    fn should_accept_bytes_after_a_state_transition_at_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
+
+        for left_over in [0, 1, 100] {
+            let (platform, serialized, identity_id) =
+                platform_with_signed_data_contract_create(platform_version.protocol_version);
+            let raw = with_left_over_bytes(&serialized, left_over);
+            let (check_result, execution_result, balance) =
+                check_and_process(&platform, &raw, identity_id, platform_version);
+
+            assert_eq!(check_result.errors.as_slice(), &[]);
+            assert_matches!(
+                execution_result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+            assert!(balance < 25_000_000_000, "the create is paid");
+        }
     }
 }

@@ -9,8 +9,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.NativeCleaner
+import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.QueriesNative
 
 /**
@@ -658,6 +660,120 @@ class Contracts internal constructor(private val sdk: Sdk) {
                 )
             }
         }
+
+    /**
+     * The `propertyConstraints` rules (protocol version 14) of [documentType],
+     * in name order (the order consensus checks them in). Empty for a type
+     * declaring none, and for every type while this SDK's protocol version is
+     * below 14. Port of Swift's `SDK.documentPropertyConstraints`.
+     *
+     * Each rule lists the properties it reads and how
+     * ([DocumentPropertyConstraint.reads]), whether it reads the owner
+     * ([DocumentPropertyConstraint.readsOwner]), the system times, heights
+     * and revisions it reads ([DocumentPropertyConstraint.readsSystem]),
+     * whether it reads the stored version of the document through `$old.`
+     * ([DocumentPropertyConstraint.readsStored]), the `countOf` and `sumOf`
+     * totals it reads ([DocumentPropertyConstraint.readsTotals]) and the values
+     * it reads of referenced documents ([DocumentPropertyConstraint.readsReferenced]).
+     *
+     * [serializedContract] is the contract's platform serialization, the bytes
+     * kept beside a fetched contract ([ContractWithSerialization.binarySerialization],
+     * `DataContractEntity.binarySerialization`). Rust reads it at this SDK's
+     * protocol version; no network call.
+     *
+     * @throws DashSdkError.NotFound for a document type the contract does not declare.
+     * @throws DashSdkError.SerializationError for bytes that are not a contract.
+     * @throws DashSdkError.InvalidParameter for empty contract bytes.
+     */
+    suspend fun propertyConstraints(
+        serializedContract: ByteArray,
+        documentType: String,
+    ): List<DocumentPropertyConstraint> = sdk.queryGate.op {
+        val json = mapNativeErrors {
+            QueriesNative.dataContractGetPropertyConstraints(
+                sdk.handle,
+                serializedContract,
+                documentType,
+            )
+        } ?: throw DashSdkError.InternalError("No propertyConstraints rules returned")
+        DocumentPropertyConstraint.listFromJson(json)
+    }
+
+    /**
+     * The first `propertyConstraints` rule a document to create would break,
+     * or `null` when it meets them all (always so while this SDK's protocol
+     * version is below 14). Port of Swift's
+     * `SDK.checkDocumentPropertyConstraints`.
+     *
+     * [propertiesJson] is the properties JSON the document would be created
+     * with (what `DocumentTransactions.create` takes) and [ownerId] the 32-byte
+     * identity that would own it, which `$ownerId` reads. Rust builds the
+     * document the create path builds and judges it with the check consensus
+     * runs; nothing but the rules is checked. A create has no stored version,
+     * so a rule reading one through `$old.`
+     * ([DocumentPropertyConstraint.readsStored]) is judged as consensus judges
+     * it on a create, every such read absent (a stored time, height or
+     * revision reads 0), and `$revision` reads 1, the revision a created
+     * document starts at. The device clock stands in for the block time the
+     * create records (`$createdAt`, `$updatedAt`, `$transferredAt`), so a
+     * rule comparing one is judged as of now; a rule reading a block height
+     * the create records (`$createdAtBlockHeight`, ..., without `$old.`) is
+     * not judged, since the height is unknown until the block (a stored
+     * height, `$old.$createdAtBlockHeight`, ..., reads 0 and is judged), nor
+     * is a rule reading a
+     * `countOf` or `sumOf` total ([DocumentPropertyConstraint.readsTotals]),
+     * which the platform reads from state when the document is sent, nor one
+     * reading a value of a referenced document
+     * ([DocumentPropertyConstraint.readsReferenced]), which the platform reads
+     * when it checks the reference; consensus may still refuse the document
+     * for any of these. [serializedContract] is as for [propertyConstraints];
+     * no network call.
+     *
+     * @throws DashSdkError.InvalidParameter for empty contract bytes, an owner
+     *   id that is not 32 bytes, or properties that are not a JSON object.
+     * @throws DashSdkError.NotFound for a document type the contract does not declare.
+     * @throws DashSdkError.SerializationError for bytes that are not a contract.
+     */
+    suspend fun checkPropertyConstraints(
+        serializedContract: ByteArray,
+        documentType: String,
+        propertiesJson: String,
+        ownerId: ByteArray,
+    ): PropertyConstraintViolation? = sdk.queryGate.op {
+        val json = mapNativeErrors {
+            QueriesNative.dataContractCheckPropertyConstraints(
+                sdk.handle,
+                serializedContract,
+                documentType,
+                propertiesJson,
+                ownerId,
+            )
+        } ?: throw DashSdkError.InternalError("No propertyConstraints verdict returned")
+        PropertyConstraintViolation.fromJson(json)
+    }
+
+    companion object {
+        /**
+         * [contractJson] (a contract as [fetchJson] and [fetchWithSerialization]
+         * return it) with its property type shorthands (protocol version 14)
+         * written in full: `"type": "identifier"` becomes the 32-byte identifier
+         * byte array and `"type": "bytes", "size": n` a byte array of exactly n
+         * bytes, in every document type schema (object members and typed array
+         * `items` included) and in `schemaDefs`. Everything else comes back as
+         * given. Rust expands them as Platform does when it parses the
+         * contract; the contract itself is stored as sent, so keep [contractJson]
+         * and read the schemas from this view. Needs no SDK; no network call.
+         * Port of the expansion Swift's `DataContractParser` runs before parsing.
+         *
+         * @throws DashSdkError.InvalidParameter for text that is not a JSON object.
+         */
+        fun expandPropertyTypeShorthands(contractJson: String): String {
+            NativeLoader.ensureLoaded()
+            return mapNativeErrors {
+                QueriesNative.dataContractJsonExpandPropertyTypeShorthands(contractJson)
+            } ?: throw DashSdkError.InternalError("No contract JSON returned")
+        }
+    }
 }
 
 /**

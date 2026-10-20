@@ -12,6 +12,18 @@ impl Drive {
     /// Adds the estimated layer information for the once-per-identity distribution trees: the
     /// token distributions root, the once-per-identity root, and, when `token_id` is given, the
     /// token's claims subtree.
+    ///
+    /// # Parameters
+    ///
+    /// * `token_id`: The token whose claims subtree is also estimated, or `None` for the roots
+    ///   only.
+    /// * `estimated_costs_only_with_layer_info`: The estimation map the layers are added to.
+    /// * `drive_version`: The drive version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` once the layers are added to the map.
+    /// * `Err(Error)` when the method version is unknown.
     pub(crate) fn add_estimation_costs_for_token_once_per_identity_distribution(
         token_id: Option<[u8; 32]>,
         estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,

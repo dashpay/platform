@@ -3960,7 +3960,10 @@ mod token_burn_tests {
             PlatformVersion::latest().protocol_version,
             // PROTOCOL_VERSION_14: +400 — genesis system documents now carry
             // the contract-version stamp, shifting byte-billed subtree reads
-            4_369_020, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+            // +740 per document write from protocol version 14: the contract's version item is
+            // one more node to rehash; -12_820: the documents expirations tree joins `Misc`
+            // beside the token supplies tree the burn rewrites, reshaping the `Misc` Merk
+            4_356_200,
         )
         .await;
     }

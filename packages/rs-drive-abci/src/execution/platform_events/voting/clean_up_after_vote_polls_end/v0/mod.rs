@@ -42,9 +42,11 @@ where
                     ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(contested_poll, vote_info) => {
                         contested_polls.push((contested_poll, end_date, vote_info));
                     }
-                    // Unreachable: only `check_for_ended_vote_polls` v1 builds this variant,
-                    // and every table that selects this v0 (protocol versions 1 to 13) selects
-                    // check v0.
+                    // Unreachable: every table that selects this v0 (protocol versions 1 to 14)
+                    // selects `check_for_ended_vote_polls` v0 or v1, which build this variant
+                    // only for a yes/no poll in the end date index, and none can be there
+                    // before 15: it enters only through `Drive::open_yes_no_vote_poll`, which
+                    // writes under the `Votes/d/p` tree that exists from 15.
                     ResolvedVotePollWithVotes::YesNoVotePollWithVotes(..) => {
                         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                             "yes/no vote polls need clean_up_after_vote_polls_end version 1",

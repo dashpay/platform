@@ -1,56 +1,34 @@
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
-use dpp::bls_signatures;
+use dpp::bls;
 
 use crate::Error;
-use dpp::bls_signatures::{Bls12381G2Impl, Pairing, Signature};
+use dpp::bls::Signature;
 use tenderdash_abci::{
     proto::types::{CanonicalVote, SignedMsgType, StateId},
     signatures::{Hashable, Signable},
 };
 
 use crate::ContextProvider;
-use dpp::version::PlatformVersion;
+use drive::error::proof::ProofError;
+use drive::error::Error as DriveError;
+use drive::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
 
-/// Reject GroveDB proof envelopes older than the floor the protocol version
-/// sets in `SystemLimits::minimum_grovedb_proof_envelope_version`. GroveDB's
-/// envelope enum is encoded by bincode as a `u32` discriminant followed by
-/// the version-specific payload; newer discriminants pass here and fail in
-/// GroveDB's own decoder if the client does not know them.
-pub(crate) fn require_supported_grovedb_proof_bytes(
-    grovedb_proof: &[u8],
-    platform_version: &PlatformVersion,
-) -> Result<(), Error> {
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<16>();
-    let (version, _): (u32, usize) =
-        bincode::decode_from_slice(grovedb_proof, config).map_err(|error| {
+/// Reject GroveDB proof envelopes older than Drive's
+/// `MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION` before the bytes reach Drive.
+pub(crate) fn require_supported_grovedb_proof_bytes(grovedb_proof: &[u8]) -> Result<(), Error> {
+    require_supported_grovedb_proof_envelope(grovedb_proof, "proof").map_err(|error| match error {
+        DriveError::Proof(ProofError::InvalidGroveDBProofEnvelope { reason, .. }) => {
             Error::ResponseDecodeError {
-                error: format!("invalid GroveDB proof envelope: {error}"),
+                error: format!("invalid GroveDB proof envelope: {reason}"),
             }
-        })?;
-
-    let minimum = platform_version
-        .system_limits
-        .minimum_grovedb_proof_envelope_version;
-    if version < minimum {
-        return Err(Error::UnsupportedGroveDBProofVersion {
-            proof: "proof",
-            version,
-            minimum,
-            protocol_version: platform_version.protocol_version,
-        });
-    }
-
-    Ok(())
+        }
+        error => error.into(),
+    })
 }
 
 /// Validate a direct GroveDB proof envelope before handing its bytes to Drive.
-pub(crate) fn supported_grovedb_proof_bytes<'a>(
-    proof: &'a Proof,
-    platform_version: &PlatformVersion,
-) -> Result<&'a [u8], Error> {
-    require_supported_grovedb_proof_bytes(&proof.grovedb_proof, platform_version)?;
+pub(crate) fn supported_grovedb_proof_bytes(proof: &Proof) -> Result<&[u8], Error> {
+    require_supported_grovedb_proof_bytes(&proof.grovedb_proof)?;
     Ok(&proof.grovedb_proof)
 }
 
@@ -77,9 +55,8 @@ pub(crate) fn verify_tenderdash_proof(
     mtd: &ResponseMetadata,
     root_hash: &[u8],
     provider: &dyn ContextProvider,
-    platform_version: &PlatformVersion,
 ) -> Result<(), Error> {
-    require_supported_grovedb_proof_bytes(&proof.grovedb_proof, platform_version)?;
+    require_supported_grovedb_proof_bytes(&proof.grovedb_proof)?;
 
     verify_tenderdash_signature(proof, mtd, root_hash, provider)
 }
@@ -108,8 +85,14 @@ pub(crate) fn verify_tenderdash_signature(
     // Now, lookup quorum details
     let chain_id = mtd.chain_id.clone();
     let quorum_type = proof.quorum_type;
-    let pubkey_bytes =
-        provider.get_quorum_public_key(quorum_type, quorum_hash, core_locked_height)?;
+    let pubkey_bytes = provider
+        .get_quorum_public_key(quorum_type, quorum_hash, core_locked_height)
+        .map_err(|error| Error::QuorumKeyUnavailable {
+            quorum_type,
+            quorum_hash,
+            core_chain_locked_height: core_locked_height,
+            error,
+        })?;
 
     let state_id = StateId {
         app_version: version,
@@ -157,8 +140,8 @@ pub(crate) fn verify_tenderdash_signature(
         }
     })?;
 
-    let pubkey = bls_signatures::PublicKey::<Bls12381G2Impl>::try_from(pubkey_bytes.as_slice())
-        .map_err(|e| Error::InvalidPublicKey {
+    let pubkey =
+        bls::PublicKey::try_from(pubkey_bytes.as_slice()).map_err(|e| Error::InvalidPublicKey {
             error: e.to_string(),
         })?;
 
@@ -187,20 +170,17 @@ pub(crate) fn verify_tenderdash_signature(
 pub fn verify_signature_digest(
     sign_digest: &[u8],
     signature: &[u8; 96],
-    public_key: &bls_signatures::PublicKey<Bls12381G2Impl>,
+    public_key: &bls::PublicKey,
 ) -> Result<bool, Error> {
     if signature == &[0; 96] {
         return Err(Error::SignatureVerificationError {
             error: "empty signature".to_string(),
         });
     }
-    let signature = Signature::Basic(
-        <Bls12381G2Impl as Pairing>::Signature::from_compressed(signature)
-            .into_option()
-            .ok_or(Error::SignatureVerificationError {
-                error: "Could not verify signature digest".to_string(),
-            })?,
-    );
+    let signature =
+        Signature::from_compressed(signature).ok_or(Error::SignatureVerificationError {
+            error: "Could not verify signature digest".to_string(),
+        })?;
 
     Ok(signature.verify(public_key, sign_digest).is_ok())
 }
@@ -308,13 +288,7 @@ mod tests {
 
         let provider = StubContextProvider;
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &provider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
         let err = result.expect_err("expected error for out-of-range quorum_type");
         let err_msg = err.to_string();
         assert!(
@@ -342,13 +316,7 @@ mod tests {
             chain_id: "test-chain".to_string(),
         };
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &StubContextProvider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &StubContextProvider);
 
         assert!(matches!(
             result,
@@ -360,16 +328,6 @@ mod tests {
         ));
     }
 
-    /// The floor is a protocol-version table entry: a client verifying with
-    /// the last generation before it still replays V0 envelopes.
-    #[test]
-    fn test_legacy_grovedb_v0_proof_passes_the_gate_before_protocol_version_14() {
-        let platform_version = PlatformVersion::get(13).expect("protocol version 13 exists");
-
-        require_supported_grovedb_proof_bytes(&grovedb_proof_bytes(0), platform_version)
-            .expect("protocol version 13 accepts V0 envelopes");
-    }
-
     #[test]
     fn test_envelopes_at_or_above_the_minimum_pass_the_gate() {
         let config = bincode::config::standard().with_big_endian();
@@ -378,17 +336,19 @@ mod tests {
             let grovedb_proof =
                 bincode::encode_to_vec(version, config).expect("test proof version should encode");
 
-            require_supported_grovedb_proof_bytes(&grovedb_proof, PlatformVersion::latest())
+            require_supported_grovedb_proof_bytes(&grovedb_proof)
                 .unwrap_or_else(|error| panic!("envelope {version} must pass the gate: {error}"));
         }
     }
 
     /// Helper: create a deterministic BLS key pair for testing.
-    fn test_keypair() -> (
-        bls_signatures::SecretKey<Bls12381G2Impl>,
-        bls_signatures::PublicKey<Bls12381G2Impl>,
-    ) {
-        let sk = bls_signatures::SecretKey::<Bls12381G2Impl>::from_hash(b"test-key-seed");
+    fn test_keypair() -> (bls::SecretKey, bls::PublicKey) {
+        let scalar =
+            hex::decode("659dc45452f29c17f96dda38ae1546e0e9e818423cdb8cc857f3728c518b4cb8")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let sk = bls::SecretKey::from_be_bytes(&scalar).unwrap();
         let pk = sk.public_key();
         (sk, pk)
     }
@@ -403,7 +363,7 @@ mod tests {
     impl ValidKeyContextProvider {
         fn new() -> Self {
             let (_, pk) = test_keypair();
-            let pk_vec: Vec<u8> = (&pk).into();
+            let pk_vec = pk.to_bytes().to_vec();
             let mut pubkey_bytes = [0u8; 48];
             pubkey_bytes.copy_from_slice(&pk_vec);
             Self { pubkey_bytes }
@@ -510,13 +470,7 @@ mod tests {
         let metadata = test_metadata();
         let provider = StubContextProvider;
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &provider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
         let err = result.expect_err("expected error for invalid quorum hash size");
         let err_msg = err.to_string();
         assert!(
@@ -543,13 +497,7 @@ mod tests {
         let metadata = test_metadata();
         let provider = ValidKeyContextProvider::new();
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &provider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
         let err = result.expect_err("expected error for invalid signature size");
         let err_msg = err.to_string();
         assert!(
@@ -591,34 +539,46 @@ mod tests {
     }
 
     /// When the provider fails to return a quorum public key, the error must
-    /// propagate (wrapped into Error::ContextProviderError) rather than panic.
+    /// name the quorum the proof asked for, so the SDK can fetch that key and
+    /// verify the same response again, and keep the provider's message for
+    /// callers that classify errors by their text.
     #[test]
-    fn test_verify_tenderdash_proof_provider_error_propagates() {
+    fn should_report_the_proofs_quorum_when_the_provider_has_no_key() {
         let proof = Proof {
             grovedb_proof: grovedb_proof_bytes(1),
-            quorum_hash: vec![0u8; 32],
+            quorum_hash: vec![0xab; 32],
             signature: vec![0u8; 96],
             round: 1,
             block_id_hash: vec![0u8; 32],
-            quorum_type: 1,
+            quorum_type: 6,
         };
 
-        let metadata = test_metadata();
+        let metadata = ResponseMetadata {
+            core_chain_locked_height: 4321,
+            ..test_metadata()
+        };
         let provider = ErroringProvider;
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &provider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
         let err = result.expect_err("expected provider error to propagate");
         let err_msg = err.to_string();
         assert!(
             err_msg.contains("simulated provider failure"),
             "error should contain provider message, got: {err_msg}"
         );
+        match err {
+            Error::QuorumKeyUnavailable {
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+                error: ContextProviderError::InvalidQuorum(_),
+            } => {
+                assert_eq!(quorum_type, 6);
+                assert_eq!(quorum_hash, [0xab; 32]);
+                assert_eq!(core_chain_locked_height, metadata.core_chain_locked_height);
+            }
+            other => panic!("expected QuorumKeyUnavailable, got {other:?}"),
+        }
     }
 
     /// A provider that returns 48 zero-bytes as the "public key" causes the
@@ -668,13 +628,7 @@ mod tests {
         let metadata = test_metadata();
         let provider = BadKeyProvider;
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &provider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
         let err = result.expect_err("expected InvalidPublicKey");
         // `PublicKey::try_from([0u8; 48])` deterministically fails in the
         // BLS12-381 library (the infinity/identity encoding is a `0xC0` prefix,
@@ -705,18 +659,67 @@ mod tests {
         let metadata = test_metadata();
         let provider = ValidKeyContextProvider::new();
 
-        let result = verify_tenderdash_proof(
-            &proof,
-            &metadata,
-            &[0u8; 32],
-            &provider,
-            PlatformVersion::latest(),
-        );
+        let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
         let err = result.expect_err("expected error for empty signature");
         let err_msg = err.to_string();
         assert!(
             err_msg.contains("empty signature"),
             "error should mention empty signature, got: {err_msg}"
         );
+    }
+
+    #[test]
+    fn should_reject_a_verified_result_root_that_differs_from_the_signed_app_hash() {
+        let metadata = test_metadata();
+        let provider = ValidKeyContextProvider::new();
+        let (key, _) = test_keypair();
+        let root = [7; 32];
+        let mut proof = Proof {
+            grovedb_proof: grovedb_proof_bytes(1),
+            quorum_hash: vec![2; 32],
+            signature: vec![],
+            round: 1,
+            block_id_hash: vec![3; 32],
+            quorum_type: 1,
+        };
+        let state_id = StateId {
+            app_version: metadata.protocol_version as u64,
+            core_chain_locked_height: metadata.core_chain_locked_height,
+            time: metadata.time_ms,
+            app_hash: root.to_vec(),
+            height: metadata.height,
+        };
+        let vote = CanonicalVote {
+            r#type: SignedMsgType::Precommit.into(),
+            block_id: proof.block_id_hash.clone(),
+            chain_id: metadata.chain_id.clone(),
+            height: metadata.height as i64,
+            round: proof.round as i64,
+            state_id: state_id
+                .calculate_msg_hash(
+                    &metadata.chain_id,
+                    metadata.height as i64,
+                    proof.round as i32,
+                )
+                .expect("hash signed state"),
+        };
+        let digest = vote
+            .calculate_sign_hash(
+                &metadata.chain_id,
+                proof.quorum_type as u8,
+                &[2; 32],
+                metadata.height as i64,
+                proof.round as i32,
+            )
+            .expect("hash vote");
+        proof.signature = key.sign(&digest).expect("sign vote").to_bytes().to_vec();
+        verify_tenderdash_proof(&proof, &metadata, &root, &provider)
+            .expect("matching app hash control");
+        let mut different_root = root;
+        different_root[0] ^= 1;
+        assert!(matches!(
+            verify_tenderdash_proof(&proof, &metadata, &different_root, &provider),
+            Err(Error::InvalidSignature { .. })
+        ));
     }
 }

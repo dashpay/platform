@@ -13,6 +13,7 @@
 //! [`DocumentCount`]: drive_proof_verifier::DocumentCount
 //! [`DocumentSplitCounts`]: drive_proof_verifier::DocumentSplitCounts
 
+use crate::documents::array_element_clauses::aggregate_where_clauses;
 use crate::documents::document_query::normalize_time_range_clauses_with_metadata_time;
 use crate::documents::document_query::DocumentQuery;
 use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
@@ -23,7 +24,6 @@ use dpp::{
     data_contract::accessors::v0::DataContractV0Getters,
     data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters},
 };
-use drive::query::validate_and_canonicalize_where_clauses;
 use drive::query::{
     CountMode, DocumentCountMode, DriveDocumentCountQuery, SelectFunction, WhereOperator,
 };
@@ -139,9 +139,13 @@ fn limit_to_u16_or_default(limit: u32) -> Result<u16, drive_proof_verifier::Erro
 ///
 /// [`DocumentCount`]: drive_proof_verifier::DocumentCount
 /// [`DocumentSplitCounts`]: drive_proof_verifier::DocumentSplitCounts
+///
+/// `folds_entries` is whether the caller adds the verified entries up into one
+/// total ([`aggregate_where_clauses`]).
 pub(super) fn verify_count_query(
     mut request: DocumentQuery,
     response: GetDocumentsResponse,
+    folds_entries: bool,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<SplitCountEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
@@ -163,19 +167,10 @@ pub(super) fn verify_count_query(
     let resolved_time_ranges =
         normalize_time_range_clauses_with_metadata_time(&mut request, mtd.time_ms)?;
 
-    // Canonicalize exactly as the server dispatcher does (the shared step
-    // in `drive::query::canonicalize`): the prover merged `[f > A, f < B]`
-    // pairs into one `between*` clause before its mode detection, so mode
-    // detection here must run over the same canonical shape or a valid
-    // proof is rejected.
-    request.where_clauses = validate_and_canonicalize_where_clauses(
-        std::mem::take(&mut request.where_clauses),
-        platform_version,
-    )
-    .map_err(|e| drive_proof_verifier::Error::RequestError {
-        error: format!("where-clause canonicalization failed: {e}"),
-    })?;
-
+    // The server's dispatcher reads the clauses with a typed array's elements
+    // keyed, then canonicalized, before its mode detection; the verifier reads
+    // them the same way, or a valid proof is refused (or a refused total
+    // accepted).
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -185,6 +180,13 @@ pub(super) fn verify_count_query(
                 request.document_type_name, e
             ),
         })?;
+    request.where_clauses = aggregate_where_clauses(
+        document_type,
+        &request.group_by,
+        std::mem::take(&mut request.where_clauses),
+        folds_entries,
+        platform_version,
+    )?;
 
     // Resolve the SQL-shape `CountMode` the request implies. Same
     // decision tree as `validate_and_route` in the abci handler —
@@ -254,7 +256,7 @@ pub(super) fn verify_count_query(
             &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-            error: "range count requires a `range_countable: true` index whose last \
+            error: "range count requires a `range_countable: true` (or summableOffCountIndex) index whose last \
                     property matches the range field"
                 .to_string(),
         })?
@@ -265,7 +267,7 @@ pub(super) fn verify_count_query(
             &resolved_time_ranges,
         )
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-            error: "prove count requires a `countable: true` index whose properties \
+            error: "prove count requires a `countable: true` (or summableOffCountIndex) index whose properties \
                     exactly match the where clause fields, or `documentsCountable: \
                     true` on the document type for unfiltered total counts"
                 .to_string(),
@@ -319,17 +321,15 @@ pub(super) fn verify_count_query(
         }
         DocumentCountMode::RangeAggregateCarrierProof => {
             // Carrier-ACOR (grovedb #663) — one verified `u64` per
-            // present In branch. `limit` cap on the per-branch
-            // walk follows the same `validate-don't-clamp`
-            // contract the distinct path uses; pass through what
-            // the caller asked for (with the `0` → default
-            // sentinel) so the path-query bytes match the
-            // server's exactly.
-            let limit_u16 = if request.limit == 0 {
-                None
-            } else {
-                Some(limit_to_u16_or_default(request.limit)?)
-            };
+            // present In branch. The limit comes from the same
+            // function the server's dispatcher uses (`0` is the
+            // unset sentinel), so a range-outer request without a
+            // limit walks the platform default on both sides and the
+            // path-query bytes match the server's exactly.
+            let limit_u16 = DriveDocumentCountQuery::carrier_aggregate_count_limit(
+                &request.where_clauses,
+                (request.limit != 0).then_some(request.limit),
+            )?;
             let left_to_right = request
                 .order_by_clauses
                 .first()
@@ -616,11 +616,15 @@ mod tests {
 
         assert_eq!(resolutions.len(), 1);
         assert_eq!(resolutions[0].field(), CREATED_AT);
+        let grid = resolutions[0]
+            .transform
+            .time_range()
+            .expect("an IN_TIME_RANGE resolution carries a time grid");
         assert_eq!(
-            resolutions[0].transform.range_seconds, RANGE_SECONDS,
+            grid.range_seconds, RANGE_SECONDS,
             "the provenance must carry the exact grid the resolution used"
         );
-        assert_eq!(resolutions[0].transform.step_seconds, STEP_SECONDS);
+        assert_eq!(grid.step_seconds, STEP_SECONDS);
         assert!(
             request.time_range_clauses.is_empty(),
             "the pending selector must be drained, not left to be encoded twice"
@@ -725,8 +729,14 @@ mod tests {
             })),
         };
 
-        let error = verify_count_query(request, response, platform_version(), &UnusedProvider)
-            .expect_err("an unproven response must not be accepted");
+        let error = verify_count_query(
+            request,
+            response,
+            false,
+            platform_version(),
+            &UnusedProvider,
+        )
+        .expect_err("an unproven response must not be accepted");
         assert!(
             matches!(error, drive_proof_verifier::Error::NoProofInResult),
             "expected NoProofInResult, got: {error:?}"

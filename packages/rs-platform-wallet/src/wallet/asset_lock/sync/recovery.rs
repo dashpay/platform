@@ -105,6 +105,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 return;
             }
             let lock = TrackedAssetLock {
+                operation_id: None,
                 out_point,
                 transaction: tx,
                 account_index,
@@ -977,6 +978,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 account_index = lock.account_index,
                 "resume_asset_lock: lock looked up"
             );
+            // A drain's lock is settled under the drain persistence contract
+            // whichever path resumes it (same-UUID resume, the generic
+            // exact-outpoint resume behind "Finish now", a readiness-deferred
+            // retry), so the admission policy applies here, before any
+            // dispatch or lifecycle write. Untagged legacy locks are unaffected.
+            if lock.operation_id.is_some() {
+                self.require_wallet_drain_persistence()?;
+            }
             // Only the two proof-less statuses are candidates. A lock
             // carrying an IS/Chain proof, a `RecoveredFromChain` entry
             // (reconstructed from a record the chain itself accepted), and
@@ -991,7 +1000,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 AssetLockStatus::InstantSendLocked
                 | AssetLockStatus::ChainLocked
                 | AssetLockStatus::RecoveredFromChain
-                | AssetLockStatus::Consumed => None,
+                | AssetLockStatus::Consumed
+                | AssetLockStatus::DrainCompleted => None,
             };
             // Claim the dispatch window for the two statuses that can still
             // send, while the read guard that produced this snapshot is
@@ -1070,7 +1080,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             AssetLockStatus::InstantSendLocked
             | AssetLockStatus::ChainLocked
             | AssetLockStatus::RecoveredFromChain
-            | AssetLockStatus::Consumed => None,
+            | AssetLockStatus::Consumed
+            | AssetLockStatus::DrainCompleted => None,
         };
         if status == AssetLockStatus::Built && local_finality.is_some() {
             dispatch_claim
@@ -1741,7 +1752,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     }
                 }
             }
-            (AssetLockStatus::Consumed, _) => {
+            (AssetLockStatus::Consumed | AssetLockStatus::DrainCompleted, _) => {
                 // Terminal tombstone — the asset lock was already
                 // burned by a successful identity registration / top-up.
                 // Retaining this state makes the typed distinction from
@@ -2171,6 +2182,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction: transaction.clone(),
                     account_index: 0,
@@ -2306,6 +2318,7 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -2524,9 +2537,12 @@ mod tests {
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
             dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         };
         let out_point = OutPoint::new(tx.txid(), 0);
         let lock = TrackedAssetLock {
+            operation_id: None,
             out_point,
             transaction: tx,
             account_index: 0,
@@ -2682,7 +2698,7 @@ mod tests {
         /// rebuild that fails at input selection is direct proof the funding
         /// reservation is still held.
         signer: crate::test_support::WalletSigner,
-        /// The handle `SpvEventForwarder` fires on IS/ChainLock events, so
+        /// The handle `LockNotifyHandler` fires on IS/ChainLock events, so
         /// a test can wake an in-flight proof wait the way the live wallet
         /// does.
         lock_notify: Arc<Notify>,
@@ -2803,6 +2819,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 self.out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point: self.out_point,
                     transaction: self.transaction.clone(),
                     account_index: 0,
@@ -4313,6 +4330,7 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -4826,6 +4844,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -4949,6 +4968,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5451,6 +5471,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5555,6 +5576,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5833,6 +5855,7 @@ mod tests {
             info.tracked_asset_locks.insert(
                 out_point,
                 TrackedAssetLock {
+                    operation_id: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5977,6 +6000,7 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
                         out_point,
                         transaction,
                         account_index: 0,

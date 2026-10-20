@@ -33,6 +33,12 @@ export class DpnsFacade {
     return w.dpnsResolveName(name);
   }
 
+  /**
+   * Registers a DPNS name. A contested name joins a contest: pass
+   * `options.contestFund` as the most, in credits, the registration pays into
+   * it, or leave it out to state the fund to join read just before the domain
+   * is submitted.
+   */
   async registerName(options: wasm.DpnsRegisterNameOptions): Promise<wasm.RegisterDpnsNameResult> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.dpnsRegisterName(options);

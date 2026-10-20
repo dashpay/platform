@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 pub mod accessors;
 pub mod v0;
 
-/// A masternode's answer to a yes/no vote poll (protocol version 14).
+/// A masternode's answer to a yes/no vote poll (protocol version 15).
 #[cfg_attr(
     all(feature = "json-conversion", feature = "serde-conversion"),
     derive(JsonConvertible)

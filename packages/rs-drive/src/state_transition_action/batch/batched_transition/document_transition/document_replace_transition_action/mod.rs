@@ -1,6 +1,10 @@
 mod v0;
 mod v1;
 
+use dpp::data_contract::document_type::property_constraints::{
+    AggregateRead, StoredSystemValues,
+};
+use crate::state_transition_action::batch::batched_transition::document_transition::property_constraint_reads::PropertyConstraintReads;
 use std::collections::{BTreeMap, BTreeSet};
 
 use derive_more::From;
@@ -115,12 +119,6 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
         }
     }
 
-    fn added_data_fields(&self) -> &BTreeSet<String> {
-        match self {
-            DocumentReplaceTransitionAction::V0(v0) => &v0.added_data_fields,
-        }
-    }
-
     fn removed_identifier_fields(&self) -> &BTreeMap<String, Identifier> {
         match self {
             DocumentReplaceTransitionAction::V0(v0) => &v0.removed_identifier_fields,
@@ -142,6 +140,63 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
     fn creator_id(&self) -> Option<Identifier> {
         match self {
             DocumentReplaceTransitionAction::V0(v0) => v0.creator_id,
+        }
+    }
+
+    fn moderated_at(&self) -> Option<TimestampMillis> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => v0.moderated_at,
+        }
+    }
+
+    fn moderated_by(&self) -> Option<Identifier> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => v0.moderated_by,
+        }
+    }
+
+    fn set_moderated(&mut self, moderated_at: TimestampMillis, moderator: Identifier) {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => {
+                v0.moderated_at = Some(moderated_at);
+                v0.moderated_by = Some(moderator);
+            }
+        }
+    }
+
+    fn property_constraint_aggregates(&self) -> &BTreeMap<AggregateRead, i128> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => {
+                PropertyConstraintReads::aggregates_of(&v0.property_constraint_reads)
+            }
+        }
+    }
+
+    fn set_property_constraint_aggregates(&mut self, aggregates: BTreeMap<AggregateRead, i128>) {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => PropertyConstraintReads::set_aggregates(
+                &mut v0.property_constraint_reads,
+                aggregates,
+            ),
+        }
+    }
+
+    fn stored_system_values(&self) -> Option<&StoredSystemValues> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => {
+                PropertyConstraintReads::stored_system_values_of(&v0.property_constraint_reads)
+            }
+        }
+    }
+
+    fn set_stored_system_values(&mut self, values: StoredSystemValues) {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => {
+                PropertyConstraintReads::set_stored_system_values(
+                    &mut v0.property_constraint_reads,
+                    values,
+                )
+            }
         }
     }
 }

@@ -11,15 +11,20 @@
 //! document type are references, and to what?" — without hand-parsing the
 //! contract's raw JSON schema.
 
+use crate::data_contract::document_type_property_constraints::integer_to_js;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::utils::define_own_property;
 use dpp::data_contract::document_type::{
-    DocumentPropertyReferenceTarget, DocumentTypeRef, IdentityKeyReferenceRequirements,
-    KeyIdReference, PropertyReference,
+    DocumentPropertyReferenceTarget, DocumentReferenceLookup, DocumentTypeRef,
+    IdentityKeyReferenceRequirements, KeyIdReference, LookupHashKey, LookupKeyParam,
+    LookupKeySource, PropertyReference, WhereCondition, WhereContainsBound, WhereLiteral,
+    WhereNotEqualBound, WhereOrderingBound,
 };
+use dpp::document::property_names::{ID, OWNER_ID};
 use dpp::prelude::Identifier;
 use js_sys::{Array, Object, Reflect};
+use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -31,7 +36,10 @@ const DOCUMENT_PROPERTY_REFERENCE_TS: &'static str = r#"
  * Mirrors the `refersTo` keyword of the v3 document meta-schema, which is
  * active from protocol version 14. The field names are the schema keyword's
  * own, so what `contract.toJSON()` shows under `refersTo` and what these
- * accessors return line up key for key.
+ * accessors return line up key for key, with one addition: a reference
+ * expression, which the schema declares by its `anyOf` or `allOf` key alone,
+ * also carries `type: 'anyOf'` or `type: 'allOf'`, so every member of the
+ * union is tagged by `type`.
  */
 /**
  * What an `identityPublicKey` reference requires of the key it points at,
@@ -96,25 +104,35 @@ export type DocumentPropertyReferenceTarget =
        */
       documentType: string;
       /**
-       * Write-time equality bindings between the two documents:
-       * `{ <referring property path>: <referenced property path> }`.
-       * Consensus refuses a write whose referring property does not equal
-       * the referenced document's property (code 40127). The referenced
-       * side may also be `$ownerId` or `$creatorId`, the referenced
-       * document's current owner or original creator, against an
-       * identifier property on the referring side. The referring side may
-       * be the writer's own `$ownerId`, which makes the pair a write gate:
-       * only an identity equal to the referenced side may create the
-       * document, and every replace re-checks it. Absent — not
-       * `{}`-valued — when the declaration carries none.
-       */
-      propertyAgreement?: Record<string, string>;
-      /**
        * How the referenced document is found when the property's value is
-       * not its id. See {@link DocumentReferenceLookup}. Absent when the
+       * not its id. See {@link DocumentReferenceFindBy}. Absent when the
        * value is the referenced document's `$id`.
        */
-      lookup?: DocumentReferenceLookup;
+      findBy?: DocumentReferenceFindBy;
+      /**
+       * What the referenced document must hold once found. See
+       * {@link DocumentReferenceWhere}. Absent — not `{}`-valued — when the
+       * declaration compares nothing.
+       */
+      where?: DocumentReferenceWhere;
+      /**
+       * Beside `findBy`: what the document `findBy` finds must meet when the
+       * referring document is created. See {@link DocumentReferenceConstraints}.
+       */
+      constraints?: DocumentReferenceConstraints;
+      /**
+       * A list the value must be in: the value (on a typed array, every
+       * element) must be one of the identifiers the typed array `inList`
+       * holds, a dotted path on `documentType`, on the document `findBy`
+       * names by `{ $id: <property> }`, the identifier property holding its
+       * id. Consensus fetches that document, checks `where` against it, and
+       * refuses a value its list does not hold, or one set while that
+       * property is not (code 40120). The list's document can never be
+       * deleted and the list never changes, so a value accepted once stays an
+       * element. To resolve it yourself, fetch the document by that id and
+       * look in `inList`.
+       */
+      inList?: string;
     }
   | {
       type: 'identityPublicKey';
@@ -171,8 +189,8 @@ export type DocumentPropertyReferenceTarget =
       /**
        * A document of a type whose documents CAN be deleted (the
        * counterpart of `permanentDocument`, disjoint from it). The
-       * referenced document must exist, and every `propertyAgreement`
-       * pair must hold, when the referring document is written; it may be
+       * referenced document must exist, and every `where` entry must
+       * hold, when the referring document is written; it may be
        * deleted afterwards, so a reader must expect the reference to
        * resolve to nothing. Every replace of the referring document
        * re-validates it: a dead reference has to be repointed at an
@@ -187,30 +205,238 @@ export type DocumentPropertyReferenceTarget =
       /** Name of the referenced document type; it must allow deletion. */
       documentType: string;
       /**
-       * Write-time equality bindings, exactly as for `permanentDocument`.
-       * Absent — not `{}`-valued — when the declaration carries none.
+       * How the referenced document is found when the property's value is
+       * not its id. See {@link DocumentReferenceFindBy}. Absent when the
+       * value is the referenced document's `$id`. With `findBy` the
+       * reference means "a document with this key exists now": once the one
+       * it found is deleted the key may find another, and every replace
+       * re-validates it, unless a `findBy` function computes the key: that
+       * commitment is judged when the document is created only.
        */
-      propertyAgreement?: Record<string, string>;
-    };
+      findBy?: DocumentReferenceFindBy;
+      /**
+       * What the referenced document must hold once found, exactly as for
+       * `permanentDocument`. Absent — not `{}`-valued — when the declaration
+       * compares nothing.
+       */
+      where?: DocumentReferenceWhere;
+      /**
+       * Beside `findBy`: what the document `findBy` finds must meet when the
+       * referring document is created. See {@link DocumentReferenceConstraints}.
+       */
+      constraints?: DocumentReferenceConstraints;
+      /**
+       * Beside `findBy`, on a reference judged on the create alone (a `findBy`
+       * function, or a document type whose documents are never replaced): the create deletes the document
+       * `findBy` finds, the writer's own commitment, in the same state
+       * transition.
+       */
+      consume?: true;
+    }
+  | {
+      /**
+       * A document of a type whose documents leave state only when the
+       * contract's moderators remove them, each removal leaving a removal
+       * record under the contract (`canBeDeleted: false`, no `ttl`, and
+       * `moderatorAbilities.delete` keeping records). Between
+       * `permanentDocument` and `deletableDocument`, disjoint from both. The
+       * referenced document must exist, and every `where` entry must hold,
+       * when the referring document is written; afterwards the reference
+       * resolves to the document or, once a moderator removed it, to its
+       * removal record, which a restore can bring the document back from. A
+       * replace keeps it, re-validating it only when the value or a property
+       * `where` reads changes, as for `permanentDocument`; on every replace
+       * for a `where` value `$ownerId`, a `notEqual` bounded by `$ownerId`,
+       * an ordering bounded by `$updatedAt` or `$transferredAt` (or their
+       * heights), and a reference a `propertyConstraints` rule reads through,
+       * which checks its whole `where`.
+       */
+      type: 'moderatedDocument';
+      /**
+       * The contract the referenced document type lives in. Always
+       * present, resolved exactly as for `permanentDocument`.
+       */
+      contractId: Identifier;
+      /**
+       * Name of the referenced document type; its documents must leave
+       * state only through a moderator's recorded removal.
+       */
+      documentType: string;
+      /**
+       * What the referenced document must hold, exactly as for
+       * `permanentDocument`. Absent — not `{}`-valued — when the declaration
+       * compares nothing.
+       */
+      where?: DocumentReferenceWhere;
+    }
+  | DocumentPropertyReferenceExpression;
 
 /**
- * The `lookup` of a document reference: the referenced document is the one
- * the unique index `index` of the referenced document type finds for a key
- * assembled from the referring document, and the reference holds if that
- * document exists (code 40120 when it does not).
- *
- * `keys` maps every property of the index, by its name on the referenced
- * side (`$ownerId` among the system ones), to where its value comes from:
- * a property path of the referring document type, `'$ownerId'` for the
- * referring document's owner, or `'.'` for the value of the property that
- * carries the reference (exactly once). To resolve a reference yourself,
- * query the index with those values: at most one document matches. Only a
- * `permanentDocument` reference carries a lookup, and its key cannot move
- * off the document it found, so it keeps resolving.
+ * A reference expression, declared as `refersTo: { anyOf: [...] }` or
+ * `refersTo: { allOf: [...] }`. The operands sit under the combinator's own
+ * key, as in the schema, and `type` names the combinator, so the union stays
+ * internally tagged like every other: `switch (reference.type)` sees
+ * `'anyOf'` and `'allOf'` next to the target kinds. An `anyOf` holds when at
+ * least one operand holds: consensus checks the operands in this order,
+ * stops at the first that holds, and when none does refuses the write with
+ * the error of the last. An `allOf` holds when every operand holds for the
+ * same value: consensus stops at the first that fails and refuses the write
+ * with its error. Operands nest, the other combinator inside, up to the
+ * protocol's depth limit (4 from protocol version 14).
  */
-export type DocumentReferenceLookup = {
-  index: string;
-  keys: Record<string, string>;
+export type DocumentPropertyReferenceExpression =
+  | { type: 'anyOf'; anyOf: Array<DocumentPropertyReferenceOperand> }
+  | { type: 'allOf'; allOf: Array<DocumentPropertyReferenceOperand> };
+
+/**
+ * One operand of a reference expression: a leaf, an `identity`, a
+ * `permanentDocument` (by id, by `findBy` or with `inList`) or a
+ * `deletableDocument` found by `findBy`, with its own fields, a `where`
+ * belonging to its own leaf, or a nested expression.
+ */
+export type DocumentPropertyReferenceOperand =
+  | Extract<
+      DocumentPropertyReferenceTarget,
+      { type: 'identity' | 'permanentDocument' | 'deletableDocument' }
+    >
+  | DocumentPropertyReferenceExpression;
+
+/**
+ * How a document reference finds the referenced document when the value is
+ * not its id: every property of one unique index of the referenced document
+ * type, by its name there (`$ownerId` among the system ones), mapped to where
+ * its value comes from: a property path of the referring document type,
+ * `'$ownerId'` for the referring document's owner, `'.'` for the value of the
+ * property that carries the reference (exactly once; a string or byte array
+ * property's value fills an index property of the same kind, byte for byte),
+ * or a function computing it (see {@link DocumentReferenceFindByFunction}).
+ * The index is the unique one
+ * whose properties are exactly these, and the reference holds if the document
+ * it finds exists (code 40120 when it does not). To resolve a reference
+ * yourself, query the referenced type by those values: at most one document
+ * matches. On a `permanentDocument` reference the key cannot move off the
+ * document it found, so it keeps resolving; on a `deletableDocument` reference
+ * it may find nothing, or a later document with the same key, once the one it
+ * found is deleted. With `inList` it is `{ $id: <property> }`: the document
+ * holding the list, by the id that property holds.
+ */
+export type DocumentReferenceFindBy = Record<string, string | DocumentReferenceFindByFunction>;
+
+/**
+ * What a referenced document must hold once found: `{ <referenced property>:
+ * <referring value> }`, each an equality consensus enforces when the referring
+ * document is written (code 40127 when it fails). The key is a property path
+ * of the referenced document type, or its `$ownerId`, `$creatorId` or `$id`
+ * (current owner, original creator, id) against an identifier on the
+ * referring side. The value is a property path of the referring document
+ * type, or `'$ownerId'`, the writer, which makes the entry a write gate: only
+ * an identity equal to the referenced side may create the document, and every
+ * replace re-checks it. Beside a `findBy` function the whole declaration is
+ * judged when the document is created only, so no replace re-checks it.
+ *
+ * A value may instead be a condition ({@link DocumentReferenceWhereCondition}):
+ * a literal the referenced side must equal, a value it must differ from,
+ * literals it must be one of, or a bound it must compare with.
+ */
+export type DocumentReferenceWhere = Record<string, string | DocumentReferenceWhereCondition>;
+
+/**
+ * A `where` entry that is not an equality with a referring value, as the
+ * schema writes it, one key:
+ *
+ * - `const`: a literal the referenced side must equal (a string is a base58
+ *   identifier for an identifier, hex for a byte array); a side the document
+ *   leaves out equals none;
+ * - `notEqual`: a referring property path, `'$ownerId'` (the writer, checked on
+ *   every replace) or a `{ const }` it must differ from; both sides absent are
+ *   equal;
+ * - `in`: two or more literals of one kind, one of which it must equal;
+ * - `greaterThan`, `greaterThanOrEqual`, `lessThan`, `lessThanOrEqual`: an
+ *   integer it must compare with, an integer property path of the referring
+ *   type, an integer `{ const }`, or a time or height the referring type
+ *   records (`'$createdAt'`; one of the update or transfer is checked on every
+ *   replace); it holds only when both sides have a value;
+ * - `contains`, of a typed array: a property path of the referring type
+ *   holding one value of the element kind, or `'$ownerId'` (the writer, among
+ *   identifiers, checked on every replace), that an element must equal; a list
+ *   left out holds nothing, and a value left out is in no list;
+ * - `containsAll`, of a typed array: a typed array property path of the
+ *   referring type whose every element it must hold, in any order; every list
+ *   holds all of an empty one.
+ *
+ * An equality between two typed arrays compares them as lists: the same
+ * elements in the same order, a list left out the empty one.
+ *
+ * An entry that does not hold refuses the write with code 40127.
+ */
+export type DocumentReferenceWhereCondition =
+  | { const: string | number | bigint | boolean }
+  | { notEqual: string | { const: string | number | bigint | boolean } }
+  | { in: Array<string | number | bigint | boolean> }
+  | { greaterThan: string | { const: number | bigint } }
+  | { greaterThanOrEqual: string | { const: number | bigint } }
+  | { lessThan: string | { const: number | bigint } }
+  | { lessThanOrEqual: string | { const: number | bigint } }
+  | { contains: string }
+  | { containsAll: string };
+
+/**
+ * A `findBy` function, for a commit and reveal, keyed by the referenced
+ * property: the document is found by that property holding the hash
+ * `function` (`sys.hash.sha256d`, SHA-256 of SHA-256) of the `params`' bytes
+ * joined in order with nothing between them. A param is a property path of the
+ * document being created (a string's UTF-8, a byte array's bytes, an
+ * identifier's 32 bytes), the property carrying the reference included,
+ * `{ const }`, fixed UTF-8 text, `'.'`, the value carrying the reference
+ * where it has no path (each element of a typed array, the writer or the
+ * creator), or `'$ownerId'`, the 32 bytes of the writer's identity, the owner
+ * of the document being created. The document it finds is a commitment made
+ * earlier; the reference
+ * is checked when the document is created only. To reveal one, compute the
+ * same hash over the values you create the document with.
+ */
+export type DocumentReferenceFindByFunction = {
+  function: 'sys.hash.sha256d';
+  params: Array<string | { const: string }>;
+};
+
+/**
+ * A `refersTo`'s `constraints`, beside `findBy`, on a reference judged on the
+ * create alone (a `findBy` function, or a document type whose documents are
+ * never replaced).
+ *
+ * - `minimumAgeBlocks`: how many blocks before the create the document `findBy`
+ *   finds must have been created, from its `$createdAtBlockHeight`, so 1 means
+ *   an earlier block (code 40142 when it was not).
+ * - `chooseFirst`: on a `deletableDocument` reference only, see
+ *   {@link DocumentReferenceChooseFirst}.
+ */
+export type DocumentReferenceConstraints = {
+  minimumAgeBlocks?: number;
+  chooseFirst?: DocumentReferenceChooseFirst;
+};
+
+/**
+ * A `deletableDocument` reference's `constraints.chooseFirst`, beside a
+ * `findBy` holding `$ownerId: '$ownerId'` and a function filling `among` (a
+ * {@link DocumentReferenceFindByFunction} reading neither `'$ownerId'` nor
+ * `'.'`): every commitment to the same values holds that hash, whoever made
+ * it. The found document must be the first valid commitment among those
+ * holding the same value. `validWhen` maps one property to a function reading
+ * `'$ownerId'` (each commitment's owner) and exactly the properties the
+ * `findBy` function reads: a commitment is valid when it holds that function
+ * computed with its owner, which takes knowing the values, so a copied hash
+ * does not count. The commitments are ordered by `by`, each entry one property
+ * and its direction, a last `$id` breaking ties in the direction of the entry
+ * before it (ascending alone). A create is refused when a
+ * valid commitment before the found one is not past its `ttl` (code 40149);
+ * two equal on every `by` property precede neither other. A found commitment
+ * past its own `ttl`, or not valid itself, reveals nothing (code 40120).
+ */
+export type DocumentReferenceChooseFirst = {
+  among: string;
+  validWhen: Record<string, DocumentReferenceFindByFunction>;
+  by: Array<Record<string, 'asc' | 'desc'>>;
 };
 
 /**
@@ -225,13 +451,31 @@ export type DocumentPropertyReference = {
    * example `"reasons[]"`; its `type` is never `identityPublicKey`, which
    * an element cannot declare.
    *
+   * The document type's `ownerRefersTo` declaration, whose value is the
+   * document's `$ownerId`, the writer, is listed first with the path
+   * `"$ownerId"`, which is not a property path: the value it checks is the
+   * document's owner. Consensus checks it with the writer's id when a
+   * document is created, and when a replace changes a property its `findBy`
+   * or `where` reads (every replace for a `deletableDocument` found by
+   * `findBy`, which gates the writer on its document still existing); in its
+   * `findBy`, `'.'` is the writer. Its `type` is `identity`, a
+   * `permanentDocument` or `deletableDocument` with `findBy`, or a
+   * `permanentDocument` with `inList`, the targets a writer can be, on a document type whose
+   * documents can be neither transferred nor traded. On a type whose documents can, a
+   * `creatorRefersTo` declaration takes its place, listed first with the
+   * path `"$creatorId"`: the same, with the document's creator, who never
+   * changes, as the value, and a `deletableDocument` only with a `findBy`
+   * function (see {@link DocumentReferenceFindByFunction}).
+   *
    * This is the same string consensus reports in the `path` field of the
-   * document-write reference errors (codes 40120-40125, 40131, 40135 and
-   * 40136), except that a write error names the failing element by its
+   * document-write reference errors (codes 40120-40125, 40131, 40135,
+   * 40136, 40142 and 40149), except that a write error names the failing element by its
    * index (`"reasons[2]"` for
    * the third). Note that contract *registration* errors prefix it with the
    * document type name (`"<documentType>.<path>"`, `"<documentType>.reasons[]"`)
-   * while document *write* errors do not.
+   * and name one leaf of a reference expression by where it sits
+   * (`"<documentType>.<path>.anyOf[1].allOf[0]"`), while document *write*
+   * errors do neither.
    */
   path: string;
 } & DocumentPropertyReferenceTarget;
@@ -255,6 +499,44 @@ fn set_field(target: &Object, key: &str, value: &JsValue, path: &str) -> WasmDpp
         ))
     })?;
     Ok(())
+}
+
+/// [`set_field`] for a key the schema names, a property of the referenced
+/// type: an own property even when the name is `__proto__`, whose assignment
+/// would call the setter every object inherits instead.
+fn set_schema_field(target: &Object, key: &str, value: JsValue, path: &str) -> WasmDppResult<()> {
+    define_own_property(target, key, value).map_err(|_| {
+        WasmDppError::generic(format!(
+            "unable to serialize the `{key}` field of the reference declared at '{path}'"
+        ))
+    })
+}
+
+/// A `findBy` function as the schema spells it: `{ function, params }`.
+fn find_by_function_to_js(key: &LookupHashKey, path: &str) -> WasmDppResult<JsValue> {
+    let computed = Object::new();
+    set_field(
+        &computed,
+        "function",
+        &JsValue::from_str(key.function.as_str()),
+        path,
+    )?;
+    let params = Array::new();
+    for param in &key.params {
+        let param_value = match param {
+            LookupKeyParam::ReferenceValue => JsValue::from_str("."),
+            LookupKeyParam::Property(property) => JsValue::from_str(property),
+            LookupKeyParam::Const(text) => {
+                let object = Object::new();
+                set_field(&object, "const", &JsValue::from_str(text), path)?;
+                object.into()
+            }
+            LookupKeyParam::Writer => JsValue::from_str("$ownerId"),
+        };
+        params.push(&param_value);
+    }
+    set_field(&computed, "params", &params, path)?;
+    Ok(computed.into())
 }
 
 /// The flat, internally-tagged JS object for an `identityPublicKey`
@@ -310,6 +592,177 @@ fn set_key_requirements_field(
     set_field(object, "keyRequirements", &fields, path)
 }
 
+/// The `where` field of a document reference: `{ referenced property:
+/// referring property }`, a consensus-enforced equality at write time, keyed by
+/// the referenced side as the schema spells it (the parsed model keys it the
+/// other way), and the other entries, each `{ referenced property: condition }`
+/// as the schema writes the condition. `find_by_entry` leaves out the entry
+/// `findBy` reads instead, a list's `$id`. Absent, not `{}`-valued, when the
+/// declaration compares nothing, matching the schema's own omission and the
+/// absent-field convention of the other optional target fields.
+fn set_where_field(
+    object: &Object,
+    property_agreement: &BTreeMap<String, String>,
+    where_conditions: &BTreeMap<String, WhereCondition>,
+    find_by_entry: Option<&str>,
+    path: &str,
+) -> WasmDppResult<()> {
+    let entries: Vec<(&String, &String)> = property_agreement
+        .iter()
+        .filter(|(_, referenced)| Some(referenced.as_str()) != find_by_entry)
+        .collect();
+    if entries.is_empty() && where_conditions.is_empty() {
+        return Ok(());
+    }
+    let where_object = Object::new();
+    for (referring, referenced) in entries {
+        set_schema_field(
+            &where_object,
+            referenced,
+            JsValue::from_str(referring),
+            path,
+        )?;
+    }
+    for (referenced, condition) in where_conditions {
+        set_schema_field(
+            &where_object,
+            referenced,
+            where_condition_to_js(condition, path)?,
+            path,
+        )?;
+    }
+    set_field(object, "where", &where_object, path)
+}
+
+/// A `where` literal as the schema writes it: an integer past
+/// `Number.MAX_SAFE_INTEGER` as a `bigint`, exactly.
+fn where_literal_to_js(literal: &WhereLiteral) -> JsValue {
+    match literal {
+        WhereLiteral::Integer(integer) => integer_to_js(*integer),
+        WhereLiteral::Boolean(flag) => JsValue::from_bool(*flag),
+        WhereLiteral::Text(text) => JsValue::from_str(text),
+    }
+}
+
+/// `{ "const": literal }`.
+fn where_constant_to_js(literal: &WhereLiteral, path: &str) -> WasmDppResult<JsValue> {
+    let constant = Object::new();
+    set_field(&constant, "const", &where_literal_to_js(literal), path)?;
+    Ok(constant.into())
+}
+
+/// The bound of a `notEqual` as the schema writes it: a path, `'$ownerId'` or
+/// `{ const }`.
+fn not_equal_bound_to_js(bound: &WhereNotEqualBound, path: &str) -> WasmDppResult<JsValue> {
+    Ok(match bound {
+        WhereNotEqualBound::Property(property) => JsValue::from_str(property),
+        WhereNotEqualBound::Writer => JsValue::from_str(OWNER_ID),
+        WhereNotEqualBound::Constant(literal) => where_constant_to_js(literal, path)?,
+    })
+}
+
+/// The bound of an ordering as the schema writes it: a path, a time or
+/// height, or `{ const }`.
+fn ordering_bound_to_js(bound: &WhereOrderingBound, path: &str) -> WasmDppResult<JsValue> {
+    Ok(match bound {
+        WhereOrderingBound::Property(property) => JsValue::from_str(property),
+        WhereOrderingBound::System(property) => JsValue::from_str(property.name()),
+        WhereOrderingBound::Constant(integer) => {
+            where_constant_to_js(&WhereLiteral::Integer(*integer), path)?
+        }
+    })
+}
+
+/// A `where` condition as the schema writes it: an object with one key.
+fn where_condition_to_js(condition: &WhereCondition, path: &str) -> WasmDppResult<JsValue> {
+    let value = match condition {
+        WhereCondition::Constant(literal) => where_literal_to_js(literal),
+        WhereCondition::NotEqual(bound) => not_equal_bound_to_js(bound, path)?,
+        WhereCondition::Ordering { bound, .. } => ordering_bound_to_js(bound, path)?,
+        WhereCondition::In(literals) => {
+            let values = Array::new();
+            for literal in literals {
+                values.push(&where_literal_to_js(literal));
+            }
+            values.into()
+        }
+        WhereCondition::Contains(WhereContainsBound::Property(property))
+        | WhereCondition::ContainsAll(property) => JsValue::from_str(property),
+        WhereCondition::Contains(WhereContainsBound::Writer) => JsValue::from_str(OWNER_ID),
+    };
+    let object = Object::new();
+    set_field(&object, condition.wire_name(), &value, path)?;
+    Ok(object.into())
+}
+
+/// The `findBy` field of a document reference found by it: every property it
+/// names mapped to its source as the schema spells it, `'.'`, `'$ownerId'`, a
+/// property path, or a function as `{ function, params }`, and, beside a
+/// function, `consume` and the `constraints` (`minimumAgeBlocks` and `chooseFirst`)
+/// where declared.
+fn set_find_by_fields(
+    object: &Object,
+    lookup: &DocumentReferenceLookup,
+    path: &str,
+) -> WasmDppResult<()> {
+    let find_by = Object::new();
+    for (index_property, source) in &lookup.keys {
+        let value = match source {
+            LookupKeySource::Hash(key) => find_by_function_to_js(key, path)?,
+            source => JsValue::from_str(source.as_str()),
+        };
+        set_schema_field(&find_by, index_property, value, path)?;
+    }
+    set_field(object, "findBy", &find_by, path)?;
+    if lookup.consume {
+        set_field(object, "consume", &JsValue::TRUE, path)?;
+    }
+    if lookup.minimum_age_blocks.is_none() && lookup.choose_first.is_none() {
+        return Ok(());
+    }
+    let constraints = Object::new();
+    if let Some(blocks) = lookup.minimum_age_blocks {
+        set_field(
+            &constraints,
+            "minimumAgeBlocks",
+            &JsValue::from(blocks),
+            path,
+        )?;
+    }
+    if let Some(choose_first) = &lookup.choose_first {
+        let choose_first_object = Object::new();
+        set_field(
+            &choose_first_object,
+            "among",
+            &JsValue::from_str(&choose_first.among),
+            path,
+        )?;
+        let valid_when = Object::new();
+        set_schema_field(
+            &valid_when,
+            &choose_first.valid_when_property,
+            find_by_function_to_js(&choose_first.valid_when, path)?,
+            path,
+        )?;
+        set_field(&choose_first_object, "validWhen", &valid_when, path)?;
+        let by = Array::new();
+        for order in &choose_first.by {
+            let entry = Object::new();
+            set_schema_field(
+                &entry,
+                &order.property,
+                JsValue::from_str(if order.ascending { "asc" } else { "desc" }),
+                path,
+            )?;
+            by.push(&entry);
+        }
+        set_field(&choose_first_object, "by", &by, path)?;
+        set_field(&constraints, "chooseFirst", &choose_first_object, path)?;
+    }
+    set_field(object, "constraints", &constraints, path)?;
+    Ok(())
+}
+
 /// Build the flat, internally-tagged JS object for one declaration.
 fn reference_to_js(
     path: &str,
@@ -347,19 +800,47 @@ fn set_reference_target_fields(
     declaring_contract_id: Identifier,
     path: &str,
 ) -> WasmDppResult<()> {
+    // The operands sit under the combinator's own key, as in the schema,
+    // each an object of its own, and `type` names the combinator, so the
+    // union stays internally tagged (CONVENTIONS.md, "Tagged unions")
+    if let Some((combinator, operands)) = target.combinator() {
+        let objects = Array::new();
+        for operand in operands.operands() {
+            objects.push(&reference_target_to_js(
+                operand,
+                declaring_contract_id,
+                path,
+            )?);
+        }
+        let name = combinator.wire_name();
+        set_field(object, "type", &JsValue::from_str(name), path)?;
+        return set_field(object, name, &objects, path);
+    }
+
     let kind = match target {
         DocumentPropertyReferenceTarget::Identity => "identity",
         DocumentPropertyReferenceTarget::Contract { .. } => "contract",
         DocumentPropertyReferenceTarget::Token => "token",
+        // A list the value must be in is a `permanentDocument` with `inList`
         DocumentPropertyReferenceTarget::PermanentDocument { .. }
-        | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. } => "permanentDocument",
+        | DocumentPropertyReferenceTarget::PermanentDocumentLookup { .. }
+        | DocumentPropertyReferenceTarget::ListElement(_) => "permanentDocument",
         DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => "identityPublicKey",
-        DocumentPropertyReferenceTarget::DeletableDocument { .. } => "deletableDocument",
+        DocumentPropertyReferenceTarget::DeletableDocument { .. }
+        | DocumentPropertyReferenceTarget::DeletableDocumentLookup { .. } => "deletableDocument",
+        DocumentPropertyReferenceTarget::ModeratedDocument { .. } => "moderatedDocument",
+        DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {
+            return Err(WasmDppError::generic(format!(
+                "the reference expression declared at '{path}' has no single target kind"
+            )));
+        }
     };
     set_field(object, "type", &JsValue::from_str(kind), path)?;
 
     match target {
         DocumentPropertyReferenceTarget::Identity | DocumentPropertyReferenceTarget::Token => {}
+        // Handled above, before the kind
+        DocumentPropertyReferenceTarget::AnyOf(_) | DocumentPropertyReferenceTarget::AllOf(_) => {}
         DocumentPropertyReferenceTarget::Contract {
             contract_requirements,
         } => {
@@ -410,17 +891,33 @@ fn set_reference_target_fields(
             contract_id,
             document_type_name,
             property_agreement,
+            where_conditions,
         }
         | DocumentPropertyReferenceTarget::PermanentDocumentLookup {
             contract_id,
             document_type_name,
             property_agreement,
+            where_conditions,
             ..
         }
         | DocumentPropertyReferenceTarget::DeletableDocument {
             contract_id,
             document_type_name,
             property_agreement,
+            where_conditions,
+        }
+        | DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+            contract_id,
+            document_type_name,
+            property_agreement,
+            where_conditions,
+            ..
+        }
+        | DocumentPropertyReferenceTarget::ModeratedDocument {
+            contract_id,
+            document_type_name,
+            property_agreement,
+            where_conditions,
         } => {
             let effective = contract_id.unwrap_or(declaring_contract_id);
             set_field(
@@ -435,42 +932,50 @@ fn set_reference_target_fields(
                 &JsValue::from_str(document_type_name),
                 path,
             )?;
-            // `propertyAgreement` binds a referring property to a property
-            // of the referenced document (consensus-enforced equality at
-            // write time). Absent — not `{}`-valued — when the declaration
-            // carries none, matching the schema's own omission and the
-            // absent-field convention of the other optional target fields.
-            if !property_agreement.is_empty() {
-                let agreement = Object::new();
-                for (referring, referenced) in property_agreement {
-                    set_field(&agreement, referring, &JsValue::from_str(referenced), path)?;
-                }
-                set_field(object, "propertyAgreement", &agreement, path)?;
-            }
-            // Present only on a lookup reference, absent when the value is
-            // the referenced document's id, as the schema omits it; the
-            // sources keep their schema spelling.
-            if let DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. } = target
+            // Present only on a reference found by `findBy`, absent when the
+            // value is the referenced document's id, as the schema omits it
+            if let DocumentPropertyReferenceTarget::PermanentDocumentLookup { lookup, .. }
+            | DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. } = target
             {
-                let lookup_object = Object::new();
-                set_field(
-                    &lookup_object,
-                    "index",
-                    &JsValue::from_str(&lookup.index),
-                    path,
-                )?;
-                let keys = Object::new();
-                for (index_property, source) in &lookup.keys {
-                    set_field(
-                        &keys,
-                        index_property,
-                        &JsValue::from_str(source.as_str()),
-                        path,
-                    )?;
-                }
-                set_field(&lookup_object, "keys", &keys, path)?;
-                set_field(object, "lookup", &lookup_object, path)?;
+                set_find_by_fields(object, lookup, path)?;
             }
+            set_where_field(object, property_agreement, where_conditions, None, path)?;
+        }
+        // A document found by its `$id` read from another property, whose list
+        // the value must be in: the fields of `permanentDocument`, `findBy`
+        // naming the `$id`, plus `inList`
+        DocumentPropertyReferenceTarget::ListElement(reference) => {
+            let effective = reference.contract_id.unwrap_or(declaring_contract_id);
+            set_field(
+                object,
+                "contractId",
+                &JsValue::from(IdentifierWasm::from(effective)),
+                path,
+            )?;
+            set_field(
+                object,
+                "documentType",
+                &JsValue::from_str(&reference.document_type_name),
+                path,
+            )?;
+            if let Some(document_id_property) = reference.document_id_property() {
+                let find_by = Object::new();
+                set_field(&find_by, ID, &JsValue::from_str(document_id_property), path)?;
+                set_field(object, "findBy", &find_by, path)?;
+            }
+            set_where_field(
+                object,
+                &reference.property_agreement,
+                &reference.where_conditions,
+                Some(ID),
+                path,
+            )?;
+            set_field(
+                object,
+                "inList",
+                &JsValue::from_str(&reference.in_list),
+                path,
+            )?;
         }
         DocumentPropertyReferenceTarget::IdentityPublicKey {
             key_id_property,
@@ -489,9 +994,12 @@ fn set_reference_target_fields(
     Ok(())
 }
 
-/// Collect every reference declaration of one document type, in schema
-/// property order: an identifier property's own, and the one the elements
-/// of a typed array of identifiers carry, listed at `path[]`.
+/// Collect every reference declaration of one document type: its
+/// `ownerRefersTo` or `creatorRefersTo` first, listed at `$ownerId` or
+/// `$creatorId`, the path consensus names it by, then in schema property
+/// order an identifier property's own, and the
+/// one the elements of a typed array of identifiers carry, listed at
+/// `path[]`.
 ///
 /// Walks `flattened_properties` rather than `properties` because that is
 /// what both consensus validators walk, and because their error `path` is
@@ -503,15 +1011,16 @@ pub(crate) fn references_for_document_type(
 ) -> WasmDppResult<Array> {
     let references = Array::new();
 
-    for (path, property) in document_type.flattened_properties() {
-        match property.property_type.reference() {
-            Some(PropertyReference::KeyId(reference)) => {
+    for (holder, reference) in document_type.reference_declarations() {
+        let path = holder.path();
+        match reference {
+            PropertyReference::KeyId(reference) => {
                 references.push(&key_id_reference_to_js(path, reference)?);
             }
-            Some(PropertyReference::Value(target)) => {
+            PropertyReference::Value(target) | PropertyReference::Revealed(target) => {
                 references.push(&reference_to_js(path, target, declaring_contract_id)?);
             }
-            Some(PropertyReference::Elements { target, .. }) => {
+            PropertyReference::Elements { target, .. } => {
                 let element_path = format!("{path}[]");
                 references.push(&reference_to_js(
                     &element_path,
@@ -519,7 +1028,6 @@ pub(crate) fn references_for_document_type(
                     declaring_contract_id,
                 )?);
             }
-            None => {}
         }
     }
 

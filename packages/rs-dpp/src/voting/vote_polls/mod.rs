@@ -47,7 +47,7 @@ pub mod yes_no_vote_poll;
 pub enum VotePoll {
     ContestedDocumentResourceVotePoll(ContestedDocumentResourceVotePoll),
     /// A yes/no poll keyed by a resource path, resolved by a supermajority once enough voting
-    /// power has been cast (protocol version 14). Appended: the bincode discriminant is the
+    /// power has been cast (protocol version 15). Appended: the bincode discriminant is the
     /// variant position.
     YesNoVotePoll(YesNoVotePoll),
 }

@@ -27,34 +27,36 @@ impl Drive {
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         coalesce_current_key_alias_operations(&mut batch_operations);
-        let (grove_db_operations, ephemeral_grove_db_operations, mut other_operations) =
+        let (grove_db_operations, ephemeral_batches, mut other_operations) =
             LowLevelDriveOperation::grovedb_operations_batch_consume_split_ephemeral(
                 batch_operations,
             );
-        // The ephemeral (TTL'd-subtree) operations apply as their own batch
-        // so their cost is known separately and can be consumed at the
-        // ephemeral price — added bytes to processing instead of storage.
-        // Cloning the layer info keeps the estimation path symmetric: the
-        // dry run prices the ephemeral batch through the same worst-case
-        // machinery, under the same pricing rule, so estimated stays an
-        // upper bound of actual per fee class.
-        let ephemeral_layer_info = if ephemeral_grove_db_operations.is_empty() {
-            None
-        } else {
-            estimated_costs_only_with_layer_info.clone()
-        };
-        // Two batches must still commit as one. GroveDB opens and commits
+        // Ephemeral operations (a `timeRange` index's TTL'd sub-levels, the
+        // writes of a document whose type declares a `ttl`) apply as their
+        // own batch per pricing rule, so each batch's cost is known
+        // separately and can be consumed under that rule. Cloning the layer
+        // info keeps the estimation path symmetric: the dry run prices every
+        // batch through the same worst-case machinery, under the same rule,
+        // so estimated stays an upper bound of actual per fee class.
+        //
+        // The batches must still commit as one. GroveDB opens and commits
         // an owned transaction per batch when none is supplied, which would
-        // leave the standing batch committed if the ephemeral one failed —
-        // a document row and its permanent index entries without their
-        // TTL'd entries. Span both with one owned transaction instead and
-        // commit only after both applied.
+        // leave an earlier batch committed if a later one failed — a
+        // document row and its permanent index entries without their TTL'd
+        // entries. Span them with one owned transaction instead and commit
+        // only after every batch applied.
+        //
+        // The split yields no empty ephemeral batch: each is opened by its first operation.
+        let batch_count = usize::from(!grove_db_operations.is_empty()) + ephemeral_batches.len();
         let owned_transaction = (transaction.is_none()
             && estimated_costs_only_with_layer_info.is_none()
-            && !grove_db_operations.is_empty()
-            && !ephemeral_grove_db_operations.is_empty())
-        .then(|| self.grove.start_transaction());
+            && batch_count > 1)
+            .then(|| self.grove.start_transaction());
         let transaction = owned_transaction.as_ref().or(transaction);
+        let ephemeral_layer_infos: Vec<_> = ephemeral_batches
+            .iter()
+            .map(|_| estimated_costs_only_with_layer_info.clone())
+            .collect();
         if !grove_db_operations.is_empty() {
             self.apply_batch_grovedb_operations(
                 estimated_costs_only_with_layer_info,
@@ -64,7 +66,9 @@ impl Drive {
                 drive_version,
             )?;
         }
-        if !ephemeral_grove_db_operations.is_empty() {
+        for ((pricing, ephemeral_grove_db_operations), ephemeral_layer_info) in
+            ephemeral_batches.into_iter().zip(ephemeral_layer_infos)
+        {
             let mut ephemeral_cost_operations: Vec<LowLevelDriveOperation> = vec![];
             self.apply_batch_grovedb_operations(
                 ephemeral_layer_info,
@@ -76,7 +80,7 @@ impl Drive {
             drive_operations.extend(
                 ephemeral_cost_operations
                     .into_iter()
-                    .map(LowLevelDriveOperation::retag_ephemeral),
+                    .map(|operation| operation.retag_ephemeral_with(pricing)),
             );
         }
         drive_operations.append(&mut other_operations);

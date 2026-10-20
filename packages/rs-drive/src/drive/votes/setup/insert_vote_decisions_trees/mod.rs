@@ -8,9 +8,9 @@ use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Creates the active polls and identity votes trees of the decisions branch when they are
-    /// missing. A chain upgrading to protocol version 14 calls this on its first block and a
-    /// chain born at 14 calls it from `create_initial_state_structure` v4, so both populations
-    /// build the same votes Merk.
+    /// missing. A chain upgrading to protocol version 15 calls this on its first block and a
+    /// chain born at 15 or later calls it from `create_initial_state_structure` v4, so both
+    /// populations build the same votes Merk.
     pub fn insert_vote_decisions_trees(
         &self,
         transaction: TransactionArg,

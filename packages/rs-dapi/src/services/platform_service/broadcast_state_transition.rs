@@ -11,11 +11,16 @@ use crate::services::PlatformServiceImpl;
 use crate::services::platform_service::TenderdashStatus;
 use crate::services::platform_service::error_mapping::decode_consensus_error;
 use crate::services::platform_service::error_mapping::map_tenderdash_message;
+use crate::services::platform_service::shielded_proof_failure_budget::{
+    INVALID_SHIELDED_PROOF_CODE, SourceKey, orchard_action_count,
+};
 use base64::prelude::*;
 use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
 use dpp::version::PlatformVersion;
 use sha2::{Digest, Sha256};
+use std::time::Duration;
 use tonic::Request;
+use tonic::metadata::MetadataValue;
 use tracing::{Instrument, debug, trace};
 
 impl PlatformServiceImpl {
@@ -23,10 +28,12 @@ impl PlatformServiceImpl {
     ///
     /// This method:
     /// 1. Validates the state transition request
-    /// 2. Converts the state transition to base64 for Tenderdash
-    /// 3. Broadcasts via Tenderdash RPC
-    /// 4. Handles complex error scenarios including duplicates
-    /// 5. Returns appropriate gRPC responses
+    /// 2. Refuses a source that spent its shielded proof failure budget
+    /// 3. Converts the state transition to base64 for Tenderdash
+    /// 4. Broadcasts via Tenderdash RPC
+    /// 5. Handles complex error scenarios including duplicates
+    /// 6. Charges the source's budget when Drive finds the proof invalid
+    /// 7. Returns appropriate gRPC responses
     ///
     /// ## Returned Values
     ///
@@ -38,6 +45,7 @@ impl PlatformServiceImpl {
         &self,
         request: Request<BroadcastStateTransitionRequest>,
     ) -> Result<BroadcastStateTransitionResponse, DapiError> {
+        let source = SourceKey::of_request(&request);
         let BroadcastStateTransitionRequest {
             state_transition: tx,
         } = request.into_inner();
@@ -47,11 +55,51 @@ impl PlatformServiceImpl {
         let txid = Sha256::digest(&tx).to_vec();
         let txid_hex = hex::encode(&txid);
 
+        let reservation = match source {
+            Some(source) => self
+                .shielded_proof_failure_budget
+                .try_reserve(source, orchard_action_count(&tx))
+                .map_err(|retry_after| {
+                    debug!(
+                        ?source,
+                        ?retry_after,
+                        tx = %txid_hex,
+                        "broadcast_state_transition: source spent its shielded proof failure budget"
+                    );
+                    proof_failure_budget_refusal(retry_after)
+                })?,
+            None => None,
+        };
+
+        let result = self.broadcast_to_tenderdash(&tx, &txid, &txid_hex).await;
+
+        if let Some(reservation) = reservation {
+            if matches!(
+                &result,
+                Err(DapiError::TenderdashClientError(status))
+                    if status.code == INVALID_SHIELDED_PROOF_CODE
+            ) {
+                reservation.charge();
+            } else {
+                reservation.refund();
+            }
+        }
+
+        result
+    }
+
+    /// Broadcast validated state transition bytes and classify Tenderdash's answer.
+    async fn broadcast_to_tenderdash(
+        &self,
+        tx: &[u8],
+        txid: &[u8],
+        txid_hex: &str,
+    ) -> Result<BroadcastStateTransitionResponse, DapiError> {
         let span = tracing::trace_span!("broadcast_state_transition_impl", tx = %txid_hex);
 
         async move {
             // Convert to base64 for Tenderdash RPC
-            let tx_base64 = BASE64_STANDARD.encode(&tx);
+            let tx_base64 = BASE64_STANDARD.encode(tx);
 
             // Attempt to broadcast the transaction; note that both Ok and Err can contain
             // information about the broadcast result, so we need to handle both.
@@ -101,7 +149,7 @@ impl PlatformServiceImpl {
             };
 
             let response: Result<BroadcastStateTransitionResponse, DapiError> = match error_result {
-                DapiError::AlreadyExists(_) => self.handle_duplicate_transaction(&tx, &txid).await,
+                DapiError::AlreadyExists(_) => self.handle_duplicate_transaction(tx, txid).await,
                 e => Err(e),
             };
 
@@ -232,6 +280,20 @@ fn validate_state_transition_bytes(tx: &[u8]) -> Result<(), DapiError> {
     Ok(())
 }
 
+/// Refuse a source that spent its shielded proof failure budget. The
+/// `ratelimit-reset` header is the one Envoy's rate limiter sends, so the
+/// SDK stops sending to this node for that long and tries another one.
+fn proof_failure_budget_refusal(retry_after: Duration) -> DapiError {
+    let mut status = tonic::Status::resource_exhausted(
+        "too many rejected shielded state transitions from this address; retry later",
+    );
+    let seconds = retry_after.as_secs() + u64::from(retry_after.subsec_nanos() > 0);
+    status
+        .metadata_mut()
+        .insert("ratelimit-reset", MetadataValue::from(seconds));
+    DapiError::Status(status)
+}
+
 /// Convert Tenderdash broadcast error details into a structured `DapiError`.
 fn map_broadcast_error(code: u32, error_message: &str, info: Option<&str>) -> DapiError {
     // TODO: prefer code over message when possible
@@ -277,5 +339,19 @@ mod tests {
             validate_state_transition_bytes(&[]),
             Err(DapiError::InvalidArgument(message)) if message.contains("not specified")
         ));
+    }
+
+    #[test]
+    fn should_refuse_a_spent_budget_as_a_rate_limit_with_whole_seconds() {
+        let status = proof_failure_budget_refusal(Duration::from_millis(2_500)).to_status();
+
+        assert_eq!(status.code(), tonic::Code::ResourceExhausted);
+        assert_eq!(
+            status
+                .metadata()
+                .get("ratelimit-reset")
+                .and_then(|value| value.to_str().ok()),
+            Some("3")
+        );
     }
 }

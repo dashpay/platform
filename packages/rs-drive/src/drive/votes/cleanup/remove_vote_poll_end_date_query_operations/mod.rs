@@ -12,8 +12,8 @@ use grovedb::TransactionArg;
 impl Drive {
     /// Removes finished polls of every kind from the end date index, and each end date's tree
     /// once nothing is left under it. `vote_polls` holds every poll closed in this block with
-    /// its end date, so the count at one end date covers both kinds: a partial count would
-    /// delete a tree that still holds a poll of the other kind.
+    /// its end date; whether an end date is left empty is read from the tree, since it can
+    /// still hold a poll of either kind the block did not reach.
     pub fn remove_vote_poll_end_date_query_operations(
         &self,
         vote_polls: &[(Identifier, TimestampMillis)],

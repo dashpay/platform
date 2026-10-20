@@ -9,7 +9,7 @@ use platform_serialization_derive::{
 };
 use thiserror::Error;
 
-/// A vote on a yes/no poll that exists but is no longer taking votes (protocol version 14).
+/// A vote on a yes/no poll that exists but is no longer taking votes (protocol version 15).
 #[derive(
     Error,
     Debug,

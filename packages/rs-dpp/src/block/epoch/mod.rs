@@ -1,3 +1,7 @@
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::{InvalidVectorSizeError, ProtocolError};
 use bincode::{BorrowDecode, Encode};
 use serde::{Deserialize, Serialize};
@@ -129,10 +133,10 @@ impl<'de, C> BorrowDecode<'de, C> for Epoch {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for Epoch {}
+impl JsonConvertible for Epoch {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for Epoch {}
+impl ValueConvertible for Epoch {}
 
 #[cfg(all(
     test,

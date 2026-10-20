@@ -17,7 +17,7 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Cleans up after the polls that ended in this block. Version 1 (protocol version 14)
+    /// Cleans up after the polls that ended in this block. Version 1 (protocol version 15)
     /// handles both kinds. It removes every finished poll from the end date index itself,
     /// so that an end date's tree is deleted only once nothing of either kind is left under
     /// it, then cleans up the polls of each kind.

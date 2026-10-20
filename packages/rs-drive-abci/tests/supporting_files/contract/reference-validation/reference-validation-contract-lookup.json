@@ -71,12 +71,9 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "joinRequest",
-            "lookup": {
-              "index": "bySubmittedCharter",
-              "keys": {
-                "submittedCharterId": "submittedCharterId",
-                "$ownerId": "."
-              }
+            "findBy": {
+              "submittedCharterId": "submittedCharterId",
+              "$ownerId": "."
             }
           }
         },
@@ -90,15 +87,12 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "joinRequest",
-            "propertyAgreement": {
-              "title": "message"
+            "findBy": {
+              "submittedCharterId": "submittedCharterId",
+              "$ownerId": "."
             },
-            "lookup": {
-              "index": "bySubmittedCharter",
-              "keys": {
-                "submittedCharterId": "submittedCharterId",
-                "$ownerId": "."
-              }
+            "where": {
+              "message": "title"
             }
           }
         },
@@ -112,12 +106,9 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "joinRequest",
-            "lookup": {
-              "index": "bySubmittedCharter",
-              "keys": {
-                "submittedCharterId": ".",
-                "$ownerId": "$ownerId"
-              }
+            "findBy": {
+              "submittedCharterId": ".",
+              "$ownerId": "$ownerId"
             }
           }
         },
@@ -136,12 +127,9 @@
             "refersTo": {
               "type": "permanentDocument",
               "documentType": "joinRequest",
-              "lookup": {
-                "index": "bySubmittedCharter",
-                "keys": {
-                  "submittedCharterId": "submittedCharterId",
-                  "$ownerId": "."
-                }
+              "findBy": {
+                "submittedCharterId": "submittedCharterId",
+                "$ownerId": "."
               }
             }
           },
@@ -175,12 +163,9 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "joinRequest",
-            "lookup": {
-              "index": "bySubmittedCharter",
-              "keys": {
-                "submittedCharterId": "meta.charterId",
-                "$ownerId": "."
-              }
+            "findBy": {
+              "submittedCharterId": "meta.charterId",
+              "$ownerId": "."
             }
           }
         }

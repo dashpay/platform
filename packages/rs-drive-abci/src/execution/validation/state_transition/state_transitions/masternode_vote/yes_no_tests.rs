@@ -17,6 +17,7 @@ use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 use crate::test::helpers::state_mutation_guard::assert_check_tx_valid_at_all_levels;
 use assert_matches::assert_matches;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
@@ -1241,6 +1242,19 @@ async fn should_keep_an_end_date_the_block_only_partly_closed() {
 /// consumes nothing.
 #[tokio::test]
 async fn should_run_a_contest_unchanged_and_strip_yes_no_polls_at_protocol_version_13() {
+    run_a_contest_and_strip_yes_no_polls(13).await;
+}
+
+/// Protocol version 14 selects the masternode vote transform v0 and state validation v1, vote
+/// registration v0, end of poll check v1 and clean-up v0, which this change gave yes/no arms
+/// that only 15 reaches. A contest there runs as it did before, and a masternode vote naming a
+/// yes/no poll is stripped as at 13.
+#[tokio::test]
+async fn should_run_a_contest_unchanged_and_strip_yes_no_polls_at_protocol_version_14() {
+    run_a_contest_and_strip_yes_no_polls(14).await;
+}
+
+async fn run_a_contest_and_strip_yes_no_polls(protocol_version: u32) {
     use crate::execution::validation::state_transition::state_transitions::tests::{
         create_dpns_identity_name_contest, dpns_name_vote_poll, get_vote_states,
     };
@@ -1248,9 +1262,9 @@ async fn should_run_a_contest_unchanged_and_strip_yes_no_polls_at_protocol_versi
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_response::get_contested_resource_vote_state_response_v0::finished_vote_info::FinishedVoteOutcome;
     use dpp::identity::accessors::IdentityGettersV0;
 
-    let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+    let platform_version = PlatformVersion::get(protocol_version).expect("protocol version");
     let mut platform = TestPlatformBuilder::new()
-        .with_initial_protocol_version(13)
+        .with_initial_protocol_version(protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
     let platform_state = platform.state.load();
@@ -1265,7 +1279,7 @@ async fn should_run_a_contest_unchanged_and_strip_yes_no_polls_at_protocol_versi
     let (pro_tx_hash, signer, voting_key) =
         setup_voter(&mut platform, 100, false, platform_version);
 
-    let yes_no_poll = two_thirds_poll(b"before 14", 1);
+    let yes_no_poll = two_thirds_poll(b"before 15", 1);
     let votes_naming_a_yes_no_poll = [
         Vote::YesNoVote(YesNoVote::V0(YesNoVoteV0 {
             vote_poll: yes_no_poll.clone(),
@@ -1288,7 +1302,19 @@ async fn should_run_a_contest_unchanged_and_strip_yes_no_polls_at_protocol_versi
         )
         .await
         .expect_err("expected the vote to be stripped");
-        assert_matches!(result, InternalError(message) if message.contains("is not active"));
+        // Protocol version 14 decodes with `decode_raw_state_transitions` 1, which reports a
+        // transition not active yet as an unpaid consensus error; 13 reports it as an internal
+        // error. Both strip the vote without charging.
+        if protocol_version >= 14 {
+            assert_matches!(
+                result,
+                UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::StateTransitionNotActiveError(_)
+                ))
+            );
+        } else {
+            assert_matches!(result, InternalError(message) if message.contains("is not active"));
+        }
     }
 
     // Nonce 1 is still free: the stripped votes consumed nothing.

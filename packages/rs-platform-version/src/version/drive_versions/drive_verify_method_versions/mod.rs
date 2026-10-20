@@ -43,6 +43,10 @@ pub struct DriveVerifyContractModerationMethodVersions {
     pub verify_contract_moderation_entries: FeatureVersion,
     pub verify_contract_fee_pots: FeatureVersion,
     pub verify_contract_document_removals: FeatureVersion,
+    pub verify_contract_team_actions: FeatureVersion,
+    pub verify_contract_team_action_signers: FeatureVersion,
+    pub verify_contract_team_action_signature: FeatureVersion,
+    pub verify_contract_moderation_action_counts: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -182,9 +186,9 @@ pub struct DriveVerifyVoteMethodVersions {
     pub verify_contests_proof: FeatureVersion,
     pub verify_vote_polls_by_end_date_proof: FeatureVersion,
     pub verify_specialized_balance: FeatureVersion,
-    /// The stored info and tallies of a yes/no poll (protocol version 14).
+    /// The stored info and tallies of a yes/no poll (protocol version 15).
     pub verify_yes_no_vote_poll_state_proof: FeatureVersion,
-    /// A masternode's vote on a yes/no poll (protocol version 14).
+    /// A masternode's vote on a yes/no poll (protocol version 15).
     pub verify_masternode_yes_no_vote: FeatureVersion,
 }
 

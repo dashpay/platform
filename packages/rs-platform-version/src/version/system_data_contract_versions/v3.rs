@@ -16,6 +16,11 @@ use crate::version::system_data_contract_versions::SystemDataContractVersions;
 // inserted by `transition_to_version_14` on chains upgrading from 13. The
 // earlier tables carry 0, which no schema generation answers to, so the table
 // itself refuses to load the contract before 14.
+//
+// The moderation charters contract (moderation_charters: 1) is registered at
+// PROTOCOL_VERSION_14 too, but is not yet written to state at genesis or on
+// upgrade: the election that a charter create opens does not exist yet, and the
+// PR that adds it writes the contract to state.
 pub const SYSTEM_DATA_CONTRACT_VERSIONS_V3: SystemDataContractVersions =
     SystemDataContractVersions {
         withdrawals: 2,
@@ -27,4 +32,5 @@ pub const SYSTEM_DATA_CONTRACT_VERSIONS_V3: SystemDataContractVersions =
         keyword_search: 1,
         document_history: 1,
         app_connect: 1,
+        moderation_charters: 1,
     };

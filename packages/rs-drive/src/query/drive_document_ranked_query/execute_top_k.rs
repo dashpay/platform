@@ -11,7 +11,7 @@
 //! `pub mod execute_top_k;` declaration.
 
 use super::branches::{axis_keys_to_ranked, decompose_branch_paths, read_branched_union};
-use super::{DriveDocumentRankedQuery, RankedPage};
+use super::{present_entries_on_axis, DriveDocumentRankedQuery, RankedPage};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -104,9 +104,9 @@ impl DriveDocumentRankedQuery<'_> {
                 "ranked",
                 &self.prefix_branches,
                 &paths,
-                self.axis,
+                self.read_axis(),
                 AxisQuery::top_k(
-                    self.axis.into(),
+                    self.read_axis().into(),
                     self.k,
                     self.offset as u64,
                     self.descending,
@@ -118,7 +118,7 @@ impl DriveDocumentRankedQuery<'_> {
             )?;
             return Ok(RankedPage {
                 skipped: 0,
-                entries,
+                entries: present_entries_on_axis(self.axis, entries),
             });
         }
         self.execute_top_k_no_proof_branch(0, drive, transaction, platform_version)
@@ -145,7 +145,7 @@ impl DriveDocumentRankedQuery<'_> {
         let path_query = PathQuery::new_axis(
             path,
             AxisQuery::top_k(
-                self.axis.into(),
+                self.read_axis().into(),
                 self.k,
                 self.offset as u64,
                 self.descending,
@@ -167,7 +167,8 @@ impl DriveDocumentRankedQuery<'_> {
                 "a keys-only ranked read returned a different result shape".to_string(),
             )));
         };
-        let entries = axis_keys_to_ranked(self.axis, keys)?;
+        let entries =
+            present_entries_on_axis(self.axis, axis_keys_to_ranked(self.read_axis(), keys)?);
         // A `RankedPage` traversal always attests its skip; its absence
         // would mean grovedb answered a different traversal than asked.
         let skipped = skipped.ok_or_else(|| {
@@ -267,7 +268,7 @@ impl DriveDocumentRankedQuery<'_> {
                 keys,
                 suffix,
                 AxisQuery::top_k(
-                    self.axis.into(),
+                    self.read_axis().into(),
                     self.k,
                     self.offset as u64,
                     self.descending,
@@ -292,7 +293,7 @@ impl DriveDocumentRankedQuery<'_> {
         let path = self.indexed_property_name_tree_path(branch)?;
         let path_query = PathQuery::new_axis_top_k(
             path,
-            self.axis.into(),
+            self.read_axis().into(),
             self.k,
             self.offset as u64,
             self.descending,

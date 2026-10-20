@@ -20,7 +20,7 @@ impl Drive {
     /// (PR 670). Returns proof bytes verified via
     /// `GroveDb::verify_aggregate_sum_query`.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_sum_range_proof(
+    pub(crate) fn execute_document_sum_range_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,

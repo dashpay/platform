@@ -201,6 +201,8 @@ struct QueryDetailView: View {
                         self.error = "Not Implemented: \(message)"
                     case .internalError(let message):
                         self.error = "Internal Error: \(message)"
+                    case .consensusRejection(let consensus, let message):
+                        self.error = "Rejected by Platform (code \(consensus.code)): \(message)"
                     case .unknown(let message):
                         self.error = "Unknown Error: \(message)"
                     }
@@ -763,6 +765,10 @@ struct QueryDetailView: View {
                 actionId: actionId
             )
 
+        case "getContractGroupInfo":
+            let contractGroupId = queryInputs["contractGroupId"] ?? ""
+            return try await sdk.getContractGroupInfo(contractGroupId: contractGroupId)
+
         // System Queries
         case "getStatus":
             return try await sdk.getStatus()
@@ -1134,6 +1140,11 @@ struct QueryDetailView: View {
                 QueryInput(name: "groupContractPosition", label: "Group Contract Position", required: true),
                 QueryInput(name: "status", label: "Status", required: true, placeholder: "ACTIVE or CLOSED"),
                 QueryInput(name: "actionId", label: "Action ID", required: true)
+            ]
+
+        case "getContractGroupInfo":
+            return [
+                QueryInput(name: "contractGroupId", label: "Contract Group ID", required: true, placeholder: "Base58 encoded ID")
             ]
 
         // System Queries

@@ -17,7 +17,10 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::{WhereClause, WhereOperator};
+use crate::query::{
+    aggregate_or_zero_when_absent, index_keeps_empty_groups, is_absent_path, WhereClause,
+    WhereOperator,
+};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
@@ -36,8 +39,9 @@ impl DriveDocumentSumQuery<'_> {
     ///   branch, summed in Rust.
     /// - **Distinct mode** (`distinct=true`): walks the unified
     ///   `distinct_sum_path_query` and emits one entry per matched
-    ///   `(in_key, key)` pair. (Currently stubbed pending the
-    ///   distinct-builder port.)
+    ///   `(in_key, key)` pair, leaving out the groups summing to zero
+    ///   except over an index that can hold empty groups
+    ///   (`index_keeps_empty_groups`, see the walk).
     pub fn execute_range_sum_no_proof(
         &self,
         drive: &Drive,
@@ -52,6 +56,14 @@ impl DriveDocumentSumQuery<'_> {
             .any(|wc| wc.operator == WhereOperator::In);
 
         if matches!(options.walk_mode, RangeSumWalkMode::Aggregate) {
+            // An absent value reads zero as the proof of the same total
+            // verifies it (`aggregate_or_zero_when_absent`).
+            let range_total_verifier = platform_version
+                .drive
+                .methods
+                .verify
+                .document_sum
+                .verify_aggregate_sum_proof;
             if has_in_on_prefix {
                 // Enforce exactly one `In` clause. Without this, a request
                 // with multiple In filters would silently use only the
@@ -110,7 +122,14 @@ impl DriveDocumentSumQuery<'_> {
                         transaction,
                         &drive_version.grove_version,
                     );
-                    let sum = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+                    let sum = aggregate_or_zero_when_absent(
+                        drive,
+                        &path_query.path,
+                        value,
+                        range_total_verifier,
+                        transaction,
+                        platform_version,
+                    )?;
                     // Use `checked_add` rather than `saturating_add` so an
                     // overflowed aggregate fails deterministically instead
                     // of silently clamping at i64::MAX. The proof-side
@@ -141,7 +160,14 @@ impl DriveDocumentSumQuery<'_> {
                 transaction,
                 &drive_version.grove_version,
             );
-            let sum = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
+            let sum = aggregate_or_zero_when_absent(
+                drive,
+                &path_query.path,
+                value,
+                range_total_verifier,
+                transaction,
+                platform_version,
+            )?;
             return Ok(vec![SumEntry {
                 in_key: None,
                 key: Vec::new(),
@@ -171,24 +197,22 @@ impl DriveDocumentSumQuery<'_> {
         );
         let elements = match result {
             Ok((elements, _)) => elements,
-            Err(Error::GroveDB(e))
-                if matches!(
-                    e.as_ref(),
-                    grovedb::Error::PathNotFound(_)
-                        | grovedb::Error::PathParentLayerNotFound(_)
-                        | grovedb::Error::PathKeyNotFound(_)
-                ) =>
-            {
+            Err(error) if is_absent_path(&error) => {
                 return Ok(Vec::new());
             }
             Err(e) => return Err(e),
         };
 
+        let keeps_empty_groups = index_keeps_empty_groups(self.document_type, self.index);
         let mut entries: Vec<SumEntry> = Vec::new();
         for triple in elements.to_path_key_elements() {
             let (path, key, element) = triple;
             let sum = element.sum_value_or_default();
-            if sum == 0 {
+            // Zero groups are kept where an index can hold empty groups
+            // (see the helper), as the distinct proof keeps them: the walk's
+            // limit counted them, so leaving them out would shorten the page.
+            // Every other index leaves out its zero sums, as before.
+            if sum == 0 && !keeps_empty_groups {
                 continue;
             }
             let in_key = if has_in_on_prefix && path.len() > base_path_len {
@@ -230,10 +254,8 @@ impl DriveDocumentSumQuery<'_> {
 
     /// Per-distinct-key range-sum proof against this query's
     /// `rangeSummable` index. Mirror of count's
-    /// `execute_distinct_count_with_proof`. Currently routes through
-    /// `distinct_sum_path_query` which is stubbed (pending the
-    /// ~280-line port from count); calls before that lands surface
-    /// `Unsupported` cleanly.
+    /// `execute_distinct_count_with_proof`, through
+    /// `distinct_sum_path_query`.
     pub fn execute_distinct_sum_with_proof(
         &self,
         drive: &Drive,

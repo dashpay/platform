@@ -3,7 +3,11 @@ use crate::impl_wasm_type_info;
 use dpp::tokens::token_event::TokenEvent;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(typescript_custom_section)]
+// The custom section is a wasm-target artifact, so only the attribute is gated
+// on it. The constant itself stays visible to Rust, which lets the field names
+// this doc promises be checked against the ones the serializer emits.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(typescript_custom_section))]
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 const TS_TYPES: &str = r#"
 /**
  * TokenEvent serialized as a plain object.
@@ -19,12 +23,19 @@ const TS_TYPES: &str = r#"
  *   - Unfreeze:{ $type: "unfreeze",frozenIdentifier, publicNote }
  *   - DestroyFrozenFunds:        { $type, frozenIdentifier, amount, publicNote }
  *   - Transfer:{ $type, recipient, publicNote, sharedEncryptedNote,
- *                personalEncryptedNote, amount }
+ *                privateEncryptedNote, amount }
  *   - Claim:   { $type, distributionType, amount, publicNote }
- *   - EmergencyAction:           { $type, emergencyAction, publicNote }
- *   - ConfigUpdate:              { $type, configChange, publicNote }
+ *   - EmergencyAction:           { $type, action, publicNote }
+ *   - ConfigUpdate:              { $type, configurationChange, publicNote }
  *   - ChangePriceForDirectPurchase: { $type, pricingSchedule, publicNote }
  *   - DirectPurchase: { $type, amount, credits }
+ *   - Shield:  { $type: "shield", amount }
+ *   - Unshield:{ $type: "unshield", recipient, amount }
+ *   - ShieldedTransfer: { $type: "shieldedTransfer" }
+ *   - MintToPool: { $type: "mintToPool", amount, actionsDigest, publicNote }
+ *   - BurnFromPool: { $type: "burnFromPool", amount, actionsDigest, publicNote }
+ *   - ClaimToPool: { $type: "claimToPool", amount }
+ *   - DirectPurchaseToPool: { $type: "directPurchaseToPool", amount, credits }
  *
  * `amount`/`credits` are routed through json_safe_u64 — small numbers, JS
  * BigInt-safe stringification above 2^53. Identifier fields use base58 in
@@ -69,6 +80,13 @@ pub enum TokenEventVariant {
     ConfigUpdate = 8,
     ChangePriceForDirectPurchase = 9,
     DirectPurchase = 10,
+    Shield = 11,
+    Unshield = 12,
+    ShieldedTransfer = 13,
+    MintToPool = 14,
+    BurnFromPool = 15,
+    ClaimToPool = 16,
+    DirectPurchaseToPool = 17,
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -106,6 +124,13 @@ impl TokenEventWasm {
                 TokenEventVariant::ChangePriceForDirectPurchase
             }
             TokenEvent::DirectPurchase(..) => TokenEventVariant::DirectPurchase,
+            TokenEvent::Shield(..) => TokenEventVariant::Shield,
+            TokenEvent::Unshield(..) => TokenEventVariant::Unshield,
+            TokenEvent::ShieldedTransfer => TokenEventVariant::ShieldedTransfer,
+            TokenEvent::MintToPool(..) => TokenEventVariant::MintToPool,
+            TokenEvent::BurnFromPool(..) => TokenEventVariant::BurnFromPool,
+            TokenEvent::ClaimToPool(..) => TokenEventVariant::ClaimToPool,
+            TokenEvent::DirectPurchaseToPool(..) => TokenEventVariant::DirectPurchaseToPool,
         }
     }
 }
@@ -118,3 +143,139 @@ impl_wasm_conversions_inner!(
     TokenEventJSONJs
 );
 impl_wasm_type_info!(TokenEventWasm, TokenEvent);
+
+#[cfg(test)]
+mod tests {
+    use super::TS_TYPES;
+    use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
+    use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionTypeWithResolvedRecipient;
+    use dpp::identifier::Identifier;
+    use dpp::tokens::emergency_action::TokenEmergencyAction;
+    use dpp::tokens::token_event::TokenEvent;
+
+    /// `TokenEventObject` is an index signature, so the per-variant field names
+    /// a TypeScript consumer works from live only in the doc block's prose and
+    /// nothing checks them. This reads the field list the doc promises for each
+    /// variant back out of it and compares that with the keys `TokenEvent`'s
+    /// `Serialize` actually emits. A name that exists only in the doc — a
+    /// property a JS consumer would read as `undefined` — fails here, and so
+    /// does renaming a serialized field without updating the doc.
+    #[test]
+    fn the_documented_field_names_are_the_ones_the_serializer_emits() {
+        // A comment block: entries wrap across lines, each carrying a leading
+        // `*`. Flatten it so one entry is one contiguous span of text.
+        let doc = TS_TYPES.replace(['\n', '*'], " ");
+
+        let mut disagreements = Vec::new();
+        for event in every_variant() {
+            let serialized = serde_json::to_value(&event).expect("a TokenEvent serializes");
+            let object = serialized
+                .as_object()
+                .expect("a TokenEvent serializes as a map keyed by field name");
+            let mut emitted: Vec<String> = object
+                .keys()
+                .filter(|key| key.as_str() != "$type")
+                .cloned()
+                .collect();
+            emitted.sort();
+
+            let variant = variant_name(&event);
+            let mut documented = documented_fields(&doc, variant);
+            documented.sort();
+
+            if documented != emitted {
+                disagreements.push(format!(
+                    "  {variant}: doc says {documented:?}, serializer emits {emitted:?}"
+                ));
+            }
+        }
+
+        assert!(
+            disagreements.is_empty(),
+            "the TypeScript doc block promises field names `TokenEvent`'s Serialize \
+             does not emit:\n{}",
+            disagreements.join("\n")
+        );
+    }
+
+    /// The payload field names the doc block promises for one variant, read out
+    /// of its `- Variant: { $type, field, ... }` entry. `$type` is the
+    /// discriminator rather than a payload field, so it is dropped.
+    fn documented_fields(doc: &str, variant: &str) -> Vec<String> {
+        let entry = doc
+            .split_once(&format!("- {variant}:"))
+            .unwrap_or_else(|| panic!("the doc block has an entry for `{variant}`"))
+            .1;
+        let fields = entry
+            .split_once('{')
+            .expect("the entry opens its field list")
+            .1
+            .split_once('}')
+            .expect("the entry closes its field list")
+            .0;
+        fields
+            .split(',')
+            .map(str::trim)
+            .filter(|field| !field.is_empty() && !field.starts_with("$type"))
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// The label the doc block uses for a variant's entry. Exhaustive, so a new
+    /// variant stops compiling until it is documented and added below.
+    fn variant_name(event: &TokenEvent) -> &'static str {
+        match event {
+            TokenEvent::Mint(..) => "Mint",
+            TokenEvent::Burn(..) => "Burn",
+            TokenEvent::Freeze(..) => "Freeze",
+            TokenEvent::Unfreeze(..) => "Unfreeze",
+            TokenEvent::DestroyFrozenFunds(..) => "DestroyFrozenFunds",
+            TokenEvent::Transfer(..) => "Transfer",
+            TokenEvent::Claim(..) => "Claim",
+            TokenEvent::EmergencyAction(..) => "EmergencyAction",
+            TokenEvent::ConfigUpdate(..) => "ConfigUpdate",
+            TokenEvent::ChangePriceForDirectPurchase(..) => "ChangePriceForDirectPurchase",
+            TokenEvent::DirectPurchase(..) => "DirectPurchase",
+            TokenEvent::Shield(..) => "Shield",
+            TokenEvent::Unshield(..) => "Unshield",
+            TokenEvent::ShieldedTransfer => "ShieldedTransfer",
+            TokenEvent::MintToPool(..) => "MintToPool",
+            TokenEvent::BurnFromPool(..) => "BurnFromPool",
+            TokenEvent::ClaimToPool(..) => "ClaimToPool",
+            TokenEvent::DirectPurchaseToPool(..) => "DirectPurchaseToPool",
+        }
+    }
+
+    /// One instance of every variant. Which keys the serializer emits depends
+    /// on the variant alone, never on the payload, so the values are stand-ins.
+    fn every_variant() -> Vec<TokenEvent> {
+        let id = Identifier::new([1; 32]);
+        vec![
+            TokenEvent::Mint(1, id, None),
+            TokenEvent::Burn(1, id, None),
+            TokenEvent::Freeze(id, None),
+            TokenEvent::Unfreeze(id, None),
+            TokenEvent::DestroyFrozenFunds(id, 1, None),
+            TokenEvent::Transfer(id, None, None, None, 1),
+            TokenEvent::Claim(
+                TokenDistributionTypeWithResolvedRecipient::PreProgrammed(id),
+                1,
+                None,
+            ),
+            TokenEvent::EmergencyAction(TokenEmergencyAction::Pause, None),
+            TokenEvent::ConfigUpdate(
+                TokenConfigurationChangeItem::TokenConfigurationNoChange,
+                None,
+            ),
+            TokenEvent::ChangePriceForDirectPurchase(None, None),
+            TokenEvent::DirectPurchase(1, 1),
+            TokenEvent::Shield(1),
+            TokenEvent::Unshield(id, 1),
+            TokenEvent::ShieldedTransfer,
+            TokenEvent::MintToPool(1, id, None),
+            TokenEvent::BurnFromPool(1, id, None),
+            TokenEvent::ClaimToPool(1),
+            TokenEvent::DirectPurchaseToPool(1, 1),
+        ]
+    }
+}

@@ -1,5 +1,9 @@
 use crate::drive::constants::CONTRACT_DOCUMENTS_PATH_HEIGHT;
+use crate::drive::document::expiration::pricing::{
+    document_expiration_cleanup_fee_for_bytes, document_remaining_lifetime_ms, document_ttl_pricing,
+};
 use crate::drive::document::index_level_tree_types::{
+    continuation_contributes_zero, document_takes_part_in_index,
     index_level_tree_types_with_continuation_demotion, IndexLevelTreeTypes,
 };
 use crate::drive::document::time_range_ttl::{entry_key_bucket_start, live_time_range_entry_keys};
@@ -7,6 +11,7 @@ use crate::drive::document::{
     make_document_reference, make_document_reference_with_sum_item, read_document_sum_contribution,
 };
 
+use crate::drive::document::derived_index_values::set_derived_index_values;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -15,35 +20,40 @@ use crate::util::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
 };
-use crate::util::object_size_info::DocumentInfo::DocumentOwnedInfo;
+use crate::util::object_size_info::DocumentInfo::{
+    DocumentEstimatedAverageSize, DocumentOwnedInfo,
+};
 use crate::util::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::util::object_size_info::PathKeyElementInfo::PathKeyRefElement;
 use crate::util::object_size_info::{
-    DocumentAndContractInfo, DocumentInfo, DocumentInfoV0Methods, DriveKeyInfo, PathKeyInfo,
+    DocumentAndContractInfo, DocumentInfo, DocumentInfoV0Methods, DriveKeyInfo, OwnedDocumentInfo,
+    PathKeyInfo,
 };
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::fee_result::FeeResult;
 
 use crate::drive::document::paths::{
     contract_document_type_path,
     contract_documents_keeping_history_primary_key_path_for_document_id,
     contract_documents_primary_key_path,
 };
-use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use dpp::data_contract::document_type::methods::{DocumentTypeBasicMethods, DocumentTypeV0Methods};
 use dpp::data_contract::document_type::{
-    DocumentTypeRef, Index, IndexCountability, IndexLevel, TimeRangeTransform,
+    DocumentTypeRef, Index, IndexBucketing, IndexCountability, IndexLevel,
 };
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
+use itertools::Itertools;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
@@ -60,6 +70,21 @@ fn drive_key_info_is_empty(key_info: &DriveKeyInfo) -> bool {
         KeyRef(key_ref) => key_ref.is_empty(),
         KeySize(_) => false,
     }
+}
+
+/// The keys of a stored-values index path, for a read of what is stored
+/// there. `KeySize` never reaches the stateful update path (see
+/// [`drive_key_info_is_empty`]).
+fn known_index_path(path: &[DriveKeyInfo]) -> Result<Vec<Vec<u8>>, Error> {
+    path.iter()
+        .map(|key_info| match key_info {
+            Key(key) => Ok(key.clone()),
+            KeyRef(key_ref) => Ok(key_ref.to_vec()),
+            KeySize(_) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "a stateful update walks known index paths",
+            ))),
+        })
+        .collect()
 }
 
 /// `[0]`-key reference-bucket `TreeType` dispatch for the
@@ -155,6 +180,11 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let drive_version = &platform_version.drive;
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+        // A document whose type declares a `ttl` stays without storage flags when replaced,
+        // transferred, bought or repriced. Dropped before anything is sized, so the replaced
+        // elements' sizes agree with what is stored.
+        let document_and_contract_info =
+            document_and_contract_info.without_storage_flags_if_expiring();
         if !document_and_contract_info.document_type.requires_revision()
         // if it requires revision then there are reasons for us to be able to update in drive
         {
@@ -170,16 +200,63 @@ impl Drive {
             .is_document_size()
             || estimated_costs_only_with_layer_info.is_some()
         {
-            return self.add_document_for_contract_operations_without_ttl_drain(
+            let contract = document_and_contract_info.contract;
+            let document_type = document_and_contract_info.document_type;
+            let mut operations = self.estimate_document_change_as_insert_operations_v1(
                 document_and_contract_info,
-                true, // we say we should override as this skips an unnecessary check
                 block_info,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
                 transaction,
                 platform_version,
-            );
+            )?;
+            // A change of a document whose type indexes the elements of a typed array
+            // (protocol version 14) can remove far more index entries than it writes:
+            // emptying the list, or moving the entries to a new owner, removes one per
+            // element in every window. The insert above prices the new version only,
+            // so the removal of the stored version's entries is priced too, at its
+            // worst case (`maxItems` estimated elements per array), as a delete prices
+            // it. No other type can hold a typed array index.
+            if estimated_costs_only_with_layer_info.is_some()
+                && document_type
+                    .indexes()
+                    .values()
+                    .any(|index| index.indexed_array.is_some())
+            {
+                let stored = DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentEstimatedAverageSize(
+                            document_type.estimated_size(platform_version)? as u32,
+                        ),
+                        owner_id: None,
+                    },
+                    contract,
+                    document_type,
+                };
+                self.remove_indices_for_top_index_level_for_contract_operations(
+                    &stored,
+                    previous_batch_operations,
+                    estimated_costs_only_with_layer_info,
+                    block_info.time_ms,
+                    transaction,
+                    &mut operations,
+                    platform_version,
+                )?;
+            }
+            return Ok(operations);
         }
+
+        // A type with derived index properties (protocol version 14) keys its documents by
+        // values read from the documents its references point at: read here for the new
+        // version, and taken from it for the old one below, whose references are the same.
+        // Every other type passes through unchanged.
+        let document_and_contract_info = self.with_derived_index_values(
+            document_and_contract_info,
+            false,
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
 
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
@@ -257,6 +334,9 @@ impl Drive {
             platform_version,
         )?;
 
+        // The stored size of the document before the change, which a type with a `ttl` needs
+        // to prepay the deletion of the bytes the change adds.
+        let old_document_bytes: u64;
         let old_document_info = if let Some(old_document_element) = old_document_element {
             // Accept BOTH plain `Item` (non-summable doctypes) AND
             // `ItemWithSumItem` (summable doctypes — primary storage on
@@ -274,13 +354,27 @@ impl Drive {
                     )))
                 }
             };
-            let document = Document::from_bytes(
+            old_document_bytes = old_serialized_document.len() as u64;
+            let mut old_document = Document::from_bytes(
                 old_serialized_document.as_slice(),
                 document_type,
                 platform_version,
             )?;
+            if !document_type.derived_index_properties().is_empty() {
+                let values = self.derived_index_values(
+                    &old_document,
+                    Some(document),
+                    contract,
+                    document_type,
+                    false,
+                    transaction,
+                    &mut batch_operations,
+                    platform_version,
+                )?;
+                set_derived_index_values(&mut old_document, values);
+            }
             let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
-            DocumentOwnedInfo((document, storage_flags.map(Cow::Owned)))
+            DocumentOwnedInfo((old_document, storage_flags.map(Cow::Owned)))
         } else {
             return Err(Error::Drive(DriveError::UpdatingDocumentThatDoesNotExist(
                 "document being updated does not exist",
@@ -301,8 +395,46 @@ impl Drive {
         // diverging from the insert path (consensus break).
         let index_structure = document_type.index_structure();
 
-        // fourth we need to store a reference to the document for each index
+        // `skipIfAbsent`: the index holds an entry for a document only when
+        // the document carries every property of its skip set, so a replace
+        // that adds or drops such a property moves the document into or out
+        // of the index. The old entry is removed only when the old document
+        // took part, and the new one written (with the trees it hangs from)
+        // only when the new document takes part — exactly what the insert
+        // and delete walkers would have done. An index that skips both
+        // versions holds nothing of the document. Every index of a pre-v14
+        // contract has an empty skip set, so both are `true` there.
+        //
+        // An index the document leaves (the old version takes part, the new
+        // one does not) only removes its old entry, and that entry's upward
+        // prune can empty a tree another index enters in this same replace.
+        // So the leaving indexes run last, after every other index has
+        // queued its writes, where their prunes see those writes and stop
+        // below any tree still in use. Without a skip index no index leaves,
+        // and the order is the index map's.
+        let mut participating_indexes = Vec::with_capacity(document_type.indexes().len());
+        let mut leaving_indexes = Vec::new();
         for index in document_type.indexes().values() {
+            let new_takes_part = document_takes_part_in_index(
+                &index.skip_if_absent_properties,
+                &document_and_contract_info.owned_document_info.document_info,
+                document_type,
+            )?;
+            let old_takes_part = document_takes_part_in_index(
+                &index.skip_if_absent_properties,
+                &old_document_info,
+                document_type,
+            )?;
+            if old_takes_part && !new_takes_part {
+                leaving_indexes.push((index, new_takes_part, old_takes_part));
+            } else if new_takes_part {
+                participating_indexes.push((index, new_takes_part, old_takes_part));
+            }
+        }
+        participating_indexes.extend(leaving_indexes);
+
+        // fourth we need to store a reference to the document for each index
+        for (index, new_takes_part, old_takes_part) in participating_indexes {
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
             // when the contract itself was created
@@ -313,15 +445,12 @@ impl Drive {
             let top_index_property = index.properties.first().ok_or(Error::Drive(
                 DriveError::CorruptedContractIndexes("invalid contract indices".to_string()),
             ))?;
-            // A time-range index's top level is keyed by the property name
-            // qualified with the grid (`TimeRangeTransform::storage_key`),
-            // so different grids over one timestamp live in sibling
+            // A bucketed (time- or integer-range) index's top level is keyed
+            // by the property name qualified with the grid (`storage_key`),
+            // so different grids over one property live in sibling
             // subtrees; a plain index keeps the bare name. The same key is
             // both the path segment and the `IndexLevel` lookup below.
-            let top_level_key = match index.time_range.as_ref() {
-                Some(transform) => transform.storage_key(&top_index_property.name),
-                None => top_index_property.name.clone(),
-            };
+            let top_level_key = index.level_key(0, &top_index_property.name);
             index_path.push(Vec::from(top_level_key.as_bytes()));
 
             // Mirror the insert path's IndexLevel descent. We
@@ -373,39 +502,53 @@ impl Drive {
                 document_reference.clone()
             };
 
-            // Time-range indexes store one entry per overlapping range bucket,
-            // so they need a set-diff update rather than the single old→new
-            // value transition below. `current_index_level` is still the
-            // top-level node and `index_path` is the base
+            let leaving = old_takes_part && !new_takes_part;
+
+            // Bucketed (time- and integer-range) indexes store one entry per
+            // containing window, and an index naming an indexed typed array
+            // one per distinct element, so they need a set-diff update rather
+            // than the single old→new value transition below.
+            // `current_index_level` is still the top-level node and
+            // `index_path` is the base
             // (…/<document_type>/<grid-qualified source>) at this point. The
-            // transform is read off the `IndexLevel` node — the same source
-            // the insert and delete walkers branch on — so all three walkers
-            // agree even on a document type constructed outside full
-            // validation. (A level's key embeds its grid, so the node's
-            // transform is exactly the grid every index sharing this level
-            // declared.)
-            if let Some(transform) = current_index_level.time_range() {
+            // transform and the element stamps are read off the `IndexLevel`
+            // nodes — the same source the insert and delete walkers branch on
+            // — so all three walkers agree even on a document type
+            // constructed outside full validation. (A level's key embeds its
+            // grid, so the node's transform is exactly the grid every index
+            // sharing this level declared.)
+            if current_index_level.bucketing().is_some()
+                || index_names_indexed_array(index, current_index_level)
+            {
                 // TTL'd (ephemeral) sub-levels ride their own op batch and carry
                 // no storage flags — same routing as the insert and delete
-                // walkers; see the ttl module's Billing section.
-                let index_is_ephemeral = transform.ttl_seconds.is_some();
+                // walkers; see the ttl module's Billing section. Only a time
+                // grid can declare a ttl.
+                let index_is_ephemeral = current_index_level
+                    .time_range()
+                    .is_some_and(|transform| transform.ttl_seconds.is_some());
                 let mut ephemeral_local_operations: Vec<LowLevelDriveOperation> = vec![];
-                let index_batch_operations: &mut Vec<LowLevelDriveOperation> = if index_is_ephemeral
-                {
-                    &mut ephemeral_local_operations
-                } else {
-                    &mut batch_operations
-                };
+                // A leaving index only prunes, so its operations go straight
+                // into this replace's batch (retagged below): its prune has to
+                // see the writes every other index queued there.
+                let leaving_operations_start = batch_operations.len();
+                let index_batch_operations: &mut Vec<LowLevelDriveOperation> =
+                    if index_is_ephemeral && !leaving {
+                        &mut ephemeral_local_operations
+                    } else {
+                        &mut batch_operations
+                    };
                 let index_storage_flags = if index_is_ephemeral {
                     None
                 } else {
                     storage_flags
                 };
-                self.update_time_range_index_for_contract_operations_v1(
+                self.update_fanned_out_index_for_contract_operations_v1(
                     index,
-                    transform,
                     document,
+                    new_takes_part,
                     &old_document_info,
+                    old_takes_part,
                     owner_id,
                     document_type,
                     &index_path,
@@ -420,8 +563,13 @@ impl Drive {
                     platform_version,
                 )?;
                 if index_is_ephemeral {
-                    batch_operations.extend(
+                    let index_operations = if leaving {
+                        batch_operations.drain(leaving_operations_start..).collect()
+                    } else {
                         ephemeral_local_operations
+                    };
+                    batch_operations.extend(
+                        index_operations
                             .into_iter()
                             .map(LowLevelDriveOperation::retag_ephemeral),
                     );
@@ -460,6 +608,9 @@ impl Drive {
                     true
                 }
             };
+            // A document moving into or out of a skip index changes its entry
+            // even when the index values read back the same.
+            change_occurred_on_index |= new_takes_part != old_takes_part;
 
             // Post-demotion tree types for the top property's level —
             // the exact types the v2 insert walkers would derive. The
@@ -475,10 +626,9 @@ impl Drive {
             // count exactly their single continuation, so the continuation
             // is inserted unwrapped and contributes its subtree count —
             // matching the v2 insert walker's dispatch.
-            let mut parent_counts_continuations = current_index_level.ranked_count_grouping()
-                || current_index_level.count_propagating();
+            let mut parent_counts_continuations = current_index_level.is_ranked_chain_level();
 
-            if change_occurred_on_index {
+            if change_occurred_on_index && new_takes_part {
                 // here we are inserting an empty tree that will have a subtree of all other index properties
                 let mut qualified_path = index_path.clone();
                 qualified_path.push(document_top_field.clone());
@@ -528,6 +678,23 @@ impl Drive {
             // non-unique one, stranding the entry where no query (and
             // no later delete) would look.
             let old_document_top_field_is_empty = drive_key_info_is_empty(&old_document_top_field);
+            // An entry written before protocol version 14 can sit in another
+            // layout than the rule gives (see
+            // `drive::document::stored_index_entry`): a unique index's entry
+            // in the `[0]` tree although none of its own values is missing
+            // (an insert carried a sibling's missing value into this path),
+            // or as the bare reference although one is (update v0), and a
+            // `nullSearchable: false` entry the rule skips. Where one could
+            // disagree, the old entry's layout is read (unbilled). A type
+            // with a `ttl` exists only from version 14, so it holds none of
+            // these; indexOnly and contested indexes are laid out apart.
+            let reads_stored_entries = index.terminal.is_none()
+                && index.contested_index.is_none()
+                && document_type.documents_ttl_seconds().is_none();
+            // Whether a sibling sub-level visited before this index's next
+            // property, on the old document's path, is missing its value:
+            // what the earlier walkers carried into this index.
+            let mut old_sibling_value_missing = false;
             let mut any_fields_null = document_top_field.is_empty();
             let mut all_fields_null = document_top_field.is_empty();
             let mut old_any_fields_null = old_document_top_field_is_empty;
@@ -547,6 +714,35 @@ impl Drive {
                 let index_property = index.properties.get(i).ok_or(Error::Drive(
                     DriveError::CorruptedContractIndexes("invalid contract indices".to_string()),
                 ))?;
+
+                if reads_stored_entries && index.unique && !old_sibling_value_missing {
+                    for (sibling, sibling_level) in current_index_level
+                        .sub_levels()
+                        .iter()
+                        .take_while(|(sibling, _)| sibling.as_str() < index_property.name.as_str())
+                    {
+                        // The level of an indexed typed array (protocol version 14) carries
+                        // no missing value: an element is never empty, and a document
+                        // holding none takes no part in the indexes naming the array. Its
+                        // value is a list, which no scalar read keys.
+                        if sibling_level.indexes_array_elements() {
+                            continue;
+                        }
+                        let old_sibling_value = old_document_info
+                            .get_raw_for_document_type(
+                                sibling,
+                                document_type,
+                                None,
+                                None,
+                                platform_version,
+                            )?
+                            .unwrap_or_default();
+                        if drive_key_info_is_empty(&old_sibling_value) {
+                            old_sibling_value_missing = true;
+                            break;
+                        }
+                    }
+                }
 
                 // Descend one step in the doctype's `IndexLevel`
                 // tree, in lockstep with `index.properties`. Failure
@@ -594,7 +790,7 @@ impl Drive {
                     }
                 };
 
-                if change_occurred_on_index {
+                if change_occurred_on_index && new_takes_part {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
 
                     let mut qualified_path = index_path.clone();
@@ -625,10 +821,11 @@ impl Drive {
                         // branch tree must be zero-wrapped so its entries
                         // never pollute the subtree totals — matching the v2
                         // insert walker's dispatch.
-                        let inserted = if matches!(parent_value_tree_type, TreeType::NormalTree)
-                            || (parent_counts_continuations
-                                && !current_index_level.count_exempt_branch())
-                        {
+                        let inserted = if !continuation_contributes_zero(
+                            parent_value_tree_type,
+                            parent_counts_continuations,
+                            current_index_level,
+                        ) {
                             self.batch_insert_empty_index_tree_if_not_exists(
                                 PathKeyInfo::PathKeyRef::<0>((
                                     index_path.clone(),
@@ -672,7 +869,7 @@ impl Drive {
                 // Iteration 1. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId
                 // Iteration 2. the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>/toUserId/<ToUserId>/accountReference
 
-                if change_occurred_on_index {
+                if change_occurred_on_index && new_takes_part {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
 
                     let mut qualified_path = index_path.clone();
@@ -714,8 +911,7 @@ impl Drive {
                 // The next-deeper continuation (if any) hangs inside
                 // this level's value tree.
                 parent_value_tree_type = sub_level_tree_types.value_tree_type;
-                parent_counts_continuations = current_index_level.ranked_count_grouping()
-                    || current_index_level.count_propagating();
+                parent_counts_continuations = current_index_level.is_ranked_chain_level();
 
                 // we push the actual value of the index path, both for the new and the old
                 index_path.push(document_index_field);
@@ -738,10 +934,38 @@ impl Drive {
                 // bare reference at key `[0]` only for a unique index
                 // with no old nulls. Same dispatch as
                 // `remove_reference_for_index_level_for_contract_operations_v0`.
-                if old_all_fields_null && !index.null_searchable {
-                    // the insert walker wrote no entry for the old
-                    // document — nothing to delete
+                // `Some(in_tree)` when the old document has an entry here:
+                // `in_tree` for the doc-id-keyed `[0]` tree, else the bare
+                // reference at key `[0]`.
+                let old_entry_layout = if !old_takes_part {
+                    // the index skipped the old document — nothing to delete
+                    None
+                } else if old_all_fields_null && !index.null_searchable {
+                    // the rule gives no entry when every indexed field is
+                    // null on a `nullSearchable: false` index; an earlier
+                    // version may have written one, in the `[0]` tree
+                    (reads_stored_entries
+                        && self.index_entry_in_tree_exists(
+                            &known_index_path(&old_index_path)?,
+                            document.id().as_slice(),
+                            transaction,
+                            drive_version,
+                        )?)
+                    .then_some(true)
+                } else if reads_stored_entries
+                    && index.unique
+                    && (old_any_fields_null || old_sibling_value_missing)
+                {
+                    Some(self.stored_index_entry_is_tree(
+                        &known_index_path(&old_index_path)?,
+                        old_any_fields_null,
+                        transaction,
+                        drive_version,
+                    )?)
                 } else {
+                    Some(!index.unique || old_any_fields_null)
+                };
+                if let Some(old_entry_in_tree) = old_entry_layout {
                     let mut key_info_path = KeyInfoPath::from_vec(
                         old_index_path
                             .into_iter()
@@ -753,7 +977,7 @@ impl Drive {
                             .collect::<Vec<KeyInfo>>(),
                     );
 
-                    if !index.unique || old_any_fields_null {
+                    if old_entry_in_tree {
                         key_info_path.push(KnownKey(vec![0]));
 
                         // here we should return an error if the element already exists
@@ -788,12 +1012,13 @@ impl Drive {
 
                 // unique indexes will be stored under key "0"
                 // non unique indices should have a tree at key "0" that has all elements based off of primary key
-                if all_fields_null && !index.null_searchable {
-                    // The insert walker writes no entry when every
-                    // indexed field is null on a `nullSearchable: false`
-                    // index — write nothing here either, or the update
-                    // would create an entry that insert/delete walkers
-                    // never expect to exist.
+                if !new_takes_part || (all_fields_null && !index.null_searchable) {
+                    // The insert walker writes no entry when the index
+                    // skips the document, or when every indexed field is
+                    // null on a `nullSearchable: false` index — write
+                    // nothing here either, or the update would create an
+                    // entry that insert/delete walkers never expect to
+                    // exist.
                 } else if !index.unique || any_fields_null {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
                     //
@@ -861,6 +1086,8 @@ impl Drive {
                 }
             } else {
                 // no change occurred on index, we need to refresh the references
+                // (both versions take part: a change in participation counts
+                // as a change, and an index skipping both was passed by above)
 
                 // We can only trust the reference content has not changed if there are no storage flags
                 let trust_refresh_reference = storage_flags.is_none();
@@ -870,54 +1097,113 @@ impl Drive {
                 //
                 // No change occurred on this index, so the old and new
                 // nullness are identical and the new-document
-                // accumulators describe the stored entry's layout.
+                // accumulators describe the stored entry's layout, save
+                // where an earlier version may have laid it out otherwise
+                // (the stored layout decides, as for the old entry above).
                 if all_fields_null && !index.null_searchable {
                     // nothing is stored for this document under this
                     // index — nothing to refresh
-                } else if !index.unique || any_fields_null {
-                    index_path.push(vec![0]);
-
-                    // here we should return an error if the element already exists
-                    self.batch_refresh_reference(
-                        index_path,
-                        document.id().to_vec(),
-                        index_document_reference.clone(),
-                        trust_refresh_reference,
-                        &mut batch_operations,
-                        drive_version,
-                    )?;
                 } else {
-                    self.batch_refresh_reference(
-                        index_path,
-                        vec![0],
-                        index_document_reference.clone(),
-                        trust_refresh_reference,
-                        &mut batch_operations,
-                        drive_version,
-                    )?;
+                    let entry_in_tree = if reads_stored_entries
+                        && index.unique
+                        && (old_any_fields_null || old_sibling_value_missing)
+                    {
+                        self.stored_index_entry_is_tree(
+                            &index_path,
+                            any_fields_null,
+                            transaction,
+                            drive_version,
+                        )?
+                    } else {
+                        !index.unique || any_fields_null
+                    };
+                    if entry_in_tree {
+                        index_path.push(vec![0]);
+
+                        // here we should return an error if the element already exists
+                        self.batch_refresh_reference(
+                            index_path,
+                            document.id().to_vec(),
+                            index_document_reference.clone(),
+                            trust_refresh_reference,
+                            &mut batch_operations,
+                            drive_version,
+                        )?;
+                    } else {
+                        self.batch_refresh_reference(
+                            index_path,
+                            vec![0],
+                            index_document_reference.clone(),
+                            trust_refresh_reference,
+                            &mut batch_operations,
+                            drive_version,
+                        )?;
+                    }
                 }
+            }
+        }
+
+        // A document whose type declares a `ttl` pays for the bytes a change adds by the
+        // lifetime it has left; its `$createdAt`, and so its expiry and its expirations tree
+        // entry, never change. Its creation prepaid its deletion; a change that grows it
+        // prepays the deletion of the bytes it adds.
+        if let Some(ttl_seconds) = document_type.documents_ttl_seconds() {
+            let pricing = document_ttl_pricing(
+                document_remaining_lifetime_ms(
+                    document.created_at(),
+                    ttl_seconds,
+                    block_info.time_ms,
+                )?,
+                self.config.epoch_time_length_s,
+                self.config.epochs_per_era,
+                &platform_version.fee_version,
+            )?;
+            batch_operations = batch_operations
+                .into_iter()
+                .map(|operation| operation.retag_document_ttl(pricing))
+                .collect();
+            let added_bytes = (document
+                .serialize(document_type, contract, platform_version)?
+                .len() as u64)
+                .saturating_sub(old_document_bytes);
+            if added_bytes > 0 {
+                batch_operations.push(LowLevelDriveOperation::PreCalculatedFeeResult(FeeResult {
+                    processing_fee: document_expiration_cleanup_fee_for_bytes(
+                        added_bytes,
+                        &platform_version.fee_version,
+                    )?,
+                    ..Default::default()
+                }));
             }
         }
         Ok(batch_operations)
     }
 
-    /// Updates the index entries for a single **time-range** index.
+    /// Updates the index entries for a single index that enters a document
+    /// under several entries: a **bucketed** (time- or integer-range) index,
+    /// whose first property puts the document in one entry per window its
+    /// value falls into, an index naming an **indexed typed array** (protocol
+    /// version 14), which puts it in one entry per distinct element, or both.
     ///
-    /// A time-range index stores one entry per overlapping range bucket the
-    /// document's timestamp falls into, so an update is a set diff rather than
-    /// the single old→new transition the normal-index path performs:
-    /// - entry keys present only in the old timestamp's set are removed,
-    /// - entry keys present only in the new timestamp's set are inserted,
-    /// - keys present in both are refreshed, or (when a later index property
-    ///   changed) deleted under the old sub-values and reinserted under the new
-    ///   ones.
+    /// An entry is the document's key at every position of the index, so
+    /// the entries are the product of the keys at each position, and an
+    /// update is a set diff of the old and the new entries rather than the
+    /// single old→new transition the normal-index path performs:
+    /// - entries only the old document has are removed,
+    /// - entries only the new document has are inserted,
+    /// - entries both have are refreshed in place.
+    /// An entry whose window or element both versions share but whose other
+    /// values changed is a different entry, so it is deleted under the old
+    /// values and inserted under the new ones.
     ///
-    /// The entry-key set for a document mirrors the insert walker exactly: a
-    /// decodable timestamp yields one key per containing bucket (none when the
+    /// The window keys mirror the insert walker exactly: a decodable
+    /// timestamp yields one key per containing bucket (none when the
     /// timestamp predates the transform's origin), a null timestamp yields the
     /// single ordinary null key, and a non-null value that fails to decode
     /// yields its raw key — so null→value, value→null and null→null
-    /// transitions maintain the same entries insert and delete would.
+    /// transitions maintain the same entries insert and delete would. The
+    /// element keys are the document's distinct elements, which a document
+    /// taking part in the index always has (the array is in its skip set).
     ///
     /// Time-range indexes are validated to be non-contested, but they may be
     /// unique when the windows do not overlap (`range == step`) and the source
@@ -927,26 +1213,29 @@ impl Drive {
     /// reference under `…/<value>/[0]/<doc_id>`, the unique layout stores it
     /// AT `…/<value>/[0]`. The predicate is evaluated separately for the new
     /// and the old document, because the layout an entry was *written* under
-    /// is the layout it must be *deleted* under.
+    /// is the layout it must be *deleted* under. An index naming a typed
+    /// array is never unique.
     ///
     /// (With a `$createdAt` source and overlap factor 1 the bucket set can
     /// never change on an update — the timestamp is immutable and yields
-    /// exactly one bucket — so on a unique index only the suffix-change arms
-    /// below are reachable. The layout dispatch is nonetheless applied to
-    /// every arm rather than reasoned away per arm: the arms are shared with
+    /// exactly one bucket — so on a unique time-range index only the
+    /// changed-values arms below are reachable; a unique integer-range index
+    /// moves between windows when its value does. The layout dispatch is
+    /// nonetheless applied to every arm rather than reasoned away per arm:
+    /// the arms are shared with
     /// non-unique indexes, and a future relaxation of the uniqueness rules
     /// must not silently resurrect the wrong layout.)
     ///
     /// The estimated-cost / document-size update path never reaches this
-    /// method — it delegates to the insert path, which has its own bucket
-    /// fan-out.
+    /// method — it delegates to the insert path, which has its own fan-out.
     #[allow(clippy::too_many_arguments)]
-    fn update_time_range_index_for_contract_operations_v1(
+    fn update_fanned_out_index_for_contract_operations_v1(
         &self,
         index: &Index,
-        transform: &TimeRangeTransform,
         document: &Document,
+        new_takes_part: bool,
         old_document_info: &DocumentInfo,
+        old_takes_part: bool,
         owner_id: Option<[u8; 32]>,
         document_type: DocumentTypeRef,
         base_index_path: &[Vec<u8>],
@@ -968,91 +1257,76 @@ impl Drive {
         // queued mutation. Do not drain here — several indexes may share
         // this level.
 
-        // New/old raw values for the bucketed source property → entry key
-        // sets, mirroring the insert walker's fan-out (see the doc comment).
-        let new_raw = document.get_raw_for_document_type(
-            &transform.source,
-            document_type,
-            owner_id,
-            platform_version,
-        )?;
-        let old_raw = match old_document_info.get_raw_for_document_type(
-            &transform.source,
-            document_type,
-            None, // We want to use the old owner id
-            None,
-            platform_version,
-        )? {
-            Some(Key(k)) => Some(k),
-            Some(KeyRef(k)) => Some(k.to_vec()),
-            _ => None,
-        };
+        // Only a time grid can declare a ttl; an integer grid never expires.
+        let bucketing = top_index_level.bucketing();
+        let ttl_transform = bucketing.and_then(IndexBucketing::time_range);
 
-        // The entry-key rule (null → single null entry, pre-origin → no
-        // entries, undecodable → raw key, decodable → containing buckets) is
-        // shared with the insert and delete walkers via
-        // `TimeRangeTransform::entry_keys_for_raw` — one definition, so the
-        // three walkers can never disagree.
-        // TTL: writes never target expired buckets — an update of a document
-        // whose windows have all expired leaves it with no entries under
-        // this index, and never resurrects a dropped bucket. The old set is
-        // NOT filtered: its expired keys flow to the delete loop below,
-        // whose per-key removable check skips exactly the buckets the lazy
-        // drop already took.
-        let new_entry_keys = live_time_range_entry_keys(
-            transform,
-            transform.entry_keys_for_raw(new_raw.as_deref().unwrap_or_default()),
-            block_time_ms,
-        );
-        let old_entry_keys = transform.entry_keys_for_raw(old_raw.as_deref().unwrap_or_default());
-
-        // Terminator-layout inputs, tracked separately for the new and the old
-        // document and accumulated over the suffix properties in the loop
-        // below. The insert and delete walkers demote a unique index to the
-        // non-unique layout as soon as ANY indexed field is null
+        // The document's keys at each position of the index, for the new and
+        // the old document, plus the IndexLevel node below the first position
+        // with its (pure, hoisted) tree-type derivation — the entry loops below
+        // run once per entry and must not re-derive per iteration.
+        //
+        // Terminator-layout inputs are tracked separately for the new and the
+        // old document. The insert and delete walkers demote a unique index to
+        // the non-unique layout as soon as ANY indexed field is null
         // (`any_fields_null`, accumulated with OR down the level recursion), so
         // an entry's layout is a property of the document that wrote it — the
         // delete below must therefore use the OLD document's verdict, not the
-        // new one's. A null source raw value yields the single empty entry key,
-        // which is exactly the null case here.
-        let mut new_any_fields_null = new_raw.as_deref().unwrap_or_default().is_empty();
-        let mut old_any_fields_null = old_raw.as_deref().unwrap_or_default().is_empty();
-
-        // Sub-property suffix (positions 1..) interleaved as [name, value, …]
-        // for both the new and old document, plus the IndexLevel node at each
-        // depth with its (pure, hoisted) tree-type derivation — the bucket
-        // loop below runs up to `overlap_factor` times and must not re-derive
-        // per iteration.
+        // new one's. A null bucketed source yields the single empty entry key,
+        // which is exactly the null case here; an element is never null.
         let mut levels: Vec<(&IndexLevel, IndexLevelTreeTypes)> = Vec::new();
-        let mut new_suffix: Vec<Vec<u8>> = Vec::new();
-        let mut old_suffix: Vec<Vec<u8>> = Vec::new();
+        let mut new_key_sets: Vec<Vec<Vec<u8>>> = Vec::with_capacity(index.properties.len());
+        let mut old_key_sets: Vec<Vec<Vec<u8>>> = Vec::with_capacity(index.properties.len());
+        let mut new_any_fields_null = false;
+        let mut old_any_fields_null = false;
         let mut current_level = top_index_level;
-        for index_property in index.properties.iter().skip(1) {
-            current_level =
-                current_level
-                    .sub_levels()
-                    .get(&index_property.name)
-                    .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(format!(
-                        "index structure missing sub_level '{}' under time-range index '{}'",
-                        index_property.name, index.name
-                    ))))?;
-            levels.push((
-                current_level,
-                index_level_tree_types_with_continuation_demotion(current_level)?,
-            ));
+        for (position, index_property) in index.properties.iter().enumerate() {
+            if position > 0 {
+                current_level =
+                    current_level
+                        .sub_levels()
+                        .get(&index_property.name)
+                        .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(format!(
+                            "index structure missing sub_level '{}' under index '{}'",
+                            index_property.name, index.name
+                        ))))?;
+                levels.push((
+                    current_level,
+                    index_level_tree_types_with_continuation_demotion(current_level)?,
+                ));
+            }
 
-            let new_val = document
-                .get_raw_for_document_type(
+            if current_level.indexes_array_elements() {
+                // One key per distinct element, as the insert walker writes them.
+                new_key_sets.push(document.get_raw_array_elements_for_document_type(
                     &index_property.name,
                     document_type,
-                    owner_id,
                     platform_version,
-                )?
+                )?);
+                old_key_sets.push(known_index_path(
+                    &old_document_info.get_raw_array_elements_for_document_type(
+                        &index_property.name,
+                        document_type,
+                        None,
+                        platform_version,
+                    )?,
+                )?);
+                continue;
+            }
+
+            // The first property of a bucketed index is read from its source
+            // property: the level key is the source qualified with the grid.
+            let source = match bucketing {
+                Some(bucketing) if position == 0 => bucketing.source(),
+                _ => index_property.name.as_str(),
+            };
+            let new_raw = document
+                .get_raw_for_document_type(source, document_type, owner_id, platform_version)?
                 .unwrap_or_default();
-            let old_val = match old_document_info.get_raw_for_document_type(
-                &index_property.name,
+            let old_raw = match old_document_info.get_raw_for_document_type(
+                source,
                 document_type,
-                None,
+                None, // We want to use the old owner id
                 None,
                 platform_version,
             )? {
@@ -1060,14 +1334,51 @@ impl Drive {
                 Some(KeyRef(k)) => k.to_vec(),
                 _ => Vec::new(),
             };
-            new_any_fields_null |= new_val.is_empty();
-            old_any_fields_null |= old_val.is_empty();
+            new_any_fields_null |= new_raw.is_empty();
+            old_any_fields_null |= old_raw.is_empty();
 
-            new_suffix.push(index_property.name.as_bytes().to_vec());
-            new_suffix.push(new_val);
-            old_suffix.push(index_property.name.as_bytes().to_vec());
-            old_suffix.push(old_val);
+            match bucketing {
+                // The entry-key rule (null → single null entry, pre-origin →
+                // no entries, undecodable → raw key, decodable → containing
+                // buckets) is shared with the insert and delete walkers via
+                // `IndexBucketing::entry_keys_for_raw` — one definition, so
+                // the three walkers can never disagree.
+                Some(bucketing) if position == 0 => {
+                    new_key_sets.push(bucketing.entry_keys_for_raw(&new_raw));
+                    old_key_sets.push(bucketing.entry_keys_for_raw(&old_raw));
+                }
+                _ => {
+                    new_key_sets.push(vec![new_raw]);
+                    old_key_sets.push(vec![old_raw]);
+                }
+            }
         }
+
+        // TTL: writes never target expired buckets — an update of a document
+        // whose windows have all expired leaves it with no entries under
+        // this index, and never resurrects a dropped bucket. The old set is
+        // NOT filtered: its expired keys flow to the delete loop below,
+        // whose per-key removable check skips exactly the buckets the lazy
+        // drop already took.
+        if let (Some(transform), Some(window_keys)) = (ttl_transform, new_key_sets.first_mut()) {
+            *window_keys =
+                live_time_range_entry_keys(transform, std::mem::take(window_keys), block_time_ms);
+        }
+
+        // `skipIfAbsent`: a version of the document the index skips has no
+        // entries in it, so its side of the set diff is empty — a document
+        // moving into the index inserts every new entry, one moving out
+        // deletes every old one.
+        let new_entries = if new_takes_part {
+            index_entries(&new_key_sets)
+        } else {
+            Vec::new()
+        };
+        let old_entries = if old_takes_part {
+            index_entries(&old_key_sets)
+        } else {
+            Vec::new()
+        };
 
         // The two terminator layouts, mirroring
         // `add_reference_for_index_level_for_contract_operations_v0`'s
@@ -1075,7 +1386,6 @@ impl Drive {
         let new_terminator_is_unique = index.unique && !new_any_fields_null;
         let old_terminator_is_unique = index.unique && !old_any_fields_null;
 
-        let suffix_changed = new_suffix != old_suffix;
         let reference_tree_type =
             reference_tree_type_for_index(index.countable, &index.summable, index.range_summable);
         let top_level_tree_types =
@@ -1083,25 +1393,33 @@ impl Drive {
         let top_value_tree_type = top_level_tree_types.value_tree_type;
         let doc_id = document.id();
 
-        let new_set: HashSet<&Vec<u8>> = new_entry_keys.iter().collect();
-        let old_set: HashSet<&Vec<u8>> = old_entry_keys.iter().collect();
+        let new_set: HashSet<&Vec<&[u8]>> = new_entries.iter().collect();
+        let old_set: HashSet<&Vec<&[u8]>> = old_entries.iter().collect();
+        // The trees the inserts below found already standing: entries share
+        // the trees above the array's level, and each is read once. The
+        // insertion cache keeps the trees this batch inserts; nothing below
+        // deletes before the inserts are done.
+        let mut standing_trees: HashSet<Vec<Vec<u8>>> = HashSet::new();
 
         // Insert/refresh new entries FIRST (see the ordering note on the
-        // delete loop below): added keys are inserted; common keys are
-        // refreshed when unchanged or reinserted when the suffix changed.
-        for entry_key in &new_entry_keys {
-            if old_set.contains(entry_key) && !suffix_changed {
+        // delete loop below): added entries are inserted; common entries are
+        // refreshed.
+        for entry in &new_entries {
+            let Some((&entry_key, entry_values)) = entry.split_first() else {
+                continue;
+            };
+            if old_set.contains(entry) {
                 // Unchanged entry — refresh the stored reference in place
                 // (its content can still differ via storage flags). An entry
-                // key can only be in both sets when the source value's
-                // null-ness matched (a null raw yields the empty key, a
-                // non-null one an 8-byte bucket start), and the suffix is
-                // unchanged here, so the old and new layouts coincide and
+                // can only be in both sets when every value's null-ness
+                // matched (a null raw yields the empty key, a non-null one a
+                // non-empty key), so the old and new layouts coincide and
                 // either verdict describes the entry on disk.
                 let mut path: Vec<Vec<u8>> = base_index_path.to_vec();
-                path.push(entry_key.clone());
-                for segment in &new_suffix {
-                    path.push(segment.clone());
+                path.push(entry_key.to_vec());
+                for (index_property, value) in index.properties.iter().skip(1).zip(entry_values) {
+                    path.push(index_property.name.as_bytes().to_vec());
+                    path.push(value.to_vec());
                 }
                 let (refresh_key, refresh_path) = if new_terminator_is_unique {
                     // Unique layout: the reference lives AT `[0]`.
@@ -1134,10 +1452,12 @@ impl Drive {
             // rather than the property name.
             let mut path: Vec<Vec<u8>> = base_index_path.to_vec();
             let mut qualified_path = path.clone();
-            qualified_path.push(entry_key.clone());
-            if !batch_insertion_cache.contains(&qualified_path) {
+            qualified_path.push(entry_key.to_vec());
+            if !batch_insertion_cache.contains(&qualified_path)
+                && !standing_trees.contains(&qualified_path)
+            {
                 let inserted = self.batch_insert_empty_tree_if_not_exists(
-                    PathKeyInfo::PathKeyRef::<0>((path.clone(), entry_key.as_slice())),
+                    PathKeyInfo::PathKeyRef::<0>((path.clone(), entry_key)),
                     top_value_tree_type,
                     storage_flags,
                     BatchInsertTreeApplyType::StatefulBatchInsertTree,
@@ -1148,9 +1468,11 @@ impl Drive {
                 )?;
                 if inserted {
                     batch_insertion_cache.insert(qualified_path);
+                } else {
+                    standing_trees.insert(qualified_path);
                 }
             }
-            path.push(entry_key.clone());
+            path.push(entry_key.to_vec());
 
             let mut parent_value_tree_type = top_value_tree_type;
             // A prefix-ranking chain level (`rankedCountable: { at }`)
@@ -1162,15 +1484,19 @@ impl Drive {
             // grouping level (validation rejects `at` naming the transform
             // source), but the stamps are read rather than assumed so the
             // three walkers share one rule.
-            let mut parent_counts_continuations =
-                top_index_level.ranked_count_grouping() || top_index_level.count_propagating();
-            for (i, (level, sub_level_tree_types)) in levels.iter().enumerate() {
-                let property_name = &new_suffix[i * 2];
-                let value = &new_suffix[i * 2 + 1];
+            let mut parent_counts_continuations = top_index_level.is_ranked_chain_level();
+            for (((level, sub_level_tree_types), index_property), value) in levels
+                .iter()
+                .zip(index.properties.iter().skip(1))
+                .zip(entry_values)
+            {
+                let property_name = &index_property.name.as_bytes().to_vec();
 
                 let mut qualified_path = path.clone();
                 qualified_path.push(property_name.clone());
-                if !batch_insertion_cache.contains(&qualified_path) {
+                if !batch_insertion_cache.contains(&qualified_path)
+                    && !standing_trees.contains(&qualified_path)
+                {
                     // Continuation property-name tree: contributes zero on
                     // every axis its aggregating parent maintains, exactly
                     // as on the insert path — except inside a ranking
@@ -1180,9 +1506,11 @@ impl Drive {
                     // dispatch above).
                     let property_name_tree_type = sub_level_tree_types.property_name_tree_type;
                     let ranked_axes = sub_level_tree_types.ranked_axes.as_slice();
-                    let inserted = if matches!(parent_value_tree_type, TreeType::NormalTree)
-                        || (parent_counts_continuations && !level.count_exempt_branch())
-                    {
+                    let inserted = if !continuation_contributes_zero(
+                        parent_value_tree_type,
+                        parent_counts_continuations,
+                        level,
+                    ) {
                         self.batch_insert_empty_index_tree_if_not_exists(
                             PathKeyInfo::PathKeyRef::<0>((path.clone(), property_name.as_slice())),
                             property_name_tree_type,
@@ -1210,15 +1538,19 @@ impl Drive {
                     };
                     if inserted {
                         batch_insertion_cache.insert(qualified_path);
+                    } else {
+                        standing_trees.insert(qualified_path);
                     }
                 }
                 path.push(property_name.clone());
 
                 let mut qualified_path = path.clone();
-                qualified_path.push(value.clone());
-                if !batch_insertion_cache.contains(&qualified_path) {
+                qualified_path.push(value.to_vec());
+                if !batch_insertion_cache.contains(&qualified_path)
+                    && !standing_trees.contains(&qualified_path)
+                {
                     let inserted = self.batch_insert_empty_tree_if_not_exists(
-                        PathKeyInfo::PathKeyRef::<0>((path.clone(), value.as_slice())),
+                        PathKeyInfo::PathKeyRef::<0>((path.clone(), *value)),
                         sub_level_tree_types.value_tree_type,
                         storage_flags,
                         BatchInsertTreeApplyType::StatefulBatchInsertTree,
@@ -1229,13 +1561,14 @@ impl Drive {
                     )?;
                     if inserted {
                         batch_insertion_cache.insert(qualified_path);
+                    } else {
+                        standing_trees.insert(qualified_path);
                     }
                 }
-                path.push(value.clone());
+                path.push(value.to_vec());
 
                 parent_value_tree_type = sub_level_tree_types.value_tree_type;
-                parent_counts_continuations =
-                    level.ranked_count_grouping() || level.count_propagating();
+                parent_counts_continuations = level.is_ranked_chain_level();
             }
 
             if new_terminator_is_unique {
@@ -1284,8 +1617,9 @@ impl Drive {
                 )?;
             }
         }
-        // Delete old entries LAST: removed keys, plus common keys whose
-        // sub-values changed (their old-suffix path no longer matches). The
+        // Delete old entries LAST: every entry the new document does not
+        // have, including one sharing its window or element with a new entry
+        // whose other values changed. The
         // ordering is load-bearing: `batch_delete_up_tree_while_empty` folds
         // the already-accumulated batch operations into its emptiness walk,
         // so with the inserts above in place it stops before deleting a
@@ -1293,8 +1627,11 @@ impl Drive {
         // re-populates — e.g. on a suffix change at an unchanged timestamp.
         // Deletes first would emit a delete of that ancestor alongside
         // inserts into it, which grovedb's batch consistency check rejects.
-        for entry_key in &old_entry_keys {
-            if new_set.contains(entry_key) && !suffix_changed {
+        for entry in &old_entries {
+            let Some((&entry_key, entry_values)) = entry.split_first() else {
+                continue;
+            };
+            if new_set.contains(entry) {
                 continue; // unchanged entry — already refreshed by the insert loop above
             }
             // TTL: an expired bucket the drain already took entirely has no
@@ -1305,10 +1642,12 @@ impl Drive {
             // bucket behaves exactly as before. This path is stateful-only
             // (estimation redirects to the insert walker at the top of the
             // v1 update), so the existence reads are always legal here.
-            let expired_entry = entry_key_bucket_start(entry_key)
-                .zip(transform.expiry_horizon_ms(block_time_ms))
-                .is_some_and(|(start, horizon)| start < horizon);
-            if expired_entry {
+            let expired_transform = ttl_transform.filter(|transform| {
+                entry_key_bucket_start(entry_key)
+                    .zip(transform.expiry_horizon_ms(block_time_ms))
+                    .is_some_and(|(start, horizon)| start < horizon)
+            });
+            if let Some(transform) = expired_transform {
                 if !self.time_range_entry_is_removable(
                     transform,
                     entry_key,
@@ -1320,9 +1659,10 @@ impl Drive {
                     continue;
                 }
                 let mut entry_path_segments: Vec<Vec<u8>> = base_index_path.to_vec();
-                entry_path_segments.push(entry_key.clone());
-                for segment in &old_suffix {
-                    entry_path_segments.push(segment.clone());
+                entry_path_segments.push(entry_key.to_vec());
+                for (index_property, value) in index.properties.iter().skip(1).zip(entry_values) {
+                    entry_path_segments.push(index_property.name.as_bytes().to_vec());
+                    entry_path_segments.push(value.to_vec());
                 }
                 if !old_terminator_is_unique {
                     entry_path_segments.push(vec![0]);
@@ -1343,9 +1683,10 @@ impl Drive {
                 .iter()
                 .map(|s| KnownKey(s.clone()))
                 .collect();
-            key_info_path.push(KnownKey(entry_key.clone()));
-            for segment in &old_suffix {
-                key_info_path.push(KnownKey(segment.clone()));
+            key_info_path.push(KnownKey(entry_key.to_vec()));
+            for (index_property, value) in index.properties.iter().skip(1).zip(entry_values) {
+                key_info_path.push(KnownKey(index_property.name.as_bytes().to_vec()));
+                key_info_path.push(KnownKey(value.to_vec()));
             }
             // The entry is removed under the layout the OLD document wrote it
             // with: under the unique layout `[0]` IS the reference and is the
@@ -1377,4 +1718,38 @@ impl Drive {
 
         Ok(())
     }
+}
+
+/// The entries an index holds for a document whose keys at each position of
+/// the index are `key_sets`, borrowed from them: every combination of one key
+/// per position, in order of the first position's keys, then the next
+/// position's. A position with no key (a document before the origin of a
+/// window grid) leaves the document no entry.
+fn index_entries(key_sets: &[Vec<Vec<u8>>]) -> Vec<Vec<&[u8]>> {
+    key_sets
+        .iter()
+        .map(|keys| keys.iter().map(Vec::as_slice))
+        .multi_cartesian_product()
+        .collect()
+}
+
+/// Whether `index`, whose first level is `top_index_level`, names an indexed
+/// typed array at any position: its entries then fan out over the array's
+/// elements. A level missing from the structure is reported by the entry
+/// diff that walks it.
+fn index_names_indexed_array(index: &Index, top_index_level: &IndexLevel) -> bool {
+    let mut level = top_index_level;
+    if level.indexes_array_elements() {
+        return true;
+    }
+    for index_property in index.properties.iter().skip(1) {
+        let Some(sub_level) = level.sub_levels().get(&index_property.name) else {
+            return false;
+        };
+        if sub_level.indexes_array_elements() {
+            return true;
+        }
+        level = sub_level;
+    }
+    false
 }

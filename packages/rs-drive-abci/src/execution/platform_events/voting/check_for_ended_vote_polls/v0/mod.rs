@@ -179,8 +179,8 @@ where
                         // Unreachable: this v0 is selected up to protocol version 13, and a
                         // yes/no poll enters the end date index only through
                         // `Drive::open_yes_no_vote_poll`, which writes under the `Votes/d/p`
-                        // tree that exists from 14 (genesis structure v4,
-                        // `transition_to_version_14`).
+                        // tree that exists from 15 (genesis structure v4 behind `>= 15`,
+                        // `transition_to_version_15`).
                         ResolvedVotePoll::YesNoVotePoll(_) => Err(Error::Execution(
                             ExecutionError::CorruptedCodeExecution(
                                 "yes/no vote polls need check_for_ended_vote_polls version 1",
@@ -314,8 +314,8 @@ where
                         // Unreachable: this v0 is selected up to protocol version 13, and a
                         // yes/no poll enters the end date index only through
                         // `Drive::open_yes_no_vote_poll`, which writes under the `Votes/d/p`
-                        // tree that exists from 14 (genesis structure v4,
-                        // `transition_to_version_14`).
+                        // tree that exists from 15 (genesis structure v4 behind `>= 15`,
+                        // `transition_to_version_15`).
                         ResolvedVotePoll::YesNoVotePoll(_) => Err(Error::Execution(
                             ExecutionError::CorruptedCodeExecution(
                                 "yes/no vote polls need check_for_ended_vote_polls version 1",

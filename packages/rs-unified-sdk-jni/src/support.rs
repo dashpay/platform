@@ -8,9 +8,57 @@ use platform_wallet_ffi::error::{
     platform_wallet_ffi_result_free, PlatformWalletFFIConsensusErrorKind, PlatformWalletFFIResult,
     PlatformWalletFFIResultCode,
 };
+use rs_sdk_ffi::DashSDKConsensusErrorKind;
 use std::ffi::CStr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
+
+/// The platform-wallet kind that shares each rs-sdk-ffi consensus kind's
+/// meaning. The match is exhaustive, so a family added to one FFI alone
+/// fails the build here.
+const fn wallet_consensus_kind(
+    kind: DashSDKConsensusErrorKind,
+) -> PlatformWalletFFIConsensusErrorKind {
+    match kind {
+        DashSDKConsensusErrorKind::ConsensusErrorKindNone => {
+            PlatformWalletFFIConsensusErrorKind::None
+        }
+        DashSDKConsensusErrorKind::ConsensusErrorKindBasic => {
+            PlatformWalletFFIConsensusErrorKind::Basic
+        }
+        DashSDKConsensusErrorKind::ConsensusErrorKindSignature => {
+            PlatformWalletFFIConsensusErrorKind::Signature
+        }
+        DashSDKConsensusErrorKind::ConsensusErrorKindFee => {
+            PlatformWalletFFIConsensusErrorKind::Fee
+        }
+        DashSDKConsensusErrorKind::ConsensusErrorKindState => {
+            PlatformWalletFFIConsensusErrorKind::State
+        }
+    }
+}
+
+const fn crosses_as_wallet_kind(kind: DashSDKConsensusErrorKind) -> bool {
+    kind as i32 == wallet_consensus_kind(kind) as i32
+}
+
+/// Compile-time drift guard for the consensus kind discriminant.
+///
+/// Both FFIs hand a consensus rejection's kind to
+/// [`throw_sdk_consensus_exception`] as its bare discriminant, and Kotlin's
+/// `ConsensusErrorKind.fromNative` decodes it with one table. So every
+/// `DashSDKConsensusErrorKind` must cross as the same number as the
+/// `PlatformWalletFFIConsensusErrorKind` of the same family; a drift is a
+/// build failure rather than a rejection Kotlin files under the wrong family.
+const _: () = assert!(
+    crosses_as_wallet_kind(DashSDKConsensusErrorKind::ConsensusErrorKindNone)
+        && crosses_as_wallet_kind(DashSDKConsensusErrorKind::ConsensusErrorKindBasic)
+        && crosses_as_wallet_kind(DashSDKConsensusErrorKind::ConsensusErrorKindSignature)
+        && crosses_as_wallet_kind(DashSDKConsensusErrorKind::ConsensusErrorKindFee)
+        && crosses_as_wallet_kind(DashSDKConsensusErrorKind::ConsensusErrorKindState),
+    "rs-sdk-ffi's DashSDKConsensusErrorKind drifted from platform-wallet-ffi's \
+     PlatformWalletFFIConsensusErrorKind; Kotlin decodes both with one table"
+);
 
 /// Offset added to every `PlatformWalletFFIResultCode` before it is thrown
 /// as a `DashSDKException` code — see [`take_pwffi_error`].
@@ -90,7 +138,7 @@ pub fn throw_pwffi_result(env: &mut JNIEnv, result: &PlatformWalletFFIResult) {
             code,
             &message,
             result.consensus_code,
-            result.consensus_kind,
+            result.consensus_kind as jint,
         );
     }
 }
@@ -110,15 +158,17 @@ pub fn throw_sdk_exception(env: &mut JNIEnv, code: i32, message: &str) {
 }
 
 /// Throw `DashSDKException(code, message, consensusCode, consensusKind)` for
-/// a failure that is a consensus rejection. `consensus_kind` crosses as its
-/// discriminant, which Kotlin's `ConsensusErrorKind.fromNative` decodes. Same
-/// `RuntimeException` fallback as [`throw_sdk_exception`].
+/// a failure that is a consensus rejection. `consensus_kind` is the
+/// discriminant of either FFI's kind (`PlatformWalletFFIConsensusErrorKind`
+/// or rs-sdk-ffi's `DashSDKConsensusErrorKind`, held equal by the drift guard
+/// at the top of this module), which Kotlin's `ConsensusErrorKind.fromNative`
+/// decodes. Same `RuntimeException` fallback as [`throw_sdk_exception`].
 pub fn throw_sdk_consensus_exception(
     env: &mut JNIEnv,
     code: i32,
     message: &str,
     consensus_code: u32,
-    consensus_kind: PlatformWalletFFIConsensusErrorKind,
+    consensus_kind: jint,
 ) {
     // Consensus codes top out in the 40000s, far inside a `jint`; one that
     // somehow is not goes out as `jint::MAX` rather than wrapping negative.
@@ -128,7 +178,7 @@ pub fn throw_sdk_consensus_exception(
         code,
         message,
         "(ILjava/lang/String;II)V",
-        &[consensus_code, consensus_kind as jint],
+        &[consensus_code, consensus_kind],
     );
 }
 

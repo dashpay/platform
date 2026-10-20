@@ -2,6 +2,7 @@ use crate::drive::Drive;
 use crate::drive::RootTree;
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use crate::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
 use crate::verify::RootHash;
 use dpp::address_funds::PlatformAddress;
 
@@ -22,41 +23,6 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 use super::{CompactedAddressBalanceProof, VerifiedCompactedAddressBalanceChanges};
-
-/// Reject a nested GroveDB proof envelope older than the floor the protocol
-/// version sets in `SystemLimits::minimum_grovedb_proof_envelope_version`.
-fn require_supported_grovedb_proof(
-    proof: &[u8],
-    label: &'static str,
-    platform_version: &PlatformVersion,
-) -> Result<(), Error> {
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<16>();
-    let (version, _): (u32, usize) =
-        bincode::decode_from_slice(proof, config).map_err(|error| {
-            Error::Proof(ProofError::InvalidGroveDBProofEnvelope {
-                proof: label,
-                reason: error.to_string(),
-            })
-        })?;
-
-    let minimum = platform_version
-        .system_limits
-        .minimum_grovedb_proof_envelope_version;
-    if version < minimum {
-        return Err(Error::Proof(
-            ProofError::UnsupportedGroveDBProofEnvelopeVersion {
-                proof: label,
-                version,
-                minimum,
-                protocol_version: platform_version.protocol_version,
-            },
-        ));
-    }
-
-    Ok(())
-}
 
 impl Drive {
     /// Verifies compacted address balance changes proof.
@@ -93,16 +59,11 @@ impl Drive {
             )));
         }
 
-        require_supported_grovedb_proof(
+        require_supported_grovedb_proof_envelope(
             &proof_envelope.predecessor_proof,
             "predecessor proof",
-            platform_version,
         )?;
-        require_supported_grovedb_proof(
-            &proof_envelope.forward_proof,
-            "forward proof",
-            platform_version,
-        )?;
+        require_supported_grovedb_proof_envelope(&proof_envelope.forward_proof, "forward proof")?;
 
         let path = vec![
             vec![RootTree::SavedBlockTransactions as u8],

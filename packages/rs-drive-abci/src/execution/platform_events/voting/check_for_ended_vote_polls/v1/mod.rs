@@ -5,6 +5,7 @@ use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Method
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeType;
+use dpp::data_contract::document_type::ContestedIndexResolution;
 use dpp::document::DocumentV0Getters;
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
@@ -12,10 +13,12 @@ use dpp::voting::contender_structs::FinalizedContender;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice::TowardsIdentity;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dpp::voting::vote_polls::yes_no_vote_poll::{VotingPower, YesNoVotePoll};
+use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
 use drive::drive::votes::resolved::vote_polls::resolve::VotePollResolver;
 use drive::drive::votes::resolved::vote_polls::{ResolvedVotePoll, ResolvedVotePollWithVotes};
 use drive::grovedb::TransactionArg;
 use drive::query::VotePollsByEndDateDriveQuery;
+use drive::util::common::encode::encode_u64;
 use itertools::Itertools;
 use std::collections::BTreeMap;
 
@@ -23,9 +26,10 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Checks for ended vote polls, awarding a tie to the earliest contender. Version 1
-    /// (protocol version 14) also closes yes/no polls: it records their result, hands it to
-    /// the feature that opened them and cleans their votes up.
+    /// Checks for ended vote polls, awarding a tie to the earliest contender, after removing
+    /// the end dates left with no vote poll among the first due. From protocol version 15 it
+    /// also closes yes/no polls: it records their result, hands it to the feature that opened
+    /// them and cleans their votes up.
     #[inline(always)]
     pub(super) fn check_for_ended_vote_polls_v1(
         &self,
@@ -37,13 +41,32 @@ where
     ) -> Result<(), Error> {
         // let's start by getting the vote polls that have finished. Version 0 carried two
         // testnet clean-ups of protocol versions 1 and 2; this version only runs from
-        // protocol version 14, so it fetches the polls due by the block time and nothing else
+        // protocol version 14, so it reads only what is due by the block time
         let distribute_after_time = block_info.time_ms;
         let maximum_vote_polls_to_process = platform_version
             .drive_abci
             .validation_and_processing
             .event_constants
             .maximum_vote_polls_to_process;
+        // An end date with no vote poll under it ends nothing yet takes a slot of the read
+        // below, so enough of them due before every vote poll would stall them all. Those among
+        // the first due go before the read; the read then reaches the vote polls behind them.
+        for empty_end_time in VotePollsByEndDateDriveQuery::execute_no_proof_empty_end_times(
+            distribute_after_time,
+            maximum_vote_polls_to_process,
+            &self.drive,
+            transaction,
+            &mut vec![],
+            platform_version,
+        )? {
+            self.drive.grove_delete(
+                vote_end_date_queries_tree_path_vec().as_slice().into(),
+                encode_u64(empty_end_time).as_slice(),
+                transaction,
+                &mut vec![],
+                &platform_version.drive,
+            )?;
+        }
         let vote_polls_by_timestamp =
             VotePollsByEndDateDriveQuery::execute_no_proof_for_specialized_end_time_query(
                 distribute_after_time,
@@ -65,6 +88,14 @@ where
                         ) => {
                             let document_type =
                                 resolved_contested_document_resource_vote_poll.document_type()?;
+                            // A contest on an index resolved without locking always has a
+                            // winner, whatever its lock tally holds
+                            let locking_allowed = resolved_contested_document_resource_vote_poll
+                                .index()?
+                                .contested_index
+                                .as_ref()
+                                .map(|contested| contested.resolution)
+                                != Some(ContestedIndexResolution::MasternodeVoteNoLocking);
                             // let's see who actually won
                             let result = self.tally_votes_for_contested_document_resource_vote_poll(
                                 (&resolved_contested_document_resource_vote_poll).into(),
@@ -110,11 +141,12 @@ where
                                 .first()
                                 .map(|max_voted_contender| max_voted_contender.final_vote_tally)
                                 .unwrap_or_default();
-                            // These are all the people who got top votes
+                            // These are all the people who got top votes, every one of them
+                            // considered (up to `maximum_contenders_to_consider`); version 0
+                            // compared at most 100
                             let top_contenders: Vec<FinalizedContender> = sorted_contenders
                                 .into_iter()
                                 .filter(|c| c.final_vote_tally == highest_vote_tally)
-                                .take(100) // Limit to the first 100 before the expensive operation
                                 .map(|contender| {
                                     FinalizedContender::try_from_contender_with_serialized_document(
                                         contender,
@@ -147,7 +179,9 @@ where
                             let winner_info = if let Some(top_contender) = maybe_top_contender {
                                 // let's check to make sure the lock votes didn't win it
                                 // if the lock is tied with the top contender the top contender gets it
-                                if result.locked_vote_tally > top_contender.final_vote_tally {
+                                if locking_allowed
+                                    && result.locked_vote_tally > top_contender.final_vote_tally
+                                {
                                     // the record will show it's locked
                                     ContestedDocumentVotePollWinnerInfo::Locked
                                 } else {
@@ -177,6 +211,11 @@ where
                             )?;
                             Ok(ResolvedVotePollWithVotes::ContestedDocumentResourceVotePollWithContractInfoAndVotes(resolved_contested_document_resource_vote_poll, identifiers_voting_for_contenders))
                         }
+                        // Reached from protocol version 15 only. At 14, which also selects
+                        // this generation, no yes/no poll is in the end date index: it enters
+                        // only through `Drive::open_yes_no_vote_poll`, which writes under the
+                        // `Votes/d/p` tree that exists from 15 (genesis structure v4 behind
+                        // `>= 15`, `transition_to_version_15`).
                         ResolvedVotePoll::YesNoVotePoll(yes_no_vote_poll) => self
                             .finish_yes_no_vote_poll(
                                 block_platform_state,

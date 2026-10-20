@@ -21,6 +21,77 @@ describe('waitForDKGWindowPass', () => {
     expect(rpcClient.getBlockCount).to.not.have.been.called();
   });
 
+  it('should resolve immediately when current and imminent DKGs do not include this node', async function it() {
+    const clock = this.sinon.useFakeTimers();
+
+    rpcClient.quorum.withArgs('dkginfo').resolves({
+      result: {
+        active_dkgs: 0,
+        next_dkg: 1,
+        upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: false }],
+      },
+    });
+
+    const promise = waitForDKGWindowPass(rpcClient);
+
+    await clock.tickAsync(0);
+    await promise;
+
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledOnce();
+    expect(rpcClient.getBlockCount).to.not.have.been.called();
+  });
+
+  it('should keep waiting while this node is a member of an imminent DKG', async function it() {
+    const clock = this.sinon.useFakeTimers();
+
+    rpcClient.quorum.withArgs('dkginfo')
+      .onFirstCall()
+      .resolves({
+        result: {
+          active_dkgs: 0,
+          next_dkg: 1,
+          upcoming_dkgs: [{ blocksUntilStart: 1, known: true, isMember: true }],
+        },
+      })
+      .onSecondCall()
+      .resolves({ result: { active_dkgs: 0, next_dkg: 24, upcoming_dkgs: [] } });
+
+    const promise = waitForDKGWindowPass(rpcClient);
+
+    await clock.tickAsync(0);
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledOnce();
+
+    await clock.tickAsync(CHECK_INTERVAL_MS);
+    await promise;
+
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledTwice();
+  });
+
+  it('should wait while active_dkgs is positive without inspecting dkgstatus', async function it() {
+    const clock = this.sinon.useFakeTimers();
+    rpcClient.quorum.withArgs('dkginfo')
+      .onFirstCall()
+      .resolves({
+        result: {
+          active_dkgs: 1,
+          next_dkg: 1,
+          upcoming_dkgs: [],
+        },
+      })
+      .onSecondCall()
+      .resolves({ result: { active_dkgs: 0, next_dkg: 1, upcoming_dkgs: [] } });
+
+    const promise = waitForDKGWindowPass(rpcClient);
+    await clock.tickAsync(0);
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledOnce();
+    await clock.tickAsync(CHECK_INTERVAL_MS);
+    await promise;
+
+    expect(rpcClient.quorum.withArgs('dkginfo')).to.have.been.calledTwice();
+    expect(rpcClient.quorum.withArgs('dkgstatus')).to.not.have.been.called();
+    expect(rpcClient.getBlockCount).to.not.have.been.called();
+  });
+
   it('waits through an active platform session and resolves once the window has passed', async function it() {
     // Block height advances from 1005 (offset 5, in window) to 1010
     // (offset 10, window closed) between polls; active_dkgs stays > 0

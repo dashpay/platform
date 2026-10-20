@@ -12,6 +12,11 @@
 //! Empty entries (a verifier that emitted `None` for a queried-but-
 //! absent branch — same forward-compat for absence proofs as count)
 //! contribute 0 to both axes via `filter_map(|e| e.<field>)`.
+//!
+//! A `containsAny` over several elements of a typed array is refused, even
+//! grouped by the array: folded, a document holding two of the elements would
+//! be counted and summed twice. `DocumentSplitAverages` keeps one pair per
+//! element.
 
 use crate::documents::average_proof_helpers::{assert_select_is_avg, verify_average_query};
 use crate::documents::document_query::DocumentQuery;
@@ -86,7 +91,7 @@ impl FromProof<DocumentQuery> for DocumentAverage {
         assert_select_is_avg(&request)?;
         let response: Self::Response = response.into();
         let (entries, mtd, proof) =
-            verify_average_query(request, response, platform_version, provider)?;
+            verify_average_query(request, response, true, platform_version, provider)?;
         // Fold per-branch (count, sum) into a single aggregate via
         // `fold_average_entries` — checked arithmetic on both axes,
         // see helper docstring.

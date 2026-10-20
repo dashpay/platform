@@ -51,6 +51,10 @@ pub trait DocumentV0Getters {
     /// The data contract version this document's bytes conform to (the
     /// serialization format 3 stamp); `None` for pre-stamp documents.
     fn contract_version(&self) -> Option<u32>;
+    /// The block time at which a moderator last wrote the document's moderator fields.
+    fn moderated_at(&self) -> Option<TimestampMillis>;
+    /// The moderator who last wrote the document's moderator fields.
+    fn moderated_by(&self) -> Option<Identifier>;
 }
 
 pub trait DocumentV0Setters: DocumentV0Getters {
@@ -164,4 +168,8 @@ pub trait DocumentV0Setters: DocumentV0Getters {
     /// Sets the contract-version stamp: the data contract version this
     /// document's bytes conform to.
     fn set_contract_version(&mut self, contract_version: Option<u32>);
+    /// Sets the block time at which a moderator last wrote the document's moderator fields.
+    fn set_moderated_at(&mut self, moderated_at: Option<TimestampMillis>);
+    /// Sets the moderator who last wrote the document's moderator fields.
+    fn set_moderated_by(&mut self, moderated_by: Option<Identifier>);
 }

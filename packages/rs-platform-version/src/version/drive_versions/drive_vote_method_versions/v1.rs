@@ -36,6 +36,7 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V1: DriveVoteMethodVersions = DriveVoteMeth
         fetch_identities_voting_for_contenders: 0,
         fetch_contested_document_vote_poll_stored_info: 0,
         fetch_identity_contested_resource_vote: 0,
+        fetch_contested_document_vote_poll_contender_count: 0,
     },
     yes_no: DriveVoteYesNoMethodVersions {
         open_yes_no_vote_poll: 0,

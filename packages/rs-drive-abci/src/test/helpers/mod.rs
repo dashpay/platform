@@ -1,3 +1,6 @@
+/// Chain lock quorum fixtures
+#[cfg(test)]
+pub mod chain_lock_quorums;
 /// Contract group fixtures
 #[cfg(test)]
 pub mod contract_groups;
@@ -8,6 +11,8 @@ pub mod fee_pools;
 pub mod setup;
 #[cfg(test)]
 pub mod state_mutation_guard;
+/// Withdrawal fixtures
+pub mod withdrawals;
 // TODO: Move tests to appropriate place
 
 #[cfg(test)]

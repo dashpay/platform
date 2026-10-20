@@ -13,7 +13,7 @@ use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
-    /// Version 1 (protocol version 14) registers a vote of either kind: a resource vote as
+    /// Version 1 (protocol version 15) registers a vote of either kind: a resource vote as
     /// before, and a yes/no vote under its poll in the decisions branch.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn register_identity_vote_v1(

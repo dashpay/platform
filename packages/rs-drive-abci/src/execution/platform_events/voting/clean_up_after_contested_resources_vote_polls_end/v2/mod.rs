@@ -19,7 +19,7 @@ where
     C: CoreRPCLike,
 {
     /// Cleans up after contested resource vote polls that ended.
-    /// Version 2 (protocol version 14) leaves the end date index alone:
+    /// Version 2 (protocol version 15) leaves the end date index alone:
     /// `clean_up_after_vote_polls_end` removes every finished poll of every kind from it, so
     /// that an end date's tree goes only once nothing is left under it.
     #[inline(always)]

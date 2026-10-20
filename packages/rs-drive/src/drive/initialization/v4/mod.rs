@@ -104,12 +104,37 @@ impl Drive {
         // sequence of inserts on both node populations.
         self.insert_contract_fee_pot_trees(transaction, platform_version)?;
 
-        // Vote decisions trees (protocol version 14): the active yes/no polls and the identity
+        // Token shielded pools root tree (protocol version 14): the BigSumTree under the Tokens
+        // tree that holds one Orchard pool per token opting in
+        // (`TokenConfigurationV1::has_shielded_pool`). The upgrade path
+        // (`Platform::transition_to_version_14`) calls the same helper, so a chain born at
+        // version 14 and one upgraded to it build a byte-identical `[Tokens]` subtree.
+        self.insert_token_shielded_pools_root_tree(transaction, platform_version)?;
+        // Document time to live trees (protocol version 14): the documents expirations tree
+        // under `Misc`, which indexes every document of a type declaring a `ttl` by the time
+        // it expires, and the lifetime storage fee pools sum tree under `Pools`, which holds
+        // their storage fees until an epoch change spreads them. After the batch apply, which
+        // creates `Misc` and the fee pools under `Pools`, and through the same helper as the
+        // upgrade path (`Platform::transition_to_version_14`), in the same position: just
+        // before the withdrawal limit trees.
+        self.insert_document_ttl_trees(transaction, platform_version)?;
+
+        // Withdrawal limit trees (protocol version 14): the total credits history, the credit
+        // inflows and the Core credit pool balances under the withdrawals tree, which the batch
+        // apply creates. Inserted one after the other through the same helper as the upgrade
+        // path (`Platform::transition_to_version_14`), in the same position: last, so the
+        // withdrawals Merk is built by the same sequence of inserts on both node populations.
+        self.insert_withdrawal_limit_trees(transaction, platform_version)?;
+
+        // Vote decisions trees (protocol version 15): the active yes/no polls and the identity
         // votes index under the votes tree's decisions branch, which the batch above creates.
-        // The upgrade path (`Platform::transition_to_version_14`) calls the same helper after
-        // the fee pot trees, so both node populations build the decisions Merk from the same
-        // sequence of inserts.
-        self.insert_vote_decisions_trees(transaction, platform_version)?;
+        // Chain-creation content, so it compares the chain's initial protocol version: a chain
+        // born at 14 replays its genesis without them and gets them from its upgrade rung. The
+        // upgrade path (`Platform::transition_to_version_15`) calls the same helper, so both
+        // node populations build the decisions Merk from the same sequence of inserts.
+        if platform_version.protocol_version >= 15 {
+            self.insert_vote_decisions_trees(transaction, platform_version)?;
+        }
 
         Ok(())
     }

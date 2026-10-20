@@ -1,3 +1,5 @@
+use crate::drive::document::expiration::pricing::document_expires_at;
+use crate::drive::document::expiration::DocumentExpirationEntry;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use grovedb::batch::KeyInfoPath;
 
@@ -8,18 +10,21 @@ use dpp::data_contract::document_type::DocumentTypeRef;
 use std::collections::HashMap;
 
 use crate::drive::document::paths::contract_documents_primary_key_path;
+use crate::util::object_size_info::DocumentInfo;
 use crate::util::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentOwnedInfo,
 };
 use crate::util::storage_flags::StorageFlags;
 
 use dpp::data_contract::DataContract;
-use dpp::document::Document;
+use dpp::document::{Document, DocumentV0Getters};
 
 use crate::drive::Drive;
 use crate::util::grove_operations::DirectQueryType;
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
-use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+use crate::util::object_size_info::{
+    DocumentAndContractInfo, DocumentInfoV0Methods, OwnedDocumentInfo,
+};
 
 use crate::error::drive::DriveError;
 
@@ -177,6 +182,61 @@ impl Drive {
             )));
         };
 
+        self.delete_read_document_for_contract_operations_v0(
+            document_id,
+            document_info,
+            contract,
+            document_type,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            block_time_ms,
+            transaction,
+            batch_operations,
+            platform_version,
+        )
+    }
+
+    /// The part of [`Self::force_delete_document_for_contract_operations_v0`] after the
+    /// document is read from its primary storage: removes it there, removes its index
+    /// entries and, for a type with a `ttl`, its expirations tree entry, appending to
+    /// `batch_operations`. Split out, with the operations and their order unchanged, so the
+    /// document expiry cleanup (protocol version 14), which reads the document to check it
+    /// first, deletes it without reading it a second time.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::drive::document) fn delete_read_document_for_contract_operations_v0(
+        &self,
+        document_id: Identifier,
+        document_info: DocumentInfo,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_time_ms: u64,
+        transaction: TransactionArg,
+        mut batch_operations: Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let contract_documents_primary_key_path = contract_documents_primary_key_path(
+            contract.id_ref().as_bytes(),
+            document_type.name().as_str(),
+        );
+
+        // A type with derived index properties (protocol version 14) keys its documents by
+        // values read from the documents its references point at, which the stored document
+        // does not hold: read again here, where they are what they were when the entries were
+        // written. Every other type passes through unchanged.
+        let document_info = self.document_info_with_derived_index_values(
+            document_info,
+            contract,
+            document_type,
+            estimated_costs_only_with_layer_info.is_some(),
+            transaction,
+            &mut batch_operations,
+            platform_version,
+        )?;
+
         // third we need to delete the document for it's primary key
         self.remove_document_from_primary_storage(
             document_id,
@@ -206,6 +266,44 @@ impl Drive {
             &mut batch_operations,
             platform_version,
         )?;
+
+        // A document whose type declares a `ttl` has an entry in the documents expirations
+        // tree, keyed by when it expires: it goes with the document, whoever deletes it (its
+        // owner, a moderator, or the expiry cleanup). In place in this shipped generation:
+        // `documents_ttl_seconds` is `Some` only on a document type parsed by generation 3
+        // from a `ttl` keyword, which only protocol version 14 reads and every earlier
+        // meta-schema refuses, so no protocol version before 14 reaches this branch.
+        if let Some(ttl_seconds) = document_type.documents_ttl_seconds() {
+            let entry_value_size =
+                DocumentExpirationEntry::serialized_size(document_type.name().as_str());
+            let expires_at_ms = match document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_borrowed_document()
+            {
+                Some(document) => {
+                    let created_at = document.created_at().ok_or(Error::Drive(
+                        DriveError::CorruptedDriveState(
+                            "a document of a type with a time to live has no creation time"
+                                .to_string(),
+                        ),
+                    ))?;
+                    document_expires_at(created_at, ttl_seconds)?
+                }
+                // A worst-case estimate has no document: any time key prices the same.
+                None => document_expires_at(block_time_ms, ttl_seconds)?,
+            };
+            self.remove_document_expiration_operations(
+                document_id.to_buffer(),
+                expires_at_ms,
+                entry_value_size,
+                estimated_costs_only_with_layer_info,
+                &previous_batch_operations,
+                transaction,
+                &mut batch_operations,
+                platform_version,
+            )?;
+        }
         Ok(batch_operations)
     }
 }

@@ -24,7 +24,7 @@ use grovedb::{Element, MaybeTree, PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
 
 impl Drive {
-    /// Version 1 (protocol version 14) removes the yes/no votes of the removed masternodes
+    /// Version 1 (protocol version 15) removes the yes/no votes of the removed masternodes
     /// too: the vote under the poll's choice sum tree and the entry in the decisions identity
     /// votes index.
     pub(super) fn remove_all_votes_given_by_identities_v1(
@@ -113,7 +113,7 @@ impl Drive {
         }
 
         // Yes/no votes: the index item names the poll and the answer, so the vote sits under
-        // the poll's tree at the answer's sum tree. A chain that activated protocol version 14
+        // the poll's tree at the answer's sum tree. A chain that activated protocol version 15
         // before the decisions trees existed has no identity votes index, and no yes/no votes.
         let has_decisions_index = self.grove_has_raw(
             (&vote_decisions_tree_path()).into(),

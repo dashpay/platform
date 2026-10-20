@@ -180,7 +180,7 @@ mod tests {
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::bincode::config;
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey};
+    use dpp::bls::SecretKey;
     use dpp::core_types::validator::v0::ValidatorV0;
     use dpp::core_types::validator_set::v0::{ValidatorSetV0, ValidatorSetV0Getters};
     use dpp::core_types::validator_set::ValidatorSet;
@@ -231,7 +231,7 @@ mod tests {
             pro_tx_hash: pro_tx_hash(byte),
             collateral_hash: Txid::from_byte_array([0u8; 32]),
             collateral_index: 0,
-            collateral_address: [0u8; 20],
+            collateral_address: Some([0u8; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: "1.2.3.4:1234".parse().expect("socket address"),
@@ -239,14 +239,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: [byte; 20],
+                owner_address: Some([byte; 20]),
                 voting_address: [0u8; 20],
-                payout_address: [0u8; 20],
+                payout_address: Some([0u8; 20]),
+                payouts: None,
                 pub_key_operator: vec![0u8; 48],
                 operator_payout_address: None,
                 platform_node_id: None,
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         }
     }
@@ -255,7 +259,7 @@ mod tests {
     /// threshold key derived from `byte`.
     fn validator_set(byte: u8, core_height: u32) -> ValidatorSet {
         let mut rng = StdRng::seed_from_u64(byte as u64);
-        let threshold_public_key = SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key();
+        let threshold_public_key = SecretKey::random(&mut rng).public_key();
         let member = ValidatorV0 {
             pro_tx_hash: pro_tx_hash(byte),
             public_key: None,
@@ -432,11 +436,15 @@ mod tests {
                 owner_address: None,
                 voting_address: None,
                 payout_address: None,
+                payouts: None,
                 pub_key_operator: None,
                 operator_payout_address: None,
                 platform_node_id: None,
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         ));
         let removed_quorum = QuorumHash::from_byte_array([0xAA; 32]);

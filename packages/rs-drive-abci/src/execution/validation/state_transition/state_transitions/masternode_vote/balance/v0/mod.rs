@@ -65,7 +65,10 @@ impl MasternodeVoteTransitionBalanceValidationV0 for MasternodeVoteTransition {
 
         // What executing the vote deducts from the fund. Until 4.2 the vote's minimum fee was
         // required here instead, a smaller amount, so a fund between the two passed this check
-        // and the vote failed inside execution.
+        // and the vote failed inside execution. Edited in place: it cannot change a block at any
+        // protocol version, because a vote refused here is refused unpaid and a vote that failed
+        // inside execution was an internal error, and both are left out of every block (see the
+        // prefunded balance pre-check in the state transition processor).
         let single_vote_cost = platform_version
             .fee_version
             .vote_resolution_fund_fees

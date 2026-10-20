@@ -16,6 +16,10 @@ use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::document_type::action_fees::{ActionFeePricing, DocumentActionFee};
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::prelude::FeeMultiplier;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 #[cfg(feature = "json-conversion")]
 use crate::serialization::JsonSafeFields;
 use crate::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
@@ -77,10 +81,10 @@ pub enum DocumentActionFeeAgreement {
 impl JsonSafeFields for DocumentActionFeeAgreement {}
 
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for DocumentActionFeeAgreement {}
+impl JsonConvertible for DocumentActionFeeAgreement {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for DocumentActionFeeAgreement {}
+impl ValueConvertible for DocumentActionFeeAgreement {}
 
 impl DocumentActionFeeAgreement {
     /// The agreement to `fee` as a document type declares it under `pricing`.
@@ -159,6 +163,20 @@ impl DocumentActionFeeAgreement {
     pub fn matches_declared(&self, pricing: ActionFeePricing, fee: DocumentActionFee) -> bool {
         self.pricing() == pricing && self.fee() == fee
     }
+
+    /// Whether the agreement asks for a discount on the moderators part: it names the declared
+    /// pricing and owner part, and less than the declared moderators part. Only the seated
+    /// moderation charter of an elected contract gives one, on a document type the contract
+    /// moderates: its `moderatorsShare` of the declared part
+    /// ([`moderators_share_of`](crate::moderation_charter::moderators_share_of)). Judging it
+    /// needs that charter, which is state; this only says whether there is anything to judge.
+    pub fn discounts_moderators_of(
+        &self,
+        pricing: ActionFeePricing,
+        fee: DocumentActionFee,
+    ) -> bool {
+        self.pricing() == pricing && self.owner() == fee.owner && self.moderators() < fee.moderators
+    }
 }
 
 #[cfg(test)]
@@ -174,6 +192,34 @@ mod tests {
         owner: 10_000_000,
         moderators: 100_000_000,
     };
+
+    #[test]
+    fn should_ask_for_a_discount_only_below_the_declared_moderators_part() {
+        let agreed = |owner, moderators, pricing| {
+            DocumentActionFeeAgreement::for_declared_fee(
+                pricing,
+                DocumentActionFee { owner, moderators },
+                KNOWN,
+            )
+        };
+        let fixed = ActionFeePricing::Fixed;
+        assert!(agreed(FEE.owner, FEE.moderators - 1, fixed).discounts_moderators_of(fixed, FEE));
+        assert!(agreed(FEE.owner, 0, fixed).discounts_moderators_of(fixed, FEE));
+        // The declared amounts are no discount, nor is anything that also moves the owner
+        // part or the pricing, nor a higher moderators part.
+        for (owner, moderators, pricing) in [
+            (FEE.owner, FEE.moderators, fixed),
+            (FEE.owner, FEE.moderators + 1, fixed),
+            (FEE.owner - 1, FEE.moderators - 1, fixed),
+            (
+                FEE.owner,
+                FEE.moderators - 1,
+                ActionFeePricing::FeeMultiplier,
+            ),
+        ] {
+            assert!(!agreed(owner, moderators, pricing).discounts_moderators_of(fixed, FEE));
+        }
+    }
 
     #[test]
     fn should_tolerate_a_fee_multiplier_up_to_the_stated_increase() {

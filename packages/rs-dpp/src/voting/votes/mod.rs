@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 #[platform_serialize(limit = 15000, unversioned)]
 pub enum Vote {
     ResourceVote(ResourceVote),
-    /// A vote on a yes/no poll (protocol version 14). Appended: the bincode discriminant is
+    /// A vote on a yes/no poll (protocol version 15). Appended: the bincode discriminant is
     /// the variant position.
     YesNoVote(YesNoVote),
 }

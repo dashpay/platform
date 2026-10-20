@@ -1,15 +1,23 @@
 use advanced_structure::v1::DocumentsBatchStateTransitionStructureValidationV1;
-mod action_validation;
+pub(in crate::execution::validation::state_transition::state_transitions) mod action_validation;
 mod advanced_structure;
 mod data_triggers;
 mod identity_contract_nonce;
-mod is_allowed;
 mod state;
 mod transformer;
 
 // A moderator's document deletion (`contract_user_moderation`) reads the document the way a
 // document's own deletion does, billed the same.
-pub(in crate::execution::validation::state_transition::state_transitions) use state::v0::fetch_documents::fetch_document_with_id;
+pub(in crate::execution::validation::state_transition) use state::v0::fetch_documents::fetch_document_with_id;
+// Check tx reserves, for a create it does not validate the state of, what the block's
+// `chooseFirst` check may bill it: its two hashes and the competitor scan's budget.
+pub(in crate::execution::validation::state_transition) use action_validation::document::document_reference_validation::v0::choose_first_reservation;
+// Moderator field changes and restores judge the document's `propertyConstraints`, with
+// the totals after the replace or insertion respectively.
+pub(in crate::execution::validation::state_transition) use transformer::v0::property_constraint_aggregates::{
+    read_property_constraint_aggregates_for_moderator_change,
+    read_property_constraint_aggregates_for_restore,
+};
 
 #[cfg(test)]
 mod tests;
@@ -342,7 +350,7 @@ impl StateTransitionStateValidation for BatchTransition {
         &self,
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
-        _validation_mode: ValidationMode,
+        validation_mode: ValidationMode,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -372,6 +380,7 @@ impl StateTransitionStateValidation for BatchTransition {
                     &platform.into(),
                     block_info,
                     execution_context,
+                    validation_mode,
                     tx,
                     platform_version,
                 )

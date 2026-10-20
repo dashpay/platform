@@ -151,7 +151,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V7: DriveAbciValidationVersions =
                         reject_data_trigger: 0,
                     },
                 },
-                is_allowed: 0,
                 identity_minimum_balance_pre_check: 0,
                 document_create_transition_structure_validation: 0,
                 document_delete_transition_structure_validation: 0,
@@ -194,6 +193,20 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V7: DriveAbciValidationVersions =
                 token_direct_purchase_transition_state_validation: 0,
                 token_set_price_for_direct_purchase_transition_structure_validation: 0,
                 token_set_price_for_direct_purchase_transition_state_validation: 0,
+                token_shield_transition_structure_validation: 0,
+                token_shield_transition_state_validation: 0,
+                token_mint_to_pool_transition_structure_validation: 0,
+                token_mint_to_pool_transition_state_validation: 0,
+                token_burn_from_pool_transition_structure_validation: 0,
+                token_burn_from_pool_transition_state_validation: 0,
+                token_claim_to_pool_transition_structure_validation: 0,
+                token_claim_to_pool_transition_state_validation: 0,
+                token_direct_purchase_to_pool_transition_structure_validation: 0,
+                token_direct_purchase_to_pool_transition_state_validation: 0,
+                token_unshield_transition_structure_validation: 0,
+                token_unshield_transition_state_validation: 0,
+                token_shielded_transfer_transition_structure_validation: 0,
+                token_shielded_transfer_transition_state_validation: 0,
             },
             identity_create_from_addresses_state_transition:
                 DriveAbciStateTransitionValidationVersion {
@@ -303,6 +316,33 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V7: DriveAbciValidationVersions =
                     state: 0,
                     transform_into_action: 0,
                 },
+            token_shielded_transfer_with_shielded_fee_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            token_unshield_with_shielded_fee_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            token_purchase_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
         },
         has_nonce_validation: 1,
         has_address_witness_validation: 0,
@@ -334,6 +374,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V7: DriveAbciValidationVersions =
             // The declared physical payload (312 note bytes + 32 nullifier
             // bytes); locked — released versions replay what they charged.
             shielded_storage_bytes_per_action: 344,
+            shielded_identity_action_write_storage_bytes: 0,
+            shielded_identity_balance_write_storage_bytes: 20,
             shielded_implicit_fee_cap: 20_000_000_000,
             shielded_identity_create_denominations: &[],
         },
