@@ -35,6 +35,10 @@ pub struct TokenClaimToPoolTransitionV0 {
     /// Halo 2 proof bytes.
     pub proof: Vec<u8>,
     /// RedPallas binding signature.
+    #[cfg_attr(
+        all(feature = "serde-conversion", not(feature = "json-conversion")),
+        serde(with = "crate::serialization::serde_bytes")
+    )]
     pub binding_signature: [u8; 64],
     /// Optional public note. Only a group action proposer may set one.
     pub public_note: Option<String>,
