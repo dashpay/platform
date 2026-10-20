@@ -140,7 +140,7 @@ The dashmate deb's Debian version comes from the tag: `5.1.0-1`, `5.1.0~rc.1-1`,
 
 1. Set the repository variable `DASHMATE_DEB_REVISION` to the next revision (`2`, then `3`, ...).
 2. In the release's `release.yml` run, re-run the `Build Dashmate packages (deb, ubuntu-24.04)` job (`gh run rerun --job <job-id> --repo dashpay/platform`), then check that `Release Dashmate packages (deb, ubuntu-24.04)` ran after it and attached debs whose names carry the new revision (`dashmate_5.1.0-2_amd64.deb`); re-run that job too if it did not.
-3. Delete the release's superseded `dashmate_*-1_amd64.deb` and `dashmate_*-1_arm64.deb` assets. The new debs have different names, so the old ones stay attached, and the install docs and deploy tooling take the first matching asset.
+3. Delete every other `dashmate_*_amd64.deb` and `dashmate_*_arm64.deb` asset of the release, keeping only the two that carry the new revision. Earlier builds have different names, so they stay attached, and the install docs and deploy tooling take the first matching asset.
 4. Delete `DASHMATE_DEB_REVISION` again, so the next release starts at revision 1.
 
 Never set `DASHMATE_DEB_EPOCH` except to re-release a version that was published under oclif's old `<version>.<git sha>-1` scheme: once a package carries an epoch, every later package needs it too. Re-releasing that way also leaves the old `<version>.<git sha>-1` debs attached, so delete them the same way.
