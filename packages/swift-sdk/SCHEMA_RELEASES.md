@@ -207,9 +207,10 @@ all required releases, not merely a commit from before the snapshot merge.
 2. Configure `SCHEMA_RELEASE_TOKEN` in both repositories: a fine-grained PAT
    limited to `dashpay/platform` and `dashpay/dashwallet-ios`, with repository
    Contents, Actions and Pull requests permissions needed by the workflow.
-   The Platform worker needs metadata read access, Platform branch/PR write
-   access, and uses the PAT so its PR events trigger CI. Apple credentials stay
-   in the iOS repository. Do not put tokens in command arguments or manifests.
+   The Platform worker and the freeze PR refresh need metadata read access and
+   Platform branch/PR write access, and use the PAT so their pushes trigger CI.
+   Apple credentials stay in the iOS repository. Do not put tokens in command
+   arguments or manifests.
 3. Initialize the iOS release baseline before the first newly tracked release,
    then run its monitor manually in dry-run mode. The baseline must reference
    the verified historical V2 binding for 9.0.2. Correct the old V1 association
@@ -259,6 +260,15 @@ or snapshot to make a test pass. A changed structure under an already released
 schema number is an error, including changes to SQLite indexes (which entity
 hashes alone do not cover).
 
+Freeze PR CI tests the branch merged with its base as of that run and does not
+rerun when the base moves on. After each push that changes `packages/swift-sdk/`
+on a `v*-dev` branch, **Refresh SwiftData schema freeze PRs** merges that branch
+into every open freeze PR targeting it, using `SCHEMA_RELEASE_TOKEN` so Swift SDK
+CI runs again; PR Hygiene waits for that build. It never force-pushes, so pull
+before pushing your own edits to the draft. A base change landing in the minute
+before you merge can still be missed: check that the PR's latest CI run started
+after it.
+
 Fixtures contain synthetic records created by the release code on an arm64
 simulator in Release configuration. They are not extracted from the device IPA
 and never contain user wallet material.
@@ -285,6 +295,12 @@ and never contain user wallet material.
 - An unsupported development database may require an explicit app-data reset
   by its owner. Export/recover any needed development wallet first. The app does
   not silently erase an unrecognized database to make migrations succeed.
+- A refresh run fails when a freeze PR stays behind its base after three update
+  requests, or when an accepted update does not land within a minute; the error
+  says which. Usual causes are a merge conflict (GitHub then also blocks merging)
+  or an invalid token. Merge the base into the branch, or replace the token,
+  then rerun the workflow on that base branch with `dry_run` cleared. Manual
+  runs default to a dry run that only reports PRs that are behind.
 
 Run the automation tests with:
 
