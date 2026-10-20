@@ -55,6 +55,23 @@ fn should_load_every_corpus_contract_at_protocol_version_14() {
 }
 
 #[test]
+fn should_load_every_mainnet_corpus_contract_at_protocol_version_13() {
+    // Mainnet ran protocol version 13 when the corpus was taken. A testnet contract written
+    // at 14 may use what 13 refuses, so only mainnet's are loaded here
+    let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+    let document_types: usize = contracts()
+        .iter()
+        .filter(|contract| contract.network == Network::Mainnet)
+        .map(|contract| {
+            let loaded = load(contract, platform_version);
+            assert_eq!(loaded.version(), contract.version);
+            loaded.document_types().len()
+        })
+        .sum();
+    assert_eq!(document_types, 106);
+}
+
+#[test]
 fn should_load_every_corpus_contract_at_the_latest_protocol_version() {
     let platform_version = PlatformVersion::latest();
     for contract in contracts() {

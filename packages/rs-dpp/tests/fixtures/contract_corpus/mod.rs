@@ -1,4 +1,4 @@
-//! The data contracts registered on mainnet and testnet, as Drive stores them.
+//! The data contracts registered on mainnet and testnet, as a node serves them.
 //!
 //! See `README.md` beside this file for where they come from. A test that changes how
 //! contracts are parsed, validated, serialized or stored runs over every one of them, so a
@@ -20,7 +20,8 @@ pub struct CorpusContract {
     pub id: String,
     /// The contract version the network held when the corpus was taken.
     pub version: u32,
-    /// The serialized contract, exactly as Drive stores it.
+    /// The serialized contract as a node serves it, serialized again at the node's protocol
+    /// version (see `README.md`).
     pub bytes: Vec<u8>,
 }
 

@@ -48,7 +48,7 @@ getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
 itertools = { version = "0.13" }
-jsonschema = { git = "https://github.com/dashpay/jsonschema-rs", branch = "configure_regexp", default-features = false, features = [
+jsonschema = { git = "https://github.com/dashpay/jsonschema-rs", rev = "aacc1ab5140daac30eb65d376852f01f5381979d", default-features = false, features = [
   "draft202012",
 ], optional = true }
 lazy_static = { version = "1.4" }
