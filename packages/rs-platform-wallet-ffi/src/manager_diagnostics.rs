@@ -21,7 +21,7 @@ use platform_wallet::manager::accessors::{
     AccountTransactionSnapshot, AccountUtxoSnapshot, AddressBanInfoSnapshot,
     CoreWalletStateSnapshot, IdentitySyncConfigSnapshot, IdentityWalletStateSnapshot,
     PlatformAddressProviderStateSnapshot, PlatformAddressSyncConfigSnapshot,
-    TrackedAssetLockSnapshot, WalletIdentityRowSnapshot,
+    TrackedAssetLockSnapshot, WalletIdentityRowSnapshot, WalletUtxoCursor, WalletUtxoRow,
 };
 
 use crate::check_ptr;
@@ -30,6 +30,7 @@ use crate::core_wallet_types::{
     AccountUtxoEntryFFI, AddressBanInfoFFI, AddressInfoFFI, CoreWalletStateFFI,
     IdentitySyncConfigFFI, IdentityWalletStateFFI, PlatformAddressProviderStateFFI,
     PlatformAddressSyncConfigFFI, TrackedAssetLockEntryFFI, WalletIdentityRowFFI,
+    WalletUtxoCursorFFI, WalletUtxoEntryFFI,
 };
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 use crate::handle::{Handle, PLATFORM_WALLET_MANAGER_STORAGE};
@@ -985,8 +986,8 @@ fn account_spec_from_raw_tags(
 /// The resume point a cursor names: its raw account tags validated into an
 /// `AccountType`, and its outpoint. The error is the tag validator's.
 pub(crate) fn wallet_utxo_cursor_from_ffi(
-    cursor: &crate::core_wallet_types::WalletUtxoCursorFFI,
-) -> Result<platform_wallet::manager::accessors::WalletUtxoCursor, String> {
+    cursor: &WalletUtxoCursorFFI,
+) -> Result<WalletUtxoCursor, String> {
     let spec = account_spec_from_raw_tags(
         cursor.type_tag,
         cursor.standard_tag,
@@ -1003,10 +1004,8 @@ pub(crate) fn wallet_utxo_cursor_from_ffi(
 /// The C row for one inventory row. Its `address` and `script_pubkey`
 /// allocations move to the caller and are released by
 /// [`release_wallet_utxo_entry`].
-pub(crate) fn wallet_utxo_entry_ffi(
-    row: platform_wallet::manager::accessors::WalletUtxoRow,
-) -> crate::core_wallet_types::WalletUtxoEntryFFI {
-    use crate::core_wallet_types::{account_type_to_tags, OutPointFFI, WalletUtxoEntryFFI};
+pub(crate) fn wallet_utxo_entry_ffi(row: WalletUtxoRow) -> WalletUtxoEntryFFI {
+    use crate::core_wallet_types::{account_type_to_tags, OutPointFFI};
 
     let tags = account_type_to_tags(&row.account_type);
     let script_len = row.script_pubkey.len();
@@ -1044,9 +1043,7 @@ pub(crate) fn wallet_utxo_entry_ffi(
 ///
 /// # Safety
 /// `entry` must come from [`wallet_utxo_entry_ffi`], released once.
-pub(crate) unsafe fn release_wallet_utxo_entry(
-    entry: &crate::core_wallet_types::WalletUtxoEntryFFI,
-) {
+pub(crate) unsafe fn release_wallet_utxo_entry(entry: &WalletUtxoEntryFFI) {
     if !entry.address.is_null() {
         let _ = CString::from_raw(entry.address);
     }
@@ -1082,7 +1079,6 @@ pub unsafe extern "C" fn platform_wallet_wallet_utxos_page(
     out_count: *mut usize,
     out_has_more: *mut bool,
 ) -> PlatformWalletFFIResult {
-    use crate::core_wallet_types::WalletUtxoEntryFFI;
     use platform_wallet::manager::accessors::{wallet_utxos_page, WalletUtxoCursor};
 
     check_ptr!(wallet_id);
