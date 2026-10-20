@@ -213,13 +213,22 @@ pub async fn replay_recorded_history(
             );
         }
     }
-    // The restored coins the records left out spend: they leave the UTXO set
-    // below and are claimed for those records once the replay is over.
+    // Reserve restored coins and recorded owned inputs absent from the
+    // projection: unsafe stored amounts do not prove the transaction invalid.
     let reserved_coins: HashSet<OutPoint> = set_aside
         .iter()
         .flat_map(|stored| &stored.transaction.input)
         .map(|input| input.previous_output)
         .filter(|outpoint| placed.contains_key(outpoint))
+        .chain(set_aside.iter().flat_map(|stored| {
+            stored.owned_inputs.iter().filter_map(|detail| {
+                stored
+                    .transaction
+                    .input
+                    .get(detail.index as usize)
+                    .map(|input| input.previous_output)
+            })
+        }))
         .collect();
     for account in wallet_info.accounts.all_funding_accounts_mut() {
         account
@@ -295,8 +304,8 @@ pub async fn replay_recorded_history(
         }
     }
     // An unconfirmed record left out stays on record, as stored, in every
-    // account holding a coin it spends or pays: a settled conflict, stored or
-    // still to come, must find it there to sweep it and release its coins.
+    // account owning a recorded input or holding a coin it spends or pays:
+    // a settled conflict must find it there to sweep it and release its coins.
     for stored in &set_aside {
         if stored.context.block_info().is_some() {
             continue;
@@ -313,7 +322,15 @@ pub async fn replay_recorded_history(
             .collect();
         for account in wallet_info.accounts.all_funding_accounts_mut() {
             let owner = funds_account_type(account);
-            if owners.contains(&owner) {
+            let owns_recorded_input = stored.owned_inputs.iter().any(|detail| {
+                stored
+                    .transaction
+                    .input
+                    .get(detail.index as usize)
+                    .is_some()
+                    && account.contains_address(&detail.address)
+            });
+            if owners.contains(&owner) || owns_recorded_input {
                 account
                     .transactions_mut()
                     .entry(stored.txid)
@@ -1976,8 +1993,8 @@ mod tests {
             let account = &restored.accounts.standard_bip44_accounts[&0];
             assert_eq!(
                 account.transactions().contains_key(&unsafe_spend.txid()),
-                !settled && staged.is_none(),
-                "{case}: only an unconfirmed record reserving a restored coin stays on record"
+                !settled,
+                "{case}: an unconfirmed record with owned inputs stays on record"
             );
             assert_eq!(
                 account.utxos.contains_key(&coin),
@@ -2178,6 +2195,83 @@ mod tests {
             "the released coin must be credited when its funding is seen"
         );
         assert_eq!(restored.balance.total(), 20_000);
+    }
+
+    /// Unsafe stored metadata must not erase ownership or spend reservations
+    /// when the store has already removed the funding coins from its projection.
+    #[tokio::test]
+    async fn should_reserve_absent_inputs_of_unsafe_stored_record_until_swept() {
+        let (mut wallet, mut restored, mut records, winner, funding_b, [coin_a, coin_b]) =
+            unsafe_loser_fixture().await;
+        let account = restored
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap();
+        let address = account.utxos[&coin_b].address.clone();
+        account.utxos.clear();
+        let mut loser = records.pop().unwrap();
+        loser.transaction.output[0].value = 25_000;
+        loser.txid = loser.transaction.txid();
+        loser.owned_inputs = vec![InputDetail {
+            index: 1,
+            value: 1 << 63,
+            address,
+        }];
+        let loser_txid = loser.txid;
+        let outcome = replay_recorded_history(
+            &mut restored,
+            &mut wallet,
+            RecordedHistory {
+                transactions: vec![loser],
+                instant_locks: BTreeMap::new(),
+            },
+        )
+        .await;
+        assert_eq!(outcome.replayed, 0);
+        assert!(
+            restored.accounts.standard_bip44_accounts[&0]
+                .transactions()
+                .contains_key(&loser_txid),
+            "the owned-input record must remain available for a later conflict sweep"
+        );
+        let mut reserved = restored.clone();
+        reserved
+            .check_core_transaction(
+                &funding_b,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await;
+        assert!(
+            !reserved.accounts.standard_bip44_accounts[&0]
+                .utxos
+                .contains_key(&coin_b),
+            "funding redelivery must not make an unsafe stored spender's input available"
+        );
+        let settled = restored
+            .check_core_transaction(&winner.transaction, winner.context, &mut wallet, true, true)
+            .await;
+        assert_eq!(settled.swept_transactions, vec![loser_txid]);
+        assert_eq!(settled.released_outpoints, vec![coin_b]);
+        restored
+            .check_core_transaction(
+                &funding_b,
+                TransactionContext::Mempool,
+                &mut wallet,
+                true,
+                true,
+            )
+            .await;
+        let account = &restored.accounts.standard_bip44_accounts[&0];
+        assert!(!account.transactions().contains_key(&loser_txid));
+        assert!(!account.utxos.contains_key(&coin_a));
+        assert!(
+            account.utxos.contains_key(&coin_b),
+            "the input unused by the winner becomes available after its claimant is swept"
+        );
     }
 
     /// Planning must not run one whole-history sweep per settled record that
