@@ -27,7 +27,11 @@ The file name contains the version, so it changes with every release; this downl
 DASHMATE_DEB="$(curl -fsSL https://api.github.com/repos/dashpay/platform/releases/latest \
   | grep -o "https://[^\"]*_$(dpkg --print-architecture)\.deb" \
   | head -n 1)"
-curl -fLO "$DASHMATE_DEB"
+if [ -z "$DASHMATE_DEB" ]; then
+  echo "Could not find a dashmate .deb for this architecture in the latest release" >&2
+else
+  curl -fLO "$DASHMATE_DEB"
+fi
 ```
 
 Install the package that was just downloaded:

@@ -134,6 +134,17 @@ gh run rerun <release-run-id> --repo dashpay/platform --failed
 
 **Prevention:** whenever you add a new publishable npm package, bootstrap it **before** cutting the release that ships it — publish one version with a token so the package exists, then configure its npm trusted publisher (org `dashpay`, repo `platform`, workflow `release.yml`) on the freshly created package. The publisher cannot be configured until the package exists, so the token publish is the required first step, not an optional stopgap. `release.sh` prints this reminder after opening the release PR.
 
+## Rebuilding the dashmate deb of a published release
+
+The dashmate deb's Debian version comes from the tag: `5.1.0-1`, `5.1.0~rc.1-1`, `5.1.0~~dev.1-1` (`packages/dashmate/scripts/deb-version.mjs`). A rebuild from the same tag produces the same version, which apt reports as already installed, so operators never receive it. To ship a rebuilt deb:
+
+1. Set the repository variable `DASHMATE_DEB_REVISION` to the next revision (`2`, then `3`, ...).
+2. Delete the release's old `dashmate_*_amd64.deb` and `dashmate_*_arm64.deb` assets: the new ones get different names, and the install docs and deploy tooling take the first matching asset.
+3. In the release's `release.yml` run, re-run the `Build Dashmate packages (deb, ubuntu-24.04)` job (`gh run rerun --job <job-id> --repo dashpay/platform`), then check that `Release Dashmate packages (deb, ubuntu-24.04)` ran after it and attached debs whose names carry the new revision (`dashmate_5.1.0-2_amd64.deb`); re-run that job too if it did not. The build job needs the run's `js-build-<sha>` artifact, which is kept for 7 days.
+4. Delete `DASHMATE_DEB_REVISION` again, so the next release starts at revision 1.
+
+Never set `DASHMATE_DEB_EPOCH` except to re-release a version that was published under oclif's old `<version>.<git sha>-1` scheme: once a package carries an epoch, every later package needs it too.
+
 ## Post-stable-release: graduate the dev branch
 
 After a **stable** `vX.Y.0` release PR merges into `vX.Y-dev`, promote the branches so `vX.Y-dev` becomes the `X.Y.x` patch line and the next dev line takes over. Only do this for a **stable** release, not prereleases. (Example below is the 4.1.0 run: current dev `v4.1-dev`, next dev `v4.2-dev`. If the next release is a **major** bump, the user says so — e.g. `v5.0-dev`.)
