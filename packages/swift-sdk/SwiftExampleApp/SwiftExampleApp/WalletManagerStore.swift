@@ -112,7 +112,7 @@ final class WalletManagerStore: ObservableObject {
     /// of each network; lookup is O(1).
     private var managers: [Network: PlatformWalletManager] = [:]
 
-    /// SDK handle pointer the cached manager was configured against.
+    /// SDK the cached manager was configured against.
     /// Used in `activate()` to detect a stale cache when `AppState`
     /// rebuilds the SDK (network switch / `platformDAPIAddresses` or
     /// `platformQuorumURL` change in Options). On mismatch we tear
@@ -120,7 +120,11 @@ final class WalletManagerStore: ObservableObject {
     /// otherwise the cached manager keeps using its own Sdk clone
     /// with stale DAPI / quorum endpoints, and proof verification
     /// fails forever ("no available addresses to use").
-    private var managerSdkHandles: [Network: OpaquePointer] = [:]
+    ///
+    /// Held strongly and compared by identity: comparing raw handles
+    /// would let a new SDK allocated at a freed SDK's address pass as
+    /// the cached one.
+    private var managerSdks: [Network: SDK] = [:]
 
     /// SwiftData container shared across every manager. Each
     /// manager's persistence handler narrows its `loadWalletList`
@@ -160,8 +164,7 @@ final class WalletManagerStore: ObservableObject {
         // failing proof verification. Drop it so the rebuild below
         // picks up the fresh SDK.
         if let existing = managers[network] {
-            let cachedHandle = managerSdkHandles[network]
-            if cachedHandle == sdk.handle {
+            if managerSdks[network] === sdk {
                 if makeActive && existing !== activeManager {
                     // Swapping to a different warm manager supersedes any
                     // in-flight SPV start against the outgoing one.
@@ -188,7 +191,7 @@ final class WalletManagerStore: ObservableObject {
             // now-stale cached manager, but it'll be replaced before
             // any caller observes it (this method is synchronous).
             managers[network] = nil
-            managerSdkHandles[network] = nil
+            managerSdks[network] = nil
         }
         let manager = PlatformWalletManager()
         try manager.configure(sdk: sdk, modelContainer: modelContainer)
@@ -210,7 +213,7 @@ final class WalletManagerStore: ObservableObject {
             )
         }
         managers[network] = manager
-        managerSdkHandles[network] = sdk.handle
+        managerSdks[network] = sdk
         if makeActive {
             // A freshly (re)built active manager supersedes any in-flight
             // SPV start against the previous one (defensive backstop; the
