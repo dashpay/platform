@@ -321,10 +321,11 @@ impl IdentityWallet {
     /// holds: the cache keeps its revision, key set and every disable, and
     /// takes only a disable or a raised limit the fetch shows
     /// ([`ManagedIdentity::take_fetched_identity`]). The rows of keys the
-    /// fetch disables are stored with the scalar snapshot; when that store
-    /// fails, the error is returned and those keys keep the disabled state
-    /// they had, so the next refresh stores the disable again
-    /// ([`ManagedIdentity::store_fetched_identity`]).
+    /// fetch disables are stored with the scalar snapshot, and so are key
+    /// rows an earlier refused store queued; when that store fails, the error
+    /// is returned, memory keeps the fold and the rows stay queued for the
+    /// identity's next key store (a refresh, load, discovery or landed
+    /// update; [`ManagedIdentity::store_fetched_identity`]).
     ///
     /// Returns the identity the cache holds afterwards.
     ///
@@ -705,11 +706,11 @@ mod tests {
         }
     }
 
-    /// A load whose store fails returns the failure and leaves the keys the
-    /// answer disables as they were in memory, so a refresh finds the
-    /// disable again and stores its row; the rest of the fold stays.
+    /// A load whose store fails returns the failure and queues its key rows,
+    /// and a refresh, which stores no rows of its own
+    /// for keys memory already holds, stores them.
     #[tokio::test]
-    async fn should_leave_a_load_s_disable_for_a_refresh_when_its_store_fails() {
+    async fn should_store_a_failed_load_s_key_rows_with_the_next_refresh() {
         let master = ExtendedPrivKey::new_master(Network::Testnet, &[7; 64]).unwrap();
         let probe = derive_load_probe_hash(
             ResolvedLoadKeyHashSource::Master(&master),
@@ -742,22 +743,26 @@ mod tests {
             "{result:?}"
         );
         let after = held(wallet).await;
-        assert_eq!(after.public_keys()[&2].disabled_at(), None);
+        assert_eq!(after.public_keys()[&2].disabled_at(), Some(4));
         assert_eq!(after.revision(), 7);
         assert!(after.public_keys().contains_key(&4));
 
         store.disarm();
+        store.taken().clear();
         wallet
             .refresh_identity(&Identifier::default())
             .await
             .unwrap();
-        assert_eq!(held(wallet).await.public_keys()[&2].disabled_at(), Some(4));
+        let stored = |key_id| store.taken().stored_key(Identifier::default(), key_id);
         assert_eq!(
-            store
-                .taken()
-                .stored_key(Identifier::default(), 2)
-                .map(|row| row.public_key.disabled_at()),
+            stored(2).map(|row| row.public_key.disabled_at()),
             Some(Some(4))
+        );
+        let key_4 = stored(4).expect("the new key's row is stored");
+        assert_eq!(key_4.public_key, held(wallet).await.public_keys()[&4]);
+        assert_eq!(
+            store.taken().stored_revision(Identifier::default()),
+            Some(7)
         );
     }
 
@@ -796,11 +801,10 @@ mod tests {
 
     /// A disable a refresh brings, from an answer older or newer than the
     /// cache, is stored with its key row. A store that refuses it fails the
-    /// refresh and leaves those keys as they were in memory, so the next
-    /// refresh finds the disable again instead of holding one in memory the
-    /// store lacks.
+    /// refresh and queues the row, which the next refresh stores although
+    /// memory already holds the disable.
     #[tokio::test]
-    async fn should_store_a_refresh_s_disable_or_leave_the_cache_as_it_was() {
+    async fn should_store_a_refresh_s_disable_or_queue_it_for_the_next_store() {
         let identity_id = Identifier::default();
         for revision in [5, 7] {
             let mut answer = answer_at(revision);
@@ -832,12 +836,12 @@ mod tests {
                 matches!(result, Err(PlatformWalletError::PersisterStore(_))),
                 "answered at {revision}: {result:?}"
             );
-            // Key 2 is live as it was; the rest of the fold stays: the
-            // revision, and the answer's balance (the cache holds no
-            // watermark), queued for the next store.
+            // Memory holds the fold: the disables, the revision, and the
+            // answer's balance (the cache holds no watermark), queued for
+            // the next store with the refused rows.
             let after = held(wallet).await;
-            assert_eq!(after.public_keys()[&2].disabled_at(), None);
-            assert_eq!(after.public_keys()[&1].disabled_at(), Some(9));
+            assert_eq!(after.public_keys()[&2].disabled_at(), Some(4));
+            assert_eq!(after.public_keys()[&1].disabled_at(), Some(3));
             assert_eq!(after.revision(), revision.max(6), "answered at {revision}");
             assert_eq!(after.balance(), 777);
             store.disarm();

@@ -296,9 +296,9 @@ impl IdentityWallet {
         // A cache refreshed to the transition or past it already holds
         // this update's keys as Platform has them (on-chain `disabled_at`
         // included) and whatever later updates did to them: applying the
-        // payload would take those back. A refresh persists no keys,
-        // though, so the touched keys are stored here from the cache's own
-        // copies, with the breadcrumbs the path below would give them: an
+        // payload would take those back. A refresh stores no rows for
+        // added keys, though, so the touched keys are stored here from the
+        // cache's own copies, with the breadcrumbs the path below would give them: an
         // added key the caller's, a disabled key the wallet slot's, as
         // `disable_keys` builds it.
         // A key the update both adds and disables is taken as added, on
@@ -355,9 +355,9 @@ impl IdentityWallet {
         // store as one changeset, which holds the revision even when no key
         // row matched. Disabled keys get the wallet slot's breadcrumb and a
         // local wall-clock `disabled_at` placeholder: a later fetch brings
-        // the on-chain block time into memory, and a load or discovery of
-        // the identity into the store. Memory holds the whole update even
-        // when the store fails.
+        // the on-chain block time into memory and the store. Memory holds
+        // the whole update even when the store fails, and the rows stay
+        // queued for the identity's next key store.
         let added = added_keys
             .into_iter()
             .map(|key| {
@@ -465,8 +465,8 @@ fn update_revision(
 
 /// The error for a landed update the wallet could not store. The update is
 /// on Platform and in the cache either way, so the caller must not resubmit
-/// it. A load or discovery of the identity stores its key rows again; a
-/// refresh stores only its scalar snapshot.
+/// it. Its key rows stay queued, and the identity's next key store (a
+/// refresh, load, discovery or another landed update) carries them.
 fn landed_but_not_stored(e: PersistenceError) -> PlatformWalletError {
     PlatformWalletError::Persistence(format!(
         "identity update landed on Platform and is in the wallet's cache, but the wallet could not \

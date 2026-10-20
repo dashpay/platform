@@ -100,19 +100,21 @@ impl ManagedIdentity {
         }
     }
 
-    /// Store `keys_cs` with the identity's scalar snapshot (status, revision
-    /// and any queued balance) as one changeset. The store's failure is
-    /// returned. A store that commits inline has committed the queued
-    /// balance, which is then cleared; a buffered one keeps it queued, so it
-    /// rides later snapshots until a balance write flushes it (see
-    /// `retry_pending_balance`), and no flush runs here.
+    /// Store `keys_cs`, the key rows an earlier refused store queued, and the
+    /// identity's scalar snapshot (status, revision and any queued balance)
+    /// as one changeset (see `store_with_queued_key_rows`). The store's
+    /// failure is returned, and its key rows are queued for the next one. A store that
+    /// commits inline has committed the queued balance, which is then
+    /// cleared; a buffered one keeps it queued, so it rides later snapshots
+    /// until a balance write flushes it (see `retry_pending_balance`), and no
+    /// flush runs here.
     pub(crate) fn store_keys_and_balance(
         &mut self,
         keys_cs: IdentityKeysChangeSet,
         persister: &WalletPersister,
     ) -> Result<(), PlatformWalletError> {
         let (balance, block_time) = self.balance_snapshot_for_persistence();
-        self.store_with_snapshot(keys_cs, persister)
+        self.store_with_queued_key_rows(keys_cs, persister)
             .map_err(|e| persister.classify_store_failure(e))?;
         if self.pending_balance_snapshot.is_some() && persister.store_commits_inline() {
             self.identity.set_balance(balance);
