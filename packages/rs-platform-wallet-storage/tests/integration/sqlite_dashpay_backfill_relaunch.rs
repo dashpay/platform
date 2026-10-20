@@ -164,15 +164,20 @@ fn stored_cursor(persister: &SqlitePersister, wallet_id: &WalletId) -> Option<u3
         .flatten()
 }
 
-fn stored_records(persister: &SqlitePersister, wallet_id: &WalletId) -> i64 {
+/// Receiving accounts the stored record covers, counted only when its extent
+/// is on file beside them — what the loader needs to restore a record.
+fn stored_covered_accounts(persister: &SqlitePersister, wallet_id: &WalletId) -> i64 {
     persister
         .lock_conn_for_test()
         .query_row(
-            "SELECT COUNT(*) FROM dashpay_backfill WHERE wallet_id = ?1",
+            "SELECT COUNT(*) FROM account_registrations AS a \
+             JOIN core_sync_state AS s ON s.wallet_id = a.wallet_id \
+             WHERE a.wallet_id = ?1 AND a.dashpay_covered_from IS NOT NULL \
+               AND s.dashpay_backfill_floor IS NOT NULL",
             params![wallet_id.as_slice()],
             |row| row.get(0),
         )
-        .expect("count dashpay_backfill")
+        .expect("count covered receiving accounts")
 }
 
 /// Advance the scan the way the SPV engine does — the wallet manager's
@@ -265,7 +270,7 @@ async fn synced_height(wallet: &PlatformWallet) -> u32 {
 /// record and the lowered cursor reach the file; the scan climbs part-way;
 /// the process dies. The next process restores the cursor inside the climb
 /// and must resume from it rather than rewind again. Then the control: the
-/// same file with its `dashpay_backfill` row deleted rewinds again, so it is
+/// same file with its backfill record cleared rewinds again, so it is
 /// the persisted record — not anything else the file restores — that stops
 /// the second rewind.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -323,7 +328,7 @@ async fn should_resume_the_backfill_from_the_persisted_cursor_after_a_sqlite_rel
         Some(REQUEST_HEIGHT),
         "the rewind must overwrite the stored cursor (synced_height_is_rewind)"
     );
-    assert_eq!(stored_records(&persister, &wallet_id), 1);
+    assert_eq!(stored_covered_accounts(&persister, &wallet_id), 1);
     {
         let mut state = persister.load().expect("load");
         let record = state
@@ -389,13 +394,24 @@ async fn should_resume_the_backfill_from_the_persisted_cursor_after_a_sqlite_rel
     // ── Control: the same file without its record rewinds again. ──
     {
         let conn = Connection::open(&path).expect("open the closed file");
-        let deleted = conn
+        let cleared = conn
             .execute(
-                "DELETE FROM dashpay_backfill WHERE wallet_id = ?1",
+                "UPDATE account_registrations SET dashpay_covered_from = NULL \
+                 WHERE wallet_id = ?1 AND dashpay_covered_from IS NOT NULL",
                 params![wallet_id.as_slice()],
             )
-            .expect("delete the record row");
-        assert_eq!(deleted, 1, "the record row must have been on file");
+            .expect("clear the covered accounts");
+        assert_eq!(
+            cleared, 1,
+            "the record's covered account must have been on file"
+        );
+        conn.execute(
+            "UPDATE core_sync_state \
+             SET dashpay_backfill_floor = NULL, dashpay_backfill_rewound_from = NULL \
+             WHERE wallet_id = ?1",
+            params![wallet_id.as_slice()],
+        )
+        .expect("clear the record's extent");
     }
     let persister = open(&path);
     let manager = relaunch(&persister).await;
