@@ -18,7 +18,7 @@ use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::D
 use crate::version::drive_abci_versions::drive_abci_method_versions::v11::DRIVE_ABCI_METHOD_VERSIONS_V11;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v2::DRIVE_ABCI_QUERY_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIVE_ABCI_STRUCTURE_VERSIONS_V2;
-use crate::version::drive_abci_versions::drive_abci_validation_versions::v10::DRIVE_ABCI_VALIDATION_VERSIONS_V10;
+use crate::version::drive_abci_versions::drive_abci_validation_versions::v11::DRIVE_ABCI_VALIDATION_VERSIONS_V11;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v3::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v9::DRIVE_VERSION_V9;
@@ -59,13 +59,25 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///    v14 and earlier
 ///    keep `verify_chain_lock_locally` 0 and `verify_chain_lock_through_core` 0,
 ///    so the blocks committed under them replay with the same verdicts.
+///
+/// 2. **Proofs of possession of the keys an identity update adds**: the
+///    identity's signature over an identity update does not cover the
+///    signatures of the keys it adds. The identity update
+///    `advanced_structure` 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuses,
+///    without a fee and without using the identity's nonce, an update whose
+///    added key's proof of possession does not verify (a key whose public key
+///    data does not decode fails it too), where 0 charged it; a revision
+///    mismatch is still charged. Protocol v14 and
+///    earlier keep `advanced_structure` 0, so the blocks committed under them
+///    replay with the same results. check_tx verifies these proofs at every
+///    protocol version, which decides mempool admission only.
 pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_15,
     drive: DRIVE_VERSION_V9,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10,
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
