@@ -126,7 +126,7 @@ impl ContextProvider for SpvQuorumSource {
                 quorum_hash,
                 core_chain_locked_height,
             ))?
-            .map_err(|e| ContextProviderError::InvalidQuorum(e.to_string()));
+            .map_err(|e| e.quorum_lookup_context_error());
 
         // The quorum public key is the trust root of every Platform proof this
         // SDK verifies; tracing which provider served it lets an operator
@@ -183,3 +183,4 @@ impl ContextProvider for SpvQuorumSource {
         Ok(None)
     }
 }
+

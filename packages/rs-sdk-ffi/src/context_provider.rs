@@ -136,16 +136,22 @@ impl SpvSourceController {
         });
     }
 
+    /// An inactive or unready source is reported as
+    /// [`ContextProviderError::QuorumSourceUnavailable`]: it is this side's
+    /// state, so the SDK must not ban the node whose proof could not be
+    /// checked.
     fn source(&self) -> Result<Arc<SpvContextSource>, ContextProviderError> {
         self.source.load_full().ok_or_else(|| {
-            ContextProviderError::Generic("SPV context source is not active".to_string())
+            ContextProviderError::QuorumSourceUnavailable(
+                "SPV context source is not active".to_string(),
+            )
         })
     }
 
     fn ready_source(&self) -> Result<Arc<SpvContextSource>, ContextProviderError> {
         let source = self.source()?;
         if !(source.is_ready)()? {
-            return Err(ContextProviderError::Generic(
+            return Err(ContextProviderError::QuorumSourceUnavailable(
                 "SPV context source is not ready".to_string(),
             ));
         }
@@ -767,5 +773,36 @@ mod tests {
                 .map(|contract| contract.id()),
             Some(id)
         );
+    }
+
+    /// Strict SPV fails closed while the SPV source is inactive or still
+    /// syncing. That is the local source's state, not the responding node's
+    /// fault, so the error must be `QuorumSourceUnavailable`: the SDK bans
+    /// nodes for any other quorum-key failure.
+    #[test]
+    fn reports_an_unavailable_spv_source_without_blaming_the_node() {
+        let auxiliary = Arc::new(AuxiliaryContextProvider::new(provider("auxiliary", 0x11)));
+        let controller = Arc::new(SpvSourceController::default());
+        let fixed = SpvContextProvider::new(Arc::clone(&controller), auxiliary, Network::Testnet);
+        let (adaptive, adaptive_controller) = adaptive(provider("trusted", 0x11), Network::Testnet);
+        adaptive.set_mode(ContextProviderMode::Spv);
+
+        let unavailable = |result: Result<[u8; 48], ContextProviderError>| {
+            matches!(
+                result,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            )
+        };
+        assert!(unavailable(fixed.get_quorum_public_key(1, [2; 32], 3)));
+        assert!(unavailable(quorum_key(&adaptive)));
+
+        let _lease = controller
+            .acquire(provider("spv", 0x22), Arc::new(|| Ok(false)))
+            .unwrap();
+        let _adaptive_lease = adaptive_controller
+            .acquire(provider("spv", 0x22), Arc::new(|| Ok(false)))
+            .unwrap();
+        assert!(unavailable(fixed.get_quorum_public_key(1, [2; 32], 3)));
+        assert!(unavailable(quorum_key(&adaptive)));
     }
 }
