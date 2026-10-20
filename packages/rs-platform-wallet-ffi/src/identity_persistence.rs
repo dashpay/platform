@@ -261,8 +261,9 @@ pub struct IdentityKeyEntryFFI {
     // mnemonic at the DIP-9 identity authentication path
     // `m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'` and
     // persist it locally. When either flag is false the entry gives no
-    // breadcrumb: `derivation_rejected` then says whether the client clears
-    // the one it holds (settled as not derived) or keeps it (unknown).
+    // breadcrumb: `derivation_rejected_is_some` then says whether the client
+    // clears the one it holds when it names the rejected coordinates, or
+    // keeps it (unknown origin).
     pub wallet_id_is_some: bool,
     pub wallet_id: [u8; 32],
     pub derivation_indices_is_some: bool,
@@ -315,12 +316,16 @@ pub struct IdentityKeyEntryFFI {
     pub expires_at_is_some: bool,
     pub expires_at: u64,
 
-    /// With `derivation_indices_is_some` false: `true` when Rust settled the
-    /// key as not derived from the wallet (its derivation candidate did not
-    /// reproduce it, or the caller declared it external), so the client
-    /// clears a derivation path it holds for the key; `false` when the
-    /// key's origin is unknown here, so the client keeps the path it holds.
-    pub derivation_rejected: bool,
+    /// With `derivation_indices_is_some` false and this flag true, the
+    /// `(rejected_identity_index, rejected_key_index)` coordinates the key
+    /// was checked at and found not to come from (its candidate there did not
+    /// reproduce it, or the caller declared the key external): the client
+    /// clears a derivation path it holds for the key only when it names
+    /// exactly these coordinates. With the flag false the key's origin is
+    /// unknown here, and the client keeps the path it holds.
+    pub derivation_rejected_is_some: bool,
+    pub rejected_identity_index: u32,
+    pub rejected_key_index: u32,
 }
 
 /// Composite identifier for [`IdentityKeysChangeSet::removed`] entries
@@ -373,11 +378,14 @@ pub struct IdentityKeyRemovalFFI {
 //   200       expires_at_is_some      bool
 //   201..=207 (padding to 8)
 //   208..=215 expires_at              u64
-//   216       derivation_rejected     bool
-//   217..=223 (padding to 8)
+//   216       derivation_rejected_is_some bool
+//   217..=219 (padding to 4)
+//   220..=223 rejected_identity_index u32
+//   224..=227 rejected_key_index      u32
+//   228..=231 (padding to 8)
 //
-// Total size = 224, alignment = 8 (from u64 / pointer).
-const _: [u8; 224] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
+// Total size = 232, alignment = 8 (from u64 / pointer).
+const _: [u8; 232] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 
 // Compile-time guard for `IdentityEntryFFI`. Same rationale as the
@@ -717,6 +725,13 @@ impl IdentityKeyEntryFFI {
             Some(idx) => (true, idx.identity_index, idx.key_index),
             None => (false, 0, 0),
         };
+        let (derivation_rejected_is_some, rejected_identity_index, rejected_key_index) = match entry
+            .derivation_rejected
+            .filter(|_| entry.derivation_indices.is_none())
+        {
+            Some(idx) => (true, idx.identity_index, idx.key_index),
+            None => (false, 0, 0),
+        };
 
         // Project the DPP `ContractBounds` enum into the kind /
         // id / doc-type-cstring trio so the Swift side can switch
@@ -767,7 +782,9 @@ impl IdentityKeyEntryFFI {
             total_budget,
             expires_at_is_some,
             expires_at,
-            derivation_rejected: entry.derivation_indices.is_none() && entry.derivation_rejected,
+            derivation_rejected_is_some,
+            rejected_identity_index,
+            rejected_key_index,
         }
     }
 }
@@ -1232,7 +1249,7 @@ mod tests {
                 identity_index: 3,
                 key_index: 5,
             }),
-            derivation_rejected: false,
+            derivation_rejected: None,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.identity_id, [2u8; 32]);
@@ -1275,23 +1292,33 @@ mod tests {
             public_key_hash: [0x00; 20],
             wallet_id: None,
             derivation_indices: None,
-            derivation_rejected: false,
+            derivation_rejected: None,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert!(!ffi.wallet_id_is_some);
         assert!(!ffi.derivation_indices_is_some);
         assert!(
-            !ffi.derivation_rejected,
+            !ffi.derivation_rejected_is_some,
             "an unknown origin keeps a stored path"
         );
         let settled = IdentityKeyEntry {
-            derivation_rejected: true,
+            derivation_rejected: Some(IdentityKeyDerivationIndices {
+                identity_index: 2,
+                key_index: 5,
+            }),
             ..entry.clone()
         };
         let mut settled_ffi = IdentityKeyEntryFFI::from_entry(&settled);
         assert!(
-            settled_ffi.derivation_rejected,
-            "a settled origin clears it"
+            settled_ffi.derivation_rejected_is_some,
+            "a refuted path is cleared"
+        );
+        assert_eq!(
+            (
+                settled_ffi.rejected_identity_index,
+                settled_ffi.rejected_key_index
+            ),
+            (2, 5)
         );
         unsafe { free_identity_key_entry_ffi(&mut settled_ffi) };
         assert!(ffi.read_only);
@@ -1325,7 +1352,7 @@ mod tests {
             public_key_hash: [0x11; 20],
             wallet_id: None,
             derivation_indices: None,
-            derivation_rejected: false,
+            derivation_rejected: None,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.contract_bounds_kind, 3);
@@ -1355,7 +1382,7 @@ mod tests {
             public_key_hash: [0x11; 20],
             wallet_id: None,
             derivation_indices: None,
-            derivation_rejected: false,
+            derivation_rejected: None,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.contract_bounds_kind, 1);
@@ -1388,7 +1415,7 @@ mod tests {
             public_key_hash: [0x22; 20],
             wallet_id: None,
             derivation_indices: None,
-            derivation_rejected: false,
+            derivation_rejected: None,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.contract_bounds_kind, 2);

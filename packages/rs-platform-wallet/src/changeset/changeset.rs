@@ -1026,12 +1026,13 @@ pub struct KeyWithBreadcrumb {
     /// Derivation coordinates for re-derivable keys; `None` gives none, its
     /// meaning set by `derivation_rejected`.
     pub breadcrumb: Option<KeyDerivationBreadcrumb>,
-    /// With no `breadcrumb`: whether the key's origin was settled as not
-    /// derived from the wallet (a derivation candidate was checked against
-    /// it and did not reproduce it, or the caller declared it external), so
-    /// a stored breadcrumb is cleared, rather than unknown, which keeps one.
-    /// See [`IdentityKeyEntry::derivation_rejected`].
-    pub derivation_rejected: bool,
+    /// With no `breadcrumb`: the derivation coordinates this key was
+    /// checked at and found not to come from (a candidate derived there did
+    /// not reproduce it, or the caller declared the key external), so a
+    /// stored breadcrumb naming exactly these coordinates is cleared; any
+    /// other stored breadcrumb, and every one when `None` (the origin is
+    /// unknown), is kept. See [`IdentityKeyEntry::derivation_rejected`].
+    pub derivation_rejected: Option<IdentityKeyDerivationIndices>,
 }
 
 /// A single identity-key entry in an [`IdentityKeysChangeSet`].
@@ -1064,43 +1065,47 @@ pub struct IdentityKeyEntry {
     /// `derivation_rejected`.
     pub derivation_indices: Option<IdentityKeyDerivationIndices>,
     /// With no `derivation_indices`, what the entry knows about the key's
-    /// origin. `false`: unknown here (a refresh, a limits update, a disable),
-    /// so a persister keeps the breadcrumb a row already holds. `true`: the
-    /// key was settled as not derived from the wallet (a load or discovery
-    /// checked its derivation candidate and it did not reproduce the key, or
-    /// the caller of an update declared it external), so a persister clears
-    /// a stored breadcrumb, which can only be a stale inferred one. Ignored
-    /// with `derivation_indices`.
+    /// origin. `None`: unknown here (a refresh, a limits update, a disable),
+    /// so a persister keeps the breadcrumb a row already holds. `Some`: the
+    /// coordinates the key was checked at and found not to come from (a load
+    /// or discovery derived a candidate there and it did not reproduce the
+    /// key, or the caller of an update declared the key external), so a
+    /// persister clears a stored breadcrumb naming exactly these coordinates,
+    /// a stale inferred one, and keeps any other: only the derivation that
+    /// was checked is refuted. Ignored with `derivation_indices`.
     #[cfg_attr(feature = "serde", serde(default))]
-    pub derivation_rejected: bool,
+    pub derivation_rejected: Option<IdentityKeyDerivationIndices>,
 }
 
 impl IdentityKeyEntry {
-    /// When this entry leaves the key's origin unknown, take what `earlier`
-    /// (an earlier row for the same key) settled about it: its breadcrumb,
-    /// as every persister keeps a stored one, or its rejection, so a later
-    /// unknown-origin write (a disable, a limits update) does not let a
-    /// persister keep a stale inferred breadcrumb the rejection cleared. A
-    /// key's origin belongs to one public key, so `earlier` must carry the
-    /// same public key, and a breadcrumb the same scope.
+    /// When this entry gives no breadcrumb, take what `earlier` (an earlier
+    /// row for the same key) settled about the key's origin: its breadcrumb,
+    /// as every persister keeps a stored one, unless this entry's own
+    /// rejection names those coordinates; or, when this entry's origin is
+    /// unknown, its rejection, so a later unknown-origin write (a disable, a
+    /// limits update) does not let a persister keep a stale inferred
+    /// breadcrumb the rejection cleared. A key's origin belongs to one public
+    /// key, so `earlier` must carry the same public key, and a breadcrumb the
+    /// same scope.
     pub fn inherit_origin(&mut self, earlier: &IdentityKeyEntry) {
-        let unknown = self.derivation_indices.is_none() && !self.derivation_rejected;
         let same_key = earlier.public_key_hash == self.public_key_hash
             && earlier.public_key.data() == self.public_key.data();
-        if !unknown || !same_key {
+        if self.derivation_indices.is_some() || !same_key {
             return;
         }
-        if earlier.derivation_indices.is_some() {
+        if let Some(indices) = earlier.derivation_indices {
             let same_scope = self
                 .wallet_id
                 .zip(earlier.wallet_id)
                 .is_none_or(|(own, other)| own == other);
-            if same_scope {
+            // This entry's own rejection refutes exactly those coordinates.
+            if same_scope && self.derivation_rejected != Some(indices) {
                 self.wallet_id = earlier.wallet_id;
-                self.derivation_indices = earlier.derivation_indices;
+                self.derivation_indices = Some(indices);
+                self.derivation_rejected = None;
             }
-        } else if earlier.derivation_rejected {
-            self.derivation_rejected = true;
+        } else if self.derivation_rejected.is_none() {
+            self.derivation_rejected = earlier.derivation_rejected;
         }
     }
 }
@@ -2608,7 +2613,7 @@ mod tests {
                 identity_index: 0,
                 key_index,
             }),
-            derivation_rejected: false,
+            derivation_rejected: None,
         };
         let changeset = |entry: IdentityKeyEntry| {
             let mut cs = IdentityKeysChangeSet::default();
@@ -2623,9 +2628,21 @@ mod tests {
         merged.merge(changeset(entry(Some(8), Some(4))));
         assert_eq!(merged.upserts[&(id, 3)], entry(Some(8), Some(4)));
 
-        // An entry that settles the key as not derived clears it.
+        // A rejection of other coordinates does not refute the breadcrumb.
+        let mut elsewhere = entry(Some(9), None);
+        elsewhere.derivation_rejected = Some(IdentityKeyDerivationIndices {
+            identity_index: 0,
+            key_index: 3,
+        });
+        merged.merge(changeset(elsewhere));
+        assert_eq!(merged.upserts[&(id, 3)], entry(Some(9), Some(4)));
+
+        // A rejection of exactly its coordinates clears it.
         let mut rejected = entry(Some(9), None);
-        rejected.derivation_rejected = true;
+        rejected.derivation_rejected = Some(IdentityKeyDerivationIndices {
+            identity_index: 0,
+            key_index: 4,
+        });
         merged.merge(changeset(rejected.clone()));
         assert_eq!(merged.upserts[&(id, 3)], rejected);
 
@@ -2633,7 +2650,7 @@ mod tests {
         let later = entry(Some(10), None);
         merged.merge(changeset(later.clone()));
         let mut kept = later;
-        kept.derivation_rejected = true;
+        kept.derivation_rejected = rejected.derivation_rejected;
         assert_eq!(merged.upserts[&(id, 3)], kept);
 
         // A breadcrumb belongs to one public key: another key under the same

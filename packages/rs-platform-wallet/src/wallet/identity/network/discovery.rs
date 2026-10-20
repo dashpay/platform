@@ -74,19 +74,24 @@ fn breadcrumb_decisions(
         .public_keys()
         .iter()
         .map(|(key_id, on_chain_key)| {
-            let candidate = candidate_scalars.get(key_id);
-            let reproduces = candidate
-                .map(|scalar| {
-                    on_chain_key
-                        .validate_private_key_bytes(scalar, network)
-                        .unwrap_or(false)
-                })
-                .unwrap_or(false);
-            // A candidate that does not reproduce the key settles it as not
-            // derived from this wallet, which clears a stale breadcrumb a
-            // client may hold for it; with no candidate (derivation failed)
-            // its origin stays unknown.
-            let derivation_rejected = candidate.is_some() && !reproduces;
+            // `None` when there is no candidate (its derivation failed) or
+            // the check itself failed: the origin stays unknown.
+            let checked = candidate_scalars.get(key_id).and_then(|scalar| {
+                on_chain_key
+                    .validate_private_key_bytes(scalar, network)
+                    .ok()
+            });
+            let reproduces = checked == Some(true);
+            // A candidate that does not reproduce the key refutes exactly the
+            // coordinates it was derived at, `(identity_index, key_id)`, which
+            // clears a stale breadcrumb a client holds there; a breadcrumb
+            // stored at other coordinates is kept.
+            let derivation_rejected = (checked == Some(false)).then_some(
+                crate::changeset::IdentityKeyDerivationIndices {
+                    identity_index,
+                    key_index: *key_id,
+                },
+            );
             let breadcrumb = if reproduces {
                 // The candidate scalar reproduced the on-chain key, so this
                 // wallet owns it: emit the DIP-9 coordinates. The scalar is
@@ -966,10 +971,14 @@ mod tests {
             "reproducible key breadcrumbed"
         );
         assert_eq!(by_id[&1].breadcrumb, None, "foreign key left watch-only");
-        assert!(!by_id[&0].derivation_rejected);
-        assert!(
+        assert_eq!(by_id[&0].derivation_rejected, None);
+        assert_eq!(
             by_id[&1].derivation_rejected,
-            "a checked candidate that does not reproduce the key settles it as not derived"
+            Some(crate::changeset::IdentityKeyDerivationIndices {
+                identity_index: 0,
+                key_index: 1,
+            }),
+            "a checked candidate that does not reproduce the key refutes its coordinates"
         );
 
         // With no candidate for a key (its derivation failed), its origin
@@ -978,7 +987,7 @@ mod tests {
         let decisions = breadcrumb_decisions(&identity, 0, wallet_id, Network::Testnet, &scalars);
         let unchecked = decisions.iter().find(|d| d.key.id() == 1).unwrap();
         assert_eq!(unchecked.breadcrumb, None);
-        assert!(!unchecked.derivation_rejected);
+        assert_eq!(unchecked.derivation_rejected, None);
     }
 
     /// An on-chain key typed `ECDSA_HASH160` (data = the 20-byte hash of

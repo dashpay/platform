@@ -68,7 +68,7 @@ impl IdentityKeyWire {
             public_key_hash: self.public_key_hash,
             wallet_id: self.wallet_id,
             derivation_indices: self.derivation_indices,
-            derivation_rejected: false,
+            derivation_rejected: None,
         })
     }
 }
@@ -208,8 +208,8 @@ pub fn apply(
         // origin unknown keeps the one the row already holds under this
         // scope, as the Swift and Kotlin persisters do: an upsert that only
         // knows the key's new state (a raised limit, a disable, a refresh)
-        // must not turn a wallet-derived key watch-only. One that settled the
-        // key as not derived (`derivation_rejected`) clears it.
+        // must not turn a wallet-derived key watch-only. One that refutes the
+        // coordinates the row holds (`derivation_rejected`) clears them.
         let mut stored = tx.prepare_cached(
             "SELECT length(public_key_blob), public_key_blob, public_key_hash \
              FROM identity_keys \
@@ -227,9 +227,9 @@ pub fn apply(
                 }
             }
             let mut wire = IdentityKeyWire::from_entry(entry)?;
-            // An entry that settled the key as not derived clears the row's
-            // breadcrumb; one that leaves its origin unknown keeps it.
-            if wire.derivation_indices.is_none() && !entry.derivation_rejected {
+            // An entry without a breadcrumb keeps the row's, unless it refutes
+            // exactly the coordinates the row holds (`derivation_rejected`).
+            if wire.derivation_indices.is_none() {
                 let held: Option<(i64, Vec<u8>, Vec<u8>)> = stored
                     .query_row(
                         params![identity_id.as_slice(), i64::from(*key_id), wallet_id_param],
@@ -247,8 +247,9 @@ pub fn apply(
                         },
                     )
                     .optional()?;
-                if let Some((wallet_id_kept, derivation_indices)) =
-                    held.and_then(|held| held_breadcrumb(held, entry, wallet_id))
+                if let Some((wallet_id_kept, derivation_indices)) = held
+                    .and_then(|held| held_breadcrumb(held, entry, wallet_id))
+                    .filter(|(_, held)| entry.derivation_rejected != Some(*held))
                 {
                     wire.wallet_id = wallet_id_kept;
                     wire.derivation_indices = Some(derivation_indices);
@@ -706,7 +707,7 @@ mod tests {
                 identity_index: 1,
                 key_index: 2,
             }),
-            derivation_rejected: false,
+            derivation_rejected: None,
         };
 
         let wire = IdentityKeyWire::from_entry(&entry).expect("encode wire");

@@ -903,7 +903,7 @@ mod tests {
             public_key_hash: [byte; 20],
             wallet_id: None,
             derivation_indices: None,
-            derivation_rejected: false,
+            derivation_rejected: None,
         };
         let mut keys = IdentityKeysChangeSet::default();
         keys.upserts
@@ -1112,7 +1112,7 @@ mod tests {
             public_key_hash: [byte; 20],
             wallet_id: None,
             derivation_indices: None,
-            derivation_rejected: false,
+            derivation_rejected: None,
         }
     }
 

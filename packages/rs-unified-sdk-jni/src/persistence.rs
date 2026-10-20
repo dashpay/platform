@@ -1538,12 +1538,12 @@ unsafe extern "C" fn tramp_persist_identity_keys(
 
 /// `onPersistIdentityKeyUpsert`'s JNI descriptor. The trailing `ZJZJ` before
 /// the final `Z` is the key usage limits pair (`hasTotalBudget`,
-/// `totalBudget`, `hasExpiresAt`, `expiresAt`); the final `Z` is
-/// `derivationRejected`. Bound at the `call_method` site and in
+/// `totalBudget`, `hasExpiresAt`, `expiresAt`); the final `ZII` is
+/// `derivationRejected`, `rejectedIdentityIndex`, `rejectedKeyIndex`. Bound at the `call_method` site and in
 /// [`BRIDGE_METHOD_TABLE`] so the two cannot drift: the smoke test resolves
 /// the table up front, while the call site only resolves when a key is
 /// first persisted.
-const IDENTITY_KEY_UPSERT_DESCRIPTOR: &str = "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJZ)I";
+const IDENTITY_KEY_UPSERT_DESCRIPTOR: &str = "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJZII)I";
 
 unsafe fn persist_identity_key_upsert(
     env: &mut JNIEnv,
@@ -1585,7 +1585,9 @@ unsafe fn persist_identity_key_upsert(
             JValue::Long(e.total_budget as i64),
             JValue::Bool(e.expires_at_is_some as u8),
             JValue::Long(e.expires_at as i64),
-            JValue::Bool(e.derivation_rejected as u8),
+            JValue::Bool(e.derivation_rejected_is_some as u8),
+            JValue::Int(e.rejected_identity_index as i32),
+            JValue::Int(e.rejected_key_index as i32),
         ],
     )?
     .i()

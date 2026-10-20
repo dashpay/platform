@@ -4157,6 +4157,13 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     parent.addPublicKey(row)
                 }
             }
+            // Another public key under this key id: the row's derivation
+            // path and private-key linkage belonged to the old key and must
+            // not pass to this one.
+            if row.publicKeyData != entry.publicKeyData {
+                row.identityDerivationPath = nil
+                row.privateKeyKeychainIdentifier = nil
+            }
             // Refresh mutable fields every upsert.
             row.publicKeyData = entry.publicKeyData
             row.readOnly = entry.readOnly
@@ -4209,13 +4216,19 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 if let path = identityAuthPath(walletId: resolvedWalletId, indices: indices) {
                     row.identityDerivationPath = path
                 }
-            } else if entry.derivationRejected {
-                // Rust settled the key as not derived from the wallet (its
-                // derivation candidate did not reproduce it, or the caller
-                // declared it external): a path held for it is a stale
-                // inferred one, and the signer must not derive at it. An
-                // entry without indices that leaves the origin unknown
-                // keeps the path.
+            } else if let rejected = entry.derivationRejected,
+                let rejectedPath = identityAuthPath(
+                    walletId: row.walletId ?? entry.walletId ?? walletId,
+                    indices: rejected
+                ),
+                row.identityDerivationPath == rejectedPath
+            {
+                // Rust checked the key at these coordinates and found it does
+                // not come from there (the candidate did not reproduce it, or
+                // the caller declared it external): the path is a stale
+                // inferred one, and the signer must not derive at it. A path
+                // at other coordinates, and every path when the origin is
+                // unknown, is kept.
                 row.identityDerivationPath = nil
             }
 
@@ -5257,10 +5270,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         /// `identity.identityPublicKeys`) and so a group bound is not
         /// mistaken for a whole-contract one.
         let contractBounds: ManagedPlatformWallet.ContractBounds?
-        /// With no `derivationIndices`: `true` when Rust settled the key as
-        /// not derived from the wallet, so a stored derivation path is
-        /// cleared; `false` when its origin is unknown, which keeps it.
-        var derivationRejected: Bool = false
+        /// With no `derivationIndices`: the coordinates Rust checked the key
+        /// at and found it does not come from, so a stored derivation path
+        /// naming exactly them is cleared; `nil` when its origin is unknown,
+        /// which keeps the stored path.
+        var derivationRejected: (identityIndex: UInt32, keyIndex: UInt32)? = nil
     }
 
     // MARK: - Watch-only Restore: Account Addresses
@@ -10333,7 +10347,9 @@ private func persistIdentityKeysCallback(
                 walletId: walletId,
                 derivationIndices: indices,
                 contractBounds: bounds,
-                derivationRejected: e.derivation_rejected
+                derivationRejected: e.derivation_rejected_is_some
+                    ? (e.rejected_identity_index, e.rejected_key_index)
+                    : nil
             ))
         }
     }

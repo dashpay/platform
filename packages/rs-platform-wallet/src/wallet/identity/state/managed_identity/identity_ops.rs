@@ -72,7 +72,7 @@ impl ManagedIdentity {
                     public_key_hash: pubkey_hash_of(pub_key),
                     wallet_id: None,
                     derivation_indices: None,
-                    derivation_rejected: false,
+                    derivation_rejected: None,
                 },
             );
         }
@@ -482,7 +482,7 @@ impl ManagedIdentity {
                     public_key_hash: pubkey_hash_of(key),
                     wallet_id: None,
                     derivation_indices: None,
-                    derivation_rejected: false,
+                    derivation_rejected: None,
                 },
             );
         }
@@ -543,7 +543,7 @@ impl ManagedIdentity {
             if public_key_hash != entry.public_key_hash || key.data() != entry.public_key.data() {
                 entry.wallet_id = None;
                 entry.derivation_indices = None;
-                entry.derivation_rejected = false;
+                entry.derivation_rejected = None;
             }
             entry.public_key_hash = public_key_hash;
             entry.public_key = key.clone();
@@ -619,7 +619,7 @@ impl ManagedIdentity {
             vec![crate::changeset::KeyWithBreadcrumb {
                 key: public_key,
                 breadcrumb: derivation_breadcrumb,
-                derivation_rejected: false,
+                derivation_rejected: None,
             }],
             persister,
         )
@@ -690,7 +690,8 @@ impl ManagedIdentity {
                     public_key_hash,
                     wallet_id,
                     derivation_indices,
-                    derivation_rejected: derivation_indices.is_none() && derivation_rejected,
+                    derivation_rejected: derivation_rejected
+                        .filter(|_| derivation_indices.is_none()),
                 },
             );
         }
@@ -743,7 +744,7 @@ impl ManagedIdentity {
                 public_key_hash,
                 wallet_id: None,
                 derivation_indices: None,
-                derivation_rejected: false,
+                derivation_rejected: None,
             },
         );
         self.store_with_queued_key_rows(keys_cs, persister)
@@ -873,7 +874,7 @@ impl ManagedIdentity {
                     public_key_hash,
                     wallet_id: None,
                     derivation_indices: None,
-                    derivation_rejected: false,
+                    derivation_rejected: None,
                 },
             );
         }
@@ -1155,12 +1156,12 @@ mod tests {
                 KeyWithBreadcrumb {
                     key: key(3),
                     breadcrumb: None,
-                    derivation_rejected: false,
+                    derivation_rejected: None,
                 },
                 KeyWithBreadcrumb {
                     key: key(4),
                     breadcrumb: None,
-                    derivation_rejected: false,
+                    derivation_rejected: None,
                 },
             ]
         };
@@ -1193,7 +1194,7 @@ mod tests {
             let decisions = vec![KeyWithBreadcrumb {
                 key: key(3).with_limits(Some(100), None),
                 breadcrumb: None,
-                derivation_rejected: false,
+                derivation_rejected: None,
             }];
             let folded = managed.key_decisions_for_fetch(&identity(revision, 100), decisions);
             assert_eq!(folded[0].key.total_budget(), Some(500), "at {revision}");
@@ -1282,7 +1283,7 @@ mod tests {
         let with_breadcrumb = |key: IdentityPublicKey| KeyWithBreadcrumb {
             breadcrumb: Some((wallet_id, 0, key.id())),
             key,
-            derivation_rejected: false,
+            derivation_rejected: None,
         };
         let row = |key_id: KeyID| {
             persister
@@ -1334,7 +1335,7 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: raised.clone(),
                     breadcrumb: None,
-                    derivation_rejected: false,
+                    derivation_rejected: None,
                 }],
                 &p,
             )
@@ -1412,7 +1413,7 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: key(4),
                     breadcrumb: Some((wallet_id, 0, 4)),
-                    derivation_rejected: false,
+                    derivation_rejected: None,
                 }],
                 &p,
             )
@@ -1476,7 +1477,7 @@ mod tests {
                     vec![KeyWithBreadcrumb {
                         breadcrumb: Some((wallet_id, 0, key.id())),
                         key,
-                        derivation_rejected: false,
+                        derivation_rejected: None,
                     }],
                     &p,
                 )
@@ -1493,7 +1494,7 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: other_key(2),
                     breadcrumb: None,
-                    derivation_rejected: false,
+                    derivation_rejected: None,
                 }],
                 &p,
             )
@@ -1515,14 +1516,17 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: key(4),
                     breadcrumb: None,
-                    derivation_rejected: true,
+                    derivation_rejected: Some(IdentityKeyDerivationIndices {
+                        identity_index: 0,
+                        key_index: 4,
+                    }),
                 }],
                 &p,
             )
             .unwrap();
         let settled = row(4).unwrap();
         assert_eq!(settled.derivation_indices, None);
-        assert!(settled.derivation_rejected);
+        assert!(settled.derivation_rejected.is_some());
 
         // A refused rejection is kept by the next store's own row for the
         // same key that leaves its origin unknown (a disable).
@@ -1534,7 +1538,10 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: key(5),
                     breadcrumb: None,
-                    derivation_rejected: true,
+                    derivation_rejected: Some(IdentityKeyDerivationIndices {
+                        identity_index: 0,
+                        key_index: 5,
+                    }),
                 }],
                 &p,
             )
@@ -1546,7 +1553,7 @@ mod tests {
         let disabled = row(5).unwrap();
         assert_eq!(disabled.public_key.disabled_at(), Some(9));
         assert!(
-            disabled.derivation_rejected,
+            disabled.derivation_rejected.is_some(),
             "the queued rejection survives"
         );
     }
@@ -1579,7 +1586,7 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: key(4),
                     breadcrumb: Some((wallet_id, 0, 4)),
-                    derivation_rejected: false,
+                    derivation_rejected: None,
                 }],
                 &p,
             )
@@ -1818,12 +1825,12 @@ mod tests {
                     crate::changeset::KeyWithBreadcrumb {
                         key: key(0),
                         breadcrumb: Some((wallet_id, 7, 0)),
-                        derivation_rejected: false,
+                        derivation_rejected: None,
                     },
                     crate::changeset::KeyWithBreadcrumb {
                         key: key(1),
                         breadcrumb: None,
-                        derivation_rejected: false,
+                        derivation_rejected: None,
                     },
                 ],
                 &p,
@@ -1884,7 +1891,7 @@ mod tests {
                 vec![crate::changeset::KeyWithBreadcrumb {
                     key: key(1),
                     breadcrumb: None,
-                    derivation_rejected: false,
+                    derivation_rejected: None,
                 }],
                 &p,
             )
@@ -1956,7 +1963,7 @@ mod tests {
             vec![crate::changeset::KeyWithBreadcrumb {
                 key: key(0),
                 breadcrumb: Some((wallet_id, 7, 0)),
-                derivation_rejected: false,
+                derivation_rejected: None,
             }],
             &p,
         );

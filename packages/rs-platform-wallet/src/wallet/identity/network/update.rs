@@ -21,7 +21,7 @@ use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
-use crate::changeset::{KeyWithBreadcrumb, PersistenceError};
+use crate::changeset::{IdentityKeyDerivationIndices, KeyWithBreadcrumb, PersistenceError};
 use crate::error::PlatformWalletError;
 
 use super::signing_key::AvailableSigningKey;
@@ -322,6 +322,17 @@ impl IdentityWallet {
                 .filter(|_| !external_key_ids.contains(&id))
                 .map(|idx| (self.wallet_id, idx, id))
         };
+        // A declared external key refutes the coordinates an update would
+        // have inferred for it (older code stored them), so a persister clears
+        // exactly that breadcrumb.
+        let external_slot = |id: KeyID| {
+            identity_index
+                .filter(|_| external_key_ids.contains(&id))
+                .map(|identity_index| IdentityKeyDerivationIndices {
+                    identity_index,
+                    key_index: id,
+                })
+        };
         let mut wm = self.wallet_manager.write().await;
         let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(
@@ -363,7 +374,7 @@ impl IdentityWallet {
                         .unwrap_or(key)
                         .clone(),
                     breadcrumb: added_breadcrumb(id),
-                    derivation_rejected: external_key_ids.contains(&id),
+                    derivation_rejected: external_slot(id),
                 });
             }
             for &id in &disabled {
@@ -378,7 +389,7 @@ impl IdentityWallet {
                 keys.push(KeyWithBreadcrumb {
                     key: key.clone(),
                     breadcrumb: None,
-                    derivation_rejected: false,
+                    derivation_rejected: None,
                 });
             }
             // Stored with the identity's snapshot even when no touched key
@@ -403,7 +414,7 @@ impl IdentityWallet {
             .into_iter()
             .map(|key| {
                 let breadcrumb = added_breadcrumb(key.id());
-                let derivation_rejected = external_key_ids.contains(&key.id());
+                let derivation_rejected = external_slot(key.id());
                 KeyWithBreadcrumb {
                     key,
                     breadcrumb,
@@ -947,9 +958,13 @@ mod update_identity_at_revision_tests {
             assert_eq!(stored.public_key, key_3(), "cached at {cached}");
             assert_eq!(stored.derivation_indices, None, "cached at {cached}");
             assert_eq!(stored.wallet_id, None, "cached at {cached}");
-            assert!(
+            assert_eq!(
                 stored.derivation_rejected,
-                "a declared external key clears a stale breadcrumb, cached at {cached}"
+                Some(IdentityKeyDerivationIndices {
+                    identity_index: 0,
+                    key_index: 3,
+                }),
+                "a declared external key refutes its slot's breadcrumb, cached at {cached}"
             );
         }
     }

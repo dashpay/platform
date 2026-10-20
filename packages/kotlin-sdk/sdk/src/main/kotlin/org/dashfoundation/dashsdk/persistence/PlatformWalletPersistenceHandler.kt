@@ -1901,6 +1901,8 @@ class PlatformWalletPersistenceHandler(
         expiresAtIsSome: Boolean,
         expiresAt: Long,
         derivationRejected: Boolean,
+        rejectedIdentityIndex: Int,
+        rejectedKeyIndex: Int,
     ): Int = guarded {
         // Item 1 — private-key persistence (the CLAUDE.md "one allowed
         // exception" shape). The `IdentityKeyEntryFFI` payload carries only
@@ -2018,7 +2020,15 @@ class PlatformWalletPersistenceHandler(
 
         stage(walletId) { db ->
             val identityBase58 = identityId.toBase58String()
-            val existing = db.publicKeyDao().getByIdentityAndKeyId(identityBase58, keyId)
+            val stored = db.publicKeyDao().getByIdentityAndKeyId(identityBase58, keyId)
+            // A row for another public key under this key id carries that
+            // key's derivation and private-key linkage, which must not pass to
+            // this one: only a row for the same public key lends them.
+            val existing = stored?.takeIf { it.publicKeyData.contentEquals(publicKeyData) }
+            // A rejection refutes only the coordinates it was checked at.
+            val refuted = derivationRejected && !derivationIndicesIsSome &&
+                existing?.derivationIdentityIndex == rejectedIdentityIndex &&
+                existing.derivationKeyIndex == rejectedKeyIndex
             // ContractBounds projection → the legacy JSON blob column +
             // doc-type name (Swift stores `[base64(contractId)]` JSON), plus
             // the kind itself: the blob holds the contract group id for kind
@@ -2029,7 +2039,7 @@ class PlatformWalletPersistenceHandler(
             val docTypeName = if (boundsKind == 2)
                 contractBoundsDocumentType else null
             val row = PublicKeyEntity(
-                id = existing?.id ?: 0,
+                id = stored?.id ?: 0,
                 keyId = keyId,
                 purpose = (purpose.toInt() and 0xFF).toString(),
                 securityLevel = (securityLevel.toInt() and 0xFF).toString(),
@@ -2055,25 +2065,25 @@ class PlatformWalletPersistenceHandler(
                 // failure marker; the null identifier is). They make the
                 // pending-repair state reconstructible after restart
                 // (dashpay/platform#4060 finding 5).
-                // Without indices, an upsert that leaves the key's origin
-                // unknown keeps the stored breadcrumb; one that settled the
-                // key as not derived ([derivationRejected]) clears it.
+                // Without indices, an upsert keeps the stored breadcrumb of
+                // the same public key unless it refutes exactly those
+                // coordinates ([derivationRejected]).
                 derivationIdentityIndex = when {
                     derivationIndicesIsSome -> identityIndex
-                    derivationRejected -> null
+                    refuted -> null
                     else -> existing?.derivationIdentityIndex
                 },
                 derivationKeyIndex = when {
                     derivationIndicesIsSome -> keyIndex
-                    derivationRejected -> null
+                    refuted -> null
                     else -> existing?.derivationKeyIndex
                 },
                 identityId = identityBase58,
                 identityIdData = identityId,
-                createdAt = existing?.createdAt ?: java.util.Date(),
+                createdAt = stored?.createdAt ?: java.util.Date(),
                 lastAccessed = now(),
             )
-            if (existing == null) db.publicKeyDao().insert(row) else db.publicKeyDao().update(row)
+            if (stored == null) db.publicKeyDao().insert(row) else db.publicKeyDao().update(row)
         }
         0
     }

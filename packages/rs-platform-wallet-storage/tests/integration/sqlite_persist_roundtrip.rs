@@ -225,7 +225,7 @@ fn tc007_identity_key_entry_roundtrip() {
             identity_index: 1,
             key_index: 2,
         }),
-        derivation_rejected: false,
+        derivation_rejected: None,
     };
     let mut keys = IdentityKeysChangeSet::default();
     keys.upserts.insert((identity_id, 7), entry.clone());

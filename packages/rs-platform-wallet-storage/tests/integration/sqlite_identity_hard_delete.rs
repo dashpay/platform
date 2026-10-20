@@ -81,7 +81,7 @@ fn key_entry(id: Identifier, key_id: u32, byte: u8) -> IdentityKeyEntry {
         public_key_hash: [byte; 20],
         wallet_id: None,
         derivation_indices: None,
-        derivation_rejected: false,
+        derivation_rejected: None,
     }
 }
 

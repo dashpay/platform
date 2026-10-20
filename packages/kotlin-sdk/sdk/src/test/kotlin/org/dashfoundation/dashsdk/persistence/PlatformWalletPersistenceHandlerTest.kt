@@ -1191,17 +1191,25 @@ class PlatformWalletPersistenceHandlerTest {
     @Test
     fun identityKeyUpsertKeepsAnUnknownOriginAndClearsARejectedOne() = runTest {
         // Without indices, an upsert that leaves the key's origin unknown
-        // keeps the stored breadcrumb; one Rust settled as not derived clears
-        // it (a stale breadcrumb inferred for an external key).
+        // keeps the stored breadcrumb; one that refutes exactly its
+        // coordinates clears it, and one that refutes other coordinates
+        // keeps it. Another public key under the key id takes nothing.
         val identityId = ByteArray(32) { 15 }
         seedIdentity(identityId)
-        fun upsert(indicesIsSome: Boolean, rejected: Boolean) {
+        fun upsert(
+            indicesIsSome: Boolean,
+            rejected: Boolean,
+            rejectedKeyIndex: Int = 0,
+            key: ByteArray = ByteArray(33) { 10 },
+        ) {
             handler.onChangesetBegin(walletId)
             handler.onPersistIdentityKeyUpsert(
                 walletId, identityId, 0, 0, 0, 0, false, false, 0,
-                ByteArray(33) { 10 }, ByteArray(20), true, walletId,
+                key, ByteArray(20), true, walletId,
                 indicesIsSome, 0, 7, 0, ByteArray(32), null,
                 derivationRejected = rejected,
+                rejectedIdentityIndex = 0,
+                rejectedKeyIndex = rejectedKeyIndex,
             )
             handler.onChangesetEnd(walletId, success = true)
         }
@@ -1211,9 +1219,15 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(7, stored().derivationKeyIndex)
         upsert(indicesIsSome = false, rejected = false)
         assertEquals(7, stored().derivationKeyIndex)
-        upsert(indicesIsSome = false, rejected = true)
+        upsert(indicesIsSome = false, rejected = true, rejectedKeyIndex = 0)
+        assertEquals("another slot's rejection keeps it", 7, stored().derivationKeyIndex)
+        upsert(indicesIsSome = false, rejected = true, rejectedKeyIndex = 7)
         assertNull(stored().derivationKeyIndex)
         assertNull(stored().derivationIdentityIndex)
+
+        upsert(indicesIsSome = true, rejected = false)
+        upsert(indicesIsSome = false, rejected = false, key = ByteArray(33) { 11 })
+        assertNull("another public key takes no breadcrumb", stored().derivationKeyIndex)
     }
 
     @Test

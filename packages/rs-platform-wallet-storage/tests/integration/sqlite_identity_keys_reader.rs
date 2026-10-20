@@ -45,7 +45,7 @@ fn key_entry(identity: Identifier, key_id: u32, byte: u8) -> IdentityKeyEntry {
             identity_index: 0,
             key_index: u32::from(byte),
         }),
-        derivation_rejected: false,
+        derivation_rejected: None,
     }
 }
 
@@ -149,7 +149,10 @@ fn should_clear_a_stored_breadcrumb_a_load_rejects_and_keep_an_unknown_one() {
 
     let mut rejected = key_entry(id, 0, 0x11);
     rejected.derivation_indices = None;
-    rejected.derivation_rejected = true;
+    rejected.derivation_rejected = Some(IdentityKeyDerivationIndices {
+        identity_index: 0,
+        key_index: 0x11,
+    });
     let mut unknown = key_entry(id, 1, 0x22);
     unknown.derivation_indices = None;
     store(vec![rejected.clone(), unknown]);
@@ -161,9 +164,65 @@ fn should_clear_a_stored_breadcrumb_a_load_rejects_and_keep_an_unknown_one() {
         .expect("load_state");
     drop(conn);
     let mut cleared = rejected;
-    cleared.derivation_rejected = false;
+    cleared.derivation_rejected = None;
     assert_eq!(cs.upserts.get(&(id, 0)), Some(&cleared));
     assert_eq!(cs.upserts.get(&(id, 1)), Some(&key_entry(id, 1, 0x22)));
+}
+
+/// A rejection refutes only the coordinates it was checked at: a breadcrumb
+/// stored at other coordinates (supplied explicitly through `add_keys`) is
+/// kept.
+#[test]
+fn should_keep_a_stored_breadcrumb_a_rejection_does_not_name() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xD6);
+    ensure_wallet_meta(&persister, &w);
+    let id = Identifier::from([0x10; 32]);
+    platform_wallet_storage::sqlite::schema::identities::ensure_exists(
+        &persister.lock_conn_for_test(),
+        &w,
+        id.as_slice().try_into().unwrap(),
+    )
+    .unwrap();
+    let store = |entry: IdentityKeyEntry| {
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts
+            .insert((entry.identity_id, entry.key_id), entry);
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    identity_keys: Some(keys),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    };
+    // Key id 3, stored with the breadcrumb `(0, 0x33)` its caller supplied.
+    let mut stored = key_entry(id, 3, 0x33);
+    stored.public_key = key_entry(id, 3, 0x33).public_key;
+    store(stored.clone());
+    // A load checks `(0, 3)` and rejects it.
+    let mut rejected = stored.clone();
+    rejected.derivation_indices = None;
+    rejected.derivation_rejected = Some(IdentityKeyDerivationIndices {
+        identity_index: 0,
+        key_index: 3,
+    });
+    store(rejected);
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let cs = identity_keys::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load_state");
+    drop(conn);
+    assert_eq!(
+        cs.upserts
+            .get(&(id, 3))
+            .and_then(|row| row.derivation_indices),
+        stored.derivation_indices
+    );
 }
 
 /// A stored row over the blob size limit is not read into memory to look for
