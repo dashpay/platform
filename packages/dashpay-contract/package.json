@@ -9,8 +9,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dashpay/platform.git",
-    "directory": "packages/dashpay-contract"
+    "url": "git+https://github.com/dashevo/dashpay-contract.git"
   },
   "author": "Dash Core Team",
   "contributors": [

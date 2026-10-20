@@ -34,8 +34,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/dashpay/platform.git",
-    "directory": "packages/wallet-lib"
+    "url": "git+https://github.com/dashevo/wallet-lib.git"
   },
   "keywords": [
     "cryptocurrency",
