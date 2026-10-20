@@ -244,9 +244,12 @@ mod tests {
                 assert!(
                     matches!(
                         &invalid.error,
-                        ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(_))
+                        ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))
+                            if error.current_protocol_version() == 1
+                                && error.required_protocol_version() == 9
+                                && error.state_transition_type() == "DocumentsBatch([])"
                     ),
-                    "expected StateTransitionNotActiveError, got {:?}",
+                    "expected StateTransitionNotActiveError(type=DocumentsBatch([]), current=1, required=9), got {:?}",
                     invalid.error
                 );
             }
