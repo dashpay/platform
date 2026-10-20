@@ -184,3 +184,90 @@ impl ContextProvider for SpvQuorumSource {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use dash_context_provider::{ContextProvider, ContextProviderError};
+    use dashcore::sml::llmq_type::network::NetworkLLMQExt;
+    use dashcore::Network;
+    use key_wallet_manager::WalletManager;
+    use tokio::sync::RwLock;
+
+    use super::SpvQuorumSource;
+    use crate::events::PlatformEventManager;
+    use crate::spv::SpvRuntime;
+    use crate::wallet::platform_wallet::PlatformWalletInfo;
+
+    const NETWORK: Network = Network::Testnet;
+
+    fn unstarted_source() -> SpvQuorumSource {
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            NETWORK,
+        )));
+        let runtime = SpvRuntime::new(wallet_manager, Arc::new(PlatformEventManager::new(vec![])));
+        SpvQuorumSource::new(Arc::new(runtime), NETWORK)
+    }
+
+    fn platform_quorum_type() -> u32 {
+        u32::from(u8::from(NETWORK.platform_type()))
+    }
+
+    /// Proof verification calls the provider synchronously. Outside a Tokio
+    /// runtime nothing can drive the SPV lookup, so it must fail instead of
+    /// panicking.
+    #[test]
+    fn should_refuse_a_lookup_outside_a_tokio_runtime() {
+        let error = unstarted_source().is_ready().unwrap_err();
+        assert!(
+            error.to_string().contains("outside a Tokio runtime"),
+            "{error}"
+        );
+    }
+
+    /// `block_in_place` panics on a current-thread runtime, and blocking that
+    /// thread any other way would starve the SPV writer the lookup waits on,
+    /// so the bridge must refuse.
+    #[test]
+    fn should_refuse_a_lookup_on_a_current_thread_runtime() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("current-thread runtime");
+        let source = unstarted_source();
+        let error = runtime.block_on(async { source.is_ready() }).unwrap_err();
+        assert!(
+            error.to_string().contains("multi-threaded Tokio runtime"),
+            "{error}"
+        );
+    }
+
+    /// On the multi-threaded runtime the SDK verifies proofs on, the bridge
+    /// reaches the SPV runtime: an unstarted client is not ready and serves no
+    /// key.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_reach_the_spv_runtime_from_a_multi_thread_runtime() {
+        let source = unstarted_source();
+        assert!(!source.is_ready().expect("readiness"));
+        let error = source
+            .get_quorum_public_key(platform_quorum_type(), [7; 32], 1)
+            .unwrap_err();
+        assert!(error.to_string().contains("not started"), "{error}");
+    }
+
+    /// The proof names its own quorum type, so only the network's Platform
+    /// quorum type may be looked up: a lower-threshold quorum must never
+    /// vouch for Platform state.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_reject_a_quorum_type_other_than_the_platform_one() {
+        let other_type = platform_quorum_type() + 1;
+        let error = unstarted_source()
+            .get_quorum_public_key(other_type, [7; 32], 1)
+            .unwrap_err();
+        assert!(
+            matches!(error, ContextProviderError::InvalidQuorum(ref message)
+                if message.contains("not the Platform quorum")),
+            "{error}"
+        );
+    }
+}
