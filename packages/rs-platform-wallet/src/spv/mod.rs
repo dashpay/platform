@@ -3,7 +3,6 @@ mod runtime;
 
 pub use peers::{SpvPeerInfo, SpvPeerNodeType};
 pub use runtime::SpvRuntime;
-pub(crate) use runtime::SpvTip;
 
 // Re-exports so the FFI layer can build sync configs and read progress
 // without depending on `dash-spv` or `tokio-util` directly.

@@ -1,6 +1,5 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
-use std::ops::Range;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -8,14 +7,13 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
-use dashcore::block::Version as BlockVersion;
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::sml::masternode_list::MasternodeList;
 use dashcore::sml::masternode_list_entry::MasternodeListEntry;
-use dashcore::{BlockHash, PubkeyHash, QuorumHash, Transaction};
+use dashcore::{PubkeyHash, QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
-use dash_spv::storage::{BlockHeaderStorage, DiskStorageManager, StorageManager};
+use dash_spv::storage::{BlockHeaderStorage, BlockHeaderTip, DiskStorageManager, StorageManager};
 use dash_spv::sync::SyncProgress;
 use dash_spv::{BroadcastResult, ClientConfig, DashSpvClient, EventHandler, Hash};
 
@@ -27,17 +25,6 @@ use crate::events::PlatformEventManager;
 use crate::masternode::list::MasternodeListSummary;
 use crate::spv::peers::{classify_peers, PeerTracker, SpvPeerInfo};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
-
-/// The SPV header chain's tip.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct SpvTip {
-    /// Height of the tip header.
-    pub(crate) height: u32,
-    /// Hash of the tip header.
-    pub(crate) hash: BlockHash,
-    /// The tip header's block time, in Unix seconds.
-    pub(crate) time: u32,
-}
 
 type SpvClient =
     DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager, DiskStorageManager>;
@@ -680,14 +667,14 @@ impl SpvRuntime {
     /// have been stored yet, or the tip header isn't readable for
     /// any reason.
     pub async fn tip_block_time(&self) -> Option<u32> {
-        self.tip().await.map(|tip| tip.time)
+        self.tip().await.map(|tip| tip.header().time)
     }
 
-    /// The header chain's tip: its height, hash and header time.
+    /// The header chain's tip.
     ///
     /// Returns `None` if the SPV client isn't running or no headers have
     /// been stored yet.
-    pub(crate) async fn tip(&self) -> Option<SpvTip> {
+    pub(crate) async fn tip(&self) -> Option<BlockHeaderTip> {
         let client_guard = self.client.read().await;
         let client = client_guard.as_ref()?;
         let storage_arc = client.storage();
@@ -695,41 +682,7 @@ impl SpvRuntime {
         let block_headers = StorageManager::block_headers(&*storage);
         drop(storage);
         let bh = block_headers.read().await;
-        let tip = BlockHeaderStorage::get_tip(&*bh).await?;
-        Some(SpvTip {
-            height: tip.height(),
-            hash: *tip.hash(),
-            time: tip.header().time,
-        })
-    }
-
-    /// Versions of the stored headers at `heights`, in height order.
-    ///
-    /// Returns `None` if the SPV client isn't running or the store does not
-    /// hold every one of those headers as one chain (it starts above them,
-    /// the read fails, or a header does not build on the one before it).
-    pub(crate) async fn header_versions(&self, heights: Range<u32>) -> Option<Vec<BlockVersion>> {
-        let client_guard = self.client.read().await;
-        let client = client_guard.as_ref()?;
-        let storage_arc = client.storage();
-        let storage = storage_arc.lock().await;
-        let block_headers = StorageManager::block_headers(&*storage);
-        drop(storage);
-        let bh = block_headers.read().await;
-        stored_header_versions(&*bh, heights).await
-    }
-
-    /// Height of the highest ChainLock the SPV client has validated against
-    /// its masternode list, which may lie above the header tip.
-    ///
-    /// Returns `None` if the SPV client isn't running or does not track
-    /// ChainLocks.
-    pub(crate) async fn best_chain_locked_height(&self) -> Option<u32> {
-        let progress = self.sync_progress().await?;
-        progress
-            .chainlocks()
-            .ok()
-            .map(|chainlocks| chainlocks.best_validated_height())
+        BlockHeaderStorage::get_tip(&*bh).await
     }
 
     /// Hash of the stored header at `height`.
@@ -809,233 +762,6 @@ impl SpvRuntime {
             .update_config(config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
-    }
-}
-
-/// Versions of the headers `store` holds at `heights`, in height order, for
-/// [`SpvRuntime::header_versions`].
-///
-/// Returns `None` when `store` does not hold every one of those headers as
-/// one chain: the range is empty, the store starts above it (it synced from
-/// a later checkpoint), the read fails or comes back short, or a header does
-/// not build on the one before it.
-async fn stored_header_versions(
-    store: &impl BlockHeaderStorage,
-    heights: Range<u32>,
-) -> Option<Vec<BlockVersion>> {
-    if heights.is_empty() || store.get_start_height().await? > heights.start {
-        return None;
-    }
-    let expected = heights.end - heights.start;
-    let headers = store.load_headers(heights).await.ok()?;
-    let linked = headers
-        .windows(2)
-        .all(|pair| pair[1].header().prev_blockhash == *pair[0].hash());
-    (headers.len() == expected as usize && linked).then(|| {
-        headers
-            .iter()
-            .map(|header| header.header().version)
-            .collect()
-    })
-}
-
-#[cfg(test)]
-mod stored_header_versions_tests {
-    use std::ops::Range;
-    use std::sync::Mutex;
-
-    use async_trait::async_trait;
-    use dash_spv::error::{StorageError, StorageResult};
-    use dash_spv::storage::{BlockHeaderStorage, BlockHeaderTip};
-    use dash_spv::types::HashedBlockHeader;
-    use dashcore::block::{Header, Version as BlockVersion};
-    use dashcore::hashes::Hash;
-    use dashcore::{BlockHash, CompactTarget, TxMerkleNode};
-
-    use super::stored_header_versions;
-
-    /// The window the tests ask for.
-    const HEIGHTS: Range<u32> = 100..110;
-
-    /// A header store that synced from `start_height` and answers every read
-    /// with `reply`, whatever range it asks for. It does not guard its own
-    /// ranges the way the disk store does, so the wallet's checks alone
-    /// decide what is read as a complete window.
-    struct ScriptedStore {
-        start_height: Option<u32>,
-        reply: Result<Vec<HashedBlockHeader>, String>,
-        reads: Mutex<Vec<Range<u32>>>,
-    }
-
-    impl ScriptedStore {
-        fn new(start_height: Option<u32>, reply: Result<Vec<HashedBlockHeader>, String>) -> Self {
-            Self {
-                start_height,
-                reply,
-                reads: Mutex::new(Vec::new()),
-            }
-        }
-
-        fn reads(&self) -> Vec<Range<u32>> {
-            self.reads.lock().expect("reads mutex").clone()
-        }
-    }
-
-    #[async_trait]
-    impl BlockHeaderStorage for ScriptedStore {
-        async fn store_headers(&mut self, _: &[HashedBlockHeader]) -> StorageResult<()> {
-            unreachable!("the wallet only reads headers")
-        }
-
-        async fn store_headers_at_height(
-            &mut self,
-            _: &[HashedBlockHeader],
-            _: u32,
-        ) -> StorageResult<()> {
-            unreachable!("the wallet only reads headers")
-        }
-
-        async fn load_headers(&self, range: Range<u32>) -> StorageResult<Vec<HashedBlockHeader>> {
-            self.reads.lock().expect("reads mutex").push(range);
-            self.reply.clone().map_err(StorageError::ReadFailed)
-        }
-
-        async fn get_tip_height(&self) -> Option<u32> {
-            unreachable!("the window is read by height")
-        }
-
-        async fn get_tip(&self) -> Option<BlockHeaderTip> {
-            unreachable!("the window is read by height")
-        }
-
-        async fn get_start_height(&self) -> Option<u32> {
-            self.start_height
-        }
-
-        async fn get_stored_headers_len(&self) -> u32 {
-            unreachable!("the window is read by height")
-        }
-
-        async fn get_header_height_by_hash(&self, _: &BlockHash) -> StorageResult<Option<u32>> {
-            unreachable!("the window is read by height")
-        }
-
-        async fn truncate_above(&mut self, _: u32) -> StorageResult<()> {
-            unreachable!("the wallet only reads headers")
-        }
-    }
-
-    /// Distinct versions, one per header, so a reordered read shows.
-    fn versions(count: usize) -> Vec<BlockVersion> {
-        (0..count as i32)
-            .map(|index| BlockVersion::from_consensus(0x2000_0000 + index))
-            .collect()
-    }
-
-    /// Headers with `versions`, each building on the one before it, the first
-    /// on `prev`. `nonce` tells two chains with the same versions apart.
-    fn chain(prev: BlockHash, versions: &[BlockVersion], nonce: u32) -> Vec<HashedBlockHeader> {
-        let mut prev_blockhash = prev;
-        versions
-            .iter()
-            .map(|&version| {
-                let header = HashedBlockHeader::from(Header {
-                    version,
-                    prev_blockhash,
-                    merkle_root: TxMerkleNode::all_zeros(),
-                    time: 0,
-                    bits: CompactTarget::from_consensus(0x1d00ffff),
-                    nonce,
-                });
-                prev_blockhash = *header.hash();
-                header
-            })
-            .collect()
-    }
-
-    /// A store that holds the whole window as one chain gives its versions
-    /// back in height order, whether it synced from below the window or from
-    /// its first height.
-    #[tokio::test]
-    async fn should_read_the_versions_of_a_complete_linked_window_in_height_order() {
-        let expected = versions(HEIGHTS.len());
-        for start_height in [0, HEIGHTS.start] {
-            let store = ScriptedStore::new(
-                Some(start_height),
-                Ok(chain(BlockHash::all_zeros(), &expected, 0)),
-            );
-            assert_eq!(
-                stored_header_versions(&store, HEIGHTS).await,
-                Some(expected.clone()),
-                "a store synced from {start_height}"
-            );
-            assert_eq!(store.reads(), vec![HEIGHTS], "the window is read once");
-        }
-    }
-
-    /// A store that synced from a checkpoint inside the window never saw the
-    /// headers below it, and one with no headers saw none, so whatever a read
-    /// would return there is not the window, and it is not read.
-    #[tokio::test]
-    async fn should_not_read_a_window_that_begins_below_the_stores_first_header() {
-        let full = chain(BlockHash::all_zeros(), &versions(HEIGHTS.len()), 0);
-        for start_height in [Some(HEIGHTS.start + 1), None] {
-            let store = ScriptedStore::new(start_height, Ok(full.clone()));
-            assert_eq!(
-                stored_header_versions(&store, HEIGHTS).await,
-                None,
-                "a store synced from {start_height:?}"
-            );
-            assert_eq!(store.reads(), Vec::<Range<u32>>::new(), "nothing is read");
-        }
-    }
-
-    /// A read that comes back with fewer headers than the window, or fails,
-    /// or a window with no heights, is not a complete period: its signalling
-    /// count proves nothing about the blocks it does not hold.
-    #[tokio::test]
-    async fn should_not_read_a_short_failed_or_empty_window() {
-        let short = chain(BlockHash::all_zeros(), &versions(HEIGHTS.len() - 1), 0);
-        let store = ScriptedStore::new(Some(0), Ok(short));
-        assert_eq!(stored_header_versions(&store, HEIGHTS).await, None, "short");
-
-        let store = ScriptedStore::new(Some(0), Err("segment unreadable".to_string()));
-        assert_eq!(
-            stored_header_versions(&store, HEIGHTS).await,
-            None,
-            "failed"
-        );
-        assert_eq!(store.reads(), vec![HEIGHTS], "the failed read was issued");
-
-        let store = ScriptedStore::new(Some(0), Ok(Vec::new()));
-        assert_eq!(
-            stored_header_versions(&store, HEIGHTS.start..HEIGHTS.start).await,
-            None,
-            "empty"
-        );
-        assert_eq!(store.reads(), Vec::<Range<u32>>::new(), "nothing is read");
-    }
-
-    /// A window of the right length whose headers are not one chain (the
-    /// read straddles two forks) is not the period the tip builds on.
-    #[tokio::test]
-    async fn should_not_read_a_full_length_window_with_a_broken_predecessor_link() {
-        let expected = versions(HEIGHTS.len());
-        let middle = HEIGHTS.len() / 2;
-        let mut spliced = chain(BlockHash::all_zeros(), &expected, 0);
-        let fork = chain(BlockHash::all_zeros(), &expected, 1);
-        spliced[middle..].clone_from_slice(&fork[middle..]);
-        assert_eq!(
-            spliced
-                .iter()
-                .map(|header| header.header().version)
-                .collect::<Vec<_>>(),
-            expected,
-            "every height holds the version a complete window would"
-        );
-
-        let store = ScriptedStore::new(Some(0), Ok(spliced));
-        assert_eq!(stored_header_versions(&store, HEIGHTS).await, None);
     }
 }
 
