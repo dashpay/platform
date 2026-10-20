@@ -5,15 +5,13 @@ use crate::{DAPIResult, DapiError};
 use dashcore_rpc::{self, Auth, Client, RpcApi, dashcore, jsonrpc};
 use std::any::type_name;
 use std::sync::Arc;
-use tokio::select;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
-use tokio::time::timeout;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::time::{Instant, timeout_at};
 
 use tracing::trace;
 use zeroize::Zeroizing;
 
 const CORE_RPC_GUARD_PERMITS: usize = 2;
-const PERMIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 #[derive(Debug, Clone)]
 pub struct CoreClient {
     client: Arc<Client>,
@@ -40,46 +38,38 @@ impl CoreClient {
     }
 
     /// Execute a blocking Core RPC call inside a limited concurrency pool.
+    ///
+    /// The permit moves into the blocking task, so it is released only when the
+    /// call returns. A blocking call cannot be stopped once started: a caller
+    /// that is cancelled or times out stops waiting, but the call keeps its permit
+    /// until Core answers (the transport's socket timeouts bound how long that
+    /// takes), so at most `CORE_RPC_GUARD_PERMITS` calls ever run at once.
     async fn guarded_blocking_call<F, R, E>(&self, op: F) -> Result<Result<R, E>, DapiError>
     where
         F: FnOnce(Arc<Client>) -> Result<R, E> + Send + 'static,
         R: Send + Sync + 'static,
         E: Send + Sync + 'static,
     {
-        let mut permit = Some(self.access_guard.acquire().await);
-        let client = self.client.clone();
-
-        let permit_deadline = tokio::time::Instant::now() + PERMIT_TIMEOUT;
-
-        let (tx, mut rx) = mpsc::channel(1);
-        // let (abortable_fut, abort) = abortable();
-        let task = tokio::task::spawn(timeout(REQUEST_TIMEOUT, async move {
-            let res = tokio::task::spawn_blocking(move || op(client)).await;
-            tx.send(res).await
-        }));
-
-        let result = loop {
-            select! {
-                biased;
-                result = rx.recv() => {break result;}
-
-                _ = tokio::time::sleep_until(permit_deadline) => {
-                    tracing::debug!("Core RPC access guard permit wait timed out after {:?}, releasing permit", PERMIT_TIMEOUT);
-                    drop(permit.take());
-                }
-            }
+        let deadline = Instant::now() + REQUEST_TIMEOUT;
+        let timed_out = || {
+            DapiError::timeout(format!(
+                "Core RPC call of type {} did not complete",
+                type_name::<F>()
+            ))
         };
-        drop(permit);
-        // task should be done by now
-        task.abort();
 
-        result
-            .ok_or_else(|| {
-                DapiError::timeout(format!(
-                    "Core RPC call of type {} did not complete",
-                    type_name::<F>()
-                ))
-            })?
+        let permit = timeout_at(deadline, self.access_guard.acquire())
+            .await
+            .map_err(|_| timed_out())?;
+        let client = self.client.clone();
+        let call = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            op(client)
+        });
+
+        timeout_at(deadline, call)
+            .await
+            .map_err(|_| timed_out())?
             .map_err(DapiError::TaskJoin)
     }
 
@@ -475,5 +465,73 @@ impl CoreRpcAccessGuard {
             .acquire_owned()
             .await
             .expect("Core RPC access guard semaphore not closed")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc as std_mpsc;
+    use std::time::Duration;
+    use tokio::sync::oneshot;
+
+    /// A client whose calls in these tests never reach Core: each operation
+    /// ignores the RPC client and blocks until the test releases it.
+    fn test_client() -> CoreClient {
+        CoreClient::new(
+            "http://127.0.0.1:1".to_string(),
+            "user".to_string(),
+            Zeroizing::new("pass".to_string()),
+            1024 * 1024,
+        )
+        .expect("client")
+    }
+
+    #[tokio::test]
+    async fn should_keep_permits_until_cancelled_calls_return() {
+        let client = test_client();
+        let semaphore = client.access_guard.semaphore.clone();
+
+        let mut releases = Vec::new();
+        for _ in 0..CORE_RPC_GUARD_PERMITS {
+            let (started_tx, started_rx) = oneshot::channel();
+            let (release_tx, release_rx) = std_mpsc::channel::<()>();
+            releases.push(release_tx);
+
+            let caller = tokio::spawn({
+                let client = client.clone();
+                async move {
+                    client
+                        .guarded_blocking_call(move |_| {
+                            let _ = started_tx.send(());
+                            let _ = release_rx.recv();
+                            Ok::<_, ()>(())
+                        })
+                        .await
+                }
+            });
+            started_rx.await.expect("call started");
+            caller.abort();
+            assert!(caller.await.expect_err("caller aborted").is_cancelled());
+        }
+
+        // Every caller is gone, but every call is still running on Core.
+        assert_eq!(semaphore.available_permits(), 0);
+
+        drop(releases);
+        let all = tokio::time::timeout(
+            Duration::from_secs(5),
+            semaphore.acquire_many(CORE_RPC_GUARD_PERMITS as u32),
+        )
+        .await
+        .expect("permits come back once the calls return")
+        .expect("semaphore open");
+        drop(all);
+
+        let result = client
+            .guarded_blocking_call(|_| Ok::<_, ()>(7))
+            .await
+            .expect("call completes");
+        assert_eq!(result, Ok(7));
     }
 }
