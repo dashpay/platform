@@ -56,7 +56,7 @@ use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property::EncryptedFor;
 use crate::data_contract::document_type::property_names::{
-    ENUM, POSITION, PROPERTIES, REF, REQUIRED,
+    ENUM, ITEMS, POSITION, PROPERTIES, REF, REQUIRED,
 };
 use crate::data_contract::document_type::schema::last_value;
 use crate::data_contract::document_type::DocumentType;
@@ -1001,27 +1001,41 @@ fn read_into_a_property(keyword: SchemaKeyword) -> bool {
     )
 }
 
-/// Whether `schema` carries anywhere a keyword the document type parser reads into a
-/// property, or a `$ref`, through which the parser may reach one. Anywhere includes data the
-/// parser never reads, such as `examples`, so a check built on this refuses more than it
-/// must.
+/// Whether `schema`, read by the document type parser as a property, carries where the
+/// parser reads it a keyword it reads into a property, or a `$ref`, through which it may
+/// reach one: on the schema itself, and down its `properties` and `items`, the only schemas
+/// below a property the parser reads. Data it never reads, such as `examples`, `enum` and
+/// `const` values or `contains`, is not scanned.
 fn carries_parser_keywords(schema: &Value) -> bool {
-    match schema {
-        Value::Map(map) => map.iter().any(|(key, value)| {
-            key.as_text()
+    schema.as_map().is_some_and(|map| {
+        map.iter().any(|(key, value)| match key.as_text() {
+            Some(PROPERTIES) => properties_carry_parser_keywords(value),
+            Some(ITEMS) => match value {
+                Value::Array(elements) => elements.iter().any(carries_parser_keywords),
+                value => carries_parser_keywords(value),
+            },
+            key => key
                 .and_then(SchemaKeyword::from_name)
                 .is_some_and(|keyword| {
                     read_into_a_property(keyword) || keyword == SchemaKeyword::Any(AnyKeyword::Ref)
-                })
-                || carries_parser_keywords(value)
-        }),
-        Value::Array(elements) => elements.iter().any(carries_parser_keywords),
-        _ => false,
-    }
+                }),
+        })
+    })
+}
+
+/// Whether a property of `properties` [carries parser keywords](carries_parser_keywords).
+fn properties_carry_parser_keywords(properties: &Value) -> bool {
+    properties.as_map().is_some_and(|properties| {
+        properties
+            .iter()
+            .any(|(_, schema)| carries_parser_keywords(schema))
+    })
 }
 
 /// Refuses a key `map` repeats, `only` that key when given, when an entry of it carries
-/// `maxBytes`, `encryptedFor` or a `$ref` ([`carries_parser_keywords`]) and the document type
+/// `maxBytes`, `encryptedFor` or a `$ref` where the document type parser reads it
+/// ([`carries_parser_keywords`]; of a repeated `properties`, in one of its properties) and the
+/// document type
 /// parser reads another of its entries than the JSON Schema validator, which reads the last:
 /// the bounds the parser checks would not be those of the entry the validation schema holds.
 /// The parser reads the first entry of a property name repeated below the document schema,
@@ -1042,7 +1056,13 @@ fn refuse_repeated_entries_the_parser_reads_otherwise(
     }
     for (key, values) in entries {
         if values.len() > 1
-            && values.iter().any(|value| carries_parser_keywords(value))
+            && values.iter().any(|value| {
+                if only == Some(PROPERTIES) {
+                    properties_carry_parser_keywords(value)
+                } else {
+                    carries_parser_keywords(value)
+                }
+            })
             && !(by_position && the_last_has_the_highest_position(&values))
         {
             return Err(structure_error(format!(

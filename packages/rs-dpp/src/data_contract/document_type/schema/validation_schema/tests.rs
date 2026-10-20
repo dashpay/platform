@@ -1712,6 +1712,44 @@ fn should_refuse_a_repeated_property_carrying_parser_keywords() {
         assert!(message.contains("declared more than once"), "{message}");
     }
 
+    // as is one carrying them down its `properties` or `items`, which the parser reads
+    let bounded = platform_value!({ "type": "string", "maxBytes": 8 });
+    for nested in [
+        platform_value!({ "type": "object", "properties": { "inner": bounded.clone() } }),
+        platform_value!({ "type": "array", "items": bounded }),
+    ] {
+        let message = refusal(with_value(Value::Map(vec![
+            (text_value("type"), text_value("object")),
+            (
+                text_value("properties"),
+                Value::Map(vec![
+                    (text_value("x"), platform_value!({ "type": "object" })),
+                    (text_value("x"), nested),
+                ]),
+            ),
+        ])));
+        assert!(message.contains("declared more than once"), "{message}");
+    }
+
+    // but not one carrying them only where the parser never reads, in its entry or not
+    for data in [
+        platform_value!({ "type": "string", "examples": [{ "maxBytes": 1 }] }),
+        platform_value!({ "type": "object", "const": { "$ref": "#/$defs/bounded" } }),
+        platform_value!({ "type": "object", "enum": [{ "encryptedFor": "x" }] }),
+        platform_value!({ "type": "array", "contains": { "maxBytes": 1 } }),
+    ] {
+        build(with_value(Value::Map(vec![
+            (text_value("type"), text_value("object")),
+            (
+                text_value("properties"),
+                Value::Map(vec![
+                    (text_value("x"), data),
+                    (text_value("x"), platform_value!({ "type": "string" })),
+                ]),
+            ),
+        ])));
+    }
+
     // Without those keywords, the validator's last entry is the one held
     let schema = build(with_value(Value::Map(vec![
         (text_value("type"), text_value("object")),
