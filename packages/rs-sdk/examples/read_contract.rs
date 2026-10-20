@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, str::FromStr};
+use std::{num::NonZeroUsize, str::FromStr, sync::Arc};
 
 use clap::Parser;
 use dash_sdk::{mock::provider::GrpcContextProvider, platform::Fetch, Sdk, SdkBuilder};
