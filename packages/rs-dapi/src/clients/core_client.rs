@@ -50,7 +50,22 @@ impl CoreClient {
         R: Send + Sync + 'static,
         E: Send + Sync + 'static,
     {
-        let deadline = Instant::now() + REQUEST_TIMEOUT;
+        self.guarded_blocking_call_until(Instant::now() + REQUEST_TIMEOUT, op)
+            .await
+    }
+
+    /// [`Self::guarded_blocking_call`] with one `deadline` covering both the
+    /// permit wait and the call.
+    async fn guarded_blocking_call_until<F, R, E>(
+        &self,
+        deadline: Instant,
+        op: F,
+    ) -> Result<Result<R, E>, DapiError>
+    where
+        F: FnOnce(Arc<Client>) -> Result<R, E> + Send + 'static,
+        R: Send + Sync + 'static,
+        E: Send + Sync + 'static,
+    {
         let timed_out = || {
             DapiError::timeout(format!(
                 "Core RPC call of type {} did not complete",
@@ -471,12 +486,20 @@ impl CoreRpcAccessGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc as std_mpsc;
     use std::time::Duration;
     use tokio::sync::oneshot;
+    use tokio::task::JoinHandle;
+
+    /// Upper bound for a test step that should finish at a short deadline,
+    /// far below `REQUEST_TIMEOUT`.
+    const STEP_LIMIT: Duration = Duration::from_secs(5);
+
+    type BlockedCall = JoinHandle<Result<Result<(), ()>, DapiError>>;
 
     /// A client whose calls in these tests never reach Core: each operation
-    /// ignores the RPC client and blocks until the test releases it.
+    /// ignores the RPC client.
     fn test_client() -> CoreClient {
         CoreClient::new(
             "http://127.0.0.1:1".to_string(),
@@ -487,51 +510,134 @@ mod tests {
         .expect("client")
     }
 
-    #[tokio::test]
-    async fn should_keep_permits_until_cancelled_calls_return() {
-        let client = test_client();
-        let semaphore = client.access_guard.semaphore.clone();
+    /// Start a call whose operation blocks until the returned sender is used
+    /// or dropped. Returns once the operation runs, so it holds a permit.
+    async fn start_blocked_call(
+        client: &CoreClient,
+        deadline: Instant,
+    ) -> (BlockedCall, std_mpsc::Sender<()>) {
+        let (started_tx, started_rx) = oneshot::channel();
+        let (release_tx, release_rx) = std_mpsc::channel::<()>();
+        let caller = tokio::spawn({
+            let client = client.clone();
+            async move {
+                client
+                    .guarded_blocking_call_until(deadline, move |_| {
+                        let _ = started_tx.send(());
+                        let _ = release_rx.recv();
+                        Ok::<_, ()>(())
+                    })
+                    .await
+            }
+        });
+        started_rx.await.expect("call started");
+        (caller, release_tx)
+    }
 
-        let mut releases = Vec::new();
-        for _ in 0..CORE_RPC_GUARD_PERMITS {
-            let (started_tx, started_rx) = oneshot::channel();
-            let (release_tx, release_rx) = std_mpsc::channel::<()>();
-            releases.push(release_tx);
-
-            let caller = tokio::spawn({
-                let client = client.clone();
-                async move {
-                    client
-                        .guarded_blocking_call(move |_| {
-                            let _ = started_tx.send(());
-                            let _ = release_rx.recv();
-                            Ok::<_, ()>(())
-                        })
-                        .await
-                }
-            });
-            started_rx.await.expect("call started");
-            caller.abort();
-            assert!(caller.await.expect_err("caller aborted").is_cancelled());
-        }
-
-        // Every caller is gone, but every call is still running on Core.
-        assert_eq!(semaphore.available_permits(), 0);
-
-        drop(releases);
+    /// Wait until every permit is free again.
+    async fn wait_for_all_permits(client: &CoreClient) {
         let all = tokio::time::timeout(
-            Duration::from_secs(5),
-            semaphore.acquire_many(CORE_RPC_GUARD_PERMITS as u32),
+            STEP_LIMIT,
+            client
+                .access_guard
+                .semaphore
+                .acquire_many(CORE_RPC_GUARD_PERMITS as u32),
         )
         .await
         .expect("permits come back once the calls return")
         .expect("semaphore open");
         drop(all);
+    }
+
+    #[tokio::test]
+    async fn should_keep_permits_until_cancelled_calls_return() {
+        let client = test_client();
+
+        let mut releases = Vec::new();
+        for _ in 0..CORE_RPC_GUARD_PERMITS {
+            let (caller, release) =
+                start_blocked_call(&client, Instant::now() + REQUEST_TIMEOUT).await;
+            releases.push(release);
+            caller.abort();
+            assert!(caller.await.expect_err("caller aborted").is_cancelled());
+        }
+
+        // Every caller is gone, but every call is still running on Core.
+        assert_eq!(client.access_guard.semaphore.available_permits(), 0);
+
+        drop(releases);
+        wait_for_all_permits(&client).await;
 
         let result = client
             .guarded_blocking_call(|_| Ok::<_, ()>(7))
             .await
             .expect("call completes");
         assert_eq!(result, Ok(7));
+    }
+
+    #[tokio::test]
+    async fn should_time_out_a_call_still_waiting_for_a_permit_at_its_deadline() {
+        let client = test_client();
+
+        let mut holders = Vec::new();
+        for _ in 0..CORE_RPC_GUARD_PERMITS {
+            holders.push(start_blocked_call(&client, Instant::now() + REQUEST_TIMEOUT).await);
+        }
+
+        let ran = Arc::new(AtomicBool::new(false));
+        let result = tokio::time::timeout(
+            STEP_LIMIT,
+            client.guarded_blocking_call_until(Instant::now() + Duration::from_millis(50), {
+                let ran = ran.clone();
+                move |_| {
+                    ran.store(true, Ordering::SeqCst);
+                    Ok::<_, ()>(())
+                }
+            }),
+        )
+        .await
+        .expect("the wait for a permit ends at the call's deadline");
+
+        assert!(
+            matches!(result, Err(DapiError::Timeout(_))),
+            "expected a timeout, got {result:?}"
+        );
+        assert!(!ran.load(Ordering::SeqCst), "the queued call never ran");
+
+        for (caller, release) in holders {
+            release.send(()).expect("holder still running");
+            assert_eq!(
+                caller.await.expect("holder finished").expect("holder call"),
+                Ok(())
+            );
+        }
+        wait_for_all_permits(&client).await;
+    }
+
+    #[tokio::test]
+    async fn should_time_out_a_running_call_at_the_same_deadline_and_keep_its_permit() {
+        let client = test_client();
+
+        // The permit is free, so the operation starts at once and the call
+        // stage gets whatever is left of the same 100 ms deadline.
+        let (caller, release) =
+            start_blocked_call(&client, Instant::now() + Duration::from_millis(100)).await;
+        let result = tokio::time::timeout(STEP_LIMIT, caller)
+            .await
+            .expect("the wait for the call ends at the same deadline")
+            .expect("caller finished");
+
+        assert!(
+            matches!(result, Err(DapiError::Timeout(_))),
+            "expected a timeout, got {result:?}"
+        );
+        // The caller gave up, but the operation is still running and keeps its permit.
+        assert_eq!(
+            client.access_guard.semaphore.available_permits(),
+            CORE_RPC_GUARD_PERMITS - 1
+        );
+
+        drop(release);
+        wait_for_all_permits(&client).await;
     }
 }
