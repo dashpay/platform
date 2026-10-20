@@ -60,6 +60,8 @@ pub unsafe fn convert_put_settings(put_settings: *const DashSDKPutSettings) -> O
             batch_feature_version: None,
             method_feature_version: None,
             base_feature_version: None,
+            action_fee_agreement: None,
+            contest_fund: None,
         });
 
         let wait_timeout = if ios_settings.wait_timeout_ms > 0 {
@@ -87,7 +89,7 @@ pub unsafe fn parse_private_key(
     private_key_bytes: *const [u8; 32],
 ) -> Result<PrivateKey, FFIError> {
     let key_bytes = *private_key_bytes;
-    let secret_key = dashcore::secp256k1::SecretKey::from_byte_array(&key_bytes)
+    let secret_key = dashcore::secp256k1::SecretKey::from_secret_bytes(key_bytes)
         .map_err(|e| FFIError::InternalError(format!("Invalid private key: {}", e)))?;
     Ok(PrivateKey::new(secret_key, Network::Mainnet))
 }

@@ -1,6 +1,10 @@
 use crate::address_funds::PlatformAddress;
 use crate::asset_lock::StoredAssetLockInfo;
 use crate::balances::credits::TokenAmount;
+use crate::data_contract::config::moderation::{
+    ContractDocumentRemoval, ContractModerationListStatuses,
+};
+use crate::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
 use crate::data_contract::group::GroupSumPower;
 use crate::data_contract::DataContract;
 use crate::document::Document;
@@ -8,6 +12,10 @@ use crate::fee::Credits;
 use crate::group::group_action_status::GroupActionStatus;
 use crate::identity::{Identity, PartialIdentity};
 use crate::prelude::AddressNonce;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::tokens::info::IdentityTokenInfo;
 use crate::tokens::status::TokenStatus;
 use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
@@ -100,6 +108,21 @@ pub enum StateTransitionProofResult {
     ),
     VerifiedAssetLockConsumed(StoredAssetLockInfo),
     VerifiedShieldedNullifiers(Vec<(Vec<u8>, bool)>),
+    /// The proven total balance of a token's shielded pool (token id, balance). Returned by the
+    /// pool transitions that only create notes (mint, claim and purchase into the pool).
+    // Kept out of the `TryInto` derive: this shares a field-type list with a variant that
+    // predates it, and `derive_more` writes one `TryFrom` per distinct list. Including it
+    // would make that conversion accept either variant, so a caller using the tuple type to
+    // tell them apart would silently stop doing so. Match on the variant instead.
+    #[try_into(ignore)]
+    VerifiedTokenShieldedPoolBalance(
+        Identifier,
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_u64")
+        )]
+        TokenAmount,
+    ),
     VerifiedShieldedNullifiersWithAddressInfos(
         Vec<(Vec<u8>, bool)>,
         #[cfg_attr(
@@ -128,51 +151,184 @@ pub enum StateTransitionProofResult {
     /// STRICT merged multi-root GroveDB proof. A light/SDK client can cryptographically confirm both
     /// that the identity was created and that the funding nullifiers were consumed.
     VerifiedIdentityWithShieldedNullifiers(Identity, Vec<(Vec<u8>, bool)>),
+    /// Returned by `ContractUserModeration`: the target identity's status on the lists the
+    /// moderation touched (contract id, identity id, one status per list proved) after the
+    /// moderation. A ban proves both lists the contract keeps, since it also removes a
+    /// suspension; an unban, a suspend and an unsuspend prove the one list they edit, and say
+    /// nothing about the other.
+    VerifiedContractModerationListStatuses(Identifier, Identifier, ContractModerationListStatuses),
+    /// A contract fee claim's execution proof shows the pot it paid out (contract id, pot, the
+    /// pot's last claim, the credits left in it) and the balance of every identity it paid,
+    /// after the claim. A pot is paid out at most once per epoch, so within its epoch the last
+    /// claim is this claim, and its claimant and block time say so.
+    VerifiedContractFeeClaim(
+        Identifier,
+        ContractFeePot,
+        ContractFeePotLastClaim,
+        Credits,
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(
+                with = "crate::serialization::json::safe_integer_map::json_safe_identifier_u64_map"
+            )
+        )]
+        BTreeMap<Identifier, Credits>,
+    ),
+    /// Returned by a `ContractUserModeration` that deletes a document: the record the removal
+    /// left under the contract (contract id, document type name, document id, record). The
+    /// proof shows the record, and the verifier checks that it names the transition's signer
+    /// and carries the transition's reason. A document id is produced at most once, so the
+    /// record is of this document and of no other.
+    VerifiedContractDocumentRemoval(Identifier, String, Identifier, ContractDocumentRemoval),
+    /// Returned by a `MintToPool` submitted as a group action: the signer's recorded power, the
+    /// action's status, and the token shielded pool's total balance. A group action writes into
+    /// the pool only once the last required signature arrives, so while the action is active the
+    /// balance is the one the pool already held, and is absent for a pool that has never held a
+    /// note. A closed action has minted, so its balance is present.
+    // Kept out of the `TryInto` derive: this shares a field-type list with a variant that
+    // predates it, and `derive_more` writes one `TryFrom` per distinct list. Including it
+    // would make that conversion accept either variant, so a caller using the tuple type to
+    // tell them apart would silently stop doing so. Match on the variant instead.
+    #[try_into(ignore)]
+    VerifiedTokenGroupActionWithShieldedPoolBalance(
+        GroupSumPower,
+        GroupActionStatus,
+        #[cfg_attr(
+            feature = "json-conversion",
+            serde(with = "crate::serialization::json_safe_option_u64")
+        )]
+        Option<TokenAmount>,
+    ),
+    /// Returned by a `BurnFromPool` submitted as a group action: the signer's recorded power, the
+    /// action's status, and the spend status of every nullifier the burn names
+    /// (`(nullifier_bytes, spent)`). A group action spends nothing until the last required
+    /// signature arrives, so while the action is active every nullifier reads unspent; a closed
+    /// action has spent them all.
+    VerifiedTokenGroupActionWithShieldedNullifiers(
+        GroupSumPower,
+        GroupActionStatus,
+        Vec<(Vec<u8>, bool)>,
+    ),
+    /// Returned by a `ContractUserModeration` that proposes the deletion of a settled document
+    /// or approves a team action: the contract, the team action and whether it is still active
+    /// or closed. The proof shows the signer's approval among the action's, active or closed,
+    /// the action's id computed from the transition for a proposal. Closed means the approvals
+    /// met the rule and the action ran, by this approval or a later one: the document is
+    /// deleted. An approval stays where it is until its action closes, and then moves with it,
+    /// so the proof holds while the approval stands: one deleted because its member left the
+    /// team no longer proves.
+    VerifiedContractTeamActionSignature(Identifier, Identifier, GroupActionStatus),
 }
 
-/// A verified state-transition proof result, tagged with the guarantee the
-/// proof establishes.
+/// The guarantee a verified state-transition proof establishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
+#[cfg_attr(
+    feature = "serde-conversion",
+    derive(serde::Serialize, serde::Deserialize)
+)]
+pub enum StateTransitionProofGuarantee {
+    /// The proof binds the execution of this specific state transition:
+    /// the verified values could only exist if the transition was applied.
+    ExecutionProved,
+    /// The proof authenticates a snapshot of the state the transition
+    /// affects — keys derived from the transition, values as of the proof's
+    /// block — but cannot bind them to the execution of this transition.
+    /// Treat as a height-pinned snapshot, not as evidence of execution.
+    AffectedState,
+}
+
+/// A verified state-transition proof: the result, the guarantee the proof
+/// establishes for it, and, when the proof carries it, the credit balance of
+/// the identity that owns the transition after it executed.
 ///
 /// Some transition families (balance top-ups, credit transfers and
 /// withdrawals, address funds movements, shields, no-history token
 /// operations) produce proofs whose values cannot be bound to the execution
 /// of one specific transition: the proof only authenticates the affected
-/// keys' state at the committed block. The tag makes that distinction part
-/// of the type so a snapshot cannot be mistaken for execution evidence.
-#[derive(Debug, PartialEq, strum::Display)]
+/// keys' state at the committed block. The guarantee makes that distinction
+/// part of the type so a snapshot cannot be mistaken for execution evidence.
+///
+/// From protocol version 14 the proof of an owned, fee-paying transition
+/// (document and token batches, contract creates and updates, identity
+/// updates and key limit updates, contract moderation) also carries the
+/// owner's credit balance, read from the same state as the result. It is a
+/// snapshot at the proof's block whatever the guarantee, and `None` for a
+/// proof made at an earlier version or for a transition without an owner.
+#[derive(Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize)
 )]
-pub enum StateTransitionProofOutcome {
-    /// The proof binds the execution of this specific state transition:
-    /// the verified values could only exist if the transition was applied.
-    ExecutionProved(StateTransitionProofResult),
-    /// The proof authenticates a snapshot of the state the transition
-    /// affects — keys derived from the transition, values as of the proof's
-    /// block — but cannot bind them to the execution of this transition.
-    /// Treat as a height-pinned snapshot, not as evidence of execution.
-    AffectedState(StateTransitionProofResult),
+pub struct StateTransitionProofOutcome {
+    guarantee: StateTransitionProofGuarantee,
+    result: StateTransitionProofResult,
+    #[cfg_attr(
+        feature = "json-conversion",
+        serde(with = "crate::serialization::json_safe_option_u64")
+    )]
+    owner_balance: Option<Credits>,
 }
 
 impl StateTransitionProofOutcome {
-    /// The verified result, regardless of the guarantee tag.
-    pub fn result(&self) -> &StateTransitionProofResult {
-        match self {
-            Self::ExecutionProved(result) | Self::AffectedState(result) => result,
+    /// An outcome whose proof binds the execution of the transition.
+    pub fn execution_proved(result: StateTransitionProofResult) -> Self {
+        Self {
+            guarantee: StateTransitionProofGuarantee::ExecutionProved,
+            result,
+            owner_balance: None,
         }
     }
 
-    /// Consume the outcome, discarding the guarantee tag.
-    pub fn into_result(self) -> StateTransitionProofResult {
-        match self {
-            Self::ExecutionProved(result) | Self::AffectedState(result) => result,
+    /// An outcome whose proof only authenticates the affected state.
+    pub fn affected_state(result: StateTransitionProofResult) -> Self {
+        Self {
+            guarantee: StateTransitionProofGuarantee::AffectedState,
+            result,
+            owner_balance: None,
         }
+    }
+
+    /// The same outcome carrying the owner's credit balance the proof showed.
+    pub fn with_owner_balance(mut self, owner_balance: Option<Credits>) -> Self {
+        self.owner_balance = owner_balance;
+        self
+    }
+
+    /// The guarantee the proof establishes.
+    pub fn guarantee(&self) -> StateTransitionProofGuarantee {
+        self.guarantee
     }
 
     /// Whether the proof established that this specific transition executed.
     pub fn is_execution_proved(&self) -> bool {
-        matches!(self, Self::ExecutionProved(_))
+        self.guarantee == StateTransitionProofGuarantee::ExecutionProved
+    }
+
+    /// The verified result, regardless of the guarantee.
+    pub fn result(&self) -> &StateTransitionProofResult {
+        &self.result
+    }
+
+    /// Consume the outcome, discarding the guarantee and the balance.
+    pub fn into_result(self) -> StateTransitionProofResult {
+        self.result
+    }
+
+    /// The credit balance of the transition's owner after it executed, when
+    /// the proof carried it: a snapshot at the proof's block.
+    pub fn owner_balance(&self) -> Option<Credits> {
+        self.owner_balance
+    }
+
+    /// Consume the outcome into its guarantee, result and owner balance.
+    pub fn into_parts(
+        self,
+    ) -> (
+        StateTransitionProofGuarantee,
+        StateTransitionProofResult,
+        Option<Credits>,
+    ) {
+        (self.guarantee, self.result, self.owner_balance)
     }
 }
 
@@ -227,10 +383,10 @@ mod json_safe_address_info_map {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for StateTransitionProofResult {}
+impl JsonConvertible for StateTransitionProofResult {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for StateTransitionProofResult {}
+impl ValueConvertible for StateTransitionProofResult {}
 
 #[cfg(all(
     test,
@@ -311,6 +467,99 @@ mod json_convertible_tests {
         assert_eq!(original, recovered);
     }
 
+    /// A token shielded pool's balance is a `u64` in a tuple variant that `#[json_safe_fields]`
+    /// cannot reach, so the JS-safe helper has to sit on the field itself. Past
+    /// `Number.MAX_SAFE_INTEGER` it must serialize as a JSON string, or a JS consumer reads a
+    /// silently rounded pool balance.
+    #[test]
+    fn verified_token_shielded_pool_balance_large_amount_serializes_as_string() {
+        use crate::serialization::JsonConvertible;
+        let original = StateTransitionProofResult::VerifiedTokenShieldedPoolBalance(
+            Identifier::new([0xcd; 32]),
+            9_007_199_254_740_993, // 2^53 + 1
+        );
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json["VerifiedTokenShieldedPoolBalance"][1],
+            json!("9007199254740993")
+        );
+        let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    /// The pool balance a group action's proof carries is an optional `u64`, equally out of the
+    /// macro's reach, and equally lossy in JS without the helper.
+    #[test]
+    fn verified_token_group_action_with_shielded_pool_balance_large_amount_serializes_as_string() {
+        use crate::serialization::JsonConvertible;
+        let original = StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedPoolBalance(
+            1,
+            GroupActionStatus::ActionActive,
+            Some(9_007_199_254_740_993), // 2^53 + 1
+        );
+        let json = original.to_json().expect("to_json");
+        assert_eq!(
+            json["VerifiedTokenGroupActionWithShieldedPoolBalance"][2],
+            json!("9007199254740993")
+        );
+        let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    /// A group action burning out of a pool reports each named nullifier's spend status. An
+    /// action still gathering signatures has spent nothing, and the round trip has to preserve
+    /// those `false` flags rather than dropping them — they are what tells a client the burn has
+    /// not run yet.
+    #[test]
+    fn verified_token_group_action_with_shielded_nullifiers_round_trips_unspent_flags() {
+        use crate::serialization::JsonConvertible;
+        let original = StateTransitionProofResult::VerifiedTokenGroupActionWithShieldedNullifiers(
+            1,
+            GroupActionStatus::ActionActive,
+            vec![(vec![1u8, 2, 3], false), (vec![4u8, 5, 6], false)],
+        );
+        let json = original.to_json().expect("to_json");
+        // Each nullifier is a `[bytes, spent]` pair and the `false` is on the wire. Asserted on
+        // the wire rather than across a round trip because the round trip cannot see it: a
+        // serializer that wrote the nullifier alone and a deserializer that filled the flag back
+        // in as `false` would agree with each other and hand a client a burn with no spend
+        // status at all.
+        assert_eq!(
+            json,
+            json!({
+                "VerifiedTokenGroupActionWithShieldedNullifiers": [
+                    1,
+                    "actionActive",
+                    [[[1, 2, 3], false], [[4, 5, 6], false]],
+                ],
+            })
+        );
+        let recovered = StateTransitionProofResult::from_json(json).expect("from_json");
+        assert_eq!(original, recovered);
+    }
+
+    /// The outcome carries the owner's balance next to the result; past
+    /// `Number.MAX_SAFE_INTEGER` it serializes as a string, and a proof made
+    /// before protocol version 14 carries none.
+    #[test]
+    fn outcome_owner_balance_serializes_as_string_past_safe_integer() {
+        let outcome = StateTransitionProofOutcome::execution_proved(fixture())
+            .with_owner_balance(Some(9_007_199_254_740_993));
+        let json = serde_json::to_value(&outcome).expect("to json");
+        assert_eq!(json["owner_balance"], json!("9007199254740993"));
+        assert_eq!(json["guarantee"], json!("ExecutionProved"));
+        let recovered: StateTransitionProofOutcome =
+            serde_json::from_value(json).expect("from json");
+        assert_eq!(outcome, recovered);
+
+        let without_balance = StateTransitionProofOutcome::affected_state(fixture());
+        let json = serde_json::to_value(&without_balance).expect("to json");
+        assert_eq!(json["owner_balance"], serde_json::Value::Null);
+        let recovered: StateTransitionProofOutcome =
+            serde_json::from_value(json).expect("from json");
+        assert_eq!(without_balance, recovered);
+    }
+
     #[test]
     fn verified_address_infos_large_credits_serialize_as_string() {
         use crate::serialization::{JsonConvertible, ValueConvertible};
@@ -344,5 +593,30 @@ mod json_convertible_tests {
         let value = original.to_object().expect("to_object");
         let recovered = StateTransitionProofResult::from_object(value).expect("from_object");
         assert_eq!(original, recovered);
+    }
+    /// A pool balance must not convert through a pre-existing variant's `TryInto` impl.
+    ///
+    /// `derive_more::TryInto` writes one `TryFrom` per distinct field-type list and ORs every
+    /// matching variant into it. `TokenAmount` and `Credits` are both `u64`, so a pool balance's
+    /// list is identical to `VerifiedTokenBalance`'s, and including it would turn a conversion
+    /// that used to identify one variant into one that accepts either. The pool variants are
+    /// therefore excluded from the derive, and this pins that: the pre-existing conversion still
+    /// works and still means what it meant, and the pool variant is refused.
+    #[test]
+    fn should_refuse_to_convert_a_pool_balance_through_a_pre_existing_variants_impl() {
+        let id = Identifier::from([7u8; 32]);
+
+        let balance = StateTransitionProofResult::VerifiedTokenBalance(id, 42);
+        let converted: (Identifier, u64) = balance
+            .try_into()
+            .expect("the pre-existing conversion still identifies a token balance");
+        assert_eq!(converted, (id, 42));
+
+        let pool = StateTransitionProofResult::VerifiedTokenShieldedPoolBalance(id, 42);
+        let refused: Result<(Identifier, u64), _> = pool.try_into();
+        assert!(
+            refused.is_err(),
+            "a pool balance must not pass for a token balance"
+        );
     }
 }

@@ -28,13 +28,12 @@ impl<T: TransportRequest> DumpData<T> {
                 type_name::<T>()
             )
         });
-        let resp =
-            <MockResult<T>>::mock_deserialize(&self.serialized_response).unwrap_or_else(|| {
-                panic!(
-                    "unable to deserialize mock data of type {}",
-                    type_name::<T::Response>()
-                )
-            });
+        let Some(resp) = <MockResult<T>>::mock_deserialize(&self.serialized_response) else {
+            panic!(
+                "unable to deserialize mock data of type {}",
+                type_name::<T::Response>()
+            )
+        };
 
         (req, resp)
     }

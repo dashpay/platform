@@ -1,14 +1,26 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use bincode::{Decode, DecodeUntrusted, Encode};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use thiserror::Error;
 
 #[derive(
-    Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
+    Error,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserializeTrusted,
+    PlatformDeserializeUntrusted,
+    DecodeUntrusted,
 )]
-#[error("the document's {referring_property} does not agree with the referenced document's {referenced_property} (propertyAgreement on {path})")]
+#[error("the document's {referring_property} does not agree with the referenced document's {referenced_property} (where on {path})")]
 #[platform_serialize(unversioned)]
 pub struct ReferencedDocumentPropertyMismatchError {
     /*

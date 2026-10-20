@@ -30,6 +30,65 @@ describe('DocumentsTransitions', () => {
     });
   }
 
+  describe('DocumentBaseTransition', () => {
+    function createAgreement() {
+      return new wasm.DocumentActionFeeAgreement({
+        owner: 10000000n,
+        moderators: 100000000n,
+        feeMultiplier: {
+          knownPermille: 1000n,
+          increaseTolerancePercent: 20,
+        },
+      });
+    }
+
+    function createBase(actionFeeAgreement?: InstanceType<typeof wasm.DocumentActionFeeAgreement>) {
+      const documentInstance = createDocument();
+
+      return new wasm.DocumentBaseTransition({
+        documentId: documentInstance.id,
+        identityContractNonce: BigInt(1),
+        documentTypeName,
+        dataContractId,
+        actionFeeAgreement,
+      });
+    }
+
+    it('should carry the action fee agreement it was created with', () => {
+      const base = createBase(createAgreement());
+
+      const agreement = base.actionFeeAgreement;
+
+      expect(agreement.owner).to.equal(10000000n);
+      expect(agreement.moderators).to.equal(100000000n);
+      expect(agreement.knownFeeMultiplierPermille).to.equal(1000n);
+      expect(agreement.feeMultiplierIncreaseTolerancePercent).to.equal(20);
+      expect(agreement.pricing).to.equal('feeMultiplier');
+    });
+
+    it('should have no action fee agreement when none is given', () => {
+      const base = createBase();
+
+      expect(base.actionFeeAgreement).to.be.undefined();
+    });
+
+    it('should set the action fee agreement', () => {
+      const base = createBase();
+
+      base.actionFeeAgreement = createAgreement();
+
+      expect(base.actionFeeAgreement.owner).to.equal(10000000n);
+    });
+
+    it('should clear the action fee agreement with undefined', () => {
+      const base = createBase(createAgreement());
+
+      base.actionFeeAgreement = undefined;
+
+      expect(base.actionFeeAgreement).to.be.undefined();
+    });
+  });
+
   describe('DocumentCreateTransition', () => {
     describe('constructor', () => {
       it('should create instance from document', () => {
@@ -41,6 +100,81 @@ describe('DocumentsTransitions', () => {
 
         expect(documentInstance).to.be.an.instanceof(wasm.Document);
         expect(createTransition).to.be.an.instanceof(wasm.DocumentCreateTransition);
+      });
+
+      it('should derive the id from the entropy and the nonce and mirror it onto the document', () => {
+        // the document is built with an id that is not the one its create
+        // transition must carry: the constructor replaces it
+        const documentInstance = createDocument();
+        expect(documentInstance.id.toBase58()).to.equal(id);
+
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(7),
+        });
+
+        const derived = wasm.Document.generateId(
+          documentTypeName,
+          ownerId,
+          dataContractId,
+          documentInstance.entropy,
+          BigInt(7),
+        );
+
+        expect(createTransition.base.id.toBytes()).to.deep.equal(derived);
+        expect(documentInstance.id.toBytes()).to.deep.equal(derived);
+        expect(documentInstance.id.toBase58()).to.not.equal(id);
+      });
+
+      it('should derive a different id for another nonce', () => {
+        const documentInstance = createDocument();
+        const { entropy } = documentInstance;
+
+        const first = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+        const second = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(2),
+        });
+
+        expect(first.entropy).to.deep.equal(entropy);
+        expect(second.entropy).to.deep.equal(entropy);
+        expect(first.base.id.toBase58()).to.not.equal(second.base.id.toBase58());
+        // the document follows the transition it was last built into
+        expect(documentInstance.id.toBase58()).to.equal(second.base.id.toBase58());
+      });
+
+      it('should keep the entropy-only id before protocol version 14', () => {
+        const documentInstance = new wasm.Document({
+          properties: document,
+          documentTypeName,
+          dataContractId,
+          ownerId,
+          revision: BigInt(revision),
+        });
+        const placeholder = documentInstance.id.toBase58();
+
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          platformVersion: 13,
+        });
+
+        expect(createTransition.base.id.toBase58()).to.equal(placeholder);
+        expect(documentInstance.id.toBase58()).to.equal(placeholder);
+      });
+
+      it('should refuse a document without entropy', () => {
+        // a document read back from Platform carries none: it exists already
+        const documentInstance = createDocument();
+        documentInstance.entropy = undefined;
+
+        expect(() => new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        })).to.throw(/entropy/);
       });
     });
 
@@ -116,6 +250,36 @@ describe('DocumentsTransitions', () => {
       });
     });
 
+    describe('actionFeeAgreement', () => {
+      it('should pass the action fee agreement to the base', () => {
+        const documentInstance = createDocument();
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+          actionFeeAgreement: new wasm.DocumentActionFeeAgreement({
+            owner: 5000n,
+            moderators: 7000n,
+          }),
+        });
+
+        const agreement = createTransition.base.actionFeeAgreement;
+
+        expect(agreement.owner).to.equal(5000n);
+        expect(agreement.moderators).to.equal(7000n);
+        expect(agreement.pricing).to.equal('fixed');
+      });
+
+      it('should leave the base without an agreement when none is given', () => {
+        const documentInstance = createDocument();
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: documentInstance,
+          identityContractNonce: BigInt(1),
+        });
+
+        expect(createTransition.base.actionFeeAgreement).to.be.undefined();
+      });
+    });
+
     describe('entropy', () => {
       it('should return entropy', () => {
         const documentInstance = createDocument();
@@ -166,6 +330,100 @@ describe('DocumentsTransitions', () => {
 
         expect(createTransition.prefundedVotingBalance.indexName).to.equal(newPrefundedVotingBalance.indexName);
         expect(createTransition.prefundedVotingBalance.credits).to.equal(newPrefundedVotingBalance.credits);
+      });
+    });
+
+    describe('contest fund from dataContract', () => {
+      // A DPNS-like name contested while its label is 3 to 19 characters
+      const contract = () => new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(2),
+        schemas: {
+          domain: {
+            type: 'object',
+            documentsMutable: false,
+            canBeDeleted: true,
+            properties: {
+              normalizedLabel: { type: 'string', maxLength: 63, position: 0 },
+              normalizedParentDomainName: { type: 'string', maxLength: 63, position: 1 },
+            },
+            required: ['normalizedLabel', 'normalizedParentDomainName'],
+            indices: [{
+              name: 'parentNameAndLabel',
+              properties: [{ normalizedParentDomainName: 'asc' }, { normalizedLabel: 'asc' }],
+              unique: true,
+              contested: {
+                fieldMatches: [{ field: 'normalizedLabel', regexPattern: '^[a-zA-Z01-]{3,19}$' }],
+                resolution: 0,
+              },
+            }],
+            additionalProperties: false,
+          },
+        },
+        definitions: null,
+        fullValidation: false,
+        platformVersion: new wasm.PlatformVersion(14),
+      });
+      const name = (dataContract: InstanceType<typeof wasm.DataContract>, label: string) => new wasm.Document({
+        properties: { normalizedLabel: label, normalizedParentDomainName: 'dash' },
+        documentTypeName: 'domain',
+        dataContractId: dataContract.id,
+        ownerId,
+      });
+      // 0.1 Dash, the contested document fund of protocol version 14
+      const contestedDocumentFund = BigInt(10000000000);
+
+      it('should state the contest fund on the contested index of a contested document', () => {
+        const dataContract = contract();
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: name(dataContract, 'quantum'),
+          identityContractNonce: BigInt(1),
+          dataContract,
+        });
+
+        expect(createTransition.prefundedVotingBalance.indexName).to.equal('parentNameAndLabel');
+        expect(createTransition.prefundedVotingBalance.credits).to.equal(contestedDocumentFund);
+      });
+
+      it('should state contestFund in place of the contest fund', () => {
+        const dataContract = contract();
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: name(dataContract, 'quantum'),
+          identityContractNonce: BigInt(1),
+          dataContract,
+          contestFund: BigInt(7),
+        });
+
+        expect(createTransition.prefundedVotingBalance.indexName).to.equal('parentNameAndLabel');
+        expect(createTransition.prefundedVotingBalance.credits).to.equal(BigInt(7));
+      });
+
+      it('should state no fund for a document that matches no contested index', () => {
+        const dataContract = contract();
+        const createTransition = new wasm.DocumentCreateTransition({
+          document: name(dataContract, 'quantumexplorerdashx'),
+          identityContractNonce: BigInt(1),
+          dataContract,
+          contestFund: BigInt(7),
+        });
+
+        expect(createTransition.prefundedVotingBalance).to.equal(undefined);
+      });
+
+      it('should refuse contestFund without dataContract or prefundedVotingBalance', () => {
+        expect(() => new wasm.DocumentCreateTransition({
+          document: name(contract(), 'quantum'),
+          identityContractNonce: BigInt(1),
+          contestFund: BigInt(7),
+        })).to.throw(/contestFund needs dataContract/);
+      });
+
+      it('should refuse a dataContract that is not the contract of the document', () => {
+        expect(() => new wasm.DocumentCreateTransition({
+          document: createDocument(),
+          identityContractNonce: BigInt(1),
+          dataContract: contract(),
+        })).to.throw(/is not the contract of the document/);
       });
     });
 

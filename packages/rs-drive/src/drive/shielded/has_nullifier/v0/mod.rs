@@ -19,9 +19,30 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<bool, Error> {
         let nullifiers_path = shielded_credit_pool_nullifiers_path();
+        // The pool's path is a parameter now, and the credit pool passes the very path this
+        // function used to build for itself: every protocol version that selects this
+        // generation sees the same operations against the same tree.
+        self.has_nullifier_in_pool_v0(
+            &nullifiers_path,
+            nullifier,
+            transaction,
+            drive_operations,
+            platform_version,
+        )
+    }
 
+    /// O(1) nullifier membership lookup in the nullifiers tree at `nullifiers_path`, whichever
+    /// shielded pool (credit or token) it belongs to.
+    pub(in crate::drive) fn has_nullifier_in_pool_v0(
+        &self,
+        nullifiers_path: &[&[u8]],
+        nullifier: &[u8; 32],
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, Error> {
         self.grove_has_raw(
-            (&nullifiers_path).into(),
+            nullifiers_path.into(),
             nullifier,
             DirectQueryType::StatefulDirectQuery,
             transaction,

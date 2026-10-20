@@ -3,6 +3,8 @@ use crate::error::Error;
 mod verify_contract;
 mod verify_contract_history;
 mod verify_contract_return_serialization;
+mod verify_contracts_by_range;
+mod verify_contracts_versions;
 
 fn retry_contract_verification_with_history<R, RetryFn, HasPresentContractFn>(
     result: Result<R, Error>,

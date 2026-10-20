@@ -4,10 +4,14 @@
 //! data is available (e.g., address balances), it is sent across FFI in
 //! C-compatible structs so the caller can persist it incrementally (e.g., via
 //! SwiftData on iOS).
+//!
+//! The negative callback return codes defined here are unrelated to
+//! `rs-unified-sdk-jni`'s `RESOLVE_*` mnemonic-resolver codes, which reuse the
+//! same integers on a different callback family.
 
 use bincode::config;
 use key_wallet::account::account_collection::AccountCollection;
-use key_wallet::account::{Account, AccountType, BLSAccount, EdDSAAccount, StandardAccountType};
+use key_wallet::account::{Account, AccountType, StandardAccountType};
 use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::derivation_bls_bip32::ExtendedBLSPubKey;
@@ -19,19 +23,25 @@ use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoIn
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::AddressInfo;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use std::str::FromStr;
 
 use crate::types::{FFINetwork, Network};
+use platform_wallet::changeset::provider_key_account::{
+    rebuild_provider_key_account, ProviderAccountRebuildError,
+};
 use platform_wallet::changeset::{
     AccountAddressPoolEntry, AccountRegistrationEntry, ClientStartState, ClientWalletStartState,
-    ListedCoreTxid, Merge, PersistenceCapabilities, PersistenceError, PlatformWalletChangeSet,
-    PlatformWalletPersistence, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
-    PERSISTENCE_CAPABILITIES_VERSION,
+    ListedCoreTxid, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
+    PlatformWalletChangeSet, PlatformWalletPersistence, ProviderKeyAccountEntry,
+    ProviderKeyExtendedPubKey, PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
+#[cfg(feature = "shielded")]
+use platform_wallet::wallet::shielded::ShieldedActivityStatus;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::ffi::CString;
 use std::os::raw::c_char;
 use std::os::raw::c_void;
@@ -44,7 +54,11 @@ use crate::contact_persistence::{
     free_contact_requests_ffi, ContactIgnoredSenderFFI, ContactRequestFFI, ContactRequestRemovalFFI,
 };
 use crate::core_address_types::{AddressPoolTypeTagFFI, CoreAddressEntryFFI, KeyTypeTagFFI};
-use crate::core_wallet_types::{free_wallet_changeset_ffi, WalletChangeSetFFI};
+use crate::core_wallet_types::{
+    build_dashpay_backfill_covered_for_callback, build_sweep_batches_for_callback,
+    build_utxo_credit_verdicts_for_callback, free_wallet_changeset_ffi,
+    DashPayBackfillCoveredContactFFI, SweepBatchFFI, UtxoCreditVerdictFFI, WalletChangeSetFFI,
+};
 use crate::dashpay_payment::{build_payment_persist_entries, DashpayPaymentPersistEntryFFI};
 use crate::dpns_name_state_persistence::{
     build_dpns_name_state_entries, free_dpns_name_state_entries, DpnsNameStateFFI,
@@ -60,8 +74,8 @@ use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 use crate::wallet_restore_types::{
     AccountSpecFFI, AccountTypeTagFFI, ContactProfileRestoreEntryFFI, IdentityKeyRestoreFFI,
     IdentityRestoreEntryFFI, LoadWalletListFreeFn, PaymentRestoreEntryFFI,
-    ProviderSpecialTxRestoreEntryFFI, StandardAccountTypeTagFFI, UnresolvedAssetLockTxRecordFFI,
-    UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
+    ProviderSpecialTxRestoreEntryFFI, StandardAccountTypeTagFFI, UnconfirmedOutgoingTxRecordFFI,
+    UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -82,6 +96,14 @@ use std::ffi::CStr;
 /// `Mempool` vs no-evidence); see each match's comment.
 pub(crate) const TX_CONTEXT_RAW_IN_BLOCK: u32 = 2;
 pub(crate) const TX_CONTEXT_RAW_IN_CHAIN_LOCKED_BLOCK: u32 = 3;
+
+/// Byte budget for decoding a host-supplied account extended public key.
+///
+/// The upstream `key-wallet` xpub decoders do not implement
+/// `DecodeUntrusted`, so every decode of persisted `account_xpub_bytes`
+/// (ECDSA, BLS, EdDSA) runs under this explicit limit instead; a complete
+/// xpub of any of the three kinds is under 200 bytes.
+pub(crate) const ACCOUNT_XPUB_DECODE_LIMIT_BYTES: usize = 1024;
 
 /// Versioned C projection of [`PersistenceCapabilities`].
 ///
@@ -132,6 +154,9 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_ASSET_LOCKS: u64 = 1 <<
 /// `on_persist_tracked_masternodes_fn` + `on_load_tracked_masternodes_fn`
 /// + `on_load_tracked_masternodes_free_fn`, and the host declaring the bit.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_MASTERNODES: u64 = 1 << 10;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_CORE_SWEEP_REMOVAL: u64 = 1 << 11;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DASHPAY_PAYMENTS: u64 = 1 << 12;
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_OPERATION_IDS: u64 = 1 << 13;
 
 /// Version of [`PersistenceCallbacksExtension`]. The extension is deliberately
 /// separate from [`PersistenceCallbacks`]: existing hosts pass the latter by
@@ -180,6 +205,119 @@ pub type LoadTrackedMasternodesFn = unsafe extern "C" fn(
 
 pub type FreeTrackedMasternodesFn =
     unsafe extern "C" fn(context: *mut c_void, rows: *const TrackedMasternodeFFI, count: usize);
+
+/// Carries a round's sweep batches — the removals of transactions a later,
+/// final transaction provably beat to an input. Fired between the same
+/// begin/end pair as the round's other per-kind callbacks, immediately
+/// after `on_persist_wallet_changeset_fn`, so the additive half of the
+/// round (including a wallet-relevant winner's own record) is already
+/// staged when the removal decides which links point at a dead
+/// transaction. Batches arrive in emission order and must be applied in
+/// sequence; see [`SweepBatchFFI`]. A non-zero return fails the round like
+/// any other per-kind callback — a deletion silently skipped would let
+/// Rust clear the sweep while the dead row survives.
+pub type PersistWalletChangesetSweepsFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    sweeps: *const SweepBatchFFI,
+    sweeps_count: usize,
+) -> i32;
+
+/// Carries the NUMERIC block height of the round's applied chainlock —
+/// the same watermark whose bincode blob rides
+/// `WalletChangeSetFFI::last_applied_chain_lock_bytes`, which is opaque to
+/// a non-Rust host. The height is one half of the sweep-tombstone
+/// collection boundary `min(chainlock_height, synced_height)` (see
+/// [`SweepBatchFFI::winner_mined_height`]); without it a host either
+/// cannot collect at all or has to guess from the synced height alone,
+/// which is not finality. Fired inside the round's begin/end bracket,
+/// after `on_persist_wallet_changeset_fn`, on every round whose changeset
+/// carries a chainlock — including a re-application at a height already
+/// stored, since Rust does not track what the host has. Monotonic-max
+/// semantics at the host are what make that harmless: chain locks only
+/// move forward, so store `max(stored, incoming)`. A non-zero
+/// return fails the round like any other per-kind callback.
+pub type PersistWalletChangesetChainLockHeightFn =
+    unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8, chain_lock_height: u32) -> i32;
+
+/// Carries the engine's credit verdicts for the round — every `Received` /
+/// `Change` output of the round's records that the engine did NOT credit
+/// to the owning account, with the reason (see [`UtxoCreditVerdictFFI`]).
+/// Fired inside the round's begin/end bracket, BEFORE
+/// `on_persist_wallet_changeset_fn`, so a persister that derives its UTXO
+/// rows from record roles can consult the verdicts while it applies the
+/// round's `utxos_added` entries — after the changeset callback would be
+/// too late, the row would already be staged as unspent. Fired only on
+/// rounds that carry at least one verdict; a round where every output was
+/// credited never fires it, so ignoring the slot is exactly today's
+/// behaviour. A non-zero return fails the round like any other per-kind
+/// callback: a verdict silently dropped leaves a phantom coin the store
+/// hands back to the engine at the next load.
+pub type PersistWalletChangesetUtxoVerdictsFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    verdicts: *const UtxoCreditVerdictFFI,
+    verdicts_count: usize,
+) -> i32;
+
+/// Persist one identity's optional balance freshness stamp in the same
+/// transaction as its legacy identity row. A null stamp means no watermark.
+pub type PersistIdentityBalanceBlockTimeFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    identity_id: *const u8,
+    block_time: *const crate::types::BlockTime,
+) -> i32;
+
+/// Load the stamp without allocating a host-owned array. `out_found` separates
+/// an absent legacy stamp from a valid all-zero block time.
+pub type LoadIdentityBalanceBlockTimeFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    identity_id: *const u8,
+    out_found: *mut bool,
+    out_block_time: *mut crate::types::BlockTime,
+) -> i32;
+
+/// Carries the wallet's DashPay coreHeight backfill record
+/// ([`DashPayBackfillRecord`](platform_wallet::changeset::DashPayBackfillRecord))
+/// whenever a round writes one: the rescan sweep stores it on the same round
+/// as the lowered `synced_height` it belongs with, so a host that stores
+/// both has a record that vouches only for a cursor it also stored. Fired
+/// inside the round's begin/end bracket, after the core changeset callback.
+/// Every write is the whole record — `floor`, `rewound_from`, and every
+/// covered contact — so the host replaces, never merges. A host without
+/// the slot keeps today's behaviour: the backfill re-fires on every launch,
+/// slow but never lossy (dashpay/platform#4302).
+pub type PersistWalletDashPayBackfillFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    floor: u32,
+    rewound_from: u32,
+    covered: *const DashPayBackfillCoveredContactFFI,
+    covered_count: usize,
+) -> i32;
+
+/// Associate an immutable 16-byte operation UUID with a 36-byte raw outpoint.
+/// Runs after the legacy asset-lock upsert, inside the same atomic changeset.
+/// All three byte pointers are readable for the duration of the callback.
+pub type PersistAssetLockOperationIdFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    operation_id: *const u8,
+) -> i32;
+
+/// Read the optional UUID for a restored outpoint, including consumed rows.
+/// `out_operation_id` points to 16 writable bytes. An unreadable or missing
+/// asset-lock row must return an error, not a successful `out_found = false`.
+pub type LoadAssetLockOperationIdFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    out_found: *mut bool,
+    out_operation_id: *mut u8,
+) -> i32;
 
 /// Size- and version-tagged additive persistence callbacks.
 ///
@@ -244,6 +382,109 @@ pub struct PersistenceCallbacksExtension {
     pub on_load_tracked_masternodes_free_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, rows: *const TrackedMasternodeFFI, count: usize),
     >,
+    /// The round's sweep batches (see [`PersistWalletChangesetSweepsFn`]).
+    /// Lives here rather than on [`WalletChangeSetFFI`] because that struct
+    /// crosses by bare pointer with no size field: appending the batches
+    /// there would let a newer callback dereference fields an older native
+    /// producer never allocated. Appended under the same version — the
+    /// version names the stable field ordering, and `struct_size` is what
+    /// proves how much of it a given host actually supplied: Rust reads
+    /// this slot only when the host's declared size covers it, so an older
+    /// extension simply never has its sweeps read rather than being
+    /// rejected outright (which a version bump would do, taking its DPNS
+    /// callback down with it).
+    pub on_persist_wallet_changeset_sweeps_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            sweeps: *const SweepBatchFFI,
+            sweeps_count: usize,
+        ) -> i32,
+    >,
+    /// The round's numeric chainlock height (see
+    /// [`PersistWalletChangesetChainLockHeightFn`]). Appended under the
+    /// same version for the same reason as the sweeps slot above:
+    /// `struct_size` proves whether a host allocated it, and a host that
+    /// did not simply never has it read. Purely additive — a host without
+    /// it keeps working, it just cannot compute the tombstone-collection
+    /// finality boundary and must hold its tombstones instead.
+    pub on_persist_wallet_changeset_chain_lock_height_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            chain_lock_height: u32,
+        ) -> i32,
+    >,
+    /// The round's credit verdicts (see
+    /// [`PersistWalletChangesetUtxoVerdictsFn`]). Appended under the same
+    /// version for the same reason as the two slots above: `struct_size`
+    /// proves whether a host allocated it, and a host that did not simply
+    /// never has it read — which is exactly today's behaviour, since a
+    /// verdict only ever refines what the changeset callback would have
+    /// written on its own.
+    pub on_persist_wallet_changeset_utxo_verdicts_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            verdicts: *const UtxoCreditVerdictFFI,
+            verdicts_count: usize,
+        ) -> i32,
+    >,
+    /// Additive sidecar: never change the stride of `IdentityEntryFFI` or
+    /// `IdentityRestoreEntryFFI`, which old hosts still allocate unchanged.
+    pub on_persist_identity_balance_block_time_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            identity_id: *const u8,
+            block_time: *const crate::types::BlockTime,
+        ) -> i32,
+    >,
+    pub on_load_identity_balance_block_time_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            identity_id: *const u8,
+            out_found: *mut bool,
+            out_block_time: *mut crate::types::BlockTime,
+        ) -> i32,
+    >,
+    /// The wallet's DashPay backfill record (see
+    /// [`PersistWalletDashPayBackfillFn`]). Appended under the same version
+    /// for the same reason as the slots above: `struct_size` proves whether
+    /// a host allocated it, and a host that did not simply never has it read
+    /// — which is exactly today's behaviour, a backfill that re-fires on
+    /// every launch.
+    pub on_persist_wallet_dashpay_backfill_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            floor: u32,
+            rewound_from: u32,
+            covered: *const DashPayBackfillCoveredContactFFI,
+            covered_count: usize,
+        ) -> i32,
+    >,
+    /// Additive sidecar: the unversioned `AssetLockEntryFFI` stride is frozen.
+    /// Both slots plus the legacy persist/load callbacks are required before
+    /// the host can attest `ASSET_LOCK_OPERATION_IDS`.
+    pub on_persist_asset_lock_operation_id_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_point: *const u8,
+            operation_id: *const u8,
+        ) -> i32,
+    >,
+    pub on_load_asset_lock_operation_id_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_point: *const u8,
+            out_found: *mut bool,
+            out_operation_id: *mut u8,
+        ) -> i32,
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -256,6 +497,14 @@ impl Default for PersistenceCallbacksExtension {
             on_persist_tracked_masternodes_fn: None,
             on_load_tracked_masternodes_fn: None,
             on_load_tracked_masternodes_free_fn: None,
+            on_persist_wallet_changeset_sweeps_fn: None,
+            on_persist_wallet_changeset_chain_lock_height_fn: None,
+            on_persist_wallet_changeset_utxo_verdicts_fn: None,
+            on_persist_identity_balance_block_time_fn: None,
+            on_load_identity_balance_block_time_fn: None,
+            on_persist_wallet_dashpay_backfill_fn: None,
+            on_persist_asset_lock_operation_id_fn: None,
+            on_load_asset_lock_operation_id_fn: None,
         }
     }
 }
@@ -269,6 +518,102 @@ pub struct PersistenceExtensionCallbacks {
     pub persist_tracked_masternodes: Option<PersistTrackedMasternodesFn>,
     pub load_tracked_masternodes: Option<LoadTrackedMasternodesFn>,
     pub load_tracked_masternodes_free: Option<FreeTrackedMasternodesFn>,
+    pub wallet_changeset_sweeps: Option<PersistWalletChangesetSweepsFn>,
+    pub wallet_changeset_chain_lock_height: Option<PersistWalletChangesetChainLockHeightFn>,
+    pub wallet_changeset_utxo_verdicts: Option<PersistWalletChangesetUtxoVerdictsFn>,
+    pub persist_identity_balance_block_time: Option<PersistIdentityBalanceBlockTimeFn>,
+    pub load_identity_balance_block_time: Option<LoadIdentityBalanceBlockTimeFn>,
+    pub wallet_dashpay_backfill: Option<PersistWalletDashPayBackfillFn>,
+    pub persist_asset_lock_operation_id: Option<PersistAssetLockOperationIdFn>,
+    pub load_asset_lock_operation_id: Option<LoadAssetLockOperationIdFn>,
+}
+
+/// Return value by which a persistence callback reports a **retryable**
+/// failure after which nothing was applied (the host's own `SQLITE_BUSY` /
+/// `SQLITE_FULL` / `SQLITE_IOERR` class).
+///
+/// The host holds the storage handle and is the only party that can see the
+/// native status code, so this is the only channel through which a retry
+/// classification reaches Rust. Surfaces to the caller as
+/// [`PersistenceErrorKind::Transient`]; the caller — never this crate —
+/// decides whether to retry.
+///
+/// Hosts use their binding's named constant rather than the literal:
+/// `NativePersistenceBridge.PERSIST_RC_TRANSIENT` (Kotlin),
+/// `PlatformWalletPersistRC.transient` (Swift).
+pub const PLATFORM_WALLET_PERSIST_RC_TRANSIENT: i32 = -2;
+
+/// Return value by which a persistence callback reports a constraint /
+/// foreign-key / integrity violation, surfacing as
+/// [`PersistenceErrorKind::Constraint`] — "the data is wrong", as opposed to
+/// "the storage engine is unhappy". Not retryable.
+///
+/// Named on the host side as `NativePersistenceBridge.PERSIST_RC_CONSTRAINT`
+/// (Kotlin) and `PlatformWalletPersistRC.constraint` (Swift).
+pub const PLATFORM_WALLET_PERSIST_RC_CONSTRAINT: i32 = -3;
+
+/// Classify a non-zero persistence-callback return value.
+///
+/// Only the two documented sentinels carry a classification; every other
+/// non-zero value keeps the conservative [`PersistenceErrorKind::Fatal`]
+/// reading, so hosts written against the plain `0` / non-zero contract
+/// behave exactly as before.
+fn persist_rc_kind(rc: i32) -> PersistenceErrorKind {
+    match rc {
+        PLATFORM_WALLET_PERSIST_RC_TRANSIENT => PersistenceErrorKind::Transient,
+        PLATFORM_WALLET_PERSIST_RC_CONSTRAINT => PersistenceErrorKind::Constraint,
+        _ => PersistenceErrorKind::Fatal,
+    }
+}
+
+/// Build the error for a non-zero return from a **single-call** callback (a
+/// load, a flush, a standalone persist), carrying the host's classification of
+/// `rc`. Round callbacks instead accumulate into [`RoundOutcome`], which
+/// classifies once for the whole round.
+fn persist_callback_error(rc: i32, message: impl Into<String>) -> PersistenceError {
+    PersistenceError::backend_with_kind(persist_rc_kind(rc), message.into())
+}
+
+/// The verdict of one `store` round's callbacks: fails if any callback failed,
+/// reporting the MOST SEVERE kind any returned
+/// (`Fatal` > `Constraint` > `Transient`) so one host-declared transient can
+/// never mask a fatal sibling.
+#[derive(Default)]
+struct RoundOutcome {
+    worst: Option<PersistenceErrorKind>,
+}
+
+impl RoundOutcome {
+    /// Record a non-zero return `rc` from a round callback.
+    fn record(&mut self, rc: i32) {
+        self.escalate(persist_rc_kind(rc));
+    }
+
+    /// Record a failure that can never be transient: a Rust-side encoding
+    /// failure (the same changeset will not encode later), or a rollback the
+    /// host could not complete.
+    fn record_fatal(&mut self) {
+        self.escalate(PersistenceErrorKind::Fatal);
+    }
+
+    /// `PersistenceErrorKind` declares its variants in ascending severity and
+    /// derives `Ord` accordingly, so the ranking lives on the type.
+    fn escalate(&mut self, kind: PersistenceErrorKind) {
+        if self.worst.is_none_or(|worst| kind > worst) {
+            self.worst = Some(kind);
+        }
+    }
+
+    /// `true` while every callback so far has succeeded — what
+    /// `on_changeset_end_fn` receives as its `success` argument.
+    fn is_success(&self) -> bool {
+        self.worst.is_none()
+    }
+
+    /// The kind to report for the round, or `None` if it succeeded.
+    fn failure_kind(&self) -> Option<PersistenceErrorKind> {
+        self.worst
+    }
 }
 
 /// C callback vtable for wallet persistence.
@@ -292,6 +637,49 @@ pub struct PersistenceExtensionCallbacks {
 /// callback returns and the lock is released.) Keep the work bounded; the call
 /// blocks every other wallet accessor while it runs. Mirrors the Rust-side
 /// `PlatformWalletPersistence::store` reentrancy contract.
+///
+/// # Reporting a failure's retry classification
+///
+/// Every callback below returns `0` for success and non-zero for failure.
+/// A plain non-zero value means "failed, do not retry" — the conservative
+/// reading Rust has always applied, so a host written against the original
+/// contract needs no change.
+///
+/// A host that can classify its own failure (it holds the storage handle and
+/// sees the native status code) may instead return one of two sentinels,
+/// which reach the Rust caller as a typed retry classification:
+///
+/// * [`PLATFORM_WALLET_PERSIST_RC_TRANSIENT`] — a retryable failure after
+///   which **nothing was applied** (`SQLITE_BUSY` and friends).
+/// * [`PLATFORM_WALLET_PERSIST_RC_CONSTRAINT`] — a constraint / integrity
+///   violation: the data is wrong, and retrying it unchanged will not help.
+///
+/// Reads and writes are never retried in-crate; the caller decides. Manager
+/// hydration and wallet registration run synchronous loads on the blocking
+/// pool. Direct trait reads run inline.
+///
+/// ## What a transient verdict promises, and who must honour it
+///
+/// A caller acting on "transient" re-issues the WHOLE changeset, and changeset
+/// vectors merge by appending — so the verdict is only meaningful when the
+/// failed round left nothing applied. That is exactly what
+/// `ATOMIC_CHANGESETS` attests and what [`Self::on_changeset_end_fn`] with
+/// `success = false` exists to drive, so a `store` round reports a transient
+/// failure ONLY when both round brackets are wired AND the host declared
+/// `ATOMIC_CHANGESETS`; otherwise Rust downgrades it to fatal, because a
+/// partially applied round re-sent in full duplicates rows rather than
+/// replacing them. **A host that does not roll a failed round back must not
+/// return the transient sentinel from a round callback.** Single-call
+/// callbacks (loads, flush, the changeset-begin abort) have no such
+/// precondition: each is one operation that either happened or did not.
+///
+/// ## Which slots can carry a sentinel at all
+///
+/// Only slots that return `i32`. A binding whose load slots hand back holder
+/// objects rather than a status code — the Kotlin bridge — has nowhere to put
+/// one, so every load failure there, thrown exceptions included, reaches Rust
+/// as fatal and unclassified. `on_get_core_tx_record_fn` is a further
+/// exception in this vtable: see its own doc.
 #[repr(C)]
 #[allow(clippy::type_complexity)]
 pub struct PersistenceCallbacks {
@@ -316,7 +704,10 @@ pub struct PersistenceCallbacks {
     /// itself failed (e.g. the atomic `save()` threw and the staged
     /// writes were rolled back); `store()` then returns `Err` so the
     /// caller does not advance state against data that never reached
-    /// durable storage.
+    /// durable storage. Failing while `success` was `false` reports a
+    /// failed ROLLBACK instead, leaving the round's disposition unknown:
+    /// `store()` then reports fatal whatever this returns, because a
+    /// changeset that may be half-applied must never be re-issued.
     pub on_changeset_end_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, wallet_id: *const u8, success: bool) -> i32,
     >,
@@ -1046,14 +1437,40 @@ pub struct FFIPersister {
     callbacks: PersistenceCallbacks,
     /// Additive callbacks negotiated outside the legacy unsized vtable.
     dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
+    /// `Some` only when the host's extension `struct_size` proved the slot
+    /// was allocated — read by `persistence_extension_callbacks` in
+    /// `manager.rs` through the `negotiated_extension_slot!` macro, which
+    /// is the single gate authority for every negotiated slot. That proof
+    /// is also what makes this a real structural attestation of
+    /// `CORE_SWEEP_REMOVAL`, unlike the legacy changeset callback whose
+    /// unchanged signature proves nothing.
+    wallet_changeset_sweeps_callback: Option<PersistWalletChangesetSweepsFn>,
+    /// `Some` only when the host's extension `struct_size` proved the slot
+    /// was allocated. Carries the numeric chainlock height a non-Rust host
+    /// cannot read out of the bincode blob on the changeset struct; a host
+    /// without it simply never collects sweep tombstones (safe — held, not
+    /// leaked to the unspent set).
+    wallet_changeset_chain_lock_height_callback: Option<PersistWalletChangesetChainLockHeightFn>,
+    /// `Some` only when the host's extension `struct_size` proved the slot
+    /// was allocated. Carries the engine's credit verdicts for the round's
+    /// `Received` / `Change` outputs it did not credit; a host without it
+    /// materialises those rows unspent, as every host did before the slot
+    /// existed.
+    wallet_changeset_utxo_verdicts_callback: Option<PersistWalletChangesetUtxoVerdictsFn>,
+    /// `Some` only when the host's extension `struct_size` proved the slot
+    /// was allocated. Carries the DashPay backfill record a round writes; a
+    /// host without it re-runs the backfill on every launch, as every host
+    /// did before the slot existed (dashpay/platform#4302).
+    wallet_dashpay_backfill_callback: Option<PersistWalletDashPayBackfillFn>,
     /// Additive tracked-masternode persistence trio (persist / load /
     /// free), likewise extension-negotiated.
     tracked_masternodes_callbacks: PersistenceExtensionCallbacks,
+    persist_identity_balance_block_time_callback: Option<PersistIdentityBalanceBlockTimeFn>,
+    load_identity_balance_block_time_callback: Option<LoadIdentityBalanceBlockTimeFn>,
     /// Semantic capability declaration supplied separately from the callback
     /// vtable by the additive manager-create API. Keeping this out of
     /// `PersistenceCallbacks` preserves that established C struct's size.
     declared_capabilities: PersistenceCapabilities,
-    pending: RwLock<BTreeMap<WalletId, PlatformWalletChangeSet>>,
     /// Serializes the ENTIRE begin→per-kind→end callback round of
     /// [`Self::store`]. Every round producer (the core-changeset bridge,
     /// platform-address sync, shielded sync, spawned DashPay tasks) shares
@@ -1065,7 +1482,8 @@ pub struct FFIPersister {
     /// spent-marker rows while both `store()` calls still return `Ok`,
     /// bypassing the durable-watermark fault latch and recreating
     /// dashpay/platform#4069. Holding this lock for the whole round makes
-    /// each round atomic with respect to every other round.
+    /// each round atomic with respect to every other round and the complete
+    /// restore read (including additive sidecars).
     round_lock: Mutex<RoundGuardState>,
 }
 
@@ -1113,11 +1531,45 @@ impl FFIPersister {
         declared_capabilities: PersistenceCapabilities,
         dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
     ) -> Self {
+        Self::new_with_persistence_capabilities_and_extension_callbacks(
+            callbacks,
+            declared_capabilities,
+            dpns_name_states_callback,
+            None,
+        )
+    }
+
+    pub fn new_with_persistence_capabilities_and_extension_callbacks(
+        callbacks: PersistenceCallbacks,
+        declared_capabilities: PersistenceCapabilities,
+        dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
+        wallet_changeset_sweeps_callback: Option<PersistWalletChangesetSweepsFn>,
+    ) -> Self {
+        Self::new_with_persistence_capabilities_and_all_extension_callbacks(
+            callbacks,
+            declared_capabilities,
+            dpns_name_states_callback,
+            wallet_changeset_sweeps_callback,
+            None,
+        )
+    }
+
+    pub fn new_with_persistence_capabilities_and_all_extension_callbacks(
+        callbacks: PersistenceCallbacks,
+        declared_capabilities: PersistenceCapabilities,
+        dpns_name_states_callback: Option<PersistDpnsNameStatesFn>,
+        wallet_changeset_sweeps_callback: Option<PersistWalletChangesetSweepsFn>,
+        wallet_changeset_chain_lock_height_callback: Option<
+            PersistWalletChangesetChainLockHeightFn,
+        >,
+    ) -> Self {
         Self::new_with_persistence_capabilities_and_extensions(
             callbacks,
             declared_capabilities,
             PersistenceExtensionCallbacks {
                 dpns_name_states: dpns_name_states_callback,
+                wallet_changeset_sweeps: wallet_changeset_sweeps_callback,
+                wallet_changeset_chain_lock_height: wallet_changeset_chain_lock_height_callback,
                 ..Default::default()
             },
         )
@@ -1131,10 +1583,32 @@ impl FFIPersister {
         Self {
             callbacks,
             dpns_name_states_callback: extensions.dpns_name_states,
+            wallet_changeset_sweeps_callback: extensions.wallet_changeset_sweeps,
+            wallet_changeset_chain_lock_height_callback: extensions
+                .wallet_changeset_chain_lock_height,
+            wallet_changeset_utxo_verdicts_callback: extensions.wallet_changeset_utxo_verdicts,
+            wallet_dashpay_backfill_callback: extensions.wallet_dashpay_backfill,
             tracked_masternodes_callbacks: extensions,
+            persist_identity_balance_block_time_callback: extensions
+                .persist_identity_balance_block_time,
+            load_identity_balance_block_time_callback: extensions.load_identity_balance_block_time,
             declared_capabilities,
-            pending: RwLock::new(BTreeMap::new()),
             round_lock: Mutex::new(RoundGuardState::default()),
+        }
+    }
+
+    /// Narrow a round's failure kind to what the caller may safely act on:
+    /// `Transient` survives only where
+    /// [`Self::store_transient_is_reissuable`] holds, since losing a retry
+    /// opportunity costs less than the rows a re-sent partial round would
+    /// duplicate. `Constraint` and `Fatal` invite no retry, so they pass
+    /// through.
+    fn reportable_round_kind(&self, reported: PersistenceErrorKind) -> PersistenceErrorKind {
+        match reported {
+            PersistenceErrorKind::Transient if !self.store_transient_is_reissuable() => {
+                PersistenceErrorKind::Fatal
+            }
+            kind => kind,
         }
     }
 
@@ -1168,6 +1642,21 @@ impl FFIPersister {
         if self.callbacks.on_persist_asset_locks_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
         }
+        if wallet_restore
+            && self.callbacks.on_persist_asset_locks_fn.is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .persist_asset_lock_operation_id
+                .is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .load_asset_lock_operation_id
+                .is_some()
+        {
+            // The declaration additionally attests UUID preservation, consumed
+            // tombstones and fail-closed loads. Legacy hosts do not set this bit.
+            capabilities = capabilities.union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS);
+        }
         if self
             .tracked_masternodes_callbacks
             .persist_tracked_masternodes
@@ -1192,6 +1681,48 @@ impl FFIPersister {
         if self.callbacks.on_persist_token_balances_fn.is_some() {
             capabilities = capabilities.union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE);
         }
+        // The dashpay-payments slot is what the sweep's Failed flip rides
+        // (`dashpay_payments_overlay` on the store round). A host that
+        // never wired it — Android deliberately keeps payment recording
+        // in-memory-only — must not read as payment-durable, or the
+        // wallet-event adapter would couple the flip to a round that
+        // silently drops it: the accepted-and-ignored shape the sweep
+        // bit's own gating exists to prevent, reproduced one channel over.
+        if self.callbacks.on_persist_dashpay_payments_fn.is_some() {
+            capabilities = capabilities.union(PersistenceCapabilities::DASHPAY_PAYMENTS);
+        }
+        // Sweeps travel through the size-tagged extension callback, so —
+        // unlike the legacy `on_persist_wallet_changeset_fn`, whose
+        // unchanged C signature proves nothing about what a host actually
+        // reads — this slot being `Some` is a genuine structural
+        // attestation: it exists only when the host's declared extension
+        // `struct_size` covered the field. The changeset callback is still
+        // required alongside it because a sweep only corrects state that
+        // callback persists; a sweeps slot with no changeset slot would
+        // attest removals against rows the host never writes. The bit is
+        // still additionally gated by `declared_capabilities` in
+        // `persistence_capabilities()` below, like every other bit: the
+        // host must attest the semantic contract, not just wire pointers.
+        //
+        // The begin/end pair and `ATOMIC_CHANGESETS` are required on top,
+        // and only for this bit, because moving sweeps onto their own slot
+        // split one logical `CoreChangeSet` across two calls. Without a
+        // round that commits or rolls back as a unit, the changeset call
+        // can make the watermark and the additive rows durable and the
+        // process can stop before the sweep call applies the removal —
+        // leaving a host that restarts past a deletion it never performed
+        // and reloads the dead transaction. Nothing before sweeps could
+        // fail this way: every core field arrived through one callback.
+        if self.wallet_changeset_sweeps_callback.is_some()
+            && self.callbacks.on_persist_wallet_changeset_fn.is_some()
+            && self.callbacks.on_changeset_begin_fn.is_some()
+            && self.callbacks.on_changeset_end_fn.is_some()
+            && self
+                .declared_capabilities
+                .contains(PersistenceCapabilities::ATOMIC_CHANGESETS)
+        {
+            capabilities = capabilities.union(PersistenceCapabilities::CORE_SWEEP_REMOVAL);
+        }
         #[cfg(feature = "shielded")]
         if self.callbacks.on_persist_shielded_viewing_keys_fn.is_some()
             && self.callbacks.on_load_shielded_viewing_keys_fn.is_some()
@@ -1210,6 +1741,16 @@ impl FFIPersister {
 }
 
 impl PlatformWalletPersistence for FFIPersister {
+    /// A host attests `ATOMIC_CHANGESETS` for a round it commits or rolls back
+    /// whole; nothing of a rolled-back round survives on this side either, so
+    /// the changeset is the caller's to re-issue. The capability is the
+    /// declaration intersected with the wired brackets, so an attestation
+    /// without an `end` callback to roll anything back does not count.
+    fn store_transient_is_reissuable(&self) -> bool {
+        self.persistence_capabilities()
+            .contains(PersistenceCapabilities::ATOMIC_CHANGESETS)
+    }
+
     // Fan-out coverage note: `pending_contact_crypto_added` /
     // `pending_contact_crypto_cleared` have no vtable slots yet, so the
     // deferred contact-crypto queue is NOT durable on FFI hosts — the
@@ -1276,9 +1817,10 @@ impl PlatformWalletPersistence for FFIPersister {
             )
         };
         if rc != 0 {
-            return Err(PersistenceError::backend(format!(
-                "on_persist_tracked_masternodes_fn returned error code {rc}"
-            )));
+            return Err(persist_callback_error(
+                rc,
+                format!("on_persist_tracked_masternodes_fn returned error code {rc}"),
+            ));
         }
         Ok(())
     }
@@ -1315,9 +1857,10 @@ impl PlatformWalletPersistence for FFIPersister {
             )
         };
         if rc != 0 {
-            return Err(PersistenceError::backend(format!(
-                "on_load_tracked_masternodes_fn returned error code {rc}"
-            )));
+            return Err(persist_callback_error(
+                rc,
+                format!("on_load_tracked_masternodes_fn returned error code {rc}"),
+            ));
         }
         let mut out = Vec::with_capacity(count);
         if !rows_ptr.is_null() && count > 0 {
@@ -1352,6 +1895,20 @@ impl PlatformWalletPersistence for FFIPersister {
         Ok(out)
     }
 
+    fn stores_dashpay_backfill(&self) -> bool {
+        // The record reaches the host only through its extension slot; a
+        // host without it cannot store one, nor replace one it holds. And
+        // coverage vouches for the cursor it rides with, which reaches the
+        // host only through the changeset callback: `store` withholds every
+        // covering record from a host without one, so claiming the record
+        // here would let the owning layer count coverage as stored that the
+        // host never received. Such a host is treated like any other that
+        // cannot keep coverage durably, which still sends it the empty
+        // record that clears coverage it holds.
+        self.wallet_dashpay_backfill_callback.is_some()
+            && self.callbacks.on_persist_wallet_changeset_fn.is_some()
+    }
+
     fn store_commits_inline(&self) -> bool {
         // The end callback commits (or rolls back) the host transaction before
         // `store` returns. `flush` is only a later general-purpose notification.
@@ -1375,6 +1932,28 @@ impl PlatformWalletPersistence for FFIPersister {
         // the sync mutex only adds waiting under genuine round contention.
         let mut round = self.round_lock.lock();
 
+        // An empty backfill record is an invalidation: Rust sends one to
+        // clear coverage the host handed back on load, before publishing a
+        // wallet that will scan without it. A host without the backfill slot
+        // can still hand coverage back — its load path decodes the record
+        // whether or not the write slot is wired — but it cannot replace it.
+        // Acknowledging the round would leave that coverage on disk beside
+        // cursors scanned without its accounts, for a later session with the
+        // slot to trust. So the round fails before anything is applied, and
+        // the publication with it (dashpay/platform#4302 review).
+        if self.wallet_dashpay_backfill_callback.is_none()
+            && changeset
+                .dashpay_backfill
+                .as_ref()
+                .is_some_and(|record| record.is_empty())
+        {
+            return Err(PersistenceError::backend_with_kind(
+                PersistenceErrorKind::Fatal,
+                "the host holds a DashPay backfill record but registered no backfill \
+                 callback to invalidate it",
+            ));
+        }
+
         // Open the round on the Rust side (rejects a nested begin / an
         // unclean round left open by a prior unwind — error, never
         // panic). Matched 1:1 with the `round.end_round()` below.
@@ -1394,19 +1973,28 @@ impl PlatformWalletPersistence for FFIPersister {
                 // A nonzero begin means the client could NOT open its
                 // transaction. Proceeding would run every per-kind
                 // callback against no batch and then fire an unmatched
-                // `end`. Treat it as fatal: close the Rust-side round
-                // (so `in_round` doesn't wedge) and fail now, before any
-                // per-kind write. (Unlike the previous advisory-log
-                // behavior, the round is aborted so no state advances
-                // against an unopened batch.)
+                // `end`. Close the Rust-side round (so `in_round` doesn't
+                // wedge) and fail now, before any per-kind write — nothing
+                // was applied, so the host's own classification of `result`
+                // is reported as-is.
                 let _ = round.end_round();
-                return Err(PersistenceError::backend(format!(
-                    "changeset-begin callback returned error code {result}; \
+                return Err(persist_callback_error(
+                    result,
+                    format!(
+                        "changeset-begin callback returned error code {result}; \
                      round aborted before any write"
-                )));
+                    ),
+                ));
             }
         }
-        let mut round_success = true;
+        let mut outcome = RoundOutcome::default();
+        // Whether this round's `synced_height` reached the host. A backfill
+        // record rides the round that lowers the cursor it vouches for, and
+        // must not reach the host when that cursor did not: a host without
+        // atomic rounds would keep the coverage over its old cursor, and no
+        // rollback on this side can take it back (dashpay/platform#4302
+        // review).
+        let mut cursor_delivered = false;
 
         // Wallet-registration metadata. Fires at most once per round
         // (registration emits the entry; subsequent rounds carry
@@ -1427,7 +2015,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         "Wallet metadata persistence callback returned error code {}",
                         result
                     );
-                    round_success = false;
+                    outcome.record(result);
                 }
             }
         }
@@ -1464,12 +2052,12 @@ impl PlatformWalletPersistence for FFIPersister {
                                 "Account registrations persistence callback returned error code {}",
                                 result
                             );
-                            round_success = false;
+                            outcome.record(result);
                         }
                     }
                     Err(e) => {
                         eprintln!("Failed to encode account registration specs: {}", e);
-                        round_success = false;
+                        outcome.record_fatal();
                     }
                 }
             }
@@ -1501,12 +2089,12 @@ impl PlatformWalletPersistence for FFIPersister {
                                 "Account address pools persistence callback returned error code {}",
                                 result
                             );
-                            round_success = false;
+                            outcome.record(result);
                         }
                     }
                     Err(e) => {
                         eprintln!("Failed to encode account address pool entries: {}", e);
-                        round_success = false;
+                        outcome.record_fatal();
                     }
                 }
             }
@@ -1541,7 +2129,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Address balance persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -1581,12 +2169,12 @@ impl PlatformWalletPersistence for FFIPersister {
                                     "Derived-address persistence callback returned error code {}",
                                     result
                                 );
-                                round_success = false;
+                                outcome.record(result);
                             }
                         }
                         Err(e) => {
                             eprintln!("Failed to encode derived address pool entries: {}", e);
-                            round_success = false;
+                            outcome.record_fatal();
                         }
                     }
                 }
@@ -1624,13 +2212,44 @@ impl PlatformWalletPersistence for FFIPersister {
                                     "Marked-used address persistence callback returned error code {}",
                                     result
                                 );
-                                round_success = false;
+                                outcome.record(result);
                             }
                         }
                         Err(e) => {
                             eprintln!("Failed to encode marked-used address pool entries: {}", e);
-                            round_success = false;
+                            outcome.record_fatal();
                         }
+                    }
+                }
+            }
+
+            // The engine's credit verdicts ride their own size-negotiated
+            // extension slot (see the layout note on `WalletChangeSetFFI`)
+            // and are fired BEFORE the changeset callback: a persister that
+            // derives its UTXO rows from record roles needs the verdicts in
+            // hand while it materialises this round's `utxos_added`
+            // entries, or it stages the very phantom row the verdict exists
+            // to prevent. Fired only when the round carries a verdict, so a
+            // host without the slot — or a round where every output was
+            // credited — behaves exactly as before.
+            if !core_cs.utxo_credit_verdicts.is_empty() {
+                if let Some(cb) = self.wallet_changeset_utxo_verdicts_callback {
+                    let verdicts = build_utxo_credit_verdicts_for_callback(core_cs);
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            verdicts.as_ptr(),
+                            verdicts.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Wallet changeset credit-verdict persistence callback returned error \
+                             code {}",
+                            result
+                        );
+                        outcome.record(result);
                     }
                 }
             }
@@ -1644,7 +2263,138 @@ impl PlatformWalletPersistence for FFIPersister {
                         "Wallet changeset persistence callback returned error code {}",
                         result
                     );
-                    round_success = false;
+                    outcome.record(result);
+                } else if core_cs.synced_height.is_some() {
+                    cursor_delivered = true;
+                }
+            }
+
+            // The numeric chainlock height rides its own size-negotiated
+            // extension slot for the same layout reason the sweeps below do:
+            // the bincode blob on the changeset struct is opaque to a
+            // non-Rust host, and the frozen `WalletChangeSetFFI` cannot grow
+            // a numeric field. Fired before the sweeps so a round carrying
+            // both has the boundary stored before any tombstone the sweep
+            // writes could be measured against it.
+            if let Some(cl) = core_cs.last_applied_chain_lock.as_ref() {
+                if let Some(cb) = self.wallet_changeset_chain_lock_height_callback {
+                    let result =
+                        unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), cl.block_height) };
+                    if result != 0 {
+                        eprintln!(
+                            "Wallet changeset chainlock-height persistence callback returned \
+                             error code {}",
+                            result
+                        );
+                        outcome.record(result);
+                    }
+                }
+            }
+
+            // The round's sweeps ride their own size-negotiated extension
+            // callback rather than the changeset struct (see the layout note
+            // on `WalletChangeSetFFI`), fired after the changeset callback
+            // and after the chainlock-height slot, still inside the same
+            // begin/end bracket — so the additive half of the round, a
+            // wallet-relevant winner's own record included, is already
+            // staged when the removal decides which links point at a dead
+            // transaction.
+            //
+            // A host without the slot simply never sees them, and this block
+            // stays silent about that on purpose: such a host can never
+            // attest `CORE_SWEEP_REMOVAL` (the derivation below requires the
+            // slot structurally), so the round is refused one layer up
+            // instead. NOTE: that refusal is the watermark-strip gate in the
+            // core bridge, which lands with the producer — nothing in THIS
+            // crate consults `CORE_SWEEP_REMOVAL` yet, and until the
+            // producer exists no round can carry sweeps at all.
+            if !core_cs.sweeps.is_empty() {
+                if let Some(cb) = self.wallet_changeset_sweeps_callback {
+                    let (batches, _batch_storage) = build_sweep_batches_for_callback(core_cs);
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            batches.as_ptr(),
+                            batches.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Wallet changeset sweeps persistence callback returned error code {}",
+                            result
+                        );
+                        outcome.record(result);
+                    }
+                }
+            }
+        }
+
+        // The DashPay backfill record rides its own size-negotiated slot,
+        // after the core changeset callback so the lowered cursor a rescan
+        // round carries is staged before the record that vouches for it.
+        // Whole-record semantics: the host replaces what it holds.
+        //
+        // A host that registered no changeset callback stores no cursor at
+        // all, so no record can vouch for one it holds: it never receives
+        // the record, not even on a record-only round. Withholding only the
+        // cursor-bearing round is not enough — that round still returns
+        // `Ok`, the reconcile records its cursor as durable, and a later
+        // record-only round would then deliver coverage beside a host cursor
+        // that never moved.
+        //
+        // Nor does a host whose rounds are not atomic: callbacks that run
+        // after this one (identities, payments, tokens, shielded) can still
+        // fail the round, and such a host would keep the cursor and the
+        // coverage from a round Rust reports as failed — coverage that then
+        // suppresses the rescan on the next launch. Only a host attesting
+        // `ATOMIC_CHANGESETS` rolls the whole round back, record included.
+        //
+        // Both gates guard COVERAGE. An empty record covers no contact, so it
+        // vouches for no cursor and is safe beside any, on any host. It is
+        // how Rust invalidates coverage a host already holds:
+        // `settle_published_backfill` sends one before publishing a wallet to
+        // a host that cannot keep coverage durably, so the host cannot
+        // restore an earlier run's coverage beside cursors this run scanned
+        // without it. Withholding it here would let `store` return `Ok` with
+        // the old coverage still on disk. So an empty record goes to every
+        // host with the slot, and a failing callback fails the round, which
+        // fails the publication. A host without the slot never received a
+        // record, so it holds none to invalidate.
+        let host_stores_cursors = self.callbacks.on_persist_wallet_changeset_fn.is_some()
+            && self
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::ATOMIC_CHANGESETS);
+        let backfill_cursor_owed = changeset
+            .core
+            .as_ref()
+            .is_some_and(|core| core.synced_height.is_some());
+        if let Some(record) = changeset.dashpay_backfill.as_ref().filter(|record| {
+            record.is_empty()
+                || (host_stores_cursors && (!backfill_cursor_owed || cursor_delivered))
+        }) {
+            if let Some(cb) = self.wallet_dashpay_backfill_callback {
+                let covered = build_dashpay_backfill_covered_for_callback(record);
+                let result = unsafe {
+                    cb(
+                        self.callbacks.context,
+                        wallet_id.as_ptr(),
+                        record.floor,
+                        record.rewound_from,
+                        if covered.is_empty() {
+                            std::ptr::null()
+                        } else {
+                            covered.as_ptr()
+                        },
+                        covered.len(),
+                    )
+                };
+                if result != 0 {
+                    eprintln!(
+                        "Wallet DashPay backfill persistence callback returned error code {}",
+                        result
+                    );
+                    outcome.record(result);
                 }
             }
         }
@@ -1688,7 +2438,48 @@ impl PlatformWalletPersistence for FFIPersister {
                         "Identity changeset persistence callback returned error code {}",
                         result
                     );
-                    round_success = false;
+                    outcome.record(result);
+                }
+            }
+        }
+
+        // Stamp sidecars share the begin/end transaction with identity scalars.
+        // Run after the legacy callback has staged any new identity rows.
+        if let (Some(id_cs), Some(cb)) = (
+            changeset.identities.as_ref(),
+            self.persist_identity_balance_block_time_callback,
+        ) {
+            for entry in id_cs.identities.values() {
+                // The restore ABI carries only identities owned by this wallet.
+                // Clear any previous sidecar when ownership is absent or changed;
+                // observed identities must not leave an unrestorable watermark.
+                let stamp = entry
+                    .last_updated_balance_block_time
+                    .filter(|_| entry.wallet_id == Some(wallet_id))
+                    .map(crate::types::BlockTime::from);
+                let rc = unsafe {
+                    cb(
+                        self.callbacks.context,
+                        wallet_id.as_ptr(),
+                        entry.id.as_bytes().as_ptr(),
+                        stamp.as_ref().map_or(std::ptr::null(), |stamp| stamp),
+                    )
+                };
+                if rc != 0 {
+                    outcome.record(rc);
+                }
+            }
+            for identity_id in &id_cs.removed {
+                let rc = unsafe {
+                    cb(
+                        self.callbacks.context,
+                        wallet_id.as_ptr(),
+                        identity_id.as_bytes().as_ptr(),
+                        std::ptr::null(),
+                    )
+                };
+                if rc != 0 {
+                    outcome.record(rc);
                 }
             }
         }
@@ -1727,7 +2518,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "DashPay payment persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -1773,7 +2564,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         "Identity keys changeset persistence callback returned error code {}",
                         result
                     );
-                    round_success = false;
+                    outcome.record(result);
                 }
             }
         }
@@ -1824,7 +2615,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Token balance persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -1869,7 +2660,32 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Asset lock persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
+                    }
+                }
+            }
+            // Preserve the legacy row stride. UUIDs are an additive sidecar,
+            // written only after their base rows in the same atomic round.
+            for entry in al_cs.asset_locks.values() {
+                if let Some(operation_id) = entry.operation_id {
+                    let Some(cb) = self
+                        .tracked_masternodes_callbacks
+                        .persist_asset_lock_operation_id
+                    else {
+                        outcome.record(1);
+                        continue;
+                    };
+                    let out_point = outpoint_to_bytes(&entry.out_point);
+                    let rc = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            out_point.as_ptr(),
+                            operation_id.as_ptr(),
+                        )
+                    };
+                    if rc != 0 {
+                        outcome.record(rc);
                     }
                 }
             }
@@ -1910,7 +2726,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Invitation persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -1960,7 +2776,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "DPNS name state persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2023,6 +2839,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         established.note.as_deref(),
                         established.is_hidden,
                         &established.accepted_accounts,
+                        established.external_account_reference,
                     ));
                     upserts.push(ContactRequestFFI::from_established_incoming(
                         key.owner_id.to_buffer(),
@@ -2036,6 +2853,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         // rides only the incoming row.
                         established.contact_account_label.as_deref(),
                         &established.accepted_accounts,
+                        established.external_account_reference,
                     ));
                 }
                 let removed_sent: Vec<ContactRequestRemovalFFI> = contacts_cs
@@ -2114,7 +2932,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Contact persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2141,7 +2959,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Sync state persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2194,7 +3012,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Shielded notes persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2226,7 +3044,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Shielded nullifier-spent persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2286,7 +3104,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Shielded outgoing-notes persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2316,7 +3134,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Shielded synced-index persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2362,7 +3180,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Shielded viewing-key persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                 }
             }
@@ -2409,6 +3227,12 @@ impl PlatformWalletPersistence for FFIPersister {
                         .map(|(id, e, cmx_buf, nf_buf)| {
                             let (identity_id, has_identity_id) = match &e.kind {
                                 platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityCreate {
+                                    identity_id,
+                                }
+                                | platform_wallet::wallet::shielded::ShieldedActivityKind::ShieldFromIdentity {
+                                    identity_id,
+                                }
+                                | platform_wallet::wallet::shielded::ShieldedActivityKind::IdentityTopUp {
                                     identity_id,
                                 } => (*identity_id, 1u8),
                                 _ => ([0u8; 32], 0u8),
@@ -2476,7 +3300,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             "Shielded activity persistence callback returned error code {}",
                             result
                         );
-                        round_success = false;
+                        outcome.record(result);
                     }
                     // `rows` and `entries` drop here, after the callback
                     // has copied everything it needs.
@@ -2485,25 +3309,39 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
 
-        // Close the round. Clients use this to commit (if
-        // `round_success == true`) or roll back (otherwise) the
+        // Close the round. Clients use this to commit (if the round
+        // succeeded) or roll back (otherwise) the
         // staged writes accumulated across the per-kind callbacks
         // above, making the whole store() call a single atomic
         // transaction from their perspective.
         if let Some(cb) = self.callbacks.on_changeset_end_fn {
-            let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr(), round_success) };
+            let result = unsafe {
+                cb(
+                    self.callbacks.context,
+                    wallet_id.as_ptr(),
+                    outcome.is_success(),
+                )
+            };
             if result != 0 {
                 eprintln!("Changeset-end callback returned error code {}", result);
-                // The end callback is where the client COMMITS the round (e.g.
-                // the SwiftData atomic `save()`). A non-zero return means the
-                // commit failed and the staged writes were rolled back — the
-                // round never reached durable storage. Treat it as a
-                // persistence failure so `store()` returns `Err` and the caller
-                // does NOT advance / clear its in-memory state (pending queues,
+                // Either way `store()` must return `Err`, so the caller does
+                // NOT advance / clear its in-memory state (pending queues,
                 // cleared drain entries, ignored-sender deltas) against data
-                // that was dropped. Otherwise the failure is silent and the
-                // dropped writes resurface or are lost with no signal.
-                round_success = false;
+                // that never reached durable storage. What differs is what the
+                // caller may then do about it.
+                if outcome.is_success() {
+                    // A clean round: `end` is the COMMIT (the SwiftData atomic
+                    // `save()`), and its failure applied nothing. The host's
+                    // classification of that is legitimate.
+                    outcome.record(result);
+                } else {
+                    // A failing round: `end` fired with `success = false` to
+                    // drive the ROLLBACK, and it failed. The round's
+                    // disposition is now unknown, whatever the host classifies
+                    // it as — and unknown is never retryable, because a
+                    // re-issued changeset merges by appending.
+                    outcome.record_fatal();
+                }
             }
         }
 
@@ -2516,20 +3354,12 @@ impl PlatformWalletPersistence for FFIPersister {
         // which cannot happen here since `begin_round` succeeded above.)
         round.end_round()?;
 
-        if !round_success {
-            return Err(PersistenceError::backend(
+        if let Some(kind) = outcome.failure_kind() {
+            return Err(PersistenceError::backend_with_kind(
+                self.reportable_round_kind(kind),
                 "one or more persistence callbacks failed; changeset was rolled back",
             ));
         }
-
-        // Merge into pending changesets. No secret rides the changeset any
-        // more — the client derives identity keys on demand from the Keychain
-        // seed at the breadcrumb path, so nothing here needs scrubbing.
-        let mut pending = self.pending.write();
-        pending
-            .entry(wallet_id)
-            .and_modify(|existing| existing.merge(changeset.clone()))
-            .or_insert(changeset);
 
         // Preserve the legacy notification phase. With an end callback, the
         // host transaction is already committed and a notification failure is
@@ -2545,9 +3375,13 @@ impl PlatformWalletPersistence for FFIPersister {
                          ignored"
                     );
                 } else {
-                    return Err(PersistenceError::backend(format!(
-                        "Persistence store callback returned error code {result}"
-                    )));
+                    // No end callback, so the per-kind writes already landed
+                    // individually and the round is not all-or-nothing —
+                    // `reportable_round_kind` withholds a retryable verdict.
+                    return Err(PersistenceError::backend_with_kind(
+                        self.reportable_round_kind(persist_rc_kind(result)),
+                        format!("Persistence store callback returned error code {result}"),
+                    ));
                 }
             }
         }
@@ -2556,30 +3390,33 @@ impl PlatformWalletPersistence for FFIPersister {
     }
 
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
-        // TODO: deferred — FFI callback failures are classified as
-        // `Fatal` (no transient-retry signal across the C ABI), and
-        // trailing-byte validation on decoded FFI payloads is not yet
-        // applied here. Both are tracked for a follow-up; no behavior
-        // change in this change.
+        // TODO: deferred — trailing-byte validation on decoded FFI
+        // payloads is not yet applied here.
         // Notify caller.
         if let Some(cb) = self.callbacks.on_flush_fn {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
             if result != 0 {
-                return Err(PersistenceError::backend(format!(
-                    "Persistence flush callback returned error code {}",
-                    result
-                )));
+                return Err(persist_callback_error(
+                    result,
+                    format!("Persistence flush callback returned error code {}", result),
+                ));
             }
         }
-
-        // Clear pending after successful flush notification.
-        let mut pending = self.pending.write();
-        pending.remove(&wallet_id);
 
         Ok(())
     }
 
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
+        // Host loaders may read the same context that store() stages into.
+        // Keep base rows and every sidecar in one committed snapshot: a load
+        // between per-kind callbacks and end must never expose a Consumed row
+        // whose commit can still fail. Callbacks must not re-enter this API.
+        let round = self.round_lock.lock();
+        if round.in_round {
+            return Err(PersistenceError::backend(
+                "FFIPersister: cannot restore from an unclosed changeset round",
+            ));
+        }
         // If Swift hasn't wired up `on_load_wallet_list_fn` there's
         // nothing to restore — treat as a fresh client.
         let Some(load_cb) = self.callbacks.on_load_wallet_list_fn else {
@@ -2594,10 +3431,10 @@ impl PlatformWalletPersistence for FFIPersister {
         let mut count: usize = 0;
         let rc = unsafe { load_cb(self.callbacks.context, &mut entries_ptr, &mut count) };
         if rc != 0 {
-            return Err(PersistenceError::backend(format!(
-                "on_load_wallet_list_fn returned error code {}",
-                rc
-            )));
+            return Err(persist_callback_error(
+                rc,
+                format!("on_load_wallet_list_fn returned error code {}", rc),
+            ));
         }
         let _guard = LoadGuard {
             context: self.callbacks.context,
@@ -2607,7 +3444,12 @@ impl PlatformWalletPersistence for FFIPersister {
         };
 
         let mut out = ClientStartState::default();
-        if entries_ptr.is_null() || count == 0 {
+        if entries_ptr.is_null() && count != 0 {
+            return Err(PersistenceError::backend(
+                "wallet restore: missing row buffer",
+            ));
+        }
+        if count == 0 {
             return Ok(out);
         }
 
@@ -2617,7 +3459,51 @@ impl PlatformWalletPersistence for FFIPersister {
         // fires before we leave this function.
         let entries = unsafe { slice::from_raw_parts(entries_ptr, count) };
         for entry in entries {
-            let (wallet_state, platform_address_state) = build_wallet_start_state(entry)?;
+            if out.wallets.contains_key(&entry.wallet_id) {
+                return Err(PersistenceError::backend(
+                    "wallet restore: duplicate wallet ID",
+                ));
+            }
+            let (mut wallet_state, platform_address_state) = build_wallet_start_state(entry)?;
+            if let Some(cb) = self
+                .tracked_masternodes_callbacks
+                .load_asset_lock_operation_id
+            {
+                load_asset_lock_operation_ids(
+                    cb,
+                    self.callbacks.context,
+                    &entry.wallet_id,
+                    &mut wallet_state.unused_asset_locks,
+                )?;
+            }
+            if let Some(cb) = self.load_identity_balance_block_time_callback {
+                for identities in wallet_state.identity_manager.wallet_identities.values_mut() {
+                    for managed in identities.values_mut() {
+                        let mut found = false;
+                        let mut stamp = crate::types::BlockTime {
+                            height: 0,
+                            core_height: 0,
+                            timestamp: 0,
+                        };
+                        let rc = unsafe {
+                            cb(
+                                self.callbacks.context,
+                                entry.wallet_id.as_ptr(),
+                                managed.id().as_bytes().as_ptr(),
+                                &mut found,
+                                &mut stamp,
+                            )
+                        };
+                        if rc != 0 {
+                            return Err(persist_callback_error(
+                                rc,
+                                "Loading identity balance block time failed".to_string(),
+                            ));
+                        }
+                        managed.last_updated_balance_block_time = found.then(|| stamp.into());
+                    }
+                }
+            }
             out.wallets.insert(entry.wallet_id, wallet_state);
             if let Some(platform_address_state) = platform_address_state {
                 out.platform_addresses
@@ -2637,8 +3523,8 @@ impl PlatformWalletPersistence for FFIPersister {
             use crate::shielded_persistence::*;
             use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
             use platform_wallet::wallet::shielded::{
-                ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
-                ShieldedDirection, ShieldedNote, ShieldedOutgoingNote, SubwalletId,
+                ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection, ShieldedNote,
+                ShieldedOutgoingNote, SubwalletId,
             };
 
             let mut shielded_state = ShieldedSyncStartState::default();
@@ -2685,10 +3571,10 @@ impl PlatformWalletPersistence for FFIPersister {
                 let rc =
                     unsafe { load_notes(self.callbacks.context, &mut notes_ptr, &mut notes_count) };
                 if rc != 0 {
-                    return Err(PersistenceError::backend(format!(
-                        "on_load_shielded_notes_fn returned error code {}",
-                        rc
-                    )));
+                    return Err(persist_callback_error(
+                        rc,
+                        format!("on_load_shielded_notes_fn returned error code {}", rc),
+                    ));
                 }
                 struct NotesGuard {
                     context: *mut c_void,
@@ -2750,10 +3636,13 @@ impl PlatformWalletPersistence for FFIPersister {
                 let rc =
                     unsafe { load_outgoing(self.callbacks.context, &mut out_ptr, &mut out_count) };
                 if rc != 0 {
-                    return Err(PersistenceError::backend(format!(
-                        "on_load_shielded_outgoing_notes_fn returned error code {}",
-                        rc
-                    )));
+                    return Err(persist_callback_error(
+                        rc,
+                        format!(
+                            "on_load_shielded_outgoing_notes_fn returned error code {}",
+                            rc
+                        ),
+                    ));
                 }
                 struct OutgoingGuard {
                     context: *mut c_void,
@@ -2814,10 +3703,10 @@ impl PlatformWalletPersistence for FFIPersister {
                     load_states(self.callbacks.context, &mut states_ptr, &mut states_count)
                 };
                 if rc != 0 {
-                    return Err(PersistenceError::backend(format!(
-                        "on_load_shielded_sync_states_fn returned error code {}",
-                        rc
-                    )));
+                    return Err(persist_callback_error(
+                        rc,
+                        format!("on_load_shielded_sync_states_fn returned error code {}", rc),
+                    ));
                 }
                 struct StatesGuard {
                     context: *mut c_void,
@@ -2853,6 +3742,7 @@ impl PlatformWalletPersistence for FFIPersister {
                             .entry(id)
                             .or_insert_with(ShieldedSubwalletStartState::default);
                         entry.last_synced_index = ffi.last_synced_index;
+                        entry.has_sync_state = true;
                     }
                 }
             }
@@ -2872,10 +3762,10 @@ impl PlatformWalletPersistence for FFIPersister {
                 let rc =
                     unsafe { load_activity(self.callbacks.context, &mut act_ptr, &mut act_count) };
                 if rc != 0 {
-                    return Err(PersistenceError::backend(format!(
-                        "on_load_shielded_activity_fn returned error code {}",
-                        rc
-                    )));
+                    return Err(persist_callback_error(
+                        rc,
+                        format!("on_load_shielded_activity_fn returned error code {}", rc),
+                    ));
                 }
                 struct ActivityGuard {
                     context: *mut c_void,
@@ -2915,6 +3805,12 @@ impl PlatformWalletPersistence for FFIPersister {
                             6 => ShieldedActivityKind::IdentityCreate {
                                 identity_id: ffi.identity_id,
                             },
+                            8 => ShieldedActivityKind::ShieldFromIdentity {
+                                identity_id: ffi.identity_id,
+                            },
+                            9 => ShieldedActivityKind::IdentityTopUp {
+                                identity_id: ffi.identity_id,
+                            },
                             // 7 and any unknown tag fall back to the
                             // residual — a forward-compat tag we don't yet
                             // model still loads as an opaque spend rather
@@ -2939,21 +3835,7 @@ impl PlatformWalletPersistence for FFIPersister {
                                 ShieldedDirection::SelfTransfer
                             }
                         };
-                        let status = match ffi.status {
-                            0 => ShieldedActivityStatus::Pending,
-                            1 => ShieldedActivityStatus::Confirmed,
-                            2 => ShieldedActivityStatus::Failed,
-                            other => {
-                                // Failed is materially distinct from
-                                // Pending/Confirmed — never let a stray
-                                // byte silently mark an operation failed.
-                                tracing::warn!(
-                                    status = other,
-                                    "unknown shielded-activity status byte on load; folding to Pending so a scan can re-confirm it"
-                                );
-                                ShieldedActivityStatus::Pending
-                            }
-                        };
+                        let status = activity_status_from_tag(ffi.status);
                         let counterparty = if ffi.counterparty_ptr.is_null()
                             || ffi.counterparty_len == 0
                         {
@@ -3035,10 +3917,13 @@ impl PlatformWalletPersistence for FFIPersister {
                     load_viewing_keys(self.callbacks.context, &mut vk_ptr, &mut vk_count)
                 };
                 if rc != 0 {
-                    return Err(PersistenceError::backend(format!(
-                        "on_load_shielded_viewing_keys_fn returned error code {}",
-                        rc
-                    )));
+                    return Err(persist_callback_error(
+                        rc,
+                        format!(
+                            "on_load_shielded_viewing_keys_fn returned error code {}",
+                            rc
+                        ),
+                    ));
                 }
                 struct ViewingKeysGuard {
                     context: *mut c_void,
@@ -3195,6 +4080,13 @@ impl PlatformWalletPersistence for FFIPersister {
         };
 
         if rc != 0 {
+            // TODO(tx-record-read-sentinels): `on_get_core_tx_record_fn`
+            // collapses every non-zero return, sentinels included, into a
+            // miss, so the transient-vs-permanent read distinction is
+            // unreachable from FFI hosts. Deferred deliberately: converting it
+            // to `persist_callback_error` and letting
+            // `get_core_tx_record_or_transient_miss` do the collapsing is a
+            // behaviour change for every host on the current contract.
             tracing::debug!(
                 txid = %txid,
                 rc,
@@ -3348,9 +4240,10 @@ impl PlatformWalletPersistence for FFIPersister {
         // free a buffer the host still owns on the failure path, which is a
         // double free for any host that cleans up its own failed allocation.
         if rc != 0 {
-            return Err(PersistenceError::backend(format!(
-                "on_list_wallet_core_txids_fn returned non-zero status {rc}"
-            )));
+            return Err(persist_callback_error(
+                rc,
+                format!("on_list_wallet_core_txids_fn returned non-zero status {rc}"),
+            ));
         }
 
         // Success: ownership is ours now, and every return below must release
@@ -3400,11 +4293,9 @@ impl PlatformWalletPersistence for FFIPersister {
         let flags = unsafe { slice::from_raw_parts(flags_ptr, count) };
 
         let mut out = Vec::with_capacity(count);
-        for (chunk, flag) in raw.chunks_exact(32).zip(flags) {
-            let mut bytes = [0u8; 32];
-            bytes.copy_from_slice(chunk);
+        for (chunk, flag) in raw.as_chunks::<32>().0.iter().zip(flags) {
             out.push(ListedCoreTxid {
-                txid: dashcore::Txid::from_byte_array(bytes),
+                txid: dashcore::Txid::from_byte_array(*chunk),
                 spends_wallet_input: flag & 0x01 != 0,
             });
         }
@@ -3444,10 +4335,7 @@ unsafe fn decode_cmx_array(ptr: *const u8, count: usize) -> Vec<[u8; 32]> {
         return Vec::new();
     };
     let bytes = slice::from_raw_parts(ptr, byte_len);
-    bytes
-        .chunks_exact(32)
-        .filter_map(|c| <[u8; 32]>::try_from(c).ok())
-        .collect()
+    bytes.as_chunks::<32>().0.to_vec()
 }
 
 /// Discriminant byte for a `ShieldedDirection` (FFI: 0 In, 1 Out, 2 Self).
@@ -3462,14 +4350,51 @@ fn activity_direction_tag(d: &platform_wallet::wallet::shielded::ShieldedDirecti
 }
 
 /// Discriminant byte for a `ShieldedActivityStatus` (FFI: 0 Pending,
-/// 1 Confirmed, 2 Failed).
+/// 1 Confirmed, 2 Failed, 3 Unknown).
 #[cfg(feature = "shielded")]
-fn activity_status_tag(s: &platform_wallet::wallet::shielded::ShieldedActivityStatus) -> u8 {
-    use platform_wallet::wallet::shielded::ShieldedActivityStatus::*;
+fn activity_status_tag(s: &ShieldedActivityStatus) -> u8 {
     match s {
-        Pending => 0,
-        Confirmed => 1,
-        Failed => 2,
+        ShieldedActivityStatus::Pending => 0,
+        ShieldedActivityStatus::Confirmed => 1,
+        ShieldedActivityStatus::Failed => 2,
+        ShieldedActivityStatus::Unknown => 3,
+    }
+}
+
+/// Decode the persisted status byte without treating an abandoned payment as failed.
+#[cfg(feature = "shielded")]
+fn activity_status_from_tag(tag: u8) -> ShieldedActivityStatus {
+    match tag {
+        0 => ShieldedActivityStatus::Pending,
+        1 => ShieldedActivityStatus::Confirmed,
+        2 => ShieldedActivityStatus::Failed,
+        3 => ShieldedActivityStatus::Unknown,
+        other => {
+            tracing::warn!(
+                status = other,
+                "unknown shielded-activity status byte on load; folding to Pending so a scan can re-confirm it"
+            );
+            ShieldedActivityStatus::Pending
+        }
+    }
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod activity_status_tests {
+    use super::{activity_status_from_tag, activity_status_tag};
+    use platform_wallet::wallet::shielded::ShieldedActivityStatus;
+
+    #[test]
+    fn should_roundtrip_abandoned_activity_as_unknown_and_preserve_existing_status_bytes() {
+        for (status, tag) in [
+            (ShieldedActivityStatus::Pending, 0),
+            (ShieldedActivityStatus::Confirmed, 1),
+            (ShieldedActivityStatus::Failed, 2),
+            (ShieldedActivityStatus::Unknown, 3),
+        ] {
+            assert_eq!(activity_status_tag(&status), tag);
+            assert_eq!(activity_status_from_tag(tag), status);
+        }
     }
 }
 
@@ -4442,12 +5367,178 @@ impl Drop for LoadGuard {
     }
 }
 
+/// Decode the unconfirmed outgoing sends the host staged for replay.
+///
+/// Fail-closed on identity: a record must decode AND hash to the txid of the
+/// row it was selected from. The replay applies each transaction through the
+/// ordinary state-update path, so bytes that do not belong to that row would
+/// move accounting for inputs and outputs unrelated to the send — a stale or
+/// partially-written `transactionData` must drop out rather than be applied.
+fn decode_unconfirmed_outgoing(
+    entry: &WalletRestoreEntryFFI,
+) -> Vec<dashcore::blockdata::transaction::Transaction> {
+    use dashcore::consensus::Decodable;
+    use dashcore::hashes::Hash;
+    let recs: &[UnconfirmedOutgoingTxRecordFFI] = if entry.unconfirmed_outgoing_tx_records.is_null()
+        || entry.unconfirmed_outgoing_tx_records_count == 0
+    {
+        &[]
+    } else {
+        unsafe {
+            slice::from_raw_parts(
+                entry.unconfirmed_outgoing_tx_records,
+                entry.unconfirmed_outgoing_tx_records_count,
+            )
+        }
+    };
+    let mut decoded: Vec<(u64, dashcore::blockdata::transaction::Transaction)> =
+        Vec::with_capacity(recs.len());
+    let mut dropped_decode = 0usize;
+    let mut dropped_identity = 0usize;
+    for rec in recs {
+        if rec.tx_bytes.is_null() || rec.tx_bytes_len == 0 {
+            dropped_decode += 1;
+            continue;
+        }
+        let bytes = unsafe { slice::from_raw_parts(rec.tx_bytes, rec.tx_bytes_len) };
+        match dashcore::blockdata::transaction::Transaction::consensus_decode(&mut &bytes[..]) {
+            // The bytes must be the row they were selected from. The
+            // replay runs through the ordinary state-update path, so a
+            // stale or partially-written `transactionData` would apply a
+            // different transaction and move accounting for inputs and
+            // outputs unrelated to this send.
+            Ok(tx) if *tx.txid().as_byte_array() == rec.txid => decoded.push((rec.first_seen, tx)),
+            Ok(tx) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(entry.wallet_id),
+                    expected = %hex::encode(rec.txid),
+                    decoded = %tx.txid(),
+                    "load: unconfirmed outgoing record does not hash to its row; dropped"
+                );
+                dropped_identity += 1;
+            }
+            Err(_) => dropped_decode += 1,
+        }
+    }
+    if dropped_decode > 0 || dropped_identity > 0 {
+        tracing::warn!(
+            wallet_id = %hex::encode(entry.wallet_id),
+            dropped_decode,
+            dropped_identity,
+            "load: unconfirmed outgoing tx records were dropped"
+        );
+    }
+    order_unconfirmed_outgoing(decoded)
+}
+
+/// Put a batch of unconfirmed outgoing sends into replay order.
+///
+/// `first_seen` establishes the baseline, but the host records it in whole
+/// seconds, so two sends a moment apart share one and their relative order is
+/// undefined. A dependency pass then moves any send that spends another send
+/// in the same batch behind it — replaying a child first leaves it with no
+/// input to spend, so it is discarded as irrelevant and that send's replay is
+/// silently lost.
+fn order_unconfirmed_outgoing(
+    mut decoded: Vec<(u64, dashcore::blockdata::transaction::Transaction)>,
+) -> Vec<dashcore::blockdata::transaction::Transaction> {
+    decoded.sort_by_key(|(first_seen, _)| *first_seen);
+
+    let in_batch: std::collections::HashSet<_> = decoded.iter().map(|(_, tx)| tx.txid()).collect();
+    let mut emitted: std::collections::HashSet<_> = std::collections::HashSet::new();
+    let mut ordered = Vec::with_capacity(decoded.len());
+    let mut queue: std::collections::VecDeque<_> = decoded.into_iter().collect();
+    // Bounded: a full lap with nothing emitted means the remainder depends on
+    // itself, which valid transactions cannot do. Emit in `first_seen` order
+    // rather than spin.
+    let mut passed_over = 0usize;
+    while let Some((first_seen, tx)) = queue.pop_front() {
+        let waits_on_batch_peer = tx.input.iter().any(|input| {
+            let parent = input.previous_output.txid;
+            in_batch.contains(&parent) && !emitted.contains(&parent)
+        });
+        if waits_on_batch_peer && passed_over <= queue.len() {
+            queue.push_back((first_seen, tx));
+            passed_over += 1;
+            continue;
+        }
+        emitted.insert(tx.txid());
+        ordered.push(tx);
+        passed_over = 0;
+    }
+    ordered
+}
+
+/// Map a provider-account rebuild failure to a load error naming the
+/// curve-specific constructor or `AccountCollection` insert that failed.
+fn provider_rebuild_error(
+    constructor: &str,
+    insert: &str,
+    error: ProviderAccountRebuildError,
+) -> PersistenceError {
+    match error {
+        ProviderAccountRebuildError::Invalid(e) => {
+            PersistenceError::backend(format!("{constructor} failed: {e:?}"))
+        }
+        ProviderAccountRebuildError::Rejected(e) => {
+            PersistenceError::backend(format!("AccountCollection::{insert} failed: {e}"))
+        }
+    }
+}
+
 /// Reconstruct an external-signable [`Wallet`] + matching start-state
 /// bucket from a single `WalletRestoreEntryFFI`. The mnemonic / seed
 /// stays in the host's keychain; signing requests route back through
 /// the configured signer surface (see
 /// `Wallet::new_external_signable`). Earlier revisions of this code
 /// path produced a `WatchOnly` wallet — that has been replaced.
+/// The persisted DashPay backfill record on a wallet-restore entry, or the
+/// empty record when the host holds none.
+///
+/// Empty is the fail-safe reading: a contact absent from the record is
+/// re-armed by the next rescan sweep (one redundant rewind), whereas a
+/// contact wrongly present would never be backfilled again. So a host that
+/// reports the flag with a null cover set gets a record that covers no one,
+/// and every entry is taken as the host stored it.
+fn decode_dashpay_backfill(
+    entry: &WalletRestoreEntryFFI,
+) -> platform_wallet::changeset::DashPayBackfillRecord {
+    use platform_wallet::changeset::{DashPayBackfillCoveredContact, DashPayBackfillRecord};
+
+    if !entry.has_dashpay_backfill {
+        return DashPayBackfillRecord::default();
+    }
+    let covered: &[DashPayBackfillCoveredContactFFI] =
+        if entry.dashpay_backfill_covered.is_null() || entry.dashpay_backfill_covered_count == 0 {
+            &[]
+        } else {
+            // SAFETY: host-owned array of `count` entries, valid for the load
+            // callback window (the same contract as every sibling array).
+            unsafe {
+                slice::from_raw_parts(
+                    entry.dashpay_backfill_covered,
+                    entry.dashpay_backfill_covered_count,
+                )
+            }
+        };
+    // `from_entries` puts the cover set in canonical form whatever the host
+    // stored: one entry per account, a duplicate keeping its HIGHEST
+    // `covered_from`, so an ambiguous record fails closed.
+    DashPayBackfillRecord::from_entries(
+        entry.dashpay_backfill_floor,
+        entry.dashpay_backfill_rewound_from,
+        covered
+            .iter()
+            .map(|c| DashPayBackfillCoveredContact {
+                owner: Identifier::from(c.owner_identity_id),
+                contact: Identifier::from(c.contact_identity_id),
+                account_index: c.account_index,
+                covered_from: c.covered_from,
+            })
+            .collect(),
+    )
+}
+
 fn build_wallet_start_state(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<
@@ -4502,7 +5593,7 @@ fn build_wallet_start_state(
         // platform node keys) live in dedicated `Option` fields on the
         // collection and carry a non-secp256k1 extended public key in
         // the same `account_xpub_bytes` slot. Rebuild them watch-only
-        // via the type-specific `new` + insert methods rather than the
+        // via the shared `rebuild_provider_key_account` rather than the
         // ECDSA `Account::from_xpub` / `insert` path (which would fail
         // to decode the bytes and reject the provider `AccountType`).
         // Provider xpubs are stored raw (`bincode(xpub)`), exactly like the
@@ -4512,54 +5603,53 @@ fn build_wallet_start_state(
         // persisted by a pre-#879 dev build will restore those (stale) xpubs
         // and show stale operator / platform-node keys until it's deleted
         // and re-imported — an accepted, transient dev-only state.
+        //
+        // The three account-xpub decodes below run upstream `key-wallet`
+        // decoders that do not implement `DecodeUntrusted` over host-supplied
+        // bytes, so each one carries the explicit
+        // `ACCOUNT_XPUB_DECODE_LIMIT_BYTES` budget. Trailing bytes are still
+        // ignored, the same deferral as the `flush` decode boundary.
         match account_type {
             AccountType::ProviderOperatorKeys => {
-                let (bls_pubkey, _): (ExtendedBLSPubKey, usize) =
-                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                        PersistenceError::backend(format!(
-                            "failed to decode provider BLS xpub: {}",
-                            e
-                        ))
-                    })?;
-                let bls_account = BLSAccount::new(
-                    Some(entry.wallet_id.to_vec()),
-                    account_type,
-                    bls_pubkey,
-                    network,
+                // The BLS decoder reads a Vec<u8> before validating the public
+                // key, so the budget is what bounds its allocation.
+                let (bls_pubkey, _): (ExtendedBLSPubKey, usize) = bincode::decode_from_slice(
+                    xpub_bytes,
+                    config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
                 )
                 .map_err(|e| {
-                    PersistenceError::backend(format!("BLSAccount::new failed: {:?}", e))
+                    PersistenceError::backend(format!("failed to decode provider BLS xpub: {}", e))
                 })?;
-                accounts.insert_bls_account(bls_account).map_err(|e| {
-                    PersistenceError::backend(format!(
-                        "AccountCollection::insert_bls_account failed: {}",
-                        e
-                    ))
-                })?;
+                rebuild_provider_key_account(
+                    &mut accounts,
+                    entry.wallet_id,
+                    network,
+                    account_type,
+                    &ProviderKeyExtendedPubKey::Bls(bls_pubkey),
+                )
+                .map_err(|e| provider_rebuild_error("BLSAccount::new", "insert_bls_account", e))?;
                 continue;
             }
             AccountType::ProviderPlatformKeys => {
-                let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) =
-                    bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                        PersistenceError::backend(format!(
-                            "failed to decode provider EdDSA xpub: {}",
-                            e
-                        ))
-                    })?;
-                let eddsa_account = EdDSAAccount::new(
-                    Some(entry.wallet_id.to_vec()),
-                    account_type,
-                    ed_pubkey,
-                    network,
+                let (ed_pubkey, _): (ExtendedEd25519PubKey, usize) = bincode::decode_from_slice(
+                    xpub_bytes,
+                    config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
                 )
                 .map_err(|e| {
-                    PersistenceError::backend(format!("EdDSAAccount::new failed: {:?}", e))
-                })?;
-                accounts.insert_eddsa_account(eddsa_account).map_err(|e| {
                     PersistenceError::backend(format!(
-                        "AccountCollection::insert_eddsa_account failed: {}",
+                        "failed to decode provider EdDSA xpub: {}",
                         e
                     ))
+                })?;
+                rebuild_provider_key_account(
+                    &mut accounts,
+                    entry.wallet_id,
+                    network,
+                    account_type,
+                    &ProviderKeyExtendedPubKey::EdDSA(ed_pubkey),
+                )
+                .map_err(|e| {
+                    provider_rebuild_error("EdDSAAccount::new", "insert_eddsa_account", e)
                 })?;
                 // The platform-node (Ed25519) pool is rehydrated from the
                 // persisted core-address rows like every other pool — see
@@ -4571,10 +5661,11 @@ fn build_wallet_start_state(
             _ => {}
         }
 
-        let (account_xpub, _): (ExtendedPubKey, usize) =
-            bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
-                PersistenceError::backend(format!("failed to decode account xpub: {}", e))
-            })?;
+        let (account_xpub, _): (ExtendedPubKey, usize) = bincode::decode_from_slice(
+            xpub_bytes,
+            config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+        )
+        .map_err(|e| PersistenceError::backend(format!("failed to decode account xpub: {}", e)))?;
         let account =
             Account::from_xpub(Some(entry.wallet_id), account_type, account_xpub, network)
                 .map_err(|e| {
@@ -5038,10 +6129,11 @@ fn build_wallet_start_state(
 
     // Per-wallet identities go straight into the wallet_identities
     // sub-map keyed by registration index. Out-of-wallet identities
-    // are not surfaced here — there's no SwiftData path for them
-    // today (PersistentIdentity always links to a wallet) — so the
-    // out-of-wallet bucket starts empty and is populated only via
-    // runtime DPNS resolution / observation.
+    // are not surfaced by this restore ABI: Swift supplies only identities
+    // linked to the wallet row. Observed SwiftData rows remain unlinked, so
+    // the out-of-wallet bucket starts empty and is populated only via
+    // runtime DPNS resolution / observation. Balance sidecars are likewise
+    // persisted only for wallet-owned identities.
     let bucket = build_wallet_identity_bucket(entry)?;
     let mut wallet_identities = BTreeMap::new();
     if !bucket.is_empty() {
@@ -5065,11 +6157,34 @@ fn build_wallet_start_state(
     // was interrupted by an app kill can resume from the latest
     // status without rebroadcasting.
     let unused_asset_locks = build_unused_asset_locks(entry)?;
+
+    // Decode the sends the host still holds as unconfirmed. Decode
+    // only: applying the spend needs `check_core_transaction`, which is
+    // async and wants the `Wallet` and the `ManagedWalletInfo`
+    // together, so the replay happens at the async boundary in
+    // `manager::load::load_from_persistor`. See
+    // `ClientWalletStartState::unconfirmed_outgoing_txs`.
+    //
+    // Ordered so a parent send is replayed before a child that spends its
+    // change — a child applied first finds its input absent and is dropped
+    // as irrelevant, silently losing that send's replay.
+    //
+    // `first_seen` alone cannot express this: the host stores it in whole
+    // seconds, and two sends a moment apart share one. So the `first_seen`
+    // sort only establishes a stable starting order, and a dependency pass
+    // then moves any send that spends another send in the same batch behind
+    // it.
+    let unconfirmed_outgoing_txs = decode_unconfirmed_outgoing(entry);
+
+    let dashpay_backfill = decode_dashpay_backfill(entry);
+
     let wallet_state = ClientWalletStartState {
         wallet,
         wallet_info,
         identity_manager,
         unused_asset_locks,
+        unconfirmed_outgoing_txs,
+        dashpay_backfill,
     };
 
     let platform_address_state = if per_account.is_empty()
@@ -5090,22 +6205,48 @@ fn build_wallet_start_state(
     Ok((wallet_state, platform_address_state))
 }
 
-/// Rebuild the `unused_asset_locks` map carried on
-/// [`ClientWalletStartState`] from the `tracked_asset_locks` slice the
-/// Swift load callback hands back. Mirrors the encoding used by
-/// [`crate::asset_lock_persistence::build_asset_lock_entries`]:
-///
-/// - `out_point` is 32-byte raw txid + 4-byte little-endian vout.
-/// - `transaction_bytes` is consensus-encoded.
-/// - `proof_bytes` is bincode-encoded (`dpp::bincode::config::standard()`).
-///   `null` / 0 length means "no proof yet" (statuses Built / Broadcast).
-///
-/// A malformed entry returns `Err(PersistenceError)` so the caller
-/// surfaces the load failure rather than dropping a partially-rebuilt
-/// state silently. Empty / null `tracked_asset_locks` yields an empty
-/// map (same as the legacy hardcoded path). Terminal `Consumed` rows
-/// are restored as tombstones so an exact-outpoint retry remains
-/// distinguishable from a lock that was never tracked.
+/// Rehydrate immutable UUID sidecars after decoding the frozen legacy rows.
+/// A failed sidecar read or ambiguous association invalidates the whole load.
+fn load_asset_lock_operation_ids(
+    callback: LoadAssetLockOperationIdFn,
+    context: *mut c_void,
+    wallet_id: &WalletId,
+    locks: &mut BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>>,
+) -> Result<(), PersistenceError> {
+    let mut operation_ids = BTreeSet::new();
+    for lock in locks.values_mut().flat_map(|locks| locks.values_mut()) {
+        let out_point = outpoint_to_bytes(&lock.out_point);
+        let mut found = false;
+        let mut operation_id = [0; 16];
+        let rc = unsafe {
+            callback(
+                context,
+                wallet_id.as_ptr(),
+                out_point.as_ptr(),
+                &mut found,
+                operation_id.as_mut_ptr(),
+            )
+        };
+        if rc != 0 {
+            return Err(persist_callback_error(
+                rc,
+                "Loading asset-lock operation ID failed",
+            ));
+        }
+        if found && !operation_ids.insert(operation_id) {
+            return Err(PersistenceError::backend(
+                "tracked asset locks: duplicate operation ID",
+            ));
+        }
+        lock.operation_id = found.then_some(operation_id);
+    }
+    Ok(())
+}
+
+/// Rebuild tracked locks from the host's frozen `AssetLockEntryFFI` rows.
+/// Transactions use consensus encoding, proofs use DPP bincode, and outpoints
+/// are raw txid bytes followed by a little-endian vout. Malformed or duplicate
+/// rows fail the whole load. Consumed rows remain recovery tombstones.
 fn build_unused_asset_locks(
     entry: &WalletRestoreEntryFFI,
 ) -> Result<
@@ -5114,9 +6255,12 @@ fn build_unused_asset_locks(
 > {
     use dashcore::hashes::Hash;
 
-    let specs: &[AssetLockEntryFFI] = if entry.tracked_asset_locks.is_null()
-        || entry.tracked_asset_locks_count == 0
-    {
+    if entry.tracked_asset_locks.is_null() && entry.tracked_asset_locks_count != 0 {
+        return Err(PersistenceError::backend(
+            "tracked asset locks: missing row buffer",
+        ));
+    }
+    let specs: &[AssetLockEntryFFI] = if entry.tracked_asset_locks_count == 0 {
         &[]
     } else {
         // SAFETY: Swift guarantees the pointer + count form a valid
@@ -5128,6 +6272,7 @@ fn build_unused_asset_locks(
 
     let mut map: BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>> =
         BTreeMap::new();
+    let mut out_points = BTreeSet::new();
     for spec in specs {
         // Decode the outpoint: 32-byte raw txid + 4-byte LE vout.
         let txid = dashcore::Txid::from_slice(&spec.out_point[..32]).map_err(|e| {
@@ -5141,6 +6286,11 @@ fn build_unused_asset_locks(
             .expect("4-byte slice from 36-byte array");
         let vout = u32::from_le_bytes(vout_bytes);
         let out_point = dashcore::OutPoint { txid, vout };
+        if !out_points.insert(out_point) {
+            return Err(PersistenceError::backend(
+                "tracked asset locks: duplicate outpoint",
+            ));
+        }
 
         // Decode the consensus-encoded transaction.
         if spec.transaction_bytes.is_null() || spec.transaction_bytes_len == 0 {
@@ -5170,6 +6320,8 @@ fn build_unused_asset_locks(
             // SAFETY: Same lifetime contract as `transaction_bytes`.
             let proof_bytes =
                 unsafe { slice::from_raw_parts(spec.proof_bytes, spec.proof_bytes_len) };
+            // The host persisted these bytes from an entry this wallet
+            // wrote, so they decode as our own data.
             let (proof, _) = dpp::bincode::decode_from_slice::<dpp::prelude::AssetLockProof, _>(
                 proof_bytes,
                 config::standard(),
@@ -5193,6 +6345,7 @@ fn build_unused_asset_locks(
             funding_type,
             identity_index: spec.identity_index,
             amount: spec.amount_duffs,
+            operation_id: None,
             status,
             proof,
         };
@@ -5236,6 +6389,7 @@ fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, Persistence
         3 => AssetLockStatus::ChainLocked,
         4 => AssetLockStatus::Consumed,
         5 => AssetLockStatus::RecoveredFromChain,
+        6 => AssetLockStatus::DrainCompleted,
         other => {
             return Err(PersistenceError::backend(format!(
                 "tracked asset lock: unknown status discriminant {}",
@@ -5588,6 +6742,7 @@ unsafe fn apply_contact_rows(
         is_hidden: bool,
         contact_account_label: Option<String>,
         accepted_accounts: Vec<u32>,
+        external_account_reference: Option<u32>,
     }
 
     let opt_string = |ptr: *const std::os::raw::c_char| -> Option<String> {
@@ -5660,6 +6815,12 @@ unsafe fn apply_contact_rows(
         if acc.accepted_accounts.is_empty() {
             acc.accepted_accounts = u32s(row.accepted_accounts, row.accepted_accounts_len);
         }
+        // The outbound-account marker is relationship-level too; a host
+        // that never stored it hands back `false`, which restores `None`
+        // and keeps the conservative one-rebuild behaviour.
+        if acc.external_account_reference.is_none() && row.has_external_account_reference {
+            acc.external_account_reference = Some(row.external_account_reference);
+        }
     }
 
     for (contact_id_bytes, acc) in by_contact {
@@ -5673,6 +6834,7 @@ unsafe fn apply_contact_rows(
                 contact.payment_channel_broken = acc.payment_channel_broken;
                 contact.contact_account_label = acc.contact_account_label;
                 contact.accepted_accounts = acc.accepted_accounts;
+                contact.external_account_reference = acc.external_account_reference;
                 managed.apply_established_contact(contact);
             }
             (Some(outgoing), None) => {
@@ -5758,6 +6920,9 @@ unsafe fn build_identity_public_keys(
                     }
                 }
             }
+            3 => Some(ContractBounds::ContractGroup {
+                id: row.contract_bounds_id.into(),
+            }),
             _ => None,
         };
 
@@ -5771,6 +6936,14 @@ unsafe fn build_identity_public_keys(
             data: BinaryData::new(bytes),
             disabled_at: None,
         });
+        // A limited key restores as limited: either limit makes it a version 1 key
+        let pk = match (
+            row.total_budget_is_some.then_some(row.total_budget),
+            row.expires_at_is_some.then_some(row.expires_at),
+        ) {
+            (None, None) => pk,
+            (total_budget, expires_at) => pk.with_limits(total_budget, expires_at),
+        };
         map.insert(row.key_id, pk);
     }
     map
@@ -6237,7 +7410,383 @@ mod tests {
     //! restoration loops that don't need the full FFI plumbing —
     //! exercising the in-memory mutation against synthetic input.
 
+    mod unconfirmed_outgoing_order {
+        use super::super::order_unconfirmed_outgoing;
+        use dashcore::blockdata::transaction::Transaction;
+        use dashcore::{OutPoint, ScriptBuf, TxIn, TxOut};
+
+        fn tx_spending(parents: &[(dashcore::Txid, u32)], value: u64) -> Transaction {
+            Transaction {
+                version: 2,
+                lock_time: 0,
+                input: parents
+                    .iter()
+                    .map(|(txid, vout)| TxIn {
+                        previous_output: OutPoint {
+                            txid: *txid,
+                            vout: *vout,
+                        },
+                        script_sig: ScriptBuf::new(),
+                        sequence: 0xffff_ffff,
+                        witness: Default::default(),
+                    })
+                    .collect(),
+                output: vec![TxOut {
+                    value,
+                    script_pubkey: ScriptBuf::new(),
+                }],
+                special_transaction_payload: None,
+            }
+        }
+
+        fn root(value: u64) -> Transaction {
+            tx_spending(
+                &[(
+                    "0000000000000000000000000000000000000000000000000000000000000001"
+                        .parse()
+                        .expect("static txid"),
+                    0,
+                )],
+                value,
+            )
+        }
+
+        /// The host stores `first_seen` in whole seconds, so a parent and the
+        /// child spending its change can share one. Replaying the child first
+        /// leaves it with no input and it is dropped as irrelevant — that
+        /// send's replay is then silently lost, which is the whole failure
+        /// this ordering exists to prevent.
+        #[test]
+        fn a_child_sharing_its_parents_second_is_replayed_after_it() {
+            let parent = root(50_000);
+            let child = tx_spending(&[(parent.txid(), 0)], 40_000);
+
+            // Child offered first, identical timestamps: nothing but the
+            // dependency pass can separate them.
+            let ordered = order_unconfirmed_outgoing(vec![
+                (1_700_000_000, child.clone()),
+                (1_700_000_000, parent.clone()),
+            ]);
+
+            assert_eq!(
+                ordered.iter().map(|tx| tx.txid()).collect::<Vec<_>>(),
+                vec![parent.txid(), child.txid()],
+                "the parent must be replayed before the child that spends it"
+            );
+        }
+
+        /// A chain of three, offered fully reversed and all in one second.
+        #[test]
+        fn a_reversed_chain_is_restored_to_dependency_order() {
+            let a = root(90_000);
+            let b = tx_spending(&[(a.txid(), 0)], 80_000);
+            let c = tx_spending(&[(b.txid(), 0)], 70_000);
+
+            let ordered = order_unconfirmed_outgoing(vec![
+                (1_700_000_000, c.clone()),
+                (1_700_000_000, b.clone()),
+                (1_700_000_000, a.clone()),
+            ]);
+
+            assert_eq!(
+                ordered.iter().map(|tx| tx.txid()).collect::<Vec<_>>(),
+                vec![a.txid(), b.txid(), c.txid()]
+            );
+        }
+
+        /// A record whose bytes do not hash to the txid of the row it came
+        /// from is dropped, not replayed.
+        ///
+        /// The replay runs through the ordinary state-update path, so a stale
+        /// or partially-written `transactionData` would not merely be ignored
+        /// — it would move accounting for whatever inputs and outputs those
+        /// bytes happen to describe.
+        #[test]
+        fn a_record_that_does_not_hash_to_its_row_is_dropped() {
+            use crate::wallet_restore_types::{
+                UnconfirmedOutgoingTxRecordFFI, WalletRestoreEntryFFI,
+            };
+            use dashcore::consensus::encode::serialize;
+
+            let honest = root(50_000);
+            let impostor = root(60_000);
+
+            let mut honest_bytes = serialize(&honest);
+            let mut impostor_bytes = serialize(&impostor);
+            let honest_txid = *dashcore::hashes::Hash::as_byte_array(&honest.txid());
+            let impostor_txid = *dashcore::hashes::Hash::as_byte_array(&impostor.txid());
+
+            let records = [
+                UnconfirmedOutgoingTxRecordFFI {
+                    txid: honest_txid,
+                    tx_bytes: honest_bytes.as_mut_ptr(),
+                    tx_bytes_len: honest_bytes.len(),
+                    first_seen: 1_700_000_000,
+                },
+                // Same shape, but the bytes belong to a different transaction.
+                UnconfirmedOutgoingTxRecordFFI {
+                    txid: impostor_txid,
+                    tx_bytes: honest_bytes.as_mut_ptr(),
+                    tx_bytes_len: honest_bytes.len(),
+                    first_seen: 1_700_000_001,
+                },
+            ];
+
+            let entry = WalletRestoreEntryFFI {
+                unconfirmed_outgoing_tx_records: records.as_ptr(),
+                unconfirmed_outgoing_tx_records_count: records.len(),
+                ..Default::default()
+            };
+
+            let decoded = super::super::decode_unconfirmed_outgoing(&entry);
+
+            assert_eq!(
+                decoded.iter().map(|tx| tx.txid()).collect::<Vec<_>>(),
+                vec![honest.txid()],
+                "only the record whose bytes match its row may be replayed"
+            );
+            let _ = impostor_bytes.as_mut_ptr();
+        }
+
+        /// Sends that do not depend on each other keep the order `first_seen`
+        /// gave them — the dependency pass must not reshuffle the baseline.
+        #[test]
+        fn independent_sends_keep_their_first_seen_order() {
+            let older = root(10_000);
+            let newer = root(20_000);
+
+            let ordered = order_unconfirmed_outgoing(vec![
+                (1_700_000_050, newer.clone()),
+                (1_700_000_000, older.clone()),
+            ]);
+
+            assert_eq!(
+                ordered.iter().map(|tx| tx.txid()).collect::<Vec<_>>(),
+                vec![older.txid(), newer.txid()]
+            );
+        }
+    }
+
     use super::*;
+
+    #[test]
+    fn should_restore_identity_balance_watermark_without_changing_legacy_rows() {
+        unsafe extern "C" fn load_wallet(
+            _: *mut c_void,
+            entries: *mut *const WalletRestoreEntryFFI,
+            count: *mut usize,
+        ) -> i32 {
+            // The legacy restore row contains only integers and raw pointers.
+            let mut identity: IdentityRestoreEntryFFI = std::mem::zeroed();
+            identity.identity_id = [7; 32];
+            identity.balance = 123;
+            *entries = Box::into_raw(Box::new(WalletRestoreEntryFFI {
+                wallet_id: [42; 32],
+                identities: Box::into_raw(Box::new(identity)),
+                identities_count: 1,
+                ..Default::default()
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_wallet(
+            _: *mut c_void,
+            entries: *const WalletRestoreEntryFFI,
+            _: usize,
+        ) {
+            let row = Box::from_raw(entries.cast_mut());
+            drop(Box::from_raw(row.identities.cast_mut()));
+        }
+        unsafe extern "C" fn load_stamp(
+            ctx: *mut c_void,
+            wallet: *const u8,
+            identity: *const u8,
+            found: *mut bool,
+            stamp: *mut crate::types::BlockTime,
+        ) -> i32 {
+            assert_eq!(std::slice::from_raw_parts(wallet, 32), &[42; 32]);
+            assert_eq!(std::slice::from_raw_parts(identity, 32), &[7; 32]);
+            let mode = *(ctx as *const u8);
+            if mode == 2 {
+                return -1;
+            }
+            *found = mode == 1;
+            // Known all-zero metadata must remain Some, not collapse to None.
+            *stamp = crate::types::BlockTime {
+                height: 0,
+                core_height: 0,
+                timestamp: 0,
+            };
+            0
+        }
+        for mode in [0_u8, 1, 2] {
+            let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    context: (&mode as *const u8).cast_mut().cast(),
+                    on_load_wallet_list_fn: Some(load_wallet),
+                    on_load_wallet_list_free_fn: Some(free_wallet),
+                    ..Default::default()
+                },
+                PersistenceCapabilities::NONE,
+                PersistenceExtensionCallbacks {
+                    load_identity_balance_block_time: Some(load_stamp),
+                    ..Default::default()
+                },
+            );
+            let result = persister.load();
+            if mode == 2 {
+                assert!(result.is_err());
+                continue;
+            }
+            let restored = result.expect("restore watermark");
+            let managed = &restored.wallets[&[42; 32]]
+                .identity_manager
+                .wallet_identities[&[42; 32]][&0];
+            assert_eq!(managed.last_updated_balance_block_time.is_some(), mode == 1);
+            assert_eq!(
+                dpp::identity::accessors::IdentityGettersV0::balance(&managed.identity),
+                123
+            );
+        }
+        let legacy = FFIPersister::new(PersistenceCallbacks {
+            on_load_wallet_list_fn: Some(load_wallet),
+            on_load_wallet_list_free_fn: Some(free_wallet),
+            ..Default::default()
+        })
+        .load()
+        .expect("old hosts still restore");
+        assert!(
+            legacy.wallets[&[42; 32]].identity_manager.wallet_identities[&[42; 32]][&0]
+                .last_updated_balance_block_time
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn should_persist_balance_watermarks_only_for_the_owning_wallet() {
+        use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
+        use std::sync::Mutex;
+
+        unsafe extern "C" fn persist(
+            ctx: *mut c_void,
+            wallet: *const u8,
+            _: *const u8,
+            stamp: *const crate::types::BlockTime,
+        ) -> i32 {
+            assert_eq!(std::slice::from_raw_parts(wallet, 32), &[42; 32]);
+            let stored = &*(ctx as *const Mutex<Option<u64>>);
+            *stored.lock().unwrap() = stamp.as_ref().map(|stamp| stamp.height);
+            0
+        }
+
+        let stored = Mutex::new(None::<u64>);
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: (&stored as *const Mutex<Option<u64>>).cast_mut().cast(),
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(noop_end),
+                ..Default::default()
+            },
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+            PersistenceExtensionCallbacks {
+                persist_identity_balance_block_time: Some(persist),
+                ..Default::default()
+            },
+        );
+        let mut managed = platform_wallet::ManagedIdentity::new_out_of_wallet(
+            dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0::default()),
+        );
+        managed.last_updated_balance_block_time = Some(platform_wallet::BlockTime::new(42, 7, 99));
+        for owner in [Some([42; 32]), None, Some([42; 32]), Some([43; 32])] {
+            managed.wallet_id = owner;
+            managed.identity_index = owner.map(|_| 0);
+            let mut identities = IdentityChangeSet::default();
+            identities
+                .identities
+                .insert(managed.id(), IdentityEntry::from_managed(&managed));
+            persister.store([42; 32], identities.into()).unwrap();
+            assert_eq!(
+                *stored.lock().unwrap(),
+                (owner == Some([42; 32])).then_some(42)
+            );
+        }
+    }
+
+    #[test]
+    fn should_roll_back_failed_identity_balance_watermark_store_and_clear_on_removal() {
+        use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
+        use std::sync::Mutex;
+        #[derive(Default)]
+        struct Host {
+            events: Mutex<Vec<(bool, bool)>>,
+            fail: bool,
+        }
+        unsafe extern "C" fn persist(
+            ctx: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            stamp: *const crate::types::BlockTime,
+        ) -> i32 {
+            let host = &*(ctx as *const Host);
+            host.events.lock().unwrap().push((true, stamp.is_null()));
+            if host.fail {
+                -1
+            } else {
+                0
+            }
+        }
+        unsafe extern "C" fn end(ctx: *mut c_void, _: *const u8, success: bool) -> i32 {
+            let host = &*(ctx as *const Host);
+            host.events.lock().unwrap().push((false, success));
+            0
+        }
+        for fail in [false, true] {
+            let host = Host {
+                fail,
+                ..Default::default()
+            };
+            let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    context: (&host as *const Host).cast_mut().cast(),
+                    on_changeset_begin_fn: Some(noop_begin),
+                    on_changeset_end_fn: Some(end),
+                    ..Default::default()
+                },
+                PersistenceCapabilities::ATOMIC_CHANGESETS,
+                PersistenceExtensionCallbacks {
+                    persist_identity_balance_block_time: Some(persist),
+                    ..Default::default()
+                },
+            );
+            let mut managed = platform_wallet::ManagedIdentity::new(
+                dpp::identity::Identity::V0(dpp::identity::v0::IdentityV0::default()),
+                0,
+            );
+            managed.wallet_id = Some([42; 32]);
+            managed.last_updated_balance_block_time = Some(platform_wallet::BlockTime {
+                height: 42,
+                core_height: 7,
+                timestamp: 99,
+            });
+            let mut identities = IdentityChangeSet::default();
+            identities
+                .identities
+                .insert(managed.id(), IdentityEntry::from_managed(&managed));
+            identities.removed.insert([9; 32].into());
+            let result = persister.store(
+                [42; 32],
+                PlatformWalletChangeSet {
+                    identities: Some(identities),
+                    ..Default::default()
+                },
+            );
+            assert_eq!(result.is_err(), fail);
+            assert_eq!(
+                *host.events.lock().unwrap(),
+                vec![(true, false), (true, true), (false, !fail)]
+            );
+        }
+    }
 
     // --- persists_durably: the fail-closed durability attestation ---
 
@@ -6292,6 +7841,82 @@ mod tests {
         *out_count = 0;
         0
     }
+
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn local_balance_restore_preserves_explicit_zero_sync_row_presence() {
+        use crate::shielded_persistence::ShieldedSubwalletSyncStateFFI;
+        use platform_wallet::wallet::shielded::SubwalletId;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        unsafe extern "C" fn load_wallet(
+            _context: *mut c_void,
+            entries: *mut *const WalletRestoreEntryFFI,
+            count: *mut usize,
+        ) -> i32 {
+            *entries = Box::into_raw(Box::new(WalletRestoreEntryFFI {
+                wallet_id: [42; 32],
+                ..Default::default()
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_wallet(
+            context: *mut c_void,
+            entries: *const WalletRestoreEntryFFI,
+            _count: usize,
+        ) {
+            drop(Box::from_raw(entries.cast_mut()));
+            (*(context as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        }
+        unsafe extern "C" fn load_state(
+            _context: *mut c_void,
+            entries: *mut *const ShieldedSubwalletSyncStateFFI,
+            count: *mut usize,
+        ) -> i32 {
+            *entries = Box::into_raw(Box::new(ShieldedSubwalletSyncStateFFI {
+                wallet_id: [42; 32],
+                account_index: 7,
+                last_synced_index: 0,
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_state(
+            context: *mut c_void,
+            entries: *const ShieldedSubwalletSyncStateFFI,
+            _count: usize,
+        ) {
+            drop(Box::from_raw(entries.cast_mut()));
+            (*(context as *const AtomicUsize)).fetch_add(1, Ordering::SeqCst);
+        }
+        let releases = AtomicUsize::new(0);
+        let persister = FFIPersister::new(PersistenceCallbacks {
+            context: (&releases as *const AtomicUsize).cast_mut().cast(),
+            on_load_wallet_list_fn: Some(load_wallet),
+            on_load_wallet_list_free_fn: Some(free_wallet),
+            on_load_shielded_sync_states_fn: Some(load_state),
+            on_load_shielded_sync_states_free_fn: Some(free_state),
+            ..Default::default()
+        });
+        let snapshot = persister.load().expect("host snapshot");
+        let account = &snapshot.shielded.per_subwallet[&SubwalletId::new([42; 32], 7)];
+        assert_eq!(account.last_synced_index, 0);
+        assert!(
+            account.has_sync_state,
+            "a persisted zero is known scan history"
+        );
+        assert!(account.notes.is_empty());
+        assert!(!snapshot
+            .shielded
+            .per_subwallet
+            .contains_key(&SubwalletId::new([42; 32], 8)));
+        assert_eq!(
+            releases.load(Ordering::SeqCst),
+            2,
+            "both host allocations freed"
+        );
+    }
     unsafe extern "C" fn noop_free_wallets(
         _ctx: *mut c_void,
         _entries: *const WalletRestoreEntryFFI,
@@ -6302,6 +7927,22 @@ mod tests {
         _ctx: *mut c_void,
         _wallet_id: *const u8,
         _changeset: *const WalletChangeSetFFI,
+    ) -> i32 {
+        0
+    }
+    unsafe extern "C" fn noop_dashpay_payments(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _entries: *const DashpayPaymentPersistEntryFFI,
+        _count: usize,
+    ) -> i32 {
+        0
+    }
+    unsafe extern "C" fn noop_wallet_changeset_sweeps(
+        _ctx: *mut c_void,
+        _wallet_id: *const u8,
+        _sweeps: *const SweepBatchFFI,
+        _sweeps_count: usize,
     ) -> i32 {
         0
     }
@@ -6650,6 +8291,1703 @@ mod tests {
         assert!(!capabilities.contains(PersistenceCapabilities::WALLET_RESTORE));
     }
 
+    /// `CORE_SWEEP_REMOVAL` requires the extension's size-negotiated
+    /// sweeps slot, the legacy changeset callback it corrects, AND the
+    /// host's explicit declaration. The legacy callback alone must never
+    /// attest it: its C signature never changed, so an out-of-tree host
+    /// built before sweeps existed still has that pointer wired — the
+    /// extension slot is the only structural fact that distinguishes a
+    /// sweep-aware host, because it exists only when the host's declared
+    /// `struct_size` proved it.
+    /// `DASHPAY_PAYMENTS` requires the payments slot AND the declaration —
+    /// the flip channel's mirror of the sweep bit's gating. Android's
+    /// vtable leaves `on_persist_dashpay_payments_fn` unset, so even a
+    /// host blindly OR-ing the bit must read as payments-blind: the
+    /// wallet-event adapter keys the sweep's Failed-flip staging on this
+    /// bit, and an accepted-and-dropped overlay is exactly the shape the
+    /// gating exists to prevent.
+    #[test]
+    fn dashpay_payments_requires_the_slot_and_the_declaration() {
+        fn persister_with(
+            callbacks: PersistenceCallbacks,
+            declared: PersistenceCapabilities,
+        ) -> FFIPersister {
+            FFIPersister::new_with_persistence_capabilities(callbacks, declared)
+        }
+        // Declared but slot unwired (the Android shape): absent.
+        assert!(!persister_with(
+            PersistenceCallbacks::default(),
+            PersistenceCapabilities::DASHPAY_PAYMENTS
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::DASHPAY_PAYMENTS));
+
+        // Slot wired but never declared: absent.
+        assert!(!persister_with(
+            PersistenceCallbacks {
+                on_persist_dashpay_payments_fn: Some(noop_dashpay_payments),
+                ..Default::default()
+            },
+            PersistenceCapabilities::NONE
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::DASHPAY_PAYMENTS));
+
+        // Wired and declared: attested.
+        assert!(persister_with(
+            PersistenceCallbacks {
+                on_persist_dashpay_payments_fn: Some(noop_dashpay_payments),
+                ..Default::default()
+            },
+            PersistenceCapabilities::DASHPAY_PAYMENTS
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::DASHPAY_PAYMENTS));
+    }
+
+    #[test]
+    fn core_sweep_removal_requires_the_extension_slot_and_the_declaration() {
+        fn persister_with(
+            callbacks: PersistenceCallbacks,
+            declared: PersistenceCapabilities,
+            sweeps: Option<PersistWalletChangesetSweepsFn>,
+        ) -> FFIPersister {
+            FFIPersister::new_with_persistence_capabilities_and_extension_callbacks(
+                callbacks, declared, None, sweeps,
+            )
+        }
+        fn wired_callbacks() -> PersistenceCallbacks {
+            PersistenceCallbacks {
+                on_persist_wallet_changeset_fn: Some(noop_wallet_changeset),
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(noop_end),
+                ..Default::default()
+            }
+        }
+        /// Everything the bit needs, atomic round included — the "without
+        /// the atomic round" case is the one below, which passes
+        /// `CORE_SWEEP_REMOVAL` on its own.
+        fn declared() -> PersistenceCapabilities {
+            PersistenceCapabilities::CORE_SWEEP_REMOVAL
+                .union(PersistenceCapabilities::ATOMIC_CHANGESETS)
+        }
+
+        // The pre-sweep-aware binary shape: legacy changeset callback
+        // wired, declaration present (a host blindly OR-ing bits), but no
+        // extension slot — absent.
+        assert!(!persister_with(wired_callbacks(), declared(), None)
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+
+        // Extension slot wired and declared, but no changeset callback to
+        // persist the rows a sweep would correct: absent.
+        assert!(!persister_with(
+            PersistenceCallbacks::default(),
+            declared(),
+            Some(noop_wallet_changeset_sweeps)
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+
+        // Structurally complete but never declared: absent.
+        assert!(!persister_with(
+            wired_callbacks(),
+            PersistenceCapabilities::NONE,
+            Some(noop_wallet_changeset_sweeps)
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+
+        // Structurally complete and declared, but without the atomic round
+        // the split transport needs: absent. Sweeps arrive on their own
+        // call, so a host with no begin/end boundary can make the changeset
+        // durable and stop before the removal lands.
+        assert!(!persister_with(
+            wired_callbacks(),
+            PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+            Some(noop_wallet_changeset_sweeps)
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+
+        // Declared atomic, but the begin/end pair is not actually wired:
+        // absent. The declaration alone cannot bracket the two calls.
+        assert!(!persister_with(
+            PersistenceCallbacks {
+                on_persist_wallet_changeset_fn: Some(noop_wallet_changeset),
+                ..Default::default()
+            },
+            declared(),
+            Some(noop_wallet_changeset_sweeps)
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+
+        // Everything present: attested.
+        assert!(persister_with(
+            wired_callbacks(),
+            declared(),
+            Some(noop_wallet_changeset_sweeps)
+        )
+        .persistence_capabilities()
+        .contains(PersistenceCapabilities::CORE_SWEEP_REMOVAL));
+    }
+
+    /// The delivery contract of the extension transport itself: a
+    /// sweep-carrying round hands its batches to the extension slot AFTER
+    /// the changeset callback, within the same round, in emission order and
+    /// with payloads intact — order is the one property a persister cannot
+    /// reconstruct, since a later batch can keep a coin spent that an
+    /// earlier one freed. The same round against a persister whose
+    /// extension never proved the slot must still succeed with the sweeps
+    /// simply undelivered: the adapter's `CORE_SWEEP_REMOVAL` gate is what
+    /// turns that into a withheld watermark rather than a false success.
+    #[test]
+    fn store_delivers_sweeps_through_the_extension_slot_after_the_changeset() {
+        use dashcore::hashes::Hash as _;
+        use platform_wallet::changeset::changeset::SweepBatch;
+        use platform_wallet::changeset::CoreChangeSet;
+
+        #[derive(Default)]
+        struct Sink {
+            events: std::sync::Mutex<Vec<String>>,
+        }
+        unsafe extern "C" fn record_changeset(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _changeset: *const WalletChangeSetFFI,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            sink.events.lock().unwrap().push("changeset".into());
+            0
+        }
+        unsafe extern "C" fn record_sweeps(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            sweeps: *const SweepBatchFFI,
+            sweeps_count: usize,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            let mut events = sink.events.lock().unwrap();
+            for batch in slice::from_raw_parts(sweeps, sweeps_count) {
+                // Both pointers are null at count 0 (see `SweepBatchFFI`), and
+                // `from_raw_parts(null, 0)` is UB — not merely a no-op — so
+                // the guard is symmetric with `released_outpoints` below. A
+                // host binding copying this consumer inherits the same shape.
+                let txids = if batch.txids.is_null() {
+                    &[][..]
+                } else {
+                    slice::from_raw_parts(batch.txids, batch.txids_count)
+                };
+                let released = if batch.released_outpoints.is_null() {
+                    &[][..]
+                } else {
+                    slice::from_raw_parts(batch.released_outpoints, batch.released_outpoints_count)
+                };
+                let winner_height = if batch.has_winner_mined_height {
+                    format!("Some({})", batch.winner_mined_height)
+                } else {
+                    "None".to_string()
+                };
+                events.push(format!(
+                    "sweep txids={:?} winner={} height={} released={:?}",
+                    txids.iter().map(|t| t[0]).collect::<Vec<_>>(),
+                    batch.superseded_by[0],
+                    winner_height,
+                    released
+                        .iter()
+                        .map(|o| (o.txid[0], o.vout))
+                        .collect::<Vec<_>>(),
+                ));
+            }
+            0
+        }
+
+        fn sweep_changeset() -> PlatformWalletChangeSet {
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    sweeps: vec![
+                        // Block-context: the winner's mined height crosses.
+                        SweepBatch {
+                            txids: vec![dashcore::Txid::from_byte_array([0x11; 32])],
+                            superseded_by: dashcore::Txid::from_byte_array([0x22; 32]),
+                            winner_mined_height: Some(910),
+                            released_outpoints: vec![dashcore::OutPoint::new(
+                                dashcore::Txid::from_byte_array([0x33; 32]),
+                                7,
+                            )],
+                        },
+                        // IS-locked winner: no height — the consumer must
+                        // see the absence, not a fabricated zero.
+                        SweepBatch {
+                            txids: vec![
+                                dashcore::Txid::from_byte_array([0x44; 32]),
+                                dashcore::Txid::from_byte_array([0x55; 32]),
+                            ],
+                            superseded_by: dashcore::Txid::from_byte_array([0x66; 32]),
+                            winner_mined_height: None,
+                            released_outpoints: vec![],
+                        },
+                    ],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }
+        }
+
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extension_callbacks(
+            callbacks,
+            PersistenceCapabilities::CORE_SWEEP_REMOVAL,
+            None,
+            Some(record_sweeps),
+        );
+        persister
+            .store([1u8; 32], sweep_changeset())
+            .expect("sweep round must succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec![
+                "changeset".to_string(),
+                "sweep txids=[17] winner=34 height=Some(910) released=[(51, 7)]".to_string(),
+                "sweep txids=[68, 85] winner=102 height=None released=[]".to_string(),
+            ],
+        );
+        drop(persister);
+
+        // No extension slot: the round still succeeds, the changeset
+        // callback still fires, and the sweeps are never delivered — the
+        // legacy-host shape, safe because such a persister can never attest
+        // CORE_SWEEP_REMOVAL (see the capability test above).
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities(
+            callbacks,
+            PersistenceCapabilities::NONE,
+        );
+        persister
+            .store([1u8; 32], sweep_changeset())
+            .expect("sweepless-host round must still succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec!["changeset".to_string()]
+        );
+        drop(persister);
+    }
+
+    /// The DashPay backfill record reaches the host through its own
+    /// size-negotiated extension slot (dashpay/platform#4302): a round that
+    /// carries one fires it after the changeset callback with the whole
+    /// record — scalars and every covered contact — a round without one
+    /// never fires it, and a host without the slot still succeeds, keeping
+    /// the pre-record behaviour of a rewind per launch.
+    #[test]
+    fn store_delivers_the_dashpay_backfill_record_through_the_extension_slot() {
+        use platform_wallet::changeset::{CoreChangeSet, DashPayBackfillRecord};
+
+        #[derive(Default)]
+        struct Sink {
+            events: std::sync::Mutex<Vec<String>>,
+        }
+        unsafe extern "C" fn record_changeset(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _changeset: *const WalletChangeSetFFI,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            sink.events.lock().unwrap().push("changeset".into());
+            0
+        }
+        unsafe extern "C" fn record_backfill(
+            ctx: *mut c_void,
+            wallet_id: *const u8,
+            floor: u32,
+            rewound_from: u32,
+            covered: *const DashPayBackfillCoveredContactFFI,
+            covered_count: usize,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            let wallet_id = std::slice::from_raw_parts(wallet_id, 32);
+            let covered: Vec<String> = if covered.is_null() {
+                assert_eq!(covered_count, 0, "null cover set must carry count 0");
+                Vec::new()
+            } else {
+                std::slice::from_raw_parts(covered, covered_count)
+                    .iter()
+                    .map(|c| {
+                        format!(
+                            "{}/{}@{}",
+                            c.owner_identity_id[0], c.contact_identity_id[0], c.covered_from
+                        )
+                    })
+                    .collect()
+            };
+            sink.events.lock().unwrap().push(format!(
+                "backfill wallet={} floor={floor} rewound_from={rewound_from} covered=[{}]",
+                wallet_id[0],
+                covered.join(",")
+            ));
+            0
+        }
+
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_changeset_begin_fn: Some(noop_begin),
+            on_changeset_end_fn: Some(noop_end),
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            callbacks,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+            PersistenceExtensionCallbacks {
+                wallet_dashpay_backfill: Some(record_backfill),
+                ..Default::default()
+            },
+        );
+
+        // A round with no record: the slot stays silent.
+        persister
+            .store(
+                [1u8; 32],
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        synced_height: Some(500),
+                        ..CoreChangeSet::default()
+                    }),
+                    ..PlatformWalletChangeSet::default()
+                },
+            )
+            .expect("round without a record");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec!["changeset".to_string()]
+        );
+
+        // The rescan's round: lowered cursor first, then the whole record.
+        let mut record = DashPayBackfillRecord::default();
+        record.record_pass(
+            2_537_092,
+            Some(2_167_092),
+            [
+                (
+                    dpp::prelude::Identifier::from([9u8; 32]),
+                    dpp::prelude::Identifier::from([2u8; 32]),
+                    0,
+                    2_300_000,
+                ),
+                (
+                    dpp::prelude::Identifier::from([1u8; 32]),
+                    dpp::prelude::Identifier::from([3u8; 32]),
+                    0,
+                    2_167_092,
+                ),
+            ],
+        );
+        sink.events.lock().unwrap().clear();
+        persister
+            .store(
+                [7u8; 32],
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        synced_height: Some(2_167_092),
+                        ..CoreChangeSet::default()
+                    }),
+                    dashpay_backfill: Some(record),
+                    ..PlatformWalletChangeSet::default()
+                },
+            )
+            .expect("rescan round");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec![
+                "changeset".to_string(),
+                "backfill wallet=7 floor=2167092 rewound_from=2537092 \
+                 covered=[1/3@2167092,9/2@2300000]"
+                    .to_string(),
+            ],
+            "the record follows the changeset callback, in record order"
+        );
+
+        // An empty cover set crosses as a null pointer with count 0.
+        sink.events.lock().unwrap().clear();
+        persister
+            .store(
+                [7u8; 32],
+                PlatformWalletChangeSet {
+                    dashpay_backfill: Some(DashPayBackfillRecord::default()),
+                    ..PlatformWalletChangeSet::default()
+                },
+            )
+            .expect("empty record round");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec!["backfill wallet=7 floor=0 rewound_from=0 covered=[]".to_string()]
+        );
+
+        // A host without the slot: a covering record is withheld and the
+        // round still succeeds — Rust never offers it one, since such a host
+        // does not store the record.
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let legacy = FFIPersister::new_with_persistence_capabilities(
+            callbacks,
+            PersistenceCapabilities::NONE,
+        );
+        assert!(!legacy.stores_dashpay_backfill());
+        let covering = DashPayBackfillRecord::from_entries(
+            100,
+            1_000,
+            vec![platform_wallet::changeset::DashPayBackfillCoveredContact {
+                owner: Identifier::from([0xAA; 32]),
+                contact: Identifier::from([0xBB; 32]),
+                account_index: 0,
+                covered_from: 100,
+            }],
+        );
+        legacy
+            .store(
+                [7u8; 32],
+                PlatformWalletChangeSet {
+                    dashpay_backfill: Some(covering),
+                    ..PlatformWalletChangeSet::default()
+                },
+            )
+            .expect("a host without the slot still stores the round");
+        assert!(sink.events.lock().unwrap().is_empty());
+        // But an empty record is an invalidation of coverage the host handed
+        // back, which it cannot perform: the round fails before anything is
+        // applied, rather than being acknowledged.
+        let refused = legacy.store(
+            [7u8; 32],
+            PlatformWalletChangeSet {
+                dashpay_backfill: Some(DashPayBackfillRecord::default()),
+                ..PlatformWalletChangeSet::default()
+            },
+        );
+        assert!(matches!(
+            refused,
+            Err(ref error) if error.kind() == Some(PersistenceErrorKind::Fatal)
+        ));
+        assert!(sink.events.lock().unwrap().is_empty());
+        drop(persister);
+    }
+
+    /// A backfill record rides the round that lowers the cursor it vouches
+    /// for, and must not reach the host when that cursor did not — a host
+    /// without atomic rounds would keep the coverage over its old cursor
+    /// (dashpay/platform#4302 review). Withheld when the changeset callback
+    /// fails for a round that carries a cursor, and on every round —
+    /// record-only ones included — for a host with no changeset callback,
+    /// which holds no cursor a record could vouch for, or whose rounds are
+    /// not atomic, so a later callback's failure could not roll the record
+    /// back. Delivered for a record-only round on an atomic host that stores
+    /// cursors.
+    #[test]
+    fn a_backfill_record_is_withheld_when_its_cursor_did_not_reach_the_host() {
+        use platform_wallet::changeset::{CoreChangeSet, DashPayBackfillRecord};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Default)]
+        struct Sink {
+            backfills: AtomicUsize,
+        }
+        unsafe extern "C" fn reject_changeset(
+            _ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _changeset: *const WalletChangeSetFFI,
+        ) -> i32 {
+            1
+        }
+        unsafe extern "C" fn accept_changeset(
+            _ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _changeset: *const WalletChangeSetFFI,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn count_backfill(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _floor: u32,
+            _rewound_from: u32,
+            _covered: *const DashPayBackfillCoveredContactFFI,
+            _covered_count: usize,
+        ) -> i32 {
+            (*(ctx as *const Sink))
+                .backfills
+                .fetch_add(1, Ordering::SeqCst);
+            0
+        }
+        fn persister_with(
+            sink: &Sink,
+            changeset: Option<PersistWalletChangesetFnForTest>,
+            atomic: bool,
+        ) -> FFIPersister {
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    context: sink as *const Sink as *mut c_void,
+                    on_changeset_begin_fn: atomic.then_some(noop_begin as _),
+                    on_changeset_end_fn: atomic.then_some(noop_end as _),
+                    on_persist_wallet_changeset_fn: changeset,
+                    ..PersistenceCallbacks::default()
+                },
+                if atomic {
+                    PersistenceCapabilities::ATOMIC_CHANGESETS
+                } else {
+                    PersistenceCapabilities::NONE
+                },
+                PersistenceExtensionCallbacks {
+                    wallet_dashpay_backfill: Some(count_backfill),
+                    ..Default::default()
+                },
+            )
+        }
+        let persister = |sink: &Sink, changeset: Option<PersistWalletChangesetFnForTest>| {
+            persister_with(sink, changeset, true)
+        };
+        type PersistWalletChangesetFnForTest =
+            unsafe extern "C" fn(*mut c_void, *const u8, *const WalletChangeSetFFI) -> i32;
+        // The gates guard coverage, so the rounds below carry a record that
+        // covers a contact; an empty one is an invalidation (see the end).
+        let covering = || {
+            let mut record = DashPayBackfillRecord::default();
+            record.record_pass(
+                1_000,
+                Some(100),
+                [(
+                    Identifier::from([0xAA; 32]),
+                    Identifier::from([0xBB; 32]),
+                    0,
+                    100,
+                )],
+            );
+            record
+        };
+        let rewind_round = || PlatformWalletChangeSet {
+            core: Some(CoreChangeSet {
+                synced_height: Some(100),
+                synced_height_is_rewind: true,
+                ..CoreChangeSet::default()
+            }),
+            dashpay_backfill: Some(covering()),
+            ..PlatformWalletChangeSet::default()
+        };
+
+        // The host rejected the cursor: the record must not follow it.
+        let sink = Sink::default();
+        let rejected = persister(&sink, Some(reject_changeset));
+        assert!(rejected.store([1u8; 32], rewind_round()).is_err());
+        assert_eq!(sink.backfills.load(Ordering::SeqCst), 0);
+
+        let record_only_round = || PlatformWalletChangeSet {
+            dashpay_backfill: Some(covering()),
+            ..PlatformWalletChangeSet::default()
+        };
+
+        // The host takes no cursors at all: a record over one is meaningless,
+        // on the rewind round and on every record-only round after it.
+        let sink = Sink::default();
+        let cursorless = persister(&sink, None);
+        cursorless
+            .store([1u8; 32], rewind_round())
+            .expect("nothing failed");
+        cursorless
+            .store([1u8; 32], record_only_round())
+            .expect("record-only round");
+        assert_eq!(sink.backfills.load(Ordering::SeqCst), 0);
+
+        // A host that stores cursors gets the record with its cursor, and a
+        // record-only round (no cursor to pair with) on its own.
+        let sink = Sink::default();
+        let accepting = persister(&sink, Some(accept_changeset));
+        accepting
+            .store([1u8; 32], rewind_round())
+            .expect("rewind round");
+        accepting
+            .store([1u8; 32], record_only_round())
+            .expect("record-only round");
+        assert_eq!(sink.backfills.load(Ordering::SeqCst), 2);
+
+        // A host whose rounds are not atomic cannot roll back a cursor and a
+        // record whose round a later callback failed: it gets neither round's
+        // record.
+        let sink = Sink::default();
+        let non_atomic = persister_with(&sink, Some(accept_changeset), false);
+        non_atomic
+            .store([1u8; 32], rewind_round())
+            .expect("rewind round");
+        non_atomic
+            .store([1u8; 32], record_only_round())
+            .expect("record-only round");
+        assert_eq!(sink.backfills.load(Ordering::SeqCst), 0);
+
+        // An empty record covers no one, so it vouches for no cursor: it is
+        // an invalidation and reaches the cursorless and the non-atomic host
+        // alike, so neither can keep an earlier run's coverage
+        // (dashpay/platform#4302 review).
+        let invalidation = || PlatformWalletChangeSet {
+            dashpay_backfill: Some(DashPayBackfillRecord::default()),
+            ..PlatformWalletChangeSet::default()
+        };
+        non_atomic
+            .store([1u8; 32], invalidation())
+            .expect("invalidation");
+        assert_eq!(sink.backfills.load(Ordering::SeqCst), 1);
+        let sink = Sink::default();
+        let cursorless = persister(&sink, None);
+        cursorless
+            .store([1u8; 32], invalidation())
+            .expect("invalidation");
+        assert_eq!(sink.backfills.load(Ordering::SeqCst), 1);
+    }
+
+    /// The lifecycle end of the invalidation above, through the real FFI
+    /// adapter, across sessions: an earlier session stored coverage the host
+    /// now hands back, and this session recreates the wallet without the
+    /// account it covers. The host's record must be cleared before the wallet
+    /// is published (dashpay/platform#4302 review):
+    /// - a host with the backfill slot but no atomic rounds gets the empty
+    ///   record, and a failing callback fails the registration;
+    /// - a host WITHOUT the slot cannot clear it, so the registration fails
+    ///   with a typed persistence error instead of being acknowledged;
+    /// - a host that hands back no record registers normally either way.
+    #[test]
+    fn a_recreated_wallet_must_clear_coverage_the_ffi_host_handed_back() {
+        use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
+        use crate::runtime::runtime;
+        use crate::wallet_restore_types::WalletRestoreEntryFFI;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use platform_wallet::changeset::PersistenceErrorKind;
+        use platform_wallet::{PlatformWalletError, PlatformWalletManager};
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+        struct Host {
+            wallet_id: [u8; 32],
+            holds_record: bool,
+            covered: [DashPayBackfillCoveredContactFFI; 1],
+            invalidations: AtomicUsize,
+            covering: AtomicUsize,
+            fail: AtomicBool,
+        }
+        unsafe extern "C" fn load_wallets(
+            ctx: *mut c_void,
+            entries: *mut *const WalletRestoreEntryFFI,
+            count: *mut usize,
+        ) -> i32 {
+            let host = &*(ctx as *const Host);
+            *entries = Box::into_raw(Box::new(WalletRestoreEntryFFI {
+                wallet_id: host.wallet_id,
+                has_dashpay_backfill: host.holds_record,
+                dashpay_backfill_floor: 100,
+                dashpay_backfill_rewound_from: 1_000,
+                dashpay_backfill_covered: if host.holds_record {
+                    host.covered.as_ptr()
+                } else {
+                    std::ptr::null()
+                },
+                dashpay_backfill_covered_count: usize::from(host.holds_record),
+                ..Default::default()
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free_wallets(
+            _: *mut c_void,
+            entries: *const WalletRestoreEntryFFI,
+            _: usize,
+        ) {
+            drop(Box::from_raw(entries.cast_mut()));
+        }
+        unsafe extern "C" fn on_backfill(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _floor: u32,
+            _rewound_from: u32,
+            _covered: *const DashPayBackfillCoveredContactFFI,
+            covered_count: usize,
+        ) -> i32 {
+            let host = &*(ctx as *const Host);
+            if covered_count == 0 {
+                host.invalidations.fetch_add(1, Ordering::SeqCst);
+            } else {
+                host.covering.fetch_add(1, Ordering::SeqCst);
+            }
+            i32::from(host.fail.load(Ordering::SeqCst))
+        }
+        unsafe extern "C" fn accounts(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountSpecFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn pools(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountAddressPoolFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        // `atomic_accounts`: atomic rounds and both account writers, but no
+        // changeset callback, so no cursor reaches the host.
+        fn manager_for(
+            host: Option<&'static Host>,
+            slot: bool,
+            atomic_accounts: bool,
+        ) -> PlatformWalletManager<FFIPersister> {
+            let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    context: host.map_or(std::ptr::null_mut(), |host| {
+                        host as *const Host as *mut c_void
+                    }),
+                    on_load_wallet_list_fn: host.map(|_| load_wallets as _),
+                    on_load_wallet_list_free_fn: host.map(|_| free_wallets as _),
+                    on_changeset_begin_fn: atomic_accounts.then_some(noop_begin as _),
+                    on_changeset_end_fn: atomic_accounts.then_some(noop_end as _),
+                    on_persist_account_registrations_fn: atomic_accounts.then_some(accounts as _),
+                    on_persist_account_address_pools_fn: atomic_accounts.then_some(pools as _),
+                    ..PersistenceCallbacks::default()
+                },
+                if atomic_accounts {
+                    PersistenceCapabilities::ATOMIC_CHANGESETS
+                        .union(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS)
+                } else {
+                    PersistenceCapabilities::NONE
+                },
+                PersistenceExtensionCallbacks {
+                    wallet_dashpay_backfill: slot.then_some(on_backfill as _),
+                    ..Default::default()
+                },
+            );
+            let events = FFIEventHandler::new(
+                EventHandlerCallbacks {
+                    context: std::ptr::null_mut(),
+                    on_wallet_event_fn: None,
+                    on_error_fn: None,
+                    on_platform_address_sync_completed_fn: None,
+                    on_shielded_sync_completed_fn: None,
+                    on_shielded_sync_progress_fn: None,
+                    on_shielded_tree_progress_fn: None,
+                    release_fn: None,
+                },
+                None,
+            );
+            let _runtime_guard = runtime().enter();
+            PlatformWalletManager::new(
+                Arc::new(
+                    dash_sdk::SdkBuilder::new_mock()
+                        .with_network(dashcore::Network::Testnet)
+                        .build()
+                        .expect("mock sdk"),
+                ),
+                Arc::new(persister),
+                Arc::new(events),
+            )
+        }
+        let create = |manager: &PlatformWalletManager<FFIPersister>| {
+            runtime().block_on(manager.create_wallet_from_seed_bytes(
+                dashcore::Network::Testnet,
+                &[42; 64],
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            ))
+        };
+        let wallet_id = create(&manager_for(None, true, false))
+            .expect("the id this seed registers under")
+            .wallet_id();
+        let host = |holds_record: bool| -> &'static Host {
+            Box::leak(Box::new(Host {
+                wallet_id,
+                holds_record,
+                covered: [DashPayBackfillCoveredContactFFI {
+                    owner_identity_id: [0xAA; 32],
+                    contact_identity_id: [0xBB; 32],
+                    account_index: 0,
+                    covered_from: 200,
+                }],
+                invalidations: AtomicUsize::new(0),
+                covering: AtomicUsize::new(0),
+                fail: AtomicBool::new(false),
+            }))
+        };
+
+        // The slot, no atomic rounds: the invalidation is delivered, and a
+        // host that fails it fails the registration.
+        let with_slot = host(true);
+        with_slot.fail.store(true, Ordering::SeqCst);
+        let manager = manager_for(Some(with_slot), true, false);
+        assert!(
+            create(&manager).is_err(),
+            "an invalidation the host failed must fail the registration"
+        );
+        with_slot.fail.store(false, Ordering::SeqCst);
+        create(&manager).expect("the invalidation lands");
+        assert_eq!(with_slot.invalidations.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            with_slot.covering.load(Ordering::SeqCst),
+            0,
+            "a host that is not atomic never receives coverage"
+        );
+
+        // No slot: the coverage cannot be cleared, so nothing is published.
+        let manager = manager_for(Some(host(true)), false, false);
+        match create(&manager) {
+            Ok(_) => panic!("coverage the host cannot clear must block the registration"),
+            Err(PlatformWalletError::PersisterStore(source)) => {
+                assert_eq!(source.kind(), Some(PersistenceErrorKind::Fatal));
+            }
+            Err(other) => panic!("expected a typed store failure, got {other:?}"),
+        }
+        assert!(runtime().block_on(manager.get_wallet(&wallet_id)).is_none());
+
+        // A host that hands back no record keeps the no-record fallback,
+        // with or without the slot.
+        for slot in [false, true] {
+            let clean = host(false);
+            create(&manager_for(Some(clean), slot, false)).expect("nothing to clear");
+            assert_eq!(clean.invalidations.load(Ordering::SeqCst), 0);
+        }
+
+        // Atomic rounds and both account writers, but no cursor callback:
+        // the host cannot keep coverage, so it is cleared like on any other
+        // such host and never offered coverage.
+        let cursorless = host(true);
+        create(&manager_for(Some(cursorless), true, true)).expect("the invalidation lands");
+        assert_eq!(cursorless.invalidations.load(Ordering::SeqCst), 1);
+        assert_eq!(cursorless.covering.load(Ordering::SeqCst), 0);
+    }
+
+    /// Coverage counts as durable on an FFI host only when everything it
+    /// rides with can reach the host: atomic rounds, both account writers,
+    /// the backfill slot, AND the changeset callback that carries the cursor
+    /// the coverage vouches for. `store` withholds every covering record
+    /// from a host without that callback, so advertising the record there
+    /// let the owning layer treat suppressed coverage as stored
+    /// (dashpay/platform#4302 review).
+    #[test]
+    fn backfill_coverage_needs_a_host_that_stores_its_cursor() {
+        use platform_wallet::changeset::persists_backfill_coverage;
+
+        unsafe extern "C" fn begin(_: *mut c_void, _: *const u8) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end(_: *mut c_void, _: *const u8, _: bool) -> i32 {
+            0
+        }
+        unsafe extern "C" fn accounts(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountSpecFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn pools(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountAddressPoolFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn changeset(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const WalletChangeSetFFI,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn backfill(
+            _: *mut c_void,
+            _: *const u8,
+            _: u32,
+            _: u32,
+            _: *const DashPayBackfillCoveredContactFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        let host = |cursor_callback: bool, slot: bool| {
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    on_changeset_begin_fn: Some(begin),
+                    on_changeset_end_fn: Some(end),
+                    on_persist_account_registrations_fn: Some(accounts),
+                    on_persist_account_address_pools_fn: Some(pools),
+                    on_persist_wallet_changeset_fn: cursor_callback.then_some(changeset as _),
+                    ..PersistenceCallbacks::default()
+                },
+                PersistenceCapabilities::ATOMIC_CHANGESETS
+                    .union(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS),
+                PersistenceExtensionCallbacks {
+                    wallet_dashpay_backfill: slot.then_some(backfill as _),
+                    ..Default::default()
+                },
+            )
+        };
+        assert!(
+            !persists_backfill_coverage(&host(false, true)),
+            "an atomic, account-capable host with the slot but no cursor callback"
+        );
+        assert!(!persists_backfill_coverage(&host(true, false)));
+        assert!(persists_backfill_coverage(&host(true, true)));
+    }
+
+    /// An atomic FFI host keeps outbound-account markers on disk only when it
+    /// also wires both account writers: `ACCOUNT_ADDRESS_POOLS` is derived
+    /// from them, and a host without them would acknowledge an account it
+    /// never stored beside a marker naming it (dashpay/platform#4302 review).
+    #[test]
+    fn outbound_markers_need_an_atomic_host_with_account_writers() {
+        use platform_wallet::changeset::persists_outbound_account_markers;
+
+        unsafe extern "C" fn begin(_: *mut c_void, _: *const u8) -> i32 {
+            0
+        }
+        unsafe extern "C" fn end(_: *mut c_void, _: *const u8, _: bool) -> i32 {
+            0
+        }
+        unsafe extern "C" fn accounts(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountSpecFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn pools(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountAddressPoolFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        let declared = PersistenceCapabilities::ATOMIC_CHANGESETS
+            .union(PersistenceCapabilities::ACCOUNT_ADDRESS_POOLS);
+        let host = |registrations: bool, address_pools: bool| {
+            FFIPersister::new_with_persistence_capabilities(
+                PersistenceCallbacks {
+                    on_changeset_begin_fn: Some(begin),
+                    on_changeset_end_fn: Some(end),
+                    on_persist_account_registrations_fn: registrations.then_some(accounts as _),
+                    on_persist_account_address_pools_fn: address_pools.then_some(pools as _),
+                    ..PersistenceCallbacks::default()
+                },
+                declared,
+            )
+        };
+        assert!(!persists_outbound_account_markers(&host(false, false)));
+        assert!(!persists_outbound_account_markers(&host(true, false)));
+        assert!(!persists_outbound_account_markers(&host(false, true)));
+        assert!(persists_outbound_account_markers(&host(true, true)));
+    }
+
+    /// Why the outbound-account marker may ride an account's round only on
+    /// an atomic host: without begin/end brackets `FFIPersister` cannot claim
+    /// `ATOMIC_CHANGESETS` even when the host declares it, and it carries on
+    /// to the contacts callback after the account callback failed. A marker
+    /// in that round would land beside the account the host still holds, so
+    /// `register_external_contact_account` leaves it out of rounds on such a
+    /// host (dashpay/platform#4302 review).
+    #[test]
+    fn a_non_atomic_host_keeps_contact_rows_after_rejecting_the_account() {
+        use key_wallet::account::AccountType;
+        use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+        use key_wallet::mnemonic::Mnemonic;
+        use platform_wallet::changeset::{
+            AccountRegistrationEntry, ContactChangeSet, SentContactRequestKey,
+        };
+        use platform_wallet::wallet::identity::{ContactRequest, EstablishedContact};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        #[derive(Default)]
+        struct Host {
+            marked_rows: AtomicUsize,
+        }
+        unsafe extern "C" fn reject_accounts(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const AccountSpecFFI,
+            _: usize,
+        ) -> i32 {
+            1
+        }
+        #[allow(clippy::too_many_arguments)]
+        unsafe extern "C" fn keep_contacts(
+            ctx: *mut c_void,
+            _: *const u8,
+            upserts: *const ContactRequestFFI,
+            count: usize,
+            _: *const ContactRequestRemovalFFI,
+            _: usize,
+            _: *const ContactRequestRemovalFFI,
+            _: usize,
+            _: *const ContactIgnoredSenderFFI,
+            _: usize,
+        ) -> i32 {
+            let host = &*(ctx as *const Host);
+            for row in std::slice::from_raw_parts(upserts, count) {
+                if row.has_external_account_reference {
+                    host.marked_rows.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+            0
+        }
+
+        let host = Host::default();
+        let persister = FFIPersister::new_with_persistence_capabilities(
+            PersistenceCallbacks {
+                context: &host as *const Host as *mut c_void,
+                on_persist_account_registrations_fn: Some(reject_accounts),
+                on_persist_contacts_fn: Some(keep_contacts),
+                ..PersistenceCallbacks::default()
+            },
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+        );
+        assert!(
+            !persister
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::ATOMIC_CHANGESETS),
+            "a declaration without begin/end brackets is not an atomic round"
+        );
+
+        let seed = Mnemonic::from_phrase(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        )
+        .expect("static BIP-39 vector")
+        .to_seed("");
+        let master =
+            ExtendedPrivKey::new_master(dashcore::Network::Testnet, &seed).expect("master");
+        let xpub = ExtendedPubKey::from_priv(&master);
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0x01; 32]);
+        let mut established = EstablishedContact::new(
+            contact,
+            ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0),
+            ContactRequest::new(contact, owner, 0, 0, 8, vec![0u8; 96], 100, 0),
+        );
+        established.external_account_reference = Some(8);
+        let mut contacts = ContactChangeSet::default();
+        contacts.established.insert(
+            SentContactRequestKey {
+                owner_id: owner,
+                recipient_id: contact,
+            },
+            established,
+        );
+        let round = PlatformWalletChangeSet {
+            account_registrations: vec![AccountRegistrationEntry {
+                account_type: AccountType::DashpayExternalAccount {
+                    index: 0,
+                    user_identity_id: owner.to_buffer(),
+                    friend_identity_id: contact.to_buffer(),
+                },
+                account_xpub: xpub,
+            }],
+            contacts: Some(contacts),
+            ..PlatformWalletChangeSet::default()
+        };
+        assert!(persister.store([7u8; 32], round).is_err());
+        assert!(
+            host.marked_rows.load(Ordering::SeqCst) > 0,
+            "the contact rows still reached the host after the account was rejected"
+        );
+    }
+
+    /// The restore side of dashpay/platform#4302: a wallet-restore entry
+    /// carrying the record decodes into the start state's
+    /// `dashpay_backfill` in canonical form, and an entry without it — the
+    /// zero-init default every pre-record host produces — decodes as the
+    /// empty record, so the rescan sweep rewinds once as it always did.
+    #[test]
+    fn wallet_restore_decodes_the_dashpay_backfill_record() {
+        use platform_wallet::changeset::DashPayBackfillRecord;
+
+        let none = WalletRestoreEntryFFI::default();
+        assert!(!none.has_dashpay_backfill);
+        assert!(super::decode_dashpay_backfill(&none).is_empty());
+
+        // The flag alone, with a null cover set: a record that covers no
+        // one, never a torn read.
+        let bare = WalletRestoreEntryFFI {
+            has_dashpay_backfill: true,
+            dashpay_backfill_floor: 10,
+            dashpay_backfill_rewound_from: 20,
+            ..Default::default()
+        };
+        let decoded = super::decode_dashpay_backfill(&bare);
+        assert!(decoded.is_empty());
+        assert_eq!((decoded.floor, decoded.rewound_from), (10, 20));
+
+        // Out of order and duplicated, as a host might hand it back: the
+        // decoded record is sorted with one entry per account, the highest
+        // height of a duplicate kept.
+        let covered = [
+            DashPayBackfillCoveredContactFFI {
+                owner_identity_id: [9u8; 32],
+                contact_identity_id: [2u8; 32],
+                account_index: 0,
+                covered_from: 2_300_000,
+            },
+            DashPayBackfillCoveredContactFFI {
+                owner_identity_id: [1u8; 32],
+                contact_identity_id: [3u8; 32],
+                account_index: 0,
+                covered_from: 2_167_092,
+            },
+            DashPayBackfillCoveredContactFFI {
+                owner_identity_id: [9u8; 32],
+                contact_identity_id: [2u8; 32],
+                account_index: 0,
+                covered_from: 2_999_999,
+            },
+        ];
+        let entry = WalletRestoreEntryFFI {
+            has_dashpay_backfill: true,
+            dashpay_backfill_floor: 2_167_092,
+            dashpay_backfill_rewound_from: 2_537_092,
+            dashpay_backfill_covered: covered.as_ptr(),
+            dashpay_backfill_covered_count: covered.len(),
+            ..Default::default()
+        };
+        let decoded = super::decode_dashpay_backfill(&entry);
+        let mut expected = DashPayBackfillRecord::default();
+        expected.record_pass(
+            2_537_092,
+            Some(2_167_092),
+            [
+                (
+                    dpp::prelude::Identifier::from([1u8; 32]),
+                    dpp::prelude::Identifier::from([3u8; 32]),
+                    0,
+                    2_167_092,
+                ),
+                (
+                    dpp::prelude::Identifier::from([9u8; 32]),
+                    dpp::prelude::Identifier::from([2u8; 32]),
+                    0,
+                    2_999_999,
+                ),
+            ],
+        );
+        assert_eq!(decoded, expected);
+        assert_eq!(
+            decoded.covered_from(
+                &dpp::prelude::Identifier::from([9u8; 32]),
+                &dpp::prelude::Identifier::from([2u8; 32]),
+                0
+            ),
+            Some(2_999_999),
+            "a duplicated account keeps its highest height, so the record fails closed"
+        );
+    }
+
+    /// The numeric chainlock height reaches the host through its own
+    /// size-negotiated extension slot: a chainlock-advancing round fires it
+    /// after the changeset callback with the height a non-Rust host cannot
+    /// read out of the bincode blob, a round with no chainlock never fires
+    /// it, and a host without the slot still succeeds — it just never
+    /// learns the finality boundary and must hold its sweep tombstones.
+    #[test]
+    fn store_delivers_the_chainlock_height_through_the_extension_slot() {
+        use platform_wallet::changeset::CoreChangeSet;
+
+        #[derive(Default)]
+        struct Sink {
+            events: std::sync::Mutex<Vec<String>>,
+        }
+        unsafe extern "C" fn record_changeset(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _changeset: *const WalletChangeSetFFI,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            sink.events.lock().unwrap().push("changeset".into());
+            0
+        }
+        unsafe extern "C" fn record_chain_lock_height(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            chain_lock_height: u32,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            sink.events
+                .lock()
+                .unwrap()
+                .push(format!("chain_lock_height={chain_lock_height}"));
+            0
+        }
+        fn chain_lock_at(height: u32) -> dashcore::ephemerealdata::chain_lock::ChainLock {
+            use dashcore::bls_sig_utils::BLSSignature;
+            use dashcore::hashes::Hash as _;
+            use dashcore::BlockHash;
+            dashcore::ephemerealdata::chain_lock::ChainLock {
+                block_height: height,
+                block_hash: BlockHash::from_byte_array([0xCC; 32]),
+                signature: BLSSignature::from([0u8; 96]),
+            }
+        }
+
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities_and_all_extension_callbacks(
+            callbacks,
+            PersistenceCapabilities::NONE,
+            None,
+            None,
+            Some(record_chain_lock_height),
+        );
+        // A round with no chainlock: the slot stays silent.
+        persister
+            .store(
+                [1u8; 32],
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        synced_height: Some(10),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .expect("chainlock-less round must succeed");
+        // A chainlock-advancing round: the numeric height crosses, after
+        // the changeset callback.
+        persister
+            .store(
+                [1u8; 32],
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        last_applied_chain_lock: Some(chain_lock_at(4_242)),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .expect("chainlock round must succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec![
+                "changeset".to_string(),
+                "changeset".to_string(),
+                "chain_lock_height=4242".to_string(),
+            ],
+        );
+        drop(persister);
+
+        // Host without the slot: the same round still succeeds.
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities(
+            callbacks,
+            PersistenceCapabilities::NONE,
+        );
+        persister
+            .store(
+                [1u8; 32],
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        last_applied_chain_lock: Some(chain_lock_at(4_242)),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .expect("slotless-host chainlock round must still succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec!["changeset".to_string()]
+        );
+        drop(persister);
+    }
+
+    /// The credit verdicts reach the host through their own
+    /// size-negotiated slot, BEFORE the changeset callback of the same
+    /// round (the persister needs them while it materialises the round's
+    /// UTXO rows), with outpoint, class and height intact; a round with no
+    /// verdict never fires the slot; and a host without the slot still
+    /// succeeds — it just materialises the row unspent, as every host did
+    /// before the slot existed.
+    #[test]
+    fn store_delivers_credit_verdicts_through_the_extension_slot_before_the_changeset() {
+        use dashcore::hashes::Hash as _;
+        use platform_wallet::changeset::changeset::UtxoCreditVerdict;
+        use platform_wallet::changeset::CoreChangeSet;
+
+        #[derive(Default)]
+        struct Sink {
+            events: std::sync::Mutex<Vec<String>>,
+        }
+        unsafe extern "C" fn record_changeset(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            _changeset: *const WalletChangeSetFFI,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            sink.events.lock().unwrap().push("changeset".into());
+            0
+        }
+        unsafe extern "C" fn record_verdicts(
+            ctx: *mut c_void,
+            _wallet_id: *const u8,
+            verdicts: *const UtxoCreditVerdictFFI,
+            verdicts_count: usize,
+        ) -> i32 {
+            let sink = &*(ctx as *const Sink);
+            let mut events = sink.events.lock().unwrap();
+            for verdict in slice::from_raw_parts(verdicts, verdicts_count) {
+                events.push(format!(
+                    "verdict txid={:02x} vout={} class={} height={}",
+                    verdict.outpoint.txid[0],
+                    verdict.outpoint.vout,
+                    verdict.verdict,
+                    verdict.spent_at_height
+                ));
+            }
+            0
+        }
+        fn outpoint(byte: u8, vout: u32) -> dashcore::OutPoint {
+            dashcore::OutPoint {
+                txid: dashcore::Txid::from_byte_array([byte; 32]),
+                vout,
+            }
+        }
+        fn verdict_round() -> PlatformWalletChangeSet {
+            let mut core = CoreChangeSet::default();
+            core.utxo_credit_verdicts.insert(
+                outpoint(0xAB, 1),
+                UtxoCreditVerdict::ObservedSpent { height: 2_402_896 },
+            );
+            core.utxo_credit_verdicts
+                .insert(outpoint(0xCD, 0), UtxoCreditVerdict::Doomed);
+            core.utxo_credit_verdicts
+                .insert(outpoint(0xEF, 2), UtxoCreditVerdict::Uncredited);
+            PlatformWalletChangeSet {
+                core: Some(core),
+                ..Default::default()
+            }
+        }
+
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            callbacks,
+            PersistenceCapabilities::NONE,
+            PersistenceExtensionCallbacks {
+                wallet_changeset_utxo_verdicts: Some(record_verdicts),
+                ..Default::default()
+            },
+        );
+        // A round with no verdict: the slot stays silent.
+        persister
+            .store(
+                [1u8; 32],
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        synced_height: Some(10),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .expect("verdict-less round must succeed");
+        // A round carrying verdicts: they cross first, in outpoint order.
+        persister
+            .store([1u8; 32], verdict_round())
+            .expect("verdict round must succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec![
+                "changeset".to_string(),
+                "verdict txid=ab vout=1 class=1 height=2402896".to_string(),
+                "verdict txid=cd vout=0 class=2 height=0".to_string(),
+                "verdict txid=ef vout=2 class=3 height=0".to_string(),
+                "changeset".to_string(),
+            ],
+        );
+        drop(persister);
+
+        // Host without the slot: the same round still succeeds.
+        let sink = Sink::default();
+        let callbacks = PersistenceCallbacks {
+            context: &sink as *const Sink as *mut c_void,
+            on_persist_wallet_changeset_fn: Some(record_changeset),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities(
+            callbacks,
+            PersistenceCapabilities::NONE,
+        );
+        persister
+            .store([1u8; 32], verdict_round())
+            .expect("slotless-host verdict round must still succeed");
+        assert_eq!(
+            sink.events.lock().unwrap().clone(),
+            vec!["changeset".to_string()]
+        );
+        drop(persister);
+    }
+
+    #[test]
+    fn should_roundtrip_drain_operation_ids_including_consumed_tombstones() {
+        use dashcore::hashes::Hash;
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+        unsafe extern "C" fn load_id(
+            context: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            found: *mut bool,
+            output: *mut u8,
+        ) -> i32 {
+            let id = *(context as *const Option<[u8; 16]>);
+            *found = id.is_some();
+            if let Some(id) = id {
+                std::ptr::copy_nonoverlapping(id.as_ptr(), output, 16);
+            }
+            0
+        }
+        for (operation_id, status) in [
+            (None, platform_wallet::AssetLockStatus::Consumed),
+            (Some([0xA5; 16]), platform_wallet::AssetLockStatus::Consumed),
+            (
+                Some([0xA5; 16]),
+                platform_wallet::AssetLockStatus::DrainCompleted,
+            ),
+        ] {
+            let entry = platform_wallet::changeset::AssetLockEntry {
+                out_point: dashcore::OutPoint {
+                    txid: dashcore::Txid::from_byte_array([3; 32]),
+                    vout: 0,
+                },
+                transaction: dashcore::Transaction {
+                    version: 3,
+                    lock_time: 0,
+                    input: vec![],
+                    output: vec![],
+                    special_transaction_payload: None,
+                },
+                account_index: 7,
+                funding_type: AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                identity_index: 0,
+                amount_duffs: 1000,
+                status: status.clone(),
+                proof: None,
+                operation_id,
+            };
+            let (entries, _storage) = build_asset_lock_entries(&[&entry]);
+            let wallet = WalletRestoreEntryFFI {
+                tracked_asset_locks: entries.as_ptr(),
+                tracked_asset_locks_count: entries.len(),
+                ..Default::default()
+            };
+            let mut restored = build_unused_asset_locks(&wallet).expect("valid persisted lock");
+            assert_eq!(
+                restored[&7][&entry.out_point].operation_id, None,
+                "legacy ABI has no UUID field"
+            );
+            load_asset_lock_operation_ids(
+                load_id,
+                (&operation_id as *const Option<[u8; 16]>).cast_mut().cast(),
+                &[42; 32],
+                &mut restored,
+            )
+            .expect("valid UUID sidecar");
+            assert_eq!(restored[&7][&entry.out_point].operation_id, operation_id);
+            assert_eq!(restored[&7][&entry.out_point].status, status);
+            let duplicated = [entries[0], entries[0]];
+            let bad_wallet = WalletRestoreEntryFFI {
+                tracked_asset_locks: duplicated.as_ptr(),
+                tracked_asset_locks_count: 2,
+                ..Default::default()
+            };
+            assert!(
+                build_unused_asset_locks(&bad_wallet).is_err(),
+                "duplicate outpoints cannot overwrite correlation"
+            );
+            if operation_id.is_some() {
+                let changeset = PlatformWalletChangeSet {
+                    asset_locks: Some(platform_wallet::changeset::AssetLockChangeSet {
+                        asset_locks: [(entry.out_point, entry.clone())].into(),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                };
+                let callbacks = || PersistenceCallbacks {
+                    on_changeset_begin_fn: Some(noop_begin),
+                    on_changeset_end_fn: Some(noop_end),
+                    on_persist_asset_locks_fn: Some(noop_asset_locks),
+                    ..Default::default()
+                };
+                let legacy = FFIPersister::new(callbacks());
+                assert!(
+                    legacy.store([42; 32], changeset.clone()).is_err(),
+                    "a legacy host cannot silently discard a drain UUID"
+                );
+                unsafe extern "C" fn persist_id(
+                    context: *mut c_void,
+                    wallet: *const u8,
+                    _: *const u8,
+                    id: *const u8,
+                ) -> i32 {
+                    assert_eq!(slice::from_raw_parts(wallet, 32), &[42; 32]);
+                    assert_eq!(slice::from_raw_parts(id, 16), &[0xA5; 16]);
+                    *(context as *mut bool) = true;
+                    0
+                }
+                let mut called = false;
+                let writer = FFIPersister::new_with_persistence_capabilities_and_extensions(
+                    PersistenceCallbacks {
+                        context: std::ptr::addr_of_mut!(called).cast(),
+                        ..callbacks()
+                    },
+                    PersistenceCapabilities::NONE,
+                    PersistenceExtensionCallbacks {
+                        persist_asset_lock_operation_id: Some(persist_id),
+                        ..Default::default()
+                    },
+                );
+                writer
+                    .store([42; 32], changeset)
+                    .expect("UUID sidecar persisted with the base row");
+                assert!(called);
+            }
+        }
+    }
+
+    #[test]
+    fn should_require_explicit_operation_id_persistence_attestation() {
+        unsafe extern "C" fn persist(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *const u8,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *mut bool,
+            _: *mut u8,
+        ) -> i32 {
+            0
+        }
+        let callbacks = || PersistenceCallbacks {
+            on_persist_asset_locks_fn: Some(noop_asset_locks),
+            on_load_wallet_list_fn: Some(noop_load_wallets),
+            on_load_wallet_list_free_fn: Some(noop_free_wallets),
+            ..Default::default()
+        };
+        let required = PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS;
+        let extensions = PersistenceExtensionCallbacks {
+            persist_asset_lock_operation_id: Some(persist),
+            load_asset_lock_operation_id: Some(load),
+            ..Default::default()
+        };
+        let persister = |callbacks, declaration, extensions| {
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                callbacks,
+                declaration,
+                extensions,
+            )
+        };
+        assert!(
+            !persister(callbacks(), PersistenceCapabilities::NONE, extensions)
+                .persistence_capabilities()
+                .contains(required)
+        );
+        assert!(persister(callbacks(), required, extensions)
+            .persistence_capabilities()
+            .contains(required));
+        assert!(!declared_persister(callbacks(), required)
+            .persistence_capabilities()
+            .contains(required));
+        for incomplete in [
+            PersistenceExtensionCallbacks {
+                persist_asset_lock_operation_id: None,
+                ..extensions
+            },
+            PersistenceExtensionCallbacks {
+                load_asset_lock_operation_id: None,
+                ..extensions
+            },
+        ] {
+            assert!(!persister(callbacks(), required, incomplete)
+                .persistence_capabilities()
+                .contains(required));
+        }
+        let mut missing_load = callbacks();
+        missing_load.on_load_wallet_list_fn = None;
+        assert!(!persister(missing_load, required, extensions)
+            .persistence_capabilities()
+            .contains(required));
+    }
+
+    #[test]
+    fn should_restore_proven_drain_completion_discriminant() {
+        assert_eq!(
+            status_from_u8(6).unwrap(),
+            platform_wallet::AssetLockStatus::DrainCompleted
+        );
+        assert_eq!(
+            status_from_u8(4).unwrap(),
+            platform_wallet::AssetLockStatus::Consumed
+        );
+        assert!(status_from_u8(7).is_err());
+    }
+
+    #[test]
+    fn should_reject_a_missing_wallet_restore_buffer() {
+        unsafe extern "C" fn missing(
+            _: *mut c_void,
+            entries: *mut *const WalletRestoreEntryFFI,
+            count: *mut usize,
+        ) -> i32 {
+            *entries = std::ptr::null();
+            *count = 1;
+            0
+        }
+        let persister = FFIPersister::new(PersistenceCallbacks {
+            on_load_wallet_list_fn: Some(missing),
+            ..Default::default()
+        });
+        assert!(
+            persister.load().is_err(),
+            "an unreadable snapshot cannot prove an operation absent"
+        );
+    }
+
     #[test]
     fn asset_lock_reconciliation_requires_every_callback_leg() {
         fn complete_callbacks() -> PersistenceCallbacks {
@@ -6704,7 +10042,8 @@ mod tests {
             .union(PersistenceCapabilities::PROVIDER_TRANSACTIONS)
             .union(PersistenceCapabilities::UNSIGNED_TOKEN_STORAGE)
             .union(PersistenceCapabilities::WALLET_RESTORE)
-            .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS);
+            .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
+            .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL);
         cb.on_changeset_begin_fn = Some(noop_begin);
         cb.on_changeset_end_fn = Some(noop_end);
         cb.on_persist_account_registrations_fn = Some(noop_registrations);
@@ -6715,7 +10054,15 @@ mod tests {
         cb.on_load_wallet_list_free_fn = Some(noop_free_wallets);
         cb.on_persist_wallet_changeset_fn = Some(noop_wallet_changeset);
         cb.on_persist_token_balances_fn = Some(noop_token_balances);
-        let capabilities = declared_persister(cb, expected).persistence_capabilities();
+        // "Fully wired" includes the extension's sweeps slot — the legacy
+        // vtable alone can no longer attest CORE_SWEEP_REMOVAL.
+        let capabilities = FFIPersister::new_with_persistence_capabilities_and_extension_callbacks(
+            cb,
+            expected,
+            None,
+            Some(noop_wallet_changeset_sweeps),
+        )
+        .persistence_capabilities();
 
         assert_eq!(capabilities, expected);
         assert!(capabilities.contains(PersistenceCapabilities::INVITATION_CREATION));
@@ -6784,15 +10131,22 @@ mod tests {
             std::mem::size_of::<PersistenceCallbacks>()
         );
         assert_eq!(PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION, 1);
-        // The extension grows ADDITIVELY under version 1 (size-gated
-        // reads); pin the current field order and terminal slot so an
-        // accidental reorder — which would silently misread every older
-        // host's callbacks — fails here.
-        assert!(
+        // The extension is append-only under version 1 (size-gated reads):
+        // pin the exact slot adjacency so every historical struct_size
+        // boundary keeps meaning what it meant when a host declared it.
+        // The DPNS slot's end is exactly where the tracked-masternode trio
+        // begins (mainline shipped the trio at those offsets before the
+        // sweeps/chainlock slots merged in, so the trio keeps them), the
+        // trio's end is where the sweeps slot begins, the sweeps slot's
+        // end is where the chainlock-height slot begins, and the
+        // later slots extend that prefix. Reordering any of them would
+        // silently misread every extension already in the field.
+        assert_eq!(
             std::mem::offset_of!(
                 PersistenceCallbacksExtension,
                 on_persist_dpns_name_states_fn
-            ) < std::mem::offset_of!(
+            ) + std::mem::size_of::<Option<PersistDpnsNameStatesFn>>(),
+            std::mem::offset_of!(
                 PersistenceCallbacksExtension,
                 on_persist_tracked_masternodes_fn
             )
@@ -6800,8 +10154,108 @@ mod tests {
         assert_eq!(
             std::mem::offset_of!(
                 PersistenceCallbacksExtension,
+                on_persist_tracked_masternodes_fn
+            ) + std::mem::size_of::<Option<PersistTrackedMasternodesFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_tracked_masternodes_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_tracked_masternodes_fn
+            ) + std::mem::size_of::<Option<LoadTrackedMasternodesFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_tracked_masternodes_free_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
                 on_load_tracked_masternodes_free_fn
             ) + std::mem::size_of::<Option<FreeTrackedMasternodesFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_sweeps_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_sweeps_fn
+            ) + std::mem::size_of::<Option<PersistWalletChangesetSweepsFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_chain_lock_height_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_chain_lock_height_fn
+            ) + std::mem::size_of::<Option<PersistWalletChangesetChainLockHeightFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_utxo_verdicts_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_changeset_utxo_verdicts_fn
+            ) + std::mem::size_of::<Option<PersistWalletChangesetUtxoVerdictsFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_identity_balance_block_time_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_identity_balance_block_time_fn
+            ) + std::mem::size_of::<Option<PersistIdentityBalanceBlockTimeFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_identity_balance_block_time_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_identity_balance_block_time_fn
+            ) + std::mem::size_of::<Option<LoadIdentityBalanceBlockTimeFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_dashpay_backfill_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_wallet_dashpay_backfill_fn
+            ) + std::mem::size_of::<Option<PersistWalletDashPayBackfillFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_asset_lock_operation_id_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_asset_lock_operation_id_fn
+            ) + std::mem::size_of::<Option<PersistAssetLockOperationIdFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_asset_lock_operation_id_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_asset_lock_operation_id_fn
+            ) + std::mem::size_of::<Option<LoadAssetLockOperationIdFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
@@ -6847,6 +10301,22 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_ASSET_LOCKS,
             PersistenceCapabilities::TRACKED_ASSET_LOCKS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_MASTERNODES,
+            PersistenceCapabilities::TRACKED_MASTERNODES.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_CORE_SWEEP_REMOVAL,
+            PersistenceCapabilities::CORE_SWEEP_REMOVAL.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_DASHPAY_PAYMENTS,
+            PersistenceCapabilities::DASHPAY_PAYMENTS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_OPERATION_IDS,
+            PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ACCOUNT_ADDRESS_POOLS,
@@ -7053,12 +10523,11 @@ mod tests {
     use dashcore::blockdata::transaction::txout::TxOut;
     use dashcore::blockdata::transaction::Transaction;
     use dashcore::consensus::encode::serialize;
-    use dashcore::secp256k1::Secp256k1;
     use dashcore::{Network, ScriptBuf};
     use key_wallet::account::{Account, AccountType, StandardAccountType};
     use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::Wallet;
 
     /// Regression: restored pool addresses must be tagged with the
@@ -7207,14 +10676,12 @@ mod tests {
         // `account_collection_test.rs` uses.
         let mnemonic = Mnemonic::from_phrase(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-            Language::English,
         )
         .expect("static BIP-39 vector must parse");
         let seed = mnemonic.to_seed("");
         let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
             .expect("master derivation must succeed");
-        let secp = Secp256k1::new();
-        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let xpub = ExtendedPubKey::from_priv(&master);
         let account = Account::from_xpub(
             None,
             AccountType::Standard {
@@ -7241,14 +10708,12 @@ mod tests {
     fn test_managed_wallet_info_with_account(account_type: AccountType) -> ManagedWalletInfo {
         let mnemonic = Mnemonic::from_phrase(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-            Language::English,
         )
         .expect("static BIP-39 vector must parse");
         let seed = mnemonic.to_seed("");
         let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
             .expect("master derivation must succeed");
-        let secp = Secp256k1::new();
-        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let xpub = ExtendedPubKey::from_priv(&master);
         let account = Account::from_xpub(None, account_type, xpub, Network::Testnet)
             .expect("Account::from_xpub on a valid xpub must succeed");
         let mut accounts = key_wallet::AccountCollection::new();
@@ -7357,14 +10822,12 @@ mod tests {
     fn test_managed_wallet_info_with_provider_owner() -> ManagedWalletInfo {
         let mnemonic = Mnemonic::from_phrase(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-            Language::English,
         )
         .expect("static BIP-39 vector must parse");
         let seed = mnemonic.to_seed("");
         let master = ExtendedPrivKey::new_master(Network::Testnet, &seed)
             .expect("master derivation must succeed");
-        let secp = Secp256k1::new();
-        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let xpub = ExtendedPubKey::from_priv(&master);
         let account =
             Account::from_xpub(None, AccountType::ProviderOwnerKeys, xpub, Network::Testnet)
                 .expect("Account::from_xpub on a valid xpub must succeed");
@@ -7490,8 +10953,12 @@ mod tests {
             version: 1,
             mn_type: None,
             pro_tx_hash: dashcore::Txid::from_byte_array([7u8; 32]),
-            ip_address: 42,
-            port: 19999,
+            service_address: dashcore::sml::masternode_list_entry::MasternodeNetInfo::Legacy(
+                std::net::SocketAddr::new(
+                    std::net::Ipv6Addr::from(42u128.to_le_bytes()).into(),
+                    19999,
+                ),
+            ),
             script_payout: ScriptBuf::new(),
             inputs_hash: [3u8; 32].into(),
             platform_node_id: None,
@@ -7800,7 +11267,6 @@ mod tests {
     fn account_xpub_survives_persist_restore_round_trip() {
         let mnemonic = Mnemonic::from_phrase(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
-            Language::English,
         )
         .expect("static BIP-39 vector must parse");
         let seed = mnemonic.to_seed("");
@@ -7828,8 +11294,11 @@ mod tests {
         let restored_type =
             account_type_from_spec(&spec).expect("account type tag round-trips through the spec");
         let raw = unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
-        let (decoded_xpub, _): (ExtendedPubKey, usize) =
-            bincode::decode_from_slice(raw, config::standard()).expect("decode account xpub");
+        let (decoded_xpub, _): (ExtendedPubKey, usize) = bincode::decode_from_slice(
+            raw,
+            config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+        )
+        .expect("decode account xpub");
         assert_eq!(
             decoded_xpub, expected_xpub,
             "the bincode round-trip must preserve the account xpub byte-for-byte"
@@ -7844,6 +11313,107 @@ mod tests {
         assert_eq!(
             restored.account_xpub, expected_xpub,
             "the restored account's xpub must equal the original — the key verify_seed_binds binds against"
+        );
+    }
+
+    /// `build_wallet_start_state` rebuilds the BLS operator-key and EdDSA
+    /// platform-node-key accounts watch-only from their bincode-encoded specs.
+    #[test]
+    fn provider_key_accounts_survive_restore_round_trip() {
+        let wallet = Wallet::from_seed_bytes(
+            [0x42; 64],
+            Network::Testnet,
+            key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+        )
+        .expect("seeded wallet");
+        let bls = wallet
+            .accounts
+            .bls_account_of_type(AccountType::ProviderOperatorKeys)
+            .expect("a Default-created wallet has a BLS provider account")
+            .bls_public_key
+            .clone();
+        let eddsa = wallet
+            .accounts
+            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+            .expect("a Default-created wallet has an EdDSA provider account")
+            .ed25519_public_key
+            .clone();
+        let bls_bytes = bincode::encode_to_vec(&bls, config::standard()).expect("encode BLS xpub");
+        let eddsa_bytes =
+            bincode::encode_to_vec(&eddsa, config::standard()).expect("encode EdDSA xpub");
+        let specs = [
+            build_account_spec_ffi(&AccountType::ProviderOperatorKeys, &bls_bytes),
+            build_account_spec_ffi(&AccountType::ProviderPlatformKeys, &eddsa_bytes),
+        ];
+        let entry = WalletRestoreEntryFFI {
+            wallet_id: wallet.wallet_id,
+            accounts: specs.as_ptr(),
+            accounts_count: specs.len(),
+            ..Default::default()
+        };
+
+        let (state, _) =
+            build_wallet_start_state(&entry).expect("provider key accounts must restore");
+
+        let restored_bls = state
+            .wallet
+            .accounts
+            .bls_account_of_type(AccountType::ProviderOperatorKeys)
+            .expect("BLS provider account must be rebuilt");
+        let restored_bls_bytes =
+            bincode::encode_to_vec(&restored_bls.bls_public_key, config::standard())
+                .expect("encode restored BLS xpub");
+        assert_eq!(restored_bls_bytes, bls_bytes);
+        assert_eq!(
+            restored_bls.parent_wallet_id.as_deref(),
+            Some(&wallet.wallet_id[..])
+        );
+        assert!(restored_bls.is_watch_only);
+        let restored_eddsa = state
+            .wallet
+            .accounts
+            .eddsa_account_of_type(AccountType::ProviderPlatformKeys)
+            .expect("EdDSA provider account must be rebuilt");
+        assert_eq!(restored_eddsa.ed25519_public_key, eddsa);
+        assert_eq!(
+            restored_eddsa.parent_wallet_id.as_deref(),
+            Some(&wallet.wallet_id[..])
+        );
+        assert!(restored_eddsa.is_watch_only);
+    }
+
+    /// The BLS xpub decoder is the only account-xpub graph with a
+    /// length-prefixed field (the public key bytes). A host-supplied blob
+    /// whose prefix claims a gigabyte must fail on the decode budget, before
+    /// the decoder reserves memory for the claimed payload.
+    #[test]
+    fn should_reject_inflated_bls_xpub_length_under_the_decode_budget() {
+        use key_wallet::bip32::ChildNumber;
+
+        // network, depth, parent fingerprint, child number: the fixed-width
+        // header every extended key starts with.
+        let mut bytes = bincode::encode_to_vec(
+            (
+                Network::Testnet,
+                0u8,
+                [0u8; 4],
+                ChildNumber::Normal { index: 0 },
+            ),
+            config::standard(),
+        )
+        .expect("encode xpub header");
+        // Vec<u8> length prefix claiming 1 GiB (bincode varint u32 marker),
+        // followed by a single byte of payload.
+        bytes.extend_from_slice(&[0xFC, 0x00, 0x00, 0x00, 0x40, 0x00]);
+
+        let error = bincode::decode_from_slice::<ExtendedBLSPubKey, _>(
+            &bytes,
+            config::standard().with_limit::<ACCOUNT_XPUB_DECODE_LIMIT_BYTES>(),
+        )
+        .expect_err("a BLS xpub claiming a 1 GiB public key must not decode");
+        assert!(
+            matches!(error, bincode::error::DecodeError::LimitExceeded),
+            "the decode budget must reject the claimed length, got {error:?}"
         );
     }
 
@@ -8122,6 +11692,7 @@ mod tests {
                 Some("a note"),
                 true,
                 &[7, 42],
+                Some(4),
             ),
             ContactRequestFFI::from_established_incoming(
                 owner.to_buffer(),
@@ -8133,6 +11704,7 @@ mod tests {
                 true,
                 Some("Main wallet"),
                 &[7, 42],
+                Some(4),
             ),
         ];
 
@@ -8190,6 +11762,11 @@ mod tests {
         assert!(e.is_hidden);
         assert!(e.payment_channel_broken);
         assert_eq!(
+            e.external_account_reference,
+            Some(4),
+            "the outbound-account marker must survive the restore (dashpay/platform#4302)"
+        );
+        assert_eq!(
             e.contact_account_label.as_deref(),
             Some("Main wallet"),
             "contact_account_label must restore from the incoming row only"
@@ -8211,7 +11788,490 @@ mod tests {
         unsafe { free_contact_requests_ffi(rows.as_mut_ptr(), rows.len()) };
     }
 
+    // ── Inbound retry classification from host return codes ──
+
+    /// Returns the "retryable, nothing applied" sentinel.
+    extern "C" fn transient_metadata(
+        _ctx: *mut TestCVoid,
+        _wallet_id: *const u8,
+        _network: FFINetwork,
+        _wallet_group_id: *const u8,
+        _birth_height: u32,
+    ) -> i32 {
+        PLATFORM_WALLET_PERSIST_RC_TRANSIENT
+    }
+
+    /// Returns the constraint sentinel.
+    extern "C" fn constraint_metadata(
+        _ctx: *mut TestCVoid,
+        _wallet_id: *const u8,
+        _network: FFINetwork,
+        _wallet_group_id: *const u8,
+        _birth_height: u32,
+    ) -> i32 {
+        PLATFORM_WALLET_PERSIST_RC_CONSTRAINT
+    }
+
+    /// Returns a plain non-zero value, as a host on the original contract does.
+    extern "C" fn unclassified_metadata(
+        _ctx: *mut TestCVoid,
+        _wallet_id: *const u8,
+        _network: FFINetwork,
+        _wallet_group_id: *const u8,
+        _birth_height: u32,
+    ) -> i32 {
+        7
+    }
+
+    extern "C" fn ok_begin(_ctx: *mut TestCVoid, _wallet_id: *const u8) -> i32 {
+        0
+    }
+
+    extern "C" fn ok_end(_ctx: *mut TestCVoid, _wallet_id: *const u8, _success: bool) -> i32 {
+        0
+    }
+
+    /// Succeeds, so the round's only failure is the one the test drives.
+    extern "C" fn ok_metadata(
+        _ctx: *mut TestCVoid,
+        _wallet_id: *const u8,
+        _network: FFINetwork,
+        _wallet_group_id: *const u8,
+        _birth_height: u32,
+    ) -> i32 {
+        0
+    }
+
+    /// One payload: the metadata entry whose callback each test drives.
+    fn metadata_changeset() -> PlatformWalletChangeSet {
+        PlatformWalletChangeSet {
+            wallet_metadata: Some(platform_wallet::changeset::WalletMetadataEntry {
+                network: Network::Testnet,
+                wallet_group_id: [1u8; 32],
+                birth_height: 1,
+            }),
+            ..PlatformWalletChangeSet::default()
+        }
+    }
+
+    /// Persister with metadata callback `metadata`, optionally bracketing
+    /// rounds and attesting atomicity.
+    fn store_failing_persister(
+        metadata: unsafe extern "C" fn(
+            *mut TestCVoid,
+            *const u8,
+            FFINetwork,
+            *const u8,
+            u32,
+        ) -> i32,
+        bracketed: bool,
+        capabilities: PersistenceCapabilities,
+    ) -> FFIPersister {
+        let callbacks = PersistenceCallbacks {
+            on_persist_wallet_metadata_fn: Some(metadata),
+            on_changeset_begin_fn: bracketed.then_some(ok_begin as _),
+            on_changeset_end_fn: bracketed.then_some(ok_end as _),
+            ..PersistenceCallbacks::default()
+        };
+        FFIPersister::new_with_persistence_capabilities(callbacks, capabilities)
+    }
+
+    fn store_error_kind(persister: &FFIPersister) -> Option<PersistenceErrorKind> {
+        persister
+            .store([1u8; 32], metadata_changeset())
+            .expect_err("the metadata callback fails every round here")
+            .kind()
+    }
+
+    /// The point of the inbound direction: a host that sees its own
+    /// `SQLITE_BUSY` can say so, and the caller learns it may retry.
+    #[test]
+    fn transient_sentinel_reaches_the_caller_from_an_atomic_round() {
+        let persister = store_failing_persister(
+            transient_metadata,
+            true,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+        );
+        assert_eq!(
+            store_error_kind(&persister),
+            Some(PersistenceErrorKind::Transient)
+        );
+    }
+
+    /// A transient verdict invites re-sending the WHOLE changeset, and
+    /// changeset vectors merge by appending — so without an all-or-nothing
+    /// round the re-send would duplicate rows. The verdict is withheld.
+    #[test]
+    fn transient_sentinel_is_withheld_when_the_round_is_not_atomic() {
+        // Brackets wired, but the host never attested atomicity.
+        let unattested =
+            store_failing_persister(transient_metadata, true, PersistenceCapabilities::NONE);
+        assert_eq!(
+            store_error_kind(&unattested),
+            Some(PersistenceErrorKind::Fatal),
+            "an unattested round must not invite a retry"
+        );
+
+        // Attested, but with no round brackets to roll anything back — the
+        // structural half of ATOMIC_CHANGESETS is missing.
+        let unbracketed = store_failing_persister(
+            transient_metadata,
+            false,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+        );
+        assert_eq!(
+            store_error_kind(&unbracketed),
+            Some(PersistenceErrorKind::Fatal),
+            "an attestation without begin/end brackets must not invite a retry"
+        );
+    }
+
+    /// `Constraint` invites no retry, so it passes through either way.
+    #[test]
+    fn constraint_sentinel_survives_whether_or_not_the_round_is_atomic() {
+        for (bracketed, capabilities) in [
+            (true, PersistenceCapabilities::ATOMIC_CHANGESETS),
+            (false, PersistenceCapabilities::NONE),
+        ] {
+            let persister = store_failing_persister(constraint_metadata, bracketed, capabilities);
+            assert_eq!(
+                store_error_kind(&persister),
+                Some(PersistenceErrorKind::Constraint)
+            );
+        }
+    }
+
+    /// Back-compatibility: a plain non-zero value keeps its conservative
+    /// reading.
+    #[test]
+    fn unclassified_non_zero_return_stays_fatal() {
+        let persister = store_failing_persister(
+            unclassified_metadata,
+            true,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+        );
+        assert_eq!(
+            store_error_kind(&persister),
+            Some(PersistenceErrorKind::Fatal)
+        );
+    }
+
+    /// The round reports the most severe kind any callback returned: here the
+    /// commit fails unclassified after a per-kind callback said transient.
+    #[test]
+    fn a_fatal_callback_masks_a_transient_sibling() {
+        extern "C" fn fatal_end(
+            _ctx: *mut TestCVoid,
+            _wallet_id: *const u8,
+            _success: bool,
+        ) -> i32 {
+            7
+        }
+
+        let callbacks = PersistenceCallbacks {
+            on_persist_wallet_metadata_fn: Some(transient_metadata),
+            on_changeset_begin_fn: Some(ok_begin),
+            on_changeset_end_fn: Some(fatal_end),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities(
+            callbacks,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+        );
+        assert_eq!(
+            store_error_kind(&persister),
+            Some(PersistenceErrorKind::Fatal),
+            "a transient sibling must not soften the round's fatal verdict"
+        );
+    }
+
+    /// `end` fires with `success = false` to drive the rollback, so a failure
+    /// there is a failure to UNDO. The round's disposition is then unknown,
+    /// and unknown is never retryable — whatever the host classifies it as.
+    #[test]
+    fn a_failed_rollback_is_never_reported_as_retryable() {
+        extern "C" fn transient_end(
+            _ctx: *mut TestCVoid,
+            _wallet_id: *const u8,
+            _success: bool,
+        ) -> i32 {
+            PLATFORM_WALLET_PERSIST_RC_TRANSIENT
+        }
+
+        let callbacks = PersistenceCallbacks {
+            on_persist_wallet_metadata_fn: Some(transient_metadata),
+            on_changeset_begin_fn: Some(ok_begin),
+            on_changeset_end_fn: Some(transient_end),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities(
+            callbacks,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+        );
+        assert_eq!(
+            store_error_kind(&persister),
+            Some(PersistenceErrorKind::Fatal),
+            "a rollback the host could not complete must not invite a re-send"
+        );
+    }
+
+    /// The other side of that coin: on an otherwise-clean round `end` is the
+    /// COMMIT, nothing was applied when it fails, and the host's transient
+    /// classification is legitimate.
+    #[test]
+    fn a_transient_commit_failure_on_a_clean_round_stays_retryable() {
+        extern "C" fn transient_end(
+            _ctx: *mut TestCVoid,
+            _wallet_id: *const u8,
+            _success: bool,
+        ) -> i32 {
+            PLATFORM_WALLET_PERSIST_RC_TRANSIENT
+        }
+
+        let callbacks = PersistenceCallbacks {
+            on_persist_wallet_metadata_fn: Some(ok_metadata),
+            on_changeset_begin_fn: Some(ok_begin),
+            on_changeset_end_fn: Some(transient_end),
+            ..PersistenceCallbacks::default()
+        };
+        let persister = FFIPersister::new_with_persistence_capabilities(
+            callbacks,
+            PersistenceCapabilities::ATOMIC_CHANGESETS,
+        );
+        assert_eq!(
+            store_error_kind(&persister),
+            Some(PersistenceErrorKind::Transient),
+            "a failed commit that applied nothing keeps the host's classification"
+        );
+    }
+
+    /// A load either happened or did not, so it carries the host's
+    /// classification with no atomicity precondition.
+    #[test]
+    fn transient_sentinel_reaches_the_caller_from_a_load() {
+        extern "C" fn transient_load(
+            _ctx: *mut TestCVoid,
+            _out_entries: *mut *const WalletRestoreEntryFFI,
+            _out_count: *mut usize,
+        ) -> i32 {
+            PLATFORM_WALLET_PERSIST_RC_TRANSIENT
+        }
+
+        let callbacks = PersistenceCallbacks {
+            on_load_wallet_list_fn: Some(transient_load),
+            ..PersistenceCallbacks::default()
+        };
+        let err = FFIPersister::new(callbacks)
+            .load()
+            .expect_err("the load callback fails");
+        assert_eq!(err.kind(), Some(PersistenceErrorKind::Transient));
+    }
+
+    /// The sentinels must stay off the values a host already returns.
+    #[test]
+    fn sentinel_values_are_pinned_including_the_accepted_resolver_overlap() {
+        // The persistence family's own established values: success, the
+        // generic failure hosts already return, and -1.
+        for taken in [0, 1, -1] {
+            assert_ne!(PLATFORM_WALLET_PERSIST_RC_TRANSIENT, taken);
+            assert_ne!(PLATFORM_WALLET_PERSIST_RC_CONSTRAINT, taken);
+        }
+        assert_ne!(
+            PLATFORM_WALLET_PERSIST_RC_TRANSIENT,
+            PLATFORM_WALLET_PERSIST_RC_CONSTRAINT
+        );
+
+        // The mnemonic-resolver callback family in `rs-unified-sdk-jni`
+        // (`src/mnemonic.rs`), copied because that crate is not a dependency
+        // here. The persistence sentinels deliberately reuse those integers:
+        // the two vtables share no call path, and renumbering a published C
+        // ABI to avoid a resemblance costs every host a migration. Hosts are
+        // kept off the literals by named constants on both sides
+        // (`NativePersistenceBridge.PERSIST_RC_*`, `PlatformWalletPersistRC`).
+        // These assertions are the tripwire: renumbering either family fires
+        // this test so the decision is re-read rather than re-derived.
+        const RESOLVE_NOT_FOUND: i32 = -1;
+        const RESOLVE_BUFFER_TOO_SMALL: i32 = -2;
+        const RESOLVE_OTHER: i32 = -3;
+        assert_eq!(
+            PLATFORM_WALLET_PERSIST_RC_TRANSIENT,
+            RESOLVE_BUFFER_TOO_SMALL
+        );
+        assert_eq!(PLATFORM_WALLET_PERSIST_RC_CONSTRAINT, RESOLVE_OTHER);
+        assert_ne!(PLATFORM_WALLET_PERSIST_RC_TRANSIENT, RESOLVE_NOT_FOUND);
+        assert_ne!(PLATFORM_WALLET_PERSIST_RC_CONSTRAINT, RESOLVE_NOT_FOUND);
+    }
+
     // ── Round serialization + defensive state machine (dashpay/platform#4069) ──
+
+    #[test]
+    fn should_restore_only_committed_asset_lock_status_after_a_failed_round() {
+        use dashcore::hashes::Hash;
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+        use std::sync::{mpsc, Condvar, Mutex as StdMutex};
+        use std::time::Duration;
+
+        struct Host {
+            transaction: Vec<u8>,
+            status: AtomicUsize,
+            // The end callback pauses after staging Consumed and before a
+            // failed commit rolls it back, like Swift's shared ModelContext.
+            end: StdMutex<(bool, bool)>,
+            changed: Condvar,
+        }
+        unsafe extern "C" fn stage(
+            context: *mut c_void,
+            _: *const u8,
+            entries: *const AssetLockEntryFFI,
+            count: usize,
+            _: *const [u8; 36],
+            _: usize,
+        ) -> i32 {
+            assert_eq!(count, 1);
+            (&*context.cast::<Host>())
+                .status
+                .store((*entries).status as usize, Ordering::SeqCst);
+            0
+        }
+        unsafe extern "C" fn reject_commit(
+            context: *mut c_void,
+            _: *const u8,
+            success: bool,
+        ) -> i32 {
+            assert!(success);
+            let host = &*context.cast::<Host>();
+            let mut end = host.end.lock().unwrap();
+            end.0 = true;
+            host.changed.notify_all();
+            while !end.1 {
+                end = host.changed.wait(end).unwrap();
+            }
+            host.status.store(1, Ordering::SeqCst); // rollback to Broadcast
+            -1
+        }
+        unsafe extern "C" fn load(
+            context: *mut c_void,
+            entries: *mut *const WalletRestoreEntryFFI,
+            count: *mut usize,
+        ) -> i32 {
+            let host = &*context.cast::<Host>();
+            let mut out_point = [3; 36];
+            out_point[32..].fill(0);
+            let lock = Box::new(AssetLockEntryFFI {
+                out_point,
+                transaction_bytes: host.transaction.as_ptr(),
+                transaction_bytes_len: host.transaction.len(),
+                account_index: 0,
+                funding_type: 5,
+                identity_index: 0,
+                amount_duffs: 1000,
+                status: host.status.load(Ordering::SeqCst) as u8,
+                proof_bytes: std::ptr::null(),
+                proof_bytes_len: 0,
+            });
+            *entries = Box::into_raw(Box::new(WalletRestoreEntryFFI {
+                wallet_id: [42; 32],
+                tracked_asset_locks: Box::into_raw(lock),
+                tracked_asset_locks_count: 1,
+                ..Default::default()
+            }));
+            *count = 1;
+            0
+        }
+        unsafe extern "C" fn free(_: *mut c_void, entries: *const WalletRestoreEntryFFI, _: usize) {
+            let wallet = Box::from_raw(entries.cast_mut());
+            drop(Box::from_raw(wallet.tracked_asset_locks.cast_mut()));
+        }
+        let entry = platform_wallet::changeset::AssetLockEntry {
+            out_point: dashcore::OutPoint {
+                txid: dashcore::Txid::from_byte_array([3; 32]),
+                vout: 0,
+            },
+            transaction: dashcore::Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::AssetLockShieldedAddressTopUp,
+            identity_index: 0,
+            amount_duffs: 1000,
+            status: platform_wallet::AssetLockStatus::Consumed,
+            proof: None,
+            operation_id: None,
+        };
+        let out_point = entry.out_point;
+        let host = Arc::new(Host {
+            transaction: dashcore::consensus::serialize(&entry.transaction),
+            status: AtomicUsize::new(1),
+            end: StdMutex::new((false, false)),
+            changed: Condvar::new(),
+        });
+        let persister = Arc::new(FFIPersister::new(PersistenceCallbacks {
+            context: Arc::as_ptr(&host).cast_mut().cast(),
+            on_persist_asset_locks_fn: Some(stage),
+            on_changeset_end_fn: Some(reject_commit),
+            on_load_wallet_list_fn: Some(load),
+            on_load_wallet_list_free_fn: Some(free),
+            ..Default::default()
+        }));
+        let writer = {
+            let persister = Arc::clone(&persister);
+            std::thread::spawn(move || {
+                persister.store(
+                    [42; 32],
+                    PlatformWalletChangeSet {
+                        asset_locks: Some(platform_wallet::changeset::AssetLockChangeSet {
+                            asset_locks: [(entry.out_point, entry)].into(),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                )
+            })
+        };
+        {
+            let mut end = host.end.lock().unwrap();
+            while !end.0 {
+                end = host.changed.wait(end).unwrap();
+            }
+        }
+        let (started_tx, started_rx) = mpsc::channel();
+        let (loaded_tx, loaded_rx) = mpsc::channel();
+        let reader = {
+            let persister = Arc::clone(&persister);
+            std::thread::spawn(move || {
+                started_tx.send(()).unwrap();
+                let loaded = persister.load();
+                loaded_tx.send(()).unwrap();
+                loaded
+            })
+        };
+        started_rx.recv().unwrap();
+        let returned_before_commit = loaded_rx.recv_timeout(Duration::from_millis(100)).is_ok();
+        // Always release the writer before asserting, including on regressions.
+        host.end.lock().unwrap().1 = true;
+        host.changed.notify_all();
+        assert!(writer.join().unwrap().is_err());
+        let loaded = reader.join().unwrap().unwrap();
+        assert!(
+            !returned_before_commit,
+            "restore observed an uncommitted round"
+        );
+        assert_eq!(
+            loaded.wallets[&[42; 32]].unused_asset_locks[&0][&out_point].status,
+            platform_wallet::AssetLockStatus::Broadcast
+        );
+    }
+
+    #[test]
+    fn should_refuse_restore_after_an_unclosed_persistence_round() {
+        let persister = FFIPersister::new(PersistenceCallbacks::default());
+        persister.round_lock.lock().begin_round().unwrap();
+        assert!(persister.load().is_err());
+    }
 
     use std::os::raw::c_void as TestCVoid;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -8591,5 +12651,41 @@ mod tests {
                 .all(|a| matches!(a.state, AddressState::Used)),
             "every emitted marked-used address must carry used == true"
         );
+    }
+
+    /// A cold restore must hand every persisted owned DPNS label to the
+    /// in-memory identity, so a later capped fetch only adds to it and no
+    /// snapshot emitted before the next complete fetch drops an owned pick
+    /// that lies outside the fetched prefix.
+    #[test]
+    fn restored_identity_carries_its_persisted_dpns_names() {
+        use super::build_wallet_identity_bucket;
+        use crate::wallet_restore_types::{IdentityRestoreEntryFFI, WalletRestoreEntryFFI};
+        use std::ffi::CString;
+        use std::os::raw::c_char;
+
+        let labels: Vec<CString> = ["alice", "bob", "carol"]
+            .iter()
+            .map(|l| CString::new(*l).unwrap())
+            .collect();
+        let pointers: Vec<*const c_char> = labels.iter().map(|l| l.as_ptr()).collect();
+        let mut identity: IdentityRestoreEntryFFI = unsafe { std::mem::zeroed() };
+        identity.identity_id = [7; 32];
+        identity.dpns_names = pointers.as_ptr();
+        identity.dpns_names_count = pointers.len();
+        let entry = WalletRestoreEntryFFI {
+            wallet_id: [42; 32],
+            identities: &identity,
+            identities_count: 1,
+            ..Default::default()
+        };
+
+        let bucket = build_wallet_identity_bucket(&entry).expect("identity must restore");
+        let restored: Vec<&str> = bucket[&0]
+            .dpns_names
+            .iter()
+            .map(|n| n.label.as_str())
+            .collect();
+        assert_eq!(restored, ["alice", "bob", "carol"]);
     }
 }

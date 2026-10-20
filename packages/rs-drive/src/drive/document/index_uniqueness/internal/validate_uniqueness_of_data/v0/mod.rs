@@ -76,83 +76,33 @@ impl Drive {
                                     platform_value!(owner_id)
                                 }
                                 property_names::CREATED_AT => {
-                                    if let Some(created_at) = created_at {
-                                        platform_value!(created_at)
-                                    } else {
-                                        return None;
-                                    }
+                                    platform_value!(created_at?)
                                 }
                                 property_names::UPDATED_AT => {
-                                    if let Some(updated_at) = updated_at {
-                                        platform_value!(updated_at)
-                                    } else {
-                                        return None;
-                                    }
+                                    platform_value!(updated_at?)
                                 }
                                 property_names::TRANSFERRED_AT => {
-                                    if let Some(transferred_at) = transferred_at {
-                                        platform_value!(transferred_at)
-                                    } else {
-                                        return None;
-                                    }
+                                    platform_value!(transferred_at?)
                                 }
                                 property_names::CREATED_AT_BLOCK_HEIGHT => {
-                                    if let Some(created_at_block_height) = created_at_block_height {
-                                        platform_value!(created_at_block_height)
-                                    } else {
-                                        return None;
-                                    }
+                                    platform_value!(created_at_block_height?)
                                 }
                                 property_names::UPDATED_AT_BLOCK_HEIGHT => {
-                                    if let Some(updated_at_block_height) = updated_at_block_height {
-                                        platform_value!(updated_at_block_height)
-                                    } else {
-                                        return None;
-                                    }
+                                    platform_value!(updated_at_block_height?)
                                 }
                                 property_names::TRANSFERRED_AT_BLOCK_HEIGHT => {
-                                    if let Some(transferred_at_block_height) =
-                                        transferred_at_block_height
-                                    {
-                                        platform_value!(transferred_at_block_height)
-                                    } else {
-                                        return None;
-                                    }
+                                    platform_value!(transferred_at_block_height?)
                                 }
                                 property_names::CREATED_AT_CORE_BLOCK_HEIGHT => {
-                                    if let Some(created_at_core_block_height) =
-                                        created_at_core_block_height
-                                    {
-                                        platform_value!(created_at_core_block_height)
-                                    } else {
-                                        return None;
-                                    }
+                                    platform_value!(created_at_core_block_height?)
                                 }
                                 property_names::UPDATED_AT_CORE_BLOCK_HEIGHT => {
-                                    if let Some(updated_at_core_block_height) =
-                                        updated_at_core_block_height
-                                    {
-                                        platform_value!(updated_at_core_block_height)
-                                    } else {
-                                        return None;
-                                    }
+                                    platform_value!(updated_at_core_block_height?)
                                 }
                                 property_names::TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
-                                    if let Some(transferred_at_core_block_height) =
-                                        transferred_at_core_block_height
-                                    {
-                                        platform_value!(transferred_at_core_block_height)
-                                    } else {
-                                        return None;
-                                    }
+                                    platform_value!(transferred_at_core_block_height?)
                                 }
-                                _ => {
-                                    if let Some(value) = data.get(property.name.as_str()) {
-                                        value.clone()
-                                    } else {
-                                        return None;
-                                    }
-                                }
+                                _ => data.get(property.name.as_str())?.clone(),
                             };
                             Some((
                                 property.name.clone(),
@@ -186,6 +136,7 @@ impl Drive {
                             start_at_included: false,
                             block_time_ms: None,
                             resolved_time_ranges: vec![],
+                            sub_queries: vec![],
                         };
 
                         // todo: deal with cost of this operation

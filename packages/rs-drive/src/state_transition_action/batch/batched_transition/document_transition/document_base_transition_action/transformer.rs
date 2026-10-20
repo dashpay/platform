@@ -1,5 +1,6 @@
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
+use dpp::data_contract::document_type::action_fees::{DocumentActionFee, DocumentActionFees};
 use dpp::data_contract::document_type::DocumentType;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
@@ -15,6 +16,7 @@ impl DocumentBaseTransitionAction {
         value: &DocumentBaseTransition,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
         get_token_cost: impl Fn(&DocumentType) -> Option<DocumentActionTokenCost>,
+        get_action_fee: impl Fn(&DocumentActionFees) -> Option<DocumentActionFee>,
         action: &str,
     ) -> Result<ConsensusValidationResult<Self>, Error> {
         Ok(
@@ -22,6 +24,7 @@ impl DocumentBaseTransitionAction {
                 value,
                 get_data_contract,
                 get_token_cost,
+                get_action_fee,
                 action,
             )?
             .map(|v0| v0.into()),

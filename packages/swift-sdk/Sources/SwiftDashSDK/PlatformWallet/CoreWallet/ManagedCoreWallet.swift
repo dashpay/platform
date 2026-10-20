@@ -89,6 +89,56 @@ public class ManagedCoreWallet {
         )
     }
 
+    /// The balance a build funded by `accountType` could actually select from —
+    /// the same accounts `finalizeAtomic` funds from, counting only UTXOs coin
+    /// selection accepts.
+    ///
+    /// Gate amount entry on this, not on ``balance()``: that sums every funding
+    /// account the wallet has, CoinJoin included, so a wallet holding mixed
+    /// coins is offered money the build then refuses.
+    ///
+    /// Reservations are not subtracted — an in-flight build's inputs still
+    /// count here. That is transient; the account-set difference is not.
+    ///
+    /// This is the GROSS sum, which is what an "available" line should show. A
+    /// build needs `amount + fee`, so do not put this behind a max/"send all"
+    /// control — use ``pooledMaxSendable(accountType:accountIndex:feeRateSatPerKb:)``.
+    public func pooledSpendableBalance(
+        accountType: CoreTransactionBuilder.AccountType = .allSpendable,
+        accountIndex: UInt32 = 0
+    ) throws -> UInt64 {
+        var balance: UInt64 = 0
+        try core_wallet_pooled_spendable_balance(
+            handle, accountType.ffi, accountIndex, &balance
+        ).check()
+        return balance
+    }
+
+    /// The largest amount a build funded by `accountType` could actually pay
+    /// out, net of the fee spending it costs — the figure a max/"send all"
+    /// control must use.
+    ///
+    /// Entering ``pooledSpendableBalance(accountType:accountIndex:)`` verbatim
+    /// as an amount fails: coin selection clears its available-versus-amount
+    /// check and then cannot cover `amount + fee`. This prices the fee off the
+    /// inputs that spending everything would take, so it needs no host-side
+    /// headroom guess on top.
+    ///
+    /// `feeRateSatPerKb` defaults to 0, meaning the same rate a builder starts
+    /// from; pass the host's rate if it sets one on its builders, or the answer
+    /// will not match what the build charges.
+    public func pooledMaxSendable(
+        accountType: CoreTransactionBuilder.AccountType = .allSpendable,
+        accountIndex: UInt32 = 0,
+        feeRateSatPerKb: UInt64 = 0
+    ) throws -> UInt64 {
+        var maxSendable: UInt64 = 0
+        try core_wallet_pooled_max_sendable(
+            handle, accountType.ffi, accountIndex, feeRateSatPerKb, &maxSendable
+        ).check()
+        return maxSendable
+    }
+
     /// Get the network this wallet operates on.
     public func network() throws -> Network {
         var ffiNetwork = FFINetwork(0)

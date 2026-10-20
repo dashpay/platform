@@ -62,7 +62,8 @@ pub use queries::{
     dash_sdk_identity_fetch_balance_and_revision,
     dash_sdk_identity_fetch_by_non_unique_public_key_hash,
     dash_sdk_identity_fetch_by_public_key_hash, dash_sdk_identity_fetch_handle,
-    dash_sdk_identity_fetch_public_keys, dash_sdk_identity_resolve_name,
+    dash_sdk_identity_fetch_keys_remaining_budgets, dash_sdk_identity_fetch_public_keys,
+    dash_sdk_identity_resolve_name,
 };
 
 // Re-export helper functions for use by submodules

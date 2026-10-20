@@ -405,6 +405,7 @@ The complete Platform read surface, mapped to where each RPC is exercised in the
 | getDataContract | Common | ✅ | `DataContractDetailsView` / catalog |
 | getDataContracts | Thorough | ✅ | catalog |
 | getDataContractHistory | Thorough | ✅ | catalog |
+| getDataContractsByRange | Thorough | ✅ | catalog |
 
 ### Document
 | RPC | Tier | Status | Where |

@@ -87,14 +87,15 @@ impl Drive {
             .with_limit::<MAX_COMPACTED_PROOF_DECODE_BYTES>();
 
         // Decode the GroveDBProof to navigate its structure
-        let grovedb_proof: GroveDBProof = bincode::decode_from_slice(proof, bincode_config)
-            .map(|(p, _)| p)
-            .map_err(|e| {
-                Error::Proof(ProofError::CorruptedProof(format!(
-                    "cannot decode GroveDBProof: {}",
-                    e
-                )))
-            })?;
+        let grovedb_proof: GroveDBProof =
+            bincode::decode_from_slice_untrusted(proof, bincode_config)
+                .map(|(p, _)| p)
+                .map_err(|e| {
+                    Error::Proof(ProofError::CorruptedProof(format!(
+                        "cannot decode GroveDBProof: {}",
+                        e
+                    )))
+                })?;
 
         // Navigate to the compacted address balances layer
         // Path: SavedBlockTransactions ('$' = 0x24) -> CompactedAddressBalances ('c' = 0x63)
@@ -215,12 +216,14 @@ impl Drive {
             let (address_balances, consumed): (
                 BTreeMap<PlatformAddress, BlockAwareCreditOperation>,
                 usize,
-            ) = bincode::decode_from_slice(&serialized_data, row_decode_config).map_err(|e| {
-                Error::Proof(ProofError::CorruptedProof(format!(
-                    "cannot decode compacted address balances: {}",
-                    e
-                )))
-            })?;
+            ) = bincode::decode_from_slice_untrusted(&serialized_data, row_decode_config).map_err(
+                |e| {
+                    Error::Proof(ProofError::CorruptedProof(format!(
+                        "cannot decode compacted address balances: {}",
+                        e
+                    )))
+                },
+            )?;
             // Wire-safe tightening (parity with v1): honest encoders emit
             // rows with no trailing bytes, so rejecting them cannot break
             // legacy peers.

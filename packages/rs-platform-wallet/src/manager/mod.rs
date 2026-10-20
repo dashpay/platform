@@ -5,12 +5,18 @@ pub mod dashpay_sync;
 pub mod dpns_sync;
 pub mod identity_sync;
 mod load;
+#[cfg(test)]
+pub(crate) use load::pool_validations_on_this_thread;
+mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 pub mod startup;
 mod wallet_lifecycle;
 
+pub(crate) use persistence_load::run_blocking_load;
+
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,9 +25,16 @@ use tokio::sync::{Notify, RwLock};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+use dpp::prelude::Identifier;
+use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet_manager::WalletManager;
 
-use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
+use crate::changeset::{
+    persists_backfill_coverage, spawn_wallet_event_adapter_with_durable_cursors, CoreChangeSet,
+    DashPayBackfillRecord, DurableCursor, DurableCursors, PlatformWalletChangeSet,
+    PlatformWalletPersistence,
+};
+use crate::error::PlatformWalletError;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::manager::dashpay_sync::DashPaySyncManager;
 use crate::manager::dpns_sync::DpnsSyncManager;
@@ -58,7 +71,7 @@ pub enum WalletWorker {
     ShieldedSync,
     /// SPV runtime — the network event source feeding every persister-
     /// visible wallet event. Not a registry worker: `SpvRuntime::stop`
-    /// owns its (bounded, abort-escalating) join, and
+    /// owns its teardown task and bounds only the wait for it, and
     /// [`shutdown`](PlatformWalletManager::shutdown) folds the stop
     /// outcome into the report so a failed SPV stop can never hide
     /// behind a clean coordinator join.
@@ -332,7 +345,23 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// update their lock-free balance atomics from event-handler
     /// context, without touching the SPV-contended `wallet_manager`
     /// lock.
-    pub(super) wallets: Arc<RwLock<std::collections::BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    ///
+    /// An [`arc_swap::ArcSwap`] rather than a lock: readers take a
+    /// wait-free snapshot that can never fail or block, which the
+    /// balance handler depends on — the event bus neither retries nor
+    /// coalesces, so a snapshot dropped during a lifecycle write would
+    /// be lost for good (see `BalanceUpdateHandler`). Writers are the
+    /// rare manager lifecycle paths (create/remove/load) and publish
+    /// via `rcu`. That closure can run more than once under a
+    /// concurrent-writer retry, and only the invocation whose
+    /// compare-and-swap succeeds is published — so captured state it
+    /// writes must be OVERWRITTEN per attempt, never accumulated across
+    /// them. `remove_wallet`'s generation verdict and the load rollback's
+    /// reclaimed-id list both rely on exactly that: each attempt recomputes
+    /// its answer from the map the closure was handed, which is the same
+    /// map the CAS compares against.
+    pub(super) wallets:
+        Arc<arc_swap::ArcSwap<std::collections::BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     /// Notified on InstantLock / ChainLock events for `AssetLockManager` waiters.
     pub(super) lock_notify: Arc<Notify>,
     pub(super) spv_manager: Arc<SpvRuntime>,
@@ -411,7 +440,7 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// cancellation token; [`shutdown`](Self::shutdown) cancels, joins, and
     /// reports per-worker terminal status.
     pub(super) registry: Arc<ThreadRegistry<WalletWorker>>,
-    /// Host-visible hard sync-fault latch (dashpay/platform#4069). Set
+    /// Host-visible hard sync-fault latch. Set
     /// (and never cleared for this manager instance's lifetime) by the
     /// wallet-event adapter the first time it freezes a durable watermark
     /// after a persistence `store()` rejection — the one remaining fault
@@ -420,23 +449,27 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// failed / rescan pending" state rather than re-freezing silently on
     /// the next launch.
     pub(super) sync_fault: Arc<std::sync::atomic::AtomicBool>,
+    /// The durable sync cursor each wallet's host last accepted, shared by
+    /// the wallet-event adapter and the DashPay rescan reconcile — the lock
+    /// that orders their cursor writes. See [`DurableCursors`].
+    pub(super) durable_cursors: DurableCursors,
     /// Per-WALLET in-broadcast fence maps, handed to every
     /// [`WalletGeneration`](crate::wallet::core::WalletGeneration) registered
-    /// under each id (`dashpay/platform#4309`, review round 8).
+    /// under each id.
     ///
     /// A fence describes a signed transaction that may be live on the network.
-    /// That fact outlives the wallet *instance* that dispatched it: removing a
-    /// wallet and re-creating it under the same id used to mint a generation
-    /// with an empty map, so the re-created wallet restored the persisted UTXO
+    /// That fact outlives the wallet *instance* that dispatched it: if removing
+    /// a wallet and re-creating it under the same id minted a generation with
+    /// an empty map, the re-created wallet would restore the persisted UTXO
     /// with nothing holding it — not the fence, not key-wallet's memory-only
     /// reservation — and could sign a conflicting spend of an outpoint the
-    /// original transaction still spends. Keying the map here instead makes the
+    /// original transaction still spends. Keying the map here makes the
     /// replacement inherit it.
     ///
     /// **Deliberately never pruned.** A removed wallet's entry stays, because a
     /// removal is exactly when the protection must survive; dropping it on
-    /// removal would restore the bug for the recreate-after-remove path this
-    /// exists to close. Growth is bounded by the number of distinct wallet ids
+    /// removal would reopen the recreate-after-remove hazard this exists to
+    /// close. Growth is bounded by the number of distinct wallet ids
     /// this process has registered, and each entry reaps its own cleared rows
     /// on read.
     ///
@@ -445,6 +478,39 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) in_broadcast_fences: std::sync::Mutex<
         std::collections::BTreeMap<WalletId, Arc<crate::wallet::core::InBroadcastFences>>,
     >,
+}
+
+/// Keep `record`'s coverage only for the DashPay receival accounts `core`
+/// actually holds, and report whether anything was dropped.
+///
+/// Coverage vouches that an account's scripts were watched; for an account
+/// the published wallet does not hold, nothing watches them, and a scan the
+/// wallet commits before the account is registered again would sit inside
+/// coverage that never saw it. Both publish paths apply this before
+/// [`PlatformWalletManager::settle_published_backfill`], which replaces the
+/// host's record when it reports a drop. Dropping the last entry also drops
+/// the extent: nothing is left for it to describe.
+pub(crate) fn retain_coverage_for_held_accounts(
+    record: &mut DashPayBackfillRecord,
+    core: &ManagedWalletInfo,
+) -> bool {
+    let held: Vec<(Identifier, Identifier, u32)> = core
+        .accounts
+        .dashpay_receival_accounts
+        .keys()
+        .map(|key| {
+            (
+                Identifier::from(key.user_identity_id),
+                Identifier::from(key.friend_identity_id),
+                key.index,
+            )
+        })
+        .collect();
+    let dropped = record.retain(|owner, contact, index| held.contains(&(*owner, *contact, index)));
+    if dropped && record.is_empty() {
+        *record = DashPayBackfillRecord::default();
+    }
+    dropped
 }
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
@@ -460,50 +526,54 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ) -> Self {
         // Take the manager's lossless, unbounded persistence receiver BEFORE
         // the manager is wrapped in the shared `Arc<RwLock>` and handed to any
-        // producer. Unlike the old broadcast subscription, an
-        // `mpsc::UnboundedReceiver` buffers events emitted during startup
-        // rather than dropping them, so there is no subscribe-before-publish
-        // race and — being unbounded — it can never `Lagged` and freeze the
-        // durable sync watermark (dashpay/platform#4069). The receiver is
-        // taken here, once, and moved into the adapter task below.
+        // producer. A broadcast subscription would drop events emitted during
+        // startup; an `mpsc::UnboundedReceiver` buffers them instead, so
+        // there is no subscribe-before-publish race and — being unbounded —
+        // it can never `Lagged` and freeze the durable sync watermark. The
+        // receiver is taken here, once, and moved into the adapter task below.
         let mut wallet_manager_inner = WalletManager::new(sdk.network);
         let event_receiver = wallet_manager_inner
             .take_persistence_receiver()
             .expect("persistence receiver is available exactly once on a fresh WalletManager");
         let wallet_manager = Arc::new(RwLock::new(wallet_manager_inner));
-        let wallets = Arc::new(RwLock::new(std::collections::BTreeMap::new()));
+        let wallets = Arc::new(arc_swap::ArcSwap::from_pointee(
+            std::collections::BTreeMap::new(),
+        ));
         let lock_notify = Arc::new(Notify::new());
         // Shared registry that owns the coordinators' loop-thread join
         // handles for a clean, panic-aware shutdown join.
         let registry = ThreadRegistry::<WalletWorker>::new();
 
-        // Host-visible hard sync-fault latch (dashpay/platform#4069). The
+        // Host-visible hard sync-fault latch. The
         // adapter raises it the first time it freezes a durable watermark.
         let sync_fault = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let durable_cursors = DurableCursors::default();
 
         // Spawn the wallet-event adapter that translates upstream
         // `WalletEvent`s into `CoreChangeSet`s and forwards them to
         // the persister.
         let event_adapter_cancel = CancellationToken::new();
-        let event_adapter_join = spawn_wallet_event_adapter(
+        let event_adapter_join = spawn_wallet_event_adapter_with_durable_cursors(
             Arc::clone(&wallet_manager),
-            Arc::clone(&persister),
+            Arc::downgrade(&persister),
             event_receiver,
             Arc::clone(&sync_fault),
+            Arc::clone(&durable_cursors),
             event_adapter_cancel.clone(),
         );
 
         // Build handler list: app handler + internal handlers.
         // BalanceUpdateHandler holds a clone of the wallets map (a
-        // separate lock from wallet_manager) so it can look up
-        // PlatformWallets and write to their lock-free balance
-        // atomics from broadcast-handler context without contending
-        // with SPV's write lock.
+        // wait-free `ArcSwap`, separate from the wallet_manager lock)
+        // so it can look up PlatformWallets and write to their
+        // lock-free balance atomics from broadcast-handler context
+        // without contending with SPV's write lock — and without any
+        // window in which a lifecycle write could make the lookup fail.
         let lock_handler = Arc::new(LockNotifyHandler::new(Arc::clone(&lock_notify)));
         let balance_handler = Arc::new(BalanceUpdateHandler::new(Arc::clone(&wallets)));
         // SpendObservationHandler releases in-broadcast input fences when the
         // wallet observes the fenced outpoints spent — the evidence that ends
-        // the fence a dispatch installs (`dashpay/platform#4309`). It takes the
+        // the fence a dispatch installs. It takes the
         // same `wallets` map, and for the same lock reason as the balance
         // handler: the event fires inside SPV's block-processing write section,
         // so the generation cannot be resolved through the wallet-manager lock.
@@ -586,7 +656,160 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
             registry,
             sync_fault,
+            durable_cursors,
             in_broadcast_fences: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+        }
+    }
+
+    /// Remove `wallet_id` from the inner manager, keeping its rewind
+    /// barrier's state under the id in the shared [`DurableCursors`] for a
+    /// successor registered under the same id (see
+    /// [`Self::inherit_rewind_barrier`]) — and for the adapter, which drops
+    /// the removed wallet's advances while nothing holds the id and counts
+    /// them off this state as it does. Called under the manager write lock,
+    /// which is what makes the hand-off atomic against the adapter.
+    pub(super) fn remove_from_wallet_manager(
+        &self,
+        wm: &mut WalletManager<PlatformWalletInfo>,
+        wallet_id: &WalletId,
+    ) -> Result<(), key_wallet_manager::WalletError> {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        let (_, info) = wm.remove_wallet(wallet_id)?;
+        let retiring = info
+            .rewind_barrier
+            .retire(WalletInfoInterface::account_generation(&info));
+        let mut retired = self.durable_cursors.retired();
+        let entry = retired.entry(*wallet_id).or_default();
+        entry.in_flight = entry.in_flight.saturating_add(retiring.in_flight);
+        entry.epoch = entry.epoch.max(retiring.epoch);
+        entry.account_generation = entry.account_generation.max(retiring.account_generation);
+        Ok(())
+    }
+
+    /// Settle the host's DashPay backfill record for a wallet about to be
+    /// published under `wallet_id`, holding the durable-cursor lock
+    /// (`durable_cursors`), and return the record the wallet carries in
+    /// memory.
+    ///
+    /// `record` is what the wallet would carry — its snapshot's record,
+    /// already filtered to the receival accounts it holds — and `own_cursor`
+    /// the scan cursor it starts from. `snapshot_cursor` is the host cursor
+    /// the pre-lock snapshot saw; an entry in `durable_cursors` wins over it.
+    /// `dropped` says the filter removed coverage from the snapshot's record.
+    ///
+    /// The host's record is replaced, before the wallet is visible to the
+    /// scanner, when it may disagree with what the wallet carries:
+    /// - the filter dropped coverage for accounts this wallet does not hold;
+    /// - an entry shows a same-id wallet was published in this process — it
+    ///   may have stored or invalidated coverage after the snapshot was read;
+    /// - the backend cannot hold the record durably and the snapshot held one.
+    ///
+    /// A replacement that puts coverage on the host while this wallet's cursor
+    /// is below the host's carries that cursor, as a rewind, in the same
+    /// round. Otherwise a crash right after it would restore the coverage
+    /// beside a cursor the wallet never scanned up to with those accounts
+    /// watched. The entry follows the cursor only once the round is
+    /// committed, so a lower cursor owed later is measured against it.
+    ///
+    /// A backend that cannot hold the record durably
+    /// ([`persists_backfill_coverage`](crate::changeset::persists_backfill_coverage):
+    /// not inline, or not atomic) gets no record at all, the same as the
+    /// rescan sweep gives it: only an empty one is written — committed with a
+    /// `flush` where `store` only buffers — before the wallet is published,
+    /// so a record an earlier run left cannot outlive this one.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn settle_published_backfill(
+        &self,
+        durable_cursors: &mut BTreeMap<WalletId, DurableCursor>,
+        wallet_id: WalletId,
+        record: DashPayBackfillRecord,
+        dropped: bool,
+        own_cursor: u32,
+        snapshot_cursor: u32,
+    ) -> Result<DashPayBackfillRecord, PlatformWalletError> {
+        let inline = self.persister.store_commits_inline();
+        let durable = persists_backfill_coverage(&*self.persister);
+        let predecessor = durable_cursors.contains_key(&wallet_id);
+        let held_on_host = !record.is_empty() || dropped;
+        let record = if durable {
+            record
+        } else {
+            DashPayBackfillRecord::default()
+        };
+        // A backend that cannot hold the record durably never had one
+        // written by this process, so only a record it handed back can need
+        // invalidating; one that can is replaced when the snapshot's record
+        // may disagree with what the wallet carries.
+        let replace = if durable {
+            dropped || predecessor
+        } else {
+            held_on_host
+        };
+        if !replace {
+            return Ok(record);
+        }
+        let host_cursor = durable_cursors
+            .get(&wallet_id)
+            .map_or(snapshot_cursor, |entry| entry.height);
+        let cursor = (!record.is_empty() && own_cursor < host_cursor).then_some(own_cursor);
+        tracing::info!(
+            wallet_id = %hex::encode(wallet_id),
+            covered = record.covered().len(),
+            dropped,
+            predecessor,
+            durable,
+            cursor = ?cursor,
+            "the host's DashPay backfill record is replaced with the one this wallet \
+             carries before the wallet is published"
+        );
+        let changeset = PlatformWalletChangeSet {
+            core: cursor.map(|cursor| CoreChangeSet {
+                synced_height: Some(cursor),
+                synced_height_is_rewind: true,
+                ..CoreChangeSet::default()
+            }),
+            dashpay_backfill: Some(record.clone()),
+            ..PlatformWalletChangeSet::default()
+        };
+        self.persister.store(wallet_id, changeset).map_err(|e| {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "failed to replace the host's DashPay backfill record; \
+                 the wallet was not published"
+            );
+            PlatformWalletError::from_store_failure(&*self.persister, e)
+        })?;
+        if !inline {
+            self.persister.flush(wallet_id).map_err(|e| {
+                tracing::error!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "failed to commit the replaced DashPay backfill record; \
+                     the wallet was not published"
+                );
+                PlatformWalletError::from_flush_failure(e)
+            })?;
+        }
+        if let Some(cursor) = cursor {
+            durable_cursors.insert(wallet_id, DurableCursor::at(cursor));
+        }
+        Ok(record)
+    }
+
+    /// Hand a newly published wallet the barrier state a removed wallet of
+    /// the same id left behind, so advances that wallet emitted — still
+    /// queued in, or already projected by, the shared adapter — are dropped
+    /// rather than stored against the new wallet's scan. Called inside the
+    /// critical section that publishes the wallet.
+    pub(super) fn inherit_rewind_barrier(
+        &self,
+        wm: &mut WalletManager<PlatformWalletInfo>,
+        wallet_id: &WalletId,
+    ) {
+        let retired = self.durable_cursors.retired().remove(wallet_id);
+        if let (Some(retired), Some(info)) = (retired, wm.get_wallet_info_mut(wallet_id)) {
+            info.rewind_barrier.inherit(retired);
         }
     }
 
@@ -596,7 +819,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// manager mints for a wallet is built from this, so a generation that
     /// replaces another under the same id inherits its pending-spend fences —
     /// see the [`in_broadcast_fences`](Self#structfield.in_broadcast_fences)
-    /// field docs (`dashpay/platform#4309`).
+    /// field docs.
     pub(super) fn in_broadcast_fences_for(
         &self,
         wallet_id: &WalletId,
@@ -611,13 +834,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 
     /// Whether the wallet-event adapter has frozen a durable sync
-    /// watermark this manager's lifetime (dashpay/platform#4069).
+    /// watermark this manager's lifetime.
     ///
     /// Returns `true` once — and stays `true` for THIS manager instance's
     /// lifetime (a destroyed-and-recreated manager starts unlatched) —
-    /// after a persistence `store()` was rejected, the one remaining fault
-    /// trigger: the lossless persistence channel cannot drop or lag events,
-    /// so the old broadcast-lag trigger no longer exists. A latch means the
+    /// after a persistence `store()` was rejected, the only fault trigger:
+    /// the lossless persistence channel cannot drop or lag events. A latch
+    /// means the
     /// persisted `syncedHeight` is deliberately held behind the chain tip
     /// for the affected wallet and a rescan is pending on the next launch.
     /// Integrators poll this to
@@ -674,7 +897,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // checkpoints; matches the prior per-wallet default at
         // `PlatformWallet::bind_shielded`.
         let store = FileBackedShieldedStore::open_path(&db_path, 100)
-            .map_err(|e| crate::error::PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+            .map_err(crate::error::PlatformWalletError::from)?;
 
         let coordinator = Arc::new(NetworkShieldedCoordinator::new(
             Arc::clone(&self.sdk),
@@ -741,18 +964,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// # The missing-coordinator case is an ERROR, not a silent no-op
     ///
-    /// This used to `Ok(())` when `shielded_coordinator()` was `None`,
-    /// treating "no coordinator" as "nothing to clear". That masked the exact
-    /// on-device failure this fix targets: the host taps Clear on a manager
-    /// whose coordinator is **not installed on this instance** — e.g. an SDK
-    /// rebuild handed the host a fresh `PlatformWalletManager` whose
-    /// `configure_shielded` never ran (or ran on a different instance than the
-    /// one currently syncing). The quiesce runs (sync loop stops), the call
-    /// returns `Ok`, and the host then wipes its own Room/SwiftData rows —
-    /// while the **on-disk commitment tree is never touched** (file mtime
-    /// unchanged on device, no `reset_commitment_tree` call). The next bind
-    /// reloads the still-full tree + its persisted watermark and re-freezes
-    /// everything.
+    /// Returning `Ok(())` when `shielded_coordinator()` is `None` — treating
+    /// "no coordinator" as "nothing to clear" — masks a real on-device
+    /// failure: the host taps Clear on a manager whose coordinator is **not
+    /// installed on this instance** — e.g. an SDK rebuild handed the host a
+    /// fresh `PlatformWalletManager` whose `configure_shielded` never ran (or
+    /// ran on a different instance than the one currently syncing). The
+    /// quiesce runs (sync loop stops), the call returns `Ok`, and the host
+    /// then wipes its own Room/SwiftData rows — while the **on-disk
+    /// commitment tree is never touched** (file mtime unchanged on device, no
+    /// `reset_commitment_tree` call). The next bind reloads the still-full
+    /// tree + its persisted watermark and re-freezes everything.
     ///
     /// The FFI only exposes this call behind a bound, shielded-enabled host
     /// surface (the "Clear" button), so reaching it with no coordinator is a
@@ -843,14 +1065,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             ));
         };
 
-        // Snapshot Arc clones under a short read lock; never hold the
-        // `wallets` read guard across the per-wallet `.await`s below —
-        // that would block registration and invite lock-ordering
-        // issues against each wallet's `wallet_manager` lock.
-        let wallets: Vec<Arc<PlatformWallet>> = {
-            let guard = self.wallets.read().await;
-            guard.values().cloned().collect()
-        };
+        // Snapshot Arc clones from the wait-free map; clone out rather
+        // than holding the `ArcSwap` guard across the per-wallet
+        // `.await`s below.
+        let wallets: Vec<Arc<PlatformWallet>> = self.wallets.load().values().cloned().collect();
 
         for wallet in wallets {
             wallet.platform().reset_sync_state().await;
@@ -868,6 +1086,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// persister / host-callback fan-out — then **joins** their loop OS
     /// threads through the shared [`ThreadRegistry`] and finally drains the
     /// wallet-event adapter task. Idempotent.
+    ///
+    /// Takes `&self`, so it cannot release the manager's own `Arc<P>`
+    /// persister — reopening the same store additionally needs the manager
+    /// dropped (see the [`Drop`] impl).
     ///
     /// Ordering matters and is fourfold:
     /// 1. SPV is stopped and joined FIRST so it cannot dispatch more wallet
@@ -888,14 +1110,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// 4. The event adapter — the sink those stores feed into — drains
     ///    LAST.
     ///
-    /// **Every phase is bounded.** SPV stop owns its own abort-escalating
-    /// join; the payment-hook drain is bounded by `PAYMENT_DRAIN_BUDGET`;
-    /// the coordinator drains run concurrently under
-    /// `COORDINATOR_DRAIN_BUDGET`; the registry join uses each worker's
-    /// join budget; the adapter join is bounded too (its live handle is
-    /// re-parked on timeout so a retry re-joins it). A wedged await
-    /// therefore surfaces as a non-clean report instead of hanging the
-    /// FFI's `destroy` forever.
+    /// **Every phase but SPV stop's lock waits is bounded.** SPV stop
+    /// bounds its wait for the teardown task, which it never aborts: a
+    /// teardown still running at the deadline is reported non-clean and
+    /// stays owned for a later stop to join. Before that deadline starts,
+    /// SPV stop waits without bound for a concurrent start or stop and
+    /// for client queries already in flight. The payment-hook drain is
+    /// bounded by `PAYMENT_DRAIN_BUDGET`; the coordinator drains run
+    /// concurrently under `COORDINATOR_DRAIN_BUDGET`; the registry join
+    /// uses each worker's join budget; the adapter join is bounded too
+    /// (its live handle is re-parked on timeout so a retry re-joins it).
+    /// Past those SPV lock waits, a wedged await therefore surfaces as a
+    /// non-clean report instead of hanging the FFI's `destroy` forever.
     ///
     /// Returns a [`ShutdownReport`] keyed by [`WalletWorker`] — including
     /// the non-registry workers [`WalletWorker::Spv`],
@@ -907,10 +1133,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// [`WorkerStatus`]: dash_async::WorkerStatus
     pub async fn shutdown(&self) -> ShutdownReport<WalletWorker> {
-        // SPV first: it is the event source feeding everything below, and
-        // its `stop` owns a bounded, abort-escalating join of the run-loop
-        // task. Its outcome lands in the report — a failed stop must not
-        // hide behind a clean coordinator join.
+        // SPV first: it is the event source feeding everything below. Its
+        // `stop` bounds the wait for teardown but never aborts it, so a
+        // timeout means SPV work is still live. Its outcome lands in the
+        // report — a failed stop must not hide behind a clean coordinator join.
         let spv_status = match self.spv_manager.stop().await {
             Ok(()) => WorkerStatus::Ok,
             Err(error) => {
@@ -1038,6 +1264,36 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     }
 }
 
+/// Stops the wallet-event adapter task, which a dirty drop would otherwise
+/// leave running against a torn-down manager.
+///
+/// Dropping the manager releases its own persister references. The idle adapter
+/// holds only a `Weak<P>`, but a drain, wallet handle, worker or in-flight read
+/// can retain a strong reference. Reopening the same storage path must wait
+/// until all such references are released; this drop does not guarantee it.
+///
+/// **Buffered events are best-effort on this path.** Cancelling is all a `Drop`
+/// can do: if dropping the fields releases the last `Arc<P>` before the adapter
+/// claims it, the adapter exits with the backlog uncommitted. Nothing
+/// durable breaks — a wallet's sync watermark rides the same `store()` as the
+/// rows it implies, so the next SPV pass re-derives both. Use
+/// [`shutdown`](PlatformWalletManager::shutdown) for a lossless drain: it holds
+/// the manager, and with it the persister, alive while it joins the task, and
+/// reports a status back.
+///
+/// Having a `Drop` at all changes teardown for every holder of this public
+/// type: a plain drop stops the adapter instead of detaching it, and the type's
+/// fields can no longer be moved out.
+impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
+    fn drop(&mut self) {
+        // Cancel and detach, never `abort`: the task observes the token at its
+        // next `recv` and exits after committing whatever its drain claimed the
+        // persister for. Aborting stops it at whatever await it is parked on,
+        // dropping a claimed batch mid-commit.
+        self.event_adapter_cancel.cancel();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1066,6 +1322,33 @@ mod tests {
         }
     }
 
+    /// Records the highest `synced_height` any `store()` carried, into state
+    /// held OUTSIDE the persister — so a test can read the outcome after the
+    /// persister itself has been released.
+    struct WatermarkPersister {
+        highest_synced_height: Arc<std::sync::atomic::AtomicU32>,
+    }
+
+    impl PlatformWalletPersistence for WatermarkPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            if let Some(height) = changeset.core.as_ref().and_then(|core| core.synced_height) {
+                self.highest_synced_height
+                    .fetch_max(height, std::sync::atomic::Ordering::SeqCst);
+            }
+            Ok(())
+        }
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
     struct NoopEventHandler;
     impl EventHandler for NoopEventHandler {}
     impl PlatformEventHandler for NoopEventHandler {}
@@ -1080,8 +1363,8 @@ mod tests {
     }
 
     /// The constructor must register [`SpendObservationHandler`] on the event
-    /// fan-out, over the LIVE wallets map (`dashpay/platform#4309`, review
-    /// round 6): a spend-bearing wallet event dispatched through the manager's
+    /// fan-out, over the LIVE wallets map: a spend-bearing wallet event
+    /// dispatched through the manager's
     /// own `event_manager` must release a registered wallet's in-broadcast
     /// fence. Dropping the handler from the constructor's handler list — the
     /// accidental-omission regression this pins — fails the final assertion,
@@ -1111,8 +1394,14 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::new(NoopPersister) as Arc<dyn PlatformWalletPersistence>,
             Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
+            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            crate::changeset::DurableCursors::default(),
         ));
-        mgr.wallets.write().await.insert(wallet_id, wallet);
+        mgr.wallets.rcu(|wallets| {
+            let mut next = std::collections::BTreeMap::clone(wallets);
+            next.insert(wallet_id, Arc::clone(&wallet));
+            next
+        });
 
         // Fence an outpoint the way a dispatch does: pin, then settle into the
         // pending-spend phase that only an observed spend may end.
@@ -1200,6 +1489,74 @@ mod tests {
         // reports them NotRunning and the report stays clean.
         let again = mgr.shutdown().await;
         assert!(again.all_clean(), "idempotent shutdown: {again:?}");
+    }
+
+    /// A joined `shutdown()` is the lossless drain: it keeps the manager — and
+    /// with it the persister — alive while the adapter finishes, so no
+    /// watermark buffered on the lossless channel is lost. A dirty `Drop`
+    /// promises nothing of the sort; see this type's `Drop` rustdoc.
+    ///
+    /// Drives the real manager and keeps NO strong `Arc<P>`: the outcome is
+    /// read from state that outlives the persister, so no reference the test
+    /// itself holds open can keep the drain's target alive for it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_joined_shutdown_commits_the_watermarks_a_live_manager_buffered() {
+        use key_wallet::mnemonic::Mnemonic;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet_manager::WalletInterface;
+
+        // Canonical all-`abandon` BIP-39 test vector.
+        const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon about";
+        const TIP: u32 = 64;
+
+        let highest_synced_height = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let persister = Arc::new(WatermarkPersister {
+            highest_synced_height: Arc::clone(&highest_synced_height),
+        });
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let manager = PlatformWalletManager::new(
+            sdk,
+            persister,
+            Arc::new(NoopEventHandler) as Arc<dyn PlatformEventHandler>,
+        );
+
+        // `Some(0)` skips the SPV-tip birth-height lookup, so nothing here
+        // touches the network.
+        let seed = Mnemonic::from_phrase(TEST_MNEMONIC)
+            .expect("valid test mnemonic")
+            .to_seed("");
+        let wallet_id = manager
+            .create_wallet_from_seed_bytes(
+                key_wallet::Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("register the test wallet")
+            .wallet_id();
+
+        // The upstream manager is the only producer on the lossless channel;
+        // a forward watermark advance is its cheapest event.
+        {
+            let mut wallet_manager = manager.wallet_manager.write().await;
+            for height in 1..=TIP {
+                wallet_manager.update_wallet_synced_height(&wallet_id, height);
+            }
+        }
+
+        let report = manager.shutdown().await;
+        assert_eq!(
+            report.per_worker.get(&WalletWorker::EventAdapter),
+            Some(&WorkerStatus::Ok),
+            "the adapter must have been joined, not timed out: {report:?}"
+        );
+        assert_eq!(
+            highest_synced_height.load(std::sync::atomic::Ordering::SeqCst),
+            TIP,
+            "a joined shutdown must commit every watermark the manager emitted"
+        );
     }
 
     /// `reset_platform_address_sync_state` must fail closed when the
@@ -1354,5 +1711,124 @@ mod tests {
             !flag.load(std::sync::atomic::Ordering::Acquire),
             "guard must clear the slot during unwind"
         );
+    }
+
+    /// A balance snapshot delivered while a lifecycle write to the
+    /// `wallets` map is in flight must still land in the wallet's
+    /// lock-free balance atomics. The event bus neither retries nor
+    /// coalesces, so a snapshot dropped here is gone for good: the
+    /// wallet keeps displaying the superseded totals until some later
+    /// event happens to carry a fresh balance, and nothing guarantees
+    /// one arrives.
+    ///
+    /// When the map was a `tokio::sync::RwLock` and the handler used
+    /// `try_read()`, this exact delivery-under-contention scenario
+    /// dropped the snapshot (the pre-fix form of this test held
+    /// `wallets.write()` across the delivery and failed). With the map
+    /// an `ArcSwap`, the closest reachable window is a lifecycle writer
+    /// parked mid-`rcu`; the handler's `load()` must observe a committed
+    /// map and apply the balance immediately, before that writer
+    /// completes.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn balance_snapshot_survives_wallets_map_write_contention() {
+        use std::collections::BTreeMap;
+
+        use crate::test_support::test_platform_wallet_manager;
+        use crate::wallet::core::BalanceUpdateHandler;
+        use key_wallet::wallet::balance::WalletCoreBalance;
+
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let wallet = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("fixture wallet is registered");
+
+        // The production unit under test, holding the same map the
+        // manager registers at construction.
+        let handler = BalanceUpdateHandler::new(Arc::clone(&manager.wallets));
+
+        // Park a lifecycle writer mid-publication: its `rcu` closure has
+        // read the current map but not yet committed the replacement.
+        // This pins open the window in which the old lock-based map
+        // made `try_read()` fail and lose the event.
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel::<()>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let wallets_for_writer = Arc::clone(&manager.wallets);
+        let writer = std::thread::spawn(move || {
+            // `rcu` re-runs its closure if the compare-and-swap loses, so the
+            // release must be waited on ONCE: a second `recv()` would block
+            // forever on a channel the test only sends to once, and
+            // `writer.join()` below would hang the suite instead of failing
+            // it. Nothing else writes this map today, so the retry is latent
+            // — which is exactly why it must not be able to wedge the test.
+            let mut parked = false;
+            wallets_for_writer.rcu(|current| {
+                if !parked {
+                    parked = true;
+                    let _ = entered_tx.send(());
+                    let _ = release_rx.recv();
+                }
+                Arc::clone(current)
+            });
+        });
+        entered_rx
+            .recv()
+            .expect("the writer must reach its rcu closure");
+
+        // Deliver the balance-bearing event while the write is in flight.
+        let corrected = WalletCoreBalance::new(1_234, 0, 0, 0);
+        handler.on_wallet_event(&crate::events::WalletEvent::BlockProcessed {
+            wallet_id,
+            height: 1_000,
+            chain_lock: None,
+            inserted: vec![],
+            updated: vec![],
+            matured: vec![],
+            balance: corrected,
+            account_balances: BTreeMap::new(),
+            addresses_derived: vec![],
+        });
+
+        // Observable immediately — before the lifecycle writer commits.
+        assert_eq!(
+            wallet.balance().confirmed(),
+            corrected.confirmed(),
+            "the balance snapshot was dropped: a lifecycle write to the wallets map \
+             was in flight during delivery, and the bus will not re-deliver it"
+        );
+
+        release_tx.send(()).expect("writer still parked");
+        writer.join().expect("writer thread completes");
+    }
+
+    /// A dirty drop CANCELS the wallet-event adapter; it must never `abort` it.
+    /// An aborted task dies at whatever await it is parked on, taking with it
+    /// the events it had already pulled off the lossless channel — the loss the
+    /// channel exists to rule out. The parked sentinel below stands in for an
+    /// adapter mid-batch: it can only finish if the drop left it running.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn dropping_the_manager_does_not_abort_the_adapter_task() {
+        let manager = make_manager();
+
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel::<()>();
+        let sentinel = tokio::spawn(async move {
+            let _ = release_rx.await;
+            let _ = done_tx.send(());
+        });
+        // Park the sentinel where the real adapter's handle lives, so the drop
+        // path acts on it. The displaced adapter has its own cancel token and
+        // exits on its own.
+        manager.event_adapter_join.lock().await.replace(sentinel);
+
+        drop(manager);
+
+        release_tx
+            .send(())
+            .expect("the adapter task was aborted on drop: its receiver is already gone");
+        tokio::time::timeout(std::time::Duration::from_secs(5), done_rx)
+            .await
+            .expect("the parked adapter task never resumed after the manager was dropped")
+            .expect("the adapter task was aborted on drop: it never finished");
     }
 }

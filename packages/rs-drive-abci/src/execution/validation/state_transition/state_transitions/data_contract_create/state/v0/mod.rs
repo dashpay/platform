@@ -1,6 +1,9 @@
+use crate::execution::validation::state_transition::state_transitions::data_contract_common::non_transferable_token_cost::external_non_transferable_token_cost_error;
 use crate::error::Error;
+use crate::execution::validation::state_transition::state_transitions::data_contract_common::check_tx_schema_depth::validate_document_schemas_depth_for_check_tx;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use dpp::consensus::ConsensusError;
 use dpp::block::block_info::BlockInfo;
 use std::collections::BTreeSet;
 
@@ -17,6 +20,7 @@ use dpp::consensus::state::token::{
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::accessors::v1::DataContractV1Getters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Getters;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Getters;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use dpp::data_contract::associated_token::token_perpetual_distribution::methods::v0::TokenPerpetualDistributionV0Accessors;
@@ -350,20 +354,38 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                     if let Some(fetch_info) = contract_fetch_info.1 {
                         let contract_tokens = fetch_info.contract.tokens();
                         for token_position in &token_positions {
-                            if !contract_tokens.contains_key(token_position) {
-                                return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                                    StateTransitionAction::BumpIdentityNonceAction(
-                                        BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
-                                    ),
-                                    vec![StateError::InvalidTokenPositionStateError(
-                                        InvalidTokenPositionStateError::new(
-                                            contract_tokens.last_key_value().map(|(token_contract_position,_)| *token_contract_position),
-                                            *token_position,
+                            let error: ConsensusError = match contract_tokens.get(token_position) {
+                                None => StateError::InvalidTokenPositionStateError(
+                                    InvalidTokenPositionStateError::new(
+                                        contract_tokens.last_key_value().map(
+                                            |(token_contract_position, _)| *token_contract_position,
                                         ),
+                                        *token_position,
+                                    ),
+                                )
+                                .into(),
+                                // An external token cost always pays the contract owner (an
+                                // external burn is refused when the schema is parsed), which a
+                                // non-transferable token forbids. Inert before protocol version
+                                // 14: only a format 1 token configuration is non-transferable, and
+                                // the pre-activation gate refuses that format on every earlier
+                                // version, so no stored contract an earlier version reads here
+                                // holds one.
+                                Some(configuration) if !configuration.is_transferable() => {
+                                    external_non_transferable_token_cost_error(
+                                        document_type,
+                                        contract_id,
+                                        *token_position,
                                     )
-                                        .into()],
-                                ));
-                            }
+                                }
+                                Some(_) => continue,
+                            };
+                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                StateTransitionAction::BumpIdentityNonceAction(
+                                    BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
+                                ),
+                                vec![error],
+                            ));
                         }
                     } else {
                         let bump_action = StateTransitionAction::BumpIdentityNonceAction(
@@ -398,13 +420,20 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
 
         // The transformation of the state transition into the state transition action will transform
         // The contract in serialized form into it's execution form
-        let result = DataContractCreateTransitionAction::try_from_borrowed_transition(
-            self,
-            block_info,
-            validation_mode.should_fully_validate_contract_on_transform_into_action(),
-            &mut validation_operations,
+        let result = validate_document_schemas_depth_for_check_tx(
+            self.data_contract(),
+            validation_mode,
             platform_version,
-        );
+        )
+        .and_then(|()| {
+            DataContractCreateTransitionAction::try_from_borrowed_transition(
+                self,
+                block_info,
+                validation_mode.should_fully_validate_contract_on_transform_into_action(),
+                &mut validation_operations,
+                platform_version,
+            )
+        });
 
         execution_context.add_dpp_operations(validation_operations);
 

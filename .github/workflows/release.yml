@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Version (i.e. v0.22.3-pre.2)"
+        description: "Version (i.e. v0.22.3-pre.2); prefix with npm-test: to run only the NPM release dry-run"
         required: true
       only_drive:
         type: boolean
@@ -18,189 +18,130 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# The OIDC token that publishes to npm is granted to the publish job alone.
-# Anywhere else it is a standing credential for republishing every package,
-# readable by any action or dependency lifecycle script running in that job.
+# Required for NPM publish
 permissions:
+  id-token: write
   contents: read
 
-# Debian version knobs, read by packages/dashmate/scripts/deb-version.mjs in both
-# the version gate and the packaging job. They have to stay in lockstep: a value
-# seen by only one of them makes the gate validate a version that is not the one
-# that ships.
-# Bump the revision to rebuild an already published version; set the epoch only
-# to outrank a version whose upstream part carried a git sha.
-env:
-  DASHMATE_DEB_REVISION: "1"
-  DASHMATE_DEB_EPOCH: ""
-
 jobs:
+  build-npm:
+    if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
+    permissions:
+      contents: read
+    # Keep the workflow with its release source. The host controller supplies
+    # a fresh JIT runner bound to this run/attempt, independent of branch name.
+    uses: ./.github/workflows/release-npm-build.yml
+
   release-npm:
-    name: Build NPM packages
+    name: Publish NPM packages
+    needs: build-npm
+    # npm trusted publishing currently accepts GitHub-hosted runners only.
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    if: github.event_name != 'workflow_dispatch'
+    if: github.event_name == 'release' || startsWith(inputs.tag, 'npm-test:')
     permissions:
+      id-token: write
       contents: read
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+
+      - name: Check Tenderdash seed snapshot freshness
+        run: node packages/dashmate/scripts/generate-tenderdash-seeds.js --check
 
       - name: Check package version matches tag
-        uses: geritol/match-tag-to-package-version@dd6acafe4382a73f4282687d5ee384b238ea1df7 # 0.2.0
+        uses: geritol/match-tag-to-package-version@0.2.0
+        if: github.event_name == 'release'
         env:
           TAG_PREFIX: v
 
-      - uses: softwareforgood/check-artifact-v4-existence@f988c59be23773bdf226dffa5720d85a13501fba # v0.4.3
-        id: check-artifact
-        with:
-          name: js-build-${{ github.sha }}
+      - name: Check package version matches requested test tag
+        id: test-tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          TAG="${INPUT_TAG#npm-test:}"
+          PACKAGE_VERSION=$(jq -r '.version' package.json)
+          if [ "$TAG" != "v${PACKAGE_VERSION}" ]; then
+            echo "::error::Requested tag $TAG does not match package version v${PACKAGE_VERSION}"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Login to DockerHub
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Setup Rust
-        uses: ./.github/actions/rust
-        with:
-          target: wasm32-unknown-unknown
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Setup sccache
-        uses: ./.github/actions/sccache
-        with:
-          bucket: ${{ vars.CACHE_S3_BUCKET }}
-          region: ${{ vars.AWS_REGION }}
-          endpoint: ${{ vars.CACHE_S3_ENDPOINT }}
-          access_key_id: ${{ secrets.CACHE_KEY_ID }}
-          secret_access_key: ${{ secrets.CACHE_SECRET_KEY }}
-
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      # Composite action defaults to Node 24+ which ships npm 11.5.1+;
-      # required for trusted-publishers OIDC at the publish step below.
-      # See https://docs.npmjs.com/trusted-publishers.
+      # Only npm itself is needed here. Do not install dependencies or restore
+      # executable caches shared with the persistent builder in this OIDC job.
+      # No registry-url: with it, setup-node@v4 writes an _authToken line to
+      # .npmrc and exports a placeholder NODE_AUTH_TOKEN, so `npm publish` can
+      # attempt token auth instead of the trusted-publishing OIDC exchange.
+      # npm's default registry is already registry.npmjs.org.
       - name: Setup Node.JS
-        uses: ./.github/actions/nodejs
-
-      - name: Install Cargo binstall
-        uses: cargo-bins/cargo-binstall@82e5fc4781666bf57476d025f1b6e7a5719da4c9 # v1.3.1
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Install wasm-bindgen-cli
-        run: cargo binstall wasm-bindgen-cli@0.2.108
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Install wasm-pack
-        run: cargo binstall wasm-pack
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      # Binaryen rewrites the wasm that ships inside the published packages, so
-      # the download is a build input we have to verify. The checksum is pinned
-      # here instead of read from the release's .sha256 sidecar, which an
-      # attacker able to replace the archive could replace as well.
-      - name: Install Binaryen
-        env:
-          BINARYEN_VERSION: version_121
-          BINARYEN_SHA256: c90e0e295e8f8484ba5b47da92f26e5d1d18db6cd2fcc0c5cc265a5a73609f17
-        run: |
-          set -euo pipefail
-          archive="/tmp/binaryen-${BINARYEN_VERSION}-x86_64-linux.tar.gz"
-          wget -q -O "${archive}" \
-            "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/binaryen-${BINARYEN_VERSION}-x86_64-linux.tar.gz"
-          echo "${BINARYEN_SHA256}  ${archive}" | sha256sum --check --strict -
-          tar -xzf "${archive}" -C /tmp
-          sudo cp -r "/tmp/binaryen-${BINARYEN_VERSION}"/* /usr/local/
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Build packages
-        run: yarn build
-        env:
-          CARGO_BUILD_PROFILE: release
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Ignore only already cached artifacts
-        run: |
-          find . -name '.gitignore' -exec rm -f {} +
-          echo ".yarn" >> .gitignore
-          echo "target" >> .gitignore
-          echo "node_modules" >> .gitignore
-          echo ".nyc_output" >> .gitignore
-          echo ".idea" >> .gitignore
-          echo ".ultra.cache.json" >> .gitignore
-          echo "db/*" >> .gitignore
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Get modified files
-        id: diff
-        run: |
-          echo "files<<EOF" >> $GITHUB_OUTPUT
-          git ls-files --others --exclude-standard >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-
-      - name: Upload the archive of built files
-        uses: actions/upload-artifact@v4
+        uses: actions/setup-node@v4
         with:
-          name: js-build-${{ github.sha }}
-          path: ${{ steps.diff.outputs.files }}
-          retention-days: 1
-          if-no-files-found: error
-          include-hidden-files: true
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+          node-version: '24.14.1'
 
-  # Publishing is split from the build so the npm OIDC token is confined to one
-  # job instead of being present for the whole cargo and wasm build.
-  #
-  # The confinement is partial, and knowingly so. Setting up Node runs
-  # `yarn install`, so dependency lifecycle scripts execute here, and any of them
-  # can read the runner's OIDC request variables and mint a token that publishes
-  # as this repository. Removing the install is not currently possible: dashmate
-  # runs `oclif manifest` from `prepack`, and four other workspaces build from
-  # their publish hooks, so packing needs the dependency graph. Closing this
-  # properly means packing in the build job and publishing the resulting
-  # tarballs, which needs a publish path that can be tested first.
-  publish-npm:
-    name: Publish NPM packages
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    if: github.event_name != 'workflow_dispatch'
-    needs:
-      - release-npm
-      - check-dashmate-deb-version
-    permissions:
-      id-token: write # npm trusted publishing
-      contents: read
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Download JS build artifacts
+      - name: Download built package artifacts
         uses: actions/download-artifact@v4
         with:
           name: js-build-${{ github.sha }}
-          path: packages
+          path: release-artifacts
 
-      # Composite action defaults to Node 24+ which ships npm 11.5.1+;
-      # required for trusted-publishers OIDC at the publish step below.
-      # See https://docs.npmjs.com/trusted-publishers.
-      - name: Setup Node.JS
-        uses: ./.github/actions/nodejs
+      # Verify every tarball against the trusted checkout metadata before the
+      # credentialed publish. Tarball contents are treated as data; no package
+      # script from the persistent builder is executed on this runner.
+      - name: Validate packed package identities
+        env:
+          ARTIFACT_DIR: release-artifacts/npm-packages
+        run: |
+          set -euo pipefail
+          NPM_CLI_PATH="$(command -v npm)" node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          // Match npm publish's own manifest parser, including archive path aliases.
+          const npmBin = path.dirname(fs.realpathSync(process.env.NPM_CLI_PATH));
+          const pacote = require(path.join(npmBin, '../node_modules/pacote'));
+          (async () => {
+            const trusted = new Map();
+            for (const workspace of JSON.parse(fs.readFileSync('package.json')).workspaces) {
+              const manifest = JSON.parse(fs.readFileSync(path.join(workspace, 'package.json')));
+              if (!manifest.private) trusted.set(manifest.name, manifest.version);
+            }
+            const tarballs = fs.readdirSync(process.env.ARTIFACT_DIR).filter(file => file.endsWith('.tgz'));
+            if (!tarballs.length) throw new Error('No NPM tarballs were uploaded.');
+            const seen = new Set();
+            for (const file of tarballs) {
+              const tarball = path.resolve(process.env.ARTIFACT_DIR, file);
+              if (!fs.lstatSync(tarball).isFile()) throw new Error(`Not a regular tarball: ${file}`);
+              const manifest = await pacote.manifest(tarball, {
+                fullmetadata: true,
+                fullReadJson: true,
+                ignoreScripts: true,
+                cache: path.join(process.env.RUNNER_TEMP, 'npm-metadata-cache'),
+              });
+              if (!trusted.has(manifest.name) || trusted.get(manifest.name) !== manifest.version) {
+                throw new Error(`Untrusted package identity in ${file}`);
+              }
+              if (seen.has(manifest.name)) throw new Error(`Duplicate tarball for ${manifest.name}`);
+              seen.add(manifest.name);
+              // No workspace requires publishConfig. It can override npm's proxy,
+              // TLS and registry options even with --ignore-scripts, exposing OIDC.
+              if (manifest.publishConfig !== undefined && JSON.stringify(manifest.publishConfig) !== '{}') {
+                throw new Error(`Builder-supplied publishConfig is not allowed in ${file}`);
+              }
+            }
+            // A partial artifact would otherwise publish an incomplete release.
+            const missing = [...trusted.keys()].filter(name => !seen.has(name));
+            if (missing.length) throw new Error(`Missing NPM tarballs: ${missing.join(', ')}`);
+          })().catch(error => { console.error(error.message); process.exitCode = 1; });
+          NODE
 
       - name: Set suffix
-        uses: actions/github-script@v6
+        uses: actions/github-script@v8
         id: suffix
         with:
           result-encoding: string
           script: |
-            const fullTag = "${{ inputs.tag }}" || context.payload.release.tag_name;
+            const fullTag = "${{ steps.test-tag.outputs.tag }}" || context.payload.release.tag_name;
             if (fullTag.includes('-')) {
               const [, fullSuffix] = fullTag.split('-');
               const [suffix] = fullSuffix.split('.');
@@ -210,12 +151,12 @@ jobs:
             }
 
       - name: Set NPM release tag
-        uses: actions/github-script@v6
+        uses: actions/github-script@v8
         id: tag
         with:
           result-encoding: string
           script: |
-            const tag = "${{ inputs.tag }}" || context.payload.release.tag_name;
+            const tag = "${{ steps.test-tag.outputs.tag }}" || context.payload.release.tag_name;
             const [, major, minor] = tag.match(/^v([0-9]+)\.([0-9]+)/);
             return (tag.includes('-') ? `${major}.${minor}-${{steps.suffix.outputs.result}}` : 'latest');
 
@@ -224,22 +165,65 @@ jobs:
           echo "NPM suffix: ${{ steps.suffix.outputs.result }}"
           echo "NPM release tag: ${{ steps.tag.outputs.result }}"
 
-      # Every publishable workspace declares this repository, which is what npm
-      # requires before it will accept a provenance attestation.
+      # --provenance=false keeps what `yarn npm publish` did before. After a
+      # trusted-publishing token exchange from a public repository, npm turns
+      # provenance on unless it is set explicitly, and the registry then
+      # rejects every package whose repository.url does not name
+      # github.com/dashpay/platform (all but wasm-drive-verify today).
       - name: Publish NPM packages
+        if: github.event_name == 'release'
         env:
-          NPM_RELEASE_TAG: ${{ steps.tag.outputs.result }}
+          NPM_TAG: ${{ steps.tag.outputs.result }}
         run: |
           set -euo pipefail
-          if [ -z "${CI:-}" ]; then
-            echo "Refusing to publish outside CI"
-            exit 1
-          fi
-          yarn workspaces foreach --all --no-private --parallel \
-            npm publish --tolerate-republish --access public --provenance --tag "${NPM_RELEASE_TAG}"
+          REGISTRY="$(npm config get registry)"
+          REGISTRY="${REGISTRY%/}"
+          for tarball in release-artifacts/npm-packages/*.tgz; do
+            metadata=$(tar -xOf "$tarball" package/package.json)
+            name=$(jq -r '.name' <<<"$metadata")
+            version=$(jq -r '.version' <<<"$metadata")
+            # npm addresses scoped packages as @scope%2fname: keep the leading @,
+            # percent-encode only the scope separator.
+            encoded_name=${name//\//%2f}
+            status=$(curl --silent --show-error --location --output "$RUNNER_TEMP/npm-metadata.json" \
+              --write-out '%{http_code}' --connect-timeout 10 --max-time 30 \
+              "$REGISTRY/$encoded_name") || {
+              echo "::error::Could not query $REGISTRY for $name@$version."
+              exit 1
+            }
+            case "$status" in
+              404)
+                ;;
+              200)
+                jq -e --arg version "$version" '.versions[$version] != null' "$RUNNER_TEMP/npm-metadata.json" >/dev/null || {
+                  jq -e . "$RUNNER_TEMP/npm-metadata.json" >/dev/null || { echo "::error::Invalid registry response for $name."; exit 1; }
+                  npm publish "$tarball" --ignore-scripts --provenance=false --access public --tag "$NPM_TAG"
+                  continue
+                }
+                echo "::notice::$name@$version already exists on $REGISTRY; skipping."
+                continue
+                ;;
+              *)
+                echo "::error::Registry query for $name@$version returned HTTP $status; refusing to publish blindly."
+                exit 1
+                ;;
+            esac
+            npm publish "$tarball" --ignore-scripts --provenance=false --access public --tag "$NPM_TAG"
+          done
+
+      - name: Dry-run NPM packages
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          NPM_TAG: ${{ steps.tag.outputs.result }}
+        run: |
+          set -euo pipefail
+          for tarball in release-artifacts/npm-packages/*.tgz; do
+            npm publish "$tarball" --ignore-scripts --provenance=false --dry-run --access public --tag "$NPM_TAG"
+          done
 
   release-drive-image:
     name: Release Drive image
+    if: ${{ !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -251,6 +235,7 @@ jobs:
 
   release-drive-image-debug:
     name: Release Drive debug image
+    if: ${{ !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -264,7 +249,7 @@ jobs:
 
   release-rs-dapi-image:
     name: Release RS-DAPI image
-    if: ${{ !inputs.only_drive }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -276,7 +261,7 @@ jobs:
 
   release-test-suite-image:
     name: Release Test Suite image
-    if: ${{ !inputs.only_drive }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
@@ -289,7 +274,7 @@ jobs:
   release-dashmate-helper-image:
     name: Release Dashmate Helper image
     secrets: inherit
-    if: ${{ !inputs.only_drive }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
     uses: ./.github/workflows/release-docker-image.yml
     with:
       name: Dashmate Helper
@@ -321,47 +306,13 @@ jobs:
     with:
       tag: ${{ github.event.release.tag_name }}
 
-  check-dashmate-deb-version:
-    name: Check Dashmate deb version
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    if: ${{ !inputs.only_drive }}
+  build-dashmate-packages:
+    name: Build Dashmate packages
+    runs-on: ${{ matrix.os }}
+    if: ${{ !inputs.only_drive && !startsWith(inputs.tag, 'npm-test:') }}
+    needs: release-npm
     permissions:
       contents: read
-    outputs:
-      validated_version: ${{ steps.check.outputs.validated_version }}
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      # apt reads a deb whose version does not sort above the installed one as a
-      # downgrade and refuses it, leaving operators silently stuck on the older
-      # release. Catch that before anything is built or published.
-      - name: Check deb version sorts above the last published release
-        id: check
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CURRENT_TAG: ${{ inputs.tag || github.event.release.tag_name }}
-        run: |
-          "${GITHUB_WORKSPACE}/packages/dashmate/scripts/check-release-deb-version.sh" "${CURRENT_TAG}"
-
-  # Holds the Apple signing certificate and the notarization credentials, and
-  # runs dependency lifecycle scripts while doing so, so it is gated on its own
-  # environment rather than sharing one with the job that will hold the package
-  # signing key. On a release the ref is refs/tags/v*, so the protection rule
-  # has to be a tag rule; a branch-only policy blocks every release.
-  release-dashmate-packages:
-    name: Release Dashmate packages
-    runs-on: ${{ matrix.os }}
-    if: ${{ !inputs.only_drive }}
-    needs:
-      - publish-npm
-      - check-dashmate-deb-version
-    environment: dashmate-release-build
-    permissions:
-      contents: write # update release artifacts
     strategy:
       fail-fast: false
       matrix:
@@ -378,48 +329,25 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
         with:
-          persist-credentials: false
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Download JS build artifacts
         uses: actions/download-artifact@v4
         with:
           name: js-build-${{ github.sha }}
-          path: packages
+          # The mixed JS/NPM artifact is rooted at the repository, since its
+          # paths contain both packages/ and npm-packages/.
+          path: .
 
       - name: Install macOS build deps
         if: runner.os == 'macOS'
         run: |
           brew install llvm coreutils
 
-      # Pinned to a master commit rather than the latest tag: the newest release
-      # (1.0.12) still declares the removed Node 16 runtime.
       - name: Set up Docker for macOS
         if: runner.os == 'macOS'
-        uses: docker-practice/actions-setup-docker@509de4a162d8fd24b2721a9fb3721131a6a4776b # master, 2025-08-24
-
-      - name: Install the Apple certificate
-        if: runner.os == 'macOS'
-        env:
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.MACOS_BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
-        run: |
-          # create variables
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
-          # import certificate and provisioning profile from secrets
-          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
-
-          # create temporary keychain
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-
-          # import certificate to keychain
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
+        uses: docker-practice/actions-setup-docker@master
 
       - name: Install Linux build deps
         if: runner.os == 'Linux'
@@ -430,194 +358,103 @@ jobs:
 
       - name: Create package
         env:
-          OSX_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
-        run: "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh ${{ matrix.package_type }}"
-
-      - name: Check the built deb carries the validated version
-        if: matrix.package_type == 'deb'
-        env:
-          VALIDATED_VERSION: ${{ needs.check-dashmate-deb-version.outputs.validated_version }}
+          # Packaging executes dependency and lifecycle scripts, including
+          # output from the persistent builder. Signing happens in a new job.
+          DASHMATE_UNSIGNED: 'true'
+          # Install the workspace packages from the tarballs release-npm
+          # published, not from the registry: npm can take many minutes to
+          # serve a version it has just accepted.
+          DASHMATE_NPM_TARBALLS_DIR: ${{ github.workspace }}/npm-packages
         run: |
-          packages/dashmate/scripts/check-built-deb-version.sh \
-            "${VALIDATED_VERSION}" packages/dashmate/dist "${RUNNER_TEMP}"
+          "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh" "${{ matrix.package_type }}"
 
-      - name: Upload artifacts to action summary
-        uses: actions/upload-artifact@v4
-        if: github.event_name != 'release'
-        with:
-          name: dashmate
-          path: packages/dashmate/dist/**
-
-      - name: Notarize MacOS Release Build
+      # Apple notarizes a package only when every native binary in it has a
+      # Developer ID signature. Stop here instead of after signing.
+      - name: Check macOS packages for unsigned native code
+        id: check_macos_packages
         if: runner.os == 'macOS'
         run: |
-          find packages/dashmate/dist/ -name '*.pkg' -exec sh -c 'xcrun notarytool submit "{}" --apple-id "${{ secrets.MACOS_APPLE_ID }}" --team-id "${{ secrets.MACOS_TEAM_ID }}" --password "${{ secrets.MACOS_NOTARIZING_PASSWORD }}" --wait;' \;
+          "${GITHUB_WORKSPACE}/scripts/check_dashmate_macos_pkg.sh" packages/dashmate/dist
 
-      # Recorded after notarization and immediately before upload, so the hashes
-      # cover the exact bytes that leave this job.
-      - name: Record built package checksums
-        if: github.event_name == 'release'
-        run: |
-          packages/dashmate/scripts/record-built-checksums.sh \
-            "${RUNNER_TEMP}" packages/dashmate/dist
-
-      - name: Upload built package checksums
+      # Under another name, so the release job does not sign them.
+      - name: Keep rejected macOS packages for inspection
+        if: failure() && steps.check_macos_packages.outcome == 'failure'
         uses: actions/upload-artifact@v4
-        if: github.event_name == 'release'
         with:
-          name: dashmate-built-checksums-${{ matrix.package_type }}
-          path: ${{ runner.temp }}/built.sha256
-          retention-days: 1
+          name: dashmate-macos-rejected-${{ github.sha }}
+          path: packages/dashmate/dist/**
+          retention-days: 7
+
+      - name: Upload Dashmate packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashmate-${{ matrix.package_type }}-${{ github.sha }}
+          path: packages/dashmate/dist/**
           if-no-files-found: error
+          retention-days: 7
 
-      - name: Upload artifacts to release
-        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
-        if: github.event_name == 'release'
-        with:
-          files: packages/dashmate/dist/**
-
-  # Publication of the release, kept apart from the jobs that build it: there is
-  # no checkout and no dependency install, so no repository or package script
-  # runs beside the signing material this job is going to hold. One first-party
-  # action still executes here to collect the build checksums.
-  #
-  # The environment is where the deployment protection rules live; without them
-  # this job's secrets would be reachable from any ref someone with write access
-  # can dispatch the workflow on. It covers this job and the packaging job only
-  # - the Docker image jobs below receive credentials via `secrets: inherit` and
-  # are not gated.
-  release-dashmate-checksums:
-    name: Release Dashmate checksums
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    needs: release-dashmate-packages
-    if: github.event_name == 'release'
-    environment: dashmate-release-signing
+  release-dashmate-packages:
+    name: Release Dashmate packages
+    needs: build-dashmate-packages
+    # `needs` on a matrix job waits for every leg and reports failure if any
+    # one leg failed, which by default would skip all four release legs. Each
+    # leg below needs only its own package type's artifact, so run whenever
+    # the build matrix ran at all: a leg whose build failed then fails at its
+    # own download step, and the other package types still ship.
+    if: >-
+      !cancelled()
+      && github.event_name == 'release'
+      && needs.build-dashmate-packages.result != 'skipped'
+    runs-on: ${{ matrix.os }}
     permissions:
-      contents: write # update release artifacts
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package_type: tarballs
+            os: ubuntu-24.04
+          - package_type: win
+            os: ubuntu-24.04
+          - package_type: deb
+            os: ubuntu-24.04
+          - package_type: macos
+            os: macos-14
     steps:
-      # Regenerating SHA256SUMS under an existing signature would leave the
-      # signature attesting a file that no longer exists in that form, which
-      # reads as valid to anyone who checks it. Removing the stale signature is
-      # a maintainer decision, so it is deliberately a manual step.
-      - name: Refuse to regenerate checksums under an existing signature
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-          signature="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
-            --jq '[.assets[].name | select(. == "SHA256SUMS.asc")] | first // ""')"
-          if [ -n "${signature}" ]; then
-            echo "::error::SHA256SUMS.asc is already attached to ${TAG}, and regenerating SHA256SUMS would strand it over a file that no longer exists. Delete it with 'gh release delete-asset ${TAG} SHA256SUMS.asc', re-run, and sign the new file."
-            exit 1
-          fi
+      # Treat finished installers as data. This job never installs or runs
+      # package code and never restores caches from the build jobs. The macOS
+      # leg checks out only the action that signs and notarizes. The checkout
+      # cleans the workspace, so it comes before the download.
+      - name: Check out the signing action
+        if: runner.os == 'macOS'
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: /.github/actions/macos-sign-notarize/
+          sparse-checkout-cone-mode: false
 
-      - name: Download built package checksums
+      - name: Download Dashmate packages
         uses: actions/download-artifact@v4
         with:
-          pattern: dashmate-built-checksums-*
-          path: built-checksums
+          name: dashmate-${{ matrix.package_type }}-${{ github.sha }}
+          path: release-artifacts
 
-      # The names and hashes the packaging jobs recorded are the whole
-      # expectation this job holds: SHA256SUMS covers the packages this workflow
-      # built, not whatever the release happens to serve. Other jobs attach
-      # assets of their own, and this job has no build record for those - listing
-      # them would attest artifacts it knows nothing about, and would depend on
-      # whether those jobs had finished yet.
-      - name: Collect the packages built in this run
-        run: |
-          set -euo pipefail
-          cat built-checksums/*/built.sha256 | LC_ALL=C sort -u > "${RUNNER_TEMP}/built.sha256"
-          if [ ! -s "${RUNNER_TEMP}/built.sha256" ]; then
-            echo "::error::No built package checksums were recorded"
-            exit 1
-          fi
-          cut -d' ' -f3- "${RUNNER_TEMP}/built.sha256" | LC_ALL=C sort > "${RUNNER_TEMP}/built-names"
+      # Shared with release-dashmate-macos-rehearsal.yml, which runs the same
+      # steps on a finished release run and publishes nothing.
+      - name: Sign and notarize macOS installers
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/macos-sign-notarize
+        with:
+          path: release-artifacts
+          certificate_base64: ${{ secrets.MACOS_BUILD_CERTIFICATE_BASE64 }}
+          certificate_password: ${{ secrets.MACOS_P12_PASSWORD }}
+          keychain_password: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          notary_api_key_base64: ${{ secrets.MACOS_NOTARY_API_KEY_BASE64 }}
+          notary_api_key_id: ${{ secrets.MACOS_NOTARY_API_KEY_ID }}
+          notary_api_issuer_id: ${{ secrets.MACOS_NOTARY_API_ISSUER_ID }}
 
-          # A release holds one asset per name, so two built files sharing a name
-          # means one of them silently replaced the other on the way up and there
-          # is no longer any way to say which bytes are published under it.
-          duplicates="$(LC_ALL=C uniq -d "${RUNNER_TEMP}/built-names")"
-          if [ -n "${duplicates}" ]; then
-            echo "::error::More than one built file would be published under the same name: $(echo "${duplicates}" | tr '\n' ' ')"
-            exit 1
-          fi
-          cat "${RUNNER_TEMP}/built.sha256"
-
-      # Fetched by name, one asset at a time, so that a package built here but
-      # missing from the release is reported as missing rather than quietly
-      # dropped from the listing.
-      - name: Download the published packages
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-          mkdir -p assets
-          missing=0
-          while IFS= read -r name; do
-            gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" \
-              --pattern "${name}" --dir assets --clobber > /dev/null 2>&1 || true
-            if [ ! -f "assets/${name}" ]; then
-              echo "::error::${name} was built in this run but is not published on ${TAG}"
-              missing=1
-            fi
-          done < "${RUNNER_TEMP}/built-names"
-          if [ "${missing}" -ne 0 ]; then
-            echo "::error::The release is missing packages this run built; refusing to publish checksums"
-            exit 1
-          fi
-
-      # A maintainer signs SHA256SUMS out of band and attaches the detached
-      # signature as SHA256SUMS.asc; apt publication then refuses to publish any
-      # package whose hash is not in the signed file, so a compromised CI run
-      # alone cannot ship a package. The listing is generated in byte-wise name
-      # order so regenerating it reproduces exactly what was signed.
-      - name: Generate SHA256SUMS
-        run: |
-          set -euo pipefail
-          cd assets
-          xargs -a "${RUNNER_TEMP}/built-names" -d '\n' sha256sum > SHA256SUMS
-          cat SHA256SUMS
-
-      # Hashing whatever the release currently serves would attest availability,
-      # not origin: anyone able to swap an asset between the packaging job and
-      # this one would simply get the replacement blessed. The comparison is on
-      # whole (hash, name) pairs and runs in both directions, because each half
-      # alone leaves a way through: matching hashes only would let bytes built
-      # for one target be published under another target's name, and matching
-      # published assets only would let a package be dropped from the release
-      # entirely without anything noticing.
-      - name: Verify published assets against the built packages
-        run: |
-          set -euo pipefail
-          LC_ALL=C sort assets/SHA256SUMS > "${RUNNER_TEMP}/published.sha256"
-          if diff -u "${RUNNER_TEMP}/built.sha256" "${RUNNER_TEMP}/published.sha256" \
-            --label built --label published; then
-            echo "All published packages match the packages built in this run"
-            exit 0
-          fi
-          echo "::error::Published packages do not match the packages built in this run; refusing to publish checksums"
-          exit 1
-
-      # Uploaded with the preinstalled CLI rather than a third-party action:
-      # code running in this job runs beside the signing material, and an action
-      # can read the keyring or shim the tools regardless of being pinned.
-      # The guard at the start of this job cannot cover the whole run: a
-      # maintainer can attach a signature while the packages are downloaded and
-      # verified. Re-checking here means the upload never replaces a file a
-      # signature already covers, leaving that signature over bytes it never saw.
-      - name: Upload checksums to release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-          signature="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
-            --jq '[.assets[].name | select(. == "SHA256SUMS.asc")] | first // ""')"
-          if [ -n "${signature}" ]; then
-            echo "::error::SHA256SUMS.asc was attached to ${TAG} while this job was running, so uploading SHA256SUMS now would leave that signature over bytes it did not sign. Delete it with 'gh release delete-asset ${TAG} SHA256SUMS.asc', re-run, and sign the new file."
-            exit 1
-          fi
-          gh release upload "${TAG}" assets/SHA256SUMS --repo "${GITHUB_REPOSITORY}" --clobber
+      - name: Upload artifacts to release
+        uses: softprops/action-gh-release@v0.1.15
+        if: github.event_name == 'release'
+        with:
+          files: release-artifacts/**

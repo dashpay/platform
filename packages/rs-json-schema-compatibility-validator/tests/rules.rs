@@ -34,8 +34,8 @@ fn assert_examples(keyword: &str, examples: &[CompatibilityRuleExample]) {
 From: {:?}
 To: {:?}",
                 keyword,
-                &example.original_schema,
-                &example.new_schema
+                example.original_schema,
+                example.new_schema
             );
         } else {
             assert!(
@@ -44,8 +44,8 @@ To: {:?}",
 From: {:?}
 To: {:?}",
                 result.incompatible_changes(),
-                &example.original_schema,
-                &example.new_schema
+                example.original_schema,
+                example.new_schema
             );
         }
     }

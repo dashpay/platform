@@ -1,5 +1,6 @@
+use crate::fee::Credits;
 use crate::identity::contract_bounds::ContractBounds;
-use crate::identity::{KeyID, KeyType, Purpose, SecurityLevel};
+use crate::identity::{KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis};
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_value::BinaryData;
 
@@ -30,6 +31,23 @@ pub trait IdentityPublicKeyInCreationV0Getters {
     fn contract_bounds(&self) -> Option<&ContractBounds>;
 }
 
+/// Trait providing the getters added with `IdentityPublicKeyInCreationV1`. A V0 key in creation
+/// answers `None` to both.
+pub trait IdentityPublicKeyInCreationV1Getters {
+    /// The total credits that state transitions signed with this key may take from the
+    /// identity, `None` when the key has no budget.
+    fn total_budget(&self) -> Option<Credits>;
+
+    /// The block time, in milliseconds, from which the key can no longer sign, `None` when the
+    /// key does not expire.
+    fn expires_at(&self) -> Option<TimestampMillis>;
+
+    /// Does the key carry a budget or an expiry
+    fn has_limits(&self) -> bool {
+        self.total_budget().is_some() || self.expires_at().is_some()
+    }
+}
+
 /// Trait providing getters for `IdentityPublicKeyInCreationV0`.
 pub trait IdentityPublicKeyInCreationV0Setters {
     fn set_signature(&mut self, signature: BinaryData);
@@ -49,48 +67,56 @@ impl IdentityPublicKeyInCreationV0Setters for IdentityPublicKeyInCreation {
     fn set_signature(&mut self, signature: BinaryData) {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.signature = signature,
+            IdentityPublicKeyInCreation::V1(v1) => v1.signature = signature,
         }
     }
 
     fn set_id(&mut self, id: KeyID) {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.id = id,
+            IdentityPublicKeyInCreation::V1(v1) => v1.id = id,
         }
     }
 
     fn set_type(&mut self, key_type: KeyType) {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.key_type = key_type,
+            IdentityPublicKeyInCreation::V1(v1) => v1.key_type = key_type,
         }
     }
 
     fn set_data(&mut self, data: BinaryData) {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.data = data,
+            IdentityPublicKeyInCreation::V1(v1) => v1.data = data,
         }
     }
 
     fn set_purpose(&mut self, purpose: Purpose) {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.purpose = purpose,
+            IdentityPublicKeyInCreation::V1(v1) => v1.purpose = purpose,
         }
     }
 
     fn set_security_level(&mut self, security_level: SecurityLevel) {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.security_level = security_level,
+            IdentityPublicKeyInCreation::V1(v1) => v1.security_level = security_level,
         }
     }
 
     fn set_contract_bounds(&mut self, contract_bounds: Option<ContractBounds>) {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.contract_bounds = contract_bounds,
+            IdentityPublicKeyInCreation::V1(v1) => v1.contract_bounds = contract_bounds,
         }
     }
 
     fn set_read_only(&mut self, read_only: bool) {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.read_only = read_only,
+            IdentityPublicKeyInCreation::V1(v1) => v1.read_only = read_only,
         }
     }
 }
@@ -100,48 +126,72 @@ impl IdentityPublicKeyInCreationV0Getters for IdentityPublicKeyInCreation {
     fn id(&self) -> KeyID {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.id,
+            IdentityPublicKeyInCreation::V1(v1) => v1.id,
         }
     }
 
     fn key_type(&self) -> KeyType {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.key_type,
+            IdentityPublicKeyInCreation::V1(v1) => v1.key_type,
         }
     }
 
     fn purpose(&self) -> Purpose {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.purpose,
+            IdentityPublicKeyInCreation::V1(v1) => v1.purpose,
         }
     }
 
     fn security_level(&self) -> SecurityLevel {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.security_level,
+            IdentityPublicKeyInCreation::V1(v1) => v1.security_level,
         }
     }
 
     fn read_only(&self) -> bool {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.read_only,
+            IdentityPublicKeyInCreation::V1(v1) => v1.read_only,
         }
     }
 
     fn data(&self) -> &BinaryData {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => &v0.data,
+            IdentityPublicKeyInCreation::V1(v1) => &v1.data,
         }
     }
 
     fn signature(&self) -> &BinaryData {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => &v0.signature,
+            IdentityPublicKeyInCreation::V1(v1) => &v1.signature,
         }
     }
 
     fn contract_bounds(&self) -> Option<&ContractBounds> {
         match self {
             IdentityPublicKeyInCreation::V0(v0) => v0.contract_bounds.as_ref(),
+            IdentityPublicKeyInCreation::V1(v1) => v1.contract_bounds.as_ref(),
+        }
+    }
+}
+
+impl IdentityPublicKeyInCreationV1Getters for IdentityPublicKeyInCreation {
+    fn total_budget(&self) -> Option<Credits> {
+        match self {
+            IdentityPublicKeyInCreation::V0(_) => None,
+            IdentityPublicKeyInCreation::V1(v1) => v1.total_budget,
+        }
+    }
+
+    fn expires_at(&self) -> Option<TimestampMillis> {
+        match self {
+            IdentityPublicKeyInCreation::V0(_) => None,
+            IdentityPublicKeyInCreation::V1(v1) => v1.expires_at,
         }
     }
 }

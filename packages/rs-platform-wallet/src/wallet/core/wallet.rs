@@ -86,8 +86,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     ///
     /// This is the single generation identity shared by BOTH deferred-payment
     /// paths — the registry-token path
-    /// ([`SignedPaymentRegistry`](crate::SignedPaymentRegistry), `dashpay/platform#4185`)
-    /// and the V2 finalized-transaction handle path (`dashpay/platform#4196`) —
+    /// ([`SignedPaymentRegistry`](crate::SignedPaymentRegistry))
+    /// and the V2 finalized-transaction handle path —
     /// so neither acts on a re-created wallet's `ReservationSet` while an old
     /// handle still names the old generation.
     pub fn is_same_generation<O: TransactionBroadcaster + ?Sized>(
@@ -118,8 +118,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// transactions to the network must hold this across both its
     /// [`is_current_generation`](Self::is_current_generation) check and the
     /// action that check authorizes. Without it the check is a bare
-    /// point-in-time observation and a teardown can complete in the gap
-    /// (`dashpay/platform#4185`).
+    /// point-in-time observation and a teardown can complete in the gap.
     ///
     /// Scoped to this generation, so holding it across a slow SPV send blocks
     /// only this wallet's teardown — never an unrelated wallet's.
@@ -395,7 +394,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// be atomic against a concurrent teardown take
     /// [`generation_payment_guard`](Self::generation_payment_guard) around the
     /// check and the action it gates; on its own this is a point-in-time
-    /// observation (`dashpay/platform#4185`).
+    /// observation.
     pub async fn is_current_generation(&self) -> bool {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)

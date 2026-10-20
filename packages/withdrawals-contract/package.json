@@ -1,11 +1,6 @@
 {
   "name": "@dashevo/withdrawals-contract",
-  "version": "4.2.0-dev.7",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/dashpay/platform.git",
-    "directory": "packages/withdrawals-contract"
-  },
+  "version": "5.0.0-rc.4",
   "description": "Data Contract to manipulate and track withdrawals",
   "scripts": {
     "build": "",

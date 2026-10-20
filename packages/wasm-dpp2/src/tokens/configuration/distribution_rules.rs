@@ -3,6 +3,7 @@ use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
 use crate::impl_wasm_type_info;
 use crate::tokens::configuration::change_control_rules::ChangeControlRulesWasm;
+use crate::tokens::configuration::once_per_identity_distribution::TokenOncePerIdentityDistributionWasm;
 use crate::tokens::configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
 use crate::tokens::configuration::pre_programmed_distribution::TokenPreProgrammedDistributionWasm;
 use crate::utils::{IntoWasm, try_from_options, try_from_options_optional, try_from_options_with};
@@ -10,7 +11,11 @@ use dpp::data_contract::associated_token::token_distribution_rules::TokenDistrib
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::{
     TokenDistributionRulesV0Getters, TokenDistributionRulesV0Setters,
 };
+use dpp::data_contract::associated_token::token_distribution_rules::accessors::v1::{
+    TokenDistributionRulesV1Getters, TokenDistributionRulesV1Setters,
+};
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
+use dpp::data_contract::associated_token::token_distribution_rules::v1::TokenDistributionRulesV1;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -25,6 +30,11 @@ export interface TokenDistributionRulesOptions {
     mintingAllowChoosingDestination: boolean;
     mintingAllowChoosingDestinationRules: ChangeControlRules;
     changeDirectPurchasePricingRules: ChangeControlRules;
+    /**
+     * A fixed amount every identity may claim exactly once. Setting it makes the rules
+     * serialize as format version 1, which needs protocol version 14.
+     */
+    oncePerIdentityDistribution?: TokenOncePerIdentityDistribution;
 }
 "#;
 
@@ -92,19 +102,35 @@ impl TokenDistributionRulesWasm {
         let change_direct_purchase_pricing_rules: ChangeControlRulesWasm =
             try_from_options(&options, "changeDirectPurchasePricingRules")?;
 
-        Ok(TokenDistributionRulesWasm(TokenDistributionRules::V0(
-            TokenDistributionRulesV0 {
-                perpetual_distribution,
-                perpetual_distribution_rules: perpetual_distribution_rules.into(),
-                pre_programmed_distribution,
-                new_tokens_destination_identity,
-                new_tokens_destination_identity_rules: new_tokens_destination_identity_rules.into(),
-                minting_allow_choosing_destination,
-                minting_allow_choosing_destination_rules: minting_allow_choosing_destination_rules
-                    .into(),
-                change_direct_purchase_pricing_rules: change_direct_purchase_pricing_rules.into(),
-            },
-        )))
+        let once_per_identity_distribution = try_from_options_optional::<
+            TokenOncePerIdentityDistributionWasm,
+        >(&options, "oncePerIdentityDistribution")?
+        .map(Into::into);
+
+        let v0 = TokenDistributionRulesV0 {
+            perpetual_distribution,
+            perpetual_distribution_rules: perpetual_distribution_rules.into(),
+            pre_programmed_distribution,
+            new_tokens_destination_identity,
+            new_tokens_destination_identity_rules: new_tokens_destination_identity_rules.into(),
+            minting_allow_choosing_destination,
+            minting_allow_choosing_destination_rules: minting_allow_choosing_destination_rules
+                .into(),
+            change_direct_purchase_pricing_rules: change_direct_purchase_pricing_rules.into(),
+        };
+
+        // Version 0 stays the wire format unless the once-per-identity distribution is set, so
+        // contracts that do not use it keep decoding on every protocol version.
+        let rules = match once_per_identity_distribution {
+            None => TokenDistributionRules::V0(v0),
+            Some(distribution) => {
+                let mut v1 = TokenDistributionRulesV1::from(v0);
+                v1.once_per_identity_distribution = Some(distribution);
+                TokenDistributionRules::V1(v1)
+            }
+        };
+
+        Ok(TokenDistributionRulesWasm(rules))
     }
 
     #[wasm_bindgen(getter = "perpetualDistribution")]
@@ -124,6 +150,13 @@ impl TokenDistributionRulesWasm {
         self.0
             .pre_programmed_distribution()
             .map(|pre| pre.clone().into())
+    }
+
+    #[wasm_bindgen(getter = "oncePerIdentityDistribution")]
+    pub fn once_per_identity_distribution(&self) -> Option<TokenOncePerIdentityDistributionWasm> {
+        self.0
+            .once_per_identity_distribution()
+            .map(|once| once.clone().into())
     }
 
     #[wasm_bindgen(getter = "newTokensDestinationIdentity")]
@@ -201,6 +234,28 @@ impl TokenDistributionRulesWasm {
         };
 
         self.0.set_pre_programmed_distribution(distribution);
+        Ok(())
+    }
+
+    #[wasm_bindgen(setter = "oncePerIdentityDistribution")]
+    pub fn set_once_per_identity_distribution(
+        &mut self,
+        distribution: &JsValue,
+    ) -> WasmDppResult<()> {
+        let distribution = if distribution.is_undefined() {
+            None
+        } else {
+            Some(
+                distribution
+                    .to_wasm::<TokenOncePerIdentityDistributionWasm>(
+                        "TokenOncePerIdentityDistribution",
+                    )?
+                    .clone()
+                    .into(),
+            )
+        };
+
+        self.0.set_once_per_identity_distribution(distribution);
         Ok(())
     }
 

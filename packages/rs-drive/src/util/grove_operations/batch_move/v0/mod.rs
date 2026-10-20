@@ -3,10 +3,12 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::grove_operations::pending_grove_operations::pending_grove_operations;
 use crate::util::grove_operations::{push_drive_operation_result, BatchMoveApplyType, QueryType};
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
 use grovedb::operations::delete::DeleteOptions;
+use grovedb::BackwardsReferences;
 use grovedb::{Element, GroveDb, TransactionArg};
 use grovedb_epoch_based_storage_flags::StorageFlags;
 use grovedb_path::SubtreePath;
@@ -58,8 +60,10 @@ impl Drive {
         }
 
         // ── 2. Build the delete op ──────────────────────────────────────────
-        let current_batch = LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
         let delete_opts = DeleteOptions {
+            // Drive stores no backward-reference participants; GroveDB checks the
+            // claim for free from the value it reads for the write.
+            backwards_references: BackwardsReferences::DontCheck,
             allow_deleting_non_empty_trees: false,
             deleting_non_empty_trees_returns_error: true,
             base_root_storage_is_free: true,
@@ -80,20 +84,25 @@ impl Drive {
                 true,
                 0,
                 (estimated_key_size, estimated_value_size),
+                BackwardsReferences::DontCheck,
                 &drive_version.grove_version,
             )
             .map(|r| r.map(Some)),
             BatchMoveApplyType::StatefulBatchMove {
                 is_known_to_be_subtree_with_sum,
-            } => self.grove.delete_operation_for_delete_internal(
-                from_path,
-                key,
-                &delete_opts,
-                is_known_to_be_subtree_with_sum,
-                &current_batch.operations,
-                transaction,
-                &drive_version.grove_version,
-            ),
+            } => {
+                // Every protocol version builds the same delete and cost as with a copy of the
+                // whole pending batch: GroveDB reads the same operations, borrowed.
+                self.grove.delete_operation_for_delete_internal(
+                    from_path,
+                    key,
+                    &delete_opts,
+                    is_known_to_be_subtree_with_sum,
+                    pending_grove_operations(drive_operations),
+                    transaction,
+                    &drive_version.grove_version,
+                )
+            }
         };
 
         // ── 3. Push delete + insert into the batch ──────────────────────────
@@ -103,11 +112,10 @@ impl Drive {
             }
 
             drive_operations.push(GroveOperation(delete_op));
-            drive_operations.push(GroveOperation(QualifiedGroveDbOp::insert_or_replace_op(
-                to_path,
-                key.to_vec(),
-                element,
-            )));
+            drive_operations.push(GroveOperation(
+                QualifiedGroveDbOp::insert_or_replace_op(to_path, key.to_vec(), element)
+                    .dont_check_for_backwards_references(),
+            ));
         }
 
         Ok(())

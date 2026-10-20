@@ -29,6 +29,7 @@
 //! every flow so register / top-up / address-fund can't drift apart
 //! on their CL fallback or retry-budget windows.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use dashcore::OutPoint;
@@ -43,6 +44,7 @@ use crate::error::{
     as_asset_lock_proof_cl_height_too_low, is_asset_lock_already_consumed, PlatformWalletError,
 };
 use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::asset_lock::AssetLockOperationContext;
 
 // ---------------------------------------------------------------------------
 // Timeout policy
@@ -61,6 +63,10 @@ use crate::wallet::asset_lock::manager::AssetLockManager;
 /// (`upgrade_to_chain_lock_proof(None)`), because a ChainLock is
 /// deterministic finality that will eventually cover any broadcast
 /// asset-lock tx — so a broadcast lock is *pending*, never *failed*.
+/// That wait does not hinge on the funding record being promoted: for a
+/// record without a height it looks the transaction's block up and checks it
+/// against the SPV header chain on every lock event and periodic re-check
+/// (see `sync::locate`), so it ends once the transaction is locatable.
 ///
 /// Only the shielded seed pool consumes this, so it is `shielded`-gated
 /// to avoid a dead-code warning in builds without that feature.
@@ -88,10 +94,9 @@ pub(crate) const CL_FALLBACK_TIMEOUT: Duration = Duration::from_secs(180);
 ///
 /// On expiry the reconciliation still returns the typed
 /// [`PlatformWalletError::AssetLockAlreadyConsumed`] — the code-24 signal
-/// hosts branch on — having simply failed to attach the chain proof. That
-/// matches the pre-#4357 behavior (typed error, no proof retained) while
-/// keeping #4357's proof retention whenever the ChainLock is reachable
-/// inside the bound.
+/// hosts branch on — having simply failed to attach the chain proof. The
+/// typed error is what matters to the host; the proof is retained only
+/// when the ChainLock is reachable inside the bound.
 pub(crate) const RECONCILIATION_CHAIN_LOCK_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Bounded proof wait applied after a resume re-broadcast came back
@@ -108,8 +113,8 @@ pub(crate) const RECONCILIATION_CHAIN_LOCK_TIMEOUT: Duration = Duration::from_se
 ///
 /// Sized to comfortably cover a ChainLock (~2.5 min) so a transaction that
 /// really was accepted still resolves inside the bound; on expiry the
-/// caller gets `TransactionBroadcastUnconfirmed`, which is what the
-/// pre-#4367 code returned immediately.
+/// caller gets `TransactionBroadcastUnconfirmed`, the same verdict an
+/// immediate give-up would report.
 pub(crate) const UNCONFIRMED_BROADCAST_PROOF_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// Delay between retries when Platform rejected with CL-height-too-low.
@@ -187,6 +192,14 @@ pub enum AssetLockFunding {
         /// pooled source set. DashPay contact-receiving accounts span
         /// their own indices and are pooled in regardless.
         account_index: u32,
+    },
+
+    /// Drain all ordinary pooled funding sources without creating change.
+    /// The operation context preserves the exact outpoint on errors and panics.
+    DrainWalletBalance {
+        account_index: u32,
+        minimum_lock_duffs: Option<u64>,
+        operation: Arc<AssetLockOperationContext>,
     },
 
     /// Build an asset lock that drains a funding account's whole balance:
@@ -525,6 +538,45 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point))
     }
 
+    /// Rebuild a ChainLock proof for a lock whose IS-lock never propagated,
+    /// **persist it**, and hand back the proof with the derivation path the
+    /// caller needs to sign.
+    ///
+    /// The persist is the point. Without it the row stays `Broadcast` with no
+    /// proof, and the next resume of the same lock re-enters the record-only
+    /// [`wait_for_proof`](Self::wait_for_proof) that timed out in the first
+    /// place: with `cl_wait = None` that wait runs its full bound and the
+    /// operation ends in `TransactionBroadcastUnconfirmed` instead of using
+    /// the proof this call already established.
+    ///
+    /// Mirrors what the stale-IS-proof (10513) path does after its own
+    /// upgrade: advance the row to `ChainLocked` carrying the proof, queue the
+    /// changeset, then resume for the path.
+    ///
+    /// Only the shielded fund path takes this fallback today, so it is
+    /// `shielded`-gated to avoid a dead-code warning without that feature.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn resolve_chain_proof_after_is_timeout(
+        &self,
+        out_point: &OutPoint,
+        cl_wait: Option<Duration>,
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
+        let chain_proof = self.upgrade_to_chain_lock_proof(out_point, cl_wait).await?;
+        let cs = self
+            .advance_asset_lock_status(
+                out_point,
+                crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
+                Some(chain_proof.clone()),
+            )
+            .await?;
+        self.queue_asset_lock_changeset(cs);
+
+        // The row now carries the proof, so this resume takes the
+        // already-final arm rather than waiting for one.
+        let (_, path) = self.resume_asset_lock(out_point, cl_wait).await?;
+        Ok((chain_proof, path))
+    }
+
     /// Resolve an [`AssetLockFunding`] to a concrete proof + path +
     /// (optional) tracked outpoint, capturing the IS-lock timeout case
     /// as a structured outcome so the caller can drive a CL retry.
@@ -591,6 +643,40 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     Err(e) => Err(e),
                 }
             }
+            AssetLockFunding::DrainWalletBalance {
+                account_index,
+                minimum_lock_duffs,
+                operation,
+            } => {
+                if funding_type != AssetLockFundingType::AssetLockShieldedAddressTopUp {
+                    return Err(PlatformWalletError::AssetLockTransaction(
+                        "pooled wallet drain is available only for shielded funding".into(),
+                    ));
+                }
+                match self
+                    .create_wallet_drain_asset_lock_proof(
+                        account_index,
+                        minimum_lock_duffs,
+                        funding_type,
+                        destination_index,
+                        asset_lock_signer,
+                        &operation,
+                    )
+                    .await
+                {
+                    Ok((proof, path, out_point)) => {
+                        Ok(FundingResolution::Resolved(ResolvedFunding {
+                            proof,
+                            path,
+                            tracked_out_point: Some(out_point),
+                        }))
+                    }
+                    Err(PlatformWalletError::FinalityTimeout(out_point)) => {
+                        Ok(FundingResolution::IsTimeout { out_point })
+                    }
+                    Err(error) => Err(error),
+                }
+            }
             AssetLockFunding::DrainAccountBalance {
                 account,
                 minimum_lock_duffs,
@@ -628,7 +714,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .tracked_resume_metadata(&out_point)
                     .await
                     .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
-                if status == crate::wallet::asset_lock::tracked::AssetLockStatus::Consumed {
+                if status.is_consumed() {
                     return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
                 }
                 // Invitation vouchers are bearer instruments: the credit
@@ -1060,6 +1146,7 @@ mod tests {
                 .insert(
                     out_point,
                     TrackedAssetLock {
+                        operation_id: None,
                         out_point,
                         transaction: transaction.clone(),
                         account_index: 0,

@@ -2704,9 +2704,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            53, 9, 163, 92, 116, 134, 17, 186, 21, 68, 156, 162, 47, 181, 214, 162, 253, 4, 246, 8,
-            41, 187, 151, 152, 216, 164, 206, 110, 230, 176, 124, 225,
+            218, 33, 80, 218, 65, 176, 16, 169, 104, 175, 188, 231, 236, 145, 201, 88, 151, 196,
+            11, 21, 153, 97, 32, 182, 177, 196, 215, 23, 155, 178, 252, 57,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -4025,11 +4027,13 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         assert_eq!(
             root_hash.as_slice(),
             vec![
-                144, 154, 147, 246, 236, 57, 41, 67, 21, 26, 212, 158, 68, 159, 206, 26, 158, 50,
-                252, 62, 143, 176, 149, 50, 19, 226, 239, 65, 112, 243, 225, 64
+                21, 138, 176, 60, 123, 198, 114, 129, 174, 239, 252, 191, 174, 54, 60, 119, 96,
+                161, 70, 31, 203, 77, 107, 203, 74, 7, 53, 142, 227, 142, 63, 87
             ],
         );
     }
@@ -4179,9 +4183,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            53, 9, 163, 92, 116, 134, 17, 186, 21, 68, 156, 162, 47, 181, 214, 162, 253, 4, 246, 8,
-            41, 187, 151, 152, 216, 164, 206, 110, 230, 176, 124, 225,
+            218, 33, 80, 218, 65, 176, 16, 169, 104, 175, 188, 231, 236, 145, 201, 88, 151, 196,
+            11, 21, 153, 97, 32, 182, 177, 196, 215, 23, 155, 178, 252, 57,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5053,9 +5059,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            75, 38, 164, 96, 117, 46, 13, 23, 183, 41, 83, 163, 112, 55, 172, 37, 186, 36, 223, 39,
-            106, 201, 46, 222, 167, 79, 236, 122, 12, 210, 29, 123,
+            43, 45, 143, 165, 228, 213, 155, 164, 47, 219, 35, 54, 79, 234, 90, 122, 172, 124, 7,
+            244, 136, 209, 187, 215, 29, 158, 150, 192, 111, 90, 161, 136,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5177,9 +5185,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // Make sure the state is deterministic
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            53, 9, 163, 92, 116, 134, 17, 186, 21, 68, 156, 162, 47, 181, 214, 162, 253, 4, 246, 8,
-            41, 187, 151, 152, 216, 164, 206, 110, 230, 176, 124, 225,
+            218, 33, 80, 218, 65, 176, 16, 169, 104, 175, 188, 231, 236, 145, 201, 88, 151, 196,
+            11, 21, 153, 97, 32, 182, 177, 196, 215, 23, 155, 178, 252, 57,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6151,9 +6161,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
+            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -6248,9 +6260,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
+            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6345,9 +6359,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
+            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6442,9 +6458,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            235, 23, 161, 209, 153, 68, 160, 57, 151, 170, 19, 99, 64, 48, 5, 114, 233, 154, 77,
-            65, 104, 102, 128, 181, 159, 124, 54, 108, 229, 88, 185, 134,
+            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
+            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6638,9 +6656,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            233, 90, 110, 8, 43, 137, 139, 242, 8, 152, 175, 246, 177, 73, 49, 137, 61, 142, 2, 49,
-            158, 134, 13, 222, 60, 223, 139, 41, 66, 131, 135, 38,
+            201, 164, 185, 154, 195, 116, 101, 180, 218, 13, 252, 38, 54, 2, 210, 37, 220, 242, 85,
+            66, 251, 209, 71, 98, 255, 217, 93, 3, 15, 184, 33, 119,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6846,9 +6866,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            233, 90, 110, 8, 43, 137, 139, 242, 8, 152, 175, 246, 177, 73, 49, 137, 61, 142, 2, 49,
-            158, 134, 13, 222, 60, 223, 139, 41, 66, 131, 135, 38,
+            201, 164, 185, 154, 195, 116, 101, 180, 218, 13, 252, 38, 54, 2, 210, 37, 220, 242, 85,
+            66, 251, 209, 71, 98, 255, 217, 93, 3, 15, 184, 33, 119,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6925,7 +6947,14 @@ mod tests {
             })
             .collect();
 
-        let a_names = ["amalle".to_string(), "anna-diane".to_string()];
+        // The page is full: the cursor's own label key holds nothing after
+        // the cursor, and the lowering no longer lets that empty subtree
+        // consume a slot of the limit.
+        let a_names = [
+            "amalle".to_string(),
+            "anna-diane".to_string(),
+            "atalanta".to_string(),
+        ];
 
         assert_eq!(names, a_names);
 
@@ -7057,9 +7086,11 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash
         let expected_app_hash = vec![
-            233, 90, 110, 8, 43, 137, 139, 242, 8, 152, 175, 246, 177, 73, 49, 137, 61, 142, 2, 49,
-            158, 134, 13, 222, 60, 223, 139, 41, 66, 131, 135, 38,
+            201, 164, 185, 154, 195, 116, 101, 180, 218, 13, 252, 38, 54, 2, 210, 37, 220, 242, 85,
+            66, 251, 209, 71, 98, 255, 217, 93, 3, 15, 184, 33, 119,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -7274,9 +7305,15 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash, and keys unsigned integer
+        // values by their big-endian bytes: this fixture parses the withdrawal type with sized
+        // integers (switching them off afterwards leaves the parsed types), so its `status`,
+        // `pooling`, `coreFeePerByte` and `transactionIndex` are unsigned. The system
+        // withdrawals contract keeps them i64, whose keys do not change
         let expected_app_hash = vec![
-            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
-            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
+            45, 251, 231, 200, 213, 139, 245, 60, 137, 163, 52, 115, 114, 123, 35, 84, 59, 57, 201,
+            6, 224, 117, 195, 143, 119, 197, 175, 115, 0, 102, 105, 28,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7355,9 +7392,15 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash, and keys unsigned integer
+        // values by their big-endian bytes: this fixture parses the withdrawal type with sized
+        // integers (switching them off afterwards leaves the parsed types), so its `status`,
+        // `pooling`, `coreFeePerByte` and `transactionIndex` are unsigned. The system
+        // withdrawals contract keeps them i64, whose keys do not change
         let expected_app_hash = vec![
-            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
-            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
+            45, 251, 231, 200, 213, 139, 245, 60, 137, 163, 52, 115, 114, 123, 35, 84, 59, 57, 201,
+            6, 224, 117, 195, 143, 119, 197, 175, 115, 0, 102, 105, 28,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7425,11 +7468,14 @@ mod tests {
             })
             .collect();
 
-        // We only get back 2 values, even though we put limit 3 because the time with status 0 is an
-        // empty tree and consumes a limit
+        // All 3 values come back: the cursor's time key holds nothing after
+        // the cursor, and the lowering no longer lets that empty subtree
+        // consume a slot of the limit (it did before protocol version 14,
+        // returning 2 values for a limit of 3).
         let a_names = [
             "DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou".to_string(),
             "2kTB6gW4wCCnySj3UFUJQM3aUYBd6qDfLCY74BnWmFKu".to_string(),
+            "74giZJn9fNczYRsxxh3wVnktJS1vzTiRWYinKK1rRcyj".to_string(),
         ];
 
         assert_eq!(names, a_names);
@@ -7457,9 +7503,15 @@ mod tests {
             .unwrap()
             .expect("there is always a root hash");
 
+        // protocol version 14 stores the contract's version item beside the contract, one more
+        // element under the contract's root subtree in the app hash, and keys unsigned integer
+        // values by their big-endian bytes: this fixture parses the withdrawal type with sized
+        // integers (switching them off afterwards leaves the parsed types), so its `status`,
+        // `pooling`, `coreFeePerByte` and `transactionIndex` are unsigned. The system
+        // withdrawals contract keeps them i64, whose keys do not change
         let expected_app_hash = vec![
-            224, 113, 139, 209, 16, 163, 116, 151, 213, 152, 169, 13, 158, 228, 31, 124, 88, 139,
-            165, 2, 152, 27, 85, 54, 21, 40, 183, 80, 104, 140, 198, 119,
+            45, 251, 231, 200, 213, 139, 245, 60, 137, 163, 52, 115, 114, 123, 35, 84, 59, 57, 201,
+            6, 224, 117, 195, 143, 119, 197, 175, 115, 0, 102, 105, 28,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7530,11 +7582,14 @@ mod tests {
             })
             .collect();
 
-        // We only get back 2 values, even though we put limit 3 because the time with status 0 is an
-        // empty tree and consumes a limit
+        // All 3 values come back: the cursor's time key holds nothing after
+        // the cursor, and the lowering no longer lets that empty subtree
+        // consume a slot of the limit (it did before protocol version 14,
+        // returning 2 values for a limit of 3).
         let a_names = [
             "DxFzXvkb2mNQHmeVknsv3gWsc6rMtLk9AsS5zMpy6hou".to_string(),
             "CCjaU67Pe79Vt51oXvQ5SkyNiypofNX9DS9PYydN9tpD".to_string(),
+            "5ikeRNwvFekr6ex32B4dLEcCaSsgXXHJBx5rJ2rwuhEV".to_string(),
         ];
 
         assert_eq!(names, a_names);
@@ -8167,6 +8222,97 @@ mod tests {
     }
 
     #[cfg(all(feature = "server", feature = "verify"))]
+    #[test]
+    fn test_proved_primary_key_cursor_pages_in_both_directions() {
+        // A `$id`-ordered page with a cursor merges the cursor lookup and the
+        // page query at the same path: the primary-key tree. The merge then has
+        // no synthesized root above the page query, so the document layer must
+        // keep the requested direction in the proof; the verifier reads both
+        // the cursor lookup and the page in that direction, and GroveDB refuses
+        // a V1 layer proof read in the other op family.
+        use dpp::document::DocumentV0Getters;
+        use dpp::prelude::Identifier;
+        use platform_value::string_encoding::Encoding;
+
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_family_tests(10, 73509, platform_version);
+        let person_document_type = contract
+            .document_type_for_name("person")
+            .expect("contract should have a person document type");
+        let root_hash = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("there is always a root hash");
+
+        let ids_of = |results: &[Vec<u8>]| -> Vec<Identifier> {
+            results
+                .iter()
+                .map(|bytes| {
+                    Document::from_bytes(bytes, person_document_type, platform_version)
+                        .expect("we should be able to deserialize the document")
+                        .id()
+                })
+                .collect()
+        };
+        let build = |query_value: serde_json::Value| {
+            let cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+                .expect("expected to serialize to cbor");
+            DriveDocumentQuery::from_cbor(
+                cbor.as_slice(),
+                &contract,
+                person_document_type,
+                &drive.config,
+                platform_version,
+            )
+            .expect("query should be built")
+        };
+
+        let (all_results, _, _) = build(json!({
+            "limit": 100,
+            "orderBy": [["$id", "asc"]],
+        }))
+        .execute_raw_results_no_proof(&drive, None, None, platform_version)
+        .expect("query should be executed");
+        let ascending_ids = ids_of(&all_results);
+        assert_eq!(ascending_ids.len(), 10);
+
+        for (ascending, included) in [(true, true), (true, false), (false, true), (false, false)] {
+            let ordered: Vec<Identifier> = if ascending {
+                ascending_ids.clone()
+            } else {
+                ascending_ids.iter().rev().cloned().collect()
+            };
+            let cursor = ordered[3];
+            let expected: Vec<Identifier> = if included {
+                ordered[3..6].to_vec()
+            } else {
+                ordered[4..7].to_vec()
+            };
+            let cursor_key = if included { "startAt" } else { "startAfter" };
+            let case = format!(
+                "orderBy $id {} with {cursor_key}",
+                if ascending { "asc" } else { "desc" }
+            );
+
+            let query = build(json!({
+                cursor_key: cursor.to_string(Encoding::Base58),
+                "limit": 3,
+                "orderBy": [["$id", if ascending { "asc" } else { "desc" }]],
+            }));
+            let (results, _, _) = query
+                .execute_raw_results_no_proof(&drive, None, None, platform_version)
+                .expect("query should be executed");
+            assert_eq!(ids_of(&results), expected, "{case}: unproved page");
+
+            let (proof_root_hash, proof_results, _) = query
+                .execute_with_proof_only_get_elements(&drive, None, None, platform_version)
+                .unwrap_or_else(|e| panic!("{case}: proved page should verify: {e}"));
+            assert_eq!(root_hash, proof_root_hash, "{case}: proof root hash");
+            assert_eq!(results, proof_results, "{case}: proved page");
+        }
+    }
+
     #[test]
     fn test_proved_desc_range_continuation_page_includes_cursor_document() {
         // Issue #4540: a continuation page over a non-unique
@@ -9303,6 +9449,7 @@ mod withdrawal_in_clause_placement_equivalence {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         // The current shape: the In clause in in_clauses
@@ -9325,6 +9472,7 @@ mod withdrawal_in_clause_placement_equivalence {
             start_at_included: false,
             block_time_ms: None,
             resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         for protocol_version in [13u32, 14u32] {
@@ -9715,5 +9863,238 @@ mod gapped_index_query_tests {
             vec![(1, 7, 3, 2, 2), (1, 3, 5, 1, 1), (1, 2, 9, 3, 3)],
             "results must actually be ordered by c ascending"
         );
+    }
+}
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod dpns_identity_records_paging {
+    //! Pins the paging shape the SDK uses to list every DPNS name of an
+    //! identity (`Sdk::get_all_dpns_usernames_by_identity`): an equality on
+    //! `records.identity` (the non-unique `identityId` index), no `orderBy`,
+    //! continued with `startAfter` the previous page's last document id. The
+    //! SDK treats a short page as "the whole set", so a continuation that
+    //! drops the rest of the equality bucket would make it prune names.
+
+    use super::*;
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::system_data_contracts::load_system_data_contract;
+    use drive::util::object_size_info::DocumentInfo;
+    use drive::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+
+    const IDENTITY: [u8; 32] = [0x11; 32];
+    const OTHER_IDENTITY: [u8; 32] = [0x22; 32];
+
+    /// DPNS contract plus three domains resolving to `IDENTITY` (ids 1, 2, 3)
+    /// and one resolving elsewhere (id 4), all written at `platform_version`.
+    fn setup(platform_version: &PlatformVersion) -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("expected to load the DPNS contract");
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply the DPNS contract");
+        let document_type = contract
+            .document_type_for_name("domain")
+            .expect("expected a domain document type");
+        for (id, identity) in [
+            (1u8, IDENTITY),
+            (2, IDENTITY),
+            (3, IDENTITY),
+            (4, OTHER_IDENTITY),
+        ] {
+            let label = format!("paging-test-name-number-{id}");
+            let mut document = document_type
+                .create_document_from_data(
+                    platform_value!({
+                        "label": label.clone(),
+                        "normalizedLabel": label,
+                        "parentDomainName": "dash",
+                        "normalizedParentDomainName": "dash",
+                        "preorderSalt": Bytes32::new([id; 32]),
+                        "records": {"identity": Identifier::from(identity)},
+                        "subdomainRules": {"allowSubdomains": false},
+                    }),
+                    Identifier::from(identity),
+                    1,
+                    1,
+                    [id; 32],
+                    platform_version,
+                )
+                .expect("expected to create a domain document");
+            document.set_id(Identifier::from([id; 32]));
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentInfo::DocumentRefInfo((&document, None)),
+                            owner_id: None,
+                        },
+                        contract: &contract,
+                        document_type,
+                    },
+                    true,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("expected to insert a domain document");
+        }
+        (drive, contract)
+    }
+
+    /// One page of `IDENTITY`'s domains through the raw path, the proved
+    /// path and the client-side proof verification the SDK runs; all three
+    /// must agree. Returns the document ids of the page.
+    fn page(
+        drive: &Drive,
+        contract: &DataContract,
+        start_after: Option<u8>,
+        platform_version: &PlatformVersion,
+    ) -> Vec<Identifier> {
+        let document_type = contract
+            .document_type_for_name("domain")
+            .expect("expected a domain document type");
+        let mut query_value = json!({
+            "where": [
+                ["records.identity", "==", bs58::encode(IDENTITY).into_string()]
+            ],
+            "limit": 2,
+        });
+        if let Some(id) = start_after {
+            query_value["startAfter"] = json!(bs58::encode([id; 32]).into_string());
+        }
+        let query_bytes = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize the query");
+        let query = || {
+            DriveDocumentQuery::from_cbor(
+                &query_bytes,
+                contract,
+                document_type,
+                &drive.config,
+                platform_version,
+            )
+            .expect("expected the query to be built")
+        };
+        let ids_of = |results: Vec<Vec<u8>>| -> Vec<Identifier> {
+            results
+                .iter()
+                .map(|bytes| {
+                    Document::from_bytes(bytes, document_type, platform_version)
+                        .expect("expected to deserialize a result")
+                        .id()
+                })
+                .collect()
+        };
+
+        let (raw, _, _) = query()
+            .execute_raw_results_no_proof(drive, None, None, platform_version)
+            .expect("expected the raw query to execute");
+        let raw = ids_of(raw);
+
+        let (_, proved, _) = query()
+            .execute_with_proof_only_get_elements(drive, None, None, platform_version)
+            .expect("expected the proved query to execute");
+        assert_eq!(raw, ids_of(proved), "raw and proved pages must agree");
+
+        let (proof, _) = query()
+            .execute_with_proof(drive, None, None, platform_version)
+            .expect("expected a proof");
+        let (_, verified) = query()
+            .verify_proof(&proof, platform_version)
+            .expect("expected the proof to verify");
+        let verified: Vec<Identifier> = verified.iter().map(|document| document.id()).collect();
+        assert_eq!(raw, verified, "the verified page must match the served one");
+
+        raw
+    }
+
+    fn assert_first_page(
+        drive: &Drive,
+        contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) {
+        assert_eq!(
+            page(drive, contract, None, platform_version),
+            vec![Identifier::from([1; 32]), Identifier::from([2; 32])],
+            "protocol version {}: first page",
+            platform_version.protocol_version
+        );
+    }
+
+    #[test]
+    fn should_continue_after_a_document_inside_an_equality_bucket_at_latest_protocol_version() {
+        let platform_version = PlatformVersion::latest();
+        assert_eq!(
+            platform_version
+                .drive
+                .methods
+                .document
+                .query
+                .non_primary_key_path_query,
+            1
+        );
+        let (drive, contract) = setup(platform_version);
+
+        assert_first_page(&drive, &contract, platform_version);
+        assert_eq!(
+            page(&drive, &contract, Some(2), platform_version),
+            vec![Identifier::from([3; 32])],
+            "startAfter the second document must return the third"
+        );
+        assert_eq!(
+            page(&drive, &contract, Some(1), platform_version),
+            vec![Identifier::from([2; 32]), Identifier::from([3; 32])],
+            "startAfter the first document must return the rest of the bucket"
+        );
+        assert_eq!(
+            page(&drive, &contract, Some(3), platform_version),
+            Vec::<Identifier>::new(),
+            "startAfter the last document is empty"
+        );
+    }
+
+    /// The v0 lowering (protocol versions <= 13) hands an exclusive cursor
+    /// to the equality clause's own key: `WhereClause::to_path_query`'s
+    /// `Equal` arm drops the key when it equals the cursor document's value
+    /// and the cursor is not included, which on a single-property index is
+    /// always the case. Every continuation inside the bucket therefore comes
+    /// back empty — served, proved and verified alike — so a client cannot
+    /// tell "no more documents" from "the cursor dropped them", and a full
+    /// first page is the most a v0 network can be asked for.
+    ///
+    /// On chain behavior: never edit these expectations; protocol version 14
+    /// (`non_primary_key_path_query: 1`) is the fix.
+    #[test]
+    fn should_drop_the_rest_of_an_equality_bucket_after_start_after_frozen_at_protocol_v13() {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+        assert_eq!(
+            platform_version
+                .drive
+                .methods
+                .document
+                .query
+                .non_primary_key_path_query,
+            0
+        );
+        let (drive, contract) = setup(platform_version);
+
+        assert_first_page(&drive, &contract, platform_version);
+        for cursor in [1u8, 2, 3] {
+            assert_eq!(
+                page(&drive, &contract, Some(cursor), platform_version),
+                Vec::<Identifier>::new(),
+                "v0 drops the whole bucket after startAfter document {cursor}"
+            );
+        }
     }
 }

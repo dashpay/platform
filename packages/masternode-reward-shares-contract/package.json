@@ -1,11 +1,6 @@
 {
   "name": "@dashevo/masternode-reward-shares-contract",
-  "version": "4.2.0-dev.7",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/dashpay/platform.git",
-    "directory": "packages/masternode-reward-shares-contract"
-  },
+  "version": "5.0.0-rc.4",
   "description": "A contract and helper scripts for reward sharing",
   "scripts": {
     "lint": "eslint .",

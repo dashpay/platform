@@ -1,6 +1,8 @@
 package org.dashfoundation.example.ui.contracts
 
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
@@ -84,6 +86,29 @@ class IndexKeywordDescriptorsTest {
     }
 
     @Test
+    fun shouldListACounterIndexSourceAndAtRankingsWithNoTerminal() {
+        val index = buildJsonObject {
+            put("summableOffCountIndex", "byPost")
+            put("rangeSummable", true)
+            put(
+                "rankedSummable",
+                buildJsonObject { put("at", buildJsonArray { add("postAuthor"); add("postId") }) },
+            )
+            put("rankedAverageable", buildJsonObject { put("at", "postAuthor") })
+        }
+        assertEquals(
+            listOf(
+                "Counter of byPost",
+                "Range Sum",
+                "Ranked by Sum at postAuthor, postId",
+                "Ranked by Average at postAuthor",
+            ),
+            indexAxisDescriptors(index),
+        )
+        assertNull(indexTerminal(index, indexOnly = true))
+    }
+
+    @Test
     fun terminalDefaultsToOwnerIdOnlyOnIndexOnlyTypes() {
         val bare = JsonObject(emptyMap())
         assertNull(indexTerminal(bare, indexOnly = false))
@@ -92,5 +117,10 @@ class IndexKeywordDescriptorsTest {
         val declared = buildJsonObject { put("terminal", "postId") }
         assertEquals("postId", indexTerminal(declared, indexOnly = true))
         assertEquals("postId", indexTerminal(declared, indexOnly = false))
+
+        val composite = buildJsonObject {
+            put("terminal", buildJsonArray { add("postId"); add("\$ownerId") })
+        }
+        assertEquals("postId ‖ \$ownerId", indexTerminal(composite, indexOnly = true))
     }
 }

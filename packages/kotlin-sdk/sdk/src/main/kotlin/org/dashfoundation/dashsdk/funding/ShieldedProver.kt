@@ -34,6 +34,24 @@ object ShieldedProver {
 
         /** ShieldedWithdrawal (base + the flat Core withdrawal-document cost). */
         Withdrawal(2),
+
+        /**
+         * ShieldFromIdentity (Type 21): the conservative complete-fee floor
+         * (`compute_shielded_identity_balance_write_fee`: compute + note storage
+         * allowance + identity write allowance) consensus requires the identity
+         * to hold on top of the amount. The exact fee is metered through GroveDB
+         * against the identity balance at execution. Backs
+         * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedShieldFromIdentity].
+         */
+        ShieldFromIdentity(3),
+
+        /**
+         * IdentityTopUpFromShieldedPool (Type 22): base plus the flat
+         * identity-balance write cost, carved from the value balance like
+         * the other pool-paid kinds. Backs
+         * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedIdentityTopUpFromPool].
+         */
+        IdentityTopUpFromPool(4),
     }
 
     /** Kick the ~30s Halo 2 proving-key build onto a background thread. Idempotent. */

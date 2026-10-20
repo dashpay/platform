@@ -10,7 +10,29 @@ use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::wallet::PlatformWallet;
 
-use super::PlatformWalletManager;
+use std::time::Duration;
+
+use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use dpp::prelude::Identifier;
+use key_wallet::account::derivation::AccountDerivation;
+use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::transaction_checking::transaction_context::TransactionContext;
+use key_wallet::transaction_checking::wallet_checker::WalletTransactionChecker;
+
+use super::{run_blocking_load, PlatformWalletManager};
+
+/// How long the load-time re-dispatch waits for the SPV transport before
+/// giving up for this launch. Readiness means the client started AND at
+/// least one peer is connected; zero peers turns a send into a definitive
+/// rejection rather than a retry, so waiting is the cheaper mistake.
+///
+/// Generous on purpose: a simulator reaches readiness in seconds, but a
+/// cold device on a slow network can take far longer, and giving up early
+/// silently defers the send to the next launch — the very delay this whole
+/// path exists to remove. Nothing is blocked on the wait; it runs on a
+/// detached task.
+const RESEND_TRANSPORT_READY_WAIT: Duration = Duration::from_secs(90);
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// Load the full [`ClientStartState`] from the configured persister
@@ -28,8 +50,39 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// wallets missing from that slice get a fresh
     /// [`PlatformAddressWallet::initialize`](crate::wallet::platform_addresses::PlatformAddressWallet::initialize).
     ///
+    /// # Errors
+    ///
+    /// Returns [`PersisterLoad`](PlatformWalletError::PersisterLoad) when the
+    /// persister cannot produce the snapshot, and
+    /// [`PersisterRestore`](PlatformWalletError::PersisterRestore) when a
+    /// wallet in the snapshot cannot have its platform-address state rebuilt.
+    /// A persisted wallet whose id disagrees with its own key material, or one
+    /// the inner [`WalletManager`] refuses, is neither a read nor a restore
+    /// failure and stays
+    /// [`WalletCreation`](PlatformWalletError::WalletCreation).
+    ///
+    /// Persister errors surface after one attempt so the caller controls retry
+    /// policy. The synchronous read runs on the blocking pool.
+    ///
+    /// Any `Err` rolls back partial inserts and leaves the manager usable: fix
+    /// the store and call again, or reconstruct. Reconstructing over the same
+    /// path needs every strong persister reference released first. Dropping
+    /// the manager releases its own references; wallet handles, workers and
+    /// in-flight operations can retain others. [`shutdown`](Self::shutdown)
+    /// takes `&self`, so it cannot release the manager's own `Arc<P>`.
+    ///
     /// [`WalletManager`]: key_wallet_manager::WalletManager
     pub async fn load_from_persistor(&self) -> Result<(), PlatformWalletError> {
+        let persister = Arc::clone(&self.persister);
+        let start_state = match run_blocking_load(move || persister.load()).await {
+            Ok(state) => state,
+            Err(e) => {
+                // Debug, not Display: it carries the real cause (e.g. a
+                // bincode decode failure) rather than flattening the chain.
+                tracing::debug!(error = ?e, "persister load failed during rehydration");
+                return Err(PlatformWalletError::from_load_failure(e));
+            }
+        };
         let ClientStartState {
             mut platform_addresses,
             wallets,
@@ -37,12 +90,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // not here — drop the snapshot at this entry point.
             #[cfg(feature = "shielded")]
                 shielded: _,
-        } = self.persister.load().map_err(|e| {
-            PlatformWalletError::WalletCreation(format!(
-                "Failed to load persisted client state: {}",
-                e
-            ))
-        })?;
+        } = start_state;
 
         // Tracked (wallet-independent) masternodes ride the same startup
         // hydration; a failure logs and starts empty rather than failing
@@ -63,16 +111,93 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // boundary with no Swift-side reset path, so transactional
         // semantics matter for this hydration API.
         let mut inserted_in_manager: Vec<WalletId> = Vec::new();
-        let mut inserted_in_wallets: Vec<WalletId> = Vec::new();
+        // Re-dispatches owed by this load, held until the rollback point has
+        // passed. See the push site for why they cannot be spawned inline.
+        #[allow(clippy::type_complexity)]
+        let mut pending_resends: Vec<(
+            WalletId,
+            Arc<WalletGeneration>,
+            Arc<crate::broadcaster::SpvBroadcaster>,
+            Vec<dashcore::Transaction>,
+        )> = Vec::new();
+        // The generation travels with the id: a rollback may only remove the
+        // registration THIS call published (see the rollback block below).
+        let mut inserted_in_wallets: Vec<(WalletId, Arc<crate::wallet::core::WalletGeneration>)> =
+            Vec::new();
         let mut load_error: Option<PlatformWalletError> = None;
 
-        'load: for (expected_wallet_id, wallet_state) in wallets {
+        // Each wallet's start state, and whether it was re-read under the
+        // durable-cursor lock that `held` still holds (see the publication
+        // step below).
+        let mut pending: std::collections::VecDeque<(WalletId, ClientWalletStartState, bool)> =
+            wallets
+                .into_iter()
+                .map(|(wallet_id, state)| (wallet_id, state, false))
+                .collect();
+        // The durable-cursor lock, kept from a re-read to the publication of
+        // the wallet processed from it. Nothing between the two takes the
+        // lock, and it is released before the rollback below.
+        let mut held = None;
+
+        'load: while let Some((expected_wallet_id, wallet_state, reread)) = pending.pop_front() {
             let ClientWalletStartState {
-                wallet,
-                wallet_info,
+                mut wallet,
+                mut wallet_info,
                 identity_manager,
                 unused_asset_locks,
+                unconfirmed_outgoing_txs,
+                dashpay_backfill,
             } = wallet_state;
+
+            // Replay the sends the host still holds as unconfirmed, before
+            // anything reads the restored balance.
+            //
+            // Their spend effect is never persisted: `isSpent` stays `false`
+            // on the input row until the spending transaction reaches a
+            // block, because a mempool-only sighting is reversible by
+            // eviction. So the UTXO restore above has just handed those
+            // inputs back as spendable. A live process was still correct —
+            // it held the effect in memory — and until now a restart
+            // recovered it only by re-observing the transaction on the
+            // network. A transaction that never reached the network cannot
+            // be re-observed, so its input stayed spendable for good and the
+            // balance re-counted the coin.
+            //
+            // Routing each record through the ordinary mempool check (rather
+            // than inserting it into `transactions_mut()` raw, the way the
+            // asset-lock record restore does) is the whole point: it runs
+            // `update_utxos`, which drops the input from `utxos` and records
+            // it in `spent_outpoints`, reproducing exactly the state the
+            // live process held. A raw insert would leave `spent_outpoints`
+            // empty AND make every later re-dispatch a no-op, because
+            // `has_transaction` would then report the record as not new.
+            //
+            // `update_state` and `update_balance` are both on: the balance
+            // this produces is what `generation.set(..)` mirrors a few lines
+            // below, and the UI reads that.
+            if !unconfirmed_outgoing_txs.is_empty() {
+                let mut replayed = 0usize;
+                for tx in &unconfirmed_outgoing_txs {
+                    let result = wallet_info
+                        .check_core_transaction(
+                            tx,
+                            TransactionContext::Mempool,
+                            &mut wallet,
+                            true,
+                            true,
+                        )
+                        .await;
+                    if result.is_relevant {
+                        replayed += 1;
+                    }
+                }
+                tracing::info!(
+                    wallet_id = %hex::encode(expected_wallet_id),
+                    offered = unconfirmed_outgoing_txs.len(),
+                    replayed,
+                    "load: replayed unconfirmed outgoing sends"
+                );
+            }
 
             // Flatten the (account → outpoint → lock) map into the flat
             // OutPoint → TrackedAssetLock map that `PlatformWalletInfo`
@@ -88,10 +213,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // (below) and key this generation's in-broadcast fence map by it.
             let wallet_id = wallet.compute_wallet_id();
 
-            // The fence map is per WALLET, not per generation
-            // (`dashpay/platform#4309`, review round 8). On a first load the
-            // registry is empty and this is a fresh map; a re-load — or a load
-            // that follows a removal — inherits whatever pending spends the
+            // The fence map is per WALLET, not per generation. On a first load
+            // the registry is empty and this is a fresh map; a re-load — or a
+            // load that follows a removal — inherits whatever pending spends the
             // previous generation under this id left standing, rather than
             // handing the restored UTXOs back unprotected.
             //
@@ -116,14 +240,55 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 core_balance.immature(),
                 core_balance.locked(),
             );
-            let platform_info = PlatformWalletInfo {
+            let mut platform_info = PlatformWalletInfo {
                 observed_input_conflicts: Default::default(),
                 core_wallet: wallet_info,
                 generation: Arc::clone(&generation),
                 identity_manager: IdentityManager::from(identity_manager),
                 tracked_asset_locks,
                 dpns_name_states: std::collections::BTreeMap::new(),
+                dashpay_backfill,
+                rewind_barrier: Default::default(),
             };
+            // A restored outbound-account marker says the contact's external
+            // account was built from its current xpub, which suppresses the
+            // startup rebuild. It must not vouch for a pool the host kept
+            // across a rotation: the host replaces the account's xpub but may
+            // keep the old pool's addresses, and `send_payment` hands out a
+            // pooled address before deriving a new one. So any external pool
+            // holding an address its current xpub does not derive loses its
+            // contact's marker, and the first contact sweep rebuilds it from
+            // the current xpub, as every cold start did before the marker
+            // was persisted (dashpay/platform#4302 review).
+            //
+            // A backend that cannot keep markers durably never had one written
+            // by this process, and one it hands back may name an account it
+            // did not keep: none is trusted, so the sweep rebuilds each
+            // outbound account once, as before the marker was persisted. Its
+            // pools are then not validated at all: no result could keep a
+            // marker that is cleared regardless.
+            if crate::changeset::persists_outbound_account_markers(&*self.persister) {
+                let distrusted =
+                    distrust_markers_of_foreign_external_pools(&wallet, &mut platform_info);
+                if distrusted > 0 {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(expected_wallet_id),
+                        contacts = distrusted,
+                        "load: restored DashPay external pools hold addresses their current \
+                         xpub does not derive; their accounts will be rebuilt"
+                    );
+                }
+            } else {
+                let cleared = clear_restored_outbound_markers(&mut platform_info);
+                if cleared > 0 {
+                    tracing::info!(
+                        wallet_id = %hex::encode(expected_wallet_id),
+                        contacts = cleared,
+                        "load: this backend does not keep outbound-account markers durably; \
+                         restored markers are not trusted"
+                    );
+                }
+            }
             // Seed the double-spend screen's session memory from the
             // freshly restored state: it closes the race where SPV's
             // chainlock dispatcher promotion-evicts a restored spender
@@ -131,6 +296,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             crate::wallet::asset_lock::sync::recovery::seed_observed_input_conflicts(
                 &platform_info,
             );
+
+            // The cursor the host just handed back is the durable one; it
+            // seeds the shared record of it as the wallet is published below.
+            let loaded_cursor = platform_info.core_wallet.metadata.synced_height;
 
             if wallet_id != expected_wallet_id {
                 load_error = Some(PlatformWalletError::WalletCreation(format!(
@@ -159,11 +328,109 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             //
             // The existence check and the insert share one write-lock scope
             // so a concurrent loader can't slip between them (TOCTOU).
+            //
+            // The durable cursor is seeded in that same scope, under the
+            // cursor lock taken first (its order: cursor lock, then manager).
+            // The insert makes the wallet visible to the scanner and the
+            // event adapter; seeding after it would let an adapter commit or
+            // a reconcile record a newer durable height first, and the seed
+            // would then overwrite it with the stale loaded one. An entry a
+            // removed same-id predecessor left behind is what the host holds
+            // now — a commit of its may have been accepted after the start
+            // state was read — so it wins over the loaded cursor, and a
+            // loaded cursor below it is owed to the host like any in-memory
+            // reset, in this wallet's inherited epoch, so no coverage is
+            // recorded beside the host's higher cursor without a reset
+            // (dashpay/platform#4302 review).
+            //
+            // The same predecessor can also have changed the host's DashPay
+            // backfill record after the start state was read: stored coverage
+            // for a receival account this snapshot does not hold, or
+            // invalidated coverage this snapshot still carries. So when an
+            // entry shows a same-id wallet was published in this process, the
+            // record this wallet carries replaces the host's before the wallet
+            // is published, paired with the loaded cursor when that is below
+            // the host's (`settle_published_backfill`). The existence check
+            // comes first, so a wallet still registered under this id is never
+            // overwritten, and every publisher holds the cursor lock, so none
+            // appears before the insert.
+            //
+            // A record is not all such a predecessor can have changed. It can
+            // also have replaced a receival account's xpub under the same
+            // `(owner, contact, index)` key and stored coverage scanned with
+            // the new one. Publishing this snapshot would restore the old
+            // xpub beside that key, and the scan it then runs would vouch for
+            // scripts the host's account does not derive. Coverage carries no
+            // xpub to check against, so the snapshot itself is replaced: under
+            // the lock, where no publisher or adapter commit can move the
+            // host, the start state is read again, and this wallet is
+            // processed from that read and published WITHOUT releasing the
+            // lock in between. A same-id wallet can only appear by being
+            // published, which takes this lock, so nothing can register,
+            // rotate an account and be removed between the read and the
+            // publication. No token stands in for that guarantee: a cursor
+            // entry does not move on account writes or same-id lifecycle
+            // changes, so it cannot prove a read is still current
+            // (dashpay/platform#4302 review).
             {
-                let mut wm = self.wallet_manager.write().await;
-                if wm.get_wallet(&wallet_id).is_some() {
+                let mut durable_cursors = match held.take() {
+                    Some(guard) => guard,
+                    None => self.durable_cursors.lock().await,
+                };
+                if self
+                    .wallet_manager
+                    .read()
+                    .await
+                    .get_wallet(&wallet_id)
+                    .is_some()
+                {
                     continue 'load;
                 }
+                if !reread && durable_cursors.contains_key(&wallet_id) {
+                    let persister = Arc::clone(&self.persister);
+                    let current = match run_blocking_load(move || persister.load()).await {
+                        Ok(mut state) => state.wallets.remove(&expected_wallet_id),
+                        Err(e) => {
+                            load_error = Some(PlatformWalletError::from_load_failure(e));
+                            break 'load;
+                        }
+                    };
+                    match current {
+                        Some(state) => {
+                            pending.push_front((expected_wallet_id, state, true));
+                            held = Some(durable_cursors);
+                        }
+                        None => tracing::warn!(
+                            wallet_id = %hex::encode(expected_wallet_id),
+                            "load: the wallet is no longer on the host; not publishing its \
+                             stale snapshot"
+                        ),
+                    }
+                    continue 'load;
+                }
+                // Coverage for a receival account this wallet did not restore
+                // vouches for scripts nothing will watch; it is dropped here,
+                // and from the host before the wallet is published, exactly
+                // as registration does (dashpay/platform#4302 review).
+                let dropped = super::retain_coverage_for_held_accounts(
+                    &mut platform_info.dashpay_backfill,
+                    &platform_info.core_wallet,
+                );
+                match self.settle_published_backfill(
+                    &mut durable_cursors,
+                    wallet_id,
+                    std::mem::take(&mut platform_info.dashpay_backfill),
+                    dropped,
+                    loaded_cursor,
+                    loaded_cursor,
+                ) {
+                    Ok(record) => platform_info.dashpay_backfill = record,
+                    Err(e) => {
+                        load_error = Some(e);
+                        break 'load;
+                    }
+                }
+                let mut wm = self.wallet_manager.write().await;
                 if let Err(e) = wm.insert_wallet(wallet, platform_info) {
                     load_error = Some(PlatformWalletError::WalletCreation(format!(
                         "Failed to register persisted wallet in WalletManager: {}",
@@ -171,12 +438,74 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     )));
                     break 'load;
                 }
+                let host_cursor = durable_cursors
+                    .get(&wallet_id)
+                    .map_or(loaded_cursor, |entry| entry.height);
+                durable_cursors
+                    .entry(wallet_id)
+                    .or_insert(crate::changeset::DurableCursor::at(loaded_cursor));
+                self.inherit_rewind_barrier(&mut wm, &wallet_id);
+                if loaded_cursor < host_cursor {
+                    if let Some(info) = wm.get_wallet_info_mut(&wallet_id) {
+                        let epoch = info.rewind_barrier.epoch();
+                        info.dashpay_backfill.owe_cursor(loaded_cursor, epoch);
+                    }
+                }
             }
             inserted_in_manager.push(wallet_id);
 
             let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(
                 &self.spv_manager,
             )));
+
+            // Give the replayed sends an owner again on the network side.
+            //
+            // dash-spv's rebroadcast timer is the only thing that retries a
+            // transaction whose broadcast saw no acceptance signal, and its
+            // `broadcasts` map is process-local: it is filled at the
+            // broadcast call and never seeded from persisted rows. So a send
+            // that did not reach the network before the app was closed had
+            // nobody left to resend it — measured, it never went out again.
+            // Re-dispatching here hands it back to that timer.
+            //
+            // Deliberately fire-and-forget on a detached task: this must not
+            // hold up the load, and the verdict is only logged. The platform
+            // broadcaster has one entry point and it waits for acceptance
+            // (`TransactionBroadcaster::broadcast` → `broadcast_and_wait`),
+            // which is harmless here — nothing is blocked on this task, and
+            // dash-spv has already taken ownership by the time the wait ends.
+            // The app registers no listener for that event, so a late
+            // `Uncertain` cannot surface a stray dialog.
+            //
+            // For the case this exists for — a send that never reached the
+            // network — `MaybeSent` is the EXPECTED answer, not a failure:
+            // the transaction goes out, no peer echoes it back inside the
+            // acceptance window, and the rebroadcast timer takes it from
+            // there. Logging that at warn would make the healthy path look
+            // broken.
+            //
+            // Safe against double-spending: this re-sends the SAME signed
+            // bytes, which is idempotent for the network, and `start_broadcast`
+            // is idempotent per txid. The real hazard would be re-dispatching
+            // without the accounting replay above — the input would be
+            // selectable again and this wallet could sign a conflicting
+            // transaction. That is why the two halves ship together.
+            if !unconfirmed_outgoing_txs.is_empty() {
+                // Queued, not spawned: a later iteration can still fail and
+                // roll this registration back, and a task already waiting on
+                // transport readiness would outlive it and rebroadcast for a
+                // wallet that no longer exists. Spawned after the rollback
+                // point instead, with the generation carried along so the
+                // task can tell whether the registration it was created for
+                // is still the live one.
+                pending_resends.push((
+                    wallet_id,
+                    Arc::clone(&generation),
+                    Arc::clone(&broadcaster),
+                    unconfirmed_outgoing_txs,
+                ));
+            }
+
             let platform_wallet = PlatformWallet::new(
                 Arc::clone(&self.sdk),
                 wallet_id,
@@ -185,6 +514,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 Arc::clone(&self.lock_notify),
                 Arc::clone(&persister_dyn),
                 broadcaster,
+                Arc::clone(&self.sync_fault),
+                Arc::clone(&self.durable_cursors),
             );
 
             // Initialize the platform-address provider. If the snapshot
@@ -197,10 +528,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .initialize_from_persisted(persisted)
                     .await
                 {
-                    load_error = Some(PlatformWalletError::WalletCreation(format!(
-                        "Failed to restore platform address state: {}",
-                        e
-                    )));
+                    // Wrap the already-typed error rather than stringify it, so
+                    // its concrete variant and source chain survive — the same
+                    // shape `register_wallet` returns for this same failure.
+                    load_error = Some(PlatformWalletError::from_restore_failure(e));
                     break 'load;
                 }
             } else {
@@ -208,27 +539,112 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
 
             let platform_wallet = Arc::new(platform_wallet);
-            let mut wallets_guard = self.wallets.write().await;
-            wallets_guard.insert(wallet_id, platform_wallet);
-            drop(wallets_guard);
-            inserted_in_wallets.push(wallet_id);
+            self.wallets.rcu(|wallets| {
+                let mut wallets = std::collections::BTreeMap::clone(wallets);
+                wallets.insert(wallet_id, Arc::clone(&platform_wallet));
+                wallets
+            });
+            inserted_in_wallets.push((wallet_id, Arc::clone(platform_wallet.generation())));
+
+            // Re-seed the balance atomic now that the wallet is published.
+            //
+            // The seed above ran before `insert_wallet`, and the wallet
+            // becomes SPV-visible the moment that insert lands — several
+            // `.await`s before the `rcu` above. Any `BlockProcessed` for it
+            // in that window finds the wallet absent from the map and its
+            // snapshot is dropped, leaving the atomic at the persisted total
+            // while the inner `ManagedWalletInfo` balance has moved on.
+            // `register_wallet` closes the same window this way; without it
+            // here, a restored wallet whose catch-up completes inside the
+            // window keeps a stale total on screen with no later event
+            // guaranteed to correct it.
+            //
+            // Last writer wins between this seed and the handler: if SPV
+            // processes another block between the read below and the `set`,
+            // the atomic briefly goes back to the older totals. The next
+            // balance-bearing event corrects it, and during catch-up those
+            // arrive continuously — which is why the seed is worth more than
+            // the window it can briefly re-open.
+            {
+                let wm = self.wallet_manager.read().await;
+                if let Some(info) = wm.get_wallet_info(&wallet_id) {
+                    let b = &info.core_wallet.balance;
+                    platform_wallet.balance().set(
+                        b.confirmed(),
+                        b.unconfirmed(),
+                        b.immature(),
+                        b.locked(),
+                    );
+                }
+            }
         }
+        // A `break` between a re-read and its publication leaves the lock
+        // held; the rollback must not run under it.
+        drop(held);
 
         if let Some(err) = load_error {
             // Walk back every wallet committed in this call so the
             // manager state matches what it was before. Order:
             // remove from `self.wallets` first (UI surface), then
             // from the inner `wallet_manager`.
+            // Generation-checked, exactly like `remove_wallet`'s own removal:
+            // a concurrent removal frees an id and a registration can publish
+            // a DIFFERENT generation under it before this rollback runs.
+            // Removing by id alone would delete that live wallet — one this
+            // call never created and whose owner is still using it.
+            let rolled_back = std::cell::RefCell::new(Vec::<WalletId>::new());
             if !inserted_in_wallets.is_empty() {
-                let mut wallets_guard = self.wallets.write().await;
-                for id in &inserted_in_wallets {
-                    wallets_guard.remove(id);
-                }
+                self.wallets.rcu(|wallets| {
+                    // `rcu` may retry, so this is rebuilt per attempt rather
+                    // than accumulated across them.
+                    let ours = rollback_targets(&inserted_in_wallets, wallets);
+                    let mut next = std::collections::BTreeMap::clone(wallets);
+                    for id in &ours {
+                        next.remove(id);
+                    }
+                    *rolled_back.borrow_mut() = ours;
+                    next
+                });
             }
+            let rolled_back = rolled_back.into_inner();
+            // Wait-free, purely for the diagnostics below: an id still in the
+            // map after the rollback is one a same-id re-registration owns.
+            let still_mapped = self.wallets.load();
             if !inserted_in_manager.is_empty() {
                 let mut wm = self.wallet_manager.write().await;
                 for id in &inserted_in_manager {
-                    if let Err(e) = wm.remove_wallet(id) {
+                    // A published id whose generation is no longer ours belongs
+                    // to a newer registration; taking it out of the inner
+                    // manager would strip a live wallet of its backing. An id
+                    // that never reached `self.wallets` (this call failed
+                    // between the two inserts) has no such owner and is unwound
+                    // as before.
+                    let published = inserted_in_wallets.iter().any(|(w, _)| w == id);
+                    if published && !rolled_back.contains(id) {
+                        // Two distinct states reach here, and saying the wrong
+                        // one sends whoever reads this after a
+                        // wallet-disappeared report chasing the wrong
+                        // generation: either something else already removed
+                        // the entry (a completed concurrent `remove_wallet`),
+                        // or a same-id re-registration published a generation
+                        // that is not ours. Only the second leaves anything in
+                        // place.
+                        if still_mapped.contains_key(id) {
+                            tracing::warn!(
+                                wallet_id = %hex::encode(id),
+                                "rollback after load failure: a new generation was registered \
+                                 under this id, leaving the new registration in place"
+                            );
+                        } else {
+                            tracing::warn!(
+                                wallet_id = %hex::encode(id),
+                                "rollback after load failure: this id was already removed by \
+                                 something else; nothing left to roll back"
+                            );
+                        }
+                        continue;
+                    }
+                    if let Err(e) = self.remove_from_wallet_manager(&mut wm, id) {
                         tracing::warn!(
                             wallet_id = %hex::encode(id),
                             error = %e,
@@ -240,14 +656,201 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             return Err(err);
         }
 
+        // Past the rollback point: every registration here is one this load
+        // actually committed, so the transactions now have a wallet to belong
+        // to for as long as it stays registered.
+        //
+        // Detached on purpose — nothing may block the load on transport
+        // readiness — which is why each task re-checks that its wallet is
+        // still the live registration before putting anything on the wire. A
+        // wallet removed while the task waits leaves the generation pointer
+        // pointing at nothing the map holds any more, and the re-dispatch is
+        // abandoned rather than broadcasting on behalf of a wallet that is
+        // gone.
+        for (wallet_id, generation, broadcaster, txs) in pending_resends {
+            let wallet_manager = Arc::clone(&self.wallet_manager);
+            tokio::spawn(async move {
+                if !broadcaster
+                    .wait_until_ready(RESEND_TRANSPORT_READY_WAIT)
+                    .await
+                {
+                    tracing::warn!(
+                        pending = txs.len(),
+                        "load: broadcast transport not ready; leaving unconfirmed \
+                         sends for the next launch"
+                    );
+                    return;
+                }
+                let total = txs.len();
+                for (position, tx) in txs.into_iter().enumerate() {
+                    let mut outcome = resend_one(
+                        &wallet_id,
+                        &generation,
+                        &wallet_manager,
+                        broadcaster.as_ref(),
+                        &tx,
+                    )
+                    .await;
+
+                    // Peers can go away between the readiness gate and the
+                    // send. Nothing owns a transaction that never left, so
+                    // wait for the transport once more and try again rather
+                    // than deferring it to the next launch.
+                    if outcome == ResendOutcome::NotSent
+                        && broadcaster
+                            .wait_until_ready(RESEND_TRANSPORT_READY_WAIT)
+                            .await
+                    {
+                        outcome = resend_one(
+                            &wallet_id,
+                            &generation,
+                            &wallet_manager,
+                            broadcaster.as_ref(),
+                            &tx,
+                        )
+                        .await;
+                    }
+
+                    match outcome {
+                        ResendOutcome::Dispatched => {}
+                        ResendOutcome::Abandoned => return,
+                        // Stop the batch. A later transaction may spend this
+                        // one's change, and dispatching it against an output
+                        // the network has never seen would put a transaction
+                        // on the wire that cannot be accepted. The remainder
+                        // is offered again at the next launch.
+                        ResendOutcome::NotSent => {
+                            tracing::warn!(
+                                wallet_id = %hex::encode(wallet_id),
+                                deferred = total - position,
+                                "load: transport refused the send; leaving the rest of the \
+                                 batch for the next launch"
+                            );
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+
         Ok(())
     }
+}
+
+/// What one re-dispatch attempt did, so a caller — and a test — can tell the
+/// two apart without reading logs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ResendOutcome {
+    /// The transaction was handed to the broadcaster. Whether the network
+    /// accepted it is deliberately not part of this answer: an unconfirmed
+    /// send with no acceptance signal is the case this path exists for.
+    Dispatched,
+    /// The wallet this transaction belongs to is no longer the live
+    /// registration, so nothing was sent and the rest of the batch is moot.
+    Abandoned,
+    /// The broadcaster proved no bytes reached the network — peers went away
+    /// between the readiness gate and the send. Nothing is tracking this
+    /// transaction, so the rest of the batch must not proceed: anything
+    /// spending its change would be built on an output the network has never
+    /// seen.
+    NotSent,
+}
+
+/// Re-dispatch one unconfirmed send, under the wallet's lifecycle gate.
+///
+/// Split out of the spawn loop so the part that has to be right can be tested
+/// directly: the gate is held across BOTH the liveness check and the network
+/// step, which is the whole contract of
+/// [`WalletGeneration::payment_guard`](crate::wallet::core::WalletGeneration::payment_guard).
+/// A bare `Arc::ptr_eq` is a point-in-time observation, and teardown can take
+/// the exclusive side between it and the broadcast, so a removed wallet's
+/// transaction would still go out.
+///
+/// Taken per transaction rather than once around a batch: each broadcast waits
+/// for an acceptance signal, and holding the gate across a whole batch would
+/// stall a removal for as long as the batch takes.
+///
+/// Lock order is the one the gate documents — gate first, wallet-manager read
+/// lock second, never the reverse.
+pub(super) async fn resend_one(
+    wallet_id: &WalletId,
+    generation: &Arc<WalletGeneration>,
+    wallet_manager: &Arc<
+        tokio::sync::RwLock<key_wallet_manager::WalletManager<PlatformWalletInfo>>,
+    >,
+    broadcaster: &dyn TransactionBroadcaster,
+    tx: &dashcore::Transaction,
+) -> ResendOutcome {
+    let _payment = generation.payment_guard().await;
+    let still_live = {
+        let wm = wallet_manager.read().await;
+        wm.get_wallet_info(wallet_id)
+            .is_some_and(|info| Arc::ptr_eq(&info.generation, generation))
+    };
+    if !still_live {
+        tracing::info!(
+            wallet_id = %hex::encode(wallet_id),
+            "load: wallet no longer registered; abandoning the re-dispatch"
+        );
+        return ResendOutcome::Abandoned;
+    }
+
+    let txid = tx.txid();
+    match broadcaster.broadcast(tx).await {
+        Ok(_) => tracing::info!(%txid, "load: re-dispatched unconfirmed send, accepted"),
+        // Expected for the orphaned case: sent, no acceptance signal, now
+        // owned by the rebroadcast timer.
+        Err(BroadcastError::MaybeSent { reason }) => tracing::info!(
+            %txid,
+            %reason,
+            "load: re-dispatched unconfirmed send, no acceptance signal yet — \
+             handed to the rebroadcast timer"
+        ),
+        // Provably never sent, so the timer never took ownership. Matched by
+        // name rather than as a catch-all: a variant added later should make
+        // this a compile error, not silently inherit "nothing was sent".
+        Err(e @ BroadcastError::Rejected { .. }) => {
+            tracing::warn!(%txid, error = ?e, "load: re-dispatch was not sent");
+            return ResendOutcome::NotSent;
+        }
+    }
+    ResendOutcome::Dispatched
+}
+
+/// Of the registrations this load published, the ones a rollback may still
+/// take back: those whose map entry is *still the same generation* this call
+/// inserted.
+///
+/// A concurrent `remove_wallet` frees an id, and a registration can publish a
+/// different generation under it before a later iteration's failure reaches
+/// the rollback. Removing by id alone would delete that live wallet — one this
+/// call never created and whose owner is still using it. Same rule
+/// `remove_wallet` applies to its own removal.
+///
+/// Pure so the invariant is unit-testable without racing a real load against a
+/// real re-registration.
+fn rollback_targets(
+    published: &[(WalletId, Arc<WalletGeneration>)],
+    current: &BTreeMap<WalletId, Arc<PlatformWallet>>,
+) -> Vec<WalletId> {
+    published
+        .iter()
+        .filter(|(id, generation)| {
+            current
+                .get(id)
+                .is_some_and(|wallet| Arc::ptr_eq(wallet.generation(), generation))
+        })
+        .map(|(id, _)| *id)
+        .collect()
 }
 
 #[cfg(test)]
 mod idempotent_load_tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
+
+    use super::rollback_targets;
+    use crate::wallet::core::WalletGeneration;
 
     use key_wallet::test_utils::TestWalletContext;
     use key_wallet::wallet::ManagedWalletInfo;
@@ -257,9 +860,75 @@ mod idempotent_load_tests {
         ClientStartState, ClientWalletStartState, IdentityManagerStartState, PersistenceError,
         PlatformWalletChangeSet, PlatformWalletPersistence,
     };
-    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::events::PlatformEventHandler;
+    use crate::test_support::NoopTestEventHandler;
     use crate::wallet::platform_wallet::WalletId;
     use crate::PlatformWalletManager;
+
+    /// Persister that hands back one wallet plus the outgoing sends the
+    /// host still holds as unconfirmed — the shape `loadWalletList`
+    /// produces for a send whose broadcast got no acceptance signal.
+    struct PendingSendPersister {
+        wallet: Wallet,
+        managed: ManagedWalletInfo,
+        pending: Vec<dashcore::Transaction>,
+    }
+
+    impl PlatformWalletPersistence for PendingSendPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            let mut wallets = BTreeMap::new();
+            wallets.insert(
+                self.wallet.compute_wallet_id(),
+                ClientWalletStartState {
+                    wallet: self.wallet.clone(),
+                    wallet_info: self.managed.clone(),
+                    identity_manager: IdentityManagerStartState::default(),
+                    unused_asset_locks: BTreeMap::new(),
+                    unconfirmed_outgoing_txs: self.pending.clone(),
+                    dashpay_backfill: Default::default(),
+                },
+            );
+            Ok(ClientStartState {
+                wallets,
+                ..Default::default()
+            })
+        }
+    }
+
+    /// A transaction spending `previous_output` to somewhere that is not
+    /// this wallet — enough for the mempool check to see the input leave.
+    fn spend_to(previous_output: dashcore::OutPoint, value: u64) -> dashcore::Transaction {
+        dashcore::Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![dashcore::TxIn {
+                previous_output,
+                script_sig: dashcore::ScriptBuf::new(),
+                sequence: 0xffff_ffff,
+                witness: Default::default(),
+            }],
+            output: vec![dashcore::TxOut {
+                value,
+                script_pubkey: dashcore::ScriptBuf::from_hex(
+                    "76a914000000000000000000000000000000000000000088ac",
+                )
+                .expect("static foreign p2pkh script"),
+            }],
+            special_transaction_payload: None,
+        }
+    }
 
     /// Persister whose `load()` returns a single-wallet snapshot rebuilt
     /// fresh on every call — `load_from_persistor` moves `wallets` out of
@@ -294,6 +963,8 @@ mod idempotent_load_tests {
                     wallet_info: self.managed.clone(),
                     identity_manager: IdentityManagerStartState::default(),
                     unused_asset_locks: BTreeMap::new(),
+                    unconfirmed_outgoing_txs: Vec::new(),
+                    dashpay_backfill: Default::default(),
                 },
             );
             Ok(ClientStartState {
@@ -303,15 +974,349 @@ mod idempotent_load_tests {
         }
     }
 
-    struct NoopEventHandler;
-    impl EventHandler for NoopEventHandler {}
-    impl PlatformEventHandler for NoopEventHandler {}
+    /// Two entries: the real wallet under its true id, and the same wallet
+    /// under a key that cannot be the id it recomputes to. The second entry
+    /// sorts last, so the loader publishes the first and then fails the
+    /// id-match check — the only way to drive the rollback without racing a
+    /// real failure.
+    struct MismatchedSecondWalletPersister {
+        wallet: Wallet,
+        managed: ManagedWalletInfo,
+    }
+
+    impl PlatformWalletPersistence for MismatchedSecondWalletPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            let entry = || ClientWalletStartState {
+                wallet: self.wallet.clone(),
+                wallet_info: self.managed.clone(),
+                identity_manager: IdentityManagerStartState::default(),
+                unused_asset_locks: BTreeMap::new(),
+                unconfirmed_outgoing_txs: Vec::new(),
+                dashpay_backfill: Default::default(),
+            };
+            let mut wallets = BTreeMap::new();
+            wallets.insert(self.wallet.compute_wallet_id(), entry());
+            // Sorts after any real id, so it is processed second.
+            wallets.insert([0xFF; 32], entry());
+            Ok(ClientStartState {
+                wallets,
+                ..Default::default()
+            })
+        }
+    }
 
     fn make_manager(
         persister: SingleWalletPersister,
     ) -> Arc<PlatformWalletManager<SingleWalletPersister>> {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
+        Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(persister),
+            event_handler,
+        ))
+    }
+
+    use crate::broadcaster::BroadcastError;
+    use std::time::Duration;
+
+    /// Broadcaster that records what it was asked to send, so a test can
+    /// assert on the absence of a broadcast rather than on log output.
+    struct CountingBroadcaster {
+        sent: Arc<std::sync::Mutex<Vec<dashcore::Txid>>>,
+    }
+
+    impl CountingBroadcaster {
+        fn new() -> Self {
+            Self {
+                sent: Arc::new(std::sync::Mutex::new(Vec::new())),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for CountingBroadcaster {
+        async fn broadcast(
+            &self,
+            transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, BroadcastError> {
+            let txid = transaction.txid();
+            self.sent.lock().expect("sent mutex").push(txid);
+            // The answer the orphaned case actually gets: the bytes went out
+            // and nothing echoed them back. `resend_one` must treat this as a
+            // dispatch, not a failure.
+            Err(BroadcastError::MaybeSent {
+                reason: "test: no acceptance signal".to_string(),
+            })
+        }
+
+        async fn wait_until_ready(&self, _timeout: Duration) -> bool {
+            true
+        }
+    }
+
+    /// A wallet still registered under the generation the resend was created
+    /// for gets its transaction put on the wire. `MaybeSent` is the expected
+    /// answer here and still counts as dispatched — treating it as a failure
+    /// is what made the healthy path look broken in the logs.
+    #[tokio::test]
+    async fn resend_dispatches_while_the_wallet_is_still_registered() {
+        let ctx = TestWalletContext::new_random();
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let manager = make_manager(SingleWalletPersister {
+            wallet: ctx.wallet,
+            managed: ctx.managed_wallet,
+        });
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+        let generation = Arc::clone(
+            manager
+                .get_wallet(&wallet_id)
+                .await
+                .expect("registered")
+                .generation(),
+        );
+
+        let broadcaster = CountingBroadcaster::new();
+        let sent = Arc::clone(&broadcaster.sent);
+        let tx = spend_to(
+            dashcore::OutPoint {
+                txid: "0000000000000000000000000000000000000000000000000000000000000001"
+                    .parse()
+                    .expect("static txid"),
+                vout: 0,
+            },
+            10_000,
+        );
+
+        let outcome = super::resend_one(
+            &wallet_id,
+            &generation,
+            &manager.wallet_manager,
+            &broadcaster,
+            &tx,
+        )
+        .await;
+
+        assert_eq!(outcome, super::ResendOutcome::Dispatched);
+        assert_eq!(
+            *sent.lock().expect("sent mutex"),
+            vec![tx.txid()],
+            "the transaction must reach the broadcaster"
+        );
+    }
+
+    /// A broadcaster that proves nothing was sent must not be reported as a
+    /// dispatch.
+    ///
+    /// `Rejected` means no bytes reached the network, so dash-spv never took
+    /// the transaction into its rebroadcast set and nothing will retry it on
+    /// its own. Reporting it as dispatched would also let the caller continue
+    /// a dependent batch against an output the network has never seen.
+    #[tokio::test]
+    async fn resend_reports_not_sent_when_the_broadcaster_refuses() {
+        let ctx = TestWalletContext::new_random();
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let manager = make_manager(SingleWalletPersister {
+            wallet: ctx.wallet,
+            managed: ctx.managed_wallet,
+        });
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+        let generation = Arc::clone(
+            manager
+                .get_wallet(&wallet_id)
+                .await
+                .expect("registered")
+                .generation(),
+        );
+
+        let broadcaster = RejectingBroadcaster;
+        let tx = spend_to(
+            dashcore::OutPoint {
+                txid: "0000000000000000000000000000000000000000000000000000000000000003"
+                    .parse()
+                    .expect("static txid"),
+                vout: 0,
+            },
+            10_000,
+        );
+
+        let outcome = super::resend_one(
+            &wallet_id,
+            &generation,
+            &manager.wallet_manager,
+            &broadcaster,
+            &tx,
+        )
+        .await;
+
+        assert_eq!(
+            outcome,
+            super::ResendOutcome::NotSent,
+            "a provably unsent transaction has no owner and must say so"
+        );
+    }
+
+    /// Broadcaster that refuses every send the way zero connected peers does.
+    struct RejectingBroadcaster;
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for RejectingBroadcaster {
+        async fn broadcast(
+            &self,
+            _transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, BroadcastError> {
+            Err(BroadcastError::Rejected {
+                reason: "test: no connected peers".to_string(),
+            })
+        }
+
+        async fn wait_until_ready(&self, _timeout: Duration) -> bool {
+            true
+        }
+    }
+
+    /// The guard this exists for: a wallet removed while the resend was
+    /// waiting must not have its transaction broadcast.
+    ///
+    /// Without the liveness check — or with it taken outside the lifecycle
+    /// gate, where teardown can slip past it — this sends on behalf of a
+    /// wallet the manager no longer has. Asserting on the broadcaster rather
+    /// than on a log line is the point: the check can be deleted and every
+    /// other test here still passes.
+    #[tokio::test]
+    async fn resend_is_abandoned_once_the_wallet_is_gone() {
+        let ctx = TestWalletContext::new_random();
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let manager = make_manager(SingleWalletPersister {
+            wallet: ctx.wallet,
+            managed: ctx.managed_wallet,
+        });
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+        let generation = Arc::clone(
+            manager
+                .get_wallet(&wallet_id)
+                .await
+                .expect("registered")
+                .generation(),
+        );
+
+        // The registration the resend was created for is gone.
+        manager
+            .wallet_manager
+            .write()
+            .await
+            .remove_wallet(&wallet_id)
+            .expect("the wallet this test just registered must be removable");
+
+        let broadcaster = CountingBroadcaster::new();
+        let sent = Arc::clone(&broadcaster.sent);
+        let tx = spend_to(
+            dashcore::OutPoint {
+                txid: "0000000000000000000000000000000000000000000000000000000000000002"
+                    .parse()
+                    .expect("static txid"),
+                vout: 0,
+            },
+            10_000,
+        );
+
+        let outcome = super::resend_one(
+            &wallet_id,
+            &generation,
+            &manager.wallet_manager,
+            &broadcaster,
+            &tx,
+        )
+        .await;
+
+        assert_eq!(outcome, super::ResendOutcome::Abandoned);
+        assert!(
+            sent.lock().expect("sent mutex").is_empty(),
+            "nothing may be broadcast for a wallet that is no longer registered"
+        );
+    }
+
+    /// A send the host still holds as unconfirmed has to be replayed at
+    /// load, or the coin it spent comes back as spendable.
+    ///
+    /// The spend effect is never persisted — `isSpent` stays false on the
+    /// input row until the spending transaction reaches a block, because a
+    /// mempool-only sighting is reversible by eviction — so the restored
+    /// UTXO set hands that input straight back. A running app is still
+    /// correct, holding the effect in memory; across a restart it used to
+    /// be recovered only by re-observing the transaction on the network,
+    /// which never happens for a send that did not reach the network. The
+    /// balance then re-counted the coin, permanently (support ticket
+    /// 32189).
+    ///
+    /// Asserting on `balance()` rather than on the account internals is
+    /// deliberate: that is the number the UI reads, and it is mirrored
+    /// from the replayed state a few lines after the replay runs.
+    #[tokio::test]
+    async fn load_replays_an_unconfirmed_outgoing_send() {
+        let (ctx, funding) = TestWalletContext::new_random()
+            .with_mempool_funding(100_000)
+            .await;
+        let wallet_id = ctx.wallet.compute_wallet_id();
+        let funded_outpoint = dashcore::OutPoint {
+            txid: funding.txid(),
+            vout: 0,
+        };
+
+        // Without a replay this is what the restore alone would leave
+        // standing, so it is also the failure the assertion below catches.
+        let spend = spend_to(funded_outpoint, 74_000);
+        let manager = make_pending_manager(PendingSendPersister {
+            wallet: ctx.wallet,
+            managed: ctx.managed_wallet,
+            pending: vec![spend],
+        });
+
+        manager
+            .load_from_persistor()
+            .await
+            .expect("the wallet must load");
+
+        let wallet = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("the loaded wallet must be registered");
+        let balance = wallet.balance();
+        let total = balance.confirmed() + balance.unconfirmed();
+        assert_eq!(
+            total, 0,
+            "the replayed send spends the only coin, so nothing may remain \
+             spendable; {} duffs left means the input came back",
+            total
+        );
+    }
+
+    fn make_pending_manager(
+        persister: PendingSendPersister,
+    ) -> Arc<PlatformWalletManager<PendingSendPersister>> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
         Arc::new(PlatformWalletManager::new(
             sdk,
             Arc::new(persister),
@@ -322,8 +1327,8 @@ mod idempotent_load_tests {
     /// The app re-activates its per-network manager on every SDK emission,
     /// which re-runs `load_from_persistor` against a manager that already
     /// holds the persisted wallet. The second (and every later) call must
-    /// be a no-op `Ok(())` — NOT the `WalletExists`-wrapped
-    /// `WalletCreation` error that used to crash the app on the main
+    /// be a no-op `Ok(())` — NOT a `WalletExists`-wrapped
+    /// `WalletCreation` error, which crashes the app on the main
     /// thread. Exactly one wallet stays registered across the calls.
     #[tokio::test]
     async fn repeated_load_from_persistor_is_idempotent() {
@@ -344,9 +1349,9 @@ mod idempotent_load_tests {
             "first load must register exactly the persisted wallet"
         );
 
-        // Re-hydrating with the wallet already present used to surface
-        // `Failed to register persisted wallet in WalletManager: Wallet
-        // already exists`. It must now be a silent no-op.
+        // Re-hydrating with the wallet already present must be a silent
+        // no-op, not `Failed to register persisted wallet in WalletManager:
+        // Wallet already exists`.
         manager
             .load_from_persistor()
             .await
@@ -360,6 +1365,531 @@ mod idempotent_load_tests {
             manager.wallet_ids().await,
             vec![expected_id],
             "idempotent reloads must not duplicate or drop the wallet"
+        );
+    }
+
+    /// Lifecycle hazard: a rollback must not remove a registration it did not
+    /// make.
+    ///
+    /// The interleaving: this load publishes generation G1 under an id, a
+    /// concurrent `remove_wallet` frees that id, a registration publishes G2
+    /// under it, and only then does a later iteration of this load fail and
+    /// reach the rollback. Removing by id alone deletes G2 — a live wallet
+    /// whose owner is still using it, and one this call never created.
+    ///
+    /// Both halves are pinned: the entry is reclaimed while it is still ours,
+    /// and refused once it is not. The inner-manager rollback keys off this
+    /// same answer, so a wallet left in `self.wallets` is never stripped of
+    /// its backing either.
+    #[tokio::test]
+    async fn rollback_only_reclaims_the_generation_this_load_published() {
+        let ctx = TestWalletContext::new_random();
+        let expected_id = ctx.wallet.compute_wallet_id();
+        let manager = make_manager(SingleWalletPersister {
+            wallet: ctx.wallet,
+            managed: ctx.managed_wallet,
+        });
+        manager
+            .load_from_persistor()
+            .await
+            .expect("first load succeeds");
+
+        let published = manager.wallets.load();
+        let wallet = published
+            .get(&expected_id)
+            .expect("the load registered the wallet");
+        let ours = Arc::clone(wallet.generation());
+
+        assert_eq!(
+            rollback_targets(&[(expected_id, Arc::clone(&ours))], &published),
+            vec![expected_id],
+            "a registration still holding this load's generation is ours to roll back"
+        );
+
+        // The same id, a different generation — what a removal plus a
+        // re-registration leaves behind.
+        let superseding = Arc::new(WalletGeneration::new());
+        assert!(
+            !Arc::ptr_eq(&ours, &superseding),
+            "the fixture must model two distinct generations"
+        );
+        assert!(
+            rollback_targets(&[(expected_id, superseding)], &published).is_empty(),
+            "a generation this load never published must survive its rollback"
+        );
+    }
+
+    /// Drives the rollback itself, not just the predicate it consults.
+    ///
+    /// `rollback_only_reclaims_the_generation_this_load_published` covers
+    /// `rollback_targets` in isolation; this one fails a load AFTER a wallet
+    /// has been published, so the `rcu` closure, the per-attempt verdict
+    /// hand-off, and the branch that decides whether the inner manager entry
+    /// is removed all execute. Inverting that decision leaves the sibling
+    /// test green while stripping a live wallet of its backing, so the two
+    /// are not redundant.
+    #[tokio::test]
+    async fn a_failed_load_rolls_back_the_wallet_it_had_already_published() {
+        let ctx = TestWalletContext::new_random();
+        let expected_id = ctx.wallet.compute_wallet_id();
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
+        let manager = Arc::new(PlatformWalletManager::new(
+            sdk,
+            Arc::new(MismatchedSecondWalletPersister {
+                wallet: ctx.wallet,
+                managed: ctx.managed_wallet,
+            }),
+            event_handler,
+        ));
+
+        let result = manager.load_from_persistor().await;
+        assert!(
+            result.is_err(),
+            "the id-mismatched second entry must fail the load"
+        );
+
+        assert!(
+            manager.get_wallet(&expected_id).await.is_none(),
+            "the wallet published before the failure must be rolled back out of the map"
+        );
+        assert!(
+            manager
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet(&expected_id)
+                .is_none(),
+            "and out of the inner manager, so a retry can re-insert it"
+        );
+    }
+}
+
+/// Clear the outbound-account marker of every established contact whose
+/// restored DashPay external pool holds an address the account's current
+/// xpub (on `wallet`) does not derive at that index, so the contact sweep
+/// rebuilds the account instead of trusting the pool. Returns how many
+/// markers were cleared.
+fn distrust_markers_of_foreign_external_pools(
+    wallet: &key_wallet::Wallet,
+    info: &mut PlatformWalletInfo,
+) -> usize {
+    let foreign: Vec<_> = info
+        .core_wallet
+        .accounts
+        .dashpay_external_accounts
+        .iter()
+        // Only a marker can be distrusted, so a relationship without one
+        // costs no derivation.
+        .filter(|(key, _)| {
+            info.identity_manager
+                .managed_identity(&Identifier::from(key.user_identity_id))
+                .and_then(|managed| {
+                    managed
+                        .dashpay()
+                        .established_contacts()
+                        .get(&Identifier::from(key.friend_identity_id))
+                })
+                .is_some_and(|established| established.external_account_reference.is_some())
+        })
+        .filter(|(key, managed)| {
+            wallet
+                .accounts
+                .dashpay_external_accounts
+                .get(key)
+                .is_some_and(|account| {
+                    managed
+                        .managed_account_type()
+                        .address_pools()
+                        .into_iter()
+                        .any(|pool| !pool_derives_from(pool, account))
+                })
+        })
+        .map(|(key, _)| *key)
+        .collect();
+    let mut cleared = 0;
+    for key in foreign {
+        let owner = Identifier::from(key.user_identity_id);
+        let contact = Identifier::from(key.friend_identity_id);
+        let marker = info
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .and_then(|managed| managed.established_contact_mut(&contact))
+            .and_then(|established| established.external_account_reference.take());
+        if marker.is_some() {
+            cleared += 1;
+        }
+    }
+    cleared
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many restored pools [`pool_derives_from`] validated on this
+    /// thread, so a test can show a load did no derivation it did not need.
+    static POOL_VALIDATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many restored pools have been validated on this thread.
+#[cfg(test)]
+pub(crate) fn pool_validations_on_this_thread() -> usize {
+    POOL_VALIDATIONS.with(std::cell::Cell::get)
+}
+
+/// Clear every restored outbound-account marker on `info`. Returns how many
+/// were set.
+fn clear_restored_outbound_markers(info: &mut PlatformWalletInfo) -> usize {
+    let mut cleared = 0;
+    for owner in info.identity_manager.identity_ids() {
+        let Some(managed) = info.identity_manager.managed_identity_mut(&owner) else {
+            continue;
+        };
+        let contacts: Vec<Identifier> = managed
+            .dashpay()
+            .established_contacts()
+            .keys()
+            .copied()
+            .collect();
+        for contact in contacts {
+            if let Some(established) = managed.established_contact_mut(&contact) {
+                if established.external_account_reference.take().is_some() {
+                    cleared += 1;
+                }
+            }
+        }
+    }
+    cleared
+}
+
+/// Whether every address in `pool` is the one `account` derives at its index.
+///
+/// Each restored index is derived on its own through key-wallet's
+/// [`AccountDerivation::derive_address_at`] — the derivation that generates
+/// the pool — so the cost follows the restored rows (a sparse row at a huge
+/// index costs one derivation) and the check cannot drift from address
+/// generation. The comparison is by script, which is what the pool watches
+/// and pays to, so an address encoded for another network still matches its
+/// key. A failed derivation counts as a mismatch, and a hardened pool never
+/// matches: its children cannot be derived from a public key.
+fn pool_derives_from(pool: &AddressPool, account: &key_wallet::Account) -> bool {
+    #[cfg(test)]
+    POOL_VALIDATIONS.with(|count| count.set(count.get() + 1));
+    if pool.pool_type == AddressPoolType::AbsentHardened {
+        return pool.addresses.is_empty();
+    }
+    pool.addresses.iter().all(|(index, info)| {
+        account
+            .derive_address_at(pool.pool_type, *index, None)
+            .is_ok_and(|address| address.script_pubkey() == info.script_pubkey)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use dash_async::WorkerStatus;
+
+    use super::*;
+    use crate::changeset::{PersistenceError, PersistenceErrorKind, PlatformWalletChangeSet};
+    use crate::events::PlatformEventHandler;
+    use crate::manager::WalletWorker;
+    use crate::test_support::NoopTestEventHandler;
+
+    /// Strong `Arc<P>` clones a freshly built [`PlatformWalletManager`] holds:
+    /// its `persister` field, the `DashPayPaymentHandler`, and the
+    /// `IdentitySyncManager` — the wallet-event adapter deliberately excluded.
+    const MANAGER_PERSISTER_HOLDERS: usize = 3;
+
+    /// Persister whose `load()` always fails.
+    struct FailingLoadPersister;
+
+    impl PlatformWalletPersistence for FailingLoadPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Err(PersistenceError::backend("simulated load failure"))
+        }
+    }
+
+    struct TransientOnceLoadPersister {
+        load_calls: AtomicUsize,
+    }
+
+    impl PlatformWalletPersistence for TransientOnceLoadPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            if self.load_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Err(PersistenceError::backend_with_kind(
+                    PersistenceErrorKind::Transient,
+                    "simulated transient load failure",
+                ));
+            }
+            Ok(ClientStartState::default())
+        }
+    }
+
+    /// Fails `load()` permanently once, then succeeds.
+    #[derive(Default)]
+    struct FatalOnceLoadPersister {
+        load_calls: AtomicUsize,
+    }
+
+    impl PlatformWalletPersistence for FatalOnceLoadPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            if self.load_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Err(PersistenceError::backend("simulated fatal load failure"));
+            }
+            Ok(ClientStartState::default())
+        }
+    }
+
+    fn make_manager<P: PlatformWalletPersistence + 'static>(
+        persister: Arc<P>,
+    ) -> PlatformWalletManager<P> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopTestEventHandler);
+        PlatformWalletManager::new(sdk, persister, handler)
+    }
+
+    #[tokio::test]
+    async fn transient_load_failure_during_startup_rehydration_surfaces_immediately() {
+        let persister = Arc::new(TransientOnceLoadPersister {
+            load_calls: AtomicUsize::new(0),
+        });
+        let probe = Arc::clone(&persister);
+        let manager = make_manager(persister);
+
+        let err = manager
+            .load_from_persistor()
+            .await
+            .expect_err("transient startup load failure must reach the caller");
+
+        match err {
+            PlatformWalletError::PersisterLoad(source) => assert!(source.is_transient()),
+            other => panic!("expected transient PersisterLoad, got {other:?}"),
+        }
+        assert_eq!(probe.load_calls.load(Ordering::SeqCst), 1);
+    }
+
+    /// Isolating by construction: the count is read on a live, idle manager
+    /// with nothing dropped or aborted, so no teardown path can stand in for
+    /// the weak-reference property.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn adapter_holds_no_strong_persister_reference() {
+        let persister = Arc::new(FailingLoadPersister);
+        let probe = Arc::clone(&persister);
+        let _manager = make_manager(persister);
+
+        assert_eq!(
+            Arc::strong_count(&probe),
+            MANAGER_PERSISTER_HOLDERS + 1,
+            "expected exactly {} strong persister references — the manager's \
+             own `persister` field, the DashPayPaymentHandler on the event \
+             fan-out, the IdentitySyncManager, and this test's probe. The idle \
+             wallet-event adapter must not be among them: it holds a Weak<P> \
+             and upgrades it per batch",
+            MANAGER_PERSISTER_HOLDERS + 1
+        );
+    }
+
+    /// Running the manager-wide, one-way `shutdown()` on this failure path
+    /// seals every coordinator's admission gate and joins the wallet-event
+    /// adapter, so the retry returns `Ok(())` onto a manager that can never
+    /// sync or persist again (#4133).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn manager_stays_usable_after_a_failed_load() {
+        let manager = make_manager(Arc::new(FatalOnceLoadPersister::default()));
+
+        let err = manager
+            .load_from_persistor()
+            .await
+            .expect_err("the first load must fail");
+        assert!(
+            matches!(err, PlatformWalletError::PersisterLoad(_)),
+            "load failure must surface as the typed PersisterLoad variant, got {err:?}"
+        );
+
+        manager
+            .load_from_persistor()
+            .await
+            .expect("a load retried after a failed one must succeed");
+
+        assert!(
+            !manager.identity_sync_manager.sync_admission_closed(),
+            "a failed load must leave sync admission open — a sealed gate \
+             makes every later `Ok(())` a lie"
+        );
+
+        // The adapter's receiver is taken exactly once, so a joined adapter
+        // cannot be respawned: `Ok` means the reused manager still persists.
+        let report = manager.shutdown().await;
+        assert_eq!(
+            report.per_worker.get(&WalletWorker::EventAdapter),
+            Some(&WorkerStatus::Ok),
+            "the wallet-event adapter must still have been running for \
+             shutdown to join it: {report:?}"
+        );
+    }
+
+    /// Dropping the manager after a failed load releases the persister — the
+    /// precondition for reconstructing on the same path without a spurious
+    /// `WalletStorageError::AlreadyOpen` masking the real error (#4133).
+    ///
+    /// Isolates nothing: the count is the product of the whole teardown, so one
+    /// participant may regress while another still releases.
+    /// `adapter_holds_no_strong_persister_reference` pins the weak reference.
+    // TODO: cover the composed open -> failed load -> reopen from
+    // platform-wallet-storage; neither side asserts it today.
+    // Multi-thread: dropping the manager runs upstream's `Drop`, whose
+    // `ThreadRegistry::shutdown()` asserts a multi-thread runtime.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn failed_load_releases_persister_for_reconstruct() {
+        let persister = Arc::new(FailingLoadPersister);
+        let probe = Arc::clone(&persister);
+        let manager = make_manager(persister);
+
+        let err = manager
+            .load_from_persistor()
+            .await
+            .expect_err("load must fail");
+        assert!(
+            matches!(err, PlatformWalletError::PersisterLoad(_)),
+            "load failure must surface as the typed PersisterLoad variant, got {err:?}"
+        );
+        assert_eq!(
+            Arc::strong_count(&probe),
+            MANAGER_PERSISTER_HOLDERS + 1,
+            "a failed load tears nothing down, so the manager's own references \
+             must be exactly as they were before the call"
+        );
+
+        drop(manager);
+        assert_eq!(
+            Arc::strong_count(&probe),
+            1,
+            "after a failed load and a drop nothing may still hold the persister"
+        );
+    }
+
+    /// A dirty drop releases the persister **synchronously**, bounded only by a
+    /// batch commit in flight (see
+    /// `an_in_flight_commit_holds_a_strong_persister_reference` in
+    /// `changeset::core_bridge`); the adapter is idle here.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn dropping_manager_releases_persister_synchronously_when_adapter_idle() {
+        let persister = Arc::new(FailingLoadPersister);
+        let probe = Arc::clone(&persister);
+        let manager = make_manager(persister);
+        assert_eq!(
+            Arc::strong_count(&probe),
+            MANAGER_PERSISTER_HOLDERS + 1,
+            "the manager must hold its persister before the drop for this to \
+             mean anything"
+        );
+
+        // Dirty drop: `shutdown` is never called, so nothing joins the adapter.
+        drop(manager);
+
+        assert_eq!(
+            Arc::strong_count(&probe),
+            1,
+            "dropping the manager must release the persister immediately — an \
+             idle adapter holds no strong reference to await"
+        );
+    }
+
+    /// Restored-address validation costs one derivation per restored row: a
+    /// single sparse row at index 1,000,000 is checked directly, not by
+    /// deriving every index below it, and a row another xpub derived is still
+    /// caught. The expected addresses come from key-wallet's own per-index
+    /// derivation, so the validator cannot drift from it unnoticed
+    /// (dashpay/platform#4302 review).
+    #[test]
+    fn restored_address_validation_is_proportional_to_the_restored_rows() {
+        use key_wallet::account::derivation::AccountDerivation;
+        use key_wallet::account::AccountType;
+        use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::managed_account::ManagedCoreFundsAccount;
+
+        let account = |seed: u8| key_wallet::Account {
+            parent_wallet_id: None,
+            account_type: AccountType::DashpayExternalAccount {
+                index: 0,
+                user_identity_id: [0xAA; 32],
+                friend_identity_id: [0x01; 32],
+            },
+            network: dashcore::Network::Testnet,
+            account_xpub: ExtendedPubKey::from_priv(
+                &ExtendedPrivKey::new_master(dashcore::Network::Testnet, &[seed; 32])
+                    .expect("master"),
+            ),
+            is_watch_only: true,
+        };
+        let (current, previous) = (account(1), account(2));
+        let managed = ManagedCoreFundsAccount::from_account(&current);
+        let pool = managed.managed_account_type().address_pools()[0].clone();
+        assert_eq!(pool.pool_type, AddressPoolType::Absent);
+        assert!(super::pool_derives_from(&pool, &current));
+
+        let sparse = |from: &key_wallet::Account| {
+            let mut pool = pool.clone();
+            let mut info = pool.addresses[&0].clone();
+            info.index = 1_000_000;
+            info.address = from
+                .derive_address_at(AddressPoolType::Absent, 1_000_000, None)
+                .expect("key-wallet derives the row");
+            info.script_pubkey = info.address.script_pubkey();
+            pool.addresses.insert(1_000_000, info);
+            pool.highest_generated = Some(1_000_000);
+            pool
+        };
+
+        let started = std::time::Instant::now();
+        assert!(super::pool_derives_from(&sparse(&current), &current));
+        assert!(
+            !super::pool_derives_from(&sparse(&previous), &current),
+            "a row the current account does not derive is caught"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "validation must not derive every index below the sparse row"
         );
     }
 }

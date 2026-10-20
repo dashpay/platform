@@ -46,7 +46,7 @@ use std::str::FromStr;
 use dashcore::address::Payload;
 use dashcore::hashes::Hash;
 use dashcore::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
-use dashcore::secp256k1::{Message, Secp256k1};
+use dashcore::secp256k1::Message;
 use dashcore::sign_message::{signed_msg_hash, MessageSignature};
 use dashcore::{Address as DashAddress, AddressType, PublicKey as DashPublicKey};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -232,7 +232,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // reserved machine marker a signer stamps at POSITION 0 of its own
         // rendering (`MnemonicResolverCoreSigner::NotFound` in production), so
         // key unavailability is recognized by that position-0 check — never a
-        // substring sniff (#4183 review) — and it must happen BEFORE the
+        // substring sniff — and it must happen BEFORE the
         // "signer rejected the digest at {path}: " context is prepended, which
         // would push the marker mid-string where no permitted check can see it.
         let (signature, public_key) = signer
@@ -274,10 +274,6 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             });
         }
 
-        // `recover_ecdsa` needs only a `Verification` context — the signing
-        // tables a full `Secp256k1::new()` would also allocate are dead weight
-        // here, since the signature itself came from the signer.
-        let secp = Secp256k1::verification_only();
         let digest = Message::from_digest(hash.to_byte_array());
         let compact = signature.serialize_compact();
 
@@ -286,7 +282,8 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             .filter_map(|id| RecoveryId::try_from(id).ok())
             .filter_map(|recid| RecoverableSignature::from_compact(&compact, recid).ok())
             .find(|candidate| {
-                secp.recover_ecdsa(&digest, candidate)
+                candidate
+                    .recover_ecdsa(digest)
                     .is_ok_and(|recovered| recovered == public_key)
             })
             .ok_or_else(|| PlatformWalletError::MessageSigningFailed {
@@ -303,7 +300,7 @@ mod tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use dashcore::secp256k1::{ecdsa, PublicKey, Secp256k1};
+    use dashcore::secp256k1::{ecdsa, PublicKey};
     use dashcore::sign_message::{signed_msg_hash, MessageSignature};
     use dashcore::{Address as DashAddress, Network};
     use key_wallet::signer::{Signer, SignerMethod, TransactionCategory};
@@ -349,7 +346,7 @@ mod tests {
     fn verifies_for(signature_base64: &str, address: &DashAddress) -> bool {
         MessageSignature::from_base64(signature_base64)
             .expect("signature is valid base64 of a 65-byte recoverable signature")
-            .is_signed_by_address(&Secp256k1::new(), address, signed_msg_hash(MESSAGE))
+            .is_signed_by_address(address, signed_msg_hash(MESSAGE))
             .expect("P2PKH address is a supported verification target")
     }
 
@@ -403,7 +400,7 @@ mod tests {
         assert!(
             MessageSignature::from_base64(&signature)
                 .expect("valid base64 of a 65-byte recoverable signature")
-                .is_signed_by_address(&Secp256k1::new(), &address, signed_msg_hash(""))
+                .is_signed_by_address(&address, signed_msg_hash(""))
                 .expect("P2PKH address is a supported verification target"),
             "a signature over the empty message must verify against signed_msg_hash(\"\")"
         );
@@ -641,8 +638,8 @@ mod tests {
 
     /// The marker only counts at position 0 of the signer's rendering: a
     /// mid-string mention stays `MessageSigningFailed`, never key-unavailable —
-    /// promoting it would be the substring sniff #4183's review rejected, and
-    /// would misroute a generic failure into the host's key repair.
+    /// promoting it would be a substring sniff, and would misroute a generic
+    /// failure into the host's key repair.
     #[tokio::test]
     async fn mid_string_marker_is_not_promoted_during_message_signing() {
         let (wm, wallet_id, _, address) =

@@ -52,7 +52,8 @@ impl DocumentQuerySdk for DocumentQuery {
 /// currently-known [`dpp::version::PlatformVersion`] for V0 vs V1 dispatch.
 ///
 /// The [`Fetch`] / [`FetchMany`](crate::platform::FetchMany) trampolines for
-/// [`dpp::document::Document`] (and the document aggregate views) split
+/// [`dpp::document::Document`], the document aggregate views, and
+/// [`drive_proof_verifier::CompositeDocuments`] split
 /// `Fetch::Query = DocumentQuery` (rich, what `FromProof` binds to) from
 /// `Fetch::Request = GetDocumentsRequest` (wire); this impl is the
 /// rich→wire step the trampoline invokes via

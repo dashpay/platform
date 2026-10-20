@@ -21,6 +21,7 @@ pub enum TokenDistributionTypeWasm {
     #[default]
     PreProgrammed = 0,
     Perpetual = 1,
+    OncePerIdentity = 2,
 }
 
 impl From<TokenDistributionTypeWasm> for TokenDistributionType {
@@ -28,6 +29,7 @@ impl From<TokenDistributionTypeWasm> for TokenDistributionType {
         match distribution_type {
             TokenDistributionTypeWasm::PreProgrammed => TokenDistributionType::PreProgrammed,
             TokenDistributionTypeWasm::Perpetual => TokenDistributionType::Perpetual,
+            TokenDistributionTypeWasm::OncePerIdentity => TokenDistributionType::OncePerIdentity,
         }
     }
 }
@@ -37,6 +39,7 @@ impl From<TokenDistributionType> for TokenDistributionTypeWasm {
         match distribution_type {
             TokenDistributionType::Perpetual => TokenDistributionTypeWasm::Perpetual,
             TokenDistributionType::PreProgrammed => TokenDistributionTypeWasm::PreProgrammed,
+            TokenDistributionType::OncePerIdentity => TokenDistributionTypeWasm::OncePerIdentity,
         }
     }
 }
@@ -49,6 +52,7 @@ impl TryFrom<&JsValue> for TokenDistributionTypeWasm {
             return match enum_val.to_lowercase().as_str() {
                 "preprogrammed" => Ok(TokenDistributionTypeWasm::PreProgrammed),
                 "perpetual" => Ok(TokenDistributionTypeWasm::Perpetual),
+                "onceperidentity" => Ok(TokenDistributionTypeWasm::OncePerIdentity),
                 _ => Err(WasmDppError::invalid_argument("unknown distribution type")),
             };
         }
@@ -57,6 +61,7 @@ impl TryFrom<&JsValue> for TokenDistributionTypeWasm {
             return match enum_val as u8 {
                 0 => Ok(TokenDistributionTypeWasm::PreProgrammed),
                 1 => Ok(TokenDistributionTypeWasm::Perpetual),
+                2 => Ok(TokenDistributionTypeWasm::OncePerIdentity),
                 _ => Err(WasmDppError::invalid_argument("unknown distribution type")),
             };
         }
@@ -80,6 +85,7 @@ impl From<TokenDistributionTypeWasm> for String {
         match distribution_type {
             TokenDistributionTypeWasm::PreProgrammed => String::from("PreProgrammed"),
             TokenDistributionTypeWasm::Perpetual => String::from("Perpetual"),
+            TokenDistributionTypeWasm::OncePerIdentity => String::from("OncePerIdentity"),
         }
     }
 }

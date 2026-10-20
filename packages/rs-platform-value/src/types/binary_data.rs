@@ -3,12 +3,12 @@ use crate::types::encoding_string_to_encoding;
 use crate::{string_encoding, Error, Value};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Default, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Encode, Decode)]
+#[derive(Default, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Encode, Decode, DecodeUntrusted)]
 pub struct BinaryData(pub Vec<u8>);
 
 impl fmt::Debug for BinaryData {

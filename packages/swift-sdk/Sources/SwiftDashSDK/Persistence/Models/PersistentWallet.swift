@@ -88,6 +88,19 @@ public final class PersistentWallet {
     /// ChainLock has ever been observed for this wallet (fresh
     /// wallet, or pre-feature row).
     public var lastAppliedChainLockBytes: Data?
+    /// NUMERIC block height of the wallet's last applied ChainLock —
+    /// the same watermark whose bincode blob sits in
+    /// `lastAppliedChainLockBytes`, which is opaque on this side of the
+    /// FFI. Delivered separately through the persistence extension's
+    /// `on_persist_wallet_changeset_chain_lock_height_fn` and stored
+    /// with monotonic-max semantics (chain locks only move forward).
+    /// This is one half of the swept-tombstone collection boundary
+    /// `min(chainlockHeight, syncedHeight)` — see
+    /// `PersistentPendingInput.winnerMinedHeight`. `nil` (fresh wallet,
+    /// pre-feature row, or a native library too old to fill the slot)
+    /// means no finality boundary is known and no tombstone may be
+    /// collected. Optional, so existing stores lightweight-migrate.
+    public var lastAppliedChainLockHeight: UInt32?
     /// User imported this wallet from an existing mnemonic (as
     /// opposed to generating a fresh one). Cosmetic flag that
     /// drives the "📥 Imported" badge; defaulted to `false` for

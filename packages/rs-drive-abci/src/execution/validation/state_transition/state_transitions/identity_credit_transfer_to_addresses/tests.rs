@@ -2955,7 +2955,7 @@ mod tests {
 
     mod serialization_tests {
         use super::*;
-        use dpp::serialization::PlatformDeserializable;
+        use dpp::serialization::PlatformDeserializableUntrusted;
         use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
         use dpp::state_transition::StateTransitionIdentitySigned;
         use dpp::state_transition::StateTransitionLike;
@@ -2988,8 +2988,8 @@ mod tests {
                 .expect("should serialize");
 
             // Deserialize
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             // Verify the deserialized transition matches the original
             match (&original_transition, &deserialized) {
@@ -3042,8 +3042,8 @@ mod tests {
             let serialized = transition.serialize_to_bytes().expect("should serialize");
 
             // Should deserialize successfully
-            let deserialized =
-                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+            let deserialized = StateTransition::deserialize_from_bytes_untrusted(&serialized)
+                .expect("should deserialize");
 
             match deserialized {
                 StateTransition::IdentityCreditTransferToAddresses(t) => {
@@ -4195,6 +4195,7 @@ mod tests {
         /// (read_only affects whether the key can be updated, not whether it can sign)
         #[tokio::test]
         async fn test_read_only_transfer_key_can_sign() {
+            use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
             let platform_version = PlatformVersion::latest();
             let mut rng = StdRng::seed_from_u64(618);
             let mut signer = SimpleSigner::default();
@@ -4223,12 +4224,8 @@ mod tests {
 
             // Make it read-only by creating a new key with read_only = true
             // We need to modify the inner V0 struct
-            let transfer_key = match transfer_key {
-                IdentityPublicKey::V0(mut v0) => {
-                    v0.read_only = true;
-                    IdentityPublicKey::V0(v0)
-                }
-            };
+            let mut transfer_key = transfer_key;
+            transfer_key.set_read_only(true);
 
             signer.add_identity_public_key(auth_key.clone(), auth_private_key);
             signer.add_identity_public_key(transfer_key.clone(), transfer_private_key);
@@ -5072,11 +5069,13 @@ mod tests {
             );
         }
 
-        /// Test that when balance equals (total_outputs + actual_fee_from_first_run) with 128 outputs,
-        /// the second run succeeds because fee estimation is now accurate enough with count sum trees.
-        /// (Previously this would fail because fee estimation used a higher worst-case estimate.)
+        /// Test that with 128 outputs, as with one, a balance of (total_outputs +
+        /// actual_fee_from_first_run) is refused, the estimate the balance check uses coming in at
+        /// or above the applied fee: since grovedb `GROVE_V4` (protocol version 14) it sizes each
+        /// rewritten root of an address balance sum tree as the apply stores it. A balance topped
+        /// up to the required one then succeeds.
         #[tokio::test]
-        async fn test_exact_actual_fee_balance_succeeds_with_128_outputs() {
+        async fn test_exact_actual_fee_balance_fails_and_estimate_succeeds_with_128_outputs() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -5179,14 +5178,14 @@ mod tests {
                 )
                 .expect("should remove balance");
 
-            // Second run - this should fail because fee estimation is higher than actual fee
+            // Second run - refused: the estimate is above the actual fee
             let platform_state2 = platform.state.load();
             let transaction2 = platform.drive.grove.start_transaction();
 
             let processing_result2 = platform
                 .platform
                 .process_raw_state_transitions(
-                    &vec![transition_bytes],
+                    &vec![transition_bytes.clone()],
                     &platform_state2,
                     &BlockInfo::default(),
                     &transaction2,
@@ -5196,12 +5195,52 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            // With count sum trees, fee estimation is now accurate enough that exact balance succeeds
-            assert_matches!(
-                processing_result2.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }] => {
-                    // Success - fee estimation is now accurate enough with count sum trees
+            let required_balance = match processing_result2.execution_results().as_slice() {
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(err)),
+                )] => {
+                    assert_eq!(err.balance(), exact_balance);
+                    err.required_balance()
                 }
+                other => panic!("expected the actual fee alone to be refused, got {other:?}"),
+            };
+            assert!(
+                required_balance > exact_balance,
+                "Required balance {required_balance} should be greater than exact balance {exact_balance}"
+            );
+            drop(transaction2);
+
+            // Third run - topped up to the required balance, the transfer succeeds
+            platform
+                .drive
+                .add_to_identity_balance(
+                    identity.id().to_buffer(),
+                    required_balance - exact_balance,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("should add balance");
+            let platform_state3 = platform.state.load();
+            let transaction3 = platform.drive.grove.start_transaction();
+
+            let processing_result3 = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state3,
+                    &BlockInfo::default(),
+                    &transaction3,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result3.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 

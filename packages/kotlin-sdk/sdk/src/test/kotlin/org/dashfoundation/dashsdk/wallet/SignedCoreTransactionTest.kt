@@ -21,11 +21,18 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class SignedCoreTransactionTest {
 
-    private fun registerBlob(token: Long, fee: Long, txid: String, txBytes: ByteArray): ByteArray {
+    private fun registerBlob(
+        token: Long,
+        fee: Long,
+        txid: String,
+        txBytes: ByteArray,
+        deliverable: Long = 0,
+    ): ByteArray {
         val txidBytes = txid.toByteArray(Charsets.UTF_8)
-        val buf = ByteBuffer.allocate(8 + 8 + 4 + txidBytes.size + 4 + txBytes.size)
+        val buf = ByteBuffer.allocate(8 + 8 + 8 + 4 + txidBytes.size + 4 + txBytes.size)
         buf.putLong(token)
         buf.putLong(fee)
+        buf.putLong(deliverable)
         buf.putInt(txidBytes.size)
         buf.put(txidBytes)
         buf.putInt(txBytes.size)
@@ -72,5 +79,43 @@ class SignedCoreTransactionTest {
         cleanable.clean()
 
         assertEquals(1, runs.get())
+    }
+
+    // --- deliverableAmountDuffs -------------------------------------------
+    //
+    // Carried in the registration blob, computed Rust-side from the REGISTERED
+    // transaction. It must NOT be re-derived from rawTxBytes: those are a
+    // mutable copy the host owns, while the broadcast sends the registered
+    // transaction referenced by the token.
+
+    @Test
+    fun deliverableAmountComesFromTheBlobNotTheBytes() {
+        val signed = ManagedPlatformWallet.SignedCoreTransaction.fromRegisterBlob(
+            registerBlob(token = 7L, fee = 432L, txid = "ab", txBytes = byteArrayOf(9, 9, 9),
+                deliverable = 27_442_985L)
+        )
+        assertEquals(27_442_985L, signed.deliverableAmountDuffs)
+    }
+
+    @Test
+    fun mutatingRawBytesCannotChangeTheDeliverableAmount() {
+        // The guarantee the drain quote rests on: what was quoted is what the
+        // registered transaction pays, whatever happens to the host's copy.
+        val signed = ManagedPlatformWallet.SignedCoreTransaction.fromRegisterBlob(
+            registerBlob(token = 1L, fee = 1L, txid = "cd", txBytes = byteArrayOf(1, 2, 3, 4),
+                deliverable = 500_000L)
+        )
+        signed.rawTxBytes.fill(0xFF.toByte())
+        assertEquals(500_000L, signed.deliverableAmountDuffs)
+    }
+
+    @Test
+    fun deliverableAmountIsZeroWhenTheEngineReportsNoSingleDestination() {
+        // Multi-recipient or OP_RETURN-only builds have no single deliverable
+        // output; Rust reports 0 and the host reads that as "not applicable".
+        val signed = ManagedPlatformWallet.SignedCoreTransaction.fromRegisterBlob(
+            registerBlob(token = 2L, fee = 10L, txid = "ef", txBytes = ByteArray(0))
+        )
+        assertEquals(0L, signed.deliverableAmountDuffs)
     }
 }

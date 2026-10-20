@@ -277,3 +277,7 @@ function createPlatformProofVerifier({
 }
 
 module.exports = createPlatformProofVerifier;
+// The shared EvoSDK is also what functional specs use to exercise
+// WASM-SDK-only read surfaces (e.g. chained document queries) against
+// the same network the verifier is bound to.
+module.exports.getEvoSdkForNetwork = getEvoSdkForNetwork;

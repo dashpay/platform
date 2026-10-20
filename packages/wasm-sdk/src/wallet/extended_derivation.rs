@@ -7,7 +7,6 @@ use crate::impl_wasm_serde_conversions;
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore;
-use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
 use dash_sdk::dpp::key_wallet::{bip32, DerivationPath, ExtendedPrivKey};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -109,20 +108,19 @@ fn derive_common_from_mnemonic(
     let derivation_path = DerivationPath::from_str(path)
         .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid derivation path: {}", e)))?;
 
-    let secp = Secp256k1::new();
     let derived_key = master_key
-        .derive_priv(&secp, &derivation_path)
+        .derive_priv(&derivation_path)
         .map_err(|e| WasmSdkError::generic(format!("Failed to derive key: {}", e)))?;
 
-    let xpub = bip32::ExtendedPubKey::from_priv(&secp, &derived_key);
+    let xpub = bip32::ExtendedPubKey::from_priv(&derived_key);
     let private_key = dashcore::PrivateKey::new(derived_key.private_key, net);
-    let public_key = private_key.public_key(&secp);
+    let public_key = private_key.public_key();
     let address = dashcore::Address::p2pkh(&public_key, net);
 
     Ok(CommonDerivation {
         path: path.to_string(),
         private_key_wif: private_key.to_wif(),
-        private_key_hex: hex::encode(private_key.inner.secret_bytes()),
+        private_key_hex: hex::encode(private_key.inner.to_secret_bytes()),
         public_key_hex: hex::encode(public_key.to_bytes()),
         address: address.to_string(),
         network: network.to_string(),

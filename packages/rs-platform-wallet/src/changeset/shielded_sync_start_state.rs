@@ -41,6 +41,10 @@ pub struct ShieldedSubwalletStartState {
     /// Sync watermark: count of note positions scanned = the next
     /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,
+    /// Whether persistence supplied an explicit sync-watermark row. The value
+    /// alone cannot distinguish a completed empty scan from no scan. This is
+    /// restore metadata only; it does not add a field to the durable schema.
+    pub has_sync_state: bool,
 }
 
 /// Whole-client shielded restore state, keyed by `SubwalletId`.

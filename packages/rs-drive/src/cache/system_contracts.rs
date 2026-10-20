@@ -3,6 +3,10 @@ use arc_swap::ArcSwap;
 use dpp::data_contract::DataContract;
 use dpp::prelude::Identifier;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+use platform_version::version::feature_initial_protocol_versions::{
+    APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION,
+    MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION,
+};
 use platform_version::version::{PlatformVersion, ProtocolVersion};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -159,6 +163,22 @@ impl SystemDataContracts {
         self.load(SystemDataContract::DocumentHistory, platform_version)
     }
 
+    /// Returns the app-connect contract materialized for `platform_version`.
+    pub fn load_app_connect(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Arc<DataContract>, Error> {
+        self.load(SystemDataContract::AppConnect, platform_version)
+    }
+
+    /// Returns the moderation charters contract materialized for `platform_version`.
+    pub fn load_moderation_charters(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Arc<DataContract>, Error> {
+        self.load(SystemDataContract::ModerationCharters, platform_version)
+    }
+
     /// Returns the system contract whose deterministic identifier matches `id`, materialized
     /// for `platform_version`.
     ///
@@ -197,6 +217,12 @@ impl SystemDataContracts {
             SystemDataContract::TokenHistory | SystemDataContract::KeywordSearch => 9,
             // Written to state by the transition to protocol version 13.
             SystemDataContract::DocumentHistory => 13,
+            // Written to state by the transition to protocol version 14.
+            SystemDataContract::AppConnect => APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION,
+            // Written to state by the transition to protocol version 14.
+            SystemDataContract::ModerationCharters => {
+                MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION
+            }
             // Never served from this cache: `WalletUtils` is only ever read from grovedb, and
             // the reserved `FeatureFlags` slot has no implementation.
             SystemDataContract::WalletUtils | SystemDataContract::FeatureFlags => return Ok(None),
@@ -397,6 +423,54 @@ mod tests {
             )
             .expect("expected the v13 lookup to succeed")
             .is_some());
+    }
+
+    #[test]
+    fn should_serve_moderation_charters_only_from_its_activation_version() {
+        let contracts = SystemDataContracts::new();
+
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::ModerationCharters.id(),
+                platform_version(13)
+            )
+            .expect("expected the pre-activation lookup to succeed")
+            .is_none());
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::ModerationCharters.id(),
+                PlatformVersion::latest()
+            )
+            .expect("expected the v14 lookup to succeed")
+            .is_some());
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::ModerationCharters.id(),
+                platform_version(13)
+            )
+            .expect("an old-version lookup after materialization must succeed")
+            .is_none());
+    }
+
+    #[test]
+    fn should_serve_app_connect_only_from_its_activation_version() {
+        let contracts = SystemDataContracts::new();
+
+        assert!(contracts
+            .find_by_id(SystemDataContract::AppConnect.id(), platform_version(13))
+            .expect("expected the pre-activation lookup to succeed")
+            .is_none());
+        assert!(contracts
+            .find_by_id(
+                SystemDataContract::AppConnect.id(),
+                PlatformVersion::latest()
+            )
+            .expect("expected the v14 lookup to succeed")
+            .is_some());
+        assert!(contracts
+            .find_by_id(SystemDataContract::AppConnect.id(), platform_version(13))
+            .expect("an old-version lookup after materialization must succeed")
+            .is_none());
     }
 
     fn memoized_protocol_versions(contracts: &SystemDataContracts) -> Vec<ProtocolVersion> {

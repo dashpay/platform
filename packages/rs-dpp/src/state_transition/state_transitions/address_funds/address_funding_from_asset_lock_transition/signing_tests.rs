@@ -14,7 +14,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::{PublicKey as RawPublicKey, Secp256k1, SecretKey as RawSecretKey};
+use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 use dashcore::{OutPoint, PublicKey};
 use platform_value::BinaryData;
 use platform_version::version::PlatformVersion;
@@ -38,9 +38,8 @@ struct TestAddressSigner {
 
 impl TestAddressSigner {
     fn add_p2pkh(&mut self, seed: [u8; 32]) -> PlatformAddress {
-        let secp = Secp256k1::new();
-        let secret = RawSecretKey::from_byte_array(&seed).expect("valid secret key");
-        let public = PublicKey::new(RawPublicKey::from_secret_key(&secp, &secret));
+        let secret = RawSecretKey::from_secret_bytes(seed).expect("valid secret key");
+        let public = PublicKey::new(RawPublicKey::from_secret_key(&secret));
         let hash = *public.pubkey_hash().as_byte_array();
         self.keys.insert(hash, (secret, public));
         PlatformAddress::P2pkh(hash)
@@ -59,7 +58,7 @@ impl Signer<PlatformAddress> for TestAddressSigner {
             .keys
             .get(hash)
             .ok_or_else(|| ProtocolError::Generic(format!("unknown key {}", hex::encode(hash))))?;
-        let sig = dashcore::signer::sign(data, secret.as_ref())
+        let sig = dashcore::signer::sign(data, secret.as_secret_bytes())
             .map_err(|e| ProtocolError::Generic(e.to_string()))?;
         Ok(BinaryData::new(sig.to_vec()))
     }
@@ -229,9 +228,8 @@ async fn try_from_asset_lock_with_signers_produces_matching_signature() {
             _path: &DerivationPath,
             sighash: [u8; 32],
         ) -> Result<(ecdsa::Signature, RawPublicKey), Self::Error> {
-            let secp = Secp256k1::new();
             let msg = Message::from_digest(sighash);
-            Ok((secp.sign_ecdsa(&msg, &self.secret), self.public))
+            Ok((self.secret.sign_ecdsa(msg), self.public))
         }
 
         async fn public_key(&self, _path: &DerivationPath) -> Result<RawPublicKey, Self::Error> {
@@ -249,9 +247,8 @@ async fn try_from_asset_lock_with_signers_produces_matching_signature() {
         }
     }
 
-    let secp = Secp256k1::new();
-    let asset_lock_secret = RawSecretKey::from_byte_array(&[7u8; 32]).expect("valid secret");
-    let asset_lock_public = RawPublicKey::from_secret_key(&secp, &asset_lock_secret);
+    let asset_lock_secret = RawSecretKey::from_secret_bytes([7u8; 32]).expect("valid secret");
+    let asset_lock_public = RawPublicKey::from_secret_key(&asset_lock_secret);
 
     let mut input_signer = TestAddressSigner::default();
     let input_addr = input_signer.add_p2pkh([1u8; 32]);

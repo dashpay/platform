@@ -212,6 +212,7 @@ impl Drive {
                 &storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
+                false,
                 event_id,
                 transaction,
                 batch_operations,

@@ -7,13 +7,15 @@ use crate::serialization::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
-#[derive(Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default)]
+#[derive(
+    Decode, Encode, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Default, DecodeUntrusted,
+)]
 // Custom `Serialize` / `Deserialize` below — `derive(Serialize, Deserialize)`
 // can't produce the desired flat wire shape because the `Identity` variant
 // wraps `Identifier` (serializes as a base58 string, not a map) and `Group`
@@ -81,8 +83,8 @@ impl<'de> Deserialize<'de> for AuthorizedActionTakers {
                 // 4.0.0-beta.4 used bare strings / externally-tagged maps, and
                 // this message is the only hint users get on ingest failure.
                 f.write_str(
-                    "AuthorizedActionTakers as a map with a `type` discriminator, \
-                     e.g. {\"type\": \"contractOwner\"} or {\"type\": \"identity\", \"identity\": \"<base58>\"} \
+                    "AuthorizedActionTakers as a map with a `$type` discriminator, \
+                     e.g. {\"$type\": \"contractOwner\"} or {\"$type\": \"identity\", \"identity\": \"<base58>\"} \
                      (the pre-4.0.0-beta.4 shapes \"ContractOwner\" / {\"Identity\": \"<base58>\"} are no longer accepted)",
                 )
             }

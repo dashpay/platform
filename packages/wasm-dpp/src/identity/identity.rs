@@ -10,7 +10,7 @@ use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV
 use dpp::identity::{Identity, IdentityPublicKey, KeyID};
 use dpp::metadata::Metadata;
 use dpp::platform_value::ReplacementType;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::serialization::PlatformSerializable;
 use dpp::serialization::ValueConvertible;
 use dpp::version::PlatformVersion;
@@ -267,7 +267,8 @@ impl IdentityWasm {
     #[wasm_bindgen(js_name=fromBuffer)]
     pub fn from_buffer(buffer: Vec<u8>) -> Result<IdentityWasm, JsValue> {
         let identity: Identity =
-            PlatformDeserializable::deserialize_from_bytes(buffer.as_slice()).with_js_error()?;
+            PlatformDeserializableUntrusted::deserialize_from_bytes_untrusted(buffer.as_slice())
+                .with_js_error()?;
         Ok(identity.into())
     }
 }

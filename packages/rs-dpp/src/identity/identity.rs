@@ -17,10 +17,12 @@ use crate::version::PlatformVersion;
 
 use crate::ProtocolError;
 #[cfg(feature = "identity-serialization")]
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use derive_more::From;
 #[cfg(feature = "identity-serialization")]
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization_derive::{
+    PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
+};
 use platform_value::Identifier;
 
 use crate::fee::Credits;
@@ -38,7 +40,14 @@ use std::collections::{BTreeMap, BTreeSet};
 )]
 #[cfg_attr(
     feature = "identity-serialization",
-    derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
+    derive(
+        Encode,
+        Decode,
+        DecodeUntrusted,
+        PlatformDeserializeTrusted,
+        PlatformDeserializeUntrusted,
+        PlatformSerialize
+    ),
     platform_serialize(limit = 15000, unversioned)
 )]
 #[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]

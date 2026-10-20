@@ -44,7 +44,7 @@ use crate::DerivedAddress;
 /// Render the BIP32 derivation path for a `DerivedAddress` event
 /// payload. See module-level docs for the path layout rules.
 pub fn derivation_path_for_derived_address(derived: &DerivedAddress) -> Option<DerivationPath> {
-    // `Address` no longer exposes its network directly — its base58/bech32
+    // `Address` does not expose its network directly — its base58/bech32
     // prefix is ambiguous across testnet/devnet/regtest. The derivation path
     // only distinguishes mainnet (coin type `5'`) from everything else (`1'`),
     // so probe for mainnet and fall back to testnet otherwise.

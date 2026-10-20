@@ -65,8 +65,10 @@ fn parse_where_operator(op: &str) -> Result<WhereOperator, FFIError> {
         "<=" | "lte" => Ok(WhereOperator::LessThanOrEquals),
         "in" => Ok(WhereOperator::In),
         "startsWith" => Ok(WhereOperator::StartsWith),
-        // "contains" and "elementMatch" are not supported in the current version
-        "contains" | "elementMatch" => Err(FFIError::InternalError(format!(
+        // The elements of a typed array an index keys (protocol version 14)
+        "contains" => Ok(WhereOperator::Contains),
+        "containsAny" => Ok(WhereOperator::ContainsAny),
+        "elementMatch" => Err(FFIError::InternalError(format!(
             "Operator '{}' is not supported",
             op
         ))),

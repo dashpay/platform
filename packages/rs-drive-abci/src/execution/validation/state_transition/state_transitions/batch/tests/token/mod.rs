@@ -8,6 +8,8 @@ mod emergency_action;
 mod freeze;
 mod mint;
 mod mint_many;
+mod non_transferable;
+mod shielded;
 mod transfer;
 mod unfreeze;
 

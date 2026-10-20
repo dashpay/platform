@@ -19,6 +19,22 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 /// named) must contain the referenced document type, and that type must forbid
 /// deletion. Identity, contract and token targets declare nothing beyond their
 /// kind, so they have nothing to validate here.
+///
+/// # Parameters
+///
+/// * `contract`: The contract being created or updated, whose declarations are checked.
+/// * `drive`: The Drive that foreign referenced contracts are fetched from.
+/// * `block_info`: The block being executed; its epoch prices the contract fetches.
+/// * `execution_context`: The execution context the contract fetch fees are billed to.
+/// * `transaction`: The GroveDB transaction.
+/// * `platform_version`: The platform version.
+///
+/// # Returns
+///
+/// * `Ok(SimpleConsensusValidationResult)`: valid when every declaration holds, otherwise
+///   carrying the consensus error of the first invalid declaration.
+/// * `Err(Error)` when the method version is unknown, a contract fetch fails or returns no
+///   fee, or checking whether a document type records creator ids fails.
 pub(in crate::execution::validation::state_transition) fn validate_data_contract_references(
     contract: &DataContract,
     drive: &Drive,

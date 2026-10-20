@@ -67,7 +67,7 @@ pub unsafe extern "C" fn dash_sdk_token_emergency_action(
     // SAFETY: We've verified all pointers are non-null above
     // However, we cannot validate if they point to valid memory without dereferencing
     // For test safety, we should create proper mock handles instead of using arbitrary values
-    let wrapper = unsafe { &mut *(sdk_handle as *mut SDKWrapper) };
+    let wrapper = unsafe { &*(sdk_handle as *const SDKWrapper) };
     let identity_public_key = unsafe { &*(identity_public_key_handle as *const IdentityPublicKey) };
     let signer = unsafe { &*(signer_handle as *const crate::signer::VTableSigner) };
     let params = unsafe { &*params };
@@ -126,9 +126,9 @@ pub unsafe extern "C" fn dash_sdk_token_emergency_action(
                 )
             };
 
-            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+            use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
 
-            DataContract::versioned_deserialize(
+            DataContract::versioned_deserialize_untrusted(
                 contract_slice,
                 false, // skip validation since it's already validated
                 wrapper.sdk.version(),
@@ -180,7 +180,7 @@ pub unsafe extern "C" fn dash_sdk_token_emergency_action(
             .token_emergency_action(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
-                FFIError::InternalError(format!("Failed to perform emergency action and wait: {}", e))
+                FFIError::sdk_call_failed("Failed to perform emergency action and wait", e)
             })?;
 
         Ok(result)

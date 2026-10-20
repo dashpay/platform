@@ -31,13 +31,15 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::UnknownVersionMismatch)` if the drive version does not match known versions.
-    pub(super) fn remove_indices_for_top_index_level_for_contract_operations(
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::drive::document) fn remove_indices_for_top_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
+        block_time_ms: u64,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -71,6 +73,7 @@ impl Drive {
                 document_and_contract_info,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
+                block_time_ms,
                 transaction,
                 batch_operations,
                 platform_version,
