@@ -27,12 +27,13 @@ use tokio_util::sync::CancellationToken;
 
 use dpp::prelude::Identifier;
 use key_wallet::wallet::ManagedWalletInfo;
-use key_wallet_manager::WalletManager;
+use key_wallet_manager::{WalletEvent, WalletManager};
 
+use crate::broadcast_probe::{AcceptanceProbe, DapiAcceptanceProbe};
+use crate::changeset::core_bridge::spawn_observed_wallet_event_adapter;
 use crate::changeset::{
-    persists_backfill_coverage, spawn_wallet_event_adapter_with_durable_cursors, CoreChangeSet,
-    DashPayBackfillRecord, DurableCursor, DurableCursors, PlatformWalletChangeSet,
-    PlatformWalletPersistence,
+    persists_backfill_coverage, CoreChangeSet, DashPayBackfillRecord, DurableCursor,
+    DurableCursors, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
 use crate::events::{PlatformEventHandler, PlatformEventManager};
@@ -44,6 +45,7 @@ use crate::manager::platform_address_sync::PlatformAddressSyncManager;
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::asset_lock::LockNotifyHandler;
+use crate::wallet::core::broadcast_resolver::BroadcastResolver;
 use crate::wallet::core::{BalanceUpdateHandler, SpendObservationHandler};
 use crate::wallet::identity::network::DashPayPaymentHandler;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -82,6 +84,11 @@ pub enum WalletWorker {
     /// tasks; its drain outcome is folded into the report because those
     /// tasks clone the FFI persister and can fire host callbacks.
     DashPayPayments,
+    /// The `BroadcastResolver` task and the reads and probes it runs. Not a
+    /// registry worker: shutdown stops the task, which aborts and awaits its
+    /// jobs; the outcome is folded into the report because the task publishes
+    /// through the host's event callbacks.
+    BroadcastProbes,
     /// The wallet-event adapter task — the sink coordinator stores feed
     /// into. Not a registry worker: joined by
     /// [`shutdown`](PlatformWalletManager::shutdown) under a bounded
@@ -390,6 +397,10 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// Tracks asynchronous payment hooks so manager shutdown can close
     /// admission and drain every task before host callback contexts are freed.
     pub(super) dashpay_payment_handler: Arc<DashPayPaymentHandler>,
+    /// Asks the network about this manager's unconfirmed sends whose
+    /// broadcast outcome was unknown and publishes the verdicts. Off until
+    /// the host calls [`set_broadcast_probe_enabled`](Self::set_broadcast_probe_enabled).
+    pub(super) broadcast_resolver: Arc<BroadcastResolver>,
     /// Periodic shielded (Orchard) note sync coordinator (spends are
     /// detected during the note scan, no separate nullifier pass).
     /// Iterates every wallet that has been bound via
@@ -524,6 +535,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         persister: Arc<P>,
         app_handler: Arc<dyn PlatformEventHandler>,
     ) -> Self {
+        let probe = Arc::new(DapiAcceptanceProbe::new(Arc::clone(&sdk)));
+        Self::with_acceptance_probe(sdk, persister, app_handler, probe)
+    }
+
+    /// [`Self::new`] with the probe the broadcast resolver asks the network
+    /// through.
+    pub(crate) fn with_acceptance_probe(
+        sdk: Arc<dash_sdk::Sdk>,
+        persister: Arc<P>,
+        app_handler: Arc<dyn PlatformEventHandler>,
+        acceptance_probe: Arc<dyn AcceptanceProbe>,
+    ) -> Self {
         // Take the manager's lossless, unbounded persistence receiver BEFORE
         // the manager is wrapped in the shared `Arc<RwLock>` and handed to any
         // producer. A broadcast subscription would drop events emitted during
@@ -549,17 +572,34 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let sync_fault = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let durable_cursors = DurableCursors::default();
 
+        // BroadcastResolver probes unconfirmed sends whose broadcast outcome
+        // was unknown (read-only; see its module docs). It publishes through
+        // the event manager it is registered with, so it gets a weak handle
+        // to it once that exists. Built before the adapter, which also feeds
+        // it wallet events from the lossless channel.
+        let broadcast_resolver = Arc::new(BroadcastResolver::new(
+            acceptance_probe,
+            Arc::clone(&wallet_manager),
+        ));
         // Spawn the wallet-event adapter that translates upstream
         // `WalletEvent`s into `CoreChangeSet`s and forwards them to
         // the persister.
         let event_adapter_cancel = CancellationToken::new();
-        let event_adapter_join = spawn_wallet_event_adapter_with_durable_cursors(
+        // Weak: the resolver's lifetime stays with the manager, not with
+        // the adapter task, which may outlive it draining its backlog.
+        let resolver_observer = Arc::downgrade(&broadcast_resolver);
+        let event_adapter_join = spawn_observed_wallet_event_adapter(
             Arc::clone(&wallet_manager),
             Arc::downgrade(&persister),
             event_receiver,
             Arc::clone(&sync_fault),
             Arc::clone(&durable_cursors),
             event_adapter_cancel.clone(),
+            Some(Arc::new(move |event: &WalletEvent| {
+                if let Some(resolver) = resolver_observer.upgrade() {
+                    resolver.on_recorded_wallet_event(event);
+                }
+            })),
         );
 
         // Build handler list: app handler + internal handlers.
@@ -594,7 +634,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             balance_handler,
             spend_observation_handler,
             Arc::clone(&dashpay_payment_handler) as Arc<dyn PlatformEventHandler>,
+            Arc::clone(&broadcast_resolver) as Arc<dyn PlatformEventHandler>,
         ]));
+        broadcast_resolver.set_event_manager(Arc::downgrade(&event_manager));
 
         let spv = Arc::new(SpvRuntime::new(
             Arc::clone(&wallet_manager),
@@ -644,6 +686,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             dashpay_sync_manager: dashpay_sync,
             dpns_sync_manager: dpns_sync,
             dashpay_payment_handler,
+            broadcast_resolver,
             #[cfg(feature = "shielded")]
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
@@ -667,14 +710,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// [`Self::inherit_rewind_barrier`]) — and for the adapter, which drops
     /// the removed wallet's advances while nothing holds the id and counts
     /// them off this state as it does. Called under the manager write lock,
-    /// which is what makes the hand-off atomic against the adapter.
+    /// which is what makes the hand-off atomic against the adapter. The
+    /// broadcast resolver is told too, under the same guard (see
+    /// [`insert_into_inner`](Self::insert_into_inner)).
     pub(super) fn remove_from_wallet_manager(
         &self,
         wm: &mut WalletManager<PlatformWalletInfo>,
         wallet_id: &WalletId,
     ) -> Result<(), key_wallet_manager::WalletError> {
         use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-        let (_, info) = wm.remove_wallet(wallet_id)?;
+        let removed = wm.remove_wallet(wallet_id);
+        // Whatever the inner manager said — it can only fail for an id it no
+        // longer holds — the wallet is gone: the resolver forgets it.
+        self.broadcast_resolver.wallet_removed(wallet_id);
+        let (_, info) = removed?;
         let retiring = info
             .rewind_barrier
             .retire(WalletInfoInterface::account_generation(&info));
@@ -1125,7 +1174,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// Returns a [`ShutdownReport`] keyed by [`WalletWorker`] — including
     /// the non-registry workers [`WalletWorker::Spv`],
-    /// [`WalletWorker::DashPayPayments`], and
+    /// [`WalletWorker::DashPayPayments`], [`WalletWorker::BroadcastProbes`], and
     /// [`WalletWorker::EventAdapter`], so no callback-capable background
     /// work is excluded from the verdict. Inspect
     /// [`ShutdownReport::all_clean`] before freeing the host callback
@@ -1148,10 +1197,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // Close payment-hook admission and join the admitted tasks —
         // they clone the FFI persister, so a straggler is exactly the
         // callback-after-destroy hazard the report exists to catch.
-        let payments_drained = self
-            .dashpay_payment_handler
-            .quiesce_within(PAYMENT_DRAIN_BUDGET)
-            .await;
+        //
+        // The broadcast resolver's task publishes through the host's event
+        // callbacks too, so it must be gone before destroy returns: it is told
+        // to stop, aborts and awaits its probes, and ends. It is not aborted
+        // itself — it may be inside a host callback — so a Timeout here means
+        // it may still call the host. Both drains share one budget.
+        let (payments_drained, probes_status) = tokio::join!(
+            self.dashpay_payment_handler
+                .quiesce_within(PAYMENT_DRAIN_BUDGET),
+            self.broadcast_resolver.stop_within(PAYMENT_DRAIN_BUDGET),
+        );
 
         // Drain the coordinators concurrently against one shared budget so
         // the drain phase as a whole is bounded (a wedged pass surfaces as
@@ -1228,6 +1284,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 WorkerStatus::Timeout
             },
         );
+        report
+            .per_worker
+            .insert(WalletWorker::BroadcastProbes, probes_status);
 
         // The wallet-event adapter is the sink the coordinators' stores
         // feed into, so it drains AFTER them. It is a plain tokio task,
@@ -1298,12 +1357,16 @@ impl<P: PlatformWalletPersistence + 'static> Drop for PlatformWalletManager<P> {
 mod tests {
     use super::*;
 
+    use crate::broadcast_probe::{ProbeOutcome, ProbeVerdict};
+    use dashcore::hashes::Hash as _;
+
     use dash_async::WorkerStatus;
 
     use crate::changeset::{
         ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
     };
     use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::test_support::{test_platform_wallet_manager_with_probe, NoopTestPersister};
 
     struct NoopPersister;
     impl PlatformWalletPersistence for NoopPersister {
@@ -1474,6 +1537,7 @@ mod tests {
         for worker in [
             WalletWorker::Spv,
             WalletWorker::DashPayPayments,
+            WalletWorker::BroadcastProbes,
             WalletWorker::EventAdapter,
         ] {
             assert!(
@@ -1556,6 +1620,263 @@ mod tests {
             highest_synced_height.load(std::sync::atomic::Ordering::SeqCst),
             TIP,
             "a joined shutdown must commit every watermark the manager emitted"
+        );
+    }
+
+    /// Counts the probes it is asked for and decides nothing.
+    #[derive(Default)]
+    struct CountingProbe(std::sync::atomic::AtomicUsize);
+
+    impl CountingProbe {
+        fn probes(&self) -> usize {
+            self.0.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AcceptanceProbe for CountingProbe {
+        async fn probe(&self, _transaction: &dashcore::Transaction) -> ProbeOutcome {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            ProbeOutcome {
+                verdict: ProbeVerdict::Unresolved {
+                    reason: "counted".to_string(),
+                },
+                answered: true,
+            }
+        }
+    }
+
+    /// How long a test waits for something another task does.
+    const TEST_WAIT: Duration = Duration::from_secs(10);
+
+    /// Wait for `holds`, asked every few milliseconds, or fail naming `what`.
+    async fn eventually<F, Fut>(what: &str, mut holds: F)
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = bool>,
+    {
+        let waited = tokio::time::timeout(TEST_WAIT, async {
+            while !holds().await {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        assert!(waited.is_ok(), "never happened: {what}");
+    }
+
+    /// An InstantSend-locked payment to the manager's wallet and an
+    /// unsettled send of the wallet's that spends it, as the mempool hands
+    /// them to the wallet: the send is a root of its own, so its probe's
+    /// verdict is published. No SPV client runs in these tests, so their
+    /// events reach the resolver through the lossless channel alone.
+    async fn receive_and_spend<P: PlatformWalletPersistence + 'static>(
+        manager: &PlatformWalletManager<P>,
+    ) {
+        use dashcore::ephemerealdata::instant_lock::InstantLock;
+        use dashcore::{OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Witness};
+        use key_wallet_manager::WalletInterface;
+
+        let spending = |txid, output| Transaction {
+            version: 2,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: OutPoint { txid, vout: 0 },
+                script_sig: ScriptBuf::new(),
+                sequence: 0xffffffff,
+                witness: Witness::new(),
+            }],
+            output: vec![output],
+            special_transaction_payload: None,
+        };
+        let mut wallet_manager = manager.wallet_manager.write().await;
+        let address = wallet_manager
+            .monitored_addresses()
+            .into_iter()
+            .next()
+            .expect("a monitored address");
+        let funding = spending(
+            dashcore::Txid::from_byte_array([7; 32]),
+            TxOut {
+                value: 100_000_000,
+                script_pubkey: address.script_pubkey(),
+            },
+        );
+        let send = spending(
+            funding.txid(),
+            TxOut {
+                value: 99_999_000,
+                script_pubkey: ScriptBuf::new_op_return(&[0u8; 4]),
+            },
+        );
+        let lock = InstantLock {
+            txid: funding.txid(),
+            ..Default::default()
+        };
+        wallet_manager
+            .process_mempool_transaction(&funding, Some(lock))
+            .await;
+        wallet_manager
+            .process_mempool_transaction(&send, None)
+            .await;
+    }
+
+    /// A manager over `probe` and `handler` with one wallet registered and
+    /// probing on.
+    async fn probing_manager(
+        probe: Arc<dyn AcceptanceProbe>,
+        handler: Arc<dyn PlatformEventHandler>,
+    ) -> (Arc<PlatformWalletManager<NoopTestPersister>>, WalletId) {
+        let (manager, wallet_id) =
+            test_platform_wallet_manager_with_probe(handler, Some(probe)).await;
+        manager.broadcast_resolver.set_enabled(true);
+        (manager, wallet_id)
+    }
+
+    /// Move the wallet's synced height to `height` and tell the resolver, as
+    /// the SPV fan-out tells it.
+    async fn step_to<P: PlatformWalletPersistence + 'static>(
+        manager: &PlatformWalletManager<P>,
+        wallet_id: WalletId,
+        height: u32,
+    ) {
+        use key_wallet_manager::{WalletEvent, WalletInterface};
+
+        manager
+            .wallet_manager
+            .write()
+            .await
+            .update_wallet_synced_height(&wallet_id, height);
+        manager
+            .broadcast_resolver
+            .on_wallet_event(&WalletEvent::SyncHeightAdvanced { wallet_id, height });
+    }
+
+    /// The constructor must connect the lossless wallet-event channel to the
+    /// broadcast resolver: a record change that reaches the resolver only
+    /// through that channel wakes an idle wallet, and the next block's pass
+    /// reads it and probes the new send. No SPV client runs here, so nothing
+    /// forwards the fan-out's copy of the events; without the constructor's
+    /// observer the wallet stays idle and the first wait below fails.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_wire_the_lossless_event_channel_into_the_broadcast_resolver() {
+        let probe = Arc::new(CountingProbe::default());
+        let (manager, wallet_id) = probing_manager(
+            Arc::clone(&probe) as Arc<dyn AcceptanceProbe>,
+            Arc::new(NoopEventHandler),
+        )
+        .await;
+        let resolver = Arc::clone(&manager.broadcast_resolver);
+
+        // Following the tip with nothing unsettled: the wallet goes idle.
+        step_to(&manager, wallet_id, 100).await;
+        step_to(&manager, wallet_id, 101).await;
+        eventually("the wallet goes idle", || resolver.is_idle(&wallet_id)).await;
+        assert_eq!(probe.probes(), 0);
+
+        receive_and_spend(&manager).await;
+        eventually("the lossless channel wakes the idle wallet", || async {
+            !resolver.is_idle(&wallet_id).await
+        })
+        .await;
+        assert_eq!(probe.probes(), 0, "a wake reads nothing by itself");
+
+        step_to(&manager, wallet_id, 102).await;
+        eventually("the next block's pass probes the send's chain", || async {
+            probe.probes() > 0
+        })
+        .await;
+
+        let report = manager.shutdown().await;
+        assert_eq!(
+            report.per_worker.get(&WalletWorker::EventAdapter),
+            Some(&WorkerStatus::Ok),
+            "{report:?}"
+        );
+    }
+
+    /// Holds the resolver's task inside a verdict callback until released,
+    /// and counts the verdicts it was handed.
+    struct HeldVerdictHandler {
+        entered: tokio::sync::Notify,
+        release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+        verdicts: std::sync::atomic::AtomicUsize,
+    }
+
+    impl EventHandler for HeldVerdictHandler {}
+    impl PlatformEventHandler for HeldVerdictHandler {
+        fn on_outgoing_transaction_probed(
+            &self,
+            _wallet_id: &WalletId,
+            _txid: &dashcore::Txid,
+            _verdict: &ProbeVerdict,
+        ) {
+            self.verdicts
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.entered.notify_one();
+            // Released once; later verdicts pass straight through.
+            let _ = self.release.lock().expect("release").recv();
+        }
+    }
+
+    /// A removal returns only once the resolver's task is past it: a verdict
+    /// the task was publishing for the wallet when it was removed is
+    /// delivered before `remove_wallet` returns, and none follows. A host
+    /// that fences its own queue at that return (the Swift manager bumps a
+    /// per-wallet generation there) then sees no verdict of the removed
+    /// wallet stamped as a successor's.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_finish_a_removal_only_after_a_verdict_the_resolver_is_publishing() {
+        let (release, held) = std::sync::mpsc::channel();
+        let handler = Arc::new(HeldVerdictHandler {
+            entered: tokio::sync::Notify::new(),
+            release: std::sync::Mutex::new(held),
+            verdicts: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let (manager, wallet_id) = probing_manager(
+            Arc::new(CountingProbe::default()),
+            Arc::clone(&handler) as Arc<dyn PlatformEventHandler>,
+        )
+        .await;
+
+        // A send to probe, then two steps that follow the tip: the pass
+        // probes it and publishes its verdict, which the handler holds.
+        receive_and_spend(&manager).await;
+        step_to(&manager, wallet_id, 100).await;
+        step_to(&manager, wallet_id, 101).await;
+        tokio::time::timeout(TEST_WAIT, handler.entered.notified())
+            .await
+            .expect("the send's verdict is published");
+
+        let mut removal = tokio::spawn({
+            let manager = Arc::clone(&manager);
+            async move { manager.remove_wallet(&wallet_id).await }
+        });
+        // The removal has done all it changes (the wallet is out of the
+        // public map, its last mutation) and still does not return: what is
+        // left of it is the wait for the resolver's task.
+        eventually("the wallet leaves the manager", || async {
+            manager.get_wallet(&wallet_id).await.is_none()
+        })
+        .await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), &mut removal)
+                .await
+                .is_err(),
+            "the removal returned while a verdict of the wallet was still being delivered"
+        );
+
+        drop(release); // the held callback returns; later ones do not wait
+        removal
+            .await
+            .expect("removal task")
+            .expect("the wallet is removed");
+        let delivered = handler.verdicts.load(std::sync::atomic::Ordering::SeqCst);
+
+        // Nothing of the removed wallet's is published from here on.
+        assert!(manager.broadcast_resolver.caught_up(TEST_WAIT).await);
+        assert_eq!(
+            handler.verdicts.load(std::sync::atomic::Ordering::SeqCst),
+            delivered
         );
     }
 

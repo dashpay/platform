@@ -30,8 +30,12 @@ use key_wallet::{DerivationPath, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
+use crate::broadcast_probe::AcceptanceProbe;
 #[cfg(test)]
 use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
+use crate::changeset::PlatformWalletPersistence;
+use crate::events::PlatformEventHandler;
+use crate::manager::PlatformWalletManager;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -633,7 +637,7 @@ where
 /// that need a full [`PlatformWallet`] but no real persistence pipeline.
 pub struct NoopTestPersister;
 
-impl crate::changeset::PlatformWalletPersistence for NoopTestPersister {
+impl PlatformWalletPersistence for NoopTestPersister {
     fn store(
         &self,
         _wallet_id: WalletId,
@@ -680,7 +684,30 @@ pub async fn test_platform_wallet_manager_with<P>(
     persister: Arc<P>,
 ) -> (Arc<crate::PlatformWalletManager<P>>, WalletId)
 where
-    P: crate::changeset::PlatformWalletPersistence + 'static,
+    P: PlatformWalletPersistence + 'static,
+{
+    build_test_platform_wallet_manager(persister, Arc::new(NoopTestEventHandler), None).await
+}
+
+/// [`test_platform_wallet_manager`] with the host's `event_handler` and,
+/// when given, the probe the broadcast resolver asks the network through
+/// (the DAPI one otherwise).
+#[cfg(test)]
+pub(crate) async fn test_platform_wallet_manager_with_probe(
+    event_handler: Arc<dyn PlatformEventHandler>,
+    acceptance_probe: Option<Arc<dyn AcceptanceProbe>>,
+) -> (Arc<PlatformWalletManager<NoopTestPersister>>, WalletId) {
+    build_test_platform_wallet_manager(Arc::new(NoopTestPersister), event_handler, acceptance_probe)
+        .await
+}
+
+async fn build_test_platform_wallet_manager<P>(
+    persister: Arc<P>,
+    event_handler: Arc<dyn PlatformEventHandler>,
+    acceptance_probe: Option<Arc<dyn AcceptanceProbe>>,
+) -> (Arc<PlatformWalletManager<P>>, WalletId)
+where
+    P: PlatformWalletPersistence + 'static,
 {
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
@@ -690,13 +717,12 @@ where
          abandon abandon abandon abandon abandon about";
 
     let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-    let event_handler: Arc<dyn crate::events::PlatformEventHandler> =
-        Arc::new(NoopTestEventHandler);
-    let manager = Arc::new(crate::PlatformWalletManager::new(
-        sdk,
-        persister,
-        event_handler,
-    ));
+    let manager = Arc::new(match acceptance_probe {
+        Some(probe) => {
+            PlatformWalletManager::with_acceptance_probe(sdk, persister, event_handler, probe)
+        }
+        None => PlatformWalletManager::new(sdk, persister, event_handler),
+    });
 
     let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid test mnemonic");
     let seed_bytes = mnemonic.to_seed("");

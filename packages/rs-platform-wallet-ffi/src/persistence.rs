@@ -9088,6 +9088,7 @@ mod tests {
                     release_fn: None,
                 },
                 None,
+                None,
             );
             let _runtime_guard = runtime().enter();
             PlatformWalletManager::new(

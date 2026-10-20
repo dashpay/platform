@@ -40,6 +40,7 @@
 //! manager's lifetime; on shutdown, fire the [`CancellationToken`] to
 //! make the task exit cleanly.
 
+use crate::wallet::core::{is_contact_watch_only, record_spends_own_coins};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -517,6 +518,41 @@ pub fn spawn_wallet_event_adapter_with_durable_cursors<P>(
 where
     P: PlatformWalletPersistence + 'static,
 {
+    spawn_observed_wallet_event_adapter(
+        wallet_manager,
+        persister,
+        receiver,
+        sync_fault,
+        durable_cursors,
+        cancel,
+        None,
+    )
+}
+
+/// Sees every wallet event the adapter takes off the lossless channel, in
+/// order, before it is projected. It runs on the adapter task: it must not
+/// block, and a panic in it would end persistence for the session.
+pub(crate) type WalletEventObserver = Arc<dyn Fn(&WalletEvent) + Send + Sync>;
+
+/// [`spawn_wallet_event_adapter_with_durable_cursors`] with an observer of the
+/// events it consumes.
+///
+/// The persistence channel is the one stream of wallet events that cannot
+/// lose any (the broadcast fan-out ends on a lagged receiver), and it has a
+/// single receiver, so a second consumer that must not miss an event listens
+/// here rather than on a channel of its own.
+pub(crate) fn spawn_observed_wallet_event_adapter<P>(
+    wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    persister: Weak<P>,
+    receiver: mpsc::UnboundedReceiver<WalletEvent>,
+    sync_fault: Arc<AtomicBool>,
+    durable_cursors: DurableCursors,
+    cancel: CancellationToken,
+    observer: Option<WalletEventObserver>,
+) -> JoinHandle<()>
+where
+    P: PlatformWalletPersistence + 'static,
+{
     tokio::spawn(run_wallet_event_adapter(
         wallet_manager,
         persister,
@@ -524,6 +560,7 @@ where
         sync_fault,
         durable_cursors,
         cancel,
+        observer,
     ))
 }
 
@@ -712,6 +749,7 @@ async fn run_wallet_event_adapter<P>(
     sync_fault: Arc<AtomicBool>,
     durable_cursors: DurableCursors,
     cancel: CancellationToken,
+    observer: Option<WalletEventObserver>,
 ) where
     P: PlatformWalletPersistence + 'static,
 {
@@ -766,6 +804,11 @@ async fn run_wallet_event_adapter<P>(
             }
             break;
         };
+        // Before the persister is claimed: the observer sees an event even
+        // when its drain exits uncommitted.
+        if let Some(observer) = &observer {
+            observer(&event);
+        }
 
         // Claim the persister before folding anything else off the channel, so
         // everything this drain consumes is guaranteed a commit: an owner
@@ -809,6 +852,9 @@ async fn run_wallet_event_adapter<P>(
         while folded < ADAPTER_STORE_BATCH_LIMIT {
             match receiver.try_recv() {
                 Ok(event) => {
+                    if let Some(observer) = &observer {
+                        observer(&event);
+                    }
                     project_event_into_batch(&wallet_manager, &durable_cursors, &event, &mut batch)
                         .await;
                     folded += 1;
@@ -2520,61 +2566,6 @@ fn slices_and_verdicts_for_txid(
     (slices, verdicts)
 }
 
-/// Is this record owned by a contact's watch-only DashPay chain?
-///
-/// A `DashpayExternalAccount` derives its addresses from the
-/// **contact's** xpub, so this wallet can observe those outputs but can
-/// never sign for them. They are the contact's coins; this wallet only
-/// ever pays into them.
-///
-/// dashpay/rust-dashcore#926 established exactly that policy at the
-/// balance layer, dropping `dashpay_external_accounts` from
-/// `ManagedAccountCollection::all_funding_accounts` (and `_mut`), which
-/// covers `balance`, `account_balances`, `utxos` and
-/// `get_spendable_utxos` in one place. `dashpay_receival_accounts` were
-/// deliberately kept: those derive from *our* xpub, so a contact paying
-/// into them really is money arriving.
-///
-/// The persistence seam is the same rule's second home. Upstream
-/// `check_core_transaction` emits **one `TransactionRecord` per matched
-/// account** (`key_wallet::transaction_checking::wallet_checker`), so a
-/// payment to a contact produces two records sharing one txid:
-///
-/// | record's account          | `direction` | `net_amount`     |
-/// |---------------------------|-------------|------------------|
-/// | funding (BIP44/BIP32/…)   | `Outgoing`  | `change - spent` |
-/// | `DashpayExternalAccount`  | `Incoming`  | `+paid`          |
-///
-/// The external account's record is not *wrong* about its own account —
-/// that chain did receive an output. It is wrong as a description of the
-/// **wallet**, and the persisted `transactions` row is keyed by txid
-/// alone, with no per-account dimension to disambiguate (the
-/// `transaction_account_involvements` table is only written for
-/// provider-key accounts). Whichever record is stored last therefore
-/// defines the row, and the watch-only one — emitted last, because
-/// `all_accounts` visits the DashPay accounts after the standard ones —
-/// wins: a payment *away* is persisted as an incoming credit, and its
-/// output is written into `txos` as a wallet-owned coin no key of ours
-/// can spend.
-///
-/// So external-account records are excluded from the persist-time
-/// projection entirely, exactly as #926 excluded the accounts from
-/// balance aggregation. What survives from the same event is everything
-/// that is genuinely ours to remember: the address-used flips and
-/// highest-used watermarks (so contact address rotation keeps working),
-/// the derived-address rows, and `derive_spent_utxos` (so a contact
-/// spending an output persisted *before* this fix still clears the
-/// stale row).
-///
-/// The predicate itself is canonical upstream
-/// ([`AccountType::is_contact_owned`], dashpay/rust-dashcore#952): its
-/// exhaustive match forces any future account type to declare whether
-/// its coins are the wallet's or a contact's, so this seam and #926's
-/// cannot drift apart.
-fn is_contact_watch_only(record: &TransactionRecord) -> bool {
-    record.account_type.is_contact_owned()
-}
-
 /// Derive the "ours" UTXOs created by a transaction's outputs.
 ///
 /// Walks `record.output_details`, keeps entries with role `Received` or
@@ -2596,9 +2587,8 @@ fn derive_new_utxos(record: &TransactionRecord) -> Vec<Utxo> {
     );
     let is_instant = matches!(record.context, TransactionContext::InstantSend(_));
     let is_coinbase = record.transaction.is_coin_base();
-    // We own at least one input iff the wallet recorded any input details
-    // (those entries are keyed to inputs that spent our outpoints).
-    let owns_any_input = !record.input_details.is_empty();
+    // Contact-owned records returned above, so this is the input rule alone.
+    let owns_any_input = record_spends_own_coins(record);
 
     record
         .output_details
@@ -5478,7 +5468,8 @@ mod tests {
     // per-wallet batch folding.
 
     use super::{
-        run_wallet_event_adapter, AdapterFaultState, PaymentOverlay, ADAPTER_STORE_BATCH_LIMIT,
+        run_wallet_event_adapter, spawn_observed_wallet_event_adapter, AdapterFaultState,
+        DurableCursors, PaymentOverlay, WalletEventObserver, ADAPTER_STORE_BATCH_LIMIT,
     };
     use crate::changeset::changeset::PlatformWalletChangeSet;
     use crate::changeset::client_start_state::ClientStartState;
@@ -6308,6 +6299,42 @@ mod tests {
         }
     }
 
+    /// The observer sees every event of a burst once and in order, whether
+    /// the adapter took it as the first of a batch or folded it in.
+    #[tokio::test]
+    async fn should_show_the_observer_every_event_in_order() {
+        const BURST: u32 = 3000;
+        let wallet_id = [7u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        for h in 1..=BURST {
+            tx.send(sync_height_event(wallet_id, h)).unwrap();
+        }
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let observer: WalletEventObserver = {
+            let seen = Arc::clone(&seen);
+            Arc::new(move |event: &WalletEvent| {
+                if let WalletEvent::SyncHeightAdvanced { height, .. } = event {
+                    seen.lock().unwrap().push(*height);
+                }
+            })
+        };
+        let (obs_tx, _obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let handle = spawn_observed_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(&persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            DurableCursors::default(),
+            CancellationToken::new(),
+            Some(observer),
+        );
+        drop(tx);
+        handle.await.unwrap();
+
+        assert_eq!(*seen.lock().unwrap(), (1..=BURST).collect::<Vec<_>>());
+    }
+
     /// (b) THE ROOT-CAUSE FIX: a burst far larger than the old bounded ring
     /// (`DEFAULT_WALLET_EVENT_CAPACITY` == 1000) is delivered losslessly over
     /// the unbounded persistence channel, so the fault latch never trips and
@@ -6336,6 +6363,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         // Close the channel so the adapter drains the entire burst (across as
@@ -6398,6 +6426,7 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             crate::changeset::DurableCursors::default(),
             cancel,
+            None,
         )
         .await;
 
@@ -6454,6 +6483,7 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             crate::changeset::DurableCursors::default(),
             cancel,
+            None,
         ));
 
         // Park inside the first chunk's `store()`, then release the only
@@ -6516,6 +6546,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         // 1) Record-bearing event whose store() is rejected → faults wallet.
@@ -6571,6 +6602,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         // Trip the guard.
@@ -6620,6 +6652,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         let observed = obs_rx
@@ -6669,6 +6702,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         let observed = obs_rx.recv().await.expect("merged store must arrive");
@@ -6723,6 +6757,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         let mut heights: BTreeMap<WalletId, Option<u32>> = BTreeMap::new();
@@ -6771,6 +6806,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         // The store for this batch panics: no observation is emitted, and the
@@ -6859,6 +6895,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         // Park the commit inside a synchronous `store()`.
@@ -6921,6 +6958,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         assert_eq!(
@@ -7013,6 +7051,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         // All three in one drain: `healthy` stores, `doomed` panics, and
@@ -7115,6 +7154,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         // Trip the fault and wait until it has latched.
@@ -7204,6 +7244,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         tx.send(swept_event(wallet_id, 0x51, 0x52)).unwrap();
@@ -7279,6 +7320,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         // Bounded like the neighbouring capability tests below: both the
@@ -7330,6 +7372,7 @@ mod tests {
             Arc::clone(&sync_fault),
             crate::changeset::DurableCursors::default(),
             cancel.clone(),
+            None,
         ));
 
         tx.send(swept_event(wallet_id, 0x61, 0x62)).unwrap();
@@ -8659,6 +8702,7 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             crate::changeset::DurableCursors::default(),
             CancellationToken::new(),
+            None,
         ));
         handle.await.expect("the adapter exits on a closed channel");
 

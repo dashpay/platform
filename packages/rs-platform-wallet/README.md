@@ -146,6 +146,16 @@ The local shielded balance API introduces three Rust source compatibility change
   index is zero. An absent row is different from a recorded empty scan; do not
   infer presence merely from `last_synced_index > 0`.
 
+## Broadcast-probe API migration
+
+Probing sends whose broadcast outcome is unknown brings these Rust source
+changes:
+
+- `WalletWorker` gains `BroadcastProbes`, reported in the shutdown report. An
+  exhaustive `match` needs an arm for it.
+- `WalletGeneration::teardown_guard` returns a `TeardownGuard` in place of the
+  bare `OwnedRwLockWriteGuard<()>`.
+
 ## Dependencies
 
 - `key-wallet`: Core wallet functionality
