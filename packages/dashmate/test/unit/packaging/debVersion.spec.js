@@ -184,8 +184,9 @@ describe('deb-version.mjs', () => {
     });
 
     // Releases go through dev, then beta, then rc, and `dev` sorts above `beta` by its
-    // letters, so a plain `~dev` would make the first beta look like a downgrade.
-    it('should order the real 4.2.0 dev, beta and rc releases upward', () => {
+    // letters, so a plain `~dev` would make the first beta look like a downgrade. The 4.2.0
+    // line went from dev.11 to beta.1; rc and the release complete the sequence.
+    it('should order dev, beta and rc releases and the release upward, as 4.2.0 went', () => {
       const releases = [
         '4.2.0-dev.10', '4.2.0-dev.11', '4.2.0-beta.1', '4.2.0-beta.7', '4.2.0-rc.1', '4.2.0',
       ];
@@ -212,8 +213,12 @@ describe('deb-version.mjs', () => {
       });
     });
 
-    // The last packages built under the git sha scheme are the 5.0.0 release candidates.
-    // The first 5.1 release must reach operators who installed one of them, without an epoch.
+    it('should treat only a `dev` label as a dev build', () => {
+      expect(debVersionFromSemver('5.1.0-devnet.1')).to.equal('5.1.0~devnet.1-1');
+    });
+
+    // 5.0.x packages are built under the git sha scheme, the 5.0.0 release candidates among
+    // them. The first 5.1 release must reach operators who installed one, without an epoch.
     it('should sort the first 5.1 dev build above every 5.0.0 git sha version', () => {
       ['5.0.0.8fccc88fc8-1', '5.0.0.ffffffffff-1', '5.0.0.9999999999-1'].forEach((legacy) => {
         expect(compareDebVersions(debVersionFromSemver('5.1.0-dev.1'), legacy)).to.be.above(0);
@@ -277,6 +282,15 @@ describe('deb-version.mjs', () => {
       expect(() => debVersionFromSemver('4.1.0', { revision: '01' })).to.throw('revision');
       expect(() => debVersionFromSemver('4.1.0', { epoch: '01' })).to.throw('epoch');
     });
+
+    // An epoch of 0 is the same as none, so it would not overtake a git sha version, and a
+    // revision of 0 sorts below the first build.
+    it('should refuse a revision or an epoch of zero', () => {
+      expect(compareDebVersions('0:4.1.0-1', '4.1.0-1')).to.equal(0);
+
+      expect(() => debVersionFromSemver('4.1.0', { revision: '0' })).to.throw('revision');
+      expect(() => debVersionFromSemver('4.1.0', { epoch: '0' })).to.throw('epoch');
+    });
   });
 
   describe('#debFileNameVersion', () => {
@@ -296,15 +310,6 @@ describe('deb-version.mjs', () => {
     it('should drop the epoch', () => {
       expect(debFileNameVersion('1:4.1.0-1')).to.equal('4.1.0-1');
       expect(debFileNameVersion(debVersionFromSemver('4.1.0-rc.3', { epoch: '2' }))).to.equal('4.1.0.rc.3-1');
-    });
-
-    it('should not change the version apt installs', () => {
-      // the file name is cosmetic; ordering comes from the control field, which keeps `~`
-      expect(debVersionFromSemver('4.1.0-rc.3')).to.equal('4.1.0~rc.3-1');
-      expect(compareDebVersions(
-        debVersionFromSemver('4.1.0-rc.3'),
-        debVersionFromSemver('4.1.0'),
-      )).to.be.below(0);
     });
   });
 
@@ -352,6 +357,12 @@ describe('deb-version.mjs', () => {
       expect(() => runArgs(['4.1.0', '--file-name'])).to.throw();
       expect(() => runArgs(['--file-name'])).to.throw();
       expect(() => runArgs([])).to.throw();
+    });
+
+    // pack_dashmate.sh relies on a failing exit status to stop the release build.
+    it('should fail for a version or a revision it cannot translate', () => {
+      expect(() => run('4.1')).to.throw();
+      expect(() => run('4.1.0', { DASHMATE_DEB_REVISION: '01' })).to.throw();
     });
   });
 });

@@ -113,6 +113,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const expectedArgumentCount = forFileName ? 2 : 1;
 
   if (!version || args.length !== expectedArgumentCount) {
+    // eslint-disable-next-line no-console
     console.error('Usage: deb-version.mjs [--file-name] SEMVER_VERSION\n\n'
       + '  Prints the Debian package version for a semver version, or the version as it\n'
       + '  appears in the package file name.\n\n'
@@ -129,8 +130,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       epoch: process.env.DASHMATE_DEB_EPOCH || '',
     });
 
+    // eslint-disable-next-line no-console
     console.log(forFileName ? debFileNameVersion(debVersion) : debVersion);
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.error(e.message);
 
     process.exit(1);
