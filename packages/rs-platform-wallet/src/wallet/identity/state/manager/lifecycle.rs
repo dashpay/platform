@@ -3,7 +3,8 @@
 //! Adds, removes, and looks up the HD index for managed identities.
 //! Every mutation here persists a corresponding
 //! [`IdentityChangeSet`](crate::changeset::IdentityChangeSet) via
-//! the supplied [`WalletPersister`].
+//! the supplied [`WalletPersister`], except
+//! [`IdentityManager::add_identity_unstored`], whose caller stores.
 
 use super::{IdentityLocation, IdentityManager};
 use crate::changeset::{IdentityChangeSet, IdentityEntry, PlatformWalletChangeSet};

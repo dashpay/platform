@@ -770,8 +770,10 @@ mod tests {
 
     /// A load that finds a new identity stores it and its keys, with the
     /// breadcrumbs verified against the seed, as one changeset: there is no
-    /// breadcrumb-less snapshot of its keys that could commit on its own, so
-    /// a store that refuses the load leaves nothing of the identity behind.
+    /// breadcrumb-less snapshot of its keys written ahead of them. A store
+    /// that takes one write and refuses the next is enough for the load (a
+    /// second write was the one that could fail after the first committed
+    /// watch-only rows), and a store that refuses it leaves nothing behind.
     #[tokio::test]
     async fn should_store_a_newly_loaded_identity_with_its_keys_in_one_changeset() {
         let master = ExtendedPrivKey::new_master(Network::Testnet, &[7; 64]).unwrap();
@@ -781,7 +783,9 @@ mod tests {
             0,
         )
         .unwrap();
-        for fails in [false, true] {
+        // How many writes the store takes before it refuses; `None` takes
+        // every write.
+        for takes in [None, Some(1), Some(0)] {
             let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
             sdk.mock()
                 .expect_fetch(PublicKeyHash(probe), Some(answer_at(7)))
@@ -799,17 +803,18 @@ mod tests {
                     .unwrap();
             }
             store.taken().clear();
-            if fails {
-                store.arm();
+            if let Some(takes) = takes {
+                store.arm_after(takes);
             }
 
             let result = wallet.load_identity_by_index_from_master(0, &master).await;
-            assert_eq!(result.is_err(), fails, "{result:?}");
             let stores = store.taken().changeset_count();
-            if fails {
+            if takes == Some(0) {
+                assert!(result.is_err());
                 assert_eq!(stores, 0, "nothing of a refused load is stored");
                 continue;
             }
+            result.unwrap();
             assert_eq!(stores, 1, "the identity and its keys go out together");
             assert_eq!(
                 store.taken().stored_revision(Identifier::default()),

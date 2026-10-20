@@ -474,7 +474,7 @@ impl IdentityWallet {
                             // imported identity cannot sign with its HIGH /
                             // CRITICAL authentication keys. A failed persist here
                             // would silently leave the identity watch-only after
-                            // restart, so surface it (matching `add_identity` above).
+                            // restart, so surface it.
                             // A fetch older than a known identity's cache stores
                             // only the keys the cache has, with their disables.
                             // A known identity is folded as loading and refresh

@@ -445,7 +445,12 @@ pub(super) mod tests {
     /// Takes every changeset until armed, then refuses each; what it takes is
     /// recorded as [`CapturingStore`] records it.
     #[derive(Default)]
-    pub(crate) struct FailingStore(AtomicBool, CapturingStore);
+    pub(crate) struct FailingStore(
+        AtomicBool,
+        CapturingStore,
+        AtomicBool,
+        std::sync::atomic::AtomicUsize,
+    );
 
     impl FailingStore {
         /// What the store took, while disarmed.
@@ -459,6 +464,13 @@ pub(super) mod tests {
 
         pub(crate) fn disarm(&self) {
             self.0.store(false, Ordering::SeqCst);
+            self.2.store(false, Ordering::SeqCst);
+        }
+
+        /// Take the next `stores` changesets, then refuse each.
+        pub(crate) fn arm_after(&self, stores: usize) {
+            self.3.store(stores, Ordering::SeqCst);
+            self.2.store(true, Ordering::SeqCst);
         }
     }
 
@@ -470,6 +482,13 @@ pub(super) mod tests {
         ) -> Result<(), PersistenceError> {
             if self.0.load(Ordering::SeqCst) {
                 return Err(PersistenceError::backend("store armed to fail"));
+            }
+            if self.2.load(Ordering::SeqCst) {
+                let left = self.3.load(Ordering::SeqCst);
+                if left == 0 {
+                    return Err(PersistenceError::backend("store armed to fail"));
+                }
+                self.3.store(left - 1, Ordering::SeqCst);
             }
             self.1.store(wallet_id, changeset)
         }
