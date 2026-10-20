@@ -1,10 +1,11 @@
 import providers from '../../../src/status/providers.js';
 
 // Characters that must never reach a terminal or the JSON output: C0 and C1 controls,
-// zero width characters, line separators, bidi overrides and isolates. They are built
-// from code points so that nothing invisible is embedded in this file.
+// zero width characters, line separators, the Arabic letter mark, bidi overrides and
+// isolates. They are built from code points so that nothing invisible is embedded in
+// this file.
 const UNSAFE_RANGES = [
-  [0x0000, 0x001f], [0x007f, 0x009f], [0x200b, 0x200f],
+  [0x0000, 0x001f], [0x007f, 0x009f], [0x061c, 0x061c], [0x200b, 0x200f],
   [0x2028, 0x2029], [0x202a, 0x202e], [0x2066, 0x2069], [0xfeff, 0xfeff],
 ];
 
@@ -13,6 +14,7 @@ const CHAR = {
   BEL: String.fromCharCode(0x07),
   NUL: String.fromCharCode(0x00),
   CSI: String.fromCharCode(0x9b),
+  ALM: String.fromCharCode(0x061c),
   ZWSP: String.fromCharCode(0x200b),
   LS: String.fromCharCode(0x2028),
   RLO: String.fromCharCode(0x202e),
@@ -422,7 +424,7 @@ describe('providers', () => {
     });
 
     it('should not print control characters from a rejected tag name', async function it() {
-      const forgery = `v9.9.9${CHAR.ESC}[2K\r${CHAR.RLO}forged${CHAR.ZWSP}${CHAR.LS}`;
+      const forgery = `v9.9.9${CHAR.ESC}[2K\r${CHAR.RLO}forged${CHAR.ZWSP}${CHAR.LS}${CHAR.ALM}`;
 
       fetchStub.resolves(jsonResponse({ tag_name: forgery }));
 

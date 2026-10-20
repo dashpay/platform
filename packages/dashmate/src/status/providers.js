@@ -15,10 +15,11 @@ const MAX_LOG_LENGTH = 200;
 
 // Characters that let remote text hijack a terminal line or disguise itself in the
 // output: C0 and C1 controls (including the escape that opens an ANSI sequence), zero
-// width characters, line separators, and the bidirectional overrides and isolates that
-// reorder what an operator reads. Matching them is the point, hence the disabled rule.
+// width characters, line separators, and the invisible directional marks, overrides and
+// isolates that reorder what an operator reads. Matching them is the point, hence the
+// disabled rule.
 // eslint-disable-next-line no-control-regex
-const UNSAFE_LOG_CHARACTERS_REGEX = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u2029\u202a-\u202e\u2066-\u2069\ufeff]/g;
+const UNSAFE_LOG_CHARACTERS_REGEX = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u2029\u202a-\u202e\u2066-\u2069\ufeff]/g;
 
 /**
  * Make text received from a remote host safe to print
