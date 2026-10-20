@@ -85,8 +85,14 @@ pub(crate) fn verify_tenderdash_signature(
     // Now, lookup quorum details
     let chain_id = mtd.chain_id.clone();
     let quorum_type = proof.quorum_type;
-    let pubkey_bytes =
-        provider.get_quorum_public_key(quorum_type, quorum_hash, core_locked_height)?;
+    let pubkey_bytes = provider
+        .get_quorum_public_key(quorum_type, quorum_hash, core_locked_height)
+        .map_err(|error| Error::QuorumKeyUnavailable {
+            quorum_type,
+            quorum_hash,
+            core_chain_locked_height: core_locked_height,
+            error,
+        })?;
 
     let state_id = StateId {
         app_version: version,
@@ -533,19 +539,24 @@ mod tests {
     }
 
     /// When the provider fails to return a quorum public key, the error must
-    /// propagate (wrapped into Error::ContextProviderError) rather than panic.
+    /// name the quorum the proof asked for, so the SDK can fetch that key and
+    /// verify the same response again, and keep the provider's message for
+    /// callers that classify errors by their text.
     #[test]
-    fn test_verify_tenderdash_proof_provider_error_propagates() {
+    fn should_report_the_proofs_quorum_when_the_provider_has_no_key() {
         let proof = Proof {
             grovedb_proof: grovedb_proof_bytes(1),
-            quorum_hash: vec![0u8; 32],
+            quorum_hash: vec![0xab; 32],
             signature: vec![0u8; 96],
             round: 1,
             block_id_hash: vec![0u8; 32],
-            quorum_type: 1,
+            quorum_type: 6,
         };
 
-        let metadata = test_metadata();
+        let metadata = ResponseMetadata {
+            core_chain_locked_height: 4321,
+            ..test_metadata()
+        };
         let provider = ErroringProvider;
 
         let result = verify_tenderdash_proof(&proof, &metadata, &[0u8; 32], &provider);
@@ -555,6 +566,19 @@ mod tests {
             err_msg.contains("simulated provider failure"),
             "error should contain provider message, got: {err_msg}"
         );
+        match err {
+            Error::QuorumKeyUnavailable {
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+                error: ContextProviderError::InvalidQuorum(_),
+            } => {
+                assert_eq!(quorum_type, 6);
+                assert_eq!(quorum_hash, [0xab; 32]);
+                assert_eq!(core_chain_locked_height, metadata.core_chain_locked_height);
+            }
+            other => panic!("expected QuorumKeyUnavailable, got {other:?}"),
+        }
     }
 
     /// A provider that returns 48 zero-bytes as the "public key" causes the
@@ -642,5 +666,60 @@ mod tests {
             err_msg.contains("empty signature"),
             "error should mention empty signature, got: {err_msg}"
         );
+    }
+
+    #[test]
+    fn should_reject_a_verified_result_root_that_differs_from_the_signed_app_hash() {
+        let metadata = test_metadata();
+        let provider = ValidKeyContextProvider::new();
+        let (key, _) = test_keypair();
+        let root = [7; 32];
+        let mut proof = Proof {
+            grovedb_proof: grovedb_proof_bytes(1),
+            quorum_hash: vec![2; 32],
+            signature: vec![],
+            round: 1,
+            block_id_hash: vec![3; 32],
+            quorum_type: 1,
+        };
+        let state_id = StateId {
+            app_version: metadata.protocol_version as u64,
+            core_chain_locked_height: metadata.core_chain_locked_height,
+            time: metadata.time_ms,
+            app_hash: root.to_vec(),
+            height: metadata.height,
+        };
+        let vote = CanonicalVote {
+            r#type: SignedMsgType::Precommit.into(),
+            block_id: proof.block_id_hash.clone(),
+            chain_id: metadata.chain_id.clone(),
+            height: metadata.height as i64,
+            round: proof.round as i64,
+            state_id: state_id
+                .calculate_msg_hash(
+                    &metadata.chain_id,
+                    metadata.height as i64,
+                    proof.round as i32,
+                )
+                .expect("hash signed state"),
+        };
+        let digest = vote
+            .calculate_sign_hash(
+                &metadata.chain_id,
+                proof.quorum_type as u8,
+                &[2; 32],
+                metadata.height as i64,
+                proof.round as i32,
+            )
+            .expect("hash vote");
+        proof.signature = key.sign(&digest).expect("sign vote").to_bytes().to_vec();
+        verify_tenderdash_proof(&proof, &metadata, &root, &provider)
+            .expect("matching app hash control");
+        let mut different_root = root;
+        different_root[0] ^= 1;
+        assert!(matches!(
+            verify_tenderdash_proof(&proof, &metadata, &different_root, &provider),
+            Err(Error::InvalidSignature { .. })
+        ));
     }
 }

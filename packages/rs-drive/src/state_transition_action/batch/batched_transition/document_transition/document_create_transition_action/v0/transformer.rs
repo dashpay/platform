@@ -164,7 +164,7 @@ impl DocumentCreateTransitionActionV0 {
                     prefunded_voting_balance: prefunded_voting_balances_by_vote_poll,
                     current_store_contest_info,
                     should_store_contest_info: should_store_contest_info.map(Box::new),
-                    property_constraint_aggregates: Default::default(),
+                    property_constraint_reads: Default::default(),
                     moderated: false,
                     consumed_documents: Vec::new(),
                     derived_index_values: None,

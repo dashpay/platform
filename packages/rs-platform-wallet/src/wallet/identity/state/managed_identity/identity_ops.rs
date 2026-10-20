@@ -1,6 +1,6 @@
 //! Core identity operations for ManagedIdentity
 
-use super::key_storage::{DpnsNameInfo, IdentityStatus};
+use super::key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus};
 use super::ManagedIdentity;
 use crate::changeset::{IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet};
 use crate::wallet::persister::WalletPersister;
@@ -240,6 +240,80 @@ impl ManagedIdentity {
         if let Err(e) = persister.store(cs.into()) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
+    }
+
+    /// Merge fetched DPNS names into the list, skipping labels already
+    /// present, and persist the result as one snapshot. Returns how many
+    /// names were added; nothing is persisted when that is zero.
+    ///
+    /// Use this for a batch instead of calling [`Self::add_dpns_name`] per
+    /// name: every persisted snapshot is read downstream as the identity's
+    /// complete owned set, so a snapshot per name makes the first one look
+    /// like the others were lost. Add-only — DPNS queries are capped by a
+    /// limit, so a label missing from a fetch is not proof it left.
+    pub fn merge_dpns_names(
+        &mut self,
+        names: impl IntoIterator<Item = DpnsNameInfo>,
+        persister: &WalletPersister,
+    ) -> u32 {
+        let mut merged = self.dpns_names.clone();
+        let mut added = 0u32;
+        for name in names {
+            if merged.iter().any(|existing| existing.label == name.label) {
+                continue;
+            }
+            merged.push(name);
+            added += 1;
+        }
+        if added > 0 {
+            self.set_dpns_names(merged, persister);
+        }
+        added
+    }
+
+    /// Apply one DPNS username fetch for this identity; returns how many
+    /// labels are new.
+    ///
+    /// On a [`DpnsFetch::Complete`] fetch (the identity's whole owned set)
+    /// of an identity the wallet only watches (no `wallet_id`) the list is
+    /// replaced with it — departed names drop out, an empty result clears
+    /// the list — while labels already known keep their `acquired_at`, and
+    /// nothing is persisted when the list is unchanged.
+    ///
+    /// A wallet-owned identity only ever merges new labels
+    /// ([`Self::merge_dpns_names`]): the DPNS marketplace sweep discovers its
+    /// departures from this list and classifies them (sale, transfer,
+    /// deletion), so a username fetch must not remove a label first. A
+    /// [`DpnsFetch::Partial`] fetch cannot prove that a missing label left,
+    /// so it only merges too. Either way one snapshot at most.
+    pub fn apply_fetched_dpns_names(
+        &mut self,
+        names: Vec<DpnsNameInfo>,
+        fetch: DpnsFetch,
+        persister: &WalletPersister,
+    ) -> u32 {
+        if fetch == DpnsFetch::Partial || self.wallet_id.is_some() {
+            return self.merge_dpns_names(names, persister);
+        }
+        // Known labels still owned, in their existing order, then new ones.
+        let mut next: Vec<DpnsNameInfo> = self
+            .dpns_names
+            .iter()
+            .filter(|known| names.iter().any(|name| name.label == known.label))
+            .cloned()
+            .collect();
+        let mut added = 0u32;
+        for name in names {
+            if next.iter().any(|existing| existing.label == name.label) {
+                continue;
+            }
+            next.push(name);
+            added += 1;
+        }
+        if next != self.dpns_names {
+            self.set_dpns_names(next, persister);
+        }
+        added
     }
 
     /// Replace the DPNS-name list wholesale.
@@ -622,6 +696,201 @@ mod tests {
             data: dpp::platform_value::BinaryData::new(vec![0x02; 33]),
             disabled_at: None,
         })
+    }
+
+    /// A batch of fetched names lands as one snapshot carrying every name,
+    /// skips labels already held, and persists nothing when all are known.
+    /// One snapshot per name made the first read as the complete owned set.
+    #[test]
+    fn merge_dpns_names_persists_one_complete_snapshot() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
+        let name = |label: &str| DpnsNameInfo {
+            label: label.to_string(),
+            acquired_at: None,
+        };
+
+        managed.add_dpns_name(name("alice"), &p);
+        let added = managed.merge_dpns_names([name("alice"), name("bob"), name("carol")], &p);
+
+        assert_eq!(added, 2);
+        let stores = persister.stores.lock().unwrap();
+        assert_eq!(
+            stores.len(),
+            2,
+            "one store for add_dpns_name, one for the merge"
+        );
+        let labels: Vec<_> = stores[1]
+            .identities
+            .as_ref()
+            .expect("identity snapshot")
+            .identities
+            .values()
+            .next()
+            .expect("one identity")
+            .dpns_names
+            .iter()
+            .map(|n| n.label.as_str())
+            .collect();
+        assert_eq!(labels, ["alice", "bob", "carol"]);
+        drop(stores);
+
+        assert_eq!(managed.merge_dpns_names([name("bob")], &p), 0);
+        assert_eq!(
+            persister.stores.lock().unwrap().len(),
+            2,
+            "nothing new, nothing stored"
+        );
+    }
+
+    fn dpns_test_identity() -> (
+        ManagedIdentity,
+        std::sync::Arc<CapturingPersister>,
+        WalletPersister,
+    ) {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
+        (ManagedIdentity::new(identity, 0), persister, p)
+    }
+
+    fn dpns_name(label: &str, acquired_at: Option<u64>) -> DpnsNameInfo {
+        DpnsNameInfo {
+            label: label.to_string(),
+            acquired_at,
+        }
+    }
+
+    fn dpns_store_count(persister: &CapturingPersister) -> usize {
+        persister.stores.lock().unwrap().len()
+    }
+
+    /// A complete fetch is the owned set: a departed label drops out, a known
+    /// label keeps its timestamp, a new one is added — in one store.
+    #[test]
+    fn complete_dpns_fetch_replaces_the_list_in_one_store() {
+        let (mut managed, persister, p) = dpns_test_identity();
+        managed.set_dpns_names(
+            vec![dpns_name("alice", Some(10)), dpns_name("bob", Some(20))],
+            &p,
+        );
+        let before = dpns_store_count(&persister);
+
+        let added = managed.apply_fetched_dpns_names(
+            vec![dpns_name("bob", Some(99)), dpns_name("carol", Some(99))],
+            DpnsFetch::Complete,
+            &p,
+        );
+
+        assert_eq!(added, 1);
+        assert_eq!(
+            managed.dpns_names,
+            vec![dpns_name("bob", Some(20)), dpns_name("carol", Some(99))]
+        );
+        assert_eq!(dpns_store_count(&persister), before + 1);
+    }
+
+    /// An empty complete fetch means the identity owns no names any more.
+    #[test]
+    fn empty_complete_dpns_fetch_clears_the_list() {
+        let (mut managed, persister, p) = dpns_test_identity();
+        managed.set_dpns_names(vec![dpns_name("alice", Some(10))], &p);
+        let before = dpns_store_count(&persister);
+
+        assert_eq!(
+            managed.apply_fetched_dpns_names(Vec::new(), DpnsFetch::Complete, &p),
+            0
+        );
+
+        assert!(managed.dpns_names.is_empty());
+        assert_eq!(dpns_store_count(&persister), before + 1);
+    }
+
+    /// A full page may be truncated: a label missing from it stays.
+    #[test]
+    fn partial_dpns_fetch_only_adds() {
+        let (mut managed, _persister, p) = dpns_test_identity();
+        managed.set_dpns_names(vec![dpns_name("alice", Some(10))], &p);
+
+        let added =
+            managed.apply_fetched_dpns_names(vec![dpns_name("bob", None)], DpnsFetch::Partial, &p);
+
+        assert_eq!(added, 1);
+        assert_eq!(
+            managed.dpns_names,
+            vec![dpns_name("alice", Some(10)), dpns_name("bob", None)]
+        );
+    }
+
+    /// A wallet-owned identity never loses a label to a username fetch, even
+    /// a complete one (including an empty complete fetch): it only gains the
+    /// new labels. The marketplace sweep discovers its departures from this
+    /// list, so pruning here would erase the only trigger.
+    #[test]
+    fn complete_dpns_fetch_on_a_wallet_identity_only_adds() {
+        let (mut managed, _persister, p) = dpns_test_identity();
+        managed.wallet_id = Some([0xAB; 32]);
+        managed.set_dpns_names(
+            vec![dpns_name("alice", Some(10)), dpns_name("bob", Some(20))],
+            &p,
+        );
+
+        let added = managed.apply_fetched_dpns_names(
+            vec![dpns_name("carol", None)],
+            DpnsFetch::Complete,
+            &p,
+        );
+        assert_eq!(added, 1);
+        let labels: Vec<&str> = managed
+            .dpns_names
+            .iter()
+            .map(|n| n.label.as_str())
+            .collect();
+        assert_eq!(labels, ["alice", "bob", "carol"]);
+
+        assert_eq!(
+            managed.apply_fetched_dpns_names(Vec::new(), DpnsFetch::Complete, &p),
+            0
+        );
+        assert_eq!(
+            managed.dpns_names.len(),
+            3,
+            "an empty complete fetch prunes nothing"
+        );
+    }
+
+    /// Re-fetching the same complete set (even in another order, with fresh
+    /// timestamps) changes nothing and stores nothing.
+    #[test]
+    fn unchanged_complete_dpns_fetch_stores_nothing() {
+        let (mut managed, persister, p) = dpns_test_identity();
+        managed.set_dpns_names(
+            vec![dpns_name("alice", Some(10)), dpns_name("bob", Some(20))],
+            &p,
+        );
+        let before = dpns_store_count(&persister);
+
+        let added = managed.apply_fetched_dpns_names(
+            vec![dpns_name("bob", Some(99)), dpns_name("alice", Some(99))],
+            DpnsFetch::Complete,
+            &p,
+        );
+
+        assert_eq!(added, 0);
+        assert_eq!(dpns_store_count(&persister), before);
+        assert_eq!(managed.dpns_names[0], dpns_name("alice", Some(10)));
     }
 
     /// `add_keys` records each key's breadcrumb (or `None` for watch-only)

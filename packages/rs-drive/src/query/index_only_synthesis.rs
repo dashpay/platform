@@ -15,8 +15,9 @@
 //!
 //! Field recovery:
 //! * prefix properties — decoded from the value path segments via
-//!   [`DocumentPropertyType::decode_value_for_tree_keys`], the inverse of
-//!   the key encoding the write path used;
+//!   `deserialize_value_for_key` of the protocol version, the inverse of the
+//!   key encoding the write path used; a typed array's segment is one of the
+//!   document's elements, recovered as a list holding that element alone;
 //! * the terminal property — decoded from the member key the same way;
 //! * `$ownerId` / `$createdAt` — from whichever position (prefix or
 //!   terminal) the index carries them.
@@ -855,6 +856,15 @@ impl DriveDocumentQuery<'_> {
                         .to_string(),
                 )));
             }
+            // A typed array is never a terminal component (registration
+            // refuses one).
+            WhereOperator::Contains | WhereOperator::ContainsAny => {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(
+                    "contains and containsAny read a typed array, which is never a terminal \
+                     component"
+                        .to_string(),
+                )));
+            }
         }
         Ok(query)
     }
@@ -1015,6 +1025,7 @@ impl DriveDocumentQuery<'_> {
                     &path,
                     &key,
                     Some(&element),
+                    platform_version,
                 )
             })
             .collect::<Result<Vec<Document>, Error>>()?;
@@ -1081,6 +1092,7 @@ impl DriveDocumentQuery<'_> {
                     &path,
                     &key,
                     Some(&element),
+                    platform_version,
                 )
             })
             .collect::<Result<Vec<Document>, Error>>()?;
@@ -1229,7 +1241,8 @@ pub fn index_only_transition_entry_path_query(
 /// storage marker); `member_key` is the entry's key (the terminal
 /// components' encoded values, concatenated); `element` is the proved
 /// entry item, required on a type with an `entryPayload` (the payload is
-/// decoded off it) and ignored otherwise.
+/// decoded off it) and ignored otherwise. The keys are read in the key
+/// generation of `platform_version` (`deserialize_value_for_key`).
 pub fn synthesize_index_only_document(
     contract_id: Identifier,
     document_type: DocumentTypeRef,
@@ -1237,7 +1250,9 @@ pub fn synthesize_index_only_document(
     path: &[Vec<u8>],
     member_key: &[u8],
     element: Option<&grovedb::Element>,
+    platform_version: &PlatformVersion,
 ) -> Result<Document, Error> {
+    use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
     use dpp::document::property_names::CREATED_AT;
 
     let corrupted =
@@ -1304,10 +1319,18 @@ pub fn synthesize_index_only_document(
                 {
                     Value::Bytes(Vec::new())
                 } else {
-                    property
-                        .property_type
-                        .decode_value_for_tree_keys(encoded)
+                    document_type
+                        .deserialize_value_for_key(name, encoded, platform_version)
                         .map_err(|e| Error::Protocol(Box::new(e)))?
+                };
+                // A typed array's level (protocol version 14) is keyed by one of
+                // the document's elements: the entry stands for that element, so
+                // the projection lists it alone, as a list of the array's type.
+                let value = if matches!(property.property_type, DocumentPropertyType::TypedArray(_))
+                {
+                    Value::Array(vec![value])
+                } else {
+                    value
                 };
                 // A flattened name like `profile.targetId` must come back
                 // as a nested `profile` map, not as a dotted top-level key

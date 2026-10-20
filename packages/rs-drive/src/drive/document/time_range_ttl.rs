@@ -89,10 +89,12 @@ pub(crate) fn live_time_range_entry_keys(
 /// value tree, its possible terminal tree, and each property-name branch
 /// plus that branch's value/terminal trees. The merged structure includes
 /// every index sharing the grid, including deeper and divergent suffixes.
-/// Multiply by overlap because a document is copied into every containing
-/// bucket. Twice that bound lets sustained writes retire old trees faster
-/// than they create new ones, with capacity to catch up after a burst.
-/// The versioned floor also lets sparse writers make useful progress.
+/// A branch of an indexed typed array holds one value tree per element, so
+/// it counts `maxItems` of them. Multiply by overlap because a document is
+/// copied into every containing bucket. Twice that bound lets sustained
+/// writes retire old trees faster than they create new ones, with capacity
+/// to catch up after a burst. The versioned floor also lets sparse writers
+/// make useful progress.
 pub(crate) fn time_range_ttl_drop_budget(
     bucket_level: &IndexLevel,
     transform: &TimeRangeTransform,
@@ -101,7 +103,12 @@ pub(crate) fn time_range_ttl_drop_budget(
     fn trees_per_bucket(level: &IndexLevel) -> Option<u64> {
         level.sub_levels().values().try_fold(
             1 + u64::from(level.has_index_with_type().is_some()),
-            |total, child| total.checked_add(1)?.checked_add(trees_per_bucket(child)?),
+            |total, child| {
+                let values = u64::from(child.indexed_array_max_items().unwrap_or(1).max(1));
+                total
+                    .checked_add(1)?
+                    .checked_add(trees_per_bucket(child)?.checked_mul(values)?)
+            },
         )
     }
     trees_per_bucket(bucket_level)

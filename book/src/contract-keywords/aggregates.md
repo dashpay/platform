@@ -16,11 +16,7 @@ Every total is updated by every write that touches it, so each flag adds to the 
     { "name": "byDay", "properties": [{ "day": "asc" }], "summable": "amount", "rangeSummable": true }
   ],
   "properties": {
-    "recipient": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
-      "position": 0
-    },
+    "recipient": { "type": "identifier", "position": 0 },
     "amount": { "type": "integer", "minimum": 1, "maximum": 4294967295, "position": 1 },
     "day": { "type": "integer", "minimum": 0, "maximum": 4294967295, "position": 2 }
   },
@@ -150,12 +146,15 @@ A range total costs more on each write than a per-value total, since every node 
 - **Type and index flags are independent.** `documentsCountable` gives the unfiltered total; a countable index gives filtered ones. A type may have both.
 - **Index-only types** take the index keywords but refuse the document type ones, since they have no primary tree. See [Index-Only Types](index-only.md).
 - **Queries must match.** A count or sum query that no index serves exactly is refused; there is no slow fallback. Pick the indexes for the queries the application will make.
+- **Typed arrays count per element.** On an index naming a [typed array](indexes.md#typed-arrays), a total is the documents holding one element: `count(*)` with `hashtags contains "dash"`, or one total per element with `containsAny` grouped by the array. A document holding several elements counts under each, so a total over several elements, which would count it more than once, is refused.
 
 ## Rules at registration
 
 - A summed property exists on the type, is an integer that fits a signed 64-bit sum (not an unsigned 64-bit integer), and is listed in `required`.
 - All summed properties of a type are the same property.
-- From protocol version 14, on a type with a [contested index](contested.md), the summed property declares a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27). Each value still only has to fit a signed 64-bit integer on other types.
+- From protocol version 14, on a type with a [contested index](contested.md), the summed property declares a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27).
+- From protocol version 14, on a type with a [`ttl`](ttl.md), the summed property declares a `minimum` of at least 0, or a `minimum` of at least -134217728 and a `maximum` of at most 134217728 (±2^27).
+- On other types, each value only has to fit a signed 64-bit integer.
 - The shorthands agree with their longhand where both are written, and no explicit `false` or `"notCountable"` contradicts them.
 - Each `range*` flag has its prerequisite, as listed above.
 - The meta-schema refuses a malformed value (`JsonSchemaError`, 10101).

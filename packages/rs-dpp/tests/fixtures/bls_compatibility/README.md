@@ -5,9 +5,7 @@ from Platform `c0b4b97f8a1a8626c2f51bc8d7baeab9c65e10da` (#5307):
 
 - `dashpay/agora-blsful` at `0c34a7a488a0bd1c9a9a2196e793b303ad35c900`;
 - `blstrs_plus` 0.8.18;
-- `blst` at `71a00877c75a482e7d44c4e6370c1a7fb82444be` (0.3.12);
-- candidate: `dash-pkc` at `e6402ced257c370a586ade9840ebbf545a4b7926`,
-  the backend used by rust-dashcore `314f10600e35311f3d875a6e8740476ab6c79c0c`.
+- `blst` at `71a00877c75a482e7d44c4e6370c1a7fb82444be` (0.3.12).
 
 `vectors.json` contains 16 Basic signatures (four canonical scalars × empty,
 text, zero digest and 256-byte messages), five secure aggregates (one/two/three
@@ -19,17 +17,14 @@ The scalar and infinity cases characterize **historical compatibility**, not
 recommended validation for a new protocol. DPP accepts nonzero scalars reduced
 modulo the group order and permits an identity public key to deserialize; an
 identity signature still fails verification. Replacing those rules requires a
-separate protocol decision. The strict dash-pkc key constructors differ here.
+separate protocol decision.
 
-The frozen expected values come from the original DPP backend listed above.
-The generator calls the current DPP implementation; after a backend change,
-compare its output with the frozen fixture rather than replacing the fixture.
-To inspect its output, run:
+The frozen expected values remain unchanged from the historical backend. The
+suite checks the migrated DPP API and the underlying `dash-pkc` implementation
+against those values. The generator uses the original blsful API.
 
-```sh
-cargo run -p dpp --example generate_bls_compatibility_vectors --locked
-cargo test -p dpp --test bls_compatibility --locked
-```
+Reproduce the corpus with the [historical generation script](../../../../../scripts/historical-test-vectors/README.md).
+It runs ignored tests on a pinned checkout and writes a separate output directory.
 
 Keep the frozen fixture unchanged when migrating the implementation. These tests
 cover the listed cases, not an exhaustive proof of equivalence or every persisted

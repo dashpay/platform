@@ -2190,7 +2190,7 @@ impl StateTransition {
     ///    returned public key (libsecp256k1 normalises both signing paths to
     ///    low-s form so the 64-byte `r||s` payload is bit-identical).
     /// 4. Serialise as a 65-byte compact recoverable signature with the
-    ///    `compressed` prefix convention used by `CompactSignature` — i.e.
+    ///    `compressed` prefix convention used by `MessageSignature` — i.e.
     ///    `[recovery_id + 27 + 4, r (32) || s (32)]`.
     ///
     /// # Errors
@@ -2213,7 +2213,8 @@ impl StateTransition {
     ) -> Result<(), ProtocolError> {
         use dashcore::secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
         use dashcore::secp256k1::Message;
-        use dashcore::signer::{double_sha, CompactSignature};
+        use dashcore::sign_message::MessageSignature;
+        use dashcore::signer::double_sha;
 
         let data = self.signable_bytes()?;
         // Pre-image transform matches `dashcore::signer::sign`: double-SHA256
@@ -2271,7 +2272,7 @@ impl StateTransition {
         // always passes `true` regardless of the underlying key encoding. The
         // signer's `sign_ecdsa` returns the compressed `secp256k1::PublicKey`,
         // so this is consistent.
-        let compact_65 = recoverable.to_compact_signature(true);
+        let compact_65 = MessageSignature::new(recoverable, true).serialize();
 
         if !self.set_signature(compact_65.to_vec().into()) {
             return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {

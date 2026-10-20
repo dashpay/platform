@@ -9,12 +9,13 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use dash_spv::network::NetworkEvent;
 use dash_spv::EventHandler;
 use dashcore::sml::masternode_list::MasternodeList;
 use dashcore::sml::masternode_list_entry::EntryMasternodeType;
+use tokio::sync::Notify;
 
 /// Node type of a connected SPV peer, resolved against the masternode list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,9 +47,20 @@ pub struct SpvPeerInfo {
 #[derive(Debug, Default)]
 pub(crate) struct PeerTracker {
     connected: Mutex<Vec<SocketAddr>>,
+    /// Woken (`notify_waiters`) after every `PeersUpdated` snapshot is
+    /// stored, so a readiness wait learns about peers without polling.
+    updated: Arc<Notify>,
 }
 
 impl PeerTracker {
+    /// A tracker that wakes `updated`'s waiters after each new snapshot.
+    pub(crate) fn new(updated: Arc<Notify>) -> Self {
+        Self {
+            connected: Mutex::default(),
+            updated,
+        }
+    }
+
     /// Lock the snapshot, recovering from poisoning: it is only cloned,
     /// cleared or replaced whole, so a panicking holder cannot tear it.
     fn connected(&self) -> MutexGuard<'_, Vec<SocketAddr>> {
@@ -73,6 +85,9 @@ impl EventHandler for PeerTracker {
     fn on_network_event(&self, event: &NetworkEvent) {
         if let NetworkEvent::PeersUpdated { addresses, .. } = event {
             *self.connected() = addresses.clone();
+            // After the store (guard dropped above): a woken waiter must see
+            // the new snapshot.
+            self.updated.notify_waiters();
         }
     }
 }
@@ -189,7 +204,7 @@ mod tests {
                 evo,
                 EntryMasternodeType::HighPerformance {
                     platform_http_port: 443,
-                    platform_node_id: PlatformNodeId::from_canonical_bytes([0u8; 20]),
+                    platform_node_id: PlatformNodeId::from_byte_array([0u8; 20]),
                 },
             ),
         ]);

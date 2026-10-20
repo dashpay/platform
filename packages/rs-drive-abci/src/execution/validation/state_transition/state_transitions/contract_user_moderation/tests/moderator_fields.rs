@@ -18,6 +18,7 @@ const JSON_SCHEMA: u32 = 10101;
 const DOCUMENT_PROPERTY_CONSTRAINT_VIOLATED: u32 = 10422;
 const NOTICE: &str = "notice";
 const CARD: &str = "card";
+const BADGE: &str = "badge";
 
 /// A report of a post, which its author can not replace, which moderators may delete, and
 /// whose `status` and `resolution` only they write, queried by who handled it last and when.
@@ -103,6 +104,31 @@ fn card_schema() -> Value {
             "grade": { "type": "integer", "minimum": 0, "maximum": 10, "position": 1 },
         },
         "required": ["name"],
+        "additionalProperties": false,
+    })
+}
+
+/// A badge its owner retitles on every replace, whose `level` only moderators write and never
+/// lower, written at most four times
+fn badge_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "moderatorAbilities": { "changeFields": ["level"] },
+        "properties": {
+            "title": { "type": "string", "minLength": 1, "maxLength": 50, "position": 0 },
+            "level": { "type": "integer", "minimum": 0, "maximum": 10, "position": 1 },
+        },
+        "required": ["title"],
+        "propertyConstraints": {
+            "atMostFourWrites": { "lessThanOrEqual": ["$revision", 4] },
+            "levelNeverDrops": {
+                "greaterThanOrEqual": [
+                    { "ifAbsent": ["level", 0] },
+                    { "ifAbsent": ["$old.level", 0] }
+                ]
+            },
+            "titleChangesOnEveryEdit": { "notEqual": ["title", "$old.title"] },
+        },
         "additionalProperties": false,
     })
 }
@@ -207,14 +233,19 @@ async fn create_ticket(
         .await
 }
 
-/// A replacement of `document`, a ticket, by `actor`, its owner
-async fn replace_ticket(setup: &Setup, actor: &Actor, document: Document) -> StateTransition {
+/// A replacement of `document`, of the type `document_type_name`, by `actor`, its owner
+async fn replacement_of(
+    setup: &Setup,
+    actor: &Actor,
+    document_type_name: &str,
+    document: Document,
+) -> StateTransition {
     BatchTransition::new_document_replacement_transition_from_document(
         document,
         setup
             .contract
-            .document_type_for_name(TICKET)
-            .expect("expected the ticket type"),
+            .document_type_for_name(document_type_name)
+            .expect("expected the document type"),
         &actor.key,
         actor.contract_nonce(),
         0,
@@ -550,7 +581,7 @@ async fn should_let_only_moderators_write_those_fields_in_their_own_documents() 
     assert_success(&setup.process(&create_ticket, &transaction));
     ticket.set("slot", Value::U64(4));
     ticket.increment_revision().expect("expected a revision");
-    let sets_the_slot = replace_ticket(&setup, &setup.user, ticket.clone()).await;
+    let sets_the_slot = replacement_of(&setup, &setup.user, TICKET, ticket.clone()).await;
     assert_paid_with_code(
         &setup.process(&sets_the_slot, &transaction),
         DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE,
@@ -573,7 +604,7 @@ async fn should_let_only_moderators_write_those_fields_in_their_own_documents() 
     let mut stale = ticket.clone();
     stale.set("title", Value::Text("scanner".to_string()));
     stale.properties_mut().remove("slot");
-    let stale_replace = replace_ticket(&setup, &setup.user, stale).await;
+    let stale_replace = replacement_of(&setup, &setup.user, TICKET, stale).await;
     assert_paid_with_code(
         &setup.process(&stale_replace, &transaction),
         INVALID_DOCUMENT_REVISION,
@@ -586,7 +617,7 @@ async fn should_let_only_moderators_write_those_fields_in_their_own_documents() 
     changes_the_slot
         .increment_revision()
         .expect("expected a revision");
-    let replace = replace_ticket(&setup, &setup.user, changes_the_slot).await;
+    let replace = replacement_of(&setup, &setup.user, TICKET, changes_the_slot).await;
     assert_paid_with_code(
         &setup.process(&replace, &transaction),
         DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE,
@@ -596,7 +627,7 @@ async fn should_let_only_moderators_write_those_fields_in_their_own_documents() 
     drops_the_slot
         .increment_revision()
         .expect("expected a revision");
-    let replace = replace_ticket(&setup, &setup.user, drops_the_slot).await;
+    let replace = replacement_of(&setup, &setup.user, TICKET, drops_the_slot).await;
     assert_paid_with_code(
         &setup.process(&replace, &transaction),
         DOCUMENT_MODERATOR_FIELD_NOT_WRITABLE,
@@ -606,7 +637,7 @@ async fn should_let_only_moderators_write_those_fields_in_their_own_documents() 
     keeps_the_slot
         .increment_revision()
         .expect("expected a revision");
-    let replace = replace_ticket(&setup, &setup.user, keeps_the_slot).await;
+    let replace = replacement_of(&setup, &setup.user, TICKET, keeps_the_slot).await;
     assert_success(&setup.process(&replace, &transaction));
     let replaced = setup
         .stored_document(TICKET, ticket.id(), Some(&transaction))
@@ -1005,7 +1036,7 @@ async fn should_stamp_a_moderator_who_writes_the_fields_in_their_own_documents()
         .expect("expected the ticket");
     renamed.set("title", Value::Text("scanner".to_string()));
     renamed.increment_revision().expect("expected a revision");
-    let replace = replace_ticket(&setup, &setup.user, renamed).await;
+    let replace = replacement_of(&setup, &setup.user, TICKET, renamed).await;
     assert_success(&setup.process_at(&replace, BLOCK_TIME_MS + 3_000, &transaction));
     let replaced = setup
         .stored_document(TICKET, ticket.id(), Some(&transaction))
@@ -1027,7 +1058,7 @@ async fn should_stamp_a_moderator_who_writes_the_fields_in_their_own_documents()
         .expect("expected the ticket");
     reslotted.set("slot", Value::U64(7));
     reslotted.increment_revision().expect("expected a revision");
-    let replace = replace_ticket(&setup, &setup.moderator, reslotted).await;
+    let replace = replacement_of(&setup, &setup.moderator, TICKET, reslotted).await;
     assert_success(&setup.process_at(&replace, BLOCK_TIME_MS + 4_000, &transaction));
     let mut retitled = setup
         .stored_document(TICKET, own.id(), Some(&transaction))
@@ -1036,7 +1067,7 @@ async fn should_stamp_a_moderator_who_writes_the_fields_in_their_own_documents()
     assert_eq!(retitled.moderated_by(), Some(setup.moderator.id()));
     retitled.set("title", Value::Text("chair".to_string()));
     retitled.increment_revision().expect("expected a revision");
-    let replace = replace_ticket(&setup, &setup.moderator, retitled).await;
+    let replace = replacement_of(&setup, &setup.moderator, TICKET, retitled).await;
     assert_success(&setup.process_at(&replace, BLOCK_TIME_MS + 6_000, &transaction));
     let kept = setup
         .stored_document(TICKET, own.id(), Some(&transaction))
@@ -1152,4 +1183,74 @@ async fn should_prove_a_whole_number_set_on_a_number_field() {
     setup.commit(transaction);
     let proved = setup.assert_change_proved(&weigh);
     assert_eq!(proved.get("weight"), Some(&Value::Float(2.0)));
+}
+
+/// A moderator's change of fields is judged only against the rules reading a field it changes,
+/// of the document or of the stored version under `$old.`, `$revision`, which it moves, or a
+/// total. `titleChangesOnEveryEdit` judges the owner's replaces and leaves the moderator's
+/// changes alone, though they keep the title.
+#[tokio::test]
+async fn should_judge_a_field_change_by_the_rules_reading_what_it_changes() {
+    let setup = Setup::new_at_with(
+        Some(moderators_without_lists()),
+        PlatformVersion::latest(),
+        |contract| {
+            add_document_type(contract, POST, post_schema(true));
+            add_document_type(contract, BADGE, badge_schema());
+        },
+    )
+    .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (badge, create) = setup
+        .create_document_of_type_with(&setup.user, BADGE, |document| {
+            let properties = document.properties_mut();
+            properties.clear();
+            properties.insert("title".to_string(), Value::Text("first".to_string()));
+        })
+        .await;
+    assert_success(&setup.process(&create, &transaction));
+    let change_level =
+        |level: u64| change_action(BADGE, badge.id(), platform_value!({ "level": level }));
+
+    let raise = setup.moderate(&setup.moderator, change_level(2)).await;
+    assert_success(&setup.process(&raise, &transaction));
+    let lower = setup.moderate(&setup.moderator, change_level(1)).await;
+    assert_paid_with_code(
+        &setup.process(&lower, &transaction),
+        DOCUMENT_PROPERTY_CONSTRAINT_VIOLATED,
+    );
+    let raise_again = setup.moderate(&setup.moderator, change_level(5)).await;
+    assert_success(&setup.process(&raise_again, &transaction));
+
+    // The owner's replace is judged against every rule: one keeping the title is refused
+    let stored = setup
+        .stored_document(BADGE, badge.id(), Some(&transaction))
+        .expect("expected the badge");
+    assert_eq!(stored.revision(), Some(3));
+    let mut kept = stored.clone();
+    kept.increment_revision().unwrap();
+    let keeps_title = replacement_of(&setup, &setup.user, BADGE, kept).await;
+    assert_paid_with_code(
+        &setup.process(&keeps_title, &transaction),
+        DOCUMENT_PROPERTY_CONSTRAINT_VIOLATED,
+    );
+    let mut retitled = stored;
+    retitled.set("title", Value::Text("second".to_string()));
+    retitled.increment_revision().unwrap();
+    let retitle = replacement_of(&setup, &setup.user, BADGE, retitled).await;
+    assert_success(&setup.process(&retitle, &transaction));
+
+    // A fifth write is refused by the rule reading `$revision`, which the change moves
+    let fifth = setup.moderate(&setup.moderator, change_level(6)).await;
+    assert_paid_with_code(
+        &setup.process(&fifth, &transaction),
+        DOCUMENT_PROPERTY_CONSTRAINT_VIOLATED,
+    );
+    let stored = setup
+        .stored_document(BADGE, badge.id(), Some(&transaction))
+        .expect("expected the badge");
+    assert_eq!(stored.revision(), Some(4));
+    assert!(stored
+        .get("level")
+        .is_some_and(|level| level.equal_underlying_data(&Value::U64(5))));
 }

@@ -1,18 +1,19 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
 use std::future::Future;
+use std::pin::pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use tokio::sync::RwLock;
+use tokio::sync::{Notify, RwLock};
 use tokio::task::{JoinError, JoinHandle};
 
+use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::sml::masternode_list::MasternodeList;
 use dashcore::{PubkeyHash, QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
-use dash_spv::storage::{DiskStorageManager, StorageManager};
 use dash_spv::sync::SyncProgress;
 use dash_spv::{BroadcastResult, ClientConfig, DashSpvClient, EventHandler, Hash};
 
@@ -25,14 +26,22 @@ use crate::masternode::list::MasternodeListSummary;
 use crate::spv::peers::{classify_peers, PeerTracker, SpvPeerInfo};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
-type SpvClient =
-    DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager, DiskStorageManager>;
+type SpvClient = DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager>;
+
+/// A quorum public key from the SPV masternode state, see
+/// [`SpvRuntime::get_quorum_public_key_with_status`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpvQuorumPublicKey {
+    /// The quorum's BLS public key.
+    pub public_key: [u8; 48],
+    /// dash-spv's verification status for the quorum. Never `Invalid`: the
+    /// lookup skips invalid entries. Only `Verified` makes the key fit to
+    /// verify Platform proofs.
+    pub status: LLMQEntryVerificationStatus,
+}
 
 /// Maximum wait per stop call; the owned teardown continues after this deadline.
 const SPV_STOP_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// How often readiness is rechecked for a client with connected peers.
-const SPV_READINESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 #[derive(Default)]
 enum Shutdown {
@@ -46,6 +55,19 @@ enum Shutdown {
 ///
 /// Events are dispatched through [`PlatformEventManager`] to all registered
 /// handlers by reference (no cloning).
+///
+/// # Lifecycle
+///
+/// [`start`](Self::start) works only on a stopped runtime. [`stop`](Self::stop)
+/// is idempotent; once it returns `Ok`, no SPV task runs and the storage
+/// directory is released. A stop that does not complete says which way:
+/// - [`ShutdownIncomplete`](PlatformWalletError::ShutdownIncomplete): teardown
+///   outlived the wait and continues. Stop again; start and storage clear
+///   return the same error until a stop completes.
+/// - [`SpvProcessRestartRequired`](PlatformWalletError::SpvProcessRestartRequired):
+///   startup or teardown panicked. This runtime refuses every later start,
+///   stop and storage clear, and nothing is promised about SPV in this
+///   process until it restarts.
 pub struct SpvRuntime {
     event_manager: Arc<PlatformEventManager>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
@@ -56,6 +78,11 @@ pub struct SpvRuntime {
     /// each stop or storage clear, so none of them interleave.
     shutdown: tokio::sync::Mutex<Shutdown>,
     peer_tracker: Arc<PeerTracker>,
+    /// Woken (`notify_waiters`) on every transition that can make
+    /// [`Self::is_broadcast_ready`] true: a client stored by `start`, and a
+    /// `PeersUpdated` snapshot stored by `peer_tracker`. Losing readiness
+    /// wakes no one; waiters only care about gaining it.
+    readiness_changed: Arc<Notify>,
 }
 
 /// Classify a failure from the SPV acceptance-check path
@@ -88,6 +115,7 @@ impl SpvRuntime {
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         event_manager: Arc<PlatformEventManager>,
     ) -> Self {
+        let readiness_changed = Arc::new(Notify::new());
         Self {
             event_manager,
             wallet_manager,
@@ -95,7 +123,8 @@ impl SpvRuntime {
             last_config: RwLock::new(None),
             task: Mutex::new(None),
             shutdown: tokio::sync::Mutex::new(Shutdown::Idle),
-            peer_tracker: Arc::new(PeerTracker::default()),
+            peer_tracker: Arc::new(PeerTracker::new(Arc::clone(&readiness_changed))),
+            readiness_changed,
         }
     }
 
@@ -118,9 +147,6 @@ impl SpvRuntime {
         let network_manager = PeerNetworkManager::new(&config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        let storage_manager = DiskStorageManager::new(&config)
-            .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
 
         // PlatformEventManager implements `EventHandler`; the peer tracker
         // rides alongside it so `connected_peers` can answer from the latest
@@ -132,10 +158,15 @@ impl SpvRuntime {
 
         let retained_config = config.clone();
 
+        // TODO(dashpay/rust-dashcore#1103): dash-spv follows a fork as soon as a
+        // peer sends a header whose parent is a stored block below the tip, and
+        // rewinds its storage and the wallets to that block before the competing
+        // branch is checked against the expected difficulty or chain work. Only
+        // the best ChainLock bounds the rewind. Pin the upstream fix when it
+        // lands: https://github.com/dashpay/rust-dashcore/issues/1103
         let spv_client = DashSpvClient::new(
             config,
             network_manager,
-            storage_manager,
             Arc::clone(&self.wallet_manager),
             event_handlers,
         )
@@ -145,6 +176,10 @@ impl SpvRuntime {
         let mut client = self.client.write().await;
         *client = Some(spv_client);
         *self.last_config.write().await = Some(retained_config);
+        // Release the client before waking readiness waiters so they can
+        // read it.
+        drop(client);
+        self.readiness_changed.notify_waiters();
 
         Ok(())
     }
@@ -163,14 +198,22 @@ impl SpvRuntime {
     /// Check that nothing is left to join. Takes the locked `shutdown` state:
     /// `task` only changes under that lock, so the answer cannot go stale.
     fn ensure_joined(&self, shutdown: &Shutdown) -> Result<(), PlatformWalletError> {
-        if !matches!(shutdown, Shutdown::Idle) {
-            return Err(PlatformWalletError::SpvError(
-                "SPV teardown is incomplete; stop SPV again before starting it".to_string(),
-            ));
+        match shutdown {
+            Shutdown::Idle => {}
+            Shutdown::Running(_) => {
+                return Err(PlatformWalletError::ShutdownIncomplete(
+                    "SPV teardown is still running; stop SPV again before starting it".to_string(),
+                ))
+            }
+            Shutdown::Failed(error) => {
+                return Err(PlatformWalletError::SpvProcessRestartRequired(
+                    error.clone(),
+                ))
+            }
         }
         let task = self.task_slot();
         if task.is_some() {
-            return Err(PlatformWalletError::SpvError(
+            return Err(PlatformWalletError::ShutdownIncomplete(
                 "SPV startup has not been joined; stop SPV before restarting it".to_string(),
             ));
         }
@@ -186,6 +229,23 @@ impl SpvRuntime {
     /// Check whether the SPV client has been started.
     pub fn is_started(&self) -> bool {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
+    }
+
+    /// Whether SPV sync is running or starting. `false` once background sync
+    /// has failed, although the client stays started until [`Self::stop`].
+    /// Never waits, so an event handler may call it.
+    pub fn is_running(&self) -> bool {
+        let Ok(client) = self.client.try_read() else {
+            return false;
+        };
+        let Some(client) = client.as_ref() else {
+            return false;
+        };
+        let starting = self
+            .task_slot()
+            .as_ref()
+            .is_some_and(|task| !task.is_finished());
+        starting || client.is_running()
     }
 
     /// Whether a broadcast issued right now could reach the network: the
@@ -208,10 +268,13 @@ impl SpvRuntime {
     /// ("client not started") verdict, and — having no retry — stays
     /// un-broadcast for the whole session.
     ///
-    /// Readiness is polled rather than pushed: "started" is a `client`
-    /// transition and "has peers" arrives as a dash-spv `PeersUpdated`
-    /// event, with no combined signal to subscribe to. The poll interval is
-    /// irrelevant next to the network latency being waited on.
+    /// Readiness is pushed, not polled: the wait re-checks only when
+    /// `start` stores a client or a `PeersUpdated` snapshot lands. While
+    /// neither happens it stays parked — including the "peers listed but
+    /// client gone" window `stop` leaves until it clears the tracker. It
+    /// registers for the wake-up before each check, so a transition racing
+    /// the check is never missed. Cancel-safe: dropping it drops only the
+    /// registration.
     ///
     /// The bound is a plain `Duration` and is applied with
     /// [`tokio::time::timeout`], which saturates an unrepresentable deadline
@@ -221,8 +284,13 @@ impl SpvRuntime {
     /// FFI frame aborts the host process.
     pub async fn wait_until_ready(&self, timeout: Duration) -> bool {
         tokio::time::timeout(timeout, async {
-            while !self.is_broadcast_ready().await {
-                tokio::time::sleep(SPV_READINESS_POLL_INTERVAL).await;
+            loop {
+                let mut changed = pin!(self.readiness_changed.notified());
+                changed.as_mut().enable();
+                if self.is_broadcast_ready().await {
+                    return;
+                }
+                changed.await;
             }
         })
         .await
@@ -262,13 +330,61 @@ impl SpvRuntime {
             .map_err(classify_spv_send_error)
     }
 
-    /// Look up a quorum public key via the SPV masternode state.
+    /// Look up the public key of a quorum dash-spv verified, for Platform
+    /// proof verification.
+    ///
+    /// Only a [`LLMQEntryVerificationStatus::Verified`] quorum's key is
+    /// returned. A quorum dash-spv holds but has not verified (`Unknown`,
+    /// `Skipped`) fails with [`PlatformWalletError::QuorumNotVerified`]; that
+    /// is usually transient, for example a freshly mined quorum whose
+    /// work-block list has not arrived yet. A quorum dash-spv does not hold,
+    /// or found `Invalid`, fails with [`PlatformWalletError::SpvError`].
+    /// [`PlatformWalletError::quorum_lookup_context_error`] maps either to
+    /// the SDK error class a context provider reports.
+    ///
+    /// A caller that accepts unverified keys uses
+    /// [`Self::get_quorum_public_key_with_status`].
     pub async fn get_quorum_public_key(
         &self,
         quorum_type: u32,
         quorum_hash: [u8; 32],
         height: u32,
     ) -> Result<[u8; 48], PlatformWalletError> {
+        let quorum = self
+            .get_quorum_public_key_with_status(quorum_type, quorum_hash, height)
+            .await?;
+        match quorum.status {
+            LLMQEntryVerificationStatus::Verified => Ok(quorum.public_key),
+            // dash-spv's lookup already skips `Invalid` entries; kept out of
+            // `QuorumNotVerified` should that ever change.
+            LLMQEntryVerificationStatus::Invalid(error) => {
+                Err(PlatformWalletError::SpvError(format!(
+                    "quorum {quorum_type}:{} is invalid: {error}",
+                    hex::encode(quorum_hash)
+                )))
+            }
+            status => Err(PlatformWalletError::QuorumNotVerified {
+                quorum_type,
+                quorum_hash,
+                status,
+            }),
+        }
+    }
+
+    /// Look up a quorum public key via the SPV masternode state, with
+    /// dash-spv's verification status for the quorum.
+    ///
+    /// Only [`LLMQEntryVerificationStatus::Verified`] means dash-spv checked the
+    /// quorum's commitment against the members it derives for the quorum. Any
+    /// other status is a key dash-spv holds but has not verified, which must
+    /// not verify Platform proofs; [`Self::get_quorum_public_key`] enforces
+    /// that.
+    pub async fn get_quorum_public_key_with_status(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        height: u32,
+    ) -> Result<SpvQuorumPublicKey, PlatformWalletError> {
         let client_guard = self.client.read().await;
         let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
             "SPV Client not started".to_string(),
@@ -282,7 +398,10 @@ impl SpvRuntime {
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
 
-        Ok(*quorum.quorum_entry.quorum_public_key.as_ref())
+        Ok(SpvQuorumPublicKey {
+            public_key: *quorum.quorum_entry.quorum_public_key.as_ref(),
+            status: quorum.verified,
+        })
     }
 
     /// Start upstream's background sync while retaining its client for queries and stop.
@@ -323,6 +442,10 @@ impl SpvRuntime {
     /// A timeout or cancelled caller leaves teardown tracked for the next stop.
     /// Restart stays blocked until a stop confirms completion. Client queries
     /// already in flight finish before teardown starts; this wait is unbounded.
+    ///
+    /// # Errors
+    ///
+    /// See the lifecycle on [`SpvRuntime`].
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
         self.stop_with(|client| async move { client.stop().await })
             .await
@@ -373,14 +496,16 @@ impl SpvRuntime {
                     *shutdown = Shutdown::Failed(format!("SPV teardown task failed: {result:?}"))
                 }
                 Err(_) => {
-                    return Err(PlatformWalletError::SpvError(
+                    return Err(PlatformWalletError::ShutdownIncomplete(
                         "SPV teardown timed out; it is still tracked for a retry".to_string(),
                     ))
                 }
             }
         }
         match shutdown {
-            Shutdown::Failed(error) => Err(PlatformWalletError::SpvError(error.clone())),
+            Shutdown::Failed(error) => Err(PlatformWalletError::SpvProcessRestartRequired(
+                error.clone(),
+            )),
             _ => Ok(()),
         }
     }
@@ -429,16 +554,9 @@ impl SpvRuntime {
             return Vec::new();
         }
 
-        let engine = client.masternode_list_engine().ok();
+        let list = client.latest_masternode_list().await;
         drop(client_guard);
-
-        match engine {
-            Some(engine) => {
-                let engine_guard = engine.read().await;
-                classify_peers(&addresses, engine_guard.latest_masternode_list())
-            }
-            None => classify_peers(&addresses, None),
-        }
+        classify_peers(&addresses, list.as_ref())
     }
 
     /// Snapshot of the current deterministic masternode list (DML) keyed
@@ -456,17 +574,10 @@ impl SpvRuntime {
     pub fn masternode_validity_snapshot_blocking(
         &self,
     ) -> Option<std::collections::HashMap<[u8; 32], bool>> {
-        // Clone the engine `Arc` out while holding the client lock, then
-        // drop it before reading the engine — same ordering as
-        // `connected_peers`.
-        let engine = {
+        let list = {
             let client_guard = self.client.blocking_read();
-            let client = client_guard.as_ref()?;
-            client.masternode_list_engine().ok()?
+            client_guard.as_ref()?.latest_masternode_list_blocking()?
         };
-
-        let engine_guard = engine.blocking_read();
-        let list = engine_guard.latest_masternode_list()?;
 
         let mut map = std::collections::HashMap::with_capacity(list.masternodes.len());
         for qualified in list.masternodes.values() {
@@ -499,55 +610,40 @@ impl SpvRuntime {
     /// it must run off the async runtime (FFI blocking thread), mirroring the
     /// other `*_blocking` accessors.
     pub fn masternodes_by_voting_key_blocking(&self, voting_key_id: &PubkeyHash) -> Vec<[u8; 32]> {
-        // Clone the engine `Arc` out while holding the client lock, then drop
-        // it before reading the engine — same ordering as `connected_peers`.
-        let engine = {
+        let list = {
             let client_guard = self.client.blocking_read();
             let Some(client) = client_guard.as_ref() else {
                 return Vec::new();
             };
-            match client.masternode_list_engine().ok() {
-                Some(engine) => engine,
-                None => return Vec::new(),
-            }
+            let Some(list) = client.latest_masternode_list_blocking() else {
+                return Vec::new();
+            };
+            list
         };
 
-        let engine_guard = engine.blocking_read();
-        let Some(list) = engine_guard.latest_masternode_list() else {
-            return Vec::new();
-        };
-
-        masternodes_by_voting_key(list, voting_key_id)
+        masternodes_by_voting_key(&list, voting_key_id)
     }
 
     /// Snapshot of the current-tip deterministic masternode list as typed
     /// summaries. `None` when the list isn't available (SPV client not
     /// running, engine not initialized, or masternode sync not complete).
-    /// Clones the engine `Arc` out under the client lock and reads the
-    /// engine without it — the two never nest, same as
-    /// [`Self::masternode_validity_snapshot_blocking`].
+    /// Reads an owned snapshot through the client's public query API.
     pub async fn masternode_list_summaries(&self) -> Option<Vec<MasternodeListSummary>> {
-        let engine = {
+        let list = {
             let client_guard = self.client.read().await;
-            let client = client_guard.as_ref()?;
-            client.masternode_list_engine().ok()?
+            client_guard.as_ref()?.latest_masternode_list().await?
         };
-        let engine_guard = engine.read().await;
-        let list = engine_guard.latest_masternode_list()?;
-        Some(MasternodeListSummary::all_from_list(list))
+        Some(MasternodeListSummary::all_from_list(&list))
     }
 
     /// Blocking twin of [`Self::masternode_list_summaries`] for FFI threads
     /// (`blocking_read`; never call from the async runtime).
     pub fn masternode_list_summaries_blocking(&self) -> Option<Vec<MasternodeListSummary>> {
-        let engine = {
+        let list = {
             let client_guard = self.client.blocking_read();
-            let client = client_guard.as_ref()?;
-            client.masternode_list_engine().ok()?
+            client_guard.as_ref()?.latest_masternode_list_blocking()?
         };
-        let engine_guard = engine.blocking_read();
-        let list = engine_guard.latest_masternode_list()?;
-        Some(MasternodeListSummary::all_from_list(list))
+        Some(MasternodeListSummary::all_from_list(&list))
     }
 
     /// Get the current sync progress.
@@ -570,16 +666,8 @@ impl SpvRuntime {
     /// have been stored yet, or the tip header isn't readable for
     /// any reason.
     pub async fn tip_block_time(&self) -> Option<u32> {
-        use dash_spv::storage::{BlockHeaderStorage, StorageManager};
-
         let client_guard = self.client.read().await;
-        let client = client_guard.as_ref()?;
-        let storage_arc = client.storage();
-        let storage = storage_arc.lock().await;
-        let block_headers = StorageManager::block_headers(&*storage);
-        drop(storage);
-        let bh = block_headers.read().await;
-        let tip = BlockHeaderStorage::get_tip(&*bh).await?;
+        let tip = client_guard.as_ref()?.tip_header().await?;
         Some(tip.header().time)
     }
 
@@ -593,18 +681,12 @@ impl SpvRuntime {
         height: u32,
     ) -> crate::wallet::asset_lock::sync::locate::HeaderLookup {
         use crate::wallet::asset_lock::sync::locate::HeaderLookup;
-        use dash_spv::storage::{BlockHeaderStorage, StorageManager};
 
         let client_guard = self.client.read().await;
         let Some(client) = client_guard.as_ref() else {
             return HeaderLookup::Unreadable("SPV client not running".to_string());
         };
-        let storage_arc = client.storage();
-        let storage = storage_arc.lock().await;
-        let block_headers = StorageManager::block_headers(&*storage);
-        drop(storage);
-        let bh = block_headers.read().await;
-        match BlockHeaderStorage::get_header(&*bh, height).await {
+        match client.header_at(height).await {
             Ok(Some(header)) => HeaderLookup::Found(*header.hash()),
             // The store is readable and the chain has nothing there.
             Ok(None) => HeaderLookup::Absent,
@@ -638,15 +720,27 @@ impl SpvRuntime {
             )
         })?;
 
-        let mut storage = DiskStorageManager::new(&config)
+        // dash-spv clears its storage only through a client. This one never
+        // runs and has no event handlers, and dropping it releases the
+        // storage. Clearing removes the whole storage directory, so the client
+        // needs neither filters nor masternodes; without them it does not
+        // replay the stored masternode state only to delete it.
+        let config = config.without_filters().without_masternodes();
+        let network_manager = PeerNetworkManager::new(&config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        StorageManager::clear(&mut storage)
+        let client: SpvClient = DashSpvClient::new(
+            config,
+            network_manager,
+            Arc::clone(&self.wallet_manager),
+            Vec::new(),
+        )
+        .await
+        .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        client
+            .clear_storage()
             .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        StorageManager::stop(&mut storage).await;
-
-        Ok(())
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
     }
 
     /// Update the running SPV client's configuration.
@@ -803,7 +897,7 @@ impl std::fmt::Debug for SpvRuntime {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use dash_spv::error::{NetworkError, SpvError};
@@ -814,7 +908,7 @@ mod tests {
     use super::{classify_spv_send_error, SpvRuntime};
     use crate::broadcaster::BroadcastError;
     use crate::error::PlatformWalletError;
-    use crate::events::PlatformEventManager;
+    use crate::events::{EventHandler, PlatformEventHandler, PlatformEventManager};
     use crate::wallet::platform_wallet::PlatformWalletInfo;
     use dash_spv::ClientConfig;
 
@@ -849,8 +943,8 @@ mod tests {
         let result = runtime.start(ClientConfig::default()).await;
 
         assert!(
-            matches!(result, Err(PlatformWalletError::SpvError(_))),
-            "a start over a live parked run loop must fail, got {result:?}"
+            is_retryable(&result),
+            "a start over a live parked run loop must ask for a stop, got {result:?}"
         );
         assert!(!runtime.is_started(), "no client may be started");
         assert!(
@@ -1053,6 +1147,19 @@ mod tests {
         );
     }
 
+    /// Teardown is still tracked: the host should stop again.
+    fn is_retryable(result: &Result<(), PlatformWalletError>) -> bool {
+        matches!(result, Err(PlatformWalletError::ShutdownIncomplete(_)))
+    }
+
+    /// Startup or teardown panicked: only a process restart recovers.
+    fn needs_restart(result: &Result<(), PlatformWalletError>) -> bool {
+        matches!(
+            result,
+            Err(PlatformWalletError::SpvProcessRestartRequired(_))
+        )
+    }
+
     async fn offline_runtime() -> (Arc<SpvRuntime>, tempfile::TempDir) {
         let storage = tempfile::tempdir().unwrap();
         let runtime = Arc::new(unstarted_runtime());
@@ -1065,6 +1172,329 @@ mod tests {
             .await
             .unwrap();
         (runtime, storage)
+    }
+
+    /// Wait out two periods of upstream's five-second storage writer and
+    /// check that nothing re-created the removed directory.
+    async fn assert_no_storage_writer_survives(storage: &tempfile::TempDir) {
+        std::fs::remove_dir_all(storage.path()).unwrap();
+        tokio::time::sleep(Duration::from_secs(11)).await;
+        assert!(
+            !storage.path().exists(),
+            "a storage writer outlived its client"
+        );
+    }
+
+    /// A storage writer that outlives its client keeps writing into a
+    /// directory that was cleared or handed to the next client. Neither a
+    /// client that never ran nor the client that clears the storage may leave
+    /// one behind.
+    #[tokio::test(start_paused = true)]
+    async fn should_leave_no_storage_writer_after_clearing_a_client_that_never_ran() {
+        let (runtime, storage) = offline_runtime().await;
+        runtime.clear_storage().await.unwrap();
+        assert_no_storage_writer_survives(&storage).await;
+    }
+
+    /// The hash Platform names the [`hold_quorum`] quorum by: dash-spv's
+    /// quorum hash in the reverse byte order.
+    const QUORUM_FIXTURE_PLATFORM_HASH: [u8; 32] = [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+        25, 26, 27, 28, 29, 30, 31,
+    ];
+
+    /// Height of the masternode list holding the fixture quorum.
+    const QUORUM_FIXTURE_HEIGHT: u32 = 1_000;
+
+    /// Make the offline runtime's engine hold, at [`QUORUM_FIXTURE_HEIGHT`], one
+    /// LLMQ type 6 quorum with key `[9; 48]` and the given dash-spv status.
+    async fn hold_quorum(
+        runtime: &SpvRuntime,
+        status: dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus,
+    ) {
+        use std::collections::BTreeMap;
+
+        use dashcore::bls_sig_utils::{BLSPublicKey, BLSSignature};
+        use dashcore::hash_types::QuorumVVecHash;
+        use dashcore::hashes::Hash;
+        use dashcore::sml::llmq_type::LLMQType;
+        use dashcore::sml::masternode_list::MasternodeList;
+        use dashcore::sml::quorum_entry::qualified_quorum_entry::QualifiedQuorumEntry;
+        use dashcore::transaction::special_transaction::quorum_commitment::QuorumEntry;
+        use dashcore::{BlockHash, QuorumHash};
+
+        let engine = {
+            let client = runtime.client.read().await;
+            dash_spv::test_utils::masternode_list_engine(client.as_ref().unwrap()).unwrap()
+        };
+        let mut quorum_hash = QUORUM_FIXTURE_PLATFORM_HASH;
+        quorum_hash.reverse();
+        let quorum_hash = QuorumHash::from_byte_array(quorum_hash);
+        let mut quorum: QualifiedQuorumEntry = QuorumEntry {
+            version: 2,
+            llmq_type: LLMQType::Llmqtype25_67,
+            quorum_hash,
+            quorum_index: None,
+            signers: vec![true; 4],
+            valid_members: vec![true; 4],
+            quorum_public_key: BLSPublicKey::from([9; 48]),
+            quorum_vvec_hash: QuorumVVecHash::all_zeros(),
+            threshold_sig: BLSSignature::from([1; 96]),
+            all_commitment_aggregated_signature: BLSSignature::from([1; 96]),
+        }
+        .into();
+        quorum.verified = status;
+        let quorums = BTreeMap::from([(
+            LLMQType::Llmqtype25_67,
+            BTreeMap::from([(quorum_hash, Arc::new(quorum))]),
+        )]);
+        let list = MasternodeList::build(
+            BTreeMap::new(),
+            quorums,
+            BlockHash::from_byte_array([3; 32]),
+            QUORUM_FIXTURE_HEIGHT,
+        )
+        .build();
+        engine
+            .write()
+            .await
+            .masternode_lists
+            .insert(QUORUM_FIXTURE_HEIGHT, list);
+    }
+
+    /// The status-carrying lookup returns the key with dash-spv's status for
+    /// the quorum, whatever the status. It does not return a quorum dash-spv
+    /// found `Invalid`.
+    #[tokio::test]
+    async fn should_return_the_quorum_status_with_its_key() {
+        use dashcore::sml::llmq_entry_verification::{
+            LLMQEntryVerificationSkipStatus, LLMQEntryVerificationStatus,
+        };
+        use dashcore::sml::quorum_validation_error::QuorumValidationError;
+
+        let (runtime, _storage) = offline_runtime().await;
+        for status in [
+            LLMQEntryVerificationStatus::Unknown,
+            LLMQEntryVerificationStatus::Skipped(
+                LLMQEntryVerificationSkipStatus::NotMarkedForVerification,
+            ),
+            LLMQEntryVerificationStatus::Skipped(LLMQEntryVerificationSkipStatus::MissedList(992)),
+            LLMQEntryVerificationStatus::Verified,
+        ] {
+            hold_quorum(&runtime, status.clone()).await;
+            let quorum = runtime
+                .get_quorum_public_key_with_status(
+                    6,
+                    QUORUM_FIXTURE_PLATFORM_HASH,
+                    QUORUM_FIXTURE_HEIGHT,
+                )
+                .await
+                .unwrap();
+            assert_eq!(quorum.public_key, [9; 48]);
+            assert_eq!(quorum.status, status);
+        }
+
+        hold_quorum(
+            &runtime,
+            LLMQEntryVerificationStatus::Invalid(QuorumValidationError::InvalidQuorumPublicKey),
+        )
+        .await;
+        assert!(runtime
+            .get_quorum_public_key_with_status(
+                6,
+                QUORUM_FIXTURE_PLATFORM_HASH,
+                QUORUM_FIXTURE_HEIGHT
+            )
+            .await
+            .is_err());
+    }
+
+    /// The key-only lookup feeds Platform proof verification, so it returns
+    /// only a key dash-spv verified. A quorum dash-spv holds unverified fails
+    /// with `QuorumNotVerified` naming the quorum and its status, which a
+    /// caller tells apart from a quorum dash-spv does not hold or found
+    /// `Invalid`.
+    #[tokio::test]
+    async fn should_reject_an_unverified_quorum_key_for_proof_verification() {
+        use dashcore::sml::llmq_entry_verification::{
+            LLMQEntryVerificationSkipStatus, LLMQEntryVerificationStatus,
+        };
+        use dashcore::sml::quorum_validation_error::QuorumValidationError;
+
+        let (runtime, _storage) = offline_runtime().await;
+        for status in [
+            LLMQEntryVerificationStatus::Unknown,
+            LLMQEntryVerificationStatus::Skipped(
+                LLMQEntryVerificationSkipStatus::NotMarkedForVerification,
+            ),
+            LLMQEntryVerificationStatus::Skipped(LLMQEntryVerificationSkipStatus::MissedList(992)),
+        ] {
+            hold_quorum(&runtime, status.clone()).await;
+            match runtime
+                .get_quorum_public_key(6, QUORUM_FIXTURE_PLATFORM_HASH, QUORUM_FIXTURE_HEIGHT)
+                .await
+            {
+                Err(PlatformWalletError::QuorumNotVerified {
+                    quorum_type,
+                    quorum_hash,
+                    status: reported,
+                }) => {
+                    assert_eq!(quorum_type, 6);
+                    assert_eq!(quorum_hash, QUORUM_FIXTURE_PLATFORM_HASH);
+                    assert_eq!(reported, status);
+                }
+                other => panic!("expected QuorumNotVerified for {status}, got {other:?}"),
+            }
+        }
+
+        hold_quorum(&runtime, LLMQEntryVerificationStatus::Verified).await;
+        assert_eq!(
+            runtime
+                .get_quorum_public_key(6, QUORUM_FIXTURE_PLATFORM_HASH, QUORUM_FIXTURE_HEIGHT)
+                .await
+                .unwrap(),
+            [9; 48]
+        );
+
+        let unknown_hash = [0xee; 32];
+        let missing = runtime
+            .get_quorum_public_key(6, unknown_hash, QUORUM_FIXTURE_HEIGHT)
+            .await;
+        assert!(
+            matches!(missing, Err(PlatformWalletError::SpvError(_))),
+            "a quorum dash-spv does not hold is not found, got {missing:?}"
+        );
+
+        hold_quorum(
+            &runtime,
+            LLMQEntryVerificationStatus::Invalid(QuorumValidationError::InvalidQuorumPublicKey),
+        )
+        .await;
+        let invalid = runtime
+            .get_quorum_public_key(6, QUORUM_FIXTURE_PLATFORM_HASH, QUORUM_FIXTURE_HEIGHT)
+            .await;
+        assert!(
+            matches!(invalid, Err(PlatformWalletError::SpvError(_))),
+            "an Invalid quorum is not found, got {invalid:?}"
+        );
+    }
+
+    /// Drive the production startup path and wait for upstream `run` to return.
+    async fn run_offline(runtime: &Arc<SpvRuntime>) {
+        runtime.spawn_run_loop();
+        wait_until("the startup task to finish", || {
+            runtime
+                .task
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|task| task.is_finished())
+        })
+        .await;
+    }
+
+    fn offline_config(storage: &tempfile::TempDir) -> ClientConfig {
+        ClientConfig::testnet()
+            .with_storage_path(storage.path())
+            .with_restrict_to_configured_peers(true)
+    }
+
+    /// The production startup path: `spawn_run_loop` drives upstream `run`,
+    /// the client stays available for queries, and stop tears down a client
+    /// whose sync loop is live.
+    #[tokio::test]
+    async fn should_run_the_real_startup_and_stop_a_running_client() {
+        let (runtime, storage) = offline_runtime().await;
+        assert!(
+            !runtime.is_running(),
+            "a client that never ran is not running"
+        );
+
+        run_offline(&runtime).await;
+        assert!(runtime.is_started(), "startup must retain the client");
+        assert!(runtime.is_running());
+        assert!(
+            runtime.sync_progress().await.is_some(),
+            "queries must reach the retained client"
+        );
+
+        runtime.stop().await.unwrap();
+        assert!(!runtime.is_started());
+        assert!(!runtime.is_running());
+        runtime
+            .start(offline_config(&storage))
+            .await
+            .expect("restart after stopping a running client");
+        runtime.stop().await.unwrap();
+    }
+
+    /// Upstream stops itself when its sync loop fails and reports that only
+    /// through `on_error`, so the retained client must stop counting as
+    /// running.
+    #[tokio::test]
+    async fn should_not_report_running_after_upstream_background_sync_fails() {
+        /// Reports the error and what a host callback sees when it queries
+        /// the running state from inside the callback.
+        struct ErrorObserver {
+            runtime: std::sync::Weak<SpvRuntime>,
+            report: Mutex<Option<tokio::sync::oneshot::Sender<(String, bool)>>>,
+        }
+
+        impl EventHandler for ErrorObserver {
+            fn on_error(&self, error: &str) {
+                if let Some(report) = self.report.lock().unwrap().take() {
+                    let running = self.runtime.upgrade().is_some_and(|spv| spv.is_running());
+                    let _ = report.send((error.to_owned(), running));
+                }
+            }
+        }
+
+        impl PlatformEventHandler for ErrorObserver {}
+
+        let (runtime, storage) = offline_runtime().await;
+        let (sender, error) = tokio::sync::oneshot::channel();
+        runtime.event_manager.add_handler(Arc::new(ErrorObserver {
+            runtime: Arc::downgrade(&runtime),
+            report: Mutex::new(Some(sender)),
+        }));
+        run_offline(&runtime).await;
+        assert!(runtime.is_running());
+
+        // Dropping the empty fixture's wallet closes its event channel. The
+        // real upstream monitor reports the failure and stops the sync loop.
+        *runtime.wallet_manager.write().await = WalletManager::new(Network::Testnet);
+        let (error, running_in_callback) = tokio::time::timeout(Duration::from_secs(5), error)
+            .await
+            .expect("upstream must report the background failure")
+            .expect("the error observer must remain registered");
+        assert!(
+            !running_in_callback,
+            "a callback querying the running state must get the stopped answer"
+        );
+        assert!(
+            error.contains("WalletEvent monitor channel closed unexpectedly"),
+            "expected a wallet event monitor failure, got {error}"
+        );
+
+        assert!(runtime.is_started(), "the client stays owned until stop");
+        // Upstream cleans up after the failure in a task of its own.
+        for _ in 0..1000 {
+            assert!(
+                !runtime.is_running(),
+                "a failed sync must not report running while upstream cleans up"
+            );
+            tokio::task::yield_now().await;
+        }
+        runtime.stop().await.unwrap();
+        assert!(!runtime.is_started());
+        assert!(!runtime.is_running());
+        runtime
+            .start(offline_config(&storage))
+            .await
+            .expect("restart after releasing the stopped client");
+        run_offline(&runtime).await;
+        assert!(runtime.is_running());
+        runtime.stop().await.unwrap();
     }
 
     #[tokio::test(start_paused = true)]
@@ -1080,10 +1510,17 @@ mod tests {
                 completed.store(true, std::sync::atomic::Ordering::SeqCst);
             })
             .await;
-        assert!(result.is_err(), "an incomplete upstream stop must time out");
-        assert!(runtime.start(ClientConfig::default()).await.is_err());
         assert!(
-            runtime.stop().await.is_err(),
+            is_retryable(&result),
+            "an incomplete upstream stop must time out as retryable, got {result:?}"
+        );
+        assert!(is_retryable(&runtime.start(ClientConfig::default()).await));
+        assert!(
+            is_retryable(&runtime.clear_storage().await),
+            "storage must not be cleared under a pending upstream stop"
+        );
+        assert!(
+            is_retryable(&runtime.stop().await),
             "retry must not report clean while upstream stop is pending"
         );
         release
@@ -1160,6 +1597,63 @@ mod tests {
         runtime.stop().await.unwrap();
     }
 
+    /// Clearing a running client must drop the chain it persisted. A client
+    /// finding stored headers resumes from their tip, so only a cleared
+    /// storage lets the restart below anchor at genesis instead of at the
+    /// checkpoint the first run stored.
+    #[tokio::test]
+    async fn should_drop_the_persisted_chain_when_clearing_a_running_client() {
+        use crate::wallet::asset_lock::sync::locate::HeaderLookup;
+
+        let storage = tempfile::tempdir().unwrap();
+        let starting_at = |height| {
+            let mut config = offline_config(&storage);
+            config.start_from_height = Some(height);
+            config
+        };
+        let genesis = dashcore::blockdata::constants::genesis_block(Network::Testnet).header;
+
+        let runtime = Arc::new(unstarted_runtime());
+        runtime.start(starting_at(u32::MAX)).await.unwrap();
+        run_offline(&runtime).await;
+        let checkpoint_time = runtime.tip_block_time().await;
+        assert!(
+            checkpoint_time.is_some_and(|time| time > genesis.time),
+            "the first run must anchor at a checkpoint, got tip time {checkpoint_time:?}"
+        );
+        assert_eq!(
+            runtime.header_hash_at(0).await,
+            HeaderLookup::Absent,
+            "a chain anchored at a checkpoint holds nothing below it"
+        );
+        runtime.stop().await.unwrap();
+
+        runtime.start(starting_at(0)).await.unwrap();
+        assert_eq!(
+            runtime.tip_block_time().await,
+            checkpoint_time,
+            "a restart must resume from the persisted checkpoint"
+        );
+        run_offline(&runtime).await;
+        assert!(runtime.is_running());
+        runtime.clear_storage().await.unwrap();
+        assert!(!runtime.is_started());
+        assert!(!runtime.is_running());
+
+        runtime.start(starting_at(0)).await.unwrap();
+        assert_eq!(
+            runtime.tip_block_time().await,
+            Some(genesis.time),
+            "after clearing, a restart must anchor at genesis"
+        );
+        assert_eq!(
+            runtime.header_hash_at(0).await,
+            HeaderLookup::Found(genesis.block_hash())
+        );
+        assert_eq!(runtime.header_hash_at(1).await, HeaderLookup::Absent);
+        runtime.stop().await.unwrap();
+    }
+
     #[tokio::test]
     async fn should_keep_teardown_tracked_when_a_clear_storage_caller_is_cancelled() {
         let (runtime, storage) = offline_runtime().await;
@@ -1212,6 +1706,10 @@ mod tests {
             let _ = pending.await;
             completed.store(true, std::sync::atomic::Ordering::SeqCst);
         }));
+        assert!(
+            runtime.is_running(),
+            "a client whose startup is in progress counts as running"
+        );
         let stopping = {
             let runtime = Arc::clone(&runtime);
             tokio::spawn(async move {
@@ -1267,8 +1765,8 @@ mod tests {
 
         assert!(!runtime.is_started(), "failed startup must drop its client");
         assert!(
-            runtime.start(config()).await.is_err(),
-            "an unjoined startup must block restart"
+            is_retryable(&runtime.start(config()).await),
+            "an unjoined startup must block restart until a stop joins it"
         );
         runtime.stop().await.unwrap();
         runtime
@@ -1280,14 +1778,20 @@ mod tests {
 
     #[tokio::test]
     async fn should_never_report_clean_after_a_startup_task_panics() {
-        let runtime = unstarted_runtime();
+        let runtime = Arc::new(unstarted_runtime());
         *runtime.task.lock().unwrap() = Some(tokio::spawn(async { panic!("mock startup panic") }));
-        assert!(runtime.stop().await.is_err());
+        assert!(needs_restart(&runtime.stop().await));
         assert!(
-            runtime.stop().await.is_err(),
+            needs_restart(&runtime.stop().await),
             "a join failure cannot be forgotten by a retry"
         );
-        assert!(runtime.start(ClientConfig::default()).await.is_err());
+        assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
+        assert!(needs_restart(&runtime.clear_storage().await));
+        runtime.spawn_run_loop();
+        assert!(
+            runtime.task.lock().unwrap().is_none(),
+            "no run loop may be spawned over a panicked startup"
+        );
     }
 
     #[tokio::test]
@@ -1317,12 +1821,13 @@ mod tests {
     #[tokio::test]
     async fn should_keep_teardown_panics_non_clean_on_every_retry() {
         let (runtime, _storage) = offline_runtime().await;
-        assert!(runtime
+        let failed = runtime
             .stop_with(|_client| async { panic!("mock teardown panic") })
-            .await
-            .is_err());
-        assert!(runtime.stop().await.is_err());
-        assert!(runtime.start(ClientConfig::default()).await.is_err());
+            .await;
+        assert!(needs_restart(&failed));
+        assert!(needs_restart(&runtime.stop().await));
+        assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
+        assert!(needs_restart(&runtime.clear_storage().await));
     }
 
     /// A panic under the `task` mutex must not make every later lifecycle
@@ -1452,8 +1957,8 @@ mod tests {
         use dash_spv::{ClientConfig, EventHandler};
         use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-        // `DiskStorageManager` locks the directory it opens, so the client
-        // gets one of its own and the stop below releases it.
+        // dash-spv locks the storage directory it opens, so the client gets
+        // one of its own and the stop below releases it.
         let storage = std::env::temp_dir().join(format!(
             "platform-wallet-spv-readiness-{}",
             std::process::id()
@@ -1503,6 +2008,124 @@ mod tests {
             .await
             .expect("clean stop releases the data dir");
         let _ = std::fs::remove_dir_all(&storage);
+    }
+
+    /// The `PeersUpdated` event dash-spv pushes after a connection change.
+    fn one_peer_connected() -> dash_spv::network::NetworkEvent {
+        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+        dash_spv::network::NetworkEvent::PeersUpdated {
+            connected_count: 1,
+            addresses: vec![SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
+                19999,
+            )],
+            best_height: Some(1_100_000),
+        }
+    }
+
+    /// Spawn a readiness wait and prove it parked: it is still pending
+    /// after the runtime has had every chance to run it.
+    async fn parked_readiness_wait(runtime: &Arc<SpvRuntime>) -> tokio::task::JoinHandle<bool> {
+        let waiter = {
+            let runtime = Arc::clone(runtime);
+            tokio::spawn(async move { runtime.wait_until_ready(Duration::from_secs(30)).await })
+        };
+        for _ in 0..16 {
+            tokio::task::yield_now().await;
+        }
+        assert!(!waiter.is_finished(), "the wait must park while not ready");
+        waiter
+    }
+
+    /// Readiness is pushed, not polled: the first `PeersUpdated` of a
+    /// started client resolves a parked wait without any virtual time
+    /// passing. A sleep-poll would only notice on its next tick.
+    #[tokio::test(start_paused = true)]
+    async fn should_resolve_a_parked_wait_on_the_first_peers_updated_event() {
+        use dash_spv::EventHandler;
+
+        let (runtime, _storage) = offline_runtime().await;
+        let waiter = parked_readiness_wait(&runtime).await;
+        let parked_at = tokio::time::Instant::now();
+
+        runtime.peer_tracker.on_network_event(&one_peer_connected());
+
+        assert!(
+            waiter.await.unwrap(),
+            "the first peer makes the client ready"
+        );
+        assert_eq!(
+            parked_at.elapsed(),
+            Duration::ZERO,
+            "the event itself must wake the wait, not a later poll tick"
+        );
+        runtime.stop().await.unwrap();
+    }
+
+    /// The client-start transition is the other half of readiness, so it
+    /// must wake a parked wait on its own too — here with the peer snapshot
+    /// already populated, so `start` is the transition that completes it.
+    #[tokio::test(start_paused = true)]
+    async fn should_resolve_a_parked_wait_when_the_client_starts() {
+        use dash_spv::EventHandler;
+
+        let runtime = Arc::new(unstarted_runtime());
+        runtime.peer_tracker.on_network_event(&one_peer_connected());
+        let waiter = parked_readiness_wait(&runtime).await;
+        let parked_at = tokio::time::Instant::now();
+
+        let storage = tempfile::tempdir().unwrap();
+        runtime
+            .start(
+                ClientConfig::testnet()
+                    .with_storage_path(storage.path())
+                    .with_restrict_to_configured_peers(true),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            waiter.await.unwrap(),
+            "a started client with a peer is ready"
+        );
+        assert_eq!(
+            parked_at.elapsed(),
+            Duration::ZERO,
+            "the start itself must wake the wait, not a later poll tick"
+        );
+        runtime.stop().await.unwrap();
+    }
+
+    /// `stop` takes the client before it clears the peer snapshot, so
+    /// "peers but no client" is a real, possibly long-lived state while
+    /// teardown runs. A wait in it must sleep until something changes —
+    /// not re-check on a timer for its whole budget.
+    #[tokio::test(start_paused = true)]
+    async fn should_not_recheck_readiness_while_nothing_changes() {
+        use dash_spv::EventHandler;
+        use std::future::Future;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let runtime = unstarted_runtime();
+        runtime.peer_tracker.on_network_event(&one_peer_connected());
+
+        let polls = AtomicUsize::new(0);
+        let mut wait = std::pin::pin!(runtime.wait_until_ready(Duration::from_secs(30)));
+        let ready = std::future::poll_fn(|cx| {
+            polls.fetch_add(1, Ordering::Relaxed);
+            wait.as_mut().poll(cx)
+        })
+        .await;
+
+        assert!(!ready, "peers without a client are not ready");
+        let polls = polls.into_inner();
+        // One poll to park, one when the budget expires. A 250 ms poll
+        // would take 120 over the 30 s budget.
+        assert!(
+            polls <= 2,
+            "the wait re-checked {polls} times with no change"
+        );
     }
 
     /// Every other error on the acceptance path may follow a partial send

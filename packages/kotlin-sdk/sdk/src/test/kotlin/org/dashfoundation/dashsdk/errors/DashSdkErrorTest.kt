@@ -10,6 +10,16 @@ import org.junit.Test
 class DashSdkErrorTest {
 
     @Test
+    fun shouldPreserveAssetLockInputCapWithoutRetryingAPartialDrain() {
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 60, "101 exceeds 100")
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.AssetLockTooManyInputs)
+        assertEquals(native.message, mapped.message)
+        assertEquals(native, mapped.cause)
+        assertFalse(mapped.isRetryable)
+    }
+
+    @Test
     fun mapsNativeCodesToHierarchy() {
         // Codes mirror DashSDKErrorCode in rs-sdk-ffi/src/error.rs.
         val cases = mapOf(
@@ -225,6 +235,28 @@ class DashSdkErrorTest {
         assertEquals(99, (mapped as DashSdkError.PlatformWallet.Generic).nativeCode)
         assertEquals("boom", mapped.message)
         assertFalse("Generic platform-wallet errors are not retryable", mapped.isRetryable)
+    }
+
+    @Test
+    fun spvTeardownCodes27And59MapTypedWithOppositeRetryability() {
+        val offset = DashSdkError.PLATFORM_WALLET_CODE_OFFSET
+
+        val incomplete =
+            DashSdkError.fromNative(DashSDKException(offset + 27, "SPV teardown timed out"))
+        assertTrue(incomplete is DashSdkError.PlatformWallet.ShutdownIncomplete)
+        assertEquals("SPV teardown timed out", incomplete.message)
+        assertTrue("a tracked teardown completes on a repeated stop", incomplete.isRetryable)
+
+        val panicDetail = "teardown task 12 panicked with message \"boom\""
+        val restart = DashSdkError.fromNative(DashSDKException(offset + 59, panicDetail))
+        assertTrue(restart is DashSdkError.PlatformWallet.SpvProcessRestartRequired)
+        assertEquals(panicDetail, restart.message)
+        assertFalse("no retry recovers a panicked teardown", restart.isRetryable)
+        assertEquals(
+            "the panic detail is diagnostic and must not be the displayed text",
+            "Sync could not be stopped cleanly. Restart the app to use it again.",
+            restart.userMessage,
+        )
     }
 
     @Test

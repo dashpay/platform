@@ -12,8 +12,8 @@
 //! can change or lose it:
 //!
 //! - the reference is a same-contract `permanentDocument` or
-//!   `moderatedDocument` one, by id, on a required top-level identifier the
-//!   referring type fixes once written;
+//!   `moderatedDocument` one, by id, on a top-level identifier the referring
+//!   type fixes once written;
 //! - the field is fixed once written on the referenced type: `$creatorId`,
 //!   `$ownerId` of a type whose documents never change hands, or a schema
 //!   property no replace or moderator can change;
@@ -95,6 +95,25 @@ pub(crate) enum DerivedIndexPropertyName {
     Refused(String),
     /// The derived property the name declares.
     Derived(Box<DerivedIndexProperty>),
+}
+
+/// Whether the index property `name` reads through a reference: its first
+/// segment names a top-level identifier property carrying a `refersTo`, so it
+/// declares a derived index property, or one refused as such
+/// ([`parse_derived_index_property_name`]), and never a property of the type.
+pub(crate) fn reads_through_reference(
+    name: &str,
+    flattened_properties: &IndexMap<String, DocumentProperty>,
+) -> bool {
+    name.split_once('.').is_some_and(|(reference_property, _)| {
+        matches!(
+            flattened_properties.get(reference_property),
+            Some(DocumentProperty {
+                property_type: DocumentPropertyType::IdentifierWithReference(_),
+                ..
+            })
+        )
+    })
 }
 
 /// What an index property name declares when its first segment names a

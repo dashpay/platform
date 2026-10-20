@@ -49,6 +49,7 @@ use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use dpp::data_contract::document_type::property_constraints::StoredVersion;
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::group::Group;
 use dpp::data_contract::schema::DataContractSchemaMethodsV0;
@@ -58,6 +59,7 @@ use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
 use dpp::data_contract::{
     DataContract, GroupContractPosition, TokenConfiguration, TokenContractPosition,
 };
+use dpp::document::DocumentV0Getters;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -891,24 +893,45 @@ impl DataContractWasm {
 
     /// The first `propertyConstraints` rule `document` breaks, in name order,
     /// evaluated with the same code consensus runs on a create or replace: its
-    /// properties, its owner for `$ownerId`, and for the system times the
-    /// device clock in place of the block time the write will record (the
-    /// document's stored creation and transfer times when it has them). A
-    /// rule reading a block height the write records is not judged, since the
-    /// height is unknown until the block, and neither is a rule reading a
-    /// `countOf` or `sumOf` total, which only the platform reads from state
-    /// (a rule's `readsTotals` lists them).
+    /// properties, its owner for `$ownerId`, the revision the write records for
+    /// `$revision` (below), and for the system times the device clock in place
+    /// of the block time the
+    /// write will record (the document's stored creation and transfer times
+    /// when it has them). A rule reading a block height the write records is
+    /// not judged, since the height is unknown until the block, a rule reading
+    /// a `countOf` or `sumOf` total, which only the platform reads from state
+    /// (a rule's `readsTotals` lists them), or a rule reading a value of the
+    /// document a reference points at, which the platform reads with the
+    /// reference (a rule's `readsReferenced` lists them).
     /// `undefined` when it meets every rule of its document type.
+    ///
+    /// `storedDocument` is the stored version the write replaces, which a rule
+    /// reads through `$old.` (a rule's `readsStored` says it does): the stored
+    /// document for a replace, `null` for a create, which has none, so that
+    /// every `$old.` read is absent. Left `undefined`, a rule reading it is not
+    /// judged, and neither is one reading `$revision`, which depends on the
+    /// write: 1 on a create, one more than the stored on a replace. Given
+    /// either, `$revision`, `$ownerId` and the creation and
+    /// transfer times are what consensus judges, whatever `document` holds: on
+    /// a replace the stored document's owner, creation and transfer and the
+    /// revision after its own, the only one consensus accepts on a replace;
+    /// on a create revision 1 and the device clock.
     ///
     /// A pre-check, so an app can refuse a document before paying for a
     /// transition consensus would refuse with
     /// `DocumentPropertyConstraintViolatedError` (code 10422). It judges the
     /// rules alone, not the document's JSON schema. Throws when the document
-    /// belongs to another contract or names a document type this one lacks.
+    /// belongs to another contract or names a document type this one lacks,
+    /// and when the stored document is not the same document.
     #[wasm_bindgen(js_name = "checkDocumentPropertyConstraints")]
     pub fn check_document_property_constraints(
         &self,
         document: &DocumentWasm,
+        #[wasm_bindgen(
+            js_name = "storedDocument",
+            unchecked_param_type = "Document | null | undefined"
+        )]
+        stored_document: JsValue,
     ) -> WasmDppResult<DocumentPropertyConstraintViolationJs> {
         let document_contract_id: Identifier = document.data_contract_id.into();
         if document_contract_id != self.0.id() {
@@ -927,7 +950,25 @@ impl DataContractWasm {
                 ))
             })?;
 
-        Ok(check_property_constraints(document_type, &document.document)?.into())
+        let stored = if stored_document.is_undefined() {
+            None
+        } else if stored_document.is_null() {
+            Some(StoredVersion::Absent)
+        } else {
+            let stored = stored_document.to_wasm::<DocumentWasm>("Document")?;
+            let stored_contract_id: Identifier = stored.data_contract_id.into();
+            let same_document = stored_contract_id == document_contract_id
+                && stored.document_type_name == document.document_type_name
+                && stored.document.id() == document.document.id();
+            if !same_document {
+                return Err(WasmDppError::invalid_argument(
+                    "the stored document is another document than the one checked".to_string(),
+                ));
+            }
+            Some(StoredVersion::of_document(&stored.document))
+        };
+
+        Ok(check_property_constraints(document_type, &document.document, stored)?.into())
     }
 
     /// Whether `newContract` is an update of this contract the platform

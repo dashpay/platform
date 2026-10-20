@@ -230,7 +230,8 @@ extension PlatformWalletManager {
         }
     }
 
-    /// Whether the SPV client is currently running.
+    /// Whether SPV sync is running or starting. `false` once background
+    /// sync has failed, until SPV is stopped and started again.
     public func isSpvRunning() throws -> Bool {
         try ensureConfigured()
         return try Self.readIsSpvRunning(handle)
@@ -315,6 +316,9 @@ extension PlatformWalletManager {
     /// Throws `walletOperation` while an async [`stopSpv()`] is in flight:
     /// that stop is already tearing the client down, and this blocking one
     /// would wait on the same teardown on the calling thread.
+    ///
+    /// Throws `shutdownIncomplete` when teardown is still running (stop
+    /// again) and `spvProcessRestartRequired` when the app must restart.
     public func stopSpv() throws {
         try ensureNoSpvStopInFlight(before: "a blocking stopSpv()")
         try platform_wallet_manager_spv_stop(handle).check()

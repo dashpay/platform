@@ -29,11 +29,7 @@ The three paths are 1 to 256 characters each.
   "type": "object",
   "documentsMutable": false,
   "properties": {
-    "recipientId": {
-      "type": "array", "byteArray": true, "minItems": 32, "maxItems": 32,
-      "contentMediaType": "application/x.dash.dpp.identifier",
-      "position": 0
-    },
+    "recipientId": { "type": "identifier", "position": 0 },
     "recipientKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295, "position": 1 },
     "senderKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295, "position": 2 },
     "encryptedMessage": {

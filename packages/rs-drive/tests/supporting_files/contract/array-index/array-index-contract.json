@@ -1,0 +1,74 @@
+{
+  "$formatVersion": "0",
+  "id": "8NRsVP68gRuYYwE6djM5jD3GwCGvUqUxRKTdaQRnqsPe",
+  "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
+  "version": 1,
+  "documentSchemas": {
+    "post": {
+      "type": "object",
+      "documentsMutable": true,
+      "canBeDeleted": true,
+      "indices": [
+        {
+          "name": "byHashtag",
+          "properties": [{ "hashtags": "asc" }],
+          "countable": "countable",
+          "rangeCountable": true,
+          "rankedCountable": true
+        },
+        {
+          "name": "byHashtagTime",
+          "properties": [{ "hashtags": "asc" }, { "$createdAt": "asc" }]
+        },
+        {
+          "name": "byOwnerHashtag",
+          "properties": [{ "$ownerId": "asc" }, { "hashtags": "asc" }]
+        },
+        {
+          "name": "byMentionTime",
+          "properties": [{ "mentions": "asc" }, { "$createdAt": "asc" }]
+        },
+        {
+          "name": "trendingToday",
+          "properties": [{ "$createdAt": "asc" }, { "topics": "asc" }],
+          "timeRange": { "on": "$createdAt", "range": 86400, "step": 86400 },
+          "rangeCountable": true,
+          "rankedCountable": true
+        }
+      ],
+      "properties": {
+        "content": {
+          "type": "string",
+          "maxLength": 280,
+          "position": 0
+        },
+        "hashtags": {
+          "type": "array",
+          "maxItems": 10,
+          "items": { "type": "string", "minLength": 1, "maxLength": 50 },
+          "position": 1
+        },
+        "mentions": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier"
+          },
+          "position": 2
+        },
+        "topics": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "type": "string", "minLength": 1, "maxLength": 20 },
+          "position": 3
+        }
+      },
+      "required": ["content", "$createdAt"],
+      "additionalProperties": false
+    }
+  }
+}

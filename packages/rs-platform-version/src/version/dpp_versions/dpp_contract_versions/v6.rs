@@ -53,7 +53,7 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
         default_current_version: 2,
     },
     methods: DataContractMethodVersions {
-        validate_document: 0,
+        validate_document: 1, // rejects repeated nested text keys before document property reads
         // Generation 1 (requiredSince): feeds the new contract version into
         // per-document-type update validation and validates requiredSince
         // annotations on document types introduced by the update, which the
@@ -88,7 +88,8 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             parse_typed_array: Some(0), // changed: a meta-schema v3 typed array (`type: "array"` with an `items` element schema) parses to `DocumentPropertyType::TypedArray`; None before this version leaves it to the scalar parser, which refuses an array that is not a byte array
             parse_property_constraints: Some(0), // changed: the meta-schema v3 `propertyConstraints` doctype keyword (named comparisons between integer expressions over the document's properties) is parsed onto the document type and the properties it reads are checked; None before this version means the keyword is ignored, as it was before it existed
             apply_generated_from: Some(0), // changed: the meta-schema v3 `generatedFrom` keyword (a string property whose value a built-in function generates from other properties of the same document) is parsed onto the property and the properties it reads are checked at registration; None before this version means the keyword is ignored, as it was before it existed
-            validate_max_depth: 0,
+            expand_property_type_shorthands: Some(0), // new: a property schema of `"type": "identifier"`, or `"type": "bytes"` with a `size`, is read as the byte array it stands for, before the meta-schema, the parser and the document validator see it; the contract is stored as sent. None before this version leaves the schema as sent, which every earlier meta-schema refuses
+            validate_max_depth: 1, // changed: a scalar `$ref` target is not walked and the visited set is never cleared, so the depth check is bounded; v0 was exponential on a crafted `$defs` chain
             max_depth: 256,
             recursive_schema_validator_versions: RecursiveSchemaValidatorVersions {
                 traversal_validator: 0,
@@ -114,8 +115,8 @@ pub const CONTRACT_VERSIONS_V6: DPPContractVersions = DPPContractVersions {
             // for replay at protocol versions <= 13.
             index_for_types: 1,
             max_size: 0,
-            serialize_value_for_key: 0,
-            deserialize_value_for_key: 0,
+            serialize_value_for_key: 1, // changed: a property (or derived index property) of an unsigned integer type is keyed by its plain big-endian bytes, so its keys sort as its values do; generation 0 flipped the top bit as for a signed value. The `$` system fields, and an unsigned property ending a `rangeSummable` index, keep their keys. The key of a typed array property is one of its elements, keyed as a property of the element's type
+            deserialize_value_for_key: 1, // changed: reads the generation 1 keys, a typed array key decoding to one element
             validate_distinct_from: Some(0), // changed: `validate_distinct_from_properties` refuses a document whose `distinctFrom` property equals what it must differ from (DocumentPropertyNotDistinctError, 10419); None before this version, where no property can carry the keyword
             validate_encrypted_property_shapes: Some(0), // changed: refuses an `encryptedFor` property whose bytes are not the shape its scheme produces; None before this version returns an empty result
             validate_max_bytes: Some(0), // changed: refuses a string longer in UTF-8 bytes than its property's `maxBytes` (DocumentPropertyMaxBytesExceededError, 10421); None before this version returns an empty result

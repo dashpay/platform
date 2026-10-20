@@ -37,6 +37,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::document_methods::DocumentMethodsV0;
+use dpp::document::property_names::CREATED_AT;
 use dpp::document::Document;
 use dpp::document::DocumentV0Setters;
 use dpp::fee::Credits;
@@ -59,7 +60,7 @@ use dash_sdk::platform::transition::put_document::PutDocument;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::{ContextProvider, DocumentQuery, Fetch};
 
-use crate::error::PlatformWalletError;
+use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 
 use super::*;
 
@@ -621,6 +622,76 @@ impl IdentityWallet {
         Ok(deleted_id)
     }
 
+    /// Delete a document by its values and broadcast.
+    ///
+    /// The delete an `indexOnly` document type needs: such a type keeps no
+    /// document row, so its delete transition carries the values that
+    /// identify the entries, and [`Self::delete_document_with_signer`]
+    /// (ids only) is refused for it. Any other document type is refused
+    /// here before anything is signed: its delete goes by id and would not
+    /// look at the values. So is a type whose documents can not be deleted.
+    ///
+    /// `properties_json` is the document's own properties as they were
+    /// created, in the format [`Self::create_document_with_signer`] takes;
+    /// `document_id` is the id that create returned. A type whose entries
+    /// commit to `$createdAt` also needs that timestamp, as a
+    /// `"$createdAt"` number of milliseconds in the same object; no other
+    /// `$` field and no property the type does not declare is accepted, and
+    /// every required property has to be there. A changed value does not
+    /// match the stored entry and Platform rejects the delete.
+    ///
+    /// Signs with the explicit `signing_key_id` (AUTHENTICATION + ECDSA)
+    /// and broadcasts via `Sdk::document_delete` on the platform-wallet
+    /// 8 MB worker stack. Returns the deleted document's `Identifier` on
+    /// confirmation.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn delete_document_by_values_with_signer<S>(
+        &self,
+        owner_identity_id: &Identifier,
+        contract_id: &Identifier,
+        document_type_name: &str,
+        document_id: &Identifier,
+        properties_json: &str,
+        signing_key_id: u32,
+        signer: &S,
+    ) -> Result<Identifier, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let data_contract = self
+            .fetch_contract_arc_for_document_op(contract_id, document_type_name)
+            .await?;
+
+        let (values, created_at) = values_from_json(properties_json)?;
+        let builder = DocumentDeleteTransitionBuilder::from_values(
+            data_contract,
+            document_type_name.to_string(),
+            *document_id,
+            *owner_identity_id,
+            values,
+            created_at,
+            self.sdk.version(),
+        )
+        .map_err(delete_preparation_error)?;
+
+        let signing_key = self
+            .resolve_authentication_signing_key(owner_identity_id, signing_key_id, signer)
+            .await?;
+
+        let DocumentDeleteResult::Deleted(deleted_id) = self
+            .sdk
+            .document_delete(builder, &signing_key, &SignerRef(signer))
+            .await
+            .map_err(|e| {
+                preserve_signer_key_unavailable_or(e, |e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "Failed to delete document: {e}"
+                    ))
+                })
+            })?;
+        Ok(deleted_id)
+    }
+
     /// Transfer an existing document on `contract_id`'s
     /// `document_type_name` to `recipient_id` and broadcast.
     ///
@@ -817,6 +888,44 @@ impl IdentityWallet {
     }
 }
 
+/// The values a delete-by-values names, parsed from `properties_json`, and
+/// its `$createdAt`, taken out of them.
+fn values_from_json(
+    properties_json: &str,
+) -> Result<(BTreeMap<String, Value>, Option<u64>), PlatformWalletError> {
+    let properties_value: serde_json::Value =
+        serde_json::from_str(properties_json).map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Invalid document properties JSON: {e}"
+            ))
+        })?;
+    let mut properties: BTreeMap<String, Value> = serde_json::from_value(properties_value)
+        .map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Document properties must be a JSON object keyed by property name: {e}"
+            ))
+        })?;
+    let created_at = match properties.remove(CREATED_AT) {
+        None => None,
+        Some(value) => Some(value.to_integer::<u64>().map_err(|e| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "{CREATED_AT} must be a number of milliseconds: {e}"
+            ))
+        })?),
+    };
+    Ok((properties, created_at))
+}
+
+/// A refusal of
+/// [`index_only_delete_document`](dash_sdk::platform::documents::transitions::index_only_delete_document)
+/// carries its own text; any other SDK error keeps its rendering.
+fn delete_preparation_error(error: dash_sdk::Error) -> PlatformWalletError {
+    match error {
+        dash_sdk::Error::Generic(message) => PlatformWalletError::InvalidIdentityData(message),
+        other => PlatformWalletError::InvalidIdentityData(other.to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::signing_key::tests::{lock_checking_signer, wallet_with_signing_keys};
@@ -834,6 +943,41 @@ mod tests {
         assert!(
             matches!(error, PlatformWalletError::Sdk(dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(ref message)))
                 if message.starts_with(crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX)),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn should_refuse_values_that_are_not_a_json_object() {
+        let error = values_from_json("[1, 2]").unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::InvalidIdentityData(ref message)
+                if message.contains("JSON object")),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn should_take_the_creation_time_out_of_the_values() {
+        let mut properties = serde_json::json!({ "encryptedPayload": "33" });
+
+        let (values, created_at) = values_from_json(&properties.to_string()).expect("parses");
+        assert_eq!(created_at, None);
+        assert_eq!(
+            values.get("encryptedPayload"),
+            Some(&Value::Text("33".to_string()))
+        );
+
+        properties["$createdAt"] = serde_json::json!(1_700_000_000_000u64);
+        let (values, created_at) = values_from_json(&properties.to_string()).expect("parses");
+        assert_eq!(created_at, Some(1_700_000_000_000));
+        assert!(!values.contains_key("$createdAt"));
+
+        properties["$createdAt"] = serde_json::json!("yesterday");
+        let error = values_from_json(&properties.to_string()).unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::InvalidIdentityData(ref message)
+                if message.contains("must be a number of milliseconds")),
             "{error:?}"
         );
     }
