@@ -15,6 +15,7 @@
 //! can never silently clear an operator payout on-chain. The payload version
 //! follows Dash Core v24's rules (see [`prepare_update_service_placeholder`]).
 
+use dashcore::block::Version as BlockVersion;
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::blockdata::transaction::special_transaction::provider_registration::ProviderMasternodeType;
 use dashcore::blockdata::transaction::special_transaction::provider_update_service::{
@@ -33,17 +34,22 @@ use dashcore::sml::masternode_list_entry::net_info::{
 use dashcore::sml::masternode_list_entry::{
     EntryMasternodeType, MasternodeListEntry, MasternodeNetInfo,
 };
-use dashcore::{Address as DashAddress, Network, Transaction, Txid};
+use dashcore::{Address as DashAddress, Block, BlockHash, Network, Transaction, Txid};
 use key_wallet::wallet::managed_wallet_info::transaction_builder::{
     BuilderError, TransactionBuilder, TransactionSigner,
 };
+use std::fmt::Display;
+use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
+use std::ops::Range;
 use zeroize::Zeroizing;
 
 use super::locator::bls_public_keys;
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
-use crate::spv::SpvRuntime;
+use crate::spv::{SpvRuntime, SpvTip};
+use crate::util::now_secs;
+use crate::wallet::asset_lock::sync::locate::BLOCK_REQUEST_SETTINGS;
 use crate::wallet::core::{CoreWallet, SignedCoreTransaction, SEND_FUNDING_SOURCES};
 use crate::wallet::platform_wallet::PlatformWallet;
 
@@ -110,6 +116,11 @@ pub async fn execute_masternode_update_service<S: TransactionSigner + ?Sized + S
 /// either broadcasts it (`CoreWallet::broadcast_finalized_transaction`) or
 /// abandons it (`CoreWallet::abandon_transaction`) — dropping it without
 /// either strands the reservation until the TTL backstop reclaims it.
+///
+/// Broadcast it promptly: its payload version is chosen for the next few
+/// blocks (see [`V24_ACTIVATION_MARGIN_BLOCKS`]), and an evonode's version-2
+/// payload held until Dash Core's V24 fork activates is refused by the
+/// network.
 pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + Sync>(
     wallet: &PlatformWallet,
     spv: &SpvRuntime,
@@ -121,7 +132,7 @@ pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + S
         .masternode_list_entries()
         .await
         .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
-    let (entry, v24_active) = update_service_target(&entries, &params.pro_tx_hash)?;
+    let (entry, list_shows_v24) = update_service_target(&entries, &params.pro_tx_hash)?;
 
     verify_operator_secret(entry.operator_public_key.as_ref(), &operator_secret)?;
 
@@ -132,21 +143,30 @@ pub async fn prepare_masternode_update_service<S: TransactionSigner + ?Sized + S
         wallet.network(),
     )?;
 
-    let placeholder = prepare_update_service_placeholder(
-        entry,
-        wallet.network(),
-        v24_active,
-        params.platform_p2p_port,
-        script_payout,
-    )?;
+    let placeholder = update_service_placeholder(
+        list_shows_v24,
+        |v24_active| {
+            prepare_update_service_placeholder(
+                entry,
+                wallet.network(),
+                v24_active,
+                params.platform_p2p_port,
+                script_payout.clone(),
+            )
+        },
+        v24_active_at_spv_tip(wallet, spv),
+    )
+    .await?;
 
     build_sign_update_service(wallet.core(), placeholder, operator_secret, signer).await
 }
 
 /// The list entry for `pro_tx_hash` (wire order) and whether the list shows
 /// that the V24 hard fork is active. Version-3 entries exist only once V24
-/// is active, so any one of them proves it; until the first one appears the
-/// list reads as pre-V24.
+/// is active, so any one of them proves it. Their absence proves nothing:
+/// Core moves an entry to version 3 only when a version-3 provider
+/// transaction for it is mined, so right after activation every entry is
+/// still legacy (see [`update_service_placeholder`]).
 pub(crate) fn update_service_target<'a>(
     entries: &'a [MasternodeListEntry],
     pro_tx_hash: &[u8; 32],
@@ -164,6 +184,255 @@ pub(crate) fn update_service_target<'a>(
         .iter()
         .any(|entry| entry.version >= ProTxVersion::ExtAddr as u16);
     Ok((entry, v24_active))
+}
+
+/// The lowest coinbase payload version Dash Core accepts while
+/// DEPLOYMENT_V24 is active; before it Core refuses this version
+/// (`CheckCbTx`).
+const V24_COINBASE_PAYLOAD_VERSION: u16 = 4;
+
+/// How old the SPV header tip may be for its pre-V24 coinbase to stand for
+/// the next block. A tip that old means the header chain has stalled, and V24
+/// may have activated in the blocks it has not seen.
+const MAX_PRE_V24_TIP_AGE_SECS: u64 = 60 * 60;
+
+/// How far past the local clock a block time may lie: Dash Core's
+/// `MAX_FUTURE_BLOCK_TIME`. A tip further ahead means the local clock is
+/// behind, and the tip's age cannot be judged from it.
+const MAX_FUTURE_BLOCK_TIME_SECS: u64 = 2 * 60 * 60;
+
+/// The block-version bit that signals DEPLOYMENT_V24.
+const V24_SIGNAL_BIT: u8 = 13;
+
+/// How close to a block where V24 may activate the wallet stops building
+/// payloads Core refuses after V24: 30 blocks, about 75 minutes at Dash's
+/// 2.5-minute block spacing, for the blocks a recent tip may lag behind the
+/// network and the time a prepared transaction waits before it is broadcast.
+const V24_ACTIVATION_MARGIN_BLOCKS: u32 = 30;
+
+/// How old a pre-V24 tip may be while V24 may activate at the next period
+/// start. The margin above is counted from the tip, so the tip must be fresh
+/// enough that few blocks can hide behind it: about 6 in 15 minutes, against
+/// about 24 in the hour [`MAX_PRE_V24_TIP_AGE_SECS`] allows elsewhere.
+const MAX_TIP_AGE_NEAR_V24_ACTIVATION_SECS: u64 = 15 * 60;
+
+/// DEPLOYMENT_V24's version-bits parameters on one network.
+struct V24Deployment {
+    /// Blocks per period (`nWindowSize`). A deployment's state is that of
+    /// the first block of its period, so V24 can only activate at a height
+    /// that is a multiple of this.
+    period: u32,
+    /// The fewest signalling blocks in a period that can lock V24 in
+    /// (`nThresholdMin`, the floor Core's decaying threshold stops at).
+    min_threshold: usize,
+}
+
+/// DEPLOYMENT_V24's parameters in Dash Core v24.0.0-rc.4's
+/// `src/chainparams.cpp`. Regtest can override them with `-vbparams`, and a
+/// devnet keeps them but may change its block spacing (`-powtargetspacing`),
+/// which changes how long the activation margin lasts, so off mainnet and
+/// testnet the checks built on them are best-effort.
+fn v24_deployment(network: Network) -> V24Deployment {
+    let (period, min_threshold) = match network {
+        Network::Mainnet => (4032, 2420),
+        Network::Testnet => (100, 60),
+        Network::Devnet => (120, 72),
+        Network::Regtest => (250, 150),
+    };
+    V24Deployment {
+        period,
+        min_threshold,
+    }
+}
+
+/// The first block after `tip_height` where V24 can activate, and the heights
+/// of the period whose signalling decides whether it can: V24 is active from
+/// a period start only if the period before it was locked in, which takes at
+/// least [`V24Deployment::min_threshold`] signalling blocks in the period
+/// before that. The heights are `None` when the chain is too short to have
+/// them.
+fn next_v24_activation_window(tip_height: u32, network: Network) -> (u64, Option<Range<u32>>) {
+    let period = v24_deployment(network).period;
+    let next_period_start = (u64::from(tip_height) / u64::from(period) + 1) * u64::from(period);
+    let signal_heights = next_period_start
+        .checked_sub(2 * u64::from(period))
+        .and_then(|start| {
+            Some(u32::try_from(start).ok()?..u32::try_from(start + u64::from(period)).ok()?)
+        });
+    (next_period_start, signal_heights)
+}
+
+/// Whether Core refuses `payload` once V24 is active: an evonode service
+/// update below version 3 (`bad-protx-version-disallowed`).
+fn refused_after_v24(payload: &ProviderUpdateServicePayload) -> bool {
+    payload.mn_type == Some(ProviderMasternodeType::HighPerformance as u16)
+        && payload.version < ProTxVersion::ExtAddr as u16
+}
+
+/// The placeholder for the V24 state Core will check it against.
+///
+/// Once V24 is active Core refuses an evonode service update below version
+/// 3, while before it Core refuses version 3, so a wrong guess fails on one
+/// side of the fork. Core rejects either with a consensus error and
+/// discourages every peer that relays it, and peer-to-peer broadcast reports
+/// no rejection, so the version must be right before anything is sent.
+///
+/// `build` makes the placeholder for a given V24 state. It runs first with
+/// the list's view (`list_shows_v24`), which also refuses a malformed request
+/// before the tip block is fetched. Only when the result is a payload Core
+/// refuses after V24 is `tip_shows_v24` awaited, to learn whether V24 is
+/// active for the next block; when it is, the placeholder is rebuilt for
+/// V24. A regular masternode's or a version-3 entry's payload is the same on
+/// both sides, so for those the future is dropped without running.
+async fn update_service_placeholder(
+    list_shows_v24: bool,
+    build: impl Fn(bool) -> Result<ProviderUpdateServicePayload, PlatformWalletError>,
+    tip_shows_v24: impl Future<Output = Result<bool, PlatformWalletError>>,
+) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
+    let placeholder = build(list_shows_v24)?;
+    if refused_after_v24(&placeholder) && tip_shows_v24.await? {
+        return build(true);
+    }
+    Ok(placeholder)
+}
+
+/// Whether V24 is active for the block after the SPV header tip: the tip's
+/// block, fetched from DAPI, and the stored headers of the period whose
+/// signalling decides the next possible activation, read by
+/// [`v24_active_after_tip`].
+async fn v24_active_at_spv_tip(
+    wallet: &PlatformWallet,
+    spv: &SpvRuntime,
+) -> Result<bool, PlatformWalletError> {
+    let tip = spv
+        .tip()
+        .await
+        .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
+    let block = wallet
+        .sdk()
+        .get_block_by_hash(&tip.hash, BLOCK_REQUEST_SETTINGS)
+        .await
+        .map_err(|e| v24_unknown(format!("fetching tip block {} failed: {e}", tip.hash)))?
+        .ok_or_else(|| v24_unknown(format!("tip block {} was not served", tip.hash)))?;
+    let network = wallet.network();
+    let signal_versions = match next_v24_activation_window(tip.height, network).1 {
+        Some(heights) => spv.header_versions(heights).await,
+        None => None,
+    };
+    v24_active_after_tip(
+        &block,
+        &tip,
+        network,
+        now_secs(),
+        signal_versions.as_deref(),
+    )
+}
+
+/// Whether V24 is active for the block after `tip`, read from `block`, the
+/// tip's block as DAPI served it, and `signal_versions`, the versions of the
+/// headers whose signalling decides the next possible activation (`None`
+/// when the SPV store does not hold them all).
+///
+/// A version-4 coinbase proves V24, since an active deployment never
+/// deactivates. A lower version proves only that V24 was not active at the
+/// tip, so it stands for the transaction being built only when the tip is
+/// recent by a local clock that agrees with it, and V24 cannot activate
+/// within [`V24_ACTIVATION_MARGIN_BLOCKS`]: either too few headers signalled
+/// for it to lock in, or the next period start is further away than that
+/// and the tip is fresh enough that few blocks hide behind it.
+/// The SPV client does not follow the mined signal that starts the
+/// deployment, so it cannot tell a locked-in fork from one that merely had
+/// enough signalling; it treats both as about to activate. Without the
+/// signalling headers only the distance to the next period start decides.
+fn v24_active_after_tip(
+    block: &Block,
+    tip: &SpvTip,
+    network: Network,
+    now_secs: u64,
+    signal_versions: Option<&[BlockVersion]>,
+) -> Result<bool, PlatformWalletError> {
+    if v24_active_at_block(block, &tip.hash)? {
+        return Ok(true);
+    }
+    let tip_time = u64::from(tip.time);
+    if tip_time > now_secs.saturating_add(MAX_FUTURE_BLOCK_TIME_SECS) {
+        return Err(v24_unknown(format!(
+            "the SPV header tip's block time is {}s past the local clock",
+            tip_time - now_secs
+        )));
+    }
+    let tip_age_secs = now_secs.saturating_sub(tip_time);
+    if tip_age_secs > MAX_PRE_V24_TIP_AGE_SECS {
+        return Err(v24_unknown(format!(
+            "the SPV header tip is {tip_age_secs}s old"
+        )));
+    }
+    let deployment = v24_deployment(network);
+    let (next_period_start, _) = next_v24_activation_window(tip.height, network);
+    let may_lock_in = signal_versions
+        .filter(|versions| versions.len() == deployment.period as usize)
+        .is_none_or(|versions| {
+            versions
+                .iter()
+                .filter(|version| version.is_signalling_soft_fork(V24_SIGNAL_BIT))
+                .count()
+                >= deployment.min_threshold
+        });
+    if !may_lock_in {
+        return Ok(false);
+    }
+    if next_period_start - u64::from(tip.height) <= u64::from(V24_ACTIVATION_MARGIN_BLOCKS) {
+        return Err(v24_unknown(format!(
+            "V24 may activate at height {next_period_start}"
+        )));
+    }
+    if tip_age_secs > MAX_TIP_AGE_NEAR_V24_ACTIVATION_SECS {
+        return Err(v24_unknown(format!(
+            "the SPV header tip is {tip_age_secs}s old and V24 may activate at height \
+             {next_period_start}"
+        )));
+    }
+    Ok(false)
+}
+
+/// Whether V24 is active at `block`, the block the SPV header chain holds as
+/// `header_hash`: Core requires a coinbase payload version of at least 4
+/// while V24 is active, and below 4 before it. DAPI's reply is not
+/// authenticated, so the block is read only once it hashes to that header
+/// and its transactions match the header's merkle root; otherwise nothing is
+/// concluded either way.
+fn v24_active_at_block(
+    block: &Block,
+    header_hash: &BlockHash,
+) -> Result<bool, PlatformWalletError> {
+    if block.block_hash() != *header_hash {
+        return Err(v24_unknown(format!(
+            "the served block {} is not the SPV header's block {header_hash}",
+            block.block_hash()
+        )));
+    }
+    if !block.check_merkle_root() {
+        return Err(v24_unknown(
+            "the served block's transactions do not match its merkle root",
+        ));
+    }
+    match block.txdata.first() {
+        Some(coinbase) if coinbase.is_coin_base() => match &coinbase.special_transaction_payload {
+            Some(TransactionPayload::CoinbasePayloadType(payload)) => {
+                Ok(payload.version >= V24_COINBASE_PAYLOAD_VERSION)
+            }
+            _ => Err(v24_unknown("the block's coinbase has no coinbase payload")),
+        },
+        _ => Err(v24_unknown("the block has no coinbase")),
+    }
+}
+
+/// The refusal when the wallet cannot tell whether V24 is active: either
+/// payload version would be refused by Core on one side of the fork.
+fn v24_unknown(reason: impl Display) -> PlatformWalletError {
+    PlatformWalletError::TransactionBuild(format!(
+        "cannot tell whether Dash Core's V24 fork is active ({reason}); try again"
+    ))
 }
 
 /// The `operatorReward` (basis points) the masternode was registered with,
@@ -627,13 +896,19 @@ mod tests {
     use crate::test_support::{
         funded_wallet_manager, funded_wallet_manager_with_outputs, WalletSigner,
     };
+    use dashcore::block::Header;
+    use dashcore::blockdata::transaction::special_transaction::coinbase::CoinbasePayload;
     use dashcore::bls_sig_utils::BLSPublicKey;
     use dashcore::blsful::{PublicKey as BlsPublicKey, Signature as BlsSignature};
+    use dashcore::consensus::encode::deserialize;
+    use dashcore::hash_types::{
+        MerkleRootAssetUnlocks, MerkleRootMasternodeList, MerkleRootQuorums,
+    };
     use dashcore::sml::masternode_list_entry::net_info::{
         Bip155Network, ExtNetInfo, NetInfoEntry, NetInfoPurpose,
     };
     use dashcore::sml::masternode_list_entry::{EntryMasternodeType, MasternodeNetInfo};
-    use dashcore::ProTxHash;
+    use dashcore::{CompactTarget, OutPoint, ProTxHash, TxIn, TxMerkleNode};
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
     use std::sync::{Arc, Mutex};
@@ -1098,6 +1373,571 @@ mod tests {
         assert_eq!(
             base_payload_bytes(&placeholder).len() + 96,
             placeholder.size()
+        );
+    }
+
+    /// A block whose only transaction is a coinbase with payload version
+    /// `version`, its merkle root committed in the header.
+    fn block_with_coinbase_payload_version(version: u16) -> Block {
+        let coinbase = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![TxIn::default()],
+            output: Vec::new(),
+            special_transaction_payload: Some(TransactionPayload::CoinbasePayloadType(
+                CoinbasePayload {
+                    version,
+                    height: 1,
+                    merkle_root_masternode_list: MerkleRootMasternodeList::all_zeros(),
+                    merkle_root_quorums: MerkleRootQuorums::all_zeros(),
+                    best_cl_height: Some(0),
+                    best_cl_signature: Some(BLSSignature::from([0u8; 96])),
+                    asset_locked_amount: Some(0),
+                    merkle_root_asset_unlocks: (version >= 4)
+                        .then(MerkleRootAssetUnlocks::all_zeros),
+                },
+            )),
+        };
+        let mut block = Block {
+            header: Header {
+                version: BlockVersion::default(),
+                prev_blockhash: BlockHash::all_zeros(),
+                merkle_root: TxMerkleNode::all_zeros(),
+                time: 0,
+                bits: CompactTarget::from_consensus(0x1d00ffff),
+                nonce: 0,
+            },
+            txdata: vec![coinbase],
+        };
+        block.header.merkle_root = block.compute_merkle_root().expect("non-empty");
+        block
+    }
+
+    /// A tip the build must not read: the payload does not depend on V24.
+    async fn tip_not_read() -> Result<bool, PlatformWalletError> {
+        panic!("the tip block must not be read for this payload")
+    }
+
+    /// The placeholder for `entry` as the wallet builds it for the list's
+    /// view of V24 and the tip's.
+    async fn placeholder_for(
+        entry: &MasternodeListEntry,
+        list_shows_v24: bool,
+        platform_p2p_port: Option<u16>,
+        tip_shows_v24: impl Future<Output = Result<bool, PlatformWalletError>>,
+    ) -> Result<ProviderUpdateServicePayload, PlatformWalletError> {
+        update_service_placeholder(
+            list_shows_v24,
+            |v24_active| {
+                prepare_update_service_placeholder(
+                    entry,
+                    Network::Devnet,
+                    v24_active,
+                    platform_p2p_port,
+                    ScriptBuf::new(),
+                )
+            },
+            tip_shows_v24,
+        )
+        .await
+    }
+
+    /// A list entry turns version 3 only when a version-3 ProRegTx or
+    /// ProUpServTx for it is mined, so right after V24 activates every entry
+    /// is still legacy, while Core already refuses an evonode service update
+    /// below version 3 (`bad-protx-version-disallowed`). The tip's coinbase
+    /// shows V24 then, so reviving a banned legacy evonode must build the
+    /// version-3 payload Core accepts.
+    #[tokio::test]
+    async fn should_revive_a_legacy_evonode_at_version_3_after_v24_before_any_v3_entry_exists() {
+        let target = legacy_core_evonode_entry("68.67.122.237:20001");
+        let entries = vec![
+            target.clone(),
+            operator_entry(0x11, false),
+            operator_entry(0x22, true),
+        ];
+        let (entry, list_shows_v24) =
+            update_service_target(&entries, &target.pro_reg_tx_hash.to_byte_array())
+                .expect("found");
+        assert!(!list_shows_v24, "every entry is still legacy");
+
+        let tip = &block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION);
+        let placeholder = placeholder_for(entry, list_shows_v24, Some(26656), async move {
+            v24_active_at_block(tip, &tip.block_hash())
+        })
+        .await
+        .expect("a legacy evonode is converted");
+        assert_matches_core_v3_vector(placeholder);
+    }
+
+    /// Before V24 the tip's coinbase is below
+    /// version 4 and Core refuses version 3, so a legacy evonode keeps its
+    /// version-2 payload.
+    #[tokio::test]
+    async fn should_keep_version_2_for_a_legacy_evonode_while_the_tip_shows_no_v24() {
+        let entry = legacy_core_evonode_entry("68.67.122.237:20001");
+        let tip = &block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION - 1);
+        let placeholder = placeholder_for(&entry, false, Some(26656), async move {
+            v24_active_at_block(tip, &tip.block_hash())
+        })
+        .await
+        .expect("version-2 evonode placeholder");
+        assert_eq!(placeholder.version, ProTxVersion::BasicBLS as u16);
+        assert_eq!(placeholder.platform_p2p_port, Some(26656));
+    }
+
+    /// Only an evonode payload below version 3 changes with V24, so only
+    /// then is the tip read: regular and version-3 unbans never depend on
+    /// DAPI's block, a version-3 neighbour already proves V24, and a request
+    /// the wallet refuses anyway fails on its own error before any network
+    /// work.
+    #[tokio::test]
+    async fn should_read_the_tip_only_for_a_payload_core_refuses_after_v24() {
+        let legacy_evonode = legacy_core_evonode_entry("68.67.122.237:20001");
+        let legacy_regular = operator_entry(0x11, false);
+        let v3_regular = MasternodeListEntry {
+            version: 3,
+            service_address: MasternodeNetInfo::Extended(ExtNetInfo {
+                version: 1,
+                purposes: vec![(
+                    NetInfoPurpose::CoreP2P,
+                    vec![NetInfoEntry::Service {
+                        network: Bip155Network::Ipv4,
+                        addr: vec![10, 0, 0, 0x11],
+                        port: 9999,
+                    }],
+                )],
+            }),
+            ..legacy_regular.clone()
+        };
+
+        let regular = placeholder_for(&legacy_regular, false, None, tip_not_read())
+            .await
+            .expect("a regular masternode needs no tip");
+        assert_eq!(regular.version, ProTxVersion::BasicBLS as u16);
+        let v3 = placeholder_for(&v3_regular, true, None, tip_not_read())
+            .await
+            .expect("a version-3 regular masternode needs no tip");
+        assert_eq!(v3.version, ProTxVersion::ExtAddr as u16);
+        let v3_evonode = placeholder_for(&core_v3_evonode_entry(), true, None, tip_not_read())
+            .await
+            .expect("a version-3 evonode needs no tip");
+        assert_matches_core_v3_vector(v3_evonode);
+        let shown_by_list = placeholder_for(&legacy_evonode, true, Some(26656), tip_not_read())
+            .await
+            .expect("a version-3 neighbour shows V24");
+        assert_matches_core_v3_vector(shown_by_list);
+
+        let err = placeholder_for(&legacy_evonode, false, None, tip_not_read())
+            .await
+            .expect_err("an evonode request without its P2P port is refused");
+        assert!(
+            matches!(&err, PlatformWalletError::InvalidParameter(message) if message.contains("requires the platform P2P port")),
+            "got {err:?}"
+        );
+    }
+
+    /// When the tip cannot be read, either payload may be refused by Core,
+    /// so nothing is built.
+    #[tokio::test]
+    async fn should_fail_the_build_when_the_tip_cannot_be_read() {
+        let entry = legacy_core_evonode_entry("68.67.122.237:20001");
+        let err = placeholder_for(&entry, false, Some(26656), async {
+            Err(PlatformWalletError::TransactionBuild(
+                "block not served".to_string(),
+            ))
+        })
+        .await
+        .expect_err("an unread tip fails the build");
+        assert!(
+            matches!(&err, PlatformWalletError::TransactionBuild(message) if message.contains("not served")),
+            "got {err:?}"
+        );
+    }
+
+    /// Core requires coinbase payload version 4 exactly while V24 is
+    /// active, so the version-3 coinbase of the last block before the fork
+    /// reads as pre-V24, and the version-4 one of the first block after it,
+    /// or any later version, as V24.
+    #[test]
+    fn should_read_v24_from_the_coinbase_payload_version() {
+        for (version, active) in [
+            (V24_COINBASE_PAYLOAD_VERSION - 1, false),
+            (V24_COINBASE_PAYLOAD_VERSION, true),
+            (V24_COINBASE_PAYLOAD_VERSION + 1, true),
+        ] {
+            let block = block_with_coinbase_payload_version(version);
+            assert_eq!(
+                v24_active_at_block(&block, &block.block_hash()).expect("verifies"),
+                active,
+                "coinbase payload version {version}"
+            );
+        }
+    }
+
+    /// Blocks Core v24 mined on either side of the fork read as such: devnet
+    /// block 15146, after V24 activated there at 15000, and testnet block
+    /// 1575845, before V24 activated on testnet.
+    #[test]
+    fn should_read_v24_from_blocks_core_mined() {
+        let devnet: Block = deserialize(
+            &hex::decode(
+                include_str!("../../tests/vectors/core_v24_devnet/block_15146.hex").trim(),
+            )
+            .expect("vector hex"),
+        )
+        .expect("Core's block decodes");
+        let testnet: Block = deserialize(
+            &hex::decode(
+                include_str!("../../tests/vectors/core_v24_testnet/block_1575845.hex").trim(),
+            )
+            .expect("vector hex"),
+        )
+        .expect("Core's block decodes");
+        let devnet_hash: BlockHash =
+            "74b7a302c6d34ee6050817524d11d6b3fb4e6f640513faa10bd4ec09d8d1a56c"
+                .parse()
+                .expect("display-order block hash");
+        let testnet_hash: BlockHash =
+            "000000787345d5662bdb4107b9749a0e8f552cee5196e9531523986d94b90bb2"
+                .parse()
+                .expect("display-order block hash");
+
+        for (block, header_hash, height, active) in [
+            (&devnet, devnet_hash, 15146, true),
+            (&testnet, testnet_hash, 1575845, false),
+        ] {
+            let Some(TransactionPayload::CoinbasePayloadType(coinbase)) =
+                &block.txdata[0].special_transaction_payload
+            else {
+                panic!("the block's first transaction is a coinbase");
+            };
+            assert_eq!(
+                coinbase.height, height,
+                "the vector is the documented block"
+            );
+            assert_eq!(
+                v24_active_at_block(block, &header_hash).expect("Core's block verifies"),
+                active,
+                "block {height}"
+            );
+        }
+    }
+
+    fn tip_of(block: &Block, height: u32, time: u32) -> SpvTip {
+        SpvTip {
+            height,
+            hash: block.block_hash(),
+            time,
+        }
+    }
+
+    /// One period of header versions, `signalling` of them signalling V24 by
+    /// Core's rule (top bits `001` and bit 13). Of the rest, every other one
+    /// sets bit 13 under other top bits, which Core does not count.
+    fn signal_period(network: Network, signalling: usize) -> Vec<BlockVersion> {
+        (0..v24_deployment(network).period as usize)
+            .map(|index| {
+                BlockVersion::from_consensus(match index {
+                    index if index < signalling => 0x2000_2000,
+                    index if index % 2 == 0 => 0x6000_2000,
+                    _ => 0x2000_0000,
+                })
+            })
+            .collect()
+    }
+
+    /// The pre-V24 tips of the period before height `period * 401` that a
+    /// pre-V24 coinbase does not stand for, with `signal_versions` as the
+    /// signalling headers. Every refusal names that height; every other tip
+    /// reads as pre-V24.
+    fn refused_tips(network: Network, signal_versions: Option<&[BlockVersion]>) -> Vec<u32> {
+        let now = 1_792_470_316;
+        let pre = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION - 1);
+        let period_start = v24_deployment(network).period * 401;
+        (period_start - v24_deployment(network).period..period_start)
+            .filter(|&height| {
+                match v24_active_after_tip(
+                    &pre,
+                    &tip_of(&pre, height, now as u32),
+                    network,
+                    now,
+                    signal_versions,
+                ) {
+                    Ok(active) => {
+                        assert!(!active, "{network:?} tip {height}");
+                        false
+                    }
+                    Err(err) => {
+                        let expected = format!("may activate at height {period_start}");
+                        assert!(
+                            matches!(&err, PlatformWalletError::TransactionBuild(message) if message.contains(&expected)),
+                            "{network:?} tip {height}: got {err:?}"
+                        );
+                        true
+                    }
+                }
+            })
+            .collect()
+    }
+
+    /// The tips within [`V24_ACTIVATION_MARGIN_BLOCKS`] of `period_start`.
+    fn margin_before(period_start: u32) -> Vec<u32> {
+        (period_start - V24_ACTIVATION_MARGIN_BLOCKS..period_start).collect()
+    }
+
+    /// The parameters are Dash Core v24.0.0-rc.4's DEPLOYMENT_V24
+    /// `nWindowSize` and `nThresholdMin` (`src/chainparams.cpp`). V24 is
+    /// active from a period start only if the period before it was locked
+    /// in, which takes that many signalling blocks in the period before
+    /// that, so those are the headers the wallet reads.
+    #[test]
+    fn should_read_v24_signalling_from_two_periods_before_the_next_period_start() {
+        for (network, period, min_threshold) in [
+            (Network::Mainnet, 4032, 2420),
+            (Network::Testnet, 100, 60),
+            (Network::Devnet, 120, 72),
+            (Network::Regtest, 250, 150),
+        ] {
+            let deployment = v24_deployment(network);
+            assert_eq!(
+                (deployment.period, deployment.min_threshold),
+                (period, min_threshold),
+                "{network:?}"
+            );
+            let start = period * 401;
+            for tip in [start - period, start - 1] {
+                assert_eq!(
+                    next_v24_activation_window(tip, network),
+                    (u64::from(start), Some(start - 2 * period..start - period)),
+                    "{network:?} tip {tip}"
+                );
+            }
+            assert_eq!(
+                next_v24_activation_window(period - 1, network),
+                (u64::from(period), None),
+                "{network:?}: the chain has no signalling period before the first"
+            );
+        }
+    }
+
+    /// When enough headers signalled for V24 to lock in at the next period
+    /// start, a pre-V24 tip within 30 blocks of it may be behind a chain
+    /// that already activated V24, or the transaction may reach peers after
+    /// it, so the build is refused until the fork is seen. Further from the
+    /// period start the version-2 payload is still built.
+    #[test]
+    fn should_refuse_a_pre_v24_tip_within_30_blocks_of_a_period_v24_may_lock_in_for() {
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Devnet,
+            Network::Regtest,
+        ] {
+            let deployment = v24_deployment(network);
+            let period_start = deployment.period * 401;
+            let enough = signal_period(network, deployment.min_threshold);
+            assert_eq!(
+                refused_tips(network, Some(&enough)),
+                margin_before(period_start),
+                "{network:?}"
+            );
+
+            let post = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION);
+            let now = 1_792_470_316;
+            assert!(
+                v24_active_after_tip(
+                    &post,
+                    &tip_of(&post, period_start - 1, now as u32),
+                    network,
+                    now,
+                    Some(&enough),
+                )
+                .expect("a version-4 tip"),
+                "{network:?}: a version-4 tip proves V24 anywhere"
+            );
+        }
+    }
+
+    /// One signalling block short of the lowest threshold, V24 cannot lock
+    /// in for the next period start, so its earliest activation is a period
+    /// further on and every tip of this period reads as pre-V24. Bit 13
+    /// under other top bits is not a V24 signal.
+    #[test]
+    fn should_build_pre_v24_payloads_up_to_a_period_start_v24_cannot_lock_in_for() {
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Devnet,
+            Network::Regtest,
+        ] {
+            let too_few = signal_period(network, v24_deployment(network).min_threshold - 1);
+            assert_eq!(
+                refused_tips(network, Some(&too_few)),
+                Vec::<u32>::new(),
+                "{network:?}"
+            );
+        }
+    }
+
+    /// An SPV client that started syncing after those headers cannot rule
+    /// out a lock-in, so only the distance to the next period start decides.
+    /// A window that is not one whole period is read the same way.
+    #[test]
+    fn should_fall_back_to_the_activation_margin_without_the_signalling_headers() {
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Devnet,
+            Network::Regtest,
+        ] {
+            let deployment = v24_deployment(network);
+            let margin = margin_before(deployment.period * 401);
+            assert_eq!(refused_tips(network, None), margin, "{network:?}");
+
+            let too_few = signal_period(network, deployment.min_threshold - 1);
+            let partial = &too_few[1..];
+            assert_eq!(
+                refused_tips(network, Some(partial)),
+                margin,
+                "{network:?}: a partial window is no evidence"
+            );
+        }
+    }
+
+    /// While V24 may lock in for the next period start, the 30-block margin
+    /// is counted from the tip, so the tip must be at most 15 minutes old for
+    /// few blocks to hide behind it. Without enough signalling the hour-long
+    /// allowance stands, since the earliest activation is a period away.
+    #[test]
+    fn should_require_a_fresh_tip_while_v24_may_lock_in() {
+        let network = Network::Testnet;
+        let deployment = v24_deployment(network);
+        let period_start = deployment.period * 401;
+        let tip_height = period_start - V24_ACTIVATION_MARGIN_BLOCKS - 1;
+        let time = 1_792_470_316u32;
+        let pre = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION - 1);
+        let enough = signal_period(network, deployment.min_threshold);
+        let too_few = signal_period(network, deployment.min_threshold - 1);
+        let read = |signal_versions: Option<&[BlockVersion]>, age_secs: u64| {
+            v24_active_after_tip(
+                &pre,
+                &tip_of(&pre, tip_height, time),
+                network,
+                u64::from(time) + age_secs,
+                signal_versions,
+            )
+        };
+        let fresh = MAX_TIP_AGE_NEAR_V24_ACTIVATION_SECS;
+        let not_fresh = MAX_TIP_AGE_NEAR_V24_ACTIVATION_SECS + 1;
+
+        assert!(!read(Some(&enough), fresh).expect("a fresh tip"));
+        for signal_versions in [Some(enough.as_slice()), None] {
+            let err = read(signal_versions, not_fresh).expect_err("a tip that is not fresh");
+            assert!(
+                matches!(&err, PlatformWalletError::TransactionBuild(message)
+                    if message.contains("901s old") && message.contains(&format!("may activate at height {period_start}"))),
+                "got {err:?}"
+            );
+        }
+        assert!(
+            !read(Some(&too_few), MAX_PRE_V24_TIP_AGE_SECS).expect("no lock-in possible"),
+            "an hour-old tip stands when V24 cannot lock in"
+        );
+    }
+
+    /// A tip older than an hour means the header chain has stalled, and V24
+    /// may have activated in blocks the SPV client has not seen, so its
+    /// pre-V24 coinbase is not trusted. A tip more than Core's two-hour
+    /// future limit ahead of the local clock means the clock is behind and
+    /// cannot judge the tip's age. Both refusals are retryable. A version-4
+    /// coinbase proves V24 either way.
+    #[test]
+    fn should_refuse_a_pre_v24_reading_from_a_stalled_spv_tip() {
+        let time = 1_792_470_316u32;
+        let height = 1_575_845;
+        let pre = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION - 1);
+        let post = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION);
+        let quiet = signal_period(Network::Testnet, 0);
+        let read = |block: &Block, now| {
+            v24_active_after_tip(
+                block,
+                &tip_of(block, height, time),
+                Network::Testnet,
+                now,
+                Some(&quiet),
+            )
+        };
+        let refused_with = |now, reason: &str| {
+            let err = read(&pre, now).expect_err(reason);
+            assert!(
+                matches!(&err, PlatformWalletError::TransactionBuild(message) if message.contains(reason)),
+                "expected {reason:?}, got {err:?}"
+            );
+        };
+        let stalled = u64::from(time) + MAX_PRE_V24_TIP_AGE_SECS + 1;
+        let clock_behind = u64::from(time) - MAX_FUTURE_BLOCK_TIME_SECS - 1;
+
+        refused_with(stalled, "3601s old");
+        assert!(!read(&pre, u64::from(time) + MAX_PRE_V24_TIP_AGE_SECS).expect("an hour old"));
+        refused_with(clock_behind, "past the local clock");
+        refused_with(0, "past the local clock");
+        assert!(
+            !read(&pre, u64::from(time) - MAX_FUTURE_BLOCK_TIME_SECS).expect("within Core's limit"),
+            "a tip timestamped ahead within Core's future limit is recent"
+        );
+
+        assert!(read(&post, stalled).expect("a version-4 tip proves V24 however old"));
+        assert!(read(&post, clock_behind).expect("whatever the clock says"));
+    }
+
+    /// The block comes from DAPI, which is not authenticated, so it is read
+    /// only once it is the SPV header's block and its transactions are the
+    /// ones that header commits to; otherwise nothing about V24 is
+    /// concluded, either way.
+    #[test]
+    fn should_refuse_a_tip_block_that_does_not_verify_against_the_spv_header() {
+        let block = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION);
+        let refused = |block: &Block, header_hash: &BlockHash, reason: &str| {
+            let err = v24_active_at_block(block, header_hash).expect_err(reason);
+            assert!(
+                matches!(&err, PlatformWalletError::TransactionBuild(message) if message.contains(reason)),
+                "expected {reason:?}, got {err:?}"
+            );
+        };
+        let recommitted = |mut block: Block| {
+            block.header.merkle_root = block.compute_merkle_root().expect("non-empty");
+            block
+        };
+
+        refused(
+            &block,
+            &BlockHash::from_byte_array([3u8; 32]),
+            "is not the SPV header's block",
+        );
+
+        let mut swapped = block.clone();
+        swapped.txdata[0] =
+            block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION - 1).txdata[0].clone();
+        refused(&swapped, &block.block_hash(), "merkle root");
+
+        let mut without_payload = block.clone();
+        without_payload.txdata[0].special_transaction_payload = None;
+        let without_payload = recommitted(without_payload);
+        refused(
+            &without_payload,
+            &without_payload.block_hash(),
+            "has no coinbase payload",
+        );
+
+        let mut spends_an_output = block.clone();
+        spends_an_output.txdata[0].input[0].previous_output =
+            OutPoint::new(Txid::from_byte_array([1u8; 32]), 0);
+        let spends_an_output = recommitted(spends_an_output);
+        refused(
+            &spends_an_output,
+            &spends_an_output.block_hash(),
+            "has no coinbase",
         );
     }
 

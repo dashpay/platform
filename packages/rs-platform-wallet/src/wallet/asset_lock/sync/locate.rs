@@ -113,7 +113,7 @@ const LOCATE_REQUEST_SETTINGS: RequestSettings = RequestSettings {
 /// Request settings for one block fetch: blocks are larger than a transaction
 /// reply, so a longer timeout and a decoding limit sized for a full block, but
 /// still a single retry.
-const BLOCK_REQUEST_SETTINGS: RequestSettings = RequestSettings {
+pub(crate) const BLOCK_REQUEST_SETTINGS: RequestSettings = RequestSettings {
     connect_timeout: None,
     timeout: Some(Duration::from_secs(10)),
     retries: Some(1),

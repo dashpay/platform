@@ -1,5 +1,6 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
+use std::ops::Range;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -7,13 +8,14 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
+use dashcore::block::Version as BlockVersion;
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::sml::masternode_list::MasternodeList;
 use dashcore::sml::masternode_list_entry::MasternodeListEntry;
-use dashcore::{PubkeyHash, QuorumHash, Transaction};
+use dashcore::{BlockHash, PubkeyHash, QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
-use dash_spv::storage::{DiskStorageManager, StorageManager};
+use dash_spv::storage::{BlockHeaderStorage, DiskStorageManager, StorageManager};
 use dash_spv::sync::SyncProgress;
 use dash_spv::{BroadcastResult, ClientConfig, DashSpvClient, EventHandler, Hash};
 
@@ -25,6 +27,17 @@ use crate::events::PlatformEventManager;
 use crate::masternode::list::MasternodeListSummary;
 use crate::spv::peers::{classify_peers, PeerTracker, SpvPeerInfo};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
+
+/// The SPV header chain's tip.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SpvTip {
+    /// Height of the tip header.
+    pub(crate) height: u32,
+    /// Hash of the tip header.
+    pub(crate) hash: BlockHash,
+    /// The tip header's block time, in Unix seconds.
+    pub(crate) time: u32,
+}
 
 type SpvClient =
     DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager, DiskStorageManager>;
@@ -667,8 +680,14 @@ impl SpvRuntime {
     /// have been stored yet, or the tip header isn't readable for
     /// any reason.
     pub async fn tip_block_time(&self) -> Option<u32> {
-        use dash_spv::storage::{BlockHeaderStorage, StorageManager};
+        self.tip().await.map(|tip| tip.time)
+    }
 
+    /// The header chain's tip: its height, hash and header time.
+    ///
+    /// Returns `None` if the SPV client isn't running or no headers have
+    /// been stored yet.
+    pub(crate) async fn tip(&self) -> Option<SpvTip> {
         let client_guard = self.client.read().await;
         let client = client_guard.as_ref()?;
         let storage_arc = client.storage();
@@ -677,7 +696,40 @@ impl SpvRuntime {
         drop(storage);
         let bh = block_headers.read().await;
         let tip = BlockHeaderStorage::get_tip(&*bh).await?;
-        Some(tip.header().time)
+        Some(SpvTip {
+            height: tip.height(),
+            hash: *tip.hash(),
+            time: tip.header().time,
+        })
+    }
+
+    /// Versions of the stored headers at `heights`, in height order.
+    ///
+    /// Returns `None` if the SPV client isn't running or the store does not
+    /// hold every one of those headers as one chain (it starts above them,
+    /// the read fails, or a header does not build on the one before it).
+    pub(crate) async fn header_versions(&self, heights: Range<u32>) -> Option<Vec<BlockVersion>> {
+        let client_guard = self.client.read().await;
+        let client = client_guard.as_ref()?;
+        let storage_arc = client.storage();
+        let storage = storage_arc.lock().await;
+        let block_headers = StorageManager::block_headers(&*storage);
+        drop(storage);
+        let bh = block_headers.read().await;
+        if heights.is_empty() || BlockHeaderStorage::get_start_height(&*bh).await? > heights.start {
+            return None;
+        }
+        let expected = heights.end - heights.start;
+        let headers = BlockHeaderStorage::load_headers(&*bh, heights).await.ok()?;
+        let linked = headers
+            .windows(2)
+            .all(|pair| pair[1].header().prev_blockhash == *pair[0].hash());
+        (headers.len() == expected as usize && linked).then(|| {
+            headers
+                .iter()
+                .map(|header| header.header().version)
+                .collect()
+        })
     }
 
     /// Hash of the stored header at `height`.
