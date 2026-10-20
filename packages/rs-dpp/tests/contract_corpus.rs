@@ -121,50 +121,20 @@ fn validation_keywords_of(schema: &Value) -> Value {
     )
 }
 
-/// A schema as the JSON Schema validator reads it (converted to JSON, so a repeated key
-/// keeps its last value and bytes are arrays of integers), with its maps sorted by key and
-/// every integer widened, so two schemas compare by what they say rather than by key order
-/// or integer width.
-fn normalized(value: &Value) -> Value {
-    widened(&Value::from(
-        value
-            .try_to_validating_json()
-            .expect("expected a schema the validator reads"),
-    ))
-}
-
-fn widened(value: &Value) -> Value {
-    match value {
-        Value::Map(map) => {
-            let mut map: Vec<_> = map
-                .iter()
-                .map(|(key, value)| (key.clone(), widened(value)))
-                .collect();
-            map.sort_by(|(left, _), (right, _)| left.as_text().cmp(&right.as_text()));
-            Value::Map(map)
-        }
-        Value::Array(elements) => Value::Array(elements.iter().map(widened).collect()),
-        value if value.is_integer() => Value::I128(value.as_integer().expect("an integer")),
-        value => value.clone(),
-    }
+/// A schema as the JSON Schema validator reads it: converted to JSON, so a repeated key
+/// keeps its last value, bytes are arrays of integers and every integer is 64-bit. Two such
+/// schemas compare equal whatever their key order, as `preserve_order` maps compare by key.
+fn validating_json(value: &Value) -> serde_json::Value {
+    value
+        .try_to_validating_json()
+        .expect("expected a schema the validator reads")
 }
 
 fn resolve<'a>(root: &'a Value, reference: &str) -> &'a Value {
     reference
-        .strip_prefix("#/")
-        .expect("expected a JSON pointer")
-        .split('/')
-        .fold(root, |target, segment| {
-            let segment = segment.replace("~1", "/").replace("~0", "~");
-            target
-                .as_map()
-                .and_then(|map| {
-                    map.iter()
-                        .find(|(key, _)| key.as_text() == Some(segment.as_str()))
-                        .map(|(_, value)| value)
-                })
-                .unwrap_or_else(|| panic!("expected {reference} to resolve"))
-        })
+        .strip_prefix('#')
+        .and_then(|pointer| root.pointer(pointer))
+        .unwrap_or_else(|| panic!("expected {reference} to resolve"))
 }
 
 #[test]
@@ -198,16 +168,16 @@ fn should_build_a_validation_schema_holding_every_validation_keyword_of_every_co
                     .unwrap_or(root);
 
             assert_eq!(
-                normalized(&schema.root.to_value()),
-                normalized(&validation_keywords_of(&root)),
+                validating_json(&schema.root.to_value()),
+                validating_json(&validation_keywords_of(&root)),
                 "{:?} contract {} document type {name}",
                 contract.network,
                 contract.id
             );
             for (reference, node) in &schema.references {
                 assert_eq!(
-                    normalized(&node.to_value()),
-                    normalized(&validation_keywords_of(resolve(&root, reference))),
+                    validating_json(&node.to_value()),
+                    validating_json(&validation_keywords_of(resolve(&root, reference))),
                     "{:?} contract {} document type {name} reference {reference}",
                     contract.network,
                     contract.id

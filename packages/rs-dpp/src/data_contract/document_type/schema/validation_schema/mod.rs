@@ -25,11 +25,12 @@
 //! * `required` is kept per object, as the validator compiles it, where the parser derives
 //!   nested requiredness from dotted names and drops a name no property carries. At the
 //!   root, the base schema has already removed the system times and heights (`$createdAt`,
-//!   `$updatedAtBlockHeight`, ...), which a document's properties never carry;
+//!   `$updatedAtBlockHeight`, ...), which a document's properties never carry, unless a
+//!   repeated `required` key shadows the one the base schema edits;
 //! * the root object's own keywords (`required`, `minProperties`, `dependentRequired`, ...)
 //!   are kept, where the parser has no property to put them on.
 //!
-//! Every schema a `$ref` reaches is built once and kept by the reference as written, so
+//! Every schema a `$ref` reaches is kept once, under each way the reference is written, so
 //! references between definitions, cyclic ones included, stay references. A reference is
 //! resolved as the JSON Schema validator resolves it, from the URL it parses the reference
 //! into: through the schemas an `$id` names first, then by its JSON pointer.
@@ -37,11 +38,13 @@
 //! Nothing reads it yet at any protocol version. It is built with the `validation-schema`
 //! feature, which `validation` enables, and does not need the JSON Schema validator it
 //! mirrors, only the `url` and `percent-encoding` crates that validator resolves references
-//! with.
+//! with. It models the document validation of protocol version 14 and later, whose parser
+//! reads `maxBytes` and `encryptedFor`, and refuses an earlier protocol version.
 
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::property::EncryptedFor;
+use crate::data_contract::document_type::schema::last_value;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
@@ -51,7 +54,9 @@ use crate::ProtocolError;
 use percent_encoding::percent_decode_str;
 use platform_value::Value;
 use platform_version::version::PlatformVersion;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::Arc;
 use url::Url;
 
 mod keyword;
@@ -64,7 +69,19 @@ pub use keyword::{
 };
 
 /// A JSON Schema simple type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    strum::EnumIter,
+    strum::EnumString,
+    strum::IntoStaticStr,
+)]
+#[strum(serialize_all = "lowercase")]
 pub enum JsonType {
     Null,
     Boolean,
@@ -78,28 +95,11 @@ pub enum JsonType {
 impl JsonType {
     /// The type's name as a schema writes it.
     pub fn name(self) -> &'static str {
-        match self {
-            JsonType::Null => "null",
-            JsonType::Boolean => "boolean",
-            JsonType::Object => "object",
-            JsonType::Array => "array",
-            JsonType::Number => "number",
-            JsonType::String => "string",
-            JsonType::Integer => "integer",
-        }
+        self.into()
     }
 
     fn from_name(name: &str) -> Option<Self> {
-        Some(match name {
-            "null" => JsonType::Null,
-            "boolean" => JsonType::Boolean,
-            "object" => JsonType::Object,
-            "array" => JsonType::Array,
-            "number" => JsonType::Number,
-            "string" => JsonType::String,
-            "integer" => JsonType::Integer,
-            _ => return None,
-        })
+        name.parse().ok()
     }
 }
 
@@ -118,13 +118,17 @@ pub enum JsonTypes {
 /// group, one boxed struct per [`SchemaKeyword`] group, allocated only when the node
 /// carries a keyword of the group, so a node pays only for the groups it uses. Numbers that
 /// bound a value (`minimum`, `multipleOf`, ...), and `enum` and `const` values, are kept as
-/// the JSON Schema validator compares them: converted to JSON as the document validator
+/// the JSON Schema validator reads them: converted to JSON as the document validator
 /// converts the schema, so an integer is 64-bit and a float stays a float, bytes and
-/// identifiers are arrays of integers, and a repeated map key keeps its last value.
+/// identifiers are arrays of integers, and a repeated map key keeps its last value. The
+/// validator compares the bounds exactly, but `multipleOf` in f64 (see
+/// [`NumberConstraints::multiple_of`]).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SchemaNode {
-    /// `$ref`: a JSON pointer into the schema the document type compiles, a key of
-    /// [`ValidationSchema::references`].
+    /// `$ref`, as written: a URL reference the validator resolves against the document
+    /// schema, through the schemas an `$id` names first and then by its fragment as a JSON
+    /// pointer, so not always to the schema at that pointer. The key of
+    /// [`ValidationSchema::references`] that holds the schema it reaches.
     pub reference: Option<String>,
     /// `type`.
     pub types: Option<JsonTypes>,
@@ -149,10 +153,13 @@ pub struct SchemaNode {
 pub struct ObjectConstraints {
     /// `properties`, in declared order.
     pub properties: Option<Vec<(String, SchemaNode)>>,
-    /// `additionalProperties`. Every document meta-schema holds it to `false`.
+    /// `additionalProperties`. Every document meta-schema holds it to `false` on the
+    /// document schema and the property schemas it restricts; a system property's schema
+    /// and a `contains` schema may hold `true`.
     pub additional_properties: Option<bool>,
     /// `required`, as the validator compiles it, including any name no property carries. At
-    /// the root, without the system times and heights the base schema removes.
+    /// the root, without the system times and heights the base schema removes, unless a
+    /// repeated `required` key shadows the one it edits.
     pub required: Option<Vec<String>>,
     /// `minProperties`.
     pub min_properties: Option<u64>,
@@ -171,8 +178,8 @@ pub struct ArrayConstraints {
     /// `contains`: a schema at least one element must match. The document meta-schemas take
     /// `contains` from JSON Schema's applicator vocabulary, which admits any schema: a
     /// boolean, or composition keywords such as `not` or `anyOf`. The builder holds a
-    /// `contains` schema made of [`SchemaKeyword`]s only and refuses any other; no contract
-    /// on mainnet or testnet declares `contains` at all. Nothing inside it carries
+    /// `contains` schema made of [`SchemaKeyword`]s and keys the validator ignores, and
+    /// refuses any other; no contract on mainnet or testnet declares `contains` at all. Nothing inside it carries
     /// `maxBytes`, `encryptedFor` or `byteArray`, which constrain nothing there.
     pub contains: Option<Box<SchemaNode>>,
     /// `minItems`.
@@ -193,7 +200,10 @@ pub struct StringConstraints {
     /// `maxBytes`, held only where the document type parser reads it: on a schema it reads
     /// as a property, and on the items of one, the elements of a typed array.
     pub max_bytes: Option<u64>,
-    /// `pattern`.
+    /// `pattern`, as written. The validator rewrites the ECMA escapes `\d`, `\w`, `\s`, their
+    /// negations and `\cX` before compiling it with the `regex` crate (see
+    /// [`compiles_as_validator_pattern`]); the builder refuses a pattern that does not
+    /// compile so, since the validator then refuses every value reaching it.
     pub pattern: Option<String>,
 }
 
@@ -208,7 +218,8 @@ pub struct NumberConstraints {
     pub exclusive_minimum: Option<Value>,
     /// `exclusiveMaximum`.
     pub exclusive_maximum: Option<Value>,
-    /// `multipleOf`.
+    /// `multipleOf`. The validator divides in f64: it converts both this divisor and the
+    /// value to f64, so an integer beyond 2^53 is rounded on either side.
     pub multiple_of: Option<Value>,
 }
 
@@ -217,8 +228,9 @@ pub struct NumberConstraints {
 pub struct FormatConstraints {
     /// `format`.
     pub format: Option<String>,
-    /// `byteArray`, Platform's keyword for an array of bytes, with the value it was
-    /// written with. Never inside `contains`.
+    /// `byteArray`, Platform's keyword for an array of bytes. Always `true`: the validator
+    /// checks a byte array whatever value is written, so the builder refuses `false`. Never
+    /// inside `contains`.
     pub byte_array: Option<bool>,
     /// `encryptedFor`, held only on a schema the document type parser reads as a property.
     pub encrypted_for: Option<EncryptedFor>,
@@ -226,14 +238,15 @@ pub struct FormatConstraints {
 
 /// A document type's schema as the document validator reads it: the root node and every
 /// schema a `$ref` reaches.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ValidationSchema {
     /// The document type's own schema. Its keys that are not a [`SchemaKeyword`] are the
     /// document type's other keywords, `$schema` and `$defs`, which constrain no value.
     pub root: SchemaNode,
     /// Every schema a `$ref` of the root or of another referenced schema reaches, by the
-    /// reference as written.
-    pub references: BTreeMap<String, SchemaNode>,
+    /// reference as written; references written differently that reach one schema share
+    /// its node.
+    pub references: BTreeMap<String, Arc<SchemaNode>>,
 }
 
 impl ValidationSchema {
@@ -242,14 +255,16 @@ impl ValidationSchema {
     /// property type shorthands expanded.
     ///
     /// Refuses a keyword value of the wrong shape; below the root, a key that is not a
-    /// [`SchemaKeyword`], and in the schema of a system property and at the root, one the
-    /// JSON Schema validator compiles; a `format` it does not know; `maxBytes`,
-    /// `encryptedFor` or `byteArray` where consensus does not check it (see the module
-    /// documentation); a `$ref` that does not resolve within the schema; a property's `$ref`
-    /// the document type parser resolves to another schema; and a `$ref` an `$id` above it
-    /// rescopes (see [`MetaKeyword::Id`]).
-    pub fn try_from_root(root: &Value) -> Result<Self, DataContractError> {
-        let root_url = document_url(root)?;
+    /// [`SchemaKeyword`] in a schema a document meta-schema restricts, and elsewhere one the
+    /// JSON Schema validator compiles; a `format`, `pattern` or `dependentRequired` it does
+    /// not compile; `byteArray: false`; `maxBytes`, `encryptedFor` or `byteArray` where
+    /// consensus does not check it (see the module documentation); a property repeated with
+    /// one of those keywords, whose entries the parser and the validator read differently; a
+    /// `$ref` that does not resolve within the schema; a property's `$ref` the document type
+    /// parser resolves to another schema; and a `$ref` an `$id` above it rescopes (see
+    /// [`MetaKeyword::Id`]).
+    pub(crate) fn try_from_root(root: &Value) -> Result<Self, DataContractError> {
+        let (root_scope, root_url) = document_urls(root)?;
         let mut reached = Reached::default();
         let root_node = build_node(root, OtherKeys::Document, Reading::Document, &mut reached)?;
         let mut references = BTreeMap::new();
@@ -259,31 +274,54 @@ impl ValidationSchema {
                 references,
             });
         }
-        let identifiers = Identifiers::of(root)?;
-        // A schema reached in several readings is built in each, for the keywords each
-        // refuses, and kept once: the readings build the same node.
+        let identifiers = Identifiers::of(root, root_scope.as_ref())?;
+        let restricted = restricted_schemas(root)?;
+        // Each written reference is resolved once, and each schema it reaches is built once
+        // in each reading that reaches it, for the keywords that reading refuses: the
+        // readings build the same node, which every reference reaching the schema shares.
+        let mut targets: BTreeMap<String, &Value> = BTreeMap::new();
         let mut visited = BTreeSet::new();
+        let mut built = BTreeSet::new();
+        let mut nodes: BTreeMap<*const Value, Arc<SchemaNode>> = BTreeMap::new();
         while let Some((reference, reading)) = reached.pending.pop_front() {
             if !visited.insert((reference.clone(), reading)) {
                 continue;
             }
-            let target = resolve_reference(root, &root_url, &identifiers.named, &reference)?;
+            let target = match targets.get(&reference) {
+                Some(target) => *target,
+                None => {
+                    let target =
+                        resolve_reference(root, &root_url, &identifiers.named, &reference)?;
+                    targets.insert(reference.clone(), target);
+                    target
+                }
+            };
             if reading == Reading::ReferencedProperty {
                 refuse_a_property_reference_the_parser_resolves_elsewhere(
                     root, &reference, target,
                 )?;
             }
-            // The root reached by a reference keeps the document type keywords beside its
-            // own, which a nested schema would refuse. It is built again in the reference's
-            // reading only for the keywords that reading refuses (a property's `maxBytes`
-            // when `contains` reaches the root, say): the node built is the root's.
-            let other_keys = if std::ptr::eq(target, root) {
-                OtherKeys::Document
-            } else {
-                OtherKeys::Refused
-            };
-            let node = build_node(target, other_keys, reading, &mut reached)?;
-            references.entry(reference).or_insert(node);
+            let address = std::ptr::from_ref(target);
+            if built.insert((address, reading)) {
+                // The root reached by a reference keeps the document type keywords beside
+                // its own, which a nested schema would refuse. A schema a document
+                // meta-schema restricts carries only the keywords; one anywhere else may
+                // carry any key the validator ignores.
+                let other_keys = if std::ptr::eq(target, root) {
+                    OtherKeys::Document
+                } else if restricted.contains(&address) {
+                    OtherKeys::Refused
+                } else {
+                    OtherKeys::Ignored
+                };
+                let node = build_node(target, other_keys, reading, &mut reached)?;
+                nodes.entry(address).or_insert_with(|| Arc::new(node));
+            }
+            if let Some(node) = nodes.get(&address) {
+                references
+                    .entry(reference)
+                    .or_insert_with(|| Arc::clone(node));
+            }
         }
         refuse_references_an_id_rescopes(&identifiers, &root_url, &reached.schemas)?;
         Ok(Self {
@@ -295,12 +333,28 @@ impl ValidationSchema {
 
 impl DataContract {
     /// The validation schema of one of the contract's document types, built from the
-    /// schema the document validator compiles for it.
+    /// schema the document validator compiles for it. Refuses a protocol version before 14,
+    /// whose document validation checks neither `maxBytes` nor `encryptedFor`, which the
+    /// validation schema holds where the parser of protocol version 14 reads them.
     pub fn document_type_validation_schema(
         &self,
         document_type_name: &str,
         platform_version: &PlatformVersion,
     ) -> Result<ValidationSchema, ProtocolError> {
+        if platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .methods
+            .validate_max_bytes
+            .is_none()
+        {
+            return Err(ProtocolError::NotSupported(format!(
+                "the validation schema models the document validation of protocol version 14 \
+                 and later, not of protocol version {}",
+                platform_version.protocol_version
+            )));
+        }
         let document_type = self.document_type_for_name(document_type_name)?;
         let root = DocumentType::enrich_with_base_schema(
             document_type.schema().clone(),
@@ -526,14 +580,69 @@ const VALIDATOR_FORMATS: [&str; 10] = [
     "uri",
 ];
 
+/// The size limit the document validator compiles a `pattern` under, the `regex` options
+/// it gives its JSON Schema validator.
+const VALIDATOR_PATTERN_SIZE_LIMIT: usize = 5 * (1 << 20);
+
+/// Whether the JSON Schema validator compiles `pattern`, as the pinned fork's
+/// `convert_regex` does: it replaces each ECMA control escape `\cX` with its control
+/// character, rewrites the classes `\d`, `\D`, `\w`, `\W`, `\s` and `\S` as explicit ones,
+/// and compiles the result with the `regex` crate under [`VALIDATOR_PATTERN_SIZE_LIMIT`],
+/// which refuses look-around and backreferences.
+fn compiles_as_validator_pattern(pattern: &str) -> bool {
+    let mut controlled = String::with_capacity(pattern.len());
+    let mut chars = pattern.chars().peekable();
+    while let Some(current) = chars.next() {
+        let mut lookahead = chars.clone();
+        match (current, lookahead.next(), lookahead.next()) {
+            ('\\', Some('c'), Some(letter)) if letter.is_ascii_alphabetic() => {
+                controlled.push(char::from(letter.to_ascii_uppercase() as u8 - 64));
+                chars.next();
+                chars.next();
+            }
+            _ => controlled.push(current),
+        }
+    }
+    let mut converted = String::with_capacity(controlled.len());
+    let mut chars = controlled.chars();
+    while let Some(current) = chars.next() {
+        if current != '\\' {
+            converted.push(current);
+            continue;
+        }
+        match chars.next() {
+            Some('d') => converted.push_str("[0-9]"),
+            Some('D') => converted.push_str("[^0-9]"),
+            Some('w') => converted.push_str("[A-Za-z0-9_]"),
+            Some('W') => converted.push_str("[^A-Za-z0-9_]"),
+            Some('s') => {
+                converted.push_str("[ \t\n\r\u{000b}\u{000c}\u{2003}\u{feff}\u{2029}\u{00a0}]")
+            }
+            Some('S') => {
+                converted.push_str("[^ \t\n\r\u{000b}\u{000c}\u{2003}\u{feff}\u{2029}\u{00a0}]")
+            }
+            Some(next) => {
+                converted.push(current);
+                converted.push(next);
+            }
+            None => converted.push(current),
+        }
+    }
+    regex::RegexBuilder::new(&converted)
+        .size_limit(VALIDATOR_PATTERN_SIZE_LIMIT)
+        .build()
+        .is_ok()
+}
+
 /// What a schema node may carry besides the [`SchemaKeyword`]s.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OtherKeys {
     /// The document schema's: keys the JSON Schema validator ignores, the document type's
     /// own keywords, `$schema` and `$defs`, which constrain no value.
     Document,
-    /// Keys the JSON Schema validator ignores: in the schema of a system property
-    /// (`$createdAt`, ...), which every document meta-schema admits as any schema.
+    /// Keys the JSON Schema validator ignores: in a schema no document meta-schema
+    /// restricts, a system property's (`$createdAt`, ...), a `contains` schema or a `$ref`
+    /// target outside the restricted schemas (an `examples` entry an `$id` names, say).
     Ignored,
     /// None: in a schema whose keys a document meta-schema restricts to the keywords it
     /// admits (`documentSchema`, `documentArrayItem`), so another key is one the validation
@@ -553,7 +662,8 @@ impl OtherKeys {
         }
     }
 
-    /// What the schemas below a node carrying `self`, but its properties', may carry.
+    /// What the schemas below a node carrying `self`, but its properties' and its
+    /// `contains` schema, which any schema may fill, may carry.
     fn below(self) -> OtherKeys {
         match self {
             OtherKeys::Document => OtherKeys::Refused,
@@ -577,33 +687,97 @@ fn default_url() -> Result<Url, DataContractError> {
         .map_err(|error| structure_error(format!("invalid default schema URL: {error}")))
 }
 
-/// The URL the JSON Schema validator resolves the document schema's references against:
-/// the root's `$id`, which must be an absolute URL for the validator to compile the schema
-/// at all, but a `json-schema:` one, which leaves it on [`DEFAULT_ROOT_URL`], as no `$id`
-/// does.
-fn document_url(root: &Value) -> Result<Url, DataContractError> {
+/// The URLs the JSON Schema validator starts the document schema from. First, its `$id`
+/// parsed as an absolute URL, the scope its resolver indexes the schema in, `None` without
+/// an `$id`; the validator compiles no schema from a relative one. Then the URL it gives
+/// the schema's references: that `$id` resolved against itself as the validator enters the
+/// schema, or [`DEFAULT_ROOT_URL`] without an `$id` or for a `json-schema:` one.
+fn document_urls(root: &Value) -> Result<(Option<Url>, Url), DataContractError> {
     let default_url = default_url()?;
-    let Some(map) = root.as_map() else {
-        return Ok(default_url);
-    };
-    let Some(id) = last_wins(map)?
-        .into_iter()
-        .find(|(key, _)| *key == "$id")
-        .and_then(|(_, id)| id.as_text())
+    let Some(id) = root
+        .as_map()
+        .and_then(|map| last_value(map, "$id"))
+        .and_then(Value::as_text)
     else {
-        return Ok(default_url);
+        return Ok((None, default_url));
     };
-    let url = Url::parse(id).map_err(|error| {
+    let not_absolute = |error: url::ParseError| {
         structure_error(format!(
             "the document schema's `$id` `{id}` is not an absolute URL, so the JSON Schema \
              validator compiles no schema from it: {error}"
         ))
-    })?;
-    Ok(if url.scheme() == DEFAULT_ROOT_SCHEME {
+    };
+    let scope = Url::parse(id).map_err(not_absolute)?;
+    let base = if scope.scheme() == DEFAULT_ROOT_SCHEME {
+        &default_url
+    } else {
+        &scope
+    };
+    let url = base.join(id).map_err(not_absolute)?;
+    let url = if url.scheme() == DEFAULT_ROOT_SCHEME {
         default_url
     } else {
         url
-    })
+    };
+    Ok((Some(scope), url))
+}
+
+/// The schemas whose keys a document meta-schema restricts to the keywords it admits
+/// (`documentSchema`, `documentArrayItem`), by address: the document schema's properties
+/// but a system property's, the contract's definitions, and below them the properties and
+/// items of each. A schema anywhere else, a system property's, an `examples` entry or a
+/// `contains` schema, may carry any key.
+fn restricted_schemas(root: &Value) -> Result<BTreeSet<*const Value>, DataContractError> {
+    let mut restricted = BTreeSet::new();
+    let Some(map) = root.as_map() else {
+        return Ok(restricted);
+    };
+    for (key, value) in last_wins(map)? {
+        let Some(entries) = value.as_map() else {
+            continue;
+        };
+        match key {
+            "properties" => {
+                for (name, property) in last_wins(entries)? {
+                    if !name.starts_with('$') {
+                        restrict(property, &mut restricted)?;
+                    }
+                }
+            }
+            "$defs" => {
+                for (_, definition) in last_wins(entries)? {
+                    restrict(definition, &mut restricted)?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(restricted)
+}
+
+/// Adds `schema`, and the properties and items below it, to the restricted schemas.
+fn restrict(
+    schema: &Value,
+    restricted: &mut BTreeSet<*const Value>,
+) -> Result<(), DataContractError> {
+    restricted.insert(std::ptr::from_ref(schema));
+    let Some(map) = schema.as_map() else {
+        return Ok(());
+    };
+    for (key, value) in last_wins(map)? {
+        match key {
+            "properties" => {
+                if let Some(properties) = value.as_map() {
+                    for (_, property) in last_wins(properties)? {
+                        restrict(property, restricted)?;
+                    }
+                }
+            }
+            "items" => restrict(value, restricted)?,
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// How consensus reads a schema node, for the three keywords of a document schema that the
@@ -639,14 +813,21 @@ enum Reading {
 }
 
 impl Reading {
-    /// Whether consensus checks `keyword` on a node read this way, `has_reference` when the
-    /// node carries a `$ref`.
-    fn checks(self, keyword: SchemaKeyword, has_reference: bool) -> bool {
-        let parsed_as_property = match self {
+    /// Whether the document type parser reads a node read this way as a property,
+    /// `has_reference` when the node carries a `$ref`: a property without one, or the
+    /// schema a property's `$ref` reaches.
+    fn parsed_as_property(self, has_reference: bool) -> bool {
+        match self {
             Reading::Property => !has_reference,
             Reading::ReferencedProperty => true,
             _ => false,
-        };
+        }
+    }
+
+    /// Whether consensus checks `keyword` on a node read this way, `has_reference` when the
+    /// node carries a `$ref`.
+    fn checks(self, keyword: SchemaKeyword, has_reference: bool) -> bool {
+        let parsed_as_property = self.parsed_as_property(has_reference);
         match keyword {
             SchemaKeyword::String(StringKeyword::MaxBytes) => {
                 parsed_as_property || self == Reading::Items
@@ -660,18 +841,16 @@ impl Reading {
     /// How consensus reads the schema `keyword` holds on a node read this way,
     /// `has_reference` when the node carries a `$ref`.
     fn below(self, keyword: SchemaKeyword, has_reference: bool) -> Reading {
-        let parsed = match self {
-            Reading::Document | Reading::ReferencedProperty => true,
-            Reading::Property => !has_reference,
-            Reading::Items | Reading::Schema | Reading::Contains => false,
-        };
+        let parsed_as_property = self.parsed_as_property(has_reference);
         match keyword {
             _ if self == Reading::Contains => Reading::Contains,
             SchemaKeyword::Array(ArrayKeyword::Contains) => Reading::Contains,
-            SchemaKeyword::Object(ObjectKeyword::Properties) if parsed => Reading::Property,
-            SchemaKeyword::Array(ArrayKeyword::Items) if parsed && self != Reading::Document => {
-                Reading::Items
+            SchemaKeyword::Object(ObjectKeyword::Properties)
+                if parsed_as_property || self == Reading::Document =>
+            {
+                Reading::Property
             }
+            SchemaKeyword::Array(ArrayKeyword::Items) if parsed_as_property => Reading::Items,
             SchemaKeyword::Any(AnyKeyword::Ref) if self == Reading::Property => {
                 Reading::ReferencedProperty
             }
@@ -698,24 +877,46 @@ fn refuse_a_property_reference_the_parser_resolves_elsewhere(
 }
 
 /// What the JSON Schema validator reads of a schema's identifiers.
+#[derive(Default)]
 struct Identifiers<'a> {
     /// Every schema an `$id` names, by the URL the validator's resolver indexes it at. A URL
     /// named twice names the later schema, as the resolver's index keeps the last.
     named: BTreeMap<String, &'a Value>,
     /// Every `$ref`, with the address of the schema holding it and the URL the validator
-    /// compiles it with there, `None` when the reference is not a URL reference.
+    /// compiles it with there, `None` when the reference is not a URL reference or its
+    /// scope is unknown.
     references: Vec<(*const Value, &'a str, Option<Url>)>,
 }
 
+/// The URL the JSON Schema validator compiles the `$ref`s of a schema against.
+#[derive(Clone, Copy)]
+enum CompileScope<'u> {
+    /// [`DEFAULT_ROOT_URL`]: no `$id` above, or one resolving to a `json-schema:` URL.
+    Default,
+    /// The URL the nearest `$id` above resolves to.
+    At(&'u Url),
+    /// Unknown: below an `$id` in `enum` or `const` data that is not a URL reference. The
+    /// validator never reads that `$id` but on the way to a `$ref` target below it, and
+    /// then fails to resolve the reference.
+    Unknown,
+}
+
 impl<'a> Identifiers<'a> {
-    /// The identifiers of the document schema `root`.
-    fn of(root: &'a Value) -> Result<Self, DataContractError> {
+    /// The identifiers of the document schema `root`, whose resolver scope is `root_scope`,
+    /// its own `$id` parsed, or the default URL without one.
+    fn of(root: &'a Value, root_scope: Option<&Url>) -> Result<Self, DataContractError> {
         let default_url = default_url()?;
-        let mut identifiers = Identifiers {
-            named: BTreeMap::new(),
-            references: Vec::new(),
+        let mut identifiers = Self::default();
+        let compile_scope = match root_scope {
+            Some(scope) if scope.scheme() != DEFAULT_ROOT_SCHEME => CompileScope::At(scope),
+            _ => CompileScope::Default,
         };
-        identifiers.collect(root, Some(&default_url), None, &default_url)?;
+        identifiers.collect(
+            root,
+            Some(root_scope.unwrap_or(&default_url)),
+            compile_scope,
+            &default_url,
+        )?;
         Ok(identifiers)
     }
 
@@ -726,15 +927,17 @@ impl<'a> Identifiers<'a> {
     /// dropped). It skips the value of every member named `enum` or `const`, a property so
     /// named included, where `named_scope` is `None`.
     ///
-    /// Its compiler gives a `$ref` the URL it resolves to against `compile_scope`, the URL
-    /// the nearest `$id` above resolves to, or `default_url` when there is none or that URL
-    /// is a `json-schema:` one, where `compile_scope` is `None`. A relative `$id` therefore
-    /// never changes the URL of a reference below it.
+    /// Its compiler gives a `$ref` the URL it resolves to against `compile_scope`: the URL
+    /// the nearest `$id` above resolves to, or the default URL when there is none or that
+    /// URL is a `json-schema:` one. A relative `$id` therefore never changes the URL of a
+    /// reference below it. An `$id` that is not a URL reference fails the whole schema, but
+    /// in `enum` or `const` data, which the validator only walks to a `$ref` target, where it
+    /// leaves the scope unknown.
     fn collect(
         &mut self,
         schema: &'a Value,
         named_scope: Option<&Url>,
-        compile_scope: Option<&Url>,
+        compile_scope: CompileScope,
         default_url: &Url,
     ) -> Result<(), DataContractError> {
         match schema {
@@ -758,27 +961,36 @@ impl<'a> Identifiers<'a> {
                         self.named.insert(named.to_string(), schema);
                         named_here = Some(named);
                     }
-                    compiled_here = Some(
-                        compile_scope
-                            .unwrap_or(default_url)
-                            .join(id)
-                            .map_err(not_a_url)?,
-                    );
+                    let base = match compile_scope {
+                        CompileScope::Default => Some(default_url),
+                        CompileScope::At(url) => Some(url),
+                        CompileScope::Unknown => None,
+                    };
+                    compiled_here = Some(match base.map(|base| base.join(id)) {
+                        Some(Ok(url)) => Some(url),
+                        Some(Err(_)) if named_scope.is_none() => None,
+                        Some(Err(error)) => return Err(not_a_url(error)),
+                        None => None,
+                    });
                 }
                 let named_scope = match named_here.as_ref() {
                     Some(named) => Some(named),
                     None => named_scope,
                 };
                 let compile_scope = match compiled_here.as_ref() {
-                    Some(compiled) if compiled.scheme() == DEFAULT_ROOT_SCHEME => None,
-                    Some(compiled) => Some(compiled),
                     None => compile_scope,
+                    Some(None) => CompileScope::Unknown,
+                    Some(Some(url)) if url.scheme() == DEFAULT_ROOT_SCHEME => CompileScope::Default,
+                    Some(Some(url)) => CompileScope::At(url),
                 };
                 for (key, value) in entries {
                     if key == "$ref" {
                         if let Some(reference) = value.as_text() {
-                            let url =
-                                reference_url(compile_scope.unwrap_or(default_url), reference);
+                            let url = match compile_scope {
+                                CompileScope::Default => reference_url(default_url, reference),
+                                CompileScope::At(url) => reference_url(url, reference),
+                                CompileScope::Unknown => None,
+                            };
                             self.references
                                 .push((std::ptr::from_ref(schema), reference, url));
                         }
@@ -835,6 +1047,48 @@ fn last_wins(map: &[(Value, Value)]) -> Result<Vec<(&str, &Value)>, DataContract
         }
     }
     Ok(entries)
+}
+
+/// Whether `schema` carries `maxBytes` or `encryptedFor` anywhere, the keywords the
+/// document type parser reads into a property.
+fn carries_parser_keywords(schema: &Value) -> bool {
+    match schema {
+        Value::Map(map) => map.iter().any(|(key, value)| {
+            matches!(key.as_text(), Some("maxBytes" | "encryptedFor"))
+                || carries_parser_keywords(value)
+        }),
+        Value::Array(elements) => elements.iter().any(carries_parser_keywords),
+        _ => false,
+    }
+}
+
+/// Refuses a key `map` repeats, `only` that key when given, when an entry of it carries
+/// `maxBytes` or `encryptedFor`. The document type parser reads the first entry of a
+/// property name repeated below the document schema, and of a repeated `properties` of the
+/// document schema, where the JSON Schema validator reads the last, so the bounds the
+/// parser checks would not be those of the entry the validation schema holds.
+fn refuse_repeated_entries_the_parser_reads_otherwise(
+    map: &[(Value, Value)],
+    only: Option<&str>,
+) -> Result<(), DataContractError> {
+    let mut entries: BTreeMap<&str, Vec<&Value>> = BTreeMap::new();
+    for (key, value) in map {
+        if let Some(key) = key.as_text() {
+            if only.is_none_or(|only| only == key) {
+                entries.entry(key).or_default().push(value);
+            }
+        }
+    }
+    for (key, values) in entries {
+        if values.len() > 1 && values.iter().any(|value| carries_parser_keywords(value)) {
+            return Err(structure_error(format!(
+                "`{key}` is declared more than once with `maxBytes` or `encryptedFor`, and the \
+                 document type parser reads another of its entries than the JSON Schema \
+                 validator does"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn text<'a>(value: &'a Value, keyword: &str) -> Result<&'a str, DataContractError> {
@@ -916,6 +1170,9 @@ fn build_node(
         .as_map()
         .ok_or_else(|| structure_error("a schema must be an object".to_string()))?;
     reached.schemas.insert(std::ptr::from_ref(schema));
+    if reading == Reading::Document {
+        refuse_repeated_entries_the_parser_reads_otherwise(map, Some("properties"))?;
+    }
     let entries = last_wins(map)?;
     let has_reference = entries.iter().any(|(name, _)| *name == "$ref");
     let mut node = SchemaNode::default();
@@ -968,22 +1225,29 @@ fn build_node(
                 let object = node.object.get_or_insert_with(Default::default);
                 match keyword {
                     ObjectKeyword::Properties => {
-                        let properties = last_wins(value.as_map().ok_or_else(|| {
+                        let properties_map = value.as_map().ok_or_else(|| {
                             structure_error("`properties` must be an object".to_string())
-                        })?)?
-                        .into_iter()
-                        .map(|(property_name, property)| {
-                            Ok((
-                                property_name.to_string(),
-                                build_node(
-                                    property,
-                                    other_keys.of_property(property_name),
-                                    below,
-                                    reached,
-                                )?,
-                            ))
-                        })
-                        .collect::<Result<_, DataContractError>>()?;
+                        })?;
+                        if below == Reading::Property {
+                            refuse_repeated_entries_the_parser_reads_otherwise(
+                                properties_map,
+                                None,
+                            )?;
+                        }
+                        let properties = last_wins(properties_map)?
+                            .into_iter()
+                            .map(|(property_name, property)| {
+                                Ok((
+                                    property_name.to_string(),
+                                    build_node(
+                                        property,
+                                        other_keys.of_property(property_name),
+                                        below,
+                                        reached,
+                                    )?,
+                                ))
+                            })
+                            .collect::<Result<_, DataContractError>>()?;
                         object.properties = Some(properties);
                     }
                     ObjectKeyword::AdditionalProperties => {
@@ -1002,7 +1266,14 @@ fn build_node(
                         })?)?
                         .into_iter()
                         .map(|(property_name, names)| {
-                            Ok((property_name.to_string(), texts_of(names, name)?))
+                            let names = texts_of(names, name)?;
+                            if names.iter().collect::<BTreeSet<_>>().len() != names.len() {
+                                return Err(structure_error(format!(
+                                    "`{name}` lists a name twice for `{property_name}`, and the \
+                                     JSON Schema validator compiles no schema that does"
+                                )));
+                            }
+                            Ok((property_name.to_string(), names))
                         })
                         .collect::<Result<_, DataContractError>>()?;
                         object.dependent_required = Some(dependent_required);
@@ -1021,9 +1292,10 @@ fn build_node(
                         )?))
                     }
                     ArrayKeyword::Contains => {
+                        // The applicator vocabulary admits any schema in `contains`
                         array.contains = Some(Box::new(build_node(
                             value,
-                            other_keys.below(),
+                            OtherKeys::Ignored,
                             below,
                             reached,
                         )?))
@@ -1039,7 +1311,16 @@ fn build_node(
                     StringKeyword::MinLength => string.min_length = Some(count(value, name)?),
                     StringKeyword::MaxLength => string.max_length = Some(count(value, name)?),
                     StringKeyword::MaxBytes => string.max_bytes = Some(count(value, name)?),
-                    StringKeyword::Pattern => string.pattern = Some(text(value, name)?.to_string()),
+                    StringKeyword::Pattern => {
+                        let pattern = text(value, name)?;
+                        if !compiles_as_validator_pattern(pattern) {
+                            return Err(structure_error(format!(
+                                "the JSON Schema validator compiles no `{name}` `{pattern}`, so \
+                                 it refuses every value reaching it"
+                            )));
+                        }
+                        string.pattern = Some(pattern.to_string())
+                    }
                 }
             }
             SchemaKeyword::Number(keyword) => {
@@ -1066,7 +1347,16 @@ fn build_node(
                         }
                         format.format = Some(format_name.to_string())
                     }
-                    FormatKeyword::ByteArray => format.byte_array = Some(boolean(value, name)?),
+                    FormatKeyword::ByteArray => {
+                        if !boolean(value, name)? {
+                            return Err(structure_error(
+                                "`byteArray: false` is checked as `true`: the JSON Schema \
+                                 validator checks a byte array whatever value is written"
+                                    .to_string(),
+                            ));
+                        }
+                        format.byte_array = Some(true)
+                    }
                     FormatKeyword::EncryptedFor => {
                         format.encrypted_for = Some(
                             platform_value::from_value(as_validated(value, name)?).map_err(
@@ -1093,14 +1383,15 @@ fn reference_url(base: &Url, reference: &str) -> Option<Url> {
 
 /// Resolves a `$ref` to the schema the JSON Schema validator reaches through it, from its URL
 /// against the root ([`reference_url`]), short of an `$id` above the reference rescoping it,
-/// which [`refuse_references_an_id_rescopes`] refuses. As the validator does, it looks the
-/// URL up among the schemas an `$id` names (`named`) first, so a location-independent
-/// `#label` resolves; then takes the document the URL without its fragment names, the
-/// schema itself at [`DEFAULT_ROOT_URL`] whatever its `$id`, or a schema an `$id` names;
-/// and follows the fragment there, percent-decoded as a whole so an encoded `/` (`%2F`)
-/// separates segments, as a JSON pointer: in each segment `~1` is `/` and `~0` is `~`, an
-/// array index has no sign or leading zero, and a segment naming a repeated map key reaches
-/// its last entry, as [`last_wins`] reads the map.
+/// which [`refuse_references_an_id_rescopes`] refuses. As the validator does, it first
+/// percent-decodes the URL's fragment as a whole, so a fragment that is not UTF-8 resolves
+/// nowhere and an encoded `/` (`%2F`) separates segments; then looks the URL up among the
+/// schemas an `$id` names (`named`), so a location-independent `#label` resolves; then
+/// takes the document the URL without its fragment names, the schema itself at
+/// [`DEFAULT_ROOT_URL`] whatever its `$id`, or a schema an `$id` names; and follows the
+/// fragment there as a JSON pointer: in each segment `~1` is `/` and `~0` is `~`, an array
+/// index has no sign or leading zero, and a segment naming a repeated map key reaches its
+/// last entry, as [`last_wins`] reads the map.
 fn resolve_reference<'a>(
     root: &'a Value,
     root_url: &Url,
@@ -1113,6 +1404,9 @@ fn resolve_reference<'a>(
         ))
     };
     let url = reference_url(root_url, reference).ok_or_else(unresolved)?;
+    let pointer = percent_decode_str(url.fragment().unwrap_or_default())
+        .decode_utf8()
+        .map_err(|_| unresolved())?;
     if let Some(schema) = named.get(url.as_str()) {
         return Ok(schema);
     }
@@ -1126,23 +1420,19 @@ fn resolve_reference<'a>(
             .copied()
             .ok_or_else(unresolved)?
     };
-    let pointer = percent_decode_str(url.fragment().unwrap_or_default())
-        .decode_utf8()
-        .map_err(|_| unresolved())?;
     if pointer.is_empty() {
         return Ok(document);
     }
     let pointer = pointer.strip_prefix('/').ok_or_else(unresolved)?;
     let mut target = document;
     for segment in pointer.split('/') {
-        let segment = segment.replace("~1", "/").replace("~0", "~");
+        let segment = if segment.contains('~') {
+            Cow::Owned(segment.replace("~1", "/").replace("~0", "~"))
+        } else {
+            Cow::Borrowed(segment)
+        };
         target = match target {
-            Value::Map(map) => map
-                .iter()
-                .rev()
-                .find(|(key, _)| key.as_text() == Some(segment.as_str()))
-                .map(|(_, value)| value)
-                .ok_or_else(unresolved)?,
+            Value::Map(map) => last_value(map, &segment).ok_or_else(unresolved)?,
             Value::Array(elements) => array_index(&segment)
                 .and_then(|index| elements.get(index))
                 .ok_or_else(unresolved)?,

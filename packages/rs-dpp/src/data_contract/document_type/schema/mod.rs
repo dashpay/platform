@@ -1,3 +1,5 @@
+use platform_value::Value;
+
 pub mod allowed_top_level_properties;
 
 mod enrich_with_base_schema;
@@ -25,3 +27,13 @@ pub use validate_schema_compatibility::*;
 
 #[cfg(feature = "validation")]
 pub use validate_max_depth::*;
+
+/// The value of the last `key` entry of `map`, the entry every other reader of a schema
+/// takes (the parser's string map and the JSON the meta-schema and the validator read both
+/// keep the last of a repeated key).
+pub(crate) fn last_value<'a>(map: &'a [(Value, Value)], key: &str) -> Option<&'a Value> {
+    map.iter()
+        .rev()
+        .find(|(entry_key, _)| entry_key.as_text() == Some(key))
+        .map(|(_, value)| value)
+}

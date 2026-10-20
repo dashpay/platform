@@ -990,6 +990,38 @@ fn contracts_with_unread_shorthands(
     ]
 }
 
+/// Each contract of `contracts_with_unread_shorthands`, registered at protocol version 13,
+/// serialized, and read back from those bytes at `read_version` as Drive reads stored
+/// contracts: the case, the registered contract, its bytes and the contract read back.
+fn stored_at_13_and_read_back(
+    read_version: &PlatformVersion,
+) -> Vec<(&'static str, DataContract, Vec<u8>, DataContract)> {
+    let platform_version_13 = PlatformVersion::get(13).expect("protocol version 13");
+    contracts_with_unread_shorthands(platform_version_13)
+        .into_iter()
+        .map(|(case, format)| {
+            let registered = DataContract::try_from_platform_versioned(
+                format,
+                true,
+                &mut vec![],
+                platform_version_13,
+            )
+            .unwrap_or_else(|error| panic!("{case}: protocol version 13 registers it: {error}"));
+            let bytes = registered
+                .serialize_to_bytes_with_platform_version(platform_version_13)
+                .unwrap_or_else(|error| panic!("{case}: it serializes: {error}"));
+            let stored = DataContract::versioned_deserialize_trusted(&bytes, false, read_version)
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "{case}: read back at protocol version {}: {error}",
+                        read_version.protocol_version
+                    )
+                });
+            (case, registered, bytes, stored)
+        })
+        .collect()
+}
+
 /// Read back from state at protocol version 14, where only full validation
 /// refuses, a contract stored before it keeps loading with its schema as
 /// stored: the upgrade reads every stored contract (the contract version
@@ -999,23 +1031,7 @@ fn contracts_with_unread_shorthands(
 fn should_read_back_at_protocol_version_14_a_contract_stored_before_it_with_unread_shorthands() {
     let platform_version_13 = PlatformVersion::get(13).expect("protocol version 13");
     let platform_version_14 = PlatformVersion::get(14).expect("protocol version 14");
-    for (case, format) in contracts_with_unread_shorthands(platform_version_13) {
-        let registered = DataContract::try_from_platform_versioned(
-            format.clone(),
-            true,
-            &mut vec![],
-            platform_version_13,
-        )
-        .unwrap_or_else(|error| panic!("{case}: protocol version 13 registers it: {error}"));
-        let bytes = registered
-            .serialize_to_bytes_with_platform_version(platform_version_13)
-            .unwrap_or_else(|error| panic!("{case}: it serializes: {error}"));
-
-        let stored =
-            DataContract::versioned_deserialize_trusted(&bytes, false, platform_version_14)
-                .unwrap_or_else(|error| {
-                    panic!("{case}: read back at protocol version 14: {error}")
-                });
+    for (case, registered, bytes, stored) in stored_at_13_and_read_back(platform_version_14) {
         assert_eq!(
             stored.document_schemas(),
             registered.document_schemas(),
@@ -1041,22 +1057,8 @@ fn should_read_back_at_protocol_version_14_a_contract_stored_before_it_with_unre
 /// a shadowed shorthand builds one for each of its document types.
 #[test]
 fn should_build_the_validation_schema_of_a_contract_stored_with_unread_shorthands() {
-    let platform_version_13 = PlatformVersion::get(13).expect("protocol version 13");
     let platform_version = PlatformVersion::latest();
-    for (case, format) in contracts_with_unread_shorthands(platform_version_13) {
-        let registered = DataContract::try_from_platform_versioned(
-            format,
-            true,
-            &mut vec![],
-            platform_version_13,
-        )
-        .unwrap_or_else(|error| panic!("{case}: protocol version 13 registers it: {error}"));
-        let bytes = registered
-            .serialize_to_bytes_with_platform_version(platform_version_13)
-            .unwrap_or_else(|error| panic!("{case}: it serializes: {error}"));
-        let stored = DataContract::versioned_deserialize_trusted(&bytes, false, platform_version)
-            .unwrap_or_else(|error| panic!("{case}: read back at the latest version: {error}"));
-
+    for (case, _, _, stored) in stored_at_13_and_read_back(platform_version) {
         for name in stored.document_types().keys() {
             stored
                 .document_type_validation_schema(name, platform_version)

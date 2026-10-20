@@ -37,7 +37,9 @@ pub enum SchemaKeyword {
 )]
 #[strum(serialize_all = "camelCase")]
 pub enum AnyKeyword {
-    /// `$ref`: a JSON pointer to a schema the value must also match.
+    /// `$ref`: a reference to a schema the value must also match, a URL the validator
+    /// resolves through the schemas an `$id` names first and then by its fragment as a JSON
+    /// pointer.
     #[strum(serialize = "$ref")]
     Ref,
     /// `type`.
