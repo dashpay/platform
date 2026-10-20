@@ -49,7 +49,9 @@ export default function startGroupNodesTaskFactory(
       minerConfig && minerConfig.get('network') === NETWORK_LOCAL
     );
 
-    const platformBuildConfig = configGroup.find((config) => (
+    // Each node's own config decides which of its services are built from local
+    // sources, so every node that builds any is built for
+    const buildConfigs = configGroup.filter((config) => (
       isServiceBuildRequired(config)
     ));
 
@@ -57,8 +59,10 @@ export default function startGroupNodesTaskFactory(
       {
         // A caller that has already built the images - restart builds them
         // before it stops anything - says so, and the build is not repeated
-        enabled: (ctx) => Boolean(platformBuildConfig) && !ctx.skipBuildServices,
-        task: () => buildServicesTask(platformBuildConfig),
+        enabled: (ctx) => buildConfigs.length > 0 && !ctx.skipBuildServices,
+        task: () => new Listr(buildConfigs.map((config) => ({
+          task: () => buildServicesTask(config),
+        }))),
       },
       {
         title: 'Starting nodes',

@@ -213,6 +213,24 @@ describe('startGroupNodesTaskFactory', () => {
       expect(dependencies.buildServicesTask).to.have.been.calledOnceWith(configs[0]);
     });
 
+    // Nothing makes the members of a group build the same services: each node's
+    // own configuration decides which of its images come from local sources
+    it('should build the images of every node that builds any', async function it() {
+      const drive = createBuildingConfig(this.sinon);
+      const rsDapi = createConfig(this.sinon, 'local_1', 20002, 'local');
+
+      rsDapi.get.withArgs('platform.enable').returns(true);
+      rsDapi.get.withArgs('platform.dapi.rsDapi.docker.build.enabled').returns(true);
+
+      const { dependencies, startGroupNodesTask } = createFactory(this.sinon);
+
+      await startGroupNodesTask([drive, rsDapi]).run({ waitForReadiness: false });
+
+      expect(dependencies.buildServicesTask).to.have.been.calledTwice();
+      expect(dependencies.buildServicesTask).to.have.been.calledWith(drive);
+      expect(dependencies.buildServicesTask).to.have.been.calledWith(rsDapi);
+    });
+
     // Restart builds the images before it stops anything, so that a build
     // failure cannot leave the group down. Building them again here would make
     // every restart of a development group pay for the whole build twice.

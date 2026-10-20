@@ -93,6 +93,23 @@ describe('Group restart command', () => {
     expect(buildServicesTask).to.have.been.calledBefore(stopNodeTask);
   });
 
+  // Nothing makes the members of a group build the same services: each node's
+  // own configuration decides which of its images come from local sources
+  it('should build the local images of every node that builds any before stopping the first one', async () => {
+    const [drive, rsDapi] = configGroup;
+
+    buildDriveFromSources(drive);
+    rsDapi.get.withArgs('platform.enable').returns(true);
+    rsDapi.get.withArgs('platform.dapi.rsDapi.docker.build.enabled').returns(true);
+
+    await run();
+
+    expect(buildServicesTask).to.have.been.calledTwice();
+    expect(buildServicesTask).to.have.been.calledWith(drive);
+    expect(buildServicesTask).to.have.been.calledWith(rsDapi);
+    expect(buildServicesTask.secondCall.calledBefore(stopNodeTask.firstCall)).to.be.true();
+  });
+
   it('should not stop any node when a local image can not be built', async () => {
     buildDriveFromSources(configGroup[0]);
 
