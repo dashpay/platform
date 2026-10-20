@@ -201,9 +201,9 @@ pub struct StringConstraints {
     /// as a property, and on the items of one, the elements of a typed array.
     pub max_bytes: Option<u64>,
     /// `pattern`, as written. The validator rewrites the ECMA escapes `\d`, `\w`, `\s`, their
-    /// negations and `\cX` before compiling it with the `regex` crate (see
-    /// [`compiles_as_validator_pattern`]); the builder refuses a pattern that does not
-    /// compile so, since the validator then refuses every value reaching it.
+    /// negations and `\cX` before compiling it with the `regex` crate under that crate's
+    /// default size limit; the builder refuses a pattern that does not compile so, since the
+    /// validator then refuses every value reaching it.
     pub pattern: Option<String>,
 }
 
@@ -580,15 +580,15 @@ const VALIDATOR_FORMATS: [&str; 10] = [
     "uri",
 ];
 
-/// The size limit the document validator compiles a `pattern` under, the `regex` options
-/// it gives its JSON Schema validator.
-const VALIDATOR_PATTERN_SIZE_LIMIT: usize = 5 * (1 << 20);
-
 /// Whether the JSON Schema validator compiles `pattern`, as the pinned fork's
 /// `convert_regex` does: it replaces each ECMA control escape `\cX` with its control
 /// character, rewrites the classes `\d`, `\D`, `\w`, `\W`, `\s` and `\S` as explicit ones,
-/// and compiles the result with the `regex` crate under [`VALIDATOR_PATTERN_SIZE_LIMIT`],
-/// which refuses look-around and backreferences.
+/// and compiles the result with the `regex` crate, which refuses look-around and
+/// backreferences. The size limit is the crate's default: the document validator compiles
+/// a contract it loaded from state with default `regex` options, and every node validates
+/// documents against a contract so loaded. Registration compiles the schema under a smaller
+/// limit, so every pattern the document schema reaches directly also compiles here; one a
+/// `$ref` target holds is compiled only when a document reaches it, under the default.
 fn compiles_as_validator_pattern(pattern: &str) -> bool {
     let mut controlled = String::with_capacity(pattern.len());
     let mut chars = pattern.chars().peekable();
@@ -628,10 +628,7 @@ fn compiles_as_validator_pattern(pattern: &str) -> bool {
             None => converted.push(current),
         }
     }
-    regex::RegexBuilder::new(&converted)
-        .size_limit(VALIDATOR_PATTERN_SIZE_LIMIT)
-        .build()
-        .is_ok()
+    regex::Regex::new(&converted).is_ok()
 }
 
 /// What a schema node may carry besides the [`SchemaKeyword`]s.

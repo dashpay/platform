@@ -1,4 +1,7 @@
 use crate::data_contract::document_type::property_names;
+// Edited in place, inert for protocol versions 14 and 15, which select this generation:
+// `last_value` moved to the schema module with its body unchanged, so every output and
+// error is the same.
 use crate::data_contract::document_type::schema::last_value;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::serialized_version::property_names as contract_property_names;

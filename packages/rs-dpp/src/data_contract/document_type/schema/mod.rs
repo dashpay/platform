@@ -28,9 +28,11 @@ pub use validate_schema_compatibility::*;
 #[cfg(feature = "validation")]
 pub use validate_max_depth::*;
 
-/// The value of the last `key` entry of `map`, the entry every other reader of a schema
-/// takes (the parser's string map and the JSON the meta-schema and the validator read both
-/// keep the last of a repeated key).
+/// The value of the last `key` entry of `map`, the entry every other reader of a property
+/// schema takes (the parser's string map and the JSON the meta-schema and the validator read
+/// both keep the last of a repeated key). `expand_property_type_shorthands` v0, which
+/// protocol versions 14 and 15 select, reads through this, so its result is consensus
+/// behavior: a reader that needs another rule must use a new helper.
 pub(crate) fn last_value<'a>(map: &'a [(Value, Value)], key: &str) -> Option<&'a Value> {
     map.iter()
         .rev()

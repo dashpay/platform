@@ -1619,10 +1619,33 @@ fn should_refuse_a_pattern_the_validator_does_not_compile() {
         platform_value!({ "type": "string", "maxLength": 8, "pattern": "^(?!admin)" }),
     ));
     assert!(message.contains("compiles no `pattern`"), "{message}");
+
+    // A pattern too large for registration's size limit compiles under the crate's default,
+    // which the validator of a contract loaded from state uses; one too large for that does
+    // not
+    let schema = build(with_value(
+        platform_value!({ "type": "string", "maxLength": 512, "pattern": PATTERN_BETWEEN_LIMITS }),
+    ));
+    assert_eq!(
+        string(property(&schema.root, "value")).pattern.as_deref(),
+        Some(PATTERN_BETWEEN_LIMITS)
+    );
+    let message = refusal(with_value(
+        platform_value!({ "type": "string", "maxLength": 512, "pattern": PATTERN_BEYOND_LIMITS }),
+    ));
+    assert!(message.contains("compiles no `pattern`"), "{message}");
 }
 
+/// A pattern the `regex` crate compiles under its default size limit but not under the
+/// 5 MiB one registration compiles a schema with.
+const PATTERN_BETWEEN_LIMITS: &str = "^\\p{L}{180}$";
+
+/// A pattern the `regex` crate compiles under neither size limit.
+const PATTERN_BEYOND_LIMITS: &str = "^\\p{L}{400}$";
+
 /// What the test above rests on: the existing validator compiles the rewritten ECMA escapes
-/// and refuses look-around.
+/// and refuses look-around, and the validator of a contract loaded from state compiles a
+/// pattern registration's size limit refuses.
 #[cfg(feature = "validation")]
 #[test]
 fn should_match_the_existing_validator_on_patterns() {
@@ -1643,6 +1666,12 @@ fn should_match_the_existing_validator_on_patterns() {
     };
     assert!(compiles("^\\d\\w\\s\\cA$"));
     assert!(!compiles("^(?!admin)"));
+
+    assert!(compiles(PATTERN_BETWEEN_LIMITS));
+    assert!(JsonSchemaValidator::new()
+        .compile(&schema(PATTERN_BETWEEN_LIMITS), PlatformVersion::latest())
+        .is_err());
+    assert!(!compiles(PATTERN_BEYOND_LIMITS));
 }
 
 #[test]
