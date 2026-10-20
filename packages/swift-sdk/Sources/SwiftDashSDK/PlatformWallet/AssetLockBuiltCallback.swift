@@ -12,9 +12,16 @@ public struct AssetLockBuiltOutPoint: Hashable, Sendable {
     /// (`<txid display hex>:<vout>`), the key of the lock's persisted row.
     public let outPointHex: String
 
-    /// Decodes the 36-byte raw outpoint (`txid_le || vout_le`) the FFI
-    /// reports.
-    init(rawBytes: Data) {
+    /// Decodes a 36-byte raw outpoint (`txid_le || vout_le`), the form the
+    /// FFI reports, so a consumer can build one to test its handler. `nil`
+    /// for any other length.
+    public init?(rawBytes: Data) {
+        guard rawBytes.count == 36 else { return nil }
+        self.init(reportedBytes: rawBytes)
+    }
+
+    /// Decodes the 36 bytes the FFI reports.
+    init(reportedBytes rawBytes: Data) {
         precondition(rawBytes.count == 36, "outpoint must be 36 bytes")
         txid = Data(rawBytes.prefix(32))
         // Byte-copy into an aligned local: `Data` does not guarantee
@@ -61,7 +68,7 @@ private func assetLockBuiltTrampoline(
 ) {
     guard let context, let outPoint36 else { return }
     let box = Unmanaged<AssetLockBuiltBox>.fromOpaque(context).takeUnretainedValue()
-    box.handler(AssetLockBuiltOutPoint(rawBytes: Data(bytes: outPoint36, count: 36)))
+    box.handler(AssetLockBuiltOutPoint(reportedBytes: Data(bytes: outPoint36, count: 36)))
 }
 
 /// Runs `body` with the C callback and context for `handler` (both `nil`

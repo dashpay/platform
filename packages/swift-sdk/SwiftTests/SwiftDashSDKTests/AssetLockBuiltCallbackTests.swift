@@ -41,6 +41,26 @@ final class AssetLockBuiltCallbackTests: XCTestCase {
         txidWire + Data([0x04, 0x03, 0x02, 0x01])
     }
 
+    /// A consumer can build the value its handler receives, to test the
+    /// handler without a funding call.
+    func testShouldBuildTheSameOutPointAConsumerIsHanded() throws {
+        let received = Received()
+        let buffer = [UInt8](Self.rawOutPoint)
+        withAssetLockBuiltCallback({ received.append($0) }) { callback, context in
+            buffer.withUnsafeBufferPointer { callback?(context, $0.baseAddress) }
+        }
+
+        let built = try XCTUnwrap(AssetLockBuiltOutPoint(rawBytes: Self.rawOutPoint))
+        XCTAssertEqual(received.all, [built])
+        XCTAssertEqual(built.txid, Self.txidWire)
+        XCTAssertEqual(built.vout, Self.vout)
+    }
+
+    func testShouldRefuseARawOutPointOfAnyOtherLength() {
+        XCTAssertNil(AssetLockBuiltOutPoint(rawBytes: Self.txidWire))
+        XCTAssertNil(AssetLockBuiltOutPoint(rawBytes: Self.rawOutPoint + Data([0])))
+    }
+
     func testShouldPassNoCallbackAndNoContextForANilHandler() {
         let (callback, context) = withAssetLockBuiltCallback(nil) { ($0, $1) }
         XCTAssertNil(callback)
