@@ -1388,12 +1388,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// 3. Ingests own sent requests via `add_sent_contact_request`, which
     ///    carries its own sent-side guard so a recurring re-ingest
     ///    creates no phantom pending rows and preserves contact metadata.
-    /// 4. Queue missing receiving accounts for sent-only requests, and for
-    ///    **every** established contact missing a sending account
-    ///    (not only newly-established ones — this also repairs
-    ///    restore-from-seed and best-effort-accept gaps), rebuilds both
-    ///    the `DashpayReceivingFunds` and `DashpayExternalAccount`
-    ///    accounts, with the transient/permanent failure policy.
+    /// 4. Queue missing receiving accounts for sent-only and established
+    ///    contacts, including broken outbound channels. Established contacts
+    ///    also queue missing external accounts unless permanently broken,
+    ///    repairing restore-from-seed and best-effort-accept gaps.
     ///
     /// **Lock ordering (critical).** The account-building registrations
     /// (`register_contact_account`, `register_external_contact_account`)
@@ -1914,8 +1912,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
     }
 
-    /// Collect missing receiving accounts for sent-only requests and account
-    /// pairs for established contacts missing a usable external account.
+    /// Collect missing receiving accounts and recoverable external accounts.
+    /// Broken outbound channels remain eligible for receiving recovery.
     /// Runs under the caller's write guard without awaiting or re-locking.
     pub(super) fn collect_account_build_candidates(
         info: &crate::wallet::platform_wallet::PlatformWalletInfo,
@@ -1947,35 +1945,38 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             }
         }
         for (contact_id, contact) in managed.dashpay().established_contacts() {
-            // Never retry a permanently-broken channel — wait for a
-            // superseding request (which clears the flag on re-establish).
-            if contact.payment_channel_broken {
-                continue;
-            }
             let key = DashpayAccountKey {
                 index: 0,
                 user_identity_id: identity_id.to_buffer(),
                 friend_identity_id: contact_id.to_buffer(),
             };
+            let has_receiving = info
+                .core_wallet
+                .accounts
+                .dashpay_receival_accounts
+                .contains_key(&key);
             let has_external = info
                 .core_wallet
                 .accounts
                 .dashpay_external_accounts
                 .contains_key(&key);
-            if has_external {
-                continue;
-            }
-            // The incoming request carries the counterparty's encrypted
-            // xpub + the key indices needed for ECDH.
-            let incoming = &contact.incoming_request;
-            out.push(AccountBuildCandidate {
-                contact_id: *contact_id,
-                external: Some(ExternalAccountBuild {
+            // A broken outbound channel must not prevent receiving recovery.
+            let external = if has_external || contact.payment_channel_broken {
+                None
+            } else {
+                let incoming = &contact.incoming_request;
+                Some(ExternalAccountBuild {
                     encrypted_public_key: incoming.encrypted_public_key.clone(),
                     our_decryption_key_index: incoming.recipient_key_index,
                     contact_encryption_key_index: incoming.sender_key_index,
-                }),
-            });
+                })
+            };
+            if !has_receiving || external.is_some() {
+                out.push(AccountBuildCandidate {
+                    contact_id: *contact_id,
+                    external,
+                });
+            }
         }
         out
     }
@@ -4874,12 +4875,9 @@ mod sweep_tests {
         assert_eq!(external.our_decryption_key_index, 2);
     }
 
-    /// **Test 4 (permanent failure → no retry):** once a contact's payment
-    /// channel is marked broken, the sweep must NOT re-list it as a
-    /// candidate — no unbounded retry until a superseding request clears
-    /// the flag.
+    /// A broken outbound channel still permits recovery of our receiving account.
     #[test]
-    fn broken_payment_channel_is_skipped_by_the_sweep() {
+    fn should_recover_missing_receiving_account_for_broken_payment_channel() {
         let our = 1u8;
         let contact = 2u8;
         let our_id = Identifier::from([our; 32]);
@@ -4896,9 +4894,15 @@ mod sweep_tests {
 
         let candidates =
             DashPayView::<SpvBroadcaster>::collect_account_build_candidates(&info, &our_id);
+        assert_eq!(
+            candidates.len(),
+            1,
+            "receiving recovery must remain available"
+        );
+        assert_eq!(candidates[0].contact_id, contact_id);
         assert!(
-            candidates.is_empty(),
-            "a permanently-broken contact must not be retried by the sweep"
+            candidates[0].external.is_none(),
+            "broken external channels must not be retried"
         );
     }
 
@@ -6150,12 +6154,15 @@ mod drain_budget_tests {
 }
 
 #[cfg(test)]
-mod sent_only_restore_tests {
+mod receiving_restore_tests {
     use super::*;
     use crate::broadcaster::SpvBroadcaster;
-    use crate::changeset::PendingContactCryptoOp;
+    use crate::changeset::{
+        ClientStartState, PendingContactCryptoOp, PersistenceError, PlatformWalletChangeSet,
+        PlatformWalletPersistence,
+    };
     use crate::events::{EventHandler, PlatformEventHandler};
-    use crate::wallet::persister::NoPlatformPersistence;
+    use crate::wallet::platform_wallet::WalletId;
     use crate::PlatformWalletManager;
     use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
     use dash_sdk::error::ContextProviderError;
@@ -6167,11 +6174,44 @@ mod sent_only_restore_tests {
     use dpp::identity::v0::IdentityV0;
     use dpp::version::PlatformVersion;
     use key_wallet::account::account_collection::DashpayAccountKey;
+    use key_wallet::account::AccountType;
+    use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+    use key_wallet::managed_account::ManagedCoreFundsAccount;
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use key_wallet::Network;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default)]
+    struct RecordingPersistence(Mutex<Vec<PlatformWalletChangeSet>>);
+
+    impl PlatformWalletPersistence for RecordingPersistence {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.0.lock().expect("recording lock").push(changeset);
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    enum RestoreState {
+        SentOnly,
+        Established {
+            has_external: bool,
+            payment_channel_broken: bool,
+        },
+    }
 
     struct NoopEventHandler;
     impl EventHandler for NoopEventHandler {}
@@ -6213,6 +6253,37 @@ mod sent_only_restore_tests {
 
     #[tokio::test]
     async fn should_discover_sent_only_account_and_backfill_without_reciprocal_request() {
+        assert_receiving_recovery(RestoreState::SentOnly).await;
+    }
+
+    #[tokio::test]
+    async fn should_recover_receiving_account_when_external_account_exists() {
+        assert_receiving_recovery(RestoreState::Established {
+            has_external: true,
+            payment_channel_broken: false,
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn should_recover_receiving_account_when_payment_channel_is_broken() {
+        assert_receiving_recovery(RestoreState::Established {
+            has_external: false,
+            payment_channel_broken: true,
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn should_recover_receiving_account_when_broken_channel_has_external_account() {
+        assert_receiving_recovery(RestoreState::Established {
+            has_external: true,
+            payment_channel_broken: true,
+        })
+        .await;
+    }
+
+    async fn assert_receiving_recovery(state: RestoreState) {
         let owner = Identifier::from([0xAA; 32]);
         let contact = Identifier::from([0xBB; 32]);
         let document_id = Identifier::from([0xCC; 32]);
@@ -6265,7 +6336,7 @@ mod sent_only_restore_tests {
                 .expect("contact query expectation");
         }
 
-        let persister = Arc::new(NoPlatformPersistence);
+        let persister = Arc::new(RecordingPersistence::default());
         let manager = PlatformWalletManager::new(
             Arc::new(sdk),
             Arc::clone(&persister),
@@ -6287,9 +6358,25 @@ mod sent_only_restore_tests {
             .expect("wallet");
         let wallet_id = wallet.wallet_id();
         let iw = wallet.identity();
+        let has_external = matches!(
+            state,
+            RestoreState::Established {
+                has_external: true,
+                ..
+            }
+        );
+        let channel_broken = matches!(
+            state,
+            RestoreState::Established {
+                payment_channel_broken: true,
+                ..
+            }
+        );
         {
             let mut wm = iw.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            let (core_wallet, info) = wm
+                .get_wallet_mut_and_info_mut(&wallet_id)
+                .expect("wallet and info");
             info.identity_manager
                 .add_identity(
                     Identity::V0(IdentityV0 {
@@ -6303,6 +6390,42 @@ mod sent_only_restore_tests {
                     &iw.persister,
                 )
                 .expect("owner");
+            if let RestoreState::Established { .. } = state {
+                let managed = info
+                    .identity_manager
+                    .managed_identity_mut(&owner)
+                    .expect("owner");
+                let outgoing = ContactRequest::new(owner, contact, 0, 0, 0, vec![1; 96], 200, 100);
+                let incoming = ContactRequest::new(contact, owner, 0, 0, 0, vec![2; 96], 300, 100);
+                let mut established = EstablishedContact::new(contact, outgoing, incoming);
+                established.payment_channel_broken = channel_broken;
+                established.external_account_reference = has_external.then_some(0);
+                managed.apply_established_contact(established);
+            }
+            if has_external {
+                let account_type = AccountType::DashpayExternalAccount {
+                    index: 0,
+                    user_identity_id: owner.to_buffer(),
+                    friend_identity_id: contact.to_buffer(),
+                };
+                let account_xpub = ExtendedPubKey::from_priv(
+                    &ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master key"),
+                );
+                core_wallet
+                    .add_account(account_type, Some(account_xpub))
+                    .expect("external account");
+                let account = key_wallet::Account {
+                    parent_wallet_id: Some(wallet_id),
+                    account_type,
+                    network: Network::Testnet,
+                    account_xpub,
+                    is_watch_only: true,
+                };
+                info.core_wallet
+                    .accounts
+                    .insert_funds_bearing_account(ManagedCoreFundsAccount::from_account(&account))
+                    .expect("managed external account");
+            }
             info.core_wallet.update_synced_height(1000);
         }
         let report = iw
@@ -6321,10 +6444,16 @@ mod sent_only_restore_tests {
                 .identity_manager
                 .managed_identity(&owner)
                 .expect("owner");
-            assert!(managed.dashpay().established_contacts().is_empty());
-            assert_eq!(managed.dashpay().sent_contact_requests().len(), 1);
+            assert_eq!(
+                managed.dashpay().established_contacts().len(),
+                usize::from(!matches!(state, RestoreState::SentOnly))
+            );
+            assert_eq!(
+                managed.dashpay().sent_contact_requests().len(),
+                usize::from(matches!(state, RestoreState::SentOnly))
+            );
             let queue = &managed.dashpay().pending_contact_crypto;
-            assert_eq!(queue.len(), 1, "sent discovery must queue receiving only");
+            assert_eq!(queue.len(), 1, "recovery must queue receiving only");
             assert!(matches!(
                 queue[0].op,
                 PendingContactCryptoOp::RegisterReceiving
@@ -6334,6 +6463,22 @@ mod sent_only_restore_tests {
                 .accounts
                 .dashpay_receival_accounts
                 .is_empty());
+        }
+        {
+            let writes = persister.0.lock().expect("recording lock");
+            let queued: Vec<_> = writes
+                .iter()
+                .flat_map(|cs| &cs.pending_contact_crypto_added)
+                .collect();
+            assert_eq!(
+                queued.len(),
+                1,
+                "the receiving operation must reach persistence"
+            );
+            assert!(matches!(
+                queued[0].op,
+                PendingContactCryptoOp::RegisterReceiving
+            ));
         }
         let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
         assert_eq!(
@@ -6364,11 +6509,27 @@ mod sent_only_restore_tests {
                 user_identity_id: owner.to_buffer(),
                 friend_identity_id: contact.to_buffer(),
             }));
-        assert!(info
-            .core_wallet
-            .accounts
-            .dashpay_external_accounts
-            .is_empty());
+        assert_eq!(
+            info.core_wallet.accounts.dashpay_external_accounts.len(),
+            usize::from(has_external)
+        );
+        let managed = info
+            .identity_manager
+            .managed_identity(&owner)
+            .expect("owner");
+        assert!(managed.dashpay().pending_contact_crypto.is_empty());
+        if let Some(contact) = managed.dashpay().established_contacts().get(&contact) {
+            assert_eq!(contact.payment_channel_broken, channel_broken);
+        }
+        let writes = persister.0.lock().expect("recording lock");
+        assert_eq!(
+            writes
+                .iter()
+                .flat_map(|cs| &cs.pending_contact_crypto_cleared)
+                .count(),
+            1,
+            "the completed operation must be durably dequeued"
+        );
         assert!(
             DashPayView::<SpvBroadcaster>::collect_account_build_candidates(info, &owner)
                 .is_empty(),
