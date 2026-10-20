@@ -269,6 +269,30 @@ jobs:
             done
           done
 
+      # Dash Core links dash-sdk-cxx as a static archive whose trust anchors
+      # are its own quorum keys and masternode list: no trusted HTTP
+      # provider, HTTP client or OpenSSL may enter its closure, and it builds
+      # its SDK from the embedder's endpoints only.
+      - name: Check the dash-sdk-cxx trust closure
+        run: |
+          closure=$(cargo tree -p dash-sdk-cxx -e normal --prefix none --locked | awk '{print $1}' | sort -u)
+          for banned in rs-sdk-trusted-context-provider reqwest openssl-sys native-tls; do
+            if grep -qx "$banned" <<<"$closure"; then
+              echo "::error::$banned leaked into dash-sdk-cxx's dependency tree"
+              exit 1
+            fi
+          done
+          if grep -rnE 'new_mainnet|new_testnet|fetch_unproved|dash_network_seeds' \
+              packages/rs-sdk-cxx/src packages/rs-sdk-cxx/include; then
+            echo "::error::dash-sdk-cxx must build its SDK from the embedder's endpoints only"
+            exit 1
+          fi
+
+      # The Rust tests cannot see a broken header layout: link and run the
+      # C++ side from the staged headers and archive alone.
+      - name: Link dash-sdk-cxx from C++
+        run: packages/rs-sdk-cxx/scripts/cxx-smoke.sh
+
       - name: Detect immutable structure changes
         if: github.event_name == 'pull_request'
         run: |
@@ -462,6 +486,7 @@ jobs:
             --package platform-wallet \
             --package platform-wallet-storage \
             --package rs-sdk-ffi \
+            --package dash-sdk-cxx \
             --package platform-wallet-ffi \
             --package rs-dapi-client \
             --package platform-serialization \
