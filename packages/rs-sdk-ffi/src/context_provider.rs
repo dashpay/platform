@@ -11,7 +11,7 @@ use dash_sdk::dpp::data_contract::TokenConfiguration;
 use dash_sdk::dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::error::ContextProviderError;
-use drive_proof_verifier::ContextProvider;
+use drive_proof_verifier::{ContextProvider, QuorumKeyFuture};
 
 use crate::context_callbacks::{CallbackContextProvider, ContextProviderCallbacks};
 use crate::types::Network;
@@ -188,6 +188,10 @@ impl AuxiliaryContextProvider {
         self.provider.get_data_contract(id, platform_version)
     }
 
+    fn register_data_contract(&self, contract: Arc<DataContract>) {
+        self.provider.register_data_contract(contract)
+    }
+
     fn get_token_configuration(
         &self,
         token_id: &Identifier,
@@ -242,6 +246,10 @@ impl ContextProvider for SpvContextProvider {
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         self.auxiliary.get_data_contract(id, platform_version)
+    }
+
+    fn register_data_contract(&self, contract: Arc<DataContract>) {
+        self.auxiliary.register_data_contract(contract)
     }
 
     fn get_token_configuration(
@@ -331,6 +339,24 @@ impl ContextProvider for AdaptiveContextProvider {
         }
     }
 
+    /// Only the trusted route can fetch a key missing from its cache. The SPV
+    /// route never fetches, so strict SPV never falls back to trusted keys.
+    fn fetch_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Option<QuorumKeyFuture> {
+        match self.active_source() {
+            AdaptiveContextProviderSource::Trusted => self.trusted.fetch_quorum_public_key(
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+            ),
+            AdaptiveContextProviderSource::Spv => None,
+        }
+    }
+
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         activation_height(self.network)
     }
@@ -341,6 +367,10 @@ impl ContextProvider for AdaptiveContextProvider {
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         self.auxiliary.get_data_contract(id, platform_version)
+    }
+
+    fn register_data_contract(&self, contract: Arc<DataContract>) {
+        self.auxiliary.register_data_contract(contract)
     }
 
     fn get_token_configuration(
@@ -408,7 +438,7 @@ mod tests {
     use dash_sdk::dpp::data_contract::TokenConfiguration;
     use dash_sdk::dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
     use dash_sdk::dpp::version::PlatformVersion;
-    use drive_proof_verifier::{ContextProvider, ContextProviderError};
+    use drive_proof_verifier::{ContextProvider, ContextProviderError, QuorumKeyFuture};
 
     use super::{
         AdaptiveContextProvider, AdaptiveContextProviderSource, AuxiliaryContextProvider,
@@ -436,6 +466,16 @@ mod tests {
                 )));
             }
             Ok([self.key_byte; 48])
+        }
+
+        fn fetch_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _height: u32,
+        ) -> Option<QuorumKeyFuture> {
+            let key = [self.key_byte; 48];
+            Some(Box::pin(async move { Ok(Some(key)) }))
         }
 
         fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
@@ -635,5 +675,97 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("auxiliary token route"));
+    }
+
+    /// The SDK fetches a quorum key missing from the trusted cache through
+    /// `fetch_quorum_public_key`. That fetch must follow the lookup's route:
+    /// a trusted route fetches from the trusted service, an SPV route never
+    /// does, or strict SPV would accept a trusted key after an SPV miss.
+    #[tokio::test]
+    async fn fetches_missing_quorum_keys_only_on_the_trusted_route() {
+        let (adaptive, spv) = adaptive(provider("trusted", 0x11), Network::Testnet);
+        let fetch =
+            |adaptive: &AdaptiveContextProvider| adaptive.fetch_quorum_public_key(1, [2; 32], 3);
+
+        let fetched = fetch(&adaptive).expect("Auto without SPV fetches from trusted");
+        assert_eq!(fetched.await.unwrap(), Some([0x11; 48]));
+
+        adaptive.set_mode(ContextProviderMode::Spv);
+        assert!(
+            fetch(&adaptive).is_none(),
+            "SPV without a source must not fetch"
+        );
+
+        let _lease = spv
+            .acquire(provider("spv", 0x22), Arc::new(|| Ok(true)))
+            .unwrap();
+        assert!(fetch(&adaptive).is_none(), "SPV must not fetch");
+
+        adaptive.set_mode(ContextProviderMode::Auto);
+        assert!(
+            fetch(&adaptive).is_none(),
+            "Auto on ready SPV must not fetch"
+        );
+
+        adaptive.set_mode(ContextProviderMode::Trusted);
+        let fetched = fetch(&adaptive).expect("Trusted fetches");
+        assert_eq!(fetched.await.unwrap(), Some([0x11; 48]));
+    }
+
+    /// Contracts the SDK learns about (for example after a contract fetch)
+    /// must reach the local resolver that SPV and Adaptive read contracts
+    /// from; otherwise proofs over those contracts cannot be verified.
+    #[test]
+    fn registers_contracts_with_the_local_resolver() {
+        use dash_sdk::dpp::data_contract::accessors::v0::{
+            DataContractV0Getters, DataContractV0Setters,
+        };
+        use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+
+        let contract = Arc::new(
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("DPNS contract"),
+        );
+        let mut unknown = Arc::unwrap_or_clone(Arc::clone(&contract));
+        unknown.set_id(Identifier::new([0x5a; 32]));
+        let unknown = Arc::new(unknown);
+        let id = unknown.id();
+
+        let trusted: Arc<dyn ContextProvider> = Arc::new(
+            crate::sdk::build_trusted_provider(
+                Network::Regtest,
+                Some("http://127.0.0.1:1".to_string()),
+            )
+            .unwrap_or_else(|_| panic!("trusted provider")),
+        );
+        let auxiliary = Arc::new(AuxiliaryContextProvider::new(Arc::clone(&trusted)));
+        let controller = Arc::new(SpvSourceController::default());
+        let fixed = SpvContextProvider::new(
+            Arc::clone(&controller),
+            Arc::clone(&auxiliary),
+            Network::Regtest,
+        );
+        let adaptive =
+            AdaptiveContextProvider::new(trusted, controller, auxiliary, Network::Regtest);
+
+        assert!(fixed
+            .get_data_contract(&id, PlatformVersion::latest())
+            .unwrap()
+            .is_none());
+        fixed.register_data_contract(Arc::clone(&unknown));
+        assert_eq!(
+            fixed
+                .get_data_contract(&id, PlatformVersion::latest())
+                .unwrap()
+                .map(|contract| contract.id()),
+            Some(id)
+        );
+        assert_eq!(
+            adaptive
+                .get_data_contract(&id, PlatformVersion::latest())
+                .unwrap()
+                .map(|contract| contract.id()),
+            Some(id)
+        );
     }
 }

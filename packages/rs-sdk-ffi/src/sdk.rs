@@ -568,7 +568,7 @@ const TRUSTED_PROVIDER_CACHE_SIZE: std::num::NonZeroUsize = match std::num::NonZ
 /// fetched asynchronously by the SDK, which then verifies the response it
 /// already holds again: proof verification never blocks on the network, and
 /// concurrent misses share one refresh.
-fn build_trusted_provider(
+pub(crate) fn build_trusted_provider(
     network: Network,
     quorum_url: Option<String>,
 ) -> Result<rs_sdk_trusted_context_provider::TrustedHttpContextProvider, DashSDKError> {
