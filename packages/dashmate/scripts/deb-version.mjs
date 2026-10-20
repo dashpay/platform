@@ -15,7 +15,13 @@
  *
  *   4.1.0                    -> 4.1.0-1
  *   4.1.0-rc.3               -> 4.1.0~rc.3-1
+ *   4.1.0-dev.11             -> 4.1.0~~dev.11-1
  *   4.1.0, second build      -> 4.1.0-2
+ *
+ * Releases go through dev, then beta, then rc. Prerelease labels compare by their
+ * characters, so `~dev` would sort above `~beta` and the first beta would look like a
+ * downgrade. A second `~` sorts below a single one, which keeps dev builds below every
+ * other prerelease of the same version.
  *
  * The git sha is not part of the version; it is carried in the package description.
  *
@@ -32,15 +38,18 @@ const NUMERIC_IDENTIFIER = '(?:0|[1-9]\\d*)';
 // The prerelease is deliberately restricted to alphanumerics and dots. A `-` there would
 // end up in the Debian upstream version and move where dpkg splits off the revision.
 const PRERELEASE_IDENTIFIER = '(?:0|[1-9]\\d*|\\d*[A-Za-z][0-9A-Za-z]*)';
-const BUILD_IDENTIFIER = '[0-9A-Za-z]+';
 
+// Build metadata (`+...`) is not accepted: no release is tagged with it, and semver gives it
+// no weight in ordering, so it has no place in a version apt orders by.
 const VERSION_REGEX = new RegExp(`^v?(${NUMERIC_IDENTIFIER}\\.${NUMERIC_IDENTIFIER}\\.${NUMERIC_IDENTIFIER})`
-  + `(?:-(${PRERELEASE_IDENTIFIER}(?:\\.${PRERELEASE_IDENTIFIER})*))?`
-  + `(?:\\+(${BUILD_IDENTIFIER}(?:\\.${BUILD_IDENTIFIER})*))?$`);
+  + `(?:-(${PRERELEASE_IDENTIFIER}(?:\\.${PRERELEASE_IDENTIFIER})*))?$`);
 
-// Debian revisions are alphanumerics plus `+ . ~`; starting with a digit keeps them sortable.
-const REVISION_REGEX = /^\d[0-9A-Za-z.+~]*$/;
-const EPOCH_REGEX = /^\d+$/;
+// Both are set by hand when a release needs them, and dpkg reads `01` as `1`, so a leading
+// zero would produce a version that is no higher than the one it was meant to overtake.
+const REVISION_REGEX = /^[1-9]\d*$/;
+const EPOCH_REGEX = /^[1-9]\d*$/;
+
+const DEV_PRERELEASE = 'dev';
 
 /**
  * @param {string} version - semver version, with or without a leading `v`
@@ -61,39 +70,38 @@ function debVersionFromSemver(version, options = {}) {
   }
 
   if (!REVISION_REGEX.test(String(revision))) {
-    throw new Error(`"${revision}" is not a valid Debian revision. Expected a number, optionally`
-      + ' followed by alphanumerics, dots, pluses or tildes');
+    throw new Error(`"${revision}" is not a valid Debian revision. Expected a positive number`
+      + ' without leading zeros');
   }
 
   if (epoch !== '' && !EPOCH_REGEX.test(String(epoch))) {
-    throw new Error(`"${epoch}" is not a valid Debian epoch. Expected a number`);
+    throw new Error(`"${epoch}" is not a valid Debian epoch. Expected a positive number without`
+      + ' leading zeros');
   }
 
-  const [, release, prerelease, build] = parsed;
+  const [, release, prerelease] = parsed;
 
-  const upstream = release + (prerelease === undefined ? '' : `~${prerelease}`);
+  let upstream = release;
 
-  // Semver gives build metadata no weight when ordering versions, so it must not reach the
-  // upstream version, where dpkg would sort `4.1.0+build.5` above plain `4.1.0`. It marks a
-  // repackaging of one upstream release, which is what the Debian revision is for.
-  const debianRevision = build === undefined ? revision : `${revision}+${build}`;
+  if (prerelease !== undefined) {
+    upstream += prerelease.split('.')[0] === DEV_PRERELEASE ? `~~${prerelease}` : `~${prerelease}`;
+  }
 
-  return `${epoch === '' ? '' : `${epoch}:`}${upstream}-${debianRevision}`;
+  return `${epoch === '' ? '' : `${epoch}:`}${upstream}-${revision}`;
 }
 
 /**
  * The version as it appears in the package file name.
  *
- * Debian leaves the epoch out of file names. `~` is dropped as well, because GitHub
- * rewrites characters like it when a release asset is uploaded, and the renamed asset
- * would no longer match the `Filename:` field of the apt index that points at it. Only
- * the name changes; the version apt installs comes from the control file.
+ * Debian leaves the epoch out of file names. Each run of `~` becomes a single `.`, because
+ * GitHub rewrites `~` when a release asset is uploaded, and the name has to be known before
+ * the upload. Only the name changes; the version apt installs comes from the control file.
  *
  * @param {string} debVersion - as returned by debVersionFromSemver
  * @returns {string}
  */
 function debFileNameVersion(debVersion) {
-  return debVersion.replace(/^\d+:/, '').replace(/~/g, '.');
+  return debVersion.replace(/^\d+:/, '').replace(/~+/g, '.');
 }
 
 export { debVersionFromSemver, debFileNameVersion };
@@ -102,8 +110,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const forFileName = args[0] === '--file-name';
   const version = forFileName ? args[1] : args[0];
+  const expectedArgumentCount = forFileName ? 2 : 1;
 
-  if (!version) {
+  if (!version || args.length !== expectedArgumentCount) {
     console.error('Usage: deb-version.mjs [--file-name] SEMVER_VERSION\n\n'
       + '  Prints the Debian package version for a semver version, or the version as it\n'
       + '  appears in the package file name.\n\n'

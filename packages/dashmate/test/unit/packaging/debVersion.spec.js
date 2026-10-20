@@ -183,6 +183,43 @@ describe('deb-version.mjs', () => {
       });
     });
 
+    // Releases go through dev, then beta, then rc, and `dev` sorts above `beta` by its
+    // letters, so a plain `~dev` would make the first beta look like a downgrade.
+    it('should order the real 4.2.0 dev, beta and rc releases upward', () => {
+      const releases = [
+        '4.2.0-dev.10', '4.2.0-dev.11', '4.2.0-beta.1', '4.2.0-beta.7', '4.2.0-rc.1', '4.2.0',
+      ];
+
+      releases.slice(1).forEach((release, index) => {
+        const previous = debVersionFromSemver(releases[index]);
+        const next = debVersionFromSemver(release);
+
+        expect(compareDebVersions(next, previous)).to.be.above(
+          0,
+          `${next} must sort above ${previous}`,
+        );
+      });
+    });
+
+    it('should keep dev builds below every other prerelease of the same version', () => {
+      expect(debVersionFromSemver('5.1.0-dev.11')).to.equal('5.1.0~~dev.11-1');
+
+      ['5.1.0-alpha.1', '5.1.0-beta.1', '5.1.0-hotfix.1', '5.1.0-pr.1825.1', '5.1.0-rc.1'].forEach((prerelease) => {
+        expect(compareDebVersions(
+          debVersionFromSemver('5.1.0-dev.11'),
+          debVersionFromSemver(prerelease),
+        )).to.be.below(0, `dev must sort below ${prerelease}`);
+      });
+    });
+
+    // The last packages built under the git sha scheme are the 5.0.0 release candidates.
+    // The first 5.1 release must reach operators who installed one of them, without an epoch.
+    it('should sort the first 5.1 dev build above every 5.0.0 git sha version', () => {
+      ['5.0.0.8fccc88fc8-1', '5.0.0.ffffffffff-1', '5.0.0.9999999999-1'].forEach((legacy) => {
+        expect(compareDebVersions(debVersionFromSemver('5.1.0-dev.1'), legacy)).to.be.above(0);
+      });
+    });
+
     // Inherent to any correct scheme, semver included, and the reason prereleases cannot
     // share a suite with stable: apt offers whatever sorts highest, so a stable node would
     // be walked onto a release candidate.
@@ -216,25 +253,13 @@ describe('deb-version.mjs', () => {
       expect(debVersionFromSemver('4.1.0', { epoch: '' })).to.equal('4.1.0-1');
     });
 
-    it('should keep build metadata out of the upstream version', () => {
-      // Semver gives build metadata no weight when ordering, so putting it in the upstream
-      // version would let `4.1.0+build.5` outrank the plain `4.1.0` release
-      expect(debVersionFromSemver('4.1.0+build.5')).to.equal('4.1.0-1+build.5');
-
-      const repackaged = debVersionFromSemver('4.1.0+build.5');
-
-      // it is still a distinct build, so it has to be installable over the plain one
-      expect(compareDebVersions(repackaged, debVersionFromSemver('4.1.0'))).to.be.above(0);
-      // but it must not overtake a revision bump or the next release
-      expect(compareDebVersions(repackaged, debVersionFromSemver('4.1.0', { revision: '2' }))).to.be.below(0);
-      expect(compareDebVersions(repackaged, debVersionFromSemver('4.1.1'))).to.be.below(0);
-    });
-
     it('should refuse anything that is not a version it can translate', () => {
       expect(() => debVersionFromSemver('4.1')).to.throw('not a version');
       expect(() => debVersionFromSemver('4.1.0-rc.3; rm -rf /')).to.throw('not a version');
       // a `-` inside the prerelease would move where dpkg splits off the Debian revision
       expect(() => debVersionFromSemver('4.1.0-rc-3')).to.throw('not a version');
+      // build metadata has no weight in semver ordering, so it cannot be given one here
+      expect(() => debVersionFromSemver('4.1.0+build.5')).to.throw('not a version');
       expect(() => debVersionFromSemver('4.1.0', { revision: '1; id' })).to.throw('revision');
       expect(() => debVersionFromSemver('4.1.0', { epoch: 'x' })).to.throw('epoch');
     });
@@ -242,10 +267,15 @@ describe('deb-version.mjs', () => {
     it('should refuse leading zeroes, which dpkg would read as the same version', () => {
       expect(compareDebVersions('4.1.0~rc.01-1', '4.1.0~rc.1-1')).to.equal(0);
       expect(compareDebVersions('04.1.0-1', '4.1.0-1')).to.equal(0);
+      expect(compareDebVersions('4.1.0-01', '4.1.0-1')).to.equal(0);
+      expect(compareDebVersions('01:4.1.0-1', '1:4.1.0-1')).to.equal(0);
 
       expect(() => debVersionFromSemver('4.1.0-rc.01')).to.throw('not a version');
       expect(() => debVersionFromSemver('04.1.0')).to.throw('not a version');
       expect(() => debVersionFromSemver('4.01.0')).to.throw('not a version');
+      // a hand-set revision or epoch of `01` would not overtake the `1` it was meant to
+      expect(() => debVersionFromSemver('4.1.0', { revision: '01' })).to.throw('revision');
+      expect(() => debVersionFromSemver('4.1.0', { epoch: '01' })).to.throw('epoch');
     });
   });
 
@@ -254,11 +284,12 @@ describe('deb-version.mjs', () => {
       expect(debFileNameVersion('4.1.0-1')).to.equal('4.1.0-1');
     });
 
-    // GitHub rewrites characters like `~` when a release asset is uploaded, which would
-    // leave the published file name disagreeing with the index that points at it.
+    // GitHub rewrites `~` when a release asset is uploaded, so a name containing it would
+    // not be the name the release ends up with.
     it('should drop the tilde a prerelease is published with', () => {
       expect(debFileNameVersion('4.1.0~rc.3-1')).to.equal('4.1.0.rc.3-1');
       expect(debFileNameVersion(debVersionFromSemver('4.1.0-beta.2'))).to.equal('4.1.0.beta.2-1');
+      expect(debFileNameVersion(debVersionFromSemver('5.1.0-dev.11'))).to.equal('5.1.0.dev.11-1');
     });
 
     // Debian leaves the epoch out of file names, and `:` would not survive publishing either
@@ -281,9 +312,10 @@ describe('deb-version.mjs', () => {
     // Both variables are always given a value, so a rebuild that exports
     // DASHMATE_DEB_REVISION in the shell running the tests cannot reach the
     // script and change the version a test asserts.
-    function run(version, env) {
-      return execFileSync(process.execPath, [SCRIPT_PATH, version], {
+    function runArgs(args, env) {
+      return execFileSync(process.execPath, [SCRIPT_PATH, ...args], {
         encoding: 'utf8',
+        stdio: 'pipe',
         env: {
           ...process.env,
           DASHMATE_DEB_REVISION: '1',
@@ -293,17 +325,33 @@ describe('deb-version.mjs', () => {
       }).trim();
     }
 
+    function run(version, env) {
+      return runArgs([version], env);
+    }
+
     it('should take the revision and the epoch from the environment', () => {
       expect(run('v4.1.0', { DASHMATE_DEB_REVISION: '2' })).to.equal('4.1.0-2');
       expect(run('v4.1.0', { DASHMATE_DEB_EPOCH: '1' })).to.equal('1:4.1.0-1');
     });
 
-    // The release workflow declares both variables in one place so that the version gate
-    // and the packaging job cannot read different values. That exports the epoch as set
-    // but empty, which has to mean the same thing as not setting it at all.
+    // The release workflow reads the epoch from a repository variable that is normally
+    // unset, which exports it as set but empty. That has to mean no epoch at all.
     it('should ignore an epoch that is set to an empty value', () => {
       expect(run('v4.1.0', { DASHMATE_DEB_REVISION: '1', DASHMATE_DEB_EPOCH: '' })).to.equal('4.1.0-1');
       expect(run('v4.1.0-rc.3', { DASHMATE_DEB_REVISION: '1', DASHMATE_DEB_EPOCH: '' })).to.equal('4.1.0~rc.3-1');
+    });
+
+    it('should print the file name version with --file-name', () => {
+      expect(runArgs(['--file-name', 'v5.1.0-dev.1'], { DASHMATE_DEB_EPOCH: '1' })).to.equal('5.1.0.dev.1-1');
+    });
+
+    // A mistyped command must fail rather than print a version for something else,
+    // such as the control version when `--file-name` was put after the version.
+    it('should refuse unexpected arguments', () => {
+      expect(() => runArgs(['4.1.0', '1', '2'])).to.throw();
+      expect(() => runArgs(['4.1.0', '--file-name'])).to.throw();
+      expect(() => runArgs(['--file-name'])).to.throw();
+      expect(() => runArgs([])).to.throw();
     });
   });
 });
