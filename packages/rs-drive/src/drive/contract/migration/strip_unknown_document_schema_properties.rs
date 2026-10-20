@@ -328,7 +328,9 @@ mod tests {
 
         // Rewrite the stored bytes the way a pre-v12 contract could look:
         // with a top-level document schema property the v1 meta-schema does
-        // not allow. The element keeps its flags and grows.
+        // not allow. The element keeps its flags and grows by more than the
+        // 32 bytes below which a removal is never refunded, so an
+        // implementation that settled the stripped bytes would show here.
         let bincode_config = bincode::config::standard()
             .with_big_endian()
             .with_no_limit();
@@ -340,11 +342,17 @@ mod tests {
             .get_mut("person")
             .expect("expected the person document type");
         person_schema
-            .insert("legacyUnknownProperty".to_string(), Value::Bool(true))
+            .insert(
+                "legacyUnknownProperty".to_string(),
+                Value::Text("x".repeat(64)),
+            )
             .expect("expected to add the unknown property");
         let inflated_bytes = bincode::encode_to_vec(&serialization_format, bincode_config)
             .expect("expected to encode the inflated contract");
-        assert!(inflated_bytes.len() > clean_bytes.len());
+        assert!(
+            inflated_bytes.len() - clean_bytes.len() >= 32,
+            "the stripped bytes must exceed the refund dust limit"
+        );
         drive
             .grove_insert(
                 (&contract_path).into(),
