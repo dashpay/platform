@@ -45,6 +45,7 @@ fn key_entry(identity: Identifier, key_id: u32, byte: u8) -> IdentityKeyEntry {
             identity_index: 0,
             key_index: u32::from(byte),
         }),
+        derivation_rejected: false,
     }
 }
 
@@ -109,6 +110,60 @@ fn should_keep_a_stored_breadcrumb_when_an_upsert_carries_none() {
     expected.derivation_indices = derived.derivation_indices;
     assert_eq!(cs.upserts.get(&(id, 0)), Some(&expected));
     assert_eq!(cs.upserts.get(&(id, 1)), Some(&watch_only_disabled));
+}
+
+/// An upsert that settles a key as not derived (`derivation_rejected`)
+/// clears a stored breadcrumb, which can only be a stale inferred one, while
+/// one that leaves the key's origin unknown keeps a valid same-key one.
+#[test]
+fn should_clear_a_stored_breadcrumb_a_load_rejects_and_keep_an_unknown_one() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xD5);
+    ensure_wallet_meta(&persister, &w);
+    let id = Identifier::from([0x0F; 32]);
+    platform_wallet_storage::sqlite::schema::identities::ensure_exists(
+        &persister.lock_conn_for_test(),
+        &w,
+        id.as_slice().try_into().unwrap(),
+    )
+    .unwrap();
+    let store = |entries: Vec<IdentityKeyEntry>| {
+        let mut keys = IdentityKeysChangeSet::default();
+        for entry in entries {
+            keys.upserts
+                .insert((entry.identity_id, entry.key_id), entry);
+        }
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    identity_keys: Some(keys),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    };
+    // Key 0: an external key carrying the legacy inferred breadcrumb; key 1:
+    // a wallet-derived key with its verified one.
+    store(vec![key_entry(id, 0, 0x11), key_entry(id, 1, 0x22)]);
+
+    let mut rejected = key_entry(id, 0, 0x11);
+    rejected.derivation_indices = None;
+    rejected.derivation_rejected = true;
+    let mut unknown = key_entry(id, 1, 0x22);
+    unknown.derivation_indices = None;
+    store(vec![rejected.clone(), unknown]);
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let cs = identity_keys::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load_state");
+    drop(conn);
+    let mut cleared = rejected;
+    cleared.derivation_rejected = false;
+    assert_eq!(cs.upserts.get(&(id, 0)), Some(&cleared));
+    assert_eq!(cs.upserts.get(&(id, 1)), Some(&key_entry(id, 1, 0x22)));
 }
 
 /// A stored row over the blob size limit is not read into memory to look for

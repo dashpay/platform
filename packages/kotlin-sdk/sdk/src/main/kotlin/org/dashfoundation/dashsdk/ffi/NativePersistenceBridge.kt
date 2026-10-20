@@ -545,6 +545,10 @@ abstract class NativePersistenceBridge {
      * key's usage limits (protocol version 14): the credits it may spend over
      * its lifetime when [totalBudgetIsSome], and the block time in milliseconds
      * from which it can no longer sign when [expiresAtIsSome].
+     *
+     * With no derivation indices, [derivationRejected] says Rust settled the
+     * key as not derived from the wallet, so a stored derivation breadcrumb
+     * is cleared; `false` leaves the key's origin unknown, which keeps it.
      */
     @Suppress("LongParameterList")
     open fun onPersistIdentityKeyUpsert(
@@ -571,6 +575,7 @@ abstract class NativePersistenceBridge {
         totalBudget: Long = 0L,
         expiresAtIsSome: Boolean = false,
         expiresAt: Long = 0L,
+        derivationRejected: Boolean = false,
     ): Int = 0
 
     /** One `(identityId, keyId)` removal. Descriptor `([B[BI)I`. */

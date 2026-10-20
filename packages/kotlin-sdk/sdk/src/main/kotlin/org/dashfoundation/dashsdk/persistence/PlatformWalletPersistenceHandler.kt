@@ -1900,6 +1900,7 @@ class PlatformWalletPersistenceHandler(
         totalBudget: Long,
         expiresAtIsSome: Boolean,
         expiresAt: Long,
+        derivationRejected: Boolean,
     ): Int = guarded {
         // Item 1 — private-key persistence (the CLAUDE.md "one allowed
         // exception" shape). The `IdentityKeyEntryFFI` payload carries only
@@ -2049,10 +2050,19 @@ class PlatformWalletPersistenceHandler(
                 // failure marker; the null identifier is). They make the
                 // pending-repair state reconstructible after restart
                 // (dashpay/platform#4060 finding 5).
-                derivationIdentityIndex =
-                    if (derivationIndicesIsSome) identityIndex else existing?.derivationIdentityIndex,
-                derivationKeyIndex =
-                    if (derivationIndicesIsSome) keyIndex else existing?.derivationKeyIndex,
+                // Without indices, an upsert that leaves the key's origin
+                // unknown keeps the stored breadcrumb; one that settled the
+                // key as not derived ([derivationRejected]) clears it.
+                derivationIdentityIndex = when {
+                    derivationIndicesIsSome -> identityIndex
+                    derivationRejected -> null
+                    else -> existing?.derivationIdentityIndex
+                },
+                derivationKeyIndex = when {
+                    derivationIndicesIsSome -> keyIndex
+                    derivationRejected -> null
+                    else -> existing?.derivationKeyIndex
+                },
                 identityId = identityBase58,
                 identityIdData = identityId,
                 createdAt = existing?.createdAt ?: java.util.Date(),

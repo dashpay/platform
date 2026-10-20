@@ -1339,6 +1339,7 @@ fn identity_key_entry(
         public_key_hash: [byte; 20],
         wallet_id: None,
         derivation_indices: None,
+        derivation_rejected: false,
     }
 }
 

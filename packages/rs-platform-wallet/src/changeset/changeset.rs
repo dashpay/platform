@@ -1023,6 +1023,12 @@ pub struct KeyWithBreadcrumb {
     pub key: dpp::identity::IdentityPublicKey,
     /// Derivation coordinates for re-derivable keys; `None` for watch-only.
     pub breadcrumb: Option<KeyDerivationBreadcrumb>,
+    /// With no `breadcrumb`: whether the key's origin was settled as not
+    /// derived from the wallet (a derivation candidate was checked against
+    /// it and did not reproduce it, or the caller declared it external), so
+    /// a stored breadcrumb is cleared, rather than unknown, which keeps one.
+    /// See [`IdentityKeyEntry::derivation_rejected`].
+    pub derivation_rejected: bool,
 }
 
 /// A single identity-key entry in an [`IdentityKeysChangeSet`].
@@ -1053,6 +1059,36 @@ pub struct IdentityKeyEntry {
     /// re-derive the private key. `None` means "view-only, no
     /// private key recoverable".
     pub derivation_indices: Option<IdentityKeyDerivationIndices>,
+    /// With no `derivation_indices`, what the entry knows about the key's
+    /// origin. `false`: unknown here (a refresh, a limits update, a disable),
+    /// so a persister keeps the breadcrumb a row already holds. `true`: the
+    /// key was settled as not derived from the wallet (a load or discovery
+    /// checked its derivation candidate and it did not reproduce the key, or
+    /// the caller of an update declared it external), so a persister clears
+    /// a stored breadcrumb, which can only be a stale inferred one. Ignored
+    /// with `derivation_indices`.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub derivation_rejected: bool,
+}
+
+impl IdentityKeyEntry {
+    /// Whether this breadcrumb-less entry leaves the key's origin unknown,
+    /// so it takes the breadcrumb `earlier` holds for the same public key
+    /// (an earlier row or a stored one), as every persister keeps a stored
+    /// breadcrumb. A breadcrumb belongs to one key's derivation, so `earlier`
+    /// must carry the same public key and scope.
+    pub fn takes_breadcrumb_of(&self, earlier: &IdentityKeyEntry) -> bool {
+        use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        self.derivation_indices.is_none()
+            && !self.derivation_rejected
+            && earlier.derivation_indices.is_some()
+            && earlier.public_key_hash == self.public_key_hash
+            && earlier.public_key.data() == self.public_key.data()
+            && self
+                .wallet_id
+                .zip(earlier.wallet_id)
+                .is_none_or(|(own, other)| own == other)
+    }
 }
 
 /// Changes to per-identity key storage.
@@ -1077,17 +1113,16 @@ impl Merge for IdentityKeysChangeSet {
         // used by other scalar-entry changesets in this module; the
         // "don't emit both upsert + remove for the same key in one
         // mutation" invariant is enforced on the emitter side. A later
-        // entry without a derivation breadcrumb keeps the earlier one's,
-        // as every persister keeps a stored breadcrumb: a key's derivation
-        // never changes, and a buffered write that only knows the key's
-        // new state must not turn a wallet-derived key watch-only.
+        // entry that leaves the key's origin unknown keeps the earlier
+        // one's breadcrumb for the same public key, as every persister keeps
+        // a stored breadcrumb: a buffered write that only knows the key's new
+        // state must not turn a wallet-derived key watch-only. One that
+        // settles the key as not derived clears it.
         for (id, mut entry) in other.upserts {
-            if entry.derivation_indices.is_none() {
-                if let Some(earlier) = self.upserts.get(&id) {
-                    if earlier.derivation_indices.is_some() {
-                        entry.wallet_id = earlier.wallet_id;
-                        entry.derivation_indices = earlier.derivation_indices;
-                    }
+            if let Some(earlier) = self.upserts.get(&id) {
+                if entry.takes_breadcrumb_of(earlier) {
+                    entry.wallet_id = earlier.wallet_id;
+                    entry.derivation_indices = earlier.derivation_indices;
                 }
             }
             self.upserts.insert(id, entry);
@@ -2561,6 +2596,7 @@ mod tests {
                 identity_index: 0,
                 key_index,
             }),
+            derivation_rejected: false,
         };
         let changeset = |entry: IdentityKeyEntry| {
             let mut cs = IdentityKeysChangeSet::default();
@@ -2574,6 +2610,26 @@ mod tests {
 
         merged.merge(changeset(entry(Some(8), Some(4))));
         assert_eq!(merged.upserts[&(id, 3)], entry(Some(8), Some(4)));
+
+        // An entry that settles the key as not derived clears it.
+        let mut rejected = entry(Some(9), None);
+        rejected.derivation_rejected = true;
+        merged.merge(changeset(rejected.clone()));
+        assert_eq!(merged.upserts[&(id, 3)], rejected);
+
+        // A breadcrumb belongs to one public key: another key under the same
+        // row id does not take it.
+        let mut merged = changeset(entry(None, Some(3)));
+        let mut other = entry(None, None);
+        other.public_key = IdentityPublicKeyV0 {
+            id: 3,
+            data: vec![7; 33].into(),
+            ..Default::default()
+        }
+        .into();
+        other.public_key_hash = [7; 20];
+        merged.merge(changeset(other.clone()));
+        assert_eq!(merged.upserts[&(id, 3)], other);
     }
 
     #[test]

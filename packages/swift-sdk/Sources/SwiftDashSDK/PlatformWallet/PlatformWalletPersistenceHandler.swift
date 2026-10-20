@@ -4209,6 +4209,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 if let path = identityAuthPath(walletId: resolvedWalletId, indices: indices) {
                     row.identityDerivationPath = path
                 }
+            } else if entry.derivationRejected {
+                // Rust settled the key as not derived from the wallet (its
+                // derivation candidate did not reproduce it, or the caller
+                // declared it external): a path held for it is a stale
+                // inferred one, and the signer must not derive at it. An
+                // entry without indices that leaves the origin unknown
+                // keeps the path.
+                row.identityDerivationPath = nil
             }
 
             row.lastAccessed = Date()
@@ -5247,6 +5255,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         /// `identity.identityPublicKeys`) and so a group bound is not
         /// mistaken for a whole-contract one.
         let contractBounds: ManagedPlatformWallet.ContractBounds?
+        /// With no `derivationIndices`: `true` when Rust settled the key as
+        /// not derived from the wallet, so a stored derivation path is
+        /// cleared; `false` when its origin is unknown, which keeps it.
+        var derivationRejected: Bool = false
     }
 
     // MARK: - Watch-only Restore: Account Addresses
@@ -10318,7 +10330,8 @@ private func persistIdentityKeysCallback(
                 publicKeyHash: dataFromTuple20(e.public_key_hash),
                 walletId: walletId,
                 derivationIndices: indices,
-                contractBounds: bounds
+                contractBounds: bounds,
+                derivationRejected: e.derivation_rejected
             ))
         }
     }

@@ -313,6 +313,13 @@ pub struct IdentityKeyEntryFFI {
     pub total_budget: u64,
     pub expires_at_is_some: bool,
     pub expires_at: u64,
+
+    /// With `derivation_indices_is_some` false: `true` when Rust settled the
+    /// key as not derived from the wallet (its derivation candidate did not
+    /// reproduce it, or the caller declared it external), so the client
+    /// clears a derivation path it holds for the key; `false` when the
+    /// key's origin is unknown here, so the client keeps the path it holds.
+    pub derivation_rejected: bool,
 }
 
 /// Composite identifier for [`IdentityKeysChangeSet::removed`] entries
@@ -365,9 +372,11 @@ pub struct IdentityKeyRemovalFFI {
 //   200       expires_at_is_some      bool
 //   201..=207 (padding to 8)
 //   208..=215 expires_at              u64
+//   216       derivation_rejected     bool
+//   217..=223 (padding to 8)
 //
-// Total size = 216, alignment = 8 (from u64 / pointer).
-const _: [u8; 216] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
+// Total size = 224, alignment = 8 (from u64 / pointer).
+const _: [u8; 224] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 
 // Compile-time guard for `IdentityEntryFFI`. Same rationale as the
@@ -757,6 +766,7 @@ impl IdentityKeyEntryFFI {
             total_budget,
             expires_at_is_some,
             expires_at,
+            derivation_rejected: entry.derivation_indices.is_none() && entry.derivation_rejected,
         }
     }
 }
@@ -1221,6 +1231,7 @@ mod tests {
                 identity_index: 3,
                 key_index: 5,
             }),
+            derivation_rejected: false,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.identity_id, [2u8; 32]);
@@ -1263,10 +1274,25 @@ mod tests {
             public_key_hash: [0x00; 20],
             wallet_id: None,
             derivation_indices: None,
+            derivation_rejected: false,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert!(!ffi.wallet_id_is_some);
         assert!(!ffi.derivation_indices_is_some);
+        assert!(
+            !ffi.derivation_rejected,
+            "an unknown origin keeps a stored path"
+        );
+        let settled = IdentityKeyEntry {
+            derivation_rejected: true,
+            ..entry.clone()
+        };
+        let mut settled_ffi = IdentityKeyEntryFFI::from_entry(&settled);
+        assert!(
+            settled_ffi.derivation_rejected,
+            "a settled origin clears it"
+        );
+        unsafe { free_identity_key_entry_ffi(&mut settled_ffi) };
         assert!(ffi.read_only);
         assert!(ffi.disabled_at_is_some);
         assert_eq!(ffi.disabled_at, 1_700_000_000);
@@ -1298,6 +1324,7 @@ mod tests {
             public_key_hash: [0x11; 20],
             wallet_id: None,
             derivation_indices: None,
+            derivation_rejected: false,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.contract_bounds_kind, 3);
@@ -1327,6 +1354,7 @@ mod tests {
             public_key_hash: [0x11; 20],
             wallet_id: None,
             derivation_indices: None,
+            derivation_rejected: false,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.contract_bounds_kind, 1);
@@ -1359,6 +1387,7 @@ mod tests {
             public_key_hash: [0x22; 20],
             wallet_id: None,
             derivation_indices: None,
+            derivation_rejected: false,
         };
         let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
         assert_eq!(ffi.contract_bounds_kind, 2);

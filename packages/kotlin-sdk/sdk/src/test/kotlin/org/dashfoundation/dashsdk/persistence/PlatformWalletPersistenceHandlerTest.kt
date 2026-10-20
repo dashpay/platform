@@ -1189,6 +1189,34 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun identityKeyUpsertKeepsAnUnknownOriginAndClearsARejectedOne() = runTest {
+        // Without indices, an upsert that leaves the key's origin unknown
+        // keeps the stored breadcrumb; one Rust settled as not derived clears
+        // it (a stale breadcrumb inferred for an external key).
+        val identityId = ByteArray(32) { 15 }
+        seedIdentity(identityId)
+        fun upsert(indicesIsSome: Boolean, rejected: Boolean) {
+            handler.onChangesetBegin(walletId)
+            handler.onPersistIdentityKeyUpsert(
+                walletId, identityId, 0, 0, 0, 0, false, false, 0,
+                ByteArray(33) { 10 }, ByteArray(20), true, walletId,
+                indicesIsSome, 0, 7, 0, ByteArray(32), null,
+                derivationRejected = rejected,
+            )
+            handler.onChangesetEnd(walletId, success = true)
+        }
+        suspend fun stored() = db.publicKeyDao().getByIdentityAndKeyId(identityId.toBase58String(), 0)!!
+
+        upsert(indicesIsSome = true, rejected = false)
+        assertEquals(7, stored().derivationKeyIndex)
+        upsert(indicesIsSome = false, rejected = false)
+        assertEquals(7, stored().derivationKeyIndex)
+        upsert(indicesIsSome = false, rejected = true)
+        assertNull(stored().derivationKeyIndex)
+        assertNull(stored().derivationIdentityIndex)
+    }
+
+    @Test
     fun identityKeyUpsertSkipsDeriveForWatchOnlyKey() = runTest {
         val deriver = FakeDeriver()
         handler = newHandler(deriver)

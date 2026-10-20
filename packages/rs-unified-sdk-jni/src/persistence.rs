@@ -1542,7 +1542,7 @@ unsafe extern "C" fn tramp_persist_identity_keys(
 /// [`BRIDGE_METHOD_TABLE`] so the two cannot drift: the smoke test resolves
 /// the table up front, while the call site only resolves when a key is
 /// first persisted.
-const IDENTITY_KEY_UPSERT_DESCRIPTOR: &str = "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJ)I";
+const IDENTITY_KEY_UPSERT_DESCRIPTOR: &str = "([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJZ)I";
 
 unsafe fn persist_identity_key_upsert(
     env: &mut JNIEnv,
@@ -1584,6 +1584,7 @@ unsafe fn persist_identity_key_upsert(
             JValue::Long(e.total_budget as i64),
             JValue::Bool(e.expires_at_is_some as u8),
             JValue::Long(e.expires_at as i64),
+            JValue::Bool(e.derivation_rejected as u8),
         ],
     )?
     .i()

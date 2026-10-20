@@ -74,14 +74,19 @@ fn breadcrumb_decisions(
         .public_keys()
         .iter()
         .map(|(key_id, on_chain_key)| {
-            let reproduces = candidate_scalars
-                .get(key_id)
+            let candidate = candidate_scalars.get(key_id);
+            let reproduces = candidate
                 .map(|scalar| {
                     on_chain_key
                         .validate_private_key_bytes(scalar, network)
                         .unwrap_or(false)
                 })
                 .unwrap_or(false);
+            // A candidate that does not reproduce the key settles it as not
+            // derived from this wallet, which clears a stale breadcrumb a
+            // client may hold for it; with no candidate (derivation failed)
+            // its origin stays unknown.
+            let derivation_rejected = candidate.is_some() && !reproduces;
             let breadcrumb = if reproduces {
                 // The candidate scalar reproduced the on-chain key, so this
                 // wallet owns it: emit the DIP-9 coordinates. The scalar is
@@ -106,6 +111,7 @@ fn breadcrumb_decisions(
             crate::changeset::KeyWithBreadcrumb {
                 key: on_chain_key.clone(),
                 breadcrumb,
+                derivation_rejected,
             }
         })
         .collect()
@@ -960,6 +966,19 @@ mod tests {
             "reproducible key breadcrumbed"
         );
         assert_eq!(by_id[&1].breadcrumb, None, "foreign key left watch-only");
+        assert!(!by_id[&0].derivation_rejected);
+        assert!(
+            by_id[&1].derivation_rejected,
+            "a checked candidate that does not reproduce the key settles it as not derived"
+        );
+
+        // With no candidate for a key (its derivation failed), its origin
+        // stays unknown.
+        scalars.remove(&1);
+        let decisions = breadcrumb_decisions(&identity, 0, wallet_id, Network::Testnet, &scalars);
+        let unchecked = decisions.iter().find(|d| d.key.id() == 1).unwrap();
+        assert_eq!(unchecked.breadcrumb, None);
+        assert!(!unchecked.derivation_rejected);
     }
 
     /// An on-chain key typed `ECDSA_HASH160` (data = the 20-byte hash of

@@ -362,6 +362,7 @@ impl IdentityWallet {
                         .unwrap_or(key)
                         .clone(),
                     breadcrumb: added_breadcrumb(id),
+                    derivation_rejected: external_key_ids.contains(&id),
                 });
             }
             for &id in &disabled {
@@ -376,6 +377,7 @@ impl IdentityWallet {
                 keys.push(KeyWithBreadcrumb {
                     key: key.clone(),
                     breadcrumb: None,
+                    derivation_rejected: false,
                 });
             }
             // Stored with the identity's snapshot even when no touched key
@@ -400,7 +402,12 @@ impl IdentityWallet {
             .into_iter()
             .map(|key| {
                 let breadcrumb = added_breadcrumb(key.id());
-                KeyWithBreadcrumb { key, breadcrumb }
+                let derivation_rejected = external_key_ids.contains(&key.id());
+                KeyWithBreadcrumb {
+                    key,
+                    breadcrumb,
+                    derivation_rejected,
+                }
             })
             .collect();
         let disabled_at = SystemTime::now()
@@ -939,6 +946,10 @@ mod update_identity_at_revision_tests {
             assert_eq!(stored.public_key, key_3(), "cached at {cached}");
             assert_eq!(stored.derivation_indices, None, "cached at {cached}");
             assert_eq!(stored.wallet_id, None, "cached at {cached}");
+            assert!(
+                stored.derivation_rejected,
+                "a declared external key clears a stale breadcrumb, cached at {cached}"
+            );
         }
     }
 

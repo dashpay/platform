@@ -68,6 +68,7 @@ impl IdentityKeyWire {
             public_key_hash: self.public_key_hash,
             wallet_id: self.wallet_id,
             derivation_indices: self.derivation_indices,
+            derivation_rejected: false,
         })
     }
 }
@@ -203,11 +204,12 @@ pub fn apply(
         // 32 zero bytes instead would produce a row that matches no
         // wallet, no NULL-scoped reader, and no guard.
         let wallet_id_param = super::wallet_id_to_param(wallet_id);
-        // An entry without a derivation breadcrumb keeps the one the row
-        // already holds under this scope, as the Swift and Kotlin persisters
-        // do: a key's derivation never changes, and an upsert that only
+        // An entry without a derivation breadcrumb that leaves the key's
+        // origin unknown keeps the one the row already holds under this
+        // scope, as the Swift and Kotlin persisters do: an upsert that only
         // knows the key's new state (a raised limit, a disable, a refresh)
-        // must not turn a wallet-derived key watch-only.
+        // must not turn a wallet-derived key watch-only. One that settled the
+        // key as not derived (`derivation_rejected`) clears it.
         let mut stored = tx.prepare_cached(
             "SELECT length(public_key_blob), public_key_blob, public_key_hash \
              FROM identity_keys \
@@ -225,7 +227,9 @@ pub fn apply(
                 }
             }
             let mut wire = IdentityKeyWire::from_entry(entry)?;
-            if wire.derivation_indices.is_none() {
+            // An entry that settled the key as not derived clears the row's
+            // breadcrumb; one that leaves its origin unknown keeps it.
+            if wire.derivation_indices.is_none() && !entry.derivation_rejected {
                 let held: Option<(i64, Vec<u8>, Vec<u8>)> = stored
                     .query_row(
                         params![identity_id.as_slice(), i64::from(*key_id), wallet_id_param],
@@ -702,6 +706,7 @@ mod tests {
                 identity_index: 1,
                 key_index: 2,
             }),
+            derivation_rejected: false,
         };
 
         let wire = IdentityKeyWire::from_entry(&entry).expect("encode wire");

@@ -72,6 +72,7 @@ impl ManagedIdentity {
                     public_key_hash: pubkey_hash_of(pub_key),
                     wallet_id: None,
                     derivation_indices: None,
+                    derivation_rejected: false,
                 },
             );
         }
@@ -481,6 +482,7 @@ impl ManagedIdentity {
                     public_key_hash: pubkey_hash_of(key),
                     wallet_id: None,
                     derivation_indices: None,
+                    derivation_rejected: false,
                 },
             );
         }
@@ -512,8 +514,9 @@ impl ManagedIdentity {
     /// Store `keys_cs` with the key rows a refused store queued (see
     /// `pending_key_rows`) and the identity's scalar snapshot as one
     /// changeset. A queued row `keys_cs` carries itself gives way to it (its
-    /// own row is newer) but lends it its breadcrumb when it has none, as a
-    /// persister keeps a stored breadcrumb. Every other one is stored with
+    /// own row is newer) but lends it its breadcrumb when that row leaves the
+    /// origin of the same public key unknown, as a persister keeps a stored
+    /// breadcrumb (see [`IdentityKeyEntry::takes_breadcrumb_of`]). Every other one is stored with
     /// the key as memory holds it now, so a row queued before a later change
     /// to the key (a landed disable, a raised limit) does not take that
     /// change back; a queued key memory no longer holds is dropped. When the
@@ -527,7 +530,7 @@ impl ManagedIdentity {
     ) -> Result<(), PersistenceError> {
         for (id, mut entry) in std::mem::take(&mut self.pending_key_rows) {
             if let Some(own) = keys_cs.upserts.get_mut(&id) {
-                if own.derivation_indices.is_none() && entry.derivation_indices.is_some() {
+                if own.takes_breadcrumb_of(&entry) {
                     own.wallet_id = entry.wallet_id;
                     own.derivation_indices = entry.derivation_indices;
                 }
@@ -536,7 +539,16 @@ impl ManagedIdentity {
             let Some(key) = self.identity.public_keys().get(&entry.key_id) else {
                 continue;
             };
-            entry.public_key_hash = pubkey_hash_of(key);
+            // A breadcrumb belongs to the key it was derived for: a queued
+            // row whose key memory now holds differently leaves its origin
+            // unknown.
+            let public_key_hash = pubkey_hash_of(key);
+            if public_key_hash != entry.public_key_hash || key.data() != entry.public_key.data() {
+                entry.wallet_id = None;
+                entry.derivation_indices = None;
+                entry.derivation_rejected = false;
+            }
+            entry.public_key_hash = public_key_hash;
             entry.public_key = key.clone();
             keys_cs.upserts.insert(id, entry);
         }
@@ -608,6 +620,7 @@ impl ManagedIdentity {
             vec![crate::changeset::KeyWithBreadcrumb {
                 key: public_key,
                 breadcrumb: derivation_breadcrumb,
+                derivation_rejected: false,
             }],
             persister,
         )
@@ -651,6 +664,7 @@ impl ManagedIdentity {
         for KeyWithBreadcrumb {
             key: public_key,
             breadcrumb,
+            derivation_rejected,
         } in keys
         {
             let key_id = public_key.id();
@@ -675,6 +689,7 @@ impl ManagedIdentity {
                     public_key_hash,
                     wallet_id,
                     derivation_indices,
+                    derivation_rejected: derivation_indices.is_none() && derivation_rejected,
                 },
             );
         }
@@ -727,6 +742,7 @@ impl ManagedIdentity {
                 public_key_hash,
                 wallet_id: None,
                 derivation_indices: None,
+                derivation_rejected: false,
             },
         );
         self.store_with_queued_key_rows(keys_cs, persister)
@@ -856,6 +872,7 @@ impl ManagedIdentity {
                     public_key_hash,
                     wallet_id: None,
                     derivation_indices: None,
+                    derivation_rejected: false,
                 },
             );
         }
@@ -1137,10 +1154,12 @@ mod tests {
                 KeyWithBreadcrumb {
                     key: key(3),
                     breadcrumb: None,
+                    derivation_rejected: false,
                 },
                 KeyWithBreadcrumb {
                     key: key(4),
                     breadcrumb: None,
+                    derivation_rejected: false,
                 },
             ]
         };
@@ -1173,6 +1192,7 @@ mod tests {
             let decisions = vec![KeyWithBreadcrumb {
                 key: key(3).with_limits(Some(100), None),
                 breadcrumb: None,
+                derivation_rejected: false,
             }];
             let folded = managed.key_decisions_for_fetch(&identity(revision, 100), decisions);
             assert_eq!(folded[0].key.total_budget(), Some(500), "at {revision}");
@@ -1261,6 +1281,7 @@ mod tests {
         let with_breadcrumb = |key: IdentityPublicKey| KeyWithBreadcrumb {
             breadcrumb: Some((wallet_id, 0, key.id())),
             key,
+            derivation_rejected: false,
         };
         let row = |key_id: KeyID| {
             persister
@@ -1312,6 +1333,7 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: raised.clone(),
                     breadcrumb: None,
+                    derivation_rejected: false,
                 }],
                 &p,
             )
@@ -1389,6 +1411,7 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: key(4),
                     breadcrumb: Some((wallet_id, 0, 4)),
+                    derivation_rejected: false,
                 }],
                 &p,
             )
@@ -1403,6 +1426,102 @@ mod tests {
         let last = rows(&persister, 4).pop().unwrap();
         assert_eq!(last.public_key, disabled);
         assert_eq!(last.derivation_indices, None);
+    }
+
+    /// A refused row lends its breadcrumb only to the same public key: a later
+    /// row of another key under the same id, or a queued row whose key memory
+    /// now holds differently, leaves the origin unknown. A row that settles a
+    /// key as not derived takes nothing.
+    #[test]
+    fn should_lend_a_queued_breadcrumb_only_to_the_same_public_key() {
+        let id = Identifier::from([1u8; 32]);
+        let wallet_id: WalletId = [0xAB; 32];
+        let other_key = |key_id: KeyID| {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                data: dpp::platform_value::BinaryData::new(vec![0x03; 33]),
+                ..match key(key_id) {
+                    IdentityPublicKey::V0(v0) => v0,
+                    _ => unreachable!(),
+                }
+            })
+        };
+        let mut managed = ManagedIdentity::new(
+            Identity::V0(IdentityV0 {
+                id,
+                public_keys: BTreeMap::from([(1, key(1))]),
+                balance: 0,
+                revision: 0,
+            }),
+            0,
+        );
+        managed.wallet_id = Some(wallet_id);
+        let persister = std::sync::Arc::new(ArmedPersister::default());
+        let p = WalletPersister::new(wallet_id, std::sync::Arc::clone(&persister) as _);
+        let row = |key_id: KeyID| {
+            persister
+                .stores
+                .lock()
+                .unwrap()
+                .last()
+                .and_then(|cs| cs.identity_keys.as_ref())
+                .and_then(|keys| keys.upserts.get(&(id, key_id)).cloned())
+        };
+        let refuse = |managed: &mut ManagedIdentity, key: IdentityPublicKey| {
+            persister
+                .armed
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            assert!(managed
+                .add_keys(
+                    vec![KeyWithBreadcrumb {
+                        breadcrumb: Some((wallet_id, 0, key.id())),
+                        key,
+                        derivation_rejected: false,
+                    }],
+                    &p,
+                )
+                .is_err());
+            persister
+                .armed
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+        };
+
+        // Its own row for another public key.
+        refuse(&mut managed, key(2));
+        managed
+            .store_keys_with_snapshot(
+                vec![KeyWithBreadcrumb {
+                    key: other_key(2),
+                    breadcrumb: None,
+                    derivation_rejected: false,
+                }],
+                &p,
+            )
+            .unwrap();
+        assert_eq!(row(2).unwrap().derivation_indices, None);
+
+        // A queued row whose key memory now holds differently.
+        refuse(&mut managed, key(3));
+        managed.identity.add_public_key(other_key(3));
+        managed.store_keys_with_snapshot(Vec::new(), &p).unwrap();
+        let queued = row(3).unwrap();
+        assert_eq!(queued.public_key, other_key(3));
+        assert_eq!(queued.derivation_indices, None);
+
+        // A row that settles the same key as not derived.
+        refuse(&mut managed, key(4));
+        managed
+            .store_keys_with_snapshot(
+                vec![KeyWithBreadcrumb {
+                    key: key(4),
+                    breadcrumb: None,
+                    derivation_rejected: true,
+                }],
+                &p,
+            )
+            .unwrap();
+        let settled = row(4).unwrap();
+        assert_eq!(settled.derivation_indices, None);
+        assert!(settled.derivation_rejected);
     }
 
     /// A key row `add_keys` could not store, breadcrumb included, rides the
@@ -1433,6 +1552,7 @@ mod tests {
                 vec![KeyWithBreadcrumb {
                     key: key(4),
                     breadcrumb: Some((wallet_id, 0, 4)),
+                    derivation_rejected: false,
                 }],
                 &p,
             )
@@ -1671,10 +1791,12 @@ mod tests {
                     crate::changeset::KeyWithBreadcrumb {
                         key: key(0),
                         breadcrumb: Some((wallet_id, 7, 0)),
+                        derivation_rejected: false,
                     },
                     crate::changeset::KeyWithBreadcrumb {
                         key: key(1),
                         breadcrumb: None,
+                        derivation_rejected: false,
                     },
                 ],
                 &p,
@@ -1735,6 +1857,7 @@ mod tests {
                 vec![crate::changeset::KeyWithBreadcrumb {
                     key: key(1),
                     breadcrumb: None,
+                    derivation_rejected: false,
                 }],
                 &p,
             )
@@ -1806,6 +1929,7 @@ mod tests {
             vec![crate::changeset::KeyWithBreadcrumb {
                 key: key(0),
                 breadcrumb: Some((wallet_id, 7, 0)),
+                derivation_rejected: false,
             }],
             &p,
         );
