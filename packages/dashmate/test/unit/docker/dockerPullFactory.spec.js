@@ -58,6 +58,48 @@ describe('dockerPull', () => {
     await expect(promise).to.be.rejectedWith('socket hang up');
   });
 
+  // The daemon and the registry behind it choose this text, and callers print it
+  // to the operator's terminal, where an escape sequence could rewrite or hide
+  // lines that were already printed
+  describe('remote text', () => {
+    const ESC = String.fromCharCode(0x1b);
+    const RLO = String.fromCharCode(0x202e);
+    const forged = `${ESC}[2K\rpull complete${RLO}`;
+
+    it('should strip control characters from the error of a refused pull', async () => {
+      docker.pull = (image, callback) => callback(new Error(`denied: ${forged}`));
+
+      const error = await dockerPull('dashpay/drive:4').then(() => null, (e) => e);
+
+      expect(error.message).to.equal('denied: [2K pull complete');
+    });
+
+    it('should strip control characters from the error of a failed pull stream', async () => {
+      const promise = dockerPull('dashpay/drive:4');
+
+      stream.destroy(new Error(`socket hang up ${forged}`));
+
+      const error = await promise.then(() => null, (e) => e);
+
+      expect(error.message).to.equal('socket hang up [2K pull complete');
+    });
+
+    it('should strip control characters from progress messages', async () => {
+      const messages = [];
+
+      const promise = dockerPull('dashpay/drive:4', (message) => messages.push(message));
+
+      stream.write(`${JSON.stringify({ status: `Downloading ${forged}`, progress: `[==> ]${ESC}[31m`, id: 'a1b2c3' })}\n`);
+      stream.end();
+
+      await promise;
+
+      expect(messages).to.deep.equal([
+        { status: 'Downloading [2K pull complete', progress: '[==> ] [31m', id: 'a1b2c3' },
+      ]);
+    });
+  });
+
   it('should resolve when the pull succeeds', async () => {
     const promise = dockerPull('dashpay/drive:4');
 
