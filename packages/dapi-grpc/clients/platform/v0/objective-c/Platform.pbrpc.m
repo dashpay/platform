@@ -1621,5 +1621,47 @@
              responseClass:[GetShieldedNullifiersResponse class]];
 }
 
+#pragma mark subscribeToStateTransitions(SubscribeToStateTransitionsRequest) returns (stream SubscribeToStateTransitionsResponse)
+
+/**
+ * Streams every committed, successfully executed state transition that matches
+ * one of the request's filters, block by block, from a chosen height onward.
+ * Served by DAPI from the Tenderdash block store; see
+ * `SubscribeToStateTransitionsResponse` for the stream contract.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)subscribeToStateTransitionsWithRequest:(SubscribeToStateTransitionsRequest *)request eventHandler:(void(^)(BOOL done, SubscribeToStateTransitionsResponse *_Nullable response, NSError *_Nullable error))eventHandler{
+  [[self RPCTosubscribeToStateTransitionsWithRequest:request eventHandler:eventHandler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * Streams every committed, successfully executed state transition that matches
+ * one of the request's filters, block by block, from a chosen height onward.
+ * Served by DAPI from the Tenderdash block store; see
+ * `SubscribeToStateTransitionsResponse` for the stream contract.
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCTosubscribeToStateTransitionsWithRequest:(SubscribeToStateTransitionsRequest *)request eventHandler:(void(^)(BOOL done, SubscribeToStateTransitionsResponse *_Nullable response, NSError *_Nullable error))eventHandler{
+  return [self RPCToMethod:@"subscribeToStateTransitions"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[SubscribeToStateTransitionsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithEventHandler:eventHandler]];
+}
+/**
+ * Streams every committed, successfully executed state transition that matches
+ * one of the request's filters, block by block, from a chosen height onward.
+ * Served by DAPI from the Tenderdash block store; see
+ * `SubscribeToStateTransitionsResponse` for the stream contract.
+ */
+- (GRPCUnaryProtoCall *)subscribeToStateTransitionsWithMessage:(SubscribeToStateTransitionsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"subscribeToStateTransitions"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[SubscribeToStateTransitionsResponse class]];
+}
+
 @end
 #endif

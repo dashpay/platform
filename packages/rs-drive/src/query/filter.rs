@@ -32,14 +32,16 @@
 //! - `validate()` performs structural checks: confirms the document type exists for the
 //!   contract, enforces action-specific composition rules (e.g., at least one non-empty
 //!   clause where required), and validates operator/value compatibility for scalar clauses
-//!   like `owner_clause` and `price_clause`.
+//!   like `owner_clause` and `price_clause`. It refuses clause values not yet brought to the
+//!   form the schema stores (`canonicalize_clause_values()`), which matching compares as they are.
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::ops::Deref;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-use dpp::data_contract::document_type::typed_array_property;
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
@@ -66,9 +68,9 @@ use dpp::version::PlatformVersion;
 /// `validate()` performs structural checks (document type exists, clause composition rules).
 #[cfg(any(feature = "server", feature = "verify"))]
 #[derive(Debug, PartialEq, Clone)]
-pub struct DriveDocumentQueryFilter<'a> {
-    /// DataContract
-    pub contract: &'a DataContract,
+pub struct DriveDocumentQueryFilter<C> {
+    /// The data contract: borrowed, or shared (`Arc`) by a filter that outlives one call.
+    pub contract: C,
     /// Document type name
     pub document_type_name: String,
     /// Action-specific clauses
@@ -140,7 +142,7 @@ pub enum DocumentActionMatchClauses {
     },
 }
 
-impl DriveDocumentQueryFilter<'_> {
+impl<C: Deref<Target = DataContract>> DriveDocumentQueryFilter<C> {
     /// Check a transition using only transition-level constraints.
     ///
     /// When to run:
@@ -180,6 +182,10 @@ impl DriveDocumentQueryFilter<'_> {
                     new_document_clauses,
                 } = &self.action_clauses
                 {
+                    // No clause reads the document: skip building its stored form.
+                    if new_document_clauses.is_empty() {
+                        return TransitionCheckResult::Pass;
+                    }
                     let Some(data) = self.data_as_stored(create.data(), platform_version) else {
                         return TransitionCheckResult::Fail;
                     };
@@ -432,47 +438,9 @@ impl DriveDocumentQueryFilter<'_> {
         document_type.data_as_stored(data, platform_version).ok()
     }
 
-    /// Whether `clause` holds for the document's `value` of its field. A clause
-    /// reading the elements of a typed array (`contains`, `containsAny`) matches
-    /// an element that keys as one of its values does, as an indexed documents
-    /// query matches it: an identifier given as bytes or base58 text, or an
-    /// integer of another width, matches the stored element it keys like. Every
-    /// other clause compares values as before.
-    #[cfg(any(feature = "server", feature = "verify"))]
-    fn clause_matches(&self, clause: &WhereClause, value: &Value) -> bool {
-        if !clause.operator.reads_array_elements() {
-            return clause.matches_value(value);
-        }
-        let Some(document_type) = self
-            .contract
-            .document_type_optional_for_name(&self.document_type_name)
-        else {
-            return false;
-        };
-        let Some(typed_array) =
-            typed_array_property(document_type.flattened_properties(), &clause.field)
-        else {
-            return false;
-        };
-        let key = |value: &Value| typed_array.item_type.encode_value_for_tree_keys(value).ok();
-        let wanted: Vec<Vec<u8>> = if clause.operator == WhereOperator::ContainsAny {
-            match clause.in_values().data {
-                Some(values) => values.iter().filter_map(key).collect(),
-                None => return false,
-            }
-        } else {
-            key(&clause.value).into_iter().collect()
-        };
-        let Value::Array(elements) = value else {
-            return false;
-        };
-        elements
-            .iter()
-            .filter_map(key)
-            .any(|element| wanted.contains(&element))
-    }
-
-    /// Single clause evaluator used by both transition and original-document paths.
+    /// Single clause evaluator used by both transition and original-document paths. Values of
+    /// schema properties are canonicalized first, as clause values were: a transition keeps its
+    /// submitter's encoding.
     #[cfg(any(feature = "server", feature = "verify"))]
     fn evaluate_clauses(
         &self,
@@ -494,50 +462,78 @@ impl DriveDocumentQueryFilter<'_> {
             }
         }
 
-        // In clauses
-        for in_clause in &clauses.in_clauses {
-            let field_value = get_value_by_path(document_data, &in_clause.field);
-            if let Some(value) = field_value {
-                if !self.clause_matches(in_clause, value) {
-                    return false;
-                }
-            } else {
+        let document_type = self
+            .contract
+            .document_type_optional_for_name(&self.document_type_name);
+        let properties = document_type
+            .as_ref()
+            .map(|document_type| document_type.flattened_properties());
+        let field_matches = |clause: &WhereClause| {
+            let Some(value) = get_value_by_path(document_data, &clause.field) else {
+                return false;
+            };
+            // `Value` orders null after every number, so a null value would satisfy `> n`; an
+            // ordered comparison never matches null, while equality and IN still can.
+            if value.is_null()
+                && !matches!(clause.operator, WhereOperator::Equal | WhereOperator::In)
+            {
                 return false;
             }
-        }
-
-        // Range clause
-        if let Some(range_clause) = &clauses.range_clause {
-            let field_value = get_value_by_path(document_data, &range_clause.field);
-            if let Some(value) = field_value {
-                if !range_clause.matches_value(value) {
-                    return false;
-                }
-            } else {
-                return false;
+            match properties.and_then(|properties| properties.get(&clause.field)) {
+                Some(property) => canonical_property_value(&property.property_type, value)
+                    .is_some_and(|value| clause.matches_value(&value)),
+                None => clause.matches_value(value),
             }
-        }
+        };
 
-        // Equal clauses
-        for (field, equal_clause) in &clauses.equal_clauses {
-            let field_value = get_value_by_path(document_data, field);
-            if let Some(value) = field_value {
-                if !self.clause_matches(equal_clause, value) {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        }
-
-        true
+        clauses.in_clauses.iter().all(field_matches)
+            && clauses.range_clause.iter().all(field_matches)
+            && clauses.equal_clauses.values().all(field_matches)
     }
 
-    /// Validate the filter structure and clauses.
+    /// Bring every clause value to the form the document type stores its field in, so matching
+    /// compares like with like. Call it before [`Self::validate`], which refuses other forms.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn canonicalize_clause_values(&mut self) -> Result<(), QuerySyntaxError> {
+        let document_type = self
+            .contract
+            .document_type_optional_for_name(&self.document_type_name)
+            .ok_or(QuerySyntaxError::DocumentTypeNotFound(
+                "unknown document type",
+            ))?;
+        canonicalize_action_clauses(document_type, &mut self.action_clauses)?;
+        Ok(())
+    }
+
+    /// Validate the filter structure and clauses, whose values must already be canonical
+    /// ([`Self::canonicalize_clause_values`]): matching compares them as they are.
     ///
     /// In addition to these validations, the subscription host should check the contract's existence.
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn validate(&self) -> QuerySyntaxSimpleValidationResult {
+        let result = self.validate_structure();
+        if !result.is_valid() {
+            return result;
+        }
+        let Some(document_type) = self
+            .contract
+            .document_type_optional_for_name(&self.document_type_name)
+        else {
+            return result;
+        };
+        match canonicalize_action_clauses(document_type, &mut self.action_clauses.clone()) {
+            Ok(false) => result,
+            Ok(true) => QuerySyntaxSimpleValidationResult::new_with_error(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "clause values must be canonical: call `canonicalize_clause_values()` first",
+                ),
+            ),
+            Err(error) => QuerySyntaxSimpleValidationResult::new_with_error(error),
+        }
+    }
+
+    #[cfg(any(feature = "server", feature = "verify"))]
+    fn validate_structure(&self) -> QuerySyntaxSimpleValidationResult {
         // Ensure the document type exists
         let Some(document_type) = self
             .contract
@@ -614,6 +610,18 @@ impl DriveDocumentQueryFilter<'_> {
                     }
                 }
                 if let Some(price) = price_clause {
+                    // IN candidates are bounded and distinct, like any IN clause's; checked after
+                    // normalization, so the same price given in two encodings is a duplicate.
+                    if price.operator == WhereOperator::In {
+                        let candidates = WhereClause {
+                            field: "$price".to_string(),
+                            operator: WhereOperator::In,
+                            value: price.value.clone(),
+                        };
+                        if let Some(error) = candidates.in_values().errors.into_iter().next() {
+                            return QuerySyntaxSimpleValidationResult::new_with_error(error);
+                        }
+                    }
                     let ok = match price.operator {
                         WhereOperator::Equal
                         | WhereOperator::GreaterThan
@@ -687,6 +695,258 @@ impl DriveDocumentQueryFilter<'_> {
                 }
             }
         }
+    }
+}
+
+/// Canonicalize every operand of `action_clauses` as [`canonicalize_where_clause`] does; whether
+/// any operand changed.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn canonicalize_action_clauses(
+    document_type: DocumentTypeRef,
+    action_clauses: &mut DocumentActionMatchClauses,
+) -> Result<bool, QuerySyntaxError> {
+    // The recipient or buyer is an identifier, the price a `u64`.
+    let (clause_sets, scalar_clause): (Vec<&mut InternalClauses>, _) = match action_clauses {
+        DocumentActionMatchClauses::Create {
+            new_document_clauses,
+        } => (vec![new_document_clauses], None),
+        DocumentActionMatchClauses::Replace {
+            original_document_clauses,
+            new_document_clauses,
+        } => (vec![original_document_clauses, new_document_clauses], None),
+        DocumentActionMatchClauses::Delete {
+            original_document_clauses,
+        } => (vec![original_document_clauses], None),
+        DocumentActionMatchClauses::Transfer {
+            original_document_clauses,
+            owner_clause,
+        }
+        | DocumentActionMatchClauses::Purchase {
+            original_document_clauses,
+            owner_clause,
+        } => (
+            vec![original_document_clauses],
+            owner_clause
+                .as_mut()
+                .map(|clause| ("$ownerId", &IDENTIFIER_PROPERTY, clause)),
+        ),
+        DocumentActionMatchClauses::UpdatePrice {
+            original_document_clauses,
+            price_clause,
+        } => (
+            vec![original_document_clauses],
+            price_clause
+                .as_mut()
+                .map(|clause| ("$price", &DocumentPropertyType::U64, clause)),
+        ),
+    };
+    let mut changed = false;
+    for clauses in clause_sets {
+        let InternalClauses {
+            primary_key_in_clause,
+            primary_key_equal_clause,
+            in_clauses,
+            range_clause,
+            equal_clauses,
+        } = clauses;
+        for clause in primary_key_in_clause
+            .iter_mut()
+            .chain(primary_key_equal_clause.iter_mut())
+            .chain(in_clauses.iter_mut())
+            .chain(range_clause.iter_mut())
+            .chain(equal_clauses.values_mut())
+        {
+            let before = clause.value.clone();
+            canonicalize_where_clause(document_type, clause)?;
+            changed |= !same_value(&before, &clause.value);
+        }
+    }
+    if let Some((field, property_type, clause)) = scalar_clause {
+        let canonical = canonical_operand(field, clause.operator, &clause.value, |value| {
+            canonical_property_value(property_type, value)
+        })?;
+        changed |= !same_value(&clause.value, &canonical);
+        clause.value = canonical;
+    }
+    Ok(changed)
+}
+
+/// `Value` equality, except that a NaN equals itself, so a canonical NaN operand stays canonical.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn same_value(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Float(a), Value::Float(b)) => a.to_bits() == b.to_bits(),
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same_value(a, b))
+        }
+        _ => a == b,
+    }
+}
+
+/// The type a filter reads `$id` and the transfer recipient or buyer as.
+#[cfg(any(feature = "server", feature = "verify"))]
+static IDENTIFIER_PROPERTY: DocumentPropertyType = DocumentPropertyType::Identifier;
+
+/// The longest base58 text of a 32-byte identifier.
+#[cfg(any(feature = "server", feature = "verify"))]
+const MAX_BASE58_IDENTIFIER_LEN: usize = 44;
+
+/// Bring a where clause's operand to the form `document_type` stores its field in, refusing a
+/// field that is neither one of its properties nor `$id`.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn canonicalize_where_clause(
+    document_type: DocumentTypeRef,
+    clause: &mut WhereClause,
+) -> Result<(), QuerySyntaxError> {
+    let property_type = match document_type.flattened_properties().get(&clause.field) {
+        Some(property) => &property.property_type,
+        None if clause.field == "$id" => &IDENTIFIER_PROPERTY,
+        // Nothing else is in a transition's data; refused before a codec decodes the operand.
+        None => {
+            return Err(QuerySyntaxError::InvalidWhereClauseComponents(
+                "filter clauses may only name document properties and `$id`",
+            ))
+        }
+    };
+    // A typed array is read by its elements: `contains` names one as an equality does,
+    // `containsAny` several as an `IN` does. A misused element operator is left for `validate`.
+    let (operator, property_type) = match property_type {
+        DocumentPropertyType::TypedArray(typed_array) if clause.operator.reads_array_elements() => {
+            (
+                clause.operator.as_key_operator(),
+                typed_array.item_type.as_ref(),
+            )
+        }
+        DocumentPropertyType::TypedArray(_) => return Ok(()),
+        _ if clause.operator.reads_array_elements() => return Ok(()),
+        property_type => (clause.operator, property_type),
+    };
+    // IN candidates packed as bytes are `u8`s: kept packed for a `u8` (`validate` refuses them
+    // on any other scalar field), listed for wider typed-array elements to canonicalize.
+    if let (WhereOperator::In, Value::Bytes(bytes)) = (operator, &clause.value) {
+        if matches!(property_type, DocumentPropertyType::U8)
+            || !clause.operator.reads_array_elements()
+        {
+            return Ok(());
+        }
+        clause.value = Value::Array(bytes.iter().copied().map(Value::U8).collect());
+    }
+    clause.value = canonical_operand(&clause.field, operator, &clause.value, |value| {
+        canonical_property_value(property_type, value)
+    })?;
+    Ok(())
+}
+
+/// `value` as a property of `property_type` stores it, so every accepted encoding of one value
+/// compares equal: through the index-key codec, except where that form would lose what a
+/// comparison needs. `None` when the value does not encode as the type.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn canonical_property_value(property_type: &DocumentPropertyType, value: &Value) -> Option<Value> {
+    if value.is_null() {
+        return Some(Value::Null);
+    }
+    match property_type {
+        // The index-key form conflates `""` with `"\0"`.
+        DocumentPropertyType::String(_) => matches!(value, Value::Text(_)).then(|| value.clone()),
+        // The index-key form turns -0.0 into NaN.
+        DocumentPropertyType::F64 => value.to_float().ok().map(Value::Float),
+        // The index-key form of an empty byte array decodes as null.
+        DocumentPropertyType::ByteArray(_) => match value {
+            Value::Array(_) => byte_list(value).map(Value::Bytes),
+            _ => value.to_binary_bytes().ok().map(Value::Bytes),
+        },
+        // Refused before the codec reports them: its error message formats the value, which
+        // can panic on text.
+        DocumentPropertyType::U128
+        | DocumentPropertyType::I128
+        | DocumentPropertyType::U64
+        | DocumentPropertyType::I64
+        | DocumentPropertyType::U32
+        | DocumentPropertyType::I32
+        | DocumentPropertyType::U16
+        | DocumentPropertyType::I16
+        | DocumentPropertyType::U8
+        | DocumentPropertyType::I8
+        | DocumentPropertyType::Date
+        | DocumentPropertyType::KeyIdWithReference(_)
+            if !value.is_integer() =>
+        {
+            None
+        }
+        DocumentPropertyType::Boolean if !matches!(value, Value::Bool(_)) => None,
+        // Base58 decoding takes time quadratic in its (unauthenticated) input.
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_) if matches!(value, Value::Text(text) if text.len() > MAX_BASE58_IDENTIFIER_LEN) => {
+            None
+        }
+        // Read as bytes, so a list of bytes is accepted whatever width its integers came in.
+        DocumentPropertyType::Identifier | DocumentPropertyType::IdentifierWithReference(_)
+            if matches!(value, Value::Array(_)) =>
+        {
+            canonical_property_value(property_type, &Value::Bytes(byte_list(value)?))
+        }
+        // Compared by its elements; one that does not encode as the element type is skipped,
+        // as no index keys it.
+        DocumentPropertyType::TypedArray(typed_array) => match value {
+            Value::Array(elements) => Some(Value::Array(
+                elements
+                    .iter()
+                    .filter_map(|element| canonical_property_value(&typed_array.item_type, element))
+                    .collect(),
+            )),
+            _ => None,
+        },
+        _ => property_type
+            .encode_value_for_tree_keys(value)
+            .and_then(|key| property_type.decode_value_for_tree_keys(&key))
+            .ok(),
+    }
+}
+
+/// A list of integers that each fit in a byte, as those bytes: a list of bytes may come as
+/// wider integers, as every integer does over the wire. `None` for anything else.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn byte_list(value: &Value) -> Option<Vec<u8>> {
+    value
+        .as_slice()
+        .ok()?
+        .iter()
+        .map(|element| {
+            element
+                .is_integer()
+                .then(|| element.to_integer::<u8>().ok())
+                .flatten()
+        })
+        .collect()
+}
+
+/// Canonicalize a clause operand with `canonical`: element-wise for the list operands of
+/// `IN` and `BETWEEN*`, directly otherwise.
+#[cfg(any(feature = "server", feature = "verify"))]
+fn canonical_operand(
+    field: &str,
+    operator: WhereOperator,
+    operand: &Value,
+    canonical: impl Fn(&Value) -> Option<Value>,
+) -> Result<Value, QuerySyntaxError> {
+    let convert = |value: &Value| {
+        canonical(value).ok_or_else(|| {
+            QuerySyntaxError::InvalidFormatWhereClause(format!(
+                "a where clause value on '{field}' does not match the field's type"
+            ))
+        })
+    };
+    match (operator, operand) {
+        (
+            WhereOperator::In
+            | WhereOperator::Between
+            | WhereOperator::BetweenExcludeBounds
+            | WhereOperator::BetweenExcludeLeft
+            | WhereOperator::BetweenExcludeRight,
+            Value::Array(values),
+        ) => Ok(Value::Array(
+            values.iter().map(convert).collect::<Result<_, _>>()?,
+        )),
+        _ => convert(operand),
     }
 }
 
@@ -2212,6 +2472,31 @@ mod tests {
     }
 
     #[test]
+    fn should_refuse_duplicate_price_in_candidates_once_normalized() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let price_in = |values: Vec<Value>| DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type_name: "niceDocument".to_string(),
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses: InternalClauses::default(),
+                price_clause: Some(ValueClause {
+                    operator: WhereOperator::In,
+                    value: Value::Array(values),
+                }),
+            },
+        };
+        assert!(price_in(vec![Value::U64(1), Value::U64(1)])
+            .validate()
+            .is_err());
+        assert!(price_in(vec![Value::U64(1); 101]).validate().is_err());
+        // The same price in two encodings is a duplicate once normalized.
+        let mut mixed = price_in(vec![Value::I64(1), Value::U64(1)]);
+        mixed.canonicalize_clause_values().expect("both are prices");
+        assert!(mixed.validate().is_err());
+    }
+
+    #[test]
     fn validate_price_clause_in_with_non_integer_is_invalid() {
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
@@ -2973,6 +3258,372 @@ mod tests {
         assert!(filter.validate().is_err());
     }
 
+    mod canonical_values {
+        use super::*;
+        use dpp::data_contract::DataContractFactory;
+        use dpp::platform_value::platform_value;
+        use dpp::platform_value::string_encoding::Encoding;
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::v0::DocumentCreateTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_create_transition::DocumentCreateTransition;
+        use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::DocumentTransferTransitionV0;
+        use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransition;
+
+        fn fixture_contract() -> DataContract {
+            get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version)
+                .data_contract_owned()
+        }
+
+        /// A contract with one document type, `rating`, of a u8 `stars` and a float `value`.
+        fn rating_contract() -> DataContract {
+            let documents = platform_value!({
+                "rating": {
+                    "type": "object",
+                    "properties": {
+                        "stars": { "type": "integer", "minimum": 0, "maximum": 255, "position": 0 },
+                        "value": { "type": "number", "position": 1 }
+                    },
+                    "additionalProperties": false
+                }
+            });
+            DataContractFactory::new(PlatformVersion::latest().protocol_version)
+                .expect("factory")
+                .create_with_value_config(Identifier::from([1u8; 32]), 1, documents, None, None)
+                .expect("the contract parses")
+                .data_contract_owned()
+        }
+
+        fn base(contract: &DataContract, document_type_name: &str) -> DocumentBaseTransition {
+            DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
+                id: Identifier::from([3u8; 32]),
+                document_type_name: document_type_name.to_string(),
+                data_contract_id: contract.id(),
+                identity_contract_nonce: 0,
+                token_payment_info: None,
+            })
+        }
+
+        fn create(
+            contract: &DataContract,
+            document_type_name: &str,
+            field: &str,
+            value: Value,
+        ) -> DocumentTransition {
+            DocumentTransition::Create(DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
+                base: base(contract, document_type_name),
+                entropy: [0u8; 32],
+                data: BTreeMap::from([(field.to_string(), value)]),
+                prefunded_voting_balance: None,
+            }))
+        }
+
+        /// The one clause, placed where `InternalClauses` keeps its operator.
+        fn clauses(field: &str, operator: WhereOperator, value: Value) -> InternalClauses {
+            let clause = WhereClause {
+                field: field.to_string(),
+                operator,
+                value,
+            };
+            let mut clauses = InternalClauses::default();
+            match operator {
+                WhereOperator::Equal if field == "$id" => {
+                    clauses.primary_key_equal_clause = Some(clause)
+                }
+                WhereOperator::Equal => {
+                    clauses.equal_clauses.insert(field.to_string(), clause);
+                }
+                WhereOperator::In => clauses.in_clauses.push(clause),
+                _ => clauses.range_clause = Some(clause),
+            }
+            clauses
+        }
+
+        /// A filter on creates of `document_type_name` with one clause, canonicalized.
+        fn create_filter<'a>(
+            contract: &'a DataContract,
+            document_type_name: &str,
+            clause: (&str, WhereOperator, Value),
+        ) -> Result<DriveDocumentQueryFilter<&'a DataContract>, QuerySyntaxError> {
+            let mut filter = DriveDocumentQueryFilter {
+                contract,
+                document_type_name: document_type_name.to_string(),
+                action_clauses: DocumentActionMatchClauses::Create {
+                    new_document_clauses: clauses(clause.0, clause.1, clause.2),
+                },
+            };
+            filter.canonicalize_clause_values()?;
+            Ok(filter)
+        }
+
+        fn passes(
+            filter: &DriveDocumentQueryFilter<&DataContract>,
+            transition: &DocumentTransition,
+        ) -> bool {
+            filter.matches_document_transition(transition, None, PlatformVersion::latest())
+                == TransitionCheckResult::Pass
+        }
+
+        #[test]
+        fn should_match_an_identifier_encoded_differently_in_clause_and_transition() {
+            let contract = fixture_contract();
+            let identifier = Identifier::from([7u8; 32]);
+            for clause_value in [
+                Value::Text(identifier.to_string(Encoding::Base58)),
+                Value::Bytes(identifier.to_vec()),
+                Value::Identifier(identifier.to_buffer()),
+            ] {
+                let filter = create_filter(
+                    &contract,
+                    "withByteArrays",
+                    ("identifierField", WhereOperator::Equal, clause_value),
+                )
+                .expect("an identifier");
+                assert!(filter.validate().is_valid());
+                let carrying =
+                    |value| create(&contract, "withByteArrays", "identifierField", value);
+                assert!(passes(
+                    &filter,
+                    &carrying(Value::Bytes(identifier.to_vec()))
+                ));
+                assert!(passes(&filter, &carrying(identifier.into())));
+                assert!(!passes(&filter, &carrying(Value::Bytes(vec![8u8; 32]))));
+            }
+        }
+
+        #[test]
+        fn should_compare_integers_of_any_width_by_value() {
+            let contract = rating_contract();
+            let filter = create_filter(
+                &contract,
+                "rating",
+                (
+                    "stars",
+                    WhereOperator::In,
+                    Value::Array(vec![Value::I64(4), Value::U16(5)]),
+                ),
+            )
+            .expect("integers that fit a u8");
+            assert!(filter.validate().is_valid());
+            let rated = |stars| create(&contract, "rating", "stars", stars);
+            assert!(passes(&filter, &rated(Value::U64(5))));
+            assert!(passes(&filter, &rated(Value::I32(4))));
+            assert!(!passes(&filter, &rated(Value::U8(3))));
+        }
+
+        #[test]
+        fn should_match_a_value_longer_than_an_index_key() {
+            let contract = fixture_contract();
+            let long_name = Value::Text("x".repeat(300));
+            let filter = create_filter(
+                &contract,
+                "niceDocument",
+                ("name", WhereOperator::Equal, long_name.clone()),
+            )
+            .expect("text");
+            assert!(passes(
+                &filter,
+                &create(&contract, "niceDocument", "name", long_name)
+            ));
+        }
+
+        #[test]
+        fn should_reject_a_value_that_does_not_fit_its_field() {
+            let contract = fixture_contract();
+            for (field, value) in [
+                ("identifierField", Value::Bytes(vec![1u8; 5])),
+                // Base58 text longer than any identifier's is refused before it is decoded.
+                ("identifierField", Value::Text("z".repeat(120_000))),
+                ("$id", Value::Text("z".repeat(120_000))),
+            ] {
+                assert!(
+                    create_filter(
+                        &contract,
+                        "withByteArrays",
+                        (field, WhereOperator::Equal, value)
+                    )
+                    .is_err(),
+                    "{field}"
+                );
+            }
+        }
+
+        #[test]
+        fn should_reject_clauses_on_fields_a_transition_does_not_carry() {
+            let contract = fixture_contract();
+            let owner: Value = Identifier::from([1u8; 32]).into();
+            // `$id` aside, system fields are not in a transition's data, nor is a derived index
+            // property; the latter is refused before a hostile operand is decoded.
+            for (field, value) in [
+                ("$ownerId", owner.clone()),
+                ("$createdAt", Value::U64(1)),
+                ("postId.$ownerId", Value::Text("z".repeat(120_000))),
+            ] {
+                assert!(
+                    create_filter(
+                        &contract,
+                        "niceDocument",
+                        (field, WhereOperator::Equal, value)
+                    )
+                    .is_err(),
+                    "{field}"
+                );
+            }
+        }
+
+        #[test]
+        fn should_match_a_transfer_recipient_given_as_bytes() {
+            let contract = fixture_contract();
+            let recipient = Identifier::from([9u8; 32]);
+            let mut filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "niceDocument".to_string(),
+                action_clauses: DocumentActionMatchClauses::Transfer {
+                    original_document_clauses: InternalClauses::default(),
+                    owner_clause: Some(ValueClause {
+                        operator: WhereOperator::In,
+                        value: Value::Array(vec![Value::Bytes(recipient.to_vec())]),
+                    }),
+                },
+            };
+            filter
+                .canonicalize_clause_values()
+                .expect("expected the recipient to canonicalize");
+            assert!(filter.validate().is_valid());
+            let transfer = DocumentTransition::Transfer(DocumentTransferTransition::V0(
+                DocumentTransferTransitionV0 {
+                    base: base(&contract, "niceDocument"),
+                    revision: 2,
+                    recipient_owner_id: recipient,
+                },
+            ));
+            assert!(passes(&filter, &transfer));
+        }
+
+        #[test]
+        fn should_keep_empty_byte_array_operands() {
+            let contract = fixture_contract();
+            for (operator, value) in [
+                (WhereOperator::Equal, Value::Bytes(vec![])),
+                (
+                    WhereOperator::In,
+                    Value::Array(vec![Value::Bytes(vec![]), Value::Bytes(vec![1])]),
+                ),
+            ] {
+                let filter = create_filter(
+                    &contract,
+                    "withByteArrays",
+                    ("byteArrayField", operator, value),
+                )
+                .expect("an empty byte array is a byte array");
+                assert!(filter.validate().is_valid(), "{operator:?}");
+                let transition = create(
+                    &contract,
+                    "withByteArrays",
+                    "byteArrayField",
+                    Value::Bytes(vec![]),
+                );
+                assert!(passes(&filter, &transition), "{operator:?}");
+            }
+        }
+
+        #[test]
+        fn should_tell_empty_text_from_a_nul_character() {
+            let contract = fixture_contract();
+            let named = |text: &str| {
+                create(
+                    &contract,
+                    "niceDocument",
+                    "name",
+                    Value::Text(text.to_string()),
+                )
+            };
+            let empty = create_filter(
+                &contract,
+                "niceDocument",
+                ("name", WhereOperator::Equal, Value::Text(String::new())),
+            )
+            .expect("text");
+            assert!(passes(&empty, &named("")));
+            assert!(!passes(&empty, &named("\0")));
+
+            let both = create_filter(
+                &contract,
+                "niceDocument",
+                (
+                    "name",
+                    WhereOperator::In,
+                    Value::Array(vec![
+                        Value::Text(String::new()),
+                        Value::Text("\0".to_string()),
+                    ]),
+                ),
+            )
+            .expect("text");
+            assert!(both.validate().is_valid(), "two distinct candidates");
+        }
+
+        #[test]
+        fn should_accept_packed_byte_candidates_only_for_a_u8_field() {
+            let contract = rating_contract();
+            let filter = create_filter(
+                &contract,
+                "rating",
+                ("stars", WhereOperator::In, Value::Bytes(vec![4, 5])),
+            )
+            .expect("packed u8 candidates");
+            assert!(filter.validate().is_valid());
+            let rated = |stars| create(&contract, "rating", "stars", Value::U64(stars));
+            assert!(passes(&filter, &rated(5)));
+            assert!(!passes(&filter, &rated(3)));
+            let on_a_float = create_filter(
+                &contract,
+                "rating",
+                ("value", WhereOperator::In, Value::Bytes(vec![4, 5])),
+            )
+            .expect("left for validation");
+            assert!(!on_a_float.validate().is_valid());
+        }
+
+        #[test]
+        fn should_not_let_null_satisfy_an_ordered_comparison() {
+            let contract = rating_contract();
+            let filter = create_filter(
+                &contract,
+                "rating",
+                ("stars", WhereOperator::GreaterThan, Value::U64(3)),
+            )
+            .expect("an integer");
+            let rated = |stars| create(&contract, "rating", "stars", stars);
+            assert!(!passes(&filter, &rated(Value::Null)));
+            assert!(passes(&filter, &rated(Value::U64(5))));
+        }
+
+        #[test]
+        fn should_compare_negative_zero_as_zero() {
+            let contract = rating_contract();
+            for (operator, operand, value, expected) in [
+                (WhereOperator::Equal, 0.0, -0.0, true),
+                (WhereOperator::Equal, -0.0, 0.0, true),
+                (WhereOperator::GreaterThan, -1.0, -0.0, true),
+                (WhereOperator::LessThan, -1.0, -0.0, false),
+            ] {
+                let filter = create_filter(
+                    &contract,
+                    "rating",
+                    ("value", operator, Value::Float(operand)),
+                )
+                .expect("a float");
+                assert_eq!(
+                    passes(
+                        &filter,
+                        &create(&contract, "rating", "value", Value::Float(value))
+                    ),
+                    expected,
+                    "{operator:?} {operand} against {value}"
+                );
+            }
+        }
+    }
+
     /// A filter reads a typed array by its elements as a documents query does
     /// (protocol version 14): with the same operators, judging the same values.
     mod typed_array_elements {
@@ -3016,6 +3667,11 @@ mod tests {
                                     "contentMediaType": "application/x.dash.dpp.identifier"
                                 },
                                 "position": 5
+                            },
+                            "ranks": {
+                                "type": "array", "maxItems": 8,
+                                "items": {"type": "integer", "minimum": 0, "maximum": 65535},
+                                "position": 6
                             }
                         },
                         "additionalProperties": false
@@ -3051,7 +3707,7 @@ mod tests {
         fn create_filter(
             contract: &DataContract,
             clause: WhereClause,
-        ) -> DriveDocumentQueryFilter<'_> {
+        ) -> DriveDocumentQueryFilter<&DataContract> {
             DriveDocumentQueryFilter {
                 contract,
                 document_type_name: "post".to_string(),
@@ -3093,7 +3749,11 @@ mod tests {
             clause: WhereClause,
             document_data: BTreeMap<String, Value>,
         ) -> bool {
-            let filter = create_filter(contract, clause);
+            let mut filter = create_filter(contract, clause);
+            // As a subscription host does, before the filter is judged or matched.
+            filter
+                .canonicalize_clause_values()
+                .expect("canonical clause values");
             let DocumentActionMatchClauses::Create {
                 new_document_clauses,
             } = &filter.action_clauses
@@ -3166,6 +3826,27 @@ mod tests {
         }
 
         #[test]
+        fn should_match_a_u16_array_against_a_list_given_as_bytes() {
+            let contract = element_contract();
+            let any_rank = clause(
+                "ranks",
+                WhereOperator::ContainsAny,
+                Value::Bytes(vec![1, 2]),
+            );
+            assert_eq!(query_refusal(&contract, &any_rank), None);
+            // The bytes are listed as u16 elements first.
+            let mut filter = create_filter(&contract, any_rank.clone());
+            filter
+                .canonicalize_clause_values()
+                .expect("canonical clause values");
+            assert!(filter.validate().is_valid());
+            let ranked = post_data("ranks", Value::Array(vec![Value::U16(1), Value::U16(500)]));
+            let unranked = post_data("ranks", Value::Array(vec![Value::U16(3)]));
+            assert!(matches(&contract, any_rank.clone(), ranked));
+            assert!(!matches(&contract, any_rank, unranked));
+        }
+
+        #[test]
         fn should_match_an_element_given_in_another_representation() {
             let contract = element_contract();
             // An integer of another width keys as the stored u8 element does.
@@ -3215,6 +3896,160 @@ mod tests {
                         authored.clone()
                     ),
                     "{given:?}"
+                );
+            }
+        }
+
+        /// The value of the one clause of a created-posts filter once its values are
+        /// canonicalized.
+        fn canonical_clause_value(contract: &DataContract, clause: WhereClause) -> Value {
+            let mut filter = create_filter(contract, clause);
+            filter
+                .canonicalize_clause_values()
+                .expect("canonical clause values");
+            let DocumentActionMatchClauses::Create {
+                new_document_clauses,
+            } = filter.action_clauses
+            else {
+                unreachable!("a create filter");
+            };
+            new_document_clauses
+                .equal_clauses
+                .into_values()
+                .chain(new_document_clauses.in_clauses)
+                .next()
+                .expect("one clause")
+                .value
+        }
+
+        #[test]
+        fn should_canonicalize_element_values_on_both_sides_of_the_match() {
+            let contract = element_contract();
+            let author = [8u8; 32];
+            // A clause value is brought to the element type's form once, element by element.
+            assert_eq!(
+                canonical_clause_value(
+                    &contract,
+                    clause(
+                        "authors",
+                        WhereOperator::Contains,
+                        Value::Bytes(author.to_vec())
+                    )
+                ),
+                Value::Identifier(author)
+            );
+            assert_eq!(
+                canonical_clause_value(
+                    &contract,
+                    clause(
+                        "scores",
+                        WhereOperator::ContainsAny,
+                        Value::Array(vec![Value::U64(5), Value::I16(1)])
+                    )
+                ),
+                Value::Array(vec![Value::U8(5), Value::U8(1)])
+            );
+            // A transition's elements keep the encoding their submitter chose, and are
+            // brought to the same form when matched.
+            let authored_as_bytes = post_data(
+                "authors",
+                Value::Array(vec![
+                    Value::Bytes([9; 32].to_vec()),
+                    Value::Bytes(author.to_vec()),
+                ]),
+            );
+            for given in [Value::Identifier(author), Value::Bytes(author.to_vec())] {
+                assert!(
+                    matches(
+                        &contract,
+                        clause("authors", WhereOperator::Contains, given.clone()),
+                        authored_as_bytes.clone()
+                    ),
+                    "{given:?}"
+                );
+            }
+            assert!(!matches(
+                &contract,
+                clause(
+                    "authors",
+                    WhereOperator::Contains,
+                    Value::Identifier([7; 32])
+                ),
+                authored_as_bytes
+            ));
+            let scored_as_u64 = post_data("scores", Value::Array(vec![Value::U64(5)]));
+            assert!(matches(
+                &contract,
+                clause(
+                    "scores",
+                    WhereOperator::ContainsAny,
+                    Value::Array(vec![Value::I64(5)])
+                ),
+                scored_as_u64.clone()
+            ));
+            assert!(matches(
+                &contract,
+                clause("scores", WhereOperator::ContainsAny, Value::Bytes(vec![5])),
+                scored_as_u64
+            ));
+        }
+
+        #[test]
+        fn should_refuse_an_operand_not_yet_canonicalized_until_it_is() {
+            let contract = element_contract();
+            let by_author = clause(
+                "authors",
+                WhereOperator::Contains,
+                Value::Bytes(vec![7u8; 32]),
+            );
+            // Matching compares operands as they are: these bytes never equal an identifier.
+            let refusal = filter_refusal(&contract, by_author.clone()).expect("not canonical");
+            assert!(refusal.contains("canonicalize_clause_values"), "{refusal}");
+
+            let mut filter = create_filter(&contract, by_author.clone());
+            filter
+                .canonicalize_clause_values()
+                .expect("canonical clause values");
+            assert!(filter.validate().is_valid());
+            let authored = post_data("authors", Value::Array(vec![Value::Identifier([7u8; 32])]));
+            assert!(matches(&contract, by_author, authored));
+        }
+
+        #[test]
+        fn should_refuse_an_element_value_that_does_not_fit_the_element_type() {
+            let contract = element_contract();
+            let mut filter = create_filter(
+                &contract,
+                clause(
+                    "authors",
+                    WhereOperator::Contains,
+                    Value::Bytes(vec![1u8; 5]),
+                ),
+            );
+            assert!(matches!(
+                filter.canonicalize_clause_values(),
+                Err(QuerySyntaxError::InvalidFormatWhereClause(_))
+            ));
+        }
+
+        #[test]
+        fn should_leave_a_misused_element_operator_for_validation_to_refuse() {
+            let contract = element_contract();
+            for refused in [
+                clause("hashtags", WhereOperator::Equal, Value::Text("dash".into())),
+                clause(
+                    "language",
+                    WhereOperator::Contains,
+                    Value::Text("en".into()),
+                ),
+            ] {
+                let mut filter = create_filter(&contract, refused.clone());
+                filter
+                    .canonicalize_clause_values()
+                    .expect("left for validation");
+                assert_eq!(
+                    filter.validate().first_error().map(ToString::to_string),
+                    query_refusal(&contract, &refused)
                 );
             }
         }

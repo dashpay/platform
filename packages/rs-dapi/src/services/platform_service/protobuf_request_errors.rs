@@ -1,6 +1,9 @@
 //! Test the public request decoder and real Drive forwarding without background connections.
 
-use super::{MAX_PENDING_STATE_TRANSITION_WAITS, PlatformServiceImpl, ShieldedProofFailureBudget};
+use super::{
+    BlockSource, MAX_PENDING_STATE_TRANSITION_WAITS, PlatformServiceImpl,
+    ShieldedProofFailureBudget, SubscriptionLimits, SubscriptionService,
+};
 use crate::cache::LruResponseCache;
 use crate::clients::TenderdashClient;
 use crate::clients::drive_client::{DriveChannel, DriveClient};
@@ -37,7 +40,7 @@ use rs_dapi_client::{
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use tower::ServiceBuilder;
@@ -158,6 +161,11 @@ impl Harness {
         let service = PlatformServiceImpl {
             drive_client: DriveClient::from_test_channel(traced),
             websocket_client: tenderdash_client.websocket_client(),
+            subscriptions: Arc::new(SubscriptionService::new(
+                Arc::new(BlockSource::new(tenderdash_client.clone())),
+                watch::channel(0).1,
+                SubscriptionLimits::default(),
+            )),
             tenderdash_client,
             config: Arc::clone(&config),
             platform_cache: LruResponseCache::with_capacity(
