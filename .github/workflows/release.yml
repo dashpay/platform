@@ -393,6 +393,8 @@ jobs:
           path: packages/dashmate/dist/**
           retention-days: 7
 
+      # Overwritten when a published release's packages are rebuilt by re-running
+      # this job; the artifact of the earlier attempt has the same name.
       - name: Upload Dashmate packages
         uses: actions/upload-artifact@v4
         with:
@@ -400,6 +402,7 @@ jobs:
           path: packages/dashmate/dist/**
           if-no-files-found: error
           retention-days: 7
+          overwrite: true
 
   release-dashmate-packages:
     name: Release Dashmate packages
