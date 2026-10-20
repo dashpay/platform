@@ -70,6 +70,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
   "client",
   "validation",
   "random-documents",
+  "dashpay-contract",
 ] }
 tokio-test = { version = "0.4.4" }
 clap = { version = "4.5.4", features = ["derive"] }
@@ -163,7 +164,6 @@ core_key_wallet = ["dpp/core_key_wallet"]
 core_key_wallet_serde = ["dpp/core_key_wallet_serde"]
 core_key_wallet_bincode = ["dpp/core_key_wallet_bincode"]
 core_key_wallet_manager = ["dpp/core_key_wallet_manager"]
-core_key_wallet_bip38 = ["dpp/core_key_wallet_bip_38"]
 core_spv = ["dpp/core_spv"]
 core_rpc_client = ["dpp/core_rpc_client"]
 shielded = ["dep:grovedb-commitment-tree", "dpp/shielded-client"]

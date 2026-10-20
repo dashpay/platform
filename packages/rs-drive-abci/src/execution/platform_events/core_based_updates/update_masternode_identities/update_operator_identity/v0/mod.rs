@@ -24,7 +24,7 @@ use drive::grovedb::Transaction;
 use drive::util::batch::DriveOperation;
 use drive::util::batch::DriveOperation::IdentityOperation;
 use drive::util::batch::IdentityOperationType::{
-    AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
+    AddNewIdentity, AddNewKeysToMasternodeIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
 };
 
 impl<C> Platform<C>
@@ -212,9 +212,8 @@ where
             }
 
             if !non_unique_keys_to_add.is_empty() {
-                drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
+                drive_operations.push(IdentityOperation(AddNewKeysToMasternodeIdentity {
                     identity_id: operator_identifier.to_buffer(),
-                    unique_keys_to_add: vec![],
                     non_unique_keys_to_add,
                 }));
             }
@@ -374,9 +373,8 @@ where
 
                 if !non_unique_keys_to_add.is_empty() {
                     // We should add keys that didn't exist before
-                    drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
+                    drive_operations.push(IdentityOperation(AddNewKeysToMasternodeIdentity {
                         identity_id: operator_identifier.to_buffer(),
-                        unique_keys_to_add: vec![],
                         non_unique_keys_to_add,
                     }));
                 }
@@ -391,7 +389,7 @@ mod tests {
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
+    use dpp::bls::SecretKey as BlsPrivateKey;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::ProTxHash;
     use dpp::dashcore::Txid;
@@ -433,11 +431,13 @@ mod tests {
             .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
-        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        let private_key_operator = BlsPrivateKey::from_be_bytes(
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
-        let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+        .expect("Core fixture secret key must decode");
+        let pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         let operator_key: IdentityPublicKey = IdentityPublicKeyV0 {
             id: 0,
@@ -976,11 +976,13 @@ mod tests {
             .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
-        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        let private_key_operator = BlsPrivateKey::from_be_bytes(
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
-        let new_pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+        .expect("Core fixture secret key must decode");
+        let new_pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         // Create an old masternode state
         let masternode_list_item = MasternodeListItem {
@@ -1072,15 +1074,13 @@ mod tests {
             .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
-        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
+        let private_key_operator = BlsPrivateKey::from_be_bytes(
             &private_key_operator_bytes
                 .try_into()
                 .expect("expected the secret key to be 32 bytes"),
         )
-        .expect(
-            "expected the conversion between bls signatures library and blsful to happen without failing",
-        );
-        let new_pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+        .expect("Core fixture secret key must decode");
+        let new_pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         let new_operator_identifier = Identifier::create_operator_identifier(
             pro_tx_hash.as_byte_array(),
@@ -1172,7 +1172,7 @@ mod tests {
 
         let added_platform_node_key = drive_operations.iter().any(|operation| {
             if let drive::util::batch::DriveOperation::IdentityOperation(
-                drive::util::batch::IdentityOperationType::AddNewKeysToIdentity {
+                drive::util::batch::IdentityOperationType::AddNewKeysToMasternodeIdentity {
                     identity_id,
                     non_unique_keys_to_add,
                     ..
@@ -1215,11 +1215,13 @@ mod tests {
             .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
-        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        let private_key_operator = BlsPrivateKey::from_be_bytes(
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
-        let new_pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+        .expect("Core fixture secret key must decode");
+        let new_pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         // Create an old masternode state with original public key operator
         let masternode_list_item = MasternodeListItem {

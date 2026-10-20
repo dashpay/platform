@@ -367,7 +367,7 @@ impl Sdk {
 
         // Before DPNS v3 the domain reveals the salt its preorder hashed
         if domain_document_type.creator_reference().is_none() {
-            let salt: [u8; 32] = StdRng::from_entropy().gen();
+            let salt: [u8; 32] = StdRng::from_os_rng().random();
             domain_properties.insert("preorderSalt".to_string(), Value::Bytes32(salt));
         }
 

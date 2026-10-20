@@ -31,6 +31,7 @@
 //! too: the wallet-manager read guard is NEVER held across the Swift
 //! resolver callback.
 
+use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash};
 use std::ffi::CString;
 use std::os::raw::c_char;
 
@@ -76,7 +77,7 @@ pub struct ProviderKeyAtIndexFFI {
     /// on the empty state.
     pub legacy_public_key_hex: *mut c_char,
     /// Null-terminated lowercase hex of the 20-byte platform node id
-    /// (40 chars) — `hash160` of the Ed25519 public key. Null for
+    /// (40 chars) — `SHA256(ed25519 pubkey)[..20]` in canonical order. Null for
     /// operator keys (no node id) and on the empty state.
     pub node_id_hex: *mut c_char,
     /// Null-terminated lowercase hex of the raw 32-byte private scalar
@@ -363,7 +364,7 @@ pub unsafe extern "C" fn platform_wallet_provider_key_at_index_free(
 /// Ed25519 public key. Pure helper — no wallet handle, no key material
 /// beyond the public key.
 ///
-/// Wraps `dashcore::PlatformNodeId::from_ed25519_public_key` so the host
+/// Converts through `EddsaPkHash` and returns canonical Tenderdash bytes so the host
 /// can render the node id of a persisted platform-node public key (which
 /// carries only the pubkey) without re-implementing the SHA-256 digest.
 ///
@@ -385,7 +386,7 @@ pub unsafe extern "C" fn platform_wallet_platform_node_id_from_ed25519_pubkey(
     }
     let mut pk32 = [0u8; 32];
     pk32.copy_from_slice(unsafe { std::slice::from_raw_parts(pubkey_ptr, 32) });
-    let node_id = dashcore::PlatformNodeId::from_ed25519_public_key(&pk32).to_byte_array();
+    let node_id = EddsaPkHash::from(EddsaPkBytes::from_bytes(pk32)).to_canonical_bytes();
     unsafe { std::ptr::copy_nonoverlapping(node_id.as_ptr(), out_node_id_20, 20) };
     true
 }

@@ -34,7 +34,7 @@ Evo SDK provides a high-level, strongly-typed interface for interacting with [Da
 npm install @dashevo/evo-sdk
 ```
 
-The package is ESM-only (`"type": "module"`). In CommonJS projects, use dynamic `import()`. Requires Node.js >= 18.18.
+The package is ESM-only (`"type": "module"`). In CommonJS projects, use dynamic `import()`. Requires Node.js >= 22.
 
 ## Usage
 
@@ -159,7 +159,21 @@ for (const entry of page.entries) {
 }
 ```
 
-Each pin is a `==`, except that at most **one** may be a branching `in` carrying 2..=`await EvoSDK.maxPrefixInBranches()` elements — one secondary walk per element, merged into a single proved page. Several `in`s would multiply into a cartesian product of walks inside one proof, so they are rejected. A single-element `in` normalizes to `==` and never spends that budget. Range operators cannot pin a prefix at all.
+A leading property that is a typed array (protocol version 14+) is pinned with `contains`, which names one element the way `==` names one value:
+
+```ts
+// The most liked posts tagged `dash`, from a ranked index on [tags, postId].
+const page = await sdk.documents.ranked({
+  dataContractId: SOCIAL,
+  documentTypeName: 'like',
+  groupBy: 'postId',
+  aggregate: { type: 'count' },
+  limit: 10,
+  where: [['tags', 'contains', 'dash']],
+});
+```
+
+Each pin is a `==` (or a `contains`), except that at most **one** may be a branching `in` carrying 2..=`await EvoSDK.maxPrefixInBranches()` elements — one secondary walk per element, merged into a single proved page. Several `in`s would multiply into a cartesian product of walks inside one proof, so they are rejected. A single-element `in` normalizes to `==` and never spends that budget. Range operators cannot pin a prefix at all, and neither can `containsAny`, which would count a document once per element it holds.
 
 A branching `in` cannot combine with a non-zero `offset`: rank-skip is attested from one secondary's counted commitments, and there is no counted structure over a branch union. Page one prefix at a time (`==` plus `offset`), or drop the offset.
 
@@ -199,7 +213,7 @@ const either = await sdk.documents.query({
 - `containsAny` takes 1 to 100 values and needs an `orderBy` on the array, which sets the order the elements are walked in. A post holding several of them comes back once, where it first appears; the limit counts every entry walked, so a page can be short, and there is no `startAt` or `startAfter`.
 - No other operator may name a typed array, and an index naming one is read only with its elements bound.
 
-Counts are per element: `sdk.documents.count` with `contains` counts the documents holding it, and `containsAny` grouped by the array gives one count per element. A ranked query grouped by the array ranks its elements, for example the most used hashtags. A count over several elements at once is refused, since it would count a document once per element it holds, and so is `containsAny` beside a range clause; the SDK refuses to verify such a count too.
+Counts are per element: `sdk.documents.count` with `contains` counts the documents holding it, and `containsAny` grouped by the array gives one count per element. A ranked query grouped by the array ranks its elements, for example the most used hashtags, and one pinned with `contains` ranks within one element (see [Pinning a compound index](#pinning-a-compound-index)). A count over several elements at once is refused, since it would count a document once per element it holds, and so is `containsAny` beside a range clause; the SDK refuses to verify such a count too.
 
 ## Contracts the app already holds
 

@@ -15,7 +15,7 @@ use crate::version::dpp_versions::dpp_validation_versions::v5::DPP_VALIDATION_VE
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
-use crate::version::drive_abci_versions::drive_abci_method_versions::v10::DRIVE_ABCI_METHOD_VERSIONS_V10;
+use crate::version::drive_abci_versions::drive_abci_method_versions::v11::DRIVE_ABCI_METHOD_VERSIONS_V11;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v2::DRIVE_ABCI_QUERY_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v2::DRIVE_ABCI_STRUCTURE_VERSIONS_V2;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v11::DRIVE_ABCI_VALIDATION_VERSIONS_V11;
@@ -36,9 +36,43 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 /// lands in its own follow-up and bumps the component table it consumes here;
 /// keeping v15 == v14 until then lets mixed-version validators agree.
 ///
-/// Changes from v14:
+/// v15 hosts these consensus changes:
 ///
-/// 1. **DPNS v3 checks a name's create with keywords**:
+/// 1. **Chain locks signed by quorums Platform does not hold yet**: a block
+///    proposal's chain lock is checked against the chain lock quorums Platform
+///    fetched at its last committed core height. When a quorum was mined after
+///    that height, inside the same DKG interval, or when the signing height
+///    lies between the two stored quorum sets after a jump of the core height,
+///    the chain lock is signed by quorums Platform does not hold, and
+///    `verify_chain_lock_locally` 0 rejected it although it was valid, failing
+///    rounds until Core produced a chain lock Platform could verify or one
+///    signed past the DKG interval. `verify_chain_lock_locally` 1
+///    (`DRIVE_ABCI_METHOD_VERSIONS_V11`) rejects locally only when Platform
+///    holds exactly the quorums active at the signing height, using Dash Core's
+///    DKG mining schedule (`core_chain_lock.dkg_mining_schedules`), and leaves
+///    the other chain locks to Core. `verify_chain_lock_through_core` 1 has
+///    Core's `verifychainlock` check the signature of every chain lock left to
+///    Core before `submitchainlock`, which skips that check for a height Core
+///    already has a chain lock at or above, and reports a failure as Core's
+///    verdict. So v15 accepts valid chain locks that v14 rejected, and rejects
+///    forged ones that v14 left to `submitchainlock`'s early return. Protocol
+///    v14 and earlier
+///    keep `verify_chain_lock_locally` 0 and `verify_chain_lock_through_core` 0,
+///    so the blocks committed under them replay with the same verdicts.
+///
+/// 2. **Proofs of possession of the keys an identity update adds**: the
+///    identity's signature over an identity update does not cover the
+///    signatures of the keys it adds. The identity update
+///    `advanced_structure` 1 (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`) refuses,
+///    without a fee and without using the identity's nonce, an update whose
+///    added key's proof of possession does not verify (a key whose public key
+///    data does not decode fails it too), where 0 charged it; a revision
+///    mismatch is still charged. Protocol v14 and
+///    earlier keep `advanced_structure` 0, so the blocks committed under them
+///    replay with the same results. check_tx verifies these proofs at every
+///    protocol version, which decides mempool admission only.
+///
+/// 3. **DPNS v3 checks a name's create with keywords**:
 ///    `SYSTEM_DATA_CONTRACT_VERSIONS_V4` selects DPNS contract v3, loaded at
 ///    genesis (which still inserts the `dash` top-level domain). Its `domain`
 ///    generates `normalizedLabel` and `normalizedParentDomainName` with
@@ -82,8 +116,8 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
     drive: DRIVE_VERSION_V9,
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V2,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V10,
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: create_domain_data_trigger 2 (note 1)
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V11, // changed: verify_chain_lock_locally 1 rejects a chain lock locally only when Platform holds the quorums active at its signing height, and verify_chain_lock_through_core 1 has Core's verifychainlock check the others before submitchainlock
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V11, // changed: identity update advanced_structure 1 refuses unpaid an identity update whose added key's proof of possession does not verify (note 2); create_domain_data_trigger 2 (note 3)
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3,
         query: DRIVE_ABCI_QUERY_VERSIONS_V2,
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
@@ -104,7 +138,7 @@ pub const PLATFORM_V15: PlatformVersion = PlatformVersion {
         methods: DPP_METHOD_VERSIONS_V3,
         factory_versions: DPP_FACTORY_VERSIONS_V1,
     },
-    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 1)
+    system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V4, // changed: DPNS v3 checks a name's create with keywords (note 3)
     fee_version: FEE_VERSION3,
     system_limits: SYSTEM_LIMITS_V4,
     consensus: ConsensusVersions {
