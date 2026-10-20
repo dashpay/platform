@@ -88,6 +88,23 @@ fn existing_validator_accepts(schema: &serde_json::Value, document: &serde_json:
         .is_valid()
 }
 
+/// Whether the existing validator compiles `schema` as the document validator compiles the
+/// document schema of a contract loaded from state. Registration compiles it under a
+/// smaller regex size limit.
+#[cfg(feature = "validation")]
+fn existing_validator_compiles(schema: &serde_json::Value) -> bool {
+    JsonSchemaValidator::new()
+        .compile_and_validate(schema, &serde_json::json!({}), PlatformVersion::latest())
+        .is_ok()
+}
+
+/// `root` as the JSON the existing validator compiles.
+#[cfg(feature = "validation")]
+fn validating_json(root: &Value) -> serde_json::Value {
+    root.try_to_validating_json()
+        .expect("expected the schema to convert")
+}
+
 #[test]
 fn should_keep_every_validation_keyword_of_a_node() {
     let schema = build(platform_value!({
@@ -733,6 +750,7 @@ fn should_match_the_existing_validator_in_scoping_a_reference_below_an_id() {
         },
         "$defs": { "label": { "type": "string", "maxLength": 10 } },
     });
+    assert!(valid(&absolute, "a"));
     assert!(
         !valid(&absolute, "ab"),
         "the scoped schema's label holds `user`, not the root's"
@@ -1089,9 +1107,9 @@ fn should_follow_the_parser_read_through_references_and_items() {
 
 #[test]
 fn should_refuse_a_property_reference_the_parser_resolves_to_another_schema() {
-    // The parser follows a property's `$ref` as a dotted path below `#/`, unescaped, and
-    // reads the first entry of a repeated key, where the JSON Schema validator reads the
-    // last.
+    // The parser follows a property's `$ref` as a dotted path below `#/`, unescaped, so it
+    // resolves neither of the first two, and reads the first entry of a repeated key, where
+    // the JSON Schema validator reads the last.
     let repeated = Value::Map(vec![
         (text_value("type"), text_value("object")),
         (
@@ -1109,7 +1127,7 @@ fn should_refuse_a_property_reference_the_parser_resolves_to_another_schema() {
             ]),
         ),
     ]);
-    for (case, root) in [
+    for (case, root, expected) in [
         (
             "escaped",
             platform_value!({
@@ -1117,6 +1135,7 @@ fn should_refuse_a_property_reference_the_parser_resolves_to_another_schema() {
                 "properties": { "value": { "$ref": "#/$defs/a~1b" } },
                 "$defs": { "a/b": { "type": "string" } },
             }),
+            "the document type parser does not resolve",
         ),
         (
             "the root",
@@ -1124,14 +1143,16 @@ fn should_refuse_a_property_reference_the_parser_resolves_to_another_schema() {
                 "type": "object",
                 "properties": { "value": { "$ref": "#" } },
             }),
+            "the document type parser does not resolve",
         ),
-        ("a repeated definition", repeated),
+        (
+            "a repeated definition",
+            repeated,
+            "the document type parser resolves",
+        ),
     ] {
         let message = refusal(root);
-        assert!(
-            message.contains("the document type parser resolves"),
-            "{case}: {message}"
-        );
+        assert!(message.contains(expected), "{case}: {message}");
     }
 }
 
@@ -1507,7 +1528,7 @@ fn a_reference_compiled_against_another_url() -> Value {
 fn should_refuse_a_reference_whose_target_compiles_its_references_against_another_url() {
     let message = refusal(a_reference_compiled_against_another_url());
     assert!(
-        message.contains("compiles against another URL"),
+        message.contains("may compile against another URL"),
         "{message}"
     );
 }
@@ -1517,9 +1538,7 @@ fn should_refuse_a_reference_whose_target_compiles_its_references_against_anothe
 #[cfg(feature = "validation")]
 #[test]
 fn should_match_the_existing_validator_on_a_reference_compiled_against_another_url() {
-    let schema = a_reference_compiled_against_another_url()
-        .try_to_validating_json()
-        .expect("expected the schema to convert");
+    let schema = validating_json(&a_reference_compiled_against_another_url());
     assert!(existing_validator_accepts(
         &schema,
         &serde_json::json!({ "names": ["hello"] })
@@ -1784,15 +1803,7 @@ fn should_match_the_existing_validator_on_patterns() {
             "properties": { "name": { "type": "string", "pattern": pattern } },
         })
     };
-    let compiles = |pattern: &str| {
-        JsonSchemaValidator::new()
-            .compile_and_validate(
-                &schema(pattern),
-                &serde_json::json!({}),
-                PlatformVersion::latest(),
-            )
-            .is_ok()
-    };
+    let compiles = |pattern: &str| existing_validator_compiles(&schema(pattern));
     assert!(compiles("^\\d\\w\\s\\cA$"));
     assert!(!compiles("^(?!admin)"));
 
@@ -1904,9 +1915,7 @@ fn references_into_data_below_an_id_that_is_not_a_url() -> [Value; 2] {
 #[test]
 fn should_match_the_existing_validator_on_a_reference_into_data_below_an_id_that_is_not_a_url() {
     for root in references_into_data_below_an_id_that_is_not_a_url() {
-        let schema = root
-            .try_to_validating_json()
-            .expect("expected the schema to convert");
+        let schema = validating_json(&root);
         assert!(existing_validator_accepts(&schema, &serde_json::json!({})));
         assert!(!existing_validator_accepts(
             &schema,
@@ -1947,12 +1956,7 @@ fn ids_that_are_not_urls_without_any_reference() -> [Value; 2] {
 #[test]
 fn should_match_the_existing_validator_on_an_id_that_is_not_a_url_without_any_reference() {
     for root in ids_that_are_not_urls_without_any_reference() {
-        let schema = root
-            .try_to_validating_json()
-            .expect("expected the schema to convert");
-        assert!(JsonSchemaValidator::new()
-            .compile_and_validate(&schema, &serde_json::json!({}), PlatformVersion::latest())
-            .is_err());
+        assert!(!existing_validator_compiles(&validating_json(&root)));
     }
 }
 
@@ -2093,13 +2097,9 @@ fn should_hold_the_formats_and_keywords_the_existing_validator_compiles() {
         "uri-template",
         "uuid",
     ] {
-        let compiles = JsonSchemaValidator::new()
-            .compile_and_validate(
-                &serde_json::json!({ "type": "string", "format": format_name }),
-                &serde_json::json!("x"),
-                PlatformVersion::latest(),
-            )
-            .is_ok();
+        let compiles = existing_validator_compiles(
+            &serde_json::json!({ "type": "string", "format": format_name }),
+        );
         assert_eq!(
             compiles,
             VALIDATOR_FORMATS.contains(&format_name),
@@ -2427,14 +2427,8 @@ fn should_refuse_a_keyword_the_validator_compiles_below_the_root() {
 
 #[test]
 fn should_refuse_what_the_validators_meta_schema_refuses_at_the_root() {
-    for (name, value) in roots_the_validators_meta_schema_refuses() {
-        let message = refusal(Value::Map(vec![
-            (
-                text_value("properties"),
-                platform_value!({ "a": { "type": "string" } }),
-            ),
-            (text_value(name), value),
-        ]));
+    for (name, root) in roots_the_validators_meta_schema_refuses() {
+        let message = refusal(root);
         assert!(message.contains("meta-schema refuses"), "{name}: {message}");
     }
 
@@ -2450,15 +2444,55 @@ fn should_refuse_what_the_validators_meta_schema_refuses_at_the_root() {
     );
 }
 
-/// Root keys the draft 2020-12 meta-schema refuses, each with its value.
-fn roots_the_validators_meta_schema_refuses() -> [(&'static str, Value); 5] {
+/// A document schema with one property, `a`, and `name` valued `value`.
+fn a_root_with(name: &str, value: Value) -> Value {
+    Value::Map(vec![
+        (
+            text_value("properties"),
+            platform_value!({ "a": { "type": "string" } }),
+        ),
+        (text_value(name), value),
+    ])
+}
+
+/// Document schemas the draft 2020-12 meta-schema refuses at the root, each with the key
+/// it refuses. A root `$id` with a trailing space before its fragment is one: the
+/// validator's `uri-reference` format refuses whitespace.
+fn roots_the_validators_meta_schema_refuses() -> Vec<(&'static str, Value)> {
     [
         ("required", platform_value!(["a", "a"])),
         ("type", platform_value!(["object", "object"])),
         ("type", platform_value!([])),
         ("title", platform_value!(5)),
+        ("description", platform_value!(true)),
+        ("$comment", platform_value!(5)),
         ("examples", platform_value!({})),
+        ("multipleOf", platform_value!(0)),
+        ("multipleOf", platform_value!(-1)),
+        ("minContains", platform_value!(-1)),
+        ("maxContains", platform_value!(1.5)),
+        ("deprecated", platform_value!("x")),
+        ("readOnly", platform_value!("x")),
+        ("writeOnly", platform_value!("x")),
+        ("contentMediaType", platform_value!(5)),
+        ("contentEncoding", platform_value!(5)),
+        ("definitions", platform_value!(1)),
+        ("$defs", platform_value!(1)),
+        ("$vocabulary", platform_value!({ "a": true })),
+        ("$schema", platform_value!("x")),
+        ("$anchor", platform_value!("1a")),
+        ("$dynamicAnchor", platform_value!("1a")),
+        ("$recursiveAnchor", platform_value!("1a")),
+        ("$id", platform_value!(5)),
+        ("$id", platform_value!("urn:a #")),
+        ("$id", platform_value!("https://example.com/a b")),
+        ("$ref", platform_value!("a b")),
+        ("$dynamicRef", platform_value!("a b")),
+        ("$recursiveRef", platform_value!("a b")),
     ]
+    .into_iter()
+    .map(|(name, value)| (name, a_root_with(name, value)))
+    .collect()
 }
 
 /// What the test above rests on: the existing validator compiles none of those roots, but a
@@ -2466,15 +2500,9 @@ fn roots_the_validators_meta_schema_refuses() -> [(&'static str, Value); 5] {
 #[cfg(feature = "validation")]
 #[test]
 fn should_match_the_existing_validator_on_what_its_meta_schema_refuses_at_the_root() {
-    for (name, value) in roots_the_validators_meta_schema_refuses() {
-        let mut schema = serde_json::json!({ "properties": { "a": { "type": "string" } } });
-        schema[name] = value
-            .try_to_validating_json()
-            .expect("expected the value to convert");
+    for (name, root) in roots_the_validators_meta_schema_refuses() {
         assert!(
-            JsonSchemaValidator::new()
-                .compile_and_validate(&schema, &serde_json::json!({}), PlatformVersion::latest())
-                .is_err(),
+            !existing_validator_compiles(&validating_json(&root)),
             "{name}"
         );
     }
@@ -2561,10 +2589,15 @@ fn should_classify_every_keyword_a_document_meta_schema_admits() {
             &fs::read_to_string(&path).expect("expected the meta-schema to read"),
         )
         .expect("expected the meta-schema to be JSON");
-        for node in ["documentSchema", "documentArrayItem"] {
-            if let Some(properties) = meta_schema["$defs"][node]["properties"].as_object() {
-                admitted.extend(properties.keys().cloned());
-            }
+        let document_schema = meta_schema["$defs"]["documentSchema"]["properties"]
+            .as_object()
+            .unwrap_or_else(|| panic!("expected `documentSchema` in {}", path.display()));
+        admitted.extend(document_schema.keys().cloned());
+        // From v3
+        if let Some(properties) =
+            meta_schema["$defs"]["documentArrayItem"]["properties"].as_object()
+        {
+            admitted.extend(properties.keys().cloned());
         }
         if let Some(properties) = meta_schema["properties"].as_object() {
             admitted_at_the_root.extend(properties.keys().cloned());
@@ -2582,7 +2615,7 @@ fn should_classify_every_keyword_a_document_meta_schema_admits() {
         .collect();
     assert!(
         unclassified.is_empty(),
-        "keywords a document meta-schema admits below the root that the validation schema neither reads nor ignores: {unclassified:?}"
+        "keywords a document meta-schema admits below the root that `SchemaKeyword` does not classify, which the builder would skip unread: {unclassified:?}"
     );
 
     // At the root, a key the validator compiles must be a keyword the validation schema holds
@@ -2621,4 +2654,439 @@ fn should_build_the_validation_schema_of_a_contract_document_type() {
             .collect();
         assert_eq!(property_names, document_type_property_names, "{name}");
     }
+}
+
+/// A `$ref` into `const` data through an `$id` that resolves to a URL with no base, then a
+/// relative `$id`: the validator joins the second onto the first and fails.
+fn a_reference_into_data_below_an_opaque_id() -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "kind": {
+                "type": "object",
+                "const": {
+                    "$id": "a",
+                    "x": {
+                        "$id": "json-schema:opaque",
+                        "y": {
+                            "$id": "b",
+                            "inner": { "type": "string", "maxLength": 8 },
+                        },
+                    },
+                },
+            },
+            "label": { "$ref": "#/properties/kind/const/x/y/inner" },
+        },
+    })
+}
+
+#[test]
+fn should_refuse_a_reference_into_data_below_an_id_with_no_base() {
+    let message = refusal(a_reference_into_data_below_an_opaque_id());
+    assert!(message.contains("may fail to enter"), "{message}");
+}
+
+/// What the test above rests on: the existing validator refuses every document carrying
+/// `label`.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_on_a_reference_into_data_below_an_id_with_no_base() {
+    let schema = validating_json(&a_reference_into_data_below_an_opaque_id());
+    assert!(existing_validator_accepts(&schema, &serde_json::json!({})));
+    assert!(!existing_validator_accepts(
+        &schema,
+        &serde_json::json!({ "label": "a" })
+    ));
+}
+
+#[test]
+fn should_refuse_a_required_repeated_with_other_names() {
+    let repeated = |first: Value, last: Value| {
+        Value::Map(vec![
+            (text_value("type"), text_value("object")),
+            (
+                text_value("properties"),
+                platform_value!({ "a": { "type": "string" }, "b": { "type": "string" } }),
+            ),
+            (text_value("required"), first),
+            (text_value("required"), last),
+        ])
+    };
+    for root in [
+        repeated(platform_value!(["a", "b"]), platform_value!(["a"])),
+        with_value(repeated(
+            platform_value!(["a", "b"]),
+            platform_value!(["a"]),
+        )),
+    ] {
+        let message = refusal(root);
+        assert!(
+            message.contains("`required` is declared more than once"),
+            "{message}"
+        );
+    }
+
+    let schema = build(repeated(platform_value!(["a"]), platform_value!(["a"])));
+    assert_eq!(object(&schema.root).required, Some(vec!["a".to_string()]));
+}
+
+#[test]
+fn should_skip_a_keyword_the_validator_compiles_only_beside_another_where_it_stands_alone() {
+    let schema = build(platform_value!({
+        "type": "object",
+        "properties": {
+            "$createdAt": { "type": "integer", "then": false },
+            "a": { "type": "string", "if": { "maxLength": 1 } },
+            "b": { "type": "string", "else": false },
+            "c": {
+                "type": "array",
+                "items": { "type": "string" },
+                "minContains": 2,
+                "maxContains": 3,
+                "additionalItems": false,
+            },
+        },
+    }));
+    assert_eq!(
+        property(&schema.root, "a").types,
+        Some(JsonTypes::One(JsonType::String))
+    );
+
+    for (keyword, value) in [
+        (
+            "if",
+            platform_value!({ "if": { "maxLength": 1 }, "then": false }),
+        ),
+        (
+            "minContains",
+            platform_value!({ "minContains": 2, "contains": { "type": "string" } }),
+        ),
+        (
+            "additionalItems",
+            platform_value!({ "additionalItems": false, "items": [{ "type": "string" }] }),
+        ),
+        (
+            "additionalItems",
+            platform_value!({ "additionalItems": { "type": "string" }, "items": false }),
+        ),
+    ] {
+        let message = refusal(with_value(value));
+        assert!(
+            message.contains(&format!("the JSON Schema validator checks `{keyword}`")),
+            "{message}"
+        );
+    }
+}
+
+/// What the test above rests on: the existing validator ignores each of those keywords
+/// standing alone.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_on_a_keyword_standing_alone() {
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "$createdAt": { "type": "integer", "then": false },
+            "b": { "type": "string", "else": false },
+            "c": {
+                "type": "array",
+                "items": { "type": "string" },
+                "minContains": 2,
+                "additionalItems": false,
+            },
+        },
+    });
+    assert!(existing_validator_accepts(
+        &schema,
+        &serde_json::json!({ "$createdAt": 1, "b": "x", "c": ["x", "y"] })
+    ));
+}
+
+#[test]
+fn should_build_a_repeated_root_property_whose_last_entry_the_parser_keeps() {
+    let root = |entries: Vec<(&str, Value)>| {
+        Value::Map(vec![
+            (text_value("type"), text_value("object")),
+            (
+                text_value("properties"),
+                Value::Map(
+                    entries
+                        .into_iter()
+                        .map(|(name, schema)| (text_value(name), schema))
+                        .collect(),
+                ),
+            ),
+        ])
+    };
+    let entry = |position: u64, max_bytes: u64| platform_value!({ "type": "string", "maxBytes": max_bytes, "position": position });
+    let other = platform_value!({ "type": "string", "position": 0 });
+
+    // The parser orders the document schema's properties by position, keeping the order of
+    // equal ones, and keeps the last entry of a name
+    let schema = build(root(vec![("a", entry(0, 4)), ("a", entry(0, 8))]));
+    assert_eq!(string(property(&schema.root, "a")).max_bytes, Some(8));
+    build(root(vec![
+        ("b", other.clone()),
+        ("a", entry(0, 4)),
+        ("a", entry(1, 8)),
+    ]));
+
+    let message = refusal(root(vec![
+        ("a", entry(1, 4)),
+        ("b", other),
+        ("a", entry(0, 8)),
+    ]));
+    assert!(
+        message.contains("`a` is declared more than once"),
+        "{message}"
+    );
+}
+
+/// Document schemas holding at the root a value of another type than the JSON the
+/// validator compiles: bytes, which it reads as an array of integers.
+fn roots_holding_bytes() -> [Value; 2] {
+    [
+        a_root_with("examples", Value::Bytes(vec![1, 2])),
+        a_root_with("required", Value::Bytes(vec![])),
+    ]
+}
+
+#[test]
+fn should_read_the_root_as_the_json_the_validator_compiles() {
+    let [examples, required] = roots_holding_bytes();
+    build(examples);
+    let schema = build(required);
+    assert_eq!(object(&schema.root).required, Some(vec![]));
+}
+
+/// What the test above rests on: the existing validator compiles both.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_on_a_root_holding_bytes() {
+    for root in roots_holding_bytes() {
+        assert!(existing_validator_compiles(&validating_json(&root)));
+    }
+}
+
+#[test]
+fn should_refuse_a_reference_an_id_may_rescope_before_resolving_it() {
+    for root in [
+        // The validator resolves `b` through the `$id` above it, to `a`'s own `c`
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "a": {
+                    "$id": "https://example.com/a",
+                    "type": "object",
+                    "properties": {
+                        "b": { "$ref": "#/properties/c" },
+                        "c": { "type": "string" },
+                    },
+                },
+            },
+        }),
+        // Under an absolute document schema `$id`, a relative `$id` gives a new URL
+        platform_value!({
+            "$id": "https://example.com/root",
+            "type": "object",
+            "properties": {
+                "p": {
+                    "$id": "sub/",
+                    "type": "object",
+                    "properties": { "u": { "$ref": "#/$defs/l" } },
+                },
+            },
+            "$defs": { "l": { "type": "string" } },
+        }),
+    ] {
+        let message = refusal(root);
+        assert!(
+            message.contains("may be given another URL by an `$id` above it"),
+            "{message}"
+        );
+    }
+}
+
+/// A property named `const` carrying an `$id` that is not a URL reference: the validator,
+/// compiling the property with the document schema, fails to enter it.
+fn a_property_named_const_with_an_id_that_is_not_a_url() -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "const": { "$id": "http://[::1", "type": "string", "maxLength": 8 },
+        },
+    })
+}
+
+#[test]
+fn should_refuse_a_property_named_const_with_an_id_that_is_not_a_url() {
+    let message = refusal(a_property_named_const_with_an_id_that_is_not_a_url());
+    assert!(message.contains("may fail to enter"), "{message}");
+    assert!(!message.contains("`$ref`"), "{message}");
+}
+
+/// What the test above rests on: the existing validator compiles nothing for it.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_on_a_property_named_const_with_an_id_that_is_not_a_url() {
+    assert!(!existing_validator_compiles(&validating_json(
+        &a_property_named_const_with_an_id_that_is_not_a_url()
+    )));
+}
+
+#[test]
+fn should_name_the_reference_that_reached_a_refused_schema() {
+    let message = refusal(platform_value!({
+        "type": "object",
+        "properties": {
+            "name": { "$ref": "#/$defs/bounded" },
+            "names": containing_reference("#/$defs/bounded"),
+        },
+        "$defs": { "bounded": { "type": "string", "maxBytes": 4 } },
+    }));
+    assert!(
+        message.contains("`maxBytes` is read inside `contains`"),
+        "{message}"
+    );
+    assert!(
+        message.contains("(reached through `$ref` `#/$defs/bounded`)"),
+        "{message}"
+    );
+}
+
+/// What the comparisons the documentation of [`SchemaNode::constant`],
+/// [`SchemaNode::enum_values`], [`ArrayConstraints::unique_items`] and
+/// [`NumberConstraints::multiple_of`] describes rest on.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_on_the_comparisons_the_documentation_describes() {
+    let accepts = |schema: serde_json::Value, value: serde_json::Value| {
+        existing_validator_accepts(
+            &serde_json::json!({ "type": "object", "properties": { "value": schema } }),
+            &serde_json::json!({ "value": value }),
+        )
+    };
+
+    // A number `const` matches within an absolute f64::EPSILON
+    assert!(accepts(
+        serde_json::json!({ "const": 9007199254740993u64 }),
+        serde_json::json!(9007199254740992u64)
+    ));
+    assert!(accepts(
+        serde_json::json!({ "const": 0 }),
+        serde_json::json!(1e-300)
+    ));
+    assert!(!accepts(
+        serde_json::json!({ "const": 0 }),
+        serde_json::json!(1e-10)
+    ));
+
+    // A fractional `multipleOf` passes every negative quotient, and decides exactly when the
+    // quotient overflows
+    assert!(accepts(
+        serde_json::json!({ "multipleOf": 0.5 }),
+        serde_json::json!(-0.3)
+    ));
+    assert!(!accepts(
+        serde_json::json!({ "multipleOf": 0.5 }),
+        serde_json::json!(0.3)
+    ));
+    assert!(!accepts(
+        serde_json::json!({ "multipleOf": 0.3 }),
+        serde_json::json!(-8.98846567431158e307) // -2^1023
+    ));
+    assert!(accepts(
+        serde_json::json!({ "multipleOf": 0.1 }),
+        serde_json::json!(1.5e308)
+    ));
+
+    // `uniqueItems` compares up to 15 elements by value and more by their JSON form
+    let elements = |count: u64| {
+        let mut elements = vec![serde_json::json!(1), serde_json::json!(1.0)];
+        elements.extend((2..count).map(|element| serde_json::json!(element)));
+        serde_json::Value::Array(elements)
+    };
+    assert!(!accepts(
+        serde_json::json!({ "uniqueItems": true }),
+        elements(15)
+    ));
+    assert!(accepts(
+        serde_json::json!({ "uniqueItems": true }),
+        elements(16)
+    ));
+
+    // `enum` compares objects key by key in the order the keys are written
+    let enumerated = |member: Value| {
+        accepts(
+            serde_json::json!({ "enum": [validating_json(&member)] }),
+            serde_json::json!({ "a": 1, "b": 2 }),
+        )
+    };
+    assert!(enumerated(Value::Map(vec![
+        (text_value("a"), Value::U64(1)),
+        (text_value("b"), Value::U64(2)),
+    ])));
+    assert!(!enumerated(Value::Map(vec![
+        (text_value("b"), Value::U64(2)),
+        (text_value("a"), Value::U64(1)),
+    ])));
+}
+
+/// Every key a draft 2020-12 vocabulary bundled with DPP checks at the root, written there
+/// with values of each JSON type: whenever the existing validator compiles nothing for the
+/// document schema, the builder refuses it.
+#[cfg(feature = "validation")]
+#[test]
+fn should_refuse_every_root_the_existing_validator_compiles_nothing_for() {
+    let draft = Path::new(env!("CARGO_MANIFEST_DIR")).join("schema/meta_schemas/draft2020-12");
+    let mut paths: Vec<_> = fs::read_dir(draft.join("meta"))
+        .expect("expected the draft 2020-12 vocabularies")
+        .map(|entry| entry.expect("expected a vocabulary").path())
+        .collect();
+    paths.push(draft.join("schema.json"));
+    let mut keys = BTreeSet::new();
+    for path in &paths {
+        let meta_schema: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(path).expect("expected the vocabulary to read"),
+        )
+        .expect("expected the vocabulary to be JSON");
+        let properties = meta_schema["properties"]
+            .as_object()
+            .unwrap_or_else(|| panic!("expected root properties in {}", path.display()));
+        keys.extend(properties.keys().cloned());
+    }
+    assert!(
+        paths.len() >= 8,
+        "expected every vocabulary, found {paths:?}"
+    );
+
+    let values = [
+        Value::Null,
+        platform_value!(true),
+        platform_value!(-1),
+        platform_value!(0),
+        platform_value!(1.5),
+        platform_value!("x"),
+        platform_value!("1a"),
+        platform_value!("a b"),
+        platform_value!([]),
+        platform_value!(["a", "a"]),
+        platform_value!({}),
+        platform_value!({ "a": 1 }),
+    ];
+    let mut uncompiled = 0;
+    for key in &keys {
+        for value in &values {
+            let root = a_root_with(key, value.clone());
+            if existing_validator_compiles(&validating_json(&root)) {
+                continue;
+            }
+            uncompiled += 1;
+            assert!(
+                ValidationSchema::try_from_root(&root).is_err(),
+                "the existing validator compiles nothing for `{key}`: {value:?}, which the builder builds"
+            );
+        }
+    }
+    assert!(uncompiled > 0);
 }

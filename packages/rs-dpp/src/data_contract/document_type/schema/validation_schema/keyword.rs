@@ -20,7 +20,8 @@ pub enum SchemaKeyword {
     String(StringKeyword),
     /// Applies to a number.
     Number(NumberKeyword),
-    /// Says what kind of string, number or byte array a value is, beyond its JSON type.
+    /// Says what kind of string, number or byte array a value is: beyond its JSON type, but
+    /// for `byteArray`, which also requires an array.
     Format(FormatKeyword),
     /// Ties the value to something outside it: another document, identity or key, or
     /// other properties of the same document.
@@ -124,7 +125,7 @@ pub enum NumberKeyword {
 }
 
 /// Keywords that say what kind of string, number or byte array a value is, beyond its JSON
-/// type.
+/// type, but for `byteArray`, which also fixes it.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, strum::EnumIter, strum::IntoStaticStr,
 )]
@@ -132,7 +133,8 @@ pub enum NumberKeyword {
 pub enum FormatKeyword {
     /// `format`: a named format, such as `uri` or `date-time`, that a value must follow.
     Format,
-    /// `byteArray`: Platform's keyword for an array whose elements are bytes.
+    /// `byteArray`: Platform's keyword for an array whose elements are bytes. Unlike
+    /// `format`, it refuses a value of any other JSON type, whatever `type` says.
     ByteArray,
     /// `encryptedFor`: the byte array is ciphertext made with a named scheme, for a
     /// recipient other properties name. JSON Schema leaves it unchecked; the validation of a
@@ -181,9 +183,11 @@ pub enum RelationshipKeyword {
 #[strum(serialize_all = "camelCase")]
 pub enum MetaKeyword {
     /// `$id`: names the schema. The JSON Schema validator resolves a `$ref` through the
-    /// schemas named this way before it follows the pointer, as the builder does, and below
-    /// an absolute `$id` against that `$id`, which the validation schema does not represent,
-    /// so the builder refuses a `$ref` an `$id` above it rescopes.
+    /// schemas named this way before it follows the pointer, as the builder does. It resolves
+    /// a `$ref` below an absolute `$id`, or below a relative one under an absolute document
+    /// schema `$id`, against that `$id`, which the validation schema does not represent, so
+    /// the builder refuses a `$ref` an `$id` above it may rescope. It also refuses a document
+    /// schema `$id` that is not an absolute URL, and an `$id` that is not a URL reference.
     #[strum(serialize = "$id")]
     Id,
     /// `position`: the property's place in the stored document, whose values are written
