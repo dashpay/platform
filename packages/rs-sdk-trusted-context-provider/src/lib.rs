@@ -9,11 +9,13 @@
 //! - **Devnet**: Uses `https://quorums.<devnet_name>.networks.dash.org/`
 
 pub mod error;
+pub mod local;
 pub mod provider;
 mod quorum_refresh;
 pub mod types;
 
 pub use error::TrustedContextProviderError;
+pub use local::LocalContextResolver;
 pub use provider::TrustedHttpContextProvider;
 
 use dpp::dashcore::Network;

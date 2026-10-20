@@ -1,39 +1,20 @@
 use crate::error::TrustedContextProviderError;
 use crate::get_quorum_base_url;
+use crate::local::LocalContextResolver;
 use crate::quorum_refresh::{
     contained, sleep, FetchedQuorums, QuorumRefreshes, QUORUM_LIST_REQUEST_TIMEOUT,
 };
 use crate::types::{PreviousQuorumsResponse, QuorumData, QuorumsResponse};
 
 use arc_swap::ArcSwap;
+use dash_context_provider::platform_activation_height;
 use dash_context_provider::{ContextProvider, ContextProviderError, QuorumKeyFuture};
 use dpp::bls::PublicKey;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 // QuorumHash is just [u8; 32]
 type QuorumHash = [u8; 32];
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
-#[cfg(any(
-    feature = "dpns-contract",
-    feature = "dashpay-contract",
-    feature = "withdrawals-contract",
-    feature = "wallet-utils-contract",
-    feature = "token-history-contract",
-    feature = "keywords-contract",
-    feature = "document-history-contract",
-    feature = "app-connect-contract",
-    feature = "moderation-charters-contract",
-    feature = "all-system-contracts"
-))]
-use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-#[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
-use dpp::version::feature_initial_protocol_versions::APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION;
-#[cfg(any(
-    feature = "moderation-charters-contract",
-    feature = "all-system-contracts"
-))]
-use dpp::version::feature_initial_protocol_versions::MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION;
 use dpp::version::PlatformVersion;
 
 use futures::future::{BoxFuture, FutureExt};
@@ -42,7 +23,6 @@ use reqwest::Client;
 use serde::Deserialize;
 #[cfg(test)]
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::error::Error as StdError;
 #[cfg(all(
     not(target_arch = "wasm32"),
@@ -91,11 +71,9 @@ pub struct TrustedHttpContextProvider {
     /// Optional fallback provider for data contracts and token configurations
     fallback_provider: Option<Arc<dyn ContextProvider>>,
 
-    /// Known contracts cache - contracts that are pre-loaded and can be served immediately
-    known_contracts: Arc<Mutex<HashMap<Identifier, Arc<DataContract>>>>,
-
-    /// Known token configurations cache - token configs that are pre-loaded for proof verification
-    known_token_configurations: Arc<Mutex<HashMap<Identifier, TokenConfiguration>>>,
+    /// Known contracts, token configurations and system contracts, shared by
+    /// clones and by whoever holds [`Self::local_resolver`].
+    local: Arc<LocalContextResolver>,
 
     /// Whether to refetch quorums if not found in cache
     refetch_if_not_found: bool,
@@ -281,8 +259,7 @@ impl TrustedHttpContextProvider {
             last_current_quorums: Arc::new(ArcSwap::new(Arc::new(None))),
             last_previous_quorums: Arc::new(ArcSwap::new(Arc::new(None))),
             fallback_provider: None,
-            known_contracts: Arc::new(Mutex::new(HashMap::new())),
-            known_token_configurations: Arc::new(Mutex::new(HashMap::new())),
+            local: Arc::default(),
             refetch_if_not_found: true,
             quorum_refreshes: Arc::default(),
         })
@@ -296,12 +273,7 @@ impl TrustedHttpContextProvider {
 
     /// Set known contracts that will be served immediately without fallback
     pub fn with_known_contracts(self, contracts: Vec<DataContract>) -> Self {
-        let mut known = self.known_contracts.lock().unwrap();
-        for contract in contracts {
-            let id = contract.id();
-            known.insert(id, Arc::new(contract));
-        }
-        drop(known);
+        self.local.add_known_contracts(contracts);
         self
     }
 
@@ -313,61 +285,46 @@ impl TrustedHttpContextProvider {
 
     /// Add a data contract to the known contracts cache
     pub fn add_known_contract(&self, contract: DataContract) {
-        let id = contract.id();
-        let mut known = self.known_contracts.lock().unwrap();
-        known.insert(id, Arc::new(contract));
+        self.local.add_known_contract(contract);
     }
 
     /// Insert a contract only when its version is strictly newer, returning
     /// the retained entry. Equal versions preserve the existing body.
     pub fn add_known_contract_if_newer(&self, contract: DataContract) -> Arc<DataContract> {
-        let id = contract.id();
-        let mut known = self.known_contracts.lock().unwrap();
-        if let Some(existing) = known.get(&id) {
-            if existing.version() >= contract.version() {
-                return existing.clone();
-            }
-        }
-        let contract = Arc::new(contract);
-        known.insert(id, contract.clone());
-        contract
+        self.local.add_known_contract_if_newer(contract)
     }
 
     /// Get a data contract from the known contracts cache
     /// Returns None if the contract is not in the cache
     pub fn get_known_contract(&self, id: &Identifier) -> Option<Arc<DataContract>> {
-        let known = self.known_contracts.lock().unwrap();
-        known.get(id).cloned()
+        self.local.get_known_contract(id)
     }
 
     /// Remove a data contract from the known contracts cache
     /// Returns true if the contract was present and removed, false otherwise
     pub fn remove_known_contract(&self, id: &Identifier) -> bool {
-        let mut known = self.known_contracts.lock().unwrap();
-        known.remove(id).is_some()
+        self.local.remove_known_contract(id)
     }
 
     /// Add multiple data contracts to the known contracts cache
     pub fn add_known_contracts(&self, contracts: Vec<DataContract>) {
-        let mut known = self.known_contracts.lock().unwrap();
-        for contract in contracts {
-            let id = contract.id();
-            known.insert(id, Arc::new(contract));
-        }
+        self.local.add_known_contracts(contracts);
     }
 
     /// Add a token configuration to the known token configurations cache
     pub fn add_known_token_configuration(&self, token_id: Identifier, config: TokenConfiguration) {
-        let mut known = self.known_token_configurations.lock().unwrap();
-        known.insert(token_id, config);
+        self.local.add_known_token_configuration(token_id, config);
     }
 
     /// Add multiple token configurations to the known token configurations cache
     pub fn add_known_token_configurations(&self, configs: Vec<(Identifier, TokenConfiguration)>) {
-        let mut known = self.known_token_configurations.lock().unwrap();
-        for (token_id, config) in configs {
-            known.insert(token_id, config);
-        }
+        self.local.add_known_token_configurations(configs);
+    }
+
+    /// The contracts and token configurations this provider serves without a
+    /// network. The returned resolver shares this provider's caches.
+    pub fn local_resolver(&self) -> Arc<LocalContextResolver> {
+        Arc::clone(&self.local)
     }
 
     /// Update the quorum caches by fetching current and previous quorums.
@@ -1032,168 +989,9 @@ impl ContextProvider for TrustedHttpContextProvider {
         id: &Identifier,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
-        // First check known contracts cache
-        let known = self.known_contracts.lock().unwrap();
-        if let Some(contract) = known.get(id) {
-            return Ok(Some(contract.clone()));
-        }
-        drop(known);
-
-        // Check if this is a system data contract and the corresponding feature is enabled
-        #[cfg(any(
-            feature = "dpns-contract",
-            feature = "dashpay-contract",
-            feature = "withdrawals-contract",
-            feature = "wallet-utils-contract",
-            feature = "token-history-contract",
-            feature = "keywords-contract",
-            feature = "document-history-contract",
-            feature = "app-connect-contract",
-            feature = "moderation-charters-contract",
-            feature = "all-system-contracts"
-        ))]
-        {
-            // Check each system contract if its feature is enabled
-            #[cfg(any(feature = "dpns-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::DPNS.id() {
-                return load_system_data_contract(SystemDataContract::DPNS, platform_version)
-                    .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| {
-                        ContextProviderError::Generic(format!(
-                            "Failed to load DPNS contract: {}",
-                            e
-                        ))
-                    });
-            }
-
-            #[cfg(any(feature = "dashpay-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::Dashpay.id() {
-                return load_system_data_contract(SystemDataContract::Dashpay, platform_version)
-                    .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| {
-                        ContextProviderError::Generic(format!(
-                            "Failed to load Dashpay contract: {}",
-                            e
-                        ))
-                    });
-            }
-
-            #[cfg(any(feature = "withdrawals-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::Withdrawals.id() {
-                return load_system_data_contract(
-                    SystemDataContract::Withdrawals,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load Withdrawals contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(feature = "wallet-utils-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::WalletUtils.id() {
-                return load_system_data_contract(
-                    SystemDataContract::WalletUtils,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load WalletUtils contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(feature = "token-history-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::TokenHistory.id() {
-                return load_system_data_contract(
-                    SystemDataContract::TokenHistory,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load TokenHistory contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(feature = "keywords-contract", feature = "all-system-contracts"))]
-            if *id == SystemDataContract::KeywordSearch.id() {
-                return load_system_data_contract(
-                    SystemDataContract::KeywordSearch,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load KeywordSearch contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(
-                feature = "document-history-contract",
-                feature = "all-system-contracts"
-            ))]
-            if *id == SystemDataContract::DocumentHistory.id() {
-                return load_system_data_contract(
-                    SystemDataContract::DocumentHistory,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load DocumentHistory contract: {}",
-                        e
-                    ))
-                });
-            }
-
-            #[cfg(any(feature = "app-connect-contract", feature = "all-system-contracts"))]
-            // Below protocol version 14 the app-connect contract is
-            // absent, so the lookup falls through to the fallback provider (or `None`).
-            if *id == SystemDataContract::AppConnect.id()
-                && platform_version.protocol_version
-                    >= APP_CONNECT_CONTRACT_INITIAL_PROTOCOL_VERSION
-            {
-                return load_system_data_contract(SystemDataContract::AppConnect, platform_version)
-                    .map(|contract| Some(Arc::new(contract)))
-                    .map_err(|e| {
-                        ContextProviderError::Generic(format!(
-                            "Failed to load AppConnect contract: {}",
-                            e
-                        ))
-                    });
-            }
-
-            #[cfg(any(
-                feature = "moderation-charters-contract",
-                feature = "all-system-contracts"
-            ))]
-            // Below protocol version 14 the moderation charters contract is absent too.
-            if *id == SystemDataContract::ModerationCharters.id()
-                && platform_version.protocol_version
-                    >= MODERATION_CHARTERS_CONTRACT_INITIAL_PROTOCOL_VERSION
-            {
-                return load_system_data_contract(
-                    SystemDataContract::ModerationCharters,
-                    platform_version,
-                )
-                .map(|contract| Some(Arc::new(contract)))
-                .map_err(|e| {
-                    ContextProviderError::Generic(format!(
-                        "Failed to load ModerationCharters contract: {}",
-                        e
-                    ))
-                });
-            }
+        // Known contracts first, then the system contracts.
+        if let Some(contract) = self.local.data_contract(id, platform_version)? {
+            return Ok(Some(contract));
         }
 
         // If not found in known contracts or system contracts, delegate to fallback provider if available
@@ -1206,9 +1004,7 @@ impl ContextProvider for TrustedHttpContextProvider {
     }
 
     fn register_data_contract(&self, contract: Arc<DataContract>) {
-        let id = contract.id();
-        let mut known = self.known_contracts.lock().unwrap();
-        known.insert(id, contract);
+        self.local.add_known_data_contract(contract);
     }
 
     fn get_token_configuration(
@@ -1216,11 +1012,9 @@ impl ContextProvider for TrustedHttpContextProvider {
         token_id: &Identifier,
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
         // First check known token configurations cache
-        let known = self.known_token_configurations.lock().unwrap();
-        if let Some(config) = known.get(token_id) {
-            return Ok(Some(config.clone()));
+        if let Some(config) = self.local.token_configuration(token_id) {
+            return Ok(Some(config));
         }
-        drop(known);
 
         // Delegate to fallback provider if available
         if let Some(ref provider) = self.fallback_provider {
@@ -1232,12 +1026,7 @@ impl ContextProvider for TrustedHttpContextProvider {
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-        // Return the L1 locked height for each network
-        match self.network {
-            Network::Mainnet => Ok(2132092), // Mainnet L1 locked height
-            Network::Testnet => Ok(1090319), // Testnet L1 locked height
-            Network::Devnet | Network::Regtest => Ok(1), // Devnet/Regtest activation height
-        }
+        Ok(platform_activation_height(self.network))
     }
 }
 
@@ -2433,6 +2222,41 @@ mod tests {
         }
     }
 
+    /// Clones, the detached copy a quorum refresh runs on, and the resolver
+    /// handed out by `local_resolver` must all see one contract cache: the SDK
+    /// registers contracts through one handle and verifies proofs through
+    /// another.
+    #[cfg(any(feature = "dpns-contract", feature = "all-system-contracts"))]
+    #[test]
+    fn should_share_one_contract_cache_across_clones_and_the_local_resolver() {
+        use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+
+        let provider = TrustedHttpContextProvider::new_with_url(
+            Network::Regtest,
+            "http://127.0.0.1:1".to_string(),
+            NonZeroUsize::new(1).expect("non-zero cache size"),
+        )
+        .expect("offline provider");
+        let mut contract =
+            load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
+                .expect("DPNS contract");
+        contract.set_id(Identifier::new([0x5b; 32]));
+        let id = contract.id();
+
+        provider.local_resolver().add_known_contract(contract);
+
+        for handle in [provider.clone(), provider.detached()] {
+            assert!(handle.get_known_contract(&id).is_some());
+            assert!(handle
+                .get_data_contract(&id, PlatformVersion::latest())
+                .unwrap()
+                .is_some());
+        }
+        assert!(provider.remove_known_contract(&id));
+        assert!(provider.local_resolver().get_known_contract(&id).is_none());
+    }
+
     #[test]
     fn test_known_contracts() {
         use dpp::version::PlatformVersion;
@@ -2463,6 +2287,7 @@ mod tests {
     #[test]
     fn should_serve_app_connect_only_from_protocol_14() {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::system_data_contracts::SystemDataContract;
         use dpp::version::PlatformVersion;
 
         // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
@@ -2495,6 +2320,7 @@ mod tests {
     #[test]
     fn should_serve_moderation_charters_only_from_protocol_14() {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::system_data_contracts::SystemDataContract;
         use dpp::version::PlatformVersion;
 
         // A numeric loopback URL avoids DNS; contract lookups make no HTTP requests.
