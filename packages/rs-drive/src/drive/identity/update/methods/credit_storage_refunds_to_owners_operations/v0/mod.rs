@@ -74,10 +74,11 @@ impl Drive {
                 }
 
                 if let Some(new_negative_balance) = outcome.negative_credit_balance_modified() {
-                    drive_operations.push(self.update_identity_negative_credit_operation_v0(
+                    drive_operations.push(self.update_identity_negative_credit_operation(
                         *owner_id,
                         new_negative_balance,
-                    ));
+                        platform_version,
+                    )?);
                 }
 
                 // From a zero balance the helper clears negative credit first and only
