@@ -6,7 +6,7 @@
 //! the key with bincode's native `Encode`/`Decode` and rides the surrounding
 //! fields on the serde encoder, keeping one blob per row.
 
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -161,6 +161,15 @@ pub fn apply(
         // 32 zero bytes instead would produce a row that matches no
         // wallet, no NULL-scoped reader, and no guard.
         let wallet_id_param = super::wallet_id_to_param(wallet_id);
+        // An entry without a derivation breadcrumb keeps the one the row
+        // already holds under this scope, as the Swift and Kotlin persisters
+        // do: a key's derivation never changes, and an upsert that only
+        // knows the key's new state (a raised limit, a disable, a refresh)
+        // must not turn a wallet-derived key watch-only.
+        let mut stored = tx.prepare_cached(
+            "SELECT public_key_blob FROM identity_keys \
+             WHERE identity_id = ?1 AND key_id = ?2 AND wallet_id IS ?3",
+        )?;
         for ((identity_id, key_id), entry) in &cs.upserts {
             // Typed columns and blob fields must agree so a row can never
             // diverge on disk.
@@ -172,7 +181,22 @@ pub fn apply(
                     return Err(WalletStorageError::IdentityKeyEntryMismatch);
                 }
             }
-            let wire = IdentityKeyWire::from_entry(entry)?;
+            let mut wire = IdentityKeyWire::from_entry(entry)?;
+            if wire.derivation_indices.is_none() {
+                let held: Option<Vec<u8>> = stored
+                    .query_row(
+                        params![identity_id.as_slice(), i64::from(*key_id), wallet_id_param],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                if let Some(held) = held {
+                    let held: IdentityKeyWire = blob::decode(&held)?;
+                    if held.derivation_indices.is_some() {
+                        wire.wallet_id = held.wallet_id;
+                        wire.derivation_indices = held.derivation_indices;
+                    }
+                }
+            }
             let entry_blob = blob::encode(&wire)?;
             stmt.execute(params![
                 wallet_id_param,

@@ -800,7 +800,8 @@ mod tests {
     }
 
     /// A disable a refresh brings, from an answer older or newer than the
-    /// cache, is stored with its key row. A store that refuses it fails the
+    /// cache, is stored with its key row, as is a key a newer answer adds. A
+    /// store that refuses them fails the
     /// refresh and queues the row, which the next refresh stores although
     /// memory already holds the disable.
     #[tokio::test]
@@ -877,6 +878,12 @@ mod tests {
                     "key {key_id} answered at {revision}"
                 );
             }
+            // A key a newer answer adds is stored too, without derivation
+            // coordinates the refresh cannot know; an older answer adds
+            // none.
+            let key_4 = store.stored_key(identity_id, 4);
+            assert_eq!(key_4.is_some(), revision > 6, "answered at {revision}");
+            assert!(key_4.is_none_or(|row| row.derivation_indices.is_none()));
         }
     }
 

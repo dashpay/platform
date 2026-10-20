@@ -439,29 +439,17 @@ impl ManagedIdentity {
         taken
     }
 
-    /// The disables `fetched` brings to keys the cache holds, at any
-    /// revision — what [`Self::take_fetched_identity`] changes in a key's
-    /// disabled state — so a caller that stores no key rows of its own can
-    /// store them (see [`Self::store_fetched_identity`]).
-    pub fn disables_from_fetch(&self, fetched: &Identity) -> Vec<(KeyID, TimestampMillis)> {
-        let taken = fetched.revision() >= self.identity.revision();
-        self.identity
-            .public_keys()
-            .iter()
-            .filter_map(|(key_id, cached)| {
-                let fetched_key = fetched.public_keys().get(key_id)?;
-                let folded = fold_fetched_key(Some(cached), fetched_key, taken)?.disabled_at()?;
-                (cached.disabled_at() != Some(folded)).then_some((*key_id, folded))
-            })
-            .collect()
-    }
-
-    /// Fold `fetched` (see [`Self::take_fetched_identity`]) and store the key
-    /// rows of the disables it brings (see [`Self::disables_from_fetch`]),
-    /// with the wallet slot's breadcrumb as [`Self::disable_keys`] gives
-    /// them, and the identity's scalar snapshot as one changeset (see
-    /// `store_keys_and_balance`). Used where a fetch comes without derived
-    /// breadcrumbs (refresh), which stores no other key rows.
+    /// Fold `fetched` (see [`Self::take_fetched_identity`]) and store the row
+    /// of every key the fold adds or changes (a disable, a raised limit, a
+    /// key added at a newer revision) with the identity's scalar snapshot as
+    /// one changeset (see `store_keys_and_balance`). Used where a fetch comes
+    /// without derived breadcrumbs (refresh), so the rows carry none: every
+    /// persister keeps the breadcrumb a row already holds, and a key with no
+    /// row yet is stored watch-only until a load or discovery derives it,
+    /// rather than with derivation coordinates inferred from the identity's
+    /// wallet slot. Storing what the fold changes makes any refresh bring the
+    /// store up to the fetch, a refresh after a restart included, which a
+    /// queue held in memory cannot.
     ///
     /// A failed store is returned; memory holds the fold (the revision above
     /// all, which the next update is built from), and the refused key rows
@@ -473,13 +461,25 @@ impl ManagedIdentity {
         block_time: BlockTime,
         persister: &WalletPersister,
     ) -> Result<(), PlatformWalletError> {
-        let disables = self.disables_from_fetch(fetched);
+        let before = self.identity.public_keys().clone();
         self.take_fetched_identity(fetched, block_time);
+        let identity_id = self.id();
         let mut keys_cs = IdentityKeysChangeSet::default();
-        for (key_id, disabled_at) in disables {
-            keys_cs
-                .upserts
-                .extend(self.stamp_disabled(&[key_id], disabled_at).upserts);
+        for (key_id, key) in self.identity.public_keys() {
+            if before.get(key_id) == Some(key) {
+                continue;
+            }
+            keys_cs.upserts.insert(
+                (identity_id, *key_id),
+                IdentityKeyEntry {
+                    identity_id,
+                    key_id: *key_id,
+                    public_key: key.clone(),
+                    public_key_hash: pubkey_hash_of(key),
+                    wallet_id: None,
+                    derivation_indices: None,
+                },
+            );
         }
         self.store_keys_and_balance(keys_cs, persister)
     }

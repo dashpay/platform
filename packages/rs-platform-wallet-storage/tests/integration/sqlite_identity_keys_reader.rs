@@ -48,6 +48,68 @@ fn key_entry(identity: Identifier, key_id: u32, byte: u8) -> IdentityKeyEntry {
     }
 }
 
+/// An upsert without a derivation breadcrumb keeps the one the row holds
+/// and takes the rest of the entry: a key's derivation never changes, and a
+/// write that only knows the key's new state (a raised limit, a disable)
+/// must not turn a wallet-derived key watch-only. A row without one stays
+/// without one.
+#[test]
+fn should_keep_a_stored_breadcrumb_when_an_upsert_carries_none() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xD2);
+    ensure_wallet_meta(&persister, &w);
+    let id = Identifier::from([0x0C; 32]);
+    platform_wallet_storage::sqlite::schema::identities::ensure_exists(
+        &persister.lock_conn_for_test(),
+        &w,
+        id.as_slice().try_into().unwrap(),
+    )
+    .unwrap();
+    let store = |entries: Vec<IdentityKeyEntry>| {
+        let mut keys = IdentityKeysChangeSet::default();
+        for entry in entries {
+            keys.upserts.insert((entry.identity_id, entry.key_id), entry);
+        }
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    identity_keys: Some(keys),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    };
+
+    let derived = key_entry(id, 0, 0x11);
+    let mut watch_only = key_entry(id, 1, 0x22);
+    watch_only.derivation_indices = None;
+    store(vec![derived.clone(), watch_only.clone()]);
+
+    let mut disabled = derived.clone();
+    disabled.derivation_indices = None;
+    if let IdentityPublicKey::V0(key) = &mut disabled.public_key {
+        key.disabled_at = Some(7);
+    }
+    let mut watch_only_disabled = watch_only.clone();
+    if let IdentityPublicKey::V0(key) = &mut watch_only_disabled.public_key {
+        key.disabled_at = Some(8);
+    }
+    store(vec![disabled.clone(), watch_only_disabled.clone()]);
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let cs = identity_keys::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load_state");
+    drop(conn);
+
+    let mut expected = disabled;
+    expected.derivation_indices = derived.derivation_indices;
+    assert_eq!(cs.upserts.get(&(id, 0)), Some(&expected));
+    assert_eq!(cs.upserts.get(&(id, 1)), Some(&watch_only_disabled));
+}
+
 /// Identity-key rows round-trip bit-exact into the keyless
 /// `IdentityKeysChangeSet`.
 #[test]
