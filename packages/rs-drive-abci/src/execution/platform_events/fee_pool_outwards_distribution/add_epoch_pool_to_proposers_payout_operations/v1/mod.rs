@@ -14,9 +14,9 @@ use dpp::platform_value::Identifier;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::query::proposer_block_count_query::ProposerQueryType;
-use drive::util::batch::DriveOperation;
 use drive::util::batch::DriveOperation::IdentityOperation;
 use drive::util::batch::IdentityOperationType::AddToIdentityBalance;
+use drive::util::batch::{DriveOperation, SystemOperationType};
 
 use drive::grovedb::Transaction;
 
@@ -35,6 +35,8 @@ impl<C> Platform<C> {
     /// balance the credit sum counts. A share whose `payToId` has no balance is skipped and
     /// stays with its masternode, and each share is capped at what is left of the masternode's
     /// payout, so neither fails the batch that ends the block.
+    /// A proposer with no balance returns its leftover and final rounding remainder to the
+    /// applying block's processing pool, after valid reward shares have been allocated.
     pub(super) fn add_epoch_pool_to_proposers_payout_operations_v1(
         &self,
         unpaid_epoch: &UnpaidEpoch,
@@ -63,6 +65,7 @@ impl<C> Platform<C> {
             })?;
 
         let mut remaining_payouts = total_payouts;
+        let mut unallocated_payouts: Credits = 0;
 
         // Calculate block count
         let unpaid_epoch_block_count = unpaid_epoch.block_count()?;
@@ -176,12 +179,36 @@ impl<C> Platform<C> {
                 masternode_payout_leftover
             };
 
-            drive_operations.push(IdentityOperation(AddToIdentityBalance {
-                identity_id: proposer_tx_hash.to_buffer(),
-                added_balance: proposer_payout,
-            }));
+            if self
+                .drive
+                .fetch_identity_balance(
+                    proposer_tx_hash.to_buffer(),
+                    Some(transaction),
+                    platform_version,
+                )?
+                .is_some()
+            {
+                drive_operations.push(IdentityOperation(AddToIdentityBalance {
+                    identity_id: proposer_tx_hash.to_buffer(),
+                    added_balance: proposer_payout,
+                }));
+            } else {
+                unallocated_payouts =
+                    unallocated_payouts
+                        .checked_add(proposer_payout)
+                        .ok_or(Error::Execution(ExecutionError::Overflow(
+                            "overflow when accumulating unallocated proposer payouts",
+                        )))?;
+            }
         }
 
+        if unallocated_payouts > 0 {
+            drive_operations.push(DriveOperation::SystemOperation(
+                SystemOperationType::AddToCurrentEpochProcessingPool {
+                    amount: unallocated_payouts,
+                },
+            ));
+        }
         batch.extend(drive_operations);
 
         Ok((storage_and_processing_fees, proposers.into_iter().collect()))
@@ -201,6 +228,7 @@ mod tests {
             setup::TestPlatformBuilder,
         };
         use dpp::block::block_info::BlockInfo;
+        use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
         use dpp::identity::accessors::IdentityGettersV0;
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 
@@ -212,6 +240,10 @@ mod tests {
         use dpp::platform_value::Value;
         use dpp::system_data_contracts::masternode_reward_shares_contract::v1::document_types;
         use drive::drive::credit_pools::epochs::operations_factory::EpochOperations;
+        use drive::drive::credit_pools::operations::update_unpaid_epoch_index_operation;
+        use drive::drive::RootTree;
+        use drive::error::{drive::DriveError, Error as DriveErrorKind};
+        use drive::grovedb::Element;
         use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
         use drive::util::batch::GroveDbOpBatch;
         use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
@@ -224,6 +256,583 @@ mod tests {
         use rust_decimal::Decimal;
         use rust_decimal_macros::dec;
         use std::borrow::Cow;
+
+        fn missing_proposer_fixture(
+            count: u16,
+            processing_fees: Credits,
+        ) -> (TempPlatform<MockCoreRPCLike>, Vec<[u8; 32]>, DataContract) {
+            let platform_version = PlatformVersion::latest();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+            let transaction = platform.drive.grove.start_transaction();
+            let contract = platform.create_mn_shares_contract(Some(&transaction), platform_version);
+            let unpaid_epoch = Epoch::new(1).expect("unpaid epoch");
+            let current_epoch = Epoch::new(2).expect("current epoch");
+            let mut batch = GroveDbOpBatch::new();
+            for (epoch, height) in [(&unpaid_epoch, 1), (&current_epoch, 1 + count as u64)] {
+                epoch.add_init_current_operations(
+                    platform_version
+                        .fee_version
+                        .uses_version_fee_multiplier_permille
+                        .unwrap(),
+                    height,
+                    1,
+                    1,
+                    platform_version.protocol_version,
+                    &mut batch,
+                );
+            }
+            // Both epochs start at the same Core height, so this non-genesis payout mints no
+            // Core reward. Only the explicitly seeded fees participate in conservation.
+            batch.push(
+                unpaid_epoch
+                    .update_processing_fee_pool_operation(processing_fees)
+                    .unwrap(),
+            );
+            batch.push(
+                current_epoch
+                    .update_processing_fee_pool_operation(100)
+                    .unwrap(),
+            );
+            batch.push(update_unpaid_epoch_index_operation(1));
+            platform
+                .drive
+                .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+                .expect("initialize payout epochs");
+            platform
+                .drive
+                .apply_drive_operations(
+                    vec![DriveOperation::SystemOperation(
+                        SystemOperationType::AddToSystemCredits {
+                            amount: processing_fees + 100,
+                        },
+                    )],
+                    true,
+                    &BlockInfo::default_with_epoch(current_epoch),
+                    Some(&transaction),
+                    platform_version,
+                    None,
+                )
+                .expect("seed total system credits");
+            let mut proposers =
+                create_test_masternode_identities_and_add_them_as_epoch_block_proposers(
+                    &platform.drive,
+                    &unpaid_epoch,
+                    count,
+                    Some(68),
+                    Some(&transaction),
+                    platform_version,
+                );
+            proposers.sort();
+            platform
+                .drive
+                .commit_transaction(transaction, &platform_version.drive)
+                .expect("commit fixture");
+            (platform, proposers, contract)
+        }
+
+        fn remove_proposer_balance(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            id: [u8; 32],
+            transaction: &Transaction,
+        ) {
+            platform
+                .drive
+                .grove
+                .delete(
+                    &[vec![RootTree::Balances as u8]],
+                    &id,
+                    None,
+                    Some(transaction),
+                    &PlatformVersion::latest().drive.grove_version,
+                )
+                .unwrap()
+                .expect("remove absent owner's balance");
+        }
+
+        #[test]
+        fn should_finish_epoch_payout_with_missing_proposers_and_conserve_their_full_allocations() {
+            let platform_version = PlatformVersion::latest();
+            for (count, missing, fees) in [
+                (1, vec![], 101),
+                (1, vec![0], 101),
+                (3, vec![0], 101),
+                (3, vec![2], 101),
+                (3, vec![0, 2], 101),
+                (3, vec![0, 1, 2], 101),
+                (3, vec![0, 1, 2], 0),
+                (3, vec![0], 1),
+            ] {
+                let (platform, proposers, _) = missing_proposer_fixture(count, fees);
+                let transaction = platform.drive.grove.start_transaction();
+                for index in &missing {
+                    remove_proposer_balance(&platform, proposers[*index], &transaction);
+                }
+                assert!(platform
+                    .drive
+                    .calculate_total_credits_balance(Some(&transaction), &platform_version.drive)
+                    .unwrap()
+                    .ok()
+                    .unwrap());
+                let mut batch = vec![];
+                let payout = platform
+                    .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
+                        2,
+                        None,
+                        None,
+                        0,
+                        &transaction,
+                        &mut batch,
+                        platform_version,
+                    )
+                    .expect("construct real epoch distribution")
+                    .expect("proposers reported");
+                assert_eq!(payout.proposers_paid_count, count);
+                assert_eq!(payout.paid_epoch_index, 1);
+                // The normal block pool write follows payout construction. Its absolute value
+                // must not overwrite credits returned by missing proposers.
+                let current_epoch = Epoch::new(2).unwrap();
+                batch.push(DriveOperation::GroveDBOpBatch(
+                    GroveDbOpBatch::from_operations(vec![current_epoch
+                        .update_processing_fee_pool_operation(100)
+                        .unwrap()]),
+                ));
+                platform
+                    .drive
+                    .apply_drive_operations(
+                        batch,
+                        true,
+                        &BlockInfo::default_with_epoch(current_epoch),
+                        Some(&transaction),
+                        platform_version,
+                        None,
+                    )
+                    .expect("missing proposer must not fail the epoch distribution batch");
+                let mut returned = 0;
+                for (index, id) in proposers.iter().enumerate() {
+                    let allocation = if index == count as usize - 1 {
+                        fees - (fees / count as u64) * (count as u64 - 1)
+                    } else {
+                        fees / count as u64
+                    };
+                    let balance = platform
+                        .drive
+                        .fetch_identity_balance(*id, Some(&transaction), platform_version)
+                        .unwrap();
+                    if missing.contains(&index) {
+                        returned += allocation;
+                        assert_eq!(balance, None);
+                    } else {
+                        assert_eq!(balance, Some(allocation));
+                    }
+                }
+                assert_eq!(
+                    platform
+                        .drive
+                        .get_epoch_processing_credits_for_distribution(
+                            &current_epoch,
+                            Some(&transaction),
+                            platform_version,
+                        )
+                        .unwrap(),
+                    100 + returned
+                );
+                assert_eq!(
+                    platform
+                        .drive
+                        .get_unpaid_epoch_index(Some(&transaction), platform_version)
+                        .unwrap(),
+                    2
+                );
+                let paid_pool = platform
+                    .drive
+                    .get_epoch_processing_credits_for_distribution(
+                        &Epoch::new(1).unwrap(),
+                        Some(&transaction),
+                        platform_version,
+                    );
+                assert!(
+                    matches!(paid_pool, Err(DriveErrorKind::GroveDB(error))
+                    if matches!(error.as_ref(), drive::grovedb::Error::PathKeyNotFound(_))),
+                    "paid epoch pool must be removed"
+                );
+                let finalized: BTreeMap<_, _> = platform
+                    .drive
+                    .get_finalized_epoch_infos(
+                        1,
+                        true,
+                        1,
+                        true,
+                        1,
+                        Some(&transaction),
+                        platform_version,
+                    )
+                    .unwrap();
+                let FinalizedEpochInfo::V0(info) =
+                    finalized.get(&1).expect("paid epoch final info");
+                assert_eq!(info.total_blocks_in_epoch, count as u64);
+                assert_eq!(info.total_processing_fees, fees);
+                assert_eq!(info.total_distributed_storage_fees, 0);
+                assert_eq!(info.core_block_rewards, 0);
+                assert_eq!(
+                    info.block_proposers,
+                    proposers
+                        .iter()
+                        .map(|id| (Identifier::new(*id), 1))
+                        .collect()
+                );
+                let totals = platform
+                    .drive
+                    .calculate_total_credits_balance(Some(&transaction), &platform_version.drive)
+                    .unwrap();
+                assert_eq!(totals.total_credits_in_platform, 100 + fees);
+                assert!(totals.ok().unwrap(), "{totals}");
+            }
+        }
+
+        #[test]
+        fn should_pay_valid_shares_and_repay_debt_even_when_the_proposers_have_no_balance() {
+            let platform_version = PlatformVersion::latest();
+            for (percentage, expected_share_total, expected_return) in
+                [(5000, 32u64, 36), (15000, 66, 2), (0, 0, 68)]
+            {
+                let (platform, proposers, contract) = missing_proposer_fixture(3, 101);
+                let transaction = platform.drive.grove.start_transaction();
+                let recipient = [7; 32];
+                create_test_identity(
+                    &platform.drive,
+                    recipient,
+                    Some(7),
+                    Some(&transaction),
+                    platform_version,
+                )
+                .expect("existing share recipient");
+                for index in [0, 2] {
+                    remove_proposer_balance(&platform, proposers[index], &transaction);
+                    insert_reward_share(
+                        &platform,
+                        &contract,
+                        proposers[index],
+                        if percentage == 0 { [8; 32] } else { recipient },
+                        percentage,
+                        &transaction,
+                        platform_version,
+                    );
+                }
+                insert_reward_share(
+                    &platform,
+                    &contract,
+                    proposers[1],
+                    [8; 32],
+                    10000,
+                    &transaction,
+                    platform_version,
+                );
+                let debt_operation = platform
+                    .drive
+                    .update_identity_negative_credit_operation(recipient, 7, platform_version)
+                    .unwrap();
+                platform
+                    .drive
+                    .apply_batch_low_level_drive_operations(
+                        None,
+                        Some(&transaction),
+                        vec![debt_operation],
+                        &mut vec![],
+                        &platform_version.drive,
+                    )
+                    .unwrap();
+                let mut batch = vec![];
+                platform
+                    .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
+                        2,
+                        None,
+                        None,
+                        0,
+                        &transaction,
+                        &mut batch,
+                        platform_version,
+                    )
+                    .expect("construct distribution");
+                let current_epoch = Epoch::new(2).unwrap();
+                batch.push(DriveOperation::GroveDBOpBatch(
+                    GroveDbOpBatch::from_operations(vec![current_epoch
+                        .update_processing_fee_pool_operation(100)
+                        .unwrap()]),
+                ));
+                platform
+                    .drive
+                    .apply_drive_operations(
+                        batch,
+                        true,
+                        &BlockInfo::default_with_epoch(current_epoch),
+                        Some(&transaction),
+                        platform_version,
+                        None,
+                    )
+                    .expect("pay shares without an owner balance");
+                assert_eq!(
+                    platform
+                        .drive
+                        .fetch_identity_balance(recipient, Some(&transaction), platform_version)
+                        .unwrap(),
+                    Some(expected_share_total.saturating_sub(7))
+                );
+                assert_eq!(
+                    platform
+                        .drive
+                        .fetch_identity_balance(proposers[1], Some(&transaction), platform_version)
+                        .unwrap(),
+                    Some(33)
+                );
+                assert_eq!(
+                    platform
+                        .drive
+                        .fetch_identity_balance([8; 32], Some(&transaction), platform_version)
+                        .unwrap(),
+                    None
+                );
+                assert_eq!(
+                    platform
+                        .drive
+                        .get_epoch_processing_credits_for_distribution(
+                            &current_epoch,
+                            Some(&transaction),
+                            platform_version
+                        )
+                        .unwrap(),
+                    100 + expected_share_total.min(7) + expected_return
+                );
+                let totals = platform
+                    .drive
+                    .calculate_total_credits_balance(Some(&transaction), &platform_version.drive)
+                    .unwrap();
+                assert!(totals.ok().unwrap(), "{totals}");
+            }
+        }
+
+        #[test]
+        fn should_propagate_corrupt_proposer_balance_reads_without_applying_distribution() {
+            let platform_version = PlatformVersion::latest();
+            for balance in [Element::new_sum_item(-1), Element::new_item(vec![1])] {
+                let (platform, proposers, _) = missing_proposer_fixture(1, 101);
+                let transaction = platform.drive.grove.start_transaction();
+                platform
+                    .drive
+                    .grove
+                    .insert(
+                        &[vec![RootTree::Balances as u8]],
+                        &proposers[0],
+                        balance,
+                        None,
+                        Some(&transaction),
+                        &platform_version.drive.grove_version,
+                    )
+                    .unwrap()
+                    .unwrap();
+                let before = platform
+                    .drive
+                    .grove
+                    .root_hash(Some(&transaction), &platform_version.drive.grove_version)
+                    .unwrap()
+                    .unwrap();
+                let result = platform
+                    .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
+                        2,
+                        None,
+                        None,
+                        0,
+                        &transaction,
+                        &mut vec![],
+                        platform_version,
+                    );
+                assert!(matches!(
+                    result,
+                    Err(Error::Drive(DriveErrorKind::Drive(
+                        DriveError::CorruptedElementType(_)
+                    )))
+                ));
+                assert_eq!(
+                    platform
+                        .drive
+                        .grove
+                        .root_hash(Some(&transaction), &platform_version.drive.grove_version)
+                        .unwrap()
+                        .unwrap(),
+                    before
+                );
+                assert_eq!(
+                    platform
+                        .drive
+                        .get_unpaid_epoch_index(Some(&transaction), platform_version)
+                        .unwrap(),
+                    1
+                );
+            }
+        }
+
+        #[test]
+        fn should_pay_a_zero_proposer_balance_created_in_the_distribution_transaction() {
+            let platform_version = PlatformVersion::latest();
+            let (platform, proposers, _) = missing_proposer_fixture(1, 101);
+            let removal = platform.drive.grove.start_transaction();
+            remove_proposer_balance(&platform, proposers[0], &removal);
+            platform
+                .drive
+                .commit_transaction(removal, &platform_version.drive)
+                .unwrap();
+            let transaction = platform.drive.grove.start_transaction();
+            platform
+                .drive
+                .grove
+                .insert(
+                    &[vec![RootTree::Balances as u8]],
+                    &proposers[0],
+                    Element::new_sum_item(0),
+                    None,
+                    Some(&transaction),
+                    &platform_version.drive.grove_version,
+                )
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_identity_balance(proposers[0], None, platform_version)
+                    .unwrap(),
+                None
+            );
+            let mut batch = vec![];
+            platform
+                .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
+                    2,
+                    None,
+                    None,
+                    0,
+                    &transaction,
+                    &mut batch,
+                    platform_version,
+                )
+                .unwrap();
+            let current_epoch = Epoch::new(2).unwrap();
+            platform
+                .drive
+                .apply_drive_operations(
+                    batch,
+                    true,
+                    &BlockInfo::default_with_epoch(current_epoch),
+                    Some(&transaction),
+                    platform_version,
+                    None,
+                )
+                .unwrap();
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_identity_balance(proposers[0], Some(&transaction), platform_version)
+                    .unwrap(),
+                Some(101)
+            );
+            assert_eq!(
+                platform
+                    .drive
+                    .get_epoch_processing_credits_for_distribution(
+                        &current_epoch,
+                        Some(&transaction),
+                        platform_version
+                    )
+                    .unwrap(),
+                100
+            );
+            assert!(platform
+                .drive
+                .calculate_total_credits_balance(Some(&transaction), &platform_version.drive)
+                .unwrap()
+                .ok()
+                .unwrap());
+        }
+
+        #[test]
+        fn should_keep_previous_protocol_payout_dispatch_and_missing_balance_refusal() {
+            for protocol_version in 1..=13 {
+                let version = PlatformVersion::get(protocol_version).unwrap();
+                assert_eq!(
+                    version
+                        .drive_abci
+                        .methods
+                        .fee_pool_outwards_distribution
+                        .add_epoch_pool_to_proposers_payout_operations,
+                    0
+                );
+                assert_eq!(
+                    version
+                        .drive
+                        .methods
+                        .batch_operations
+                        .apply_drive_operations,
+                    0
+                );
+            }
+            let legacy = PlatformVersion::get(13).unwrap();
+            let unpaid_epoch: UnpaidEpoch = UnpaidEpochV0 {
+                epoch_index: 1,
+                start_block_height: 1,
+                next_epoch_start_block_height: 2,
+                start_block_core_height: 1,
+                next_epoch_start_block_core_height: 1,
+                next_unpaid_epoch_index: 2,
+                epoch_start_time: 1,
+                protocol_version: 13,
+                fee_multiplier: 0,
+            }
+            .into();
+            for missing in [false, true] {
+                let (platform, proposers, _) = missing_proposer_fixture(1, 101);
+                let transaction = platform.drive.grove.start_transaction();
+                if missing {
+                    remove_proposer_balance(&platform, proposers[0], &transaction);
+                }
+                let mut batch = vec![];
+                let result = platform.add_epoch_pool_to_proposers_payout_operations(
+                    &unpaid_epoch,
+                    0,
+                    &transaction,
+                    &mut batch,
+                    legacy,
+                );
+                if missing {
+                    assert!(
+                        result.is_err(),
+                        "historical payout behavior must remain unchanged"
+                    );
+                } else {
+                    result.unwrap();
+                    assert!(matches!(
+                        batch.as_slice(),
+                        [DriveOperation::GroveDBOpBatch(_)]
+                    ));
+                    platform
+                        .drive
+                        .apply_drive_operations(
+                            batch,
+                            true,
+                            &BlockInfo::default_with_epoch(Epoch::new(2).unwrap()),
+                            Some(&transaction),
+                            legacy,
+                            None,
+                        )
+                        .unwrap();
+                    assert_eq!(
+                        platform
+                            .drive
+                            .fetch_identity_balance(proposers[0], Some(&transaction), legacy)
+                            .unwrap(),
+                        Some(101)
+                    );
+                }
+            }
+        }
 
         #[test]
         fn should_pay_proposers_and_shares_and_credit_a_repaid_debt_to_the_block_epochs_pool() {

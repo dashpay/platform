@@ -92,7 +92,8 @@ pub struct CoreChangeSet {
     ///
     /// Includes records first stored (`TransactionDetected`,
     /// `BlockProcessed.inserted`), records whose context advanced
-    /// (`BlockProcessed.updated` — e.g. a mempool tx that just confirmed),
+    /// (`BlockProcessed.updated` — e.g. a mempool tx that just confirmed;
+    /// `TransactionInstantLocked` — the locked record as the wallet holds it),
     /// and coinbase records that crossed the maturity threshold
     /// (`BlockProcessed.matured`). The event bridge folds a
     /// transaction's per-account slices into a single record whose
@@ -145,9 +146,10 @@ pub struct CoreChangeSet {
     /// `InstantSend`, or `InBlock` context — anything `InChainLockedBlock`
     /// is excluded since chain-lock finality already supersedes IS).
     ///
-    /// Populated from `WalletEvent::TransactionInstantLocked`. The
-    /// persister applies these by looking up the matching record and
-    /// updating its `context` to `TransactionContext::InstantSend(..)`.
+    /// Populated from `WalletEvent::TransactionInstantLocked`. A persister
+    /// that keeps locks stores them from here; the record's own context
+    /// reaches it through the record the same event re-emits in `records`
+    /// when the wallet still holds one.
     /// Chain-locked records skip this map entirely — by the time a
     /// transaction is chain-locked it's final, and IS-lock state is
     /// no longer informative.
@@ -3629,13 +3631,8 @@ mod coalesce_account_records_tests {
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
 
     fn record(net_amount: i64, context: TransactionContext) -> TransactionRecord {
-        let tx = Transaction {
-            version: 2,
-            lock_time: 0,
-            input: vec![],
-            output: vec![],
-            special_transaction_payload: None,
-        };
+        let mut tx = crate::test_support::core_fixtures::spend_of(&[], vec![]);
+        tx.version = 2;
         let mut record = TransactionRecord::new(
             tx,
             key_wallet::account::AccountType::Standard {
@@ -3657,35 +3654,27 @@ mod coalesce_account_records_tests {
         TransactionContext::InBlock(BlockInfo::new(100, BlockHash::all_zeros(), 0))
     }
 
+    /// A later record of equal or higher rank replaces an earlier one; a
+    /// stale mempool record never overwrites a confirmed one.
     #[test]
-    fn should_keep_confirmed_record_intact_when_stale_mempool_record_follows() {
-        let mut records = vec![
-            record(500, in_block()),
-            record(900, TransactionContext::Mempool),
-        ];
-        coalesce_account_records(&mut records);
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].net_amount, 500);
-        assert!(matches!(records[0].context, TransactionContext::InBlock(_)));
-    }
-
-    #[test]
-    fn should_replace_with_later_record_of_equal_or_higher_rank() {
-        let mut equal = vec![
-            record(500, TransactionContext::Mempool),
-            record(900, TransactionContext::Mempool),
-        ];
-        coalesce_account_records(&mut equal);
-        assert_eq!(equal.len(), 1);
-        assert_eq!(equal[0].net_amount, 900);
-
-        let mut higher = vec![
-            record(500, TransactionContext::Mempool),
-            record(900, in_block()),
-        ];
-        coalesce_account_records(&mut higher);
-        assert_eq!(higher.len(), 1);
-        assert_eq!(higher[0].net_amount, 900);
-        assert!(matches!(higher[0].context, TransactionContext::InBlock(_)));
+    fn should_coalesce_to_the_latest_record_of_the_highest_rank() {
+        let mempool = || TransactionContext::Mempool;
+        // (case, earlier context, later context, (kept net, kept confirmed))
+        for (case, earlier, later, kept) in [
+            (
+                "stale mempool after confirmed",
+                in_block(),
+                mempool(),
+                (500, true),
+            ),
+            ("equal rank", mempool(), mempool(), (900, false)),
+            ("higher rank", mempool(), in_block(), (900, true)),
+        ] {
+            let mut records = vec![record(500, earlier), record(900, later)];
+            coalesce_account_records(&mut records);
+            assert_eq!(records.len(), 1, "{case}");
+            let confirmed = matches!(records[0].context, TransactionContext::InBlock(_));
+            assert_eq!((records[0].net_amount, confirmed), kept, "{case}");
+        }
     }
 }
