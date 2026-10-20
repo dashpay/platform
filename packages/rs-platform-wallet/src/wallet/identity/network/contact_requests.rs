@@ -1388,7 +1388,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// 3. Ingests own sent requests via `add_sent_contact_request`, which
     ///    carries its own sent-side guard so a recurring re-ingest
     ///    creates no phantom pending rows and preserves contact metadata.
-    /// 4. For **every** established contact missing a sending account
+    /// 4. Queue missing receiving accounts for sent-only requests, and for
+    ///    **every** established contact missing a sending account
     ///    (not only newly-established ones — this also repairs
     ///    restore-from-seed and best-effort-accept gaps), rebuilds both
     ///    the `DashpayReceivingFunds` and `DashpayExternalAccount`
@@ -1711,10 +1712,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     report.unpersisted_identities.push(identity_id);
                 }
 
-                // (3) Collect account-building candidates: every established
-                //     contact missing a sending (external) account, skipping
-                //     contacts whose payment channel is already marked
-                //     permanently broken (no unbounded retry).
+                // (3) Collect missing receiving accounts for sent-only
+                //     requests and account pairs for established contacts.
                 Self::collect_account_build_candidates(info, &identity_id)
             };
 
@@ -1915,11 +1914,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         }
     }
 
-    /// Collect every established contact (for `identity_id`) that is
-    /// missing its `DashpayExternalAccount` and is NOT already marked
-    /// permanently broken — the account-building candidates for this
-    /// sweep. Runs under the caller's write guard; performs no
-    /// awaits and no lock re-acquisition.
+    /// Collect missing receiving accounts for sent-only requests and account
+    /// pairs for established contacts missing a usable external account.
+    /// Runs under the caller's write guard without awaiting or re-locking.
     pub(super) fn collect_account_build_candidates(
         info: &crate::wallet::platform_wallet::PlatformWalletInfo,
         identity_id: &Identifier,
@@ -1931,6 +1928,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
 
         let mut out = Vec::new();
+        for contact_id in managed.dashpay().sent_contact_requests().keys() {
+            let key = DashpayAccountKey {
+                index: 0,
+                user_identity_id: identity_id.to_buffer(),
+                friend_identity_id: contact_id.to_buffer(),
+            };
+            if !info
+                .core_wallet
+                .accounts
+                .dashpay_receival_accounts
+                .contains_key(&key)
+            {
+                out.push(AccountBuildCandidate {
+                    contact_id: *contact_id,
+                    external: None,
+                });
+            }
+        }
         for (contact_id, contact) in managed.dashpay().established_contacts() {
             // Never retry a permanently-broken channel — wait for a
             // superseding request (which clears the flag on re-establish).
@@ -1955,19 +1970,21 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let incoming = &contact.incoming_request;
             out.push(AccountBuildCandidate {
                 contact_id: *contact_id,
-                encrypted_public_key: incoming.encrypted_public_key.clone(),
-                our_decryption_key_index: incoming.recipient_key_index,
-                contact_encryption_key_index: incoming.sender_key_index,
+                external: Some(ExternalAccountBuild {
+                    encrypted_public_key: incoming.encrypted_public_key.clone(),
+                    our_decryption_key_index: incoming.recipient_key_index,
+                    contact_encryption_key_index: incoming.sender_key_index,
+                }),
             });
         }
         out
     }
 
-    /// Queue the two DashPay account builds for one established contact.
+    /// Queue a receiving account and, for an established contact, an external account.
     ///
     /// The recurring sweep runs without a signer, so it cannot derive the
     /// receiving (friendship) xpub or the ECDH secret itself. It enqueues
-    /// both ops for the signer-backed drain
+    /// the required ops for the signer-backed drain
     /// ([`Self::drain_pending_contact_crypto_verified`]), which registers the
     /// `DashpayReceivingFunds` account, fetches the counterparty, validates
     /// the request's key indices before any ECDH, and registers the
@@ -2014,7 +2031,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             return;
         }
 
-        // Enqueue the deferred crypto ops (receiving xpub + external decrypt).
+        // Enqueue receiving derivation and any reciprocal external decryption.
         // Idempotent per (owner, contact, kind), so re-enqueuing every sweep is
         // a no-op until the drain clears them.
         self.enqueue_deferred_contact_crypto(identity_id, &candidate)
@@ -2043,26 +2060,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         };
         let enqueued_at_ms = crate::util::now_ms();
 
-        let entries = vec![
-            // (1) Our receiving xpub (no payload — derived from the identity ids).
-            PendingContactCrypto {
-                owner_identity_id: *identity_id,
-                contact_id: candidate.contact_id,
-                op: PendingContactCryptoOp::RegisterReceiving,
-                enqueued_at_ms,
-            },
-            // (2) The external account — ECDH decrypt of the contact's xpub.
-            PendingContactCrypto {
+        let mut entries = vec![PendingContactCrypto {
+            owner_identity_id: *identity_id,
+            contact_id: candidate.contact_id,
+            op: PendingContactCryptoOp::RegisterReceiving,
+            enqueued_at_ms,
+        }];
+        if let Some(external) = &candidate.external {
+            entries.push(PendingContactCrypto {
                 owner_identity_id: *identity_id,
                 contact_id: candidate.contact_id,
                 op: PendingContactCryptoOp::RegisterExternal {
-                    encrypted_public_key: candidate.encrypted_public_key.clone(),
-                    our_decryption_key_index: candidate.our_decryption_key_index,
-                    contact_encryption_key_index: candidate.contact_encryption_key_index,
+                    encrypted_public_key: external.encrypted_public_key.clone(),
+                    our_decryption_key_index: external.our_decryption_key_index,
+                    contact_encryption_key_index: external.contact_encryption_key_index,
                 },
                 enqueued_at_ms,
-            },
-        ];
+            });
+        }
 
         // Serialize the queue write with identity removal under the same guard.
         let mut wm = self.wallet_manager.write().await;
@@ -3443,12 +3458,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 }
 
-/// One established contact that needs its DashPay accounts (re)built
-/// during a sync sweep. Collected under the write guard, consumed
-/// after it is dropped.
+/// Contact accounts to build after releasing the sync sweep's write guard.
 pub(super) struct AccountBuildCandidate {
     /// The counterparty identity.
     contact_id: Identifier,
+    /// A reciprocal request supplies the material for our external sending account.
+    external: Option<ExternalAccountBuild>,
+}
+
+/// Public request material needed to build an external sending account.
+struct ExternalAccountBuild {
     /// The counterparty's 96-byte encrypted xpub (from their incoming
     /// request to us) to decrypt + register as a `DashpayExternalAccount`.
     encrypted_public_key: Vec<u8>,
@@ -4848,10 +4867,11 @@ mod sweep_tests {
         assert_eq!(c.contact_id, Identifier::from([contact; 32]));
         // The candidate carries the counterparty's encrypted xpub + the
         // ECDH key indices taken from the INCOMING request.
-        assert_eq!(c.encrypted_public_key, vec![7u8; 96]);
+        let external = c.external.as_ref().expect("reciprocal request");
+        assert_eq!(external.encrypted_public_key, vec![7u8; 96]);
         // incoming request: sender=contact key_index 1, recipient(us) key_index 2
-        assert_eq!(c.contact_encryption_key_index, 1);
-        assert_eq!(c.our_decryption_key_index, 2);
+        assert_eq!(external.contact_encryption_key_index, 1);
+        assert_eq!(external.our_decryption_key_index, 2);
     }
 
     /// **Test 4 (permanent failure → no retry):** once a contact's payment
@@ -6130,6 +6150,234 @@ mod drain_budget_tests {
 }
 
 #[cfg(test)]
+mod sent_only_restore_tests {
+    use super::*;
+    use crate::broadcaster::SpvBroadcaster;
+    use crate::changeset::PendingContactCryptoOp;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::persister::NoPlatformPersistence;
+    use crate::PlatformWalletManager;
+    use dash_sdk::drive::query::{OrderClause, WhereClause, WhereOperator};
+    use dash_sdk::error::ContextProviderError;
+    use dash_sdk::platform::{ContextProvider, DocumentQuery};
+    use dash_sdk::query_types::Documents;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::{DataContract, TokenConfiguration};
+    use dpp::document::{Document, DocumentV0};
+    use dpp::identity::v0::IdentityV0;
+    use dpp::version::PlatformVersion;
+    use key_wallet::account::account_collection::DashpayAccountKey;
+    use key_wallet::mnemonic::Mnemonic;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+    use key_wallet::Network;
+    use std::sync::Arc;
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    struct DashpayContractProvider(Arc<DataContract>);
+
+    impl ContextProvider for DashpayContractProvider {
+        fn get_data_contract(
+            &self,
+            id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok((*id == self.0.id()).then(|| Arc::clone(&self.0)))
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::Config(
+                "no quorum keys in this test".into(),
+            ))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<u32, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    #[tokio::test]
+    async fn should_discover_sent_only_account_and_backfill_without_reciprocal_request() {
+        let owner = Identifier::from([0xAA; 32]);
+        let contact = Identifier::from([0xBB; 32]);
+        let document_id = Identifier::from([0xCC; 32]);
+        let contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::data_contracts::SystemDataContract::Dashpay,
+            PlatformVersion::latest(),
+        )
+        .expect("bundled DashPay contract");
+        let contract = Arc::new(contract);
+        let mut sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_version(PlatformVersion::latest())
+            .with_context_provider(DashpayContractProvider(Arc::clone(&contract)))
+            .build()
+            .expect("mock sdk");
+        let document = Document::V0(DocumentV0 {
+            id: document_id,
+            owner_id: owner,
+            properties: BTreeMap::from([
+                ("toUserId".into(), Value::Identifier(contact.to_buffer())),
+                ("senderKeyIndex".into(), Value::U32(0)),
+                ("recipientKeyIndex".into(), Value::U32(0)),
+                ("accountReference".into(), Value::U32(0)),
+                ("encryptedPublicKey".into(), Value::Bytes(vec![1; 96])),
+            ]),
+            created_at: Some(100),
+            created_at_core_block_height: Some(200),
+            ..Default::default()
+        });
+        for field in ["toUserId", "$ownerId"] {
+            let mut query =
+                DocumentQuery::new(Arc::clone(&contract), "contactRequest").expect("contact query");
+            query.where_clauses = vec![WhereClause {
+                field: field.into(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(owner.to_buffer()),
+            }];
+            query.order_by_clauses = vec![OrderClause {
+                field: "$createdAt".into(),
+                ascending: true,
+            }];
+            query.limit = 100;
+            let mut documents = Documents::new();
+            if field == "$ownerId" {
+                documents.insert(document_id, Some(document.clone()));
+            }
+            sdk.mock()
+                .expect_fetch_many::<Identifier, Document, _, Documents>(query, Some(documents))
+                .await
+                .expect("contact query expectation");
+        }
+
+        let persister = Arc::new(NoPlatformPersistence);
+        let manager = PlatformWalletManager::new(
+            Arc::new(sdk),
+            Arc::clone(&persister),
+            Arc::new(NoopEventHandler),
+        );
+        let seed = Mnemonic::from_phrase(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        )
+        .expect("test mnemonic")
+        .to_seed("");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet");
+        let wallet_id = wallet.wallet_id();
+        let iw = wallet.identity();
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("info");
+            info.identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id: owner,
+                        public_keys: BTreeMap::new(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    0,
+                    wallet_id,
+                    &iw.persister,
+                )
+                .expect("owner");
+            info.core_wallet.update_synced_height(1000);
+        }
+        let report = iw
+            .dashpay()
+            .sync_contact_requests_reporting()
+            .await
+            .expect("sync");
+        assert!(
+            report.is_complete(),
+            "mock must answer both query directions: {report:?}"
+        );
+        {
+            let wm = iw.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("info");
+            let managed = info
+                .identity_manager
+                .managed_identity(&owner)
+                .expect("owner");
+            assert!(managed.dashpay().established_contacts().is_empty());
+            assert_eq!(managed.dashpay().sent_contact_requests().len(), 1);
+            let queue = &managed.dashpay().pending_contact_crypto;
+            assert_eq!(queue.len(), 1, "sent discovery must queue receiving only");
+            assert!(matches!(
+                queue[0].op,
+                PendingContactCryptoOp::RegisterReceiving
+            ));
+            assert!(info
+                .core_wallet
+                .accounts
+                .dashpay_receival_accounts
+                .is_empty());
+        }
+        let provider = SeedCryptoProvider::from_seed(seed, Network::Testnet);
+        assert_eq!(
+            iw.dashpay()
+                .drain_pending_contact_crypto_verified(&provider, None)
+                .await
+                .expect("verified drain"),
+            1,
+            "the signer-backed drain must build the discovered receiving account"
+        );
+        assert_eq!(
+            iw.dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("rescan"),
+            Some(200),
+            "backfill must start at the outgoing request's publication height"
+        );
+        let wm = iw.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet_id).expect("info");
+        assert_eq!(info.core_wallet.synced_height(), 200);
+        assert!(info
+            .core_wallet
+            .accounts
+            .dashpay_receival_accounts
+            .contains_key(&DashpayAccountKey {
+                index: 0,
+                user_identity_id: owner.to_buffer(),
+                friend_identity_id: contact.to_buffer(),
+            }));
+        assert!(info
+            .core_wallet
+            .accounts
+            .dashpay_external_accounts
+            .is_empty());
+        assert!(
+            DashPayView::<SpvBroadcaster>::collect_account_build_candidates(info, &owner)
+                .is_empty(),
+            "a later sweep must not rebuild the receiving account"
+        );
+    }
+}
+
+#[cfg(test)]
 mod pending_enqueue_tests {
     use super::*;
     use std::sync::atomic::Ordering;
@@ -6139,9 +6387,11 @@ mod pending_enqueue_tests {
         let (iw, owner, backend) = super::super::pending_crypto_tests::fixture().await;
         let candidate = AccountBuildCandidate {
             contact_id: Identifier::from([0xBB; 32]),
-            encrypted_public_key: vec![0; 96],
-            our_decryption_key_index: 0,
-            contact_encryption_key_index: 1,
+            external: Some(ExternalAccountBuild {
+                encrypted_public_key: vec![0; 96],
+                our_decryption_key_index: 0,
+                contact_encryption_key_index: 1,
+            }),
         };
         iw.dashpay()
             .enqueue_deferred_contact_crypto(&owner, &candidate)
