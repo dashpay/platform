@@ -32,7 +32,9 @@ internal object TransactionsNative {
      * Add public keys and/or disable existing key ids on an identity,
      * signing the resulting `IdentityUpdateTransition` via [signerHandle]
      * (the identity's MASTER auth key). Bridges
-     * `platform_wallet_update_identity_with_signer` — the exact call Swift
+     * `platform_wallet_update_identity_with_signer`, or
+     * `platform_wallet_update_identity_with_signer_at_revision` with
+     * [hasRevision] — the exact call Swift
      * `AddIdentityKeyView.submit` makes through `wallet.updateIdentity(...)`.
      *
      * @param addPubkeysBlob big-endian rows for the keys to add: `u32
@@ -51,6 +53,8 @@ internal object TransactionsNative {
      *   cached identity would give another revision is refused before
      *   anything is signed (bridges
      *   `platform_wallet_update_identity_with_signer_at_revision`).
+     * @param revision the revision the update must carry; read only with
+     *   [hasRevision].
      */
     external fun updateIdentity(
         walletHandle: Long,

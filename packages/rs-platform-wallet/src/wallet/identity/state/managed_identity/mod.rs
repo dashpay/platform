@@ -23,7 +23,7 @@ pub use crate::wallet::identity::types::key_storage::{
 use crate::changeset::IdentityKeyEntry;
 use dpp::identity::{Identity, KeyID};
 use dpp::prelude::Identifier;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A managed identity that combines an Identity with wallet-specific metadata.
 ///
@@ -66,6 +66,13 @@ pub struct ManagedIdentity {
     /// (see `store_with_queued_key_rows`), each with the key as memory then
     /// holds it, until one succeeds.
     pending_key_rows: BTreeMap<(Identifier, KeyID), IdentityKeyEntry>,
+
+    /// Keys a refresh took into memory that have no row in the store yet:
+    /// only a path that knows a key's origin (a load or discovery, a landed
+    /// update) creates its row, so a breadcrumb-less update of one of these
+    /// keys is not stored (see `store_with_queued_key_rows`). Memory only:
+    /// after a restart the cache's keys come from rows.
+    rowless_key_ids: BTreeSet<KeyID>,
 
     /// Last block time when keys were synced for this identity
     pub last_synced_keys_block_time: Option<BlockTime>,

@@ -168,7 +168,9 @@ fn read_key_ids(env: &mut JNIEnv, ids: &jni::objects::JIntArray) -> Option<Vec<u
 /// (the identity's MASTER auth key) — the exact call
 /// `AddIdentityKeyView.submit` makes through `wallet.updateIdentity(...)`.
 ///
-/// Thin marshaler over `platform_wallet_update_identity_with_signer`. The
+/// Thin marshaler over `platform_wallet_update_identity_with_signer` (or
+/// `platform_wallet_update_identity_with_signer_at_revision` with
+/// `hasRevision`). The
 /// derive + Keystore-persist of the new keys' private material happens on
 /// the Kotlin side BEFORE this call (mirroring the Swift flow); here we only
 /// carry the on-chain public rows.
