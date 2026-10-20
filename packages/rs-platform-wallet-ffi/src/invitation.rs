@@ -32,6 +32,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use platform_wallet::wallet::identity::crypto::{
     parse_invitation_uri, InviterInfo, ParsedInvitation,
 };
+use platform_wallet::PlatformWalletError;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use platform_wallet::wallet::identity::network::{
@@ -303,7 +304,8 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
     // (scheme/host, size cap, WIF network+compression) is checked here; the
     // funding tx is fetched and the credit-output binding resolved inside
     // `claim_invitation`.
-    let invitation = unwrap_result_or_return!(parse_invitation_uri(&uri));
+    let invitation =
+        unwrap_result_or_return!(parse_invitation_uri(&uri).map_err(PlatformWalletError::from));
     let keys_map = match decode_identity_pubkeys(identity_pubkeys, identity_pubkeys_count) {
         Ok(m) => m,
         Err(e) => return e,
@@ -342,6 +344,7 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
 /// falling through the generic arm into "proceed anyway".
 fn parse_invitation_for_query(uri: &str) -> Result<ParsedInvitation, PlatformWalletFFIResult> {
     parse_invitation_uri(uri).map_err(|e| {
+        let e = PlatformWalletError::from(e);
         PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!("invitation link is malformed and cannot be claimed: {e}"),
@@ -682,10 +685,10 @@ mod tests {
     use dashcore::secp256k1::SecretKey;
     use dashcore::{Network, PrivateKey};
 
-    // Marshalling-boundary coverage. The invitation crypto/codec semantics are
-    // pinned library-side in `platform_wallet`'s `crypto::invitation` +
-    // `network::invitation`; these tests only exercise the FFI's null/parameter
-    // guards and the wallet-lookup miss path.
+    // Marshalling-boundary coverage. The invitation codec and claim semantics
+    // are pinned library-side in `dash_sdk::platform::dashpay`'s invitation
+    // module and `platform_wallet`'s `network::invitation`; these tests only
+    // exercise the FFI's null/parameter guards and the wallet-lookup miss path.
 
     /// A null `core_signer_handle` is rejected with `ErrorNullPointer` before
     /// any wallet lookup (the `check_ptr!` contract).

@@ -560,6 +560,101 @@ fn should_reach_the_kept_operator_identity_after_a_re_encode_and_a_restart() {
     }
 }
 
+/// One diff entry can carry a re-encoded operator key and an operator payout at once: MN_L2's
+/// recorded ProUpRegTx step, here with an operator payout added. Platform drops both from the
+/// entry. MN_L2 keeps its legacy key bytes, the operator payout of its full state, and its
+/// operator identity with every key, the payout key included; and the blocks end exactly as they
+/// do without the diff's operator payout.
+#[test]
+fn should_ignore_the_operator_payout_of_a_diff_that_re_encodes_the_operator_key() {
+    let mn_l2 = pro_tx_hash(MN_L2);
+    let diff_payout = [0x81; 20];
+    let listed_payout = recorded_masternodes()[&mn_l2].state.operator_payout_address;
+    assert!(listed_payout.is_some_and(|payout| payout != diff_payout));
+    for platform_version in [
+        PlatformVersion::get(13).expect("expected protocol version 13"),
+        PlatformVersion::latest(),
+    ] {
+        let version = platform_version.protocol_version;
+        let mut outcomes = vec![];
+        for with_diff_payout in [false, true] {
+            let mut list_diffs = recorded_steps();
+            if with_diff_payout {
+                let (_, entry) = list_diffs
+                    .get_mut(&(V24_ACTIVATION_HEIGHT + 2))
+                    .and_then(|diff| {
+                        diff.updated_mns
+                            .iter_mut()
+                            .find(|(pro_tx_hash, _)| *pro_tx_hash == mn_l2)
+                    })
+                    .expect("expected MN_L2's recorded re-encode");
+                assert_eq!(entry.pub_key_operator, Some(bytes(MN_L2_BASIC_KEY)));
+                entry.operator_payout_address = Some(Some(diff_payout));
+            }
+            let core_heights: Vec<u32> = list_diffs.keys().copied().collect();
+            let platform = platform_with_core(platform_version, list_diffs, V24_ACTIVATION_HEIGHT);
+            let transaction = platform.drive.grove.start_transaction();
+            let state = run_core_heights(
+                &platform,
+                &transaction,
+                platform_version,
+                core_heights,
+                None,
+            );
+            let context = format!("PV{version}, diff payout: {with_diff_payout}");
+
+            let stored = &state.full_masternode_list()[&mn_l2].state;
+            assert_eq!(
+                stored.pub_key_operator,
+                bytes(MN_L2_LEGACY_KEY),
+                "{context}"
+            );
+            assert_eq!(stored.operator_payout_address, listed_payout, "{context}");
+            let operator_keys = identity_keys(
+                &platform,
+                &transaction,
+                platform_version,
+                operator_identifier(&mn_l2, &bytes(MN_L2_LEGACY_KEY)),
+            )
+            .expect("expected MN_L2's operator identity");
+            assert!(
+                operator_keys.iter().all(|(.., disabled)| !disabled),
+                "{context}: {operator_keys:?}"
+            );
+            assert!(
+                operator_keys.iter().any(|(_, purpose, data, _)| {
+                    *purpose == Purpose::TRANSFER
+                        && listed_payout.is_some_and(|payout| data == &payout)
+                }),
+                "{context}: MN_L2's operator payout key is the listed payout: {operator_keys:?}"
+            );
+            assert_eq!(
+                identity_keys(
+                    &platform,
+                    &transaction,
+                    platform_version,
+                    operator_identifier(&mn_l2, &bytes(MN_L2_BASIC_KEY))
+                ),
+                None,
+                "{context}"
+            );
+            outcomes.push((
+                state.full_masternode_list().clone(),
+                platform
+                    .drive
+                    .grove
+                    .root_hash(Some(&transaction), &platform_version.drive.grove_version)
+                    .value
+                    .expect("expected a root hash"),
+            ));
+        }
+        assert_eq!(
+            outcomes[0], outcomes[1],
+            "PV{version}: the diff's operator payout changes nothing"
+        );
+    }
+}
+
 /// The masternode for the synthetic steps: MN_L1 as recorded, with operator key `key`.
 fn masternode_with_key(key: Vec<u8>) -> MasternodeListItem {
     let mut masternode = recorded_masternodes()
