@@ -229,7 +229,18 @@ pub fn apply(
                 let held: Option<(i64, Vec<u8>, Vec<u8>)> = stored
                     .query_row(
                         params![identity_id.as_slice(), i64::from(*key_id), wallet_id_param],
-                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                        |row| {
+                            // The size guard runs before the payload is read,
+                            // as in `load_state`; an oversized row is read as
+                            // empty and replaced (`held_breadcrumb`).
+                            let blob_len: i64 = row.get(0)?;
+                            let payload: Vec<u8> = if blob::check_size(blob_len).is_ok() {
+                                row.get(1)?
+                            } else {
+                                Vec::new()
+                            };
+                            Ok((blob_len, payload, row.get(2)?))
+                        },
                     )
                     .optional()?;
                 if let Some((wallet_id_kept, derivation_indices)) =

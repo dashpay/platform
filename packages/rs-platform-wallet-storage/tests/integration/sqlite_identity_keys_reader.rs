@@ -111,6 +111,59 @@ fn should_keep_a_stored_breadcrumb_when_an_upsert_carries_none() {
     assert_eq!(cs.upserts.get(&(id, 1)), Some(&watch_only_disabled));
 }
 
+/// A stored row over the blob size limit is not read into memory to look for
+/// a breadcrumb; the upsert replaces it.
+#[test]
+fn should_replace_an_oversized_stored_row_without_reading_it() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xD4);
+    ensure_wallet_meta(&persister, &w);
+    let id = Identifier::from([0x0E; 32]);
+    platform_wallet_storage::sqlite::schema::identities::ensure_exists(
+        &persister.lock_conn_for_test(),
+        &w,
+        id.as_slice().try_into().unwrap(),
+    )
+    .unwrap();
+    let entry = key_entry(id, 0, 0x11);
+    persister
+        .lock_conn_for_test()
+        .execute(
+            "INSERT INTO identity_keys \
+                (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
+             VALUES (?1, ?2, 0, zeroblob(?3), ?4, NULL)",
+            rusqlite::params![
+                w.as_slice(),
+                id.as_slice(),
+                (platform_wallet_storage::SIZE_LIMIT_BYTES + 1) as i64,
+                &entry.public_key_hash[..],
+            ],
+        )
+        .unwrap();
+
+    let mut upsert = entry.clone();
+    upsert.derivation_indices = None;
+    let mut keys = IdentityKeysChangeSet::default();
+    keys.upserts.insert((id, 0), upsert.clone());
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identity_keys: Some(keys),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let cs = identity_keys::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load_state");
+    drop(conn);
+    assert_eq!(cs.upserts.get(&(id, 0)), Some(&upsert));
+}
+
 /// A breadcrumb belongs to one key: an upsert of another public key under a
 /// stored row's key id does not take the row's breadcrumb.
 #[test]

@@ -632,17 +632,15 @@ impl ManagedIdentity {
             return Ok(());
         }
         let keys_cs = self.layer_keys(keys);
-        let cs = PlatformWalletChangeSet {
-            identities: Some(self.snapshot_changeset()),
-            identity_keys: Some(keys_cs),
-            ..Default::default()
-        };
         // Surface the persist failure — these rows carry the per-key
         // derivation breadcrumb + verified scalar that make an imported /
         // restored identity signable. Swallowing a failed store here would
         // leave the keys in memory but absent from the client store, so the
-        // identity comes back watch-only after restart with no signal.
-        persister.store(cs)
+        // identity comes back watch-only after restart with no signal. The
+        // refused rows, breadcrumbs included, also ride the identity's next
+        // key store (see `store_with_queued_key_rows`): a refresh that finds
+        // the same keys has no row of its own to give them.
+        self.store_with_queued_key_rows(keys_cs, persister)
     }
 
     /// Layer `keys` onto this identity in memory, returning their key rows.
@@ -756,7 +754,8 @@ impl ManagedIdentity {
     /// the authoritative on-chain block time.
     ///
     /// Does **not** touch the identity revision — the caller bumps it
-    /// alongside the update transition. A store failure is logged, not
+    /// alongside the update transition. A store failure is logged (its rows
+    /// queued for the next key store, see `store_with_queued_key_rows`), not
     /// returned; a landed update goes through [`Self::apply_landed_keys`],
     /// which returns it and stores the revision too.
     pub fn disable_keys(
@@ -771,12 +770,7 @@ impl ManagedIdentity {
         if keys_cs.upserts.is_empty() {
             return;
         }
-        let cs = PlatformWalletChangeSet {
-            identities: Some(self.snapshot_changeset()),
-            identity_keys: Some(keys_cs),
-            ..Default::default()
-        };
-        if let Err(e) = persister.store(cs) {
+        if let Err(e) = self.store_with_queued_key_rows(keys_cs, persister) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
     }
@@ -1409,6 +1403,54 @@ mod tests {
         let last = rows(&persister, 4).pop().unwrap();
         assert_eq!(last.public_key, disabled);
         assert_eq!(last.derivation_indices, None);
+    }
+
+    /// A key row `add_keys` could not store, breadcrumb included, rides the
+    /// next key store, here a refresh that finds the same keys and so has no
+    /// row of its own to give them.
+    #[test]
+    fn should_store_a_refused_add_key_row_with_the_next_refresh() {
+        let id = Identifier::from([1u8; 32]);
+        let wallet_id: WalletId = [0xAB; 32];
+        let identity = |keys: Vec<IdentityPublicKey>| {
+            Identity::V0(IdentityV0 {
+                id,
+                public_keys: keys.into_iter().map(|key| (key.id(), key)).collect(),
+                balance: 0,
+                revision: 6,
+            })
+        };
+        let mut managed = ManagedIdentity::new(identity(vec![key(1)]), 0);
+        managed.wallet_id = Some(wallet_id);
+        let persister = std::sync::Arc::new(ArmedPersister::default());
+        let p = WalletPersister::new(wallet_id, std::sync::Arc::clone(&persister) as _);
+
+        persister
+            .armed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed
+            .add_keys(
+                vec![KeyWithBreadcrumb {
+                    key: key(4),
+                    breadcrumb: Some((wallet_id, 0, 4)),
+                }],
+                &p,
+            )
+            .is_err());
+        persister
+            .armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        managed
+            .store_fetched_identity(&identity(vec![key(1), key(4)]), BlockTime::new(1, 1, 1), &p)
+            .unwrap();
+        let stores = persister.stores.lock().unwrap();
+        let row = stores
+            .last()
+            .and_then(|cs| cs.identity_keys.as_ref())
+            .and_then(|keys| keys.upserts.get(&(id, 4)))
+            .expect("the refused row rides the refresh's store");
+        assert_eq!(row.public_key, key(4));
+        assert!(row.derivation_indices.is_some());
     }
 
     /// A batch of fetched names lands as one snapshot carrying every name,
