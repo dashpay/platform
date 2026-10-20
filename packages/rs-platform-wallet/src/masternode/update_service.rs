@@ -304,28 +304,52 @@ async fn v24_active_at_spv_tip(
     wallet: &PlatformWallet,
     spv: &SpvRuntime,
 ) -> Result<bool, PlatformWalletError> {
-    let tip = spv
-        .tip()
-        .await
-        .ok_or(PlatformWalletError::MasternodeListUnavailable)?;
-    let block = wallet
-        .sdk()
-        .get_block_by_hash(&tip.hash, BLOCK_REQUEST_SETTINGS)
+    v24_active_at_spv_tip_with(
+        spv.tip().await,
+        |hash| async move {
+            wallet
+                .sdk()
+                .get_block_by_hash(&hash, BLOCK_REQUEST_SETTINGS)
+                .await
+        },
+        |heights| spv.header_versions(heights),
+        wallet.network(),
+        now_secs,
+    )
+    .await
+}
+
+/// [`v24_active_at_spv_tip`] over its readers: `tip` is the SPV header tip,
+/// `fetch_block` fetches a block by hash, `header_versions` reads the stored
+/// headers' versions at some heights, and `now` reads the local clock once
+/// both are in.
+///
+/// No tip is [`PlatformWalletError::MasternodeListUnavailable`]: the SPV
+/// client is not running or holds no headers yet. A failed fetch or a block
+/// not served is a retryable refusal, like every other state the wallet
+/// cannot read V24 from.
+async fn v24_active_at_spv_tip_with<B, E, V>(
+    tip: Option<SpvTip>,
+    fetch_block: impl FnOnce(BlockHash) -> B,
+    header_versions: impl FnOnce(Range<u32>) -> V,
+    network: Network,
+    now: impl FnOnce() -> u64,
+) -> Result<bool, PlatformWalletError>
+where
+    B: Future<Output = Result<Option<Block>, E>>,
+    E: Display,
+    V: Future<Output = Option<Vec<BlockVersion>>>,
+{
+    let tip = tip.ok_or(PlatformWalletError::MasternodeListUnavailable)?;
+    let block = fetch_block(tip.hash)
         .await
         .map_err(|e| v24_unknown(format!("fetching tip block {} failed: {e}", tip.hash)))?
         .ok_or_else(|| v24_unknown(format!("tip block {} was not served", tip.hash)))?;
-    let network = wallet.network();
     let signal_versions = match next_v24_activation_window(tip.height, network).1 {
-        Some(heights) => spv.header_versions(heights).await,
+        Some(heights) => header_versions(heights).await,
         None => None,
     };
-    v24_active_after_tip(
-        &block,
-        &tip,
-        network,
-        now_secs(),
-        signal_versions.as_deref(),
-    )
+    v24_active_after_tip(&block, &tip, network, now(), signal_versions.as_deref())
 }
 
 /// Whether V24 is active for the block after `tip`, read from `block`, the
@@ -911,6 +935,7 @@ mod tests {
     use dashcore::{CompactTarget, OutPoint, ProTxHash, TxIn, TxMerkleNode};
     use key_wallet::account::StandardAccountType;
     use key_wallet::wallet::managed_wallet_info::fee::FeeRate;
+    use std::cell::RefCell;
     use std::sync::{Arc, Mutex};
 
     /// A fixed valid BLS12-381 secret scalar (big-endian, below the group
@@ -1939,6 +1964,157 @@ mod tests {
             &spends_an_output.block_hash(),
             "has no coinbase",
         );
+    }
+
+    /// A fetch the wallet must not make: there is no tip to fetch.
+    async fn block_not_fetched(_: BlockHash) -> Result<Option<Block>, String> {
+        panic!("no block may be fetched without an SPV tip")
+    }
+
+    /// A header read the wallet must not make: there is no tip to read for.
+    async fn headers_not_read(_: Range<u32>) -> Option<Vec<BlockVersion>> {
+        panic!("no headers may be read without an SPV tip")
+    }
+
+    /// Without an SPV tip the SPV client is not running or holds no headers
+    /// yet, the state an unavailable masternode list reports, and there is
+    /// no block to ask DAPI for.
+    #[tokio::test]
+    async fn should_report_a_missing_spv_tip_as_an_unavailable_masternode_list() {
+        let result = v24_active_at_spv_tip_with(
+            None,
+            block_not_fetched,
+            headers_not_read,
+            Network::Testnet,
+            || panic!("nothing is read, so the clock is not either"),
+        )
+        .await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::MasternodeListUnavailable)),
+            "got {result:?}"
+        );
+    }
+
+    /// The tip's block is asked for by the SPV tip's hash, and DAPI's reply
+    /// decides nothing unless it is that block: a failed fetch, a block not
+    /// served, another block, or the tip's header over other transactions
+    /// all leave V24 unknown, which is retryable. The block itself reads as
+    /// V24.
+    #[tokio::test]
+    async fn should_refuse_retryably_unless_dapi_serves_the_spv_tips_block() {
+        let now = 1_792_470_316u64;
+        let block = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION);
+        let tip = tip_of(&block, 1_575_845, now as u32);
+        let mut other = block.clone();
+        other.header.nonce = 1;
+        let mut tampered = block.clone();
+        tampered.txdata[0] =
+            block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION - 1).txdata[0].clone();
+        let read = |served: Result<Option<Block>, String>| async move {
+            let requested = RefCell::new(Vec::new());
+            let result = v24_active_at_spv_tip_with(
+                Some(tip),
+                |hash| {
+                    requested.borrow_mut().push(hash);
+                    async move { served }
+                },
+                |_| async { Some(signal_period(Network::Testnet, 0)) },
+                Network::Testnet,
+                || now,
+            )
+            .await;
+            assert_eq!(
+                requested.into_inner(),
+                vec![tip.hash],
+                "the tip's block is asked for, once"
+            );
+            result
+        };
+
+        for (served, reason) in [
+            (
+                Err("connection refused".to_string()),
+                format!("fetching tip block {} failed: connection refused", tip.hash),
+            ),
+            (Ok(None), format!("tip block {} was not served", tip.hash)),
+            (Ok(Some(other)), "is not the SPV header's block".to_string()),
+            (Ok(Some(tampered)), "merkle root".to_string()),
+        ] {
+            let err = read(served).await.expect_err(&reason);
+            assert!(
+                matches!(&err, PlatformWalletError::TransactionBuild(message)
+                    if message.contains(&reason) && message.contains("try again")),
+                "expected {reason:?}, got {err:?}"
+            );
+        }
+        assert!(read(Ok(Some(block))).await.expect("the tip's block"));
+    }
+
+    /// The pre-V24 reading for a fresh testnet tip at `height`, with the store
+    /// holding `stored` as the signalling headers, and the heights they were
+    /// read at.
+    async fn read_signalling(
+        height: u32,
+        stored: Option<Vec<BlockVersion>>,
+    ) -> (Result<bool, PlatformWalletError>, Vec<Range<u32>>) {
+        let now = 1_792_470_316u64;
+        let pre = block_with_coinbase_payload_version(V24_COINBASE_PAYLOAD_VERSION - 1);
+        let tip = tip_of(&pre, height, now as u32);
+        let reads = RefCell::new(Vec::new());
+        let result = v24_active_at_spv_tip_with(
+            Some(tip),
+            |_| async move { Ok::<_, String>(Some(pre)) },
+            |heights| {
+                reads.borrow_mut().push(heights);
+                async move { stored }
+            },
+            Network::Testnet,
+            || now,
+        )
+        .await;
+        (result, reads.into_inner())
+    }
+
+    /// The headers read are those of the period whose signalling decides
+    /// whether V24 can activate at the tip's next period start, and what
+    /// they show reaches the activation rule: with too few signals a pre-V24
+    /// tip within 30 blocks of that start still builds, with enough or with
+    /// none read it is refused. A chain too short to have that period reads
+    /// no headers and only the margin decides.
+    #[tokio::test]
+    async fn should_read_the_signalling_period_that_decides_the_tips_next_period_start() {
+        let network = Network::Testnet;
+        let deployment = v24_deployment(network);
+        let period_start = deployment.period * 401;
+        let tip_height = period_start - 1;
+        let window = period_start - 2 * deployment.period..period_start - deployment.period;
+        let refused_for = |result: &Result<bool, PlatformWalletError>, start: u32| {
+            let expected = format!("may activate at height {start}");
+            assert!(
+                matches!(result, Err(PlatformWalletError::TransactionBuild(message)) if message.contains(&expected)),
+                "expected {expected:?}, got {result:?}"
+            );
+        };
+
+        let too_few = signal_period(network, deployment.min_threshold - 1);
+        let (result, reads) = read_signalling(tip_height, Some(too_few)).await;
+        assert_eq!(reads, vec![window.clone()]);
+        assert!(!result.expect("V24 cannot lock in for the next period start"));
+
+        let enough = signal_period(network, deployment.min_threshold);
+        for stored in [Some(enough), None] {
+            let (result, reads) = read_signalling(tip_height, stored).await;
+            assert_eq!(reads, vec![window.clone()]);
+            refused_for(&result, period_start);
+        }
+
+        let (result, reads) = read_signalling(deployment.period - 1, None).await;
+        assert_eq!(
+            reads,
+            Vec::<Range<u32>>::new(),
+            "no period before the first"
+        );
+        refused_for(&result, deployment.period);
     }
 
     /// A masternode registered without addresses, or whose address map
