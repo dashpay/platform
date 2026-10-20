@@ -210,6 +210,13 @@ class IdentityUpdates internal constructor(
      * Add [addPublicKeys] and/or disable [disablePublicKeyIds] on
      * [identityId] in a single `IdentityUpdateTransition`, signed via
      * [signerHandle]. At least one of add / disable must be non-empty.
+     *
+     * [externalKeyIds] names the added keys that do not come from the
+     * wallet's derivation (a key generated or received outside it, whose
+     * private key the wallet cannot derive): they are stored without
+     * derivation coordinates. Every other added key is stored as derived at
+     * the identity's index and the key's id. An id that names no added key
+     * is refused before anything is signed.
      */
     suspend fun update(
         walletHandle: Long,
@@ -217,6 +224,7 @@ class IdentityUpdates internal constructor(
         addPublicKeys: List<IdentityPubkey> = emptyList(),
         disablePublicKeyIds: List<Int> = emptyList(),
         signerHandle: Long,
+        externalKeyIds: List<Int> = emptyList(),
     ) = gate.op {
         require(identityId.size == 32) {
             "identityId must be 32 bytes, got ${identityId.size}"
@@ -227,6 +235,9 @@ class IdentityUpdates internal constructor(
         require(disablePublicKeyIds.all { it >= 0 }) {
             "every disabled key id must be non-negative, got $disablePublicKeyIds"
         }
+        require(externalKeyIds.all { it >= 0 }) {
+            "every external key id must be non-negative, got $externalKeyIds"
+        }
         mapNativeErrors {
             TransactionsNative.updateIdentity(
                 walletHandle,
@@ -234,6 +245,7 @@ class IdentityUpdates internal constructor(
                 IdentityPubkeyCodec.encode(addPublicKeys),
                 disablePublicKeyIds.toIntArray(),
                 signerHandle,
+                externalKeyIds.toIntArray(),
             )
         }
     }

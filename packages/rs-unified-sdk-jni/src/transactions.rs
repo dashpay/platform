@@ -132,6 +132,34 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
 
 // ── Identity update (add / disable keys) ──────────────────────────────
 
+/// Read a JVM `int[]` of key ids into `Vec<u32>`. A null or empty array is
+/// no ids; a negative entry throws (it would bit-cast to a bogus huge key
+/// id) and returns `None`. jni 0.21 has no `convert_int_array`, so the
+/// length is read first, then the region into an owned buffer.
+fn read_key_ids(env: &mut JNIEnv, ids: &jni::objects::JIntArray) -> Option<Vec<u32>> {
+    if ids.is_null() {
+        return Some(Vec::new());
+    }
+    match env.get_array_length(ids) {
+        Ok(len) if len > 0 => {
+            let mut buf = vec![0i32; len as usize];
+            if env.get_int_array_region(ids, 0, &mut buf).is_err() {
+                let _ = env.exception_clear();
+                return Some(Vec::new());
+            }
+            if buf.iter().any(|&i| i < 0) {
+                throw_sdk_exception(env, 1, "keyIds must be non-negative");
+                return None;
+            }
+            Some(buf.into_iter().map(|i| i as u32).collect())
+        }
+        _ => {
+            let _ = env.exception_clear();
+            Some(Vec::new())
+        }
+    }
+}
+
 /// Add public keys and/or disable existing key ids on an identity, signing
 /// the resulting `IdentityUpdateTransition` via the external `signerHandle`
 /// (the identity's MASTER auth key) — the exact call
@@ -168,7 +196,9 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
 ///
 /// `disablePublicKeyIds` is a JVM `int[]` of key ids to disable (may be
 /// empty). At least one of add / disable must be non-empty for the FFI to
-/// build a transition. Returns nothing on success (throws on error) — Room
+/// build a transition. `externalKeyIds` is a JVM `int[]` (may be empty) of
+/// the added keys that do not come from the wallet's derivation; they are
+/// stored without derivation coordinates. Returns nothing on success (throws on error) — Room
 /// learns of the change through the persistence changeset.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_updateIdentity(
@@ -179,6 +209,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
     add_pubkeys_blob: JByteArray,
     disable_public_key_ids: jni::objects::JIntArray,
     signer_handle: jlong,
+    external_key_ids: jni::objects::JIntArray,
 ) {
     guard(&mut env, (), |env| {
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
@@ -192,37 +223,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
             return;
         };
 
-        // Read the disable ids (a JVM int[] → Vec<u32>). A null int[] is a
-        // legitimate "no disables"; jni 0.21 has no `convert_int_array`, so
-        // read the length then the region into an owned buffer.
-        let disable_ids: Vec<u32> = if disable_public_key_ids.is_null() {
-            Vec::new()
-        } else {
-            match env.get_array_length(&disable_public_key_ids) {
-                Ok(len) if len > 0 => {
-                    let mut buf = vec![0i32; len as usize];
-                    if env
-                        .get_int_array_region(&disable_public_key_ids, 0, &mut buf)
-                        .is_err()
-                    {
-                        let _ = env.exception_clear();
-                        Vec::new()
-                    } else {
-                        // Reject negative entries before the sign-losing
-                        // cast — a negative int would otherwise bit-cast
-                        // to a bogus huge u32 key id.
-                        if buf.iter().any(|&i| i < 0) {
-                            throw_sdk_exception(env, 1, "keyIds must be non-negative");
-                            return;
-                        }
-                        buf.into_iter().map(|i| i as u32).collect()
-                    }
-                }
-                _ => {
-                    let _ = env.exception_clear();
-                    Vec::new()
-                }
-            }
+        // Read the disable and external ids (JVM int[] → Vec<u32>).
+        let Some(disable_ids) = read_key_ids(env, &disable_public_key_ids) else {
+            return;
+        };
+        let Some(external_ids) = read_key_ids(env, &external_key_ids) else {
+            return;
         };
 
         if decoded.is_empty() && disable_ids.is_empty() {
@@ -247,6 +253,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
                     ffi_rows.as_ptr()
                 },
                 ffi_rows.len(),
+                if external_ids.is_empty() {
+                    ptr::null()
+                } else {
+                    external_ids.as_ptr()
+                },
+                external_ids.len(),
                 if disable_ids.is_empty() {
                     ptr::null()
                 } else {
@@ -256,7 +268,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
                 signer_handle as *mut SignerHandle,
             )
         };
-        // `decoded` / `ffi_rows` / `disable_ids` own the buffers the pointers
+        // `decoded` / `ffi_rows` / `external_ids` / `disable_ids` own the buffers the pointers
         // reference; they stay in scope through the FFI call above.
         take_pwffi_error(env, result);
     })
