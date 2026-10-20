@@ -1304,7 +1304,8 @@ impl PlatformWalletPersistence for SqlitePersister {
     }
 
     /// Every `store` writes the record in the same transaction as the cursor
-    /// it travels with (`dashpay_backfill` table), and an empty record clears
+    /// it travels with (`core_sync_state` and `account_registrations`
+    /// columns, see `schema::dashpay_backfill`), and an empty record clears
     /// the stored one. Durable coverage additionally needs inline rounds, so
     /// in [`FlushMode::Manual`] `persists_backfill_coverage` still reads
     /// `false` through [`store_commits_inline`](Self::store_commits_inline).
@@ -2407,7 +2408,6 @@ mod tests {
             "core_sync_state",
             "core_transactions",
             "core_utxos",
-            "dashpay_backfill",
             "identities",
             "identity_keys",
             "identity_scan_failed_indices",

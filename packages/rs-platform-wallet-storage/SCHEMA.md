@@ -42,7 +42,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Ten tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), the `identity_scan_states` / `identity_scan_failed_indices` pair (V017), and `dashpay_backfill` (V019) — see the [Migrations](#migrations) log for what each adds in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Nine tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), and the `identity_scan_states` / `identity_scan_failed_indices` pair (V017) — see the [Migrations](#migrations) log for what each adds in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -357,6 +357,12 @@ SQL lookups without blob decoding.
   pair. Sentinel `0` / `zeroblob(32)` default for account types without
   that axis (including the provider key-material types).
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
+- `dashpay_covered_from` (V022): the height a `'dashpay_receiving'` account
+  is covered from in the DashPay coreHeight backfill record (DIP-15 §12.6,
+  dashpay/platform#4302); NULL when the record does not cover it. A CHECK
+  limits it to `'dashpay_receiving'` rows. The record's extent lives on
+  [`core_sync_state`](#core_sync_state); the account upsert never touches
+  this column.
 
 ### `pending_contact_crypto`
 
@@ -455,9 +461,16 @@ the last applied ChainLock. `last_processed_height` and `synced_height` are
 NULL until the first block is processed. The one exception to the monotonic
 max is a `synced_height` marked `CoreChangeSet::synced_height_is_rewind`: the
 DashPay coreHeight backfill lowers the cursor deliberately, and the
-[`dashpay_backfill`](#dashpay_backfill) record committed in the same
-transaction vouches for the lowered value, so a rewind overwrites the stored
-cursor. `last_applied_chain_lock` is NULL
+backfill record committed in the same transaction vouches for the lowered
+value, so a rewind overwrites the stored cursor.
+
+`dashpay_backfill_floor` / `dashpay_backfill_rewound_from` (V022) are that
+record's extent: the lowest height the backfill rewound the cursor to and the
+cursor it rewound from. Both set or both NULL (CHECK). Its covered receiving
+accounts are `account_registrations.dashpay_covered_from`. Every write
+replaces the whole record; an empty record, or one none of whose accounts has
+a row, sets both NULL and clears every `dashpay_covered_from`. NULL restores
+the empty record, which upstream answers by re-running the backfill. `last_applied_chain_lock` is NULL
 until a ChainLock has been applied and flushed.
 
 `chainlock_height` (V007) mirrors `CoreChangeSet::last_applied_chain_lock`
@@ -544,7 +557,7 @@ pending). The request columns hold a bincode-encoded `ContactRequest`;
 `accepted_accounts` holds a bincode-encoded `Vec<u32>`.
 `payment_channel_broken` is nullable and read as false when NULL; it is set
 when external-account registration permanently fails for a contact and
-cleared on a superseding rotation. `external_account_reference` (V019) is the
+cleared on a superseding rotation. `external_account_reference` (V022) is the
 outbound-account marker — the account reference the contact's outbound
 account was last built for — written only on established rows, NULL when
 absent; a NULL marker makes the next sweep rebuild that account once.
@@ -554,23 +567,6 @@ absent; a NULL marker makes the next sweep rebuild that account once.
 - Trigger cleanup: `cascade_children_on_identity_delete` brooms by `owner_id` — there is no FK to `identities`.
 - Index: `idx_contacts_owner(owner_id)`, the broom's access path (`owner_id` is not the leading PK column).
 - `state` CHECK: sourced from `sqlite::schema::contacts::CONTACT_STATE_LABELS`.
-
-### `dashpay_backfill`
-
-One row per wallet: the DashPay coreHeight backfill record (DIP-15 §12.6) —
-`floor`, the lowest height it rewound the cursor to, `rewound_from`, the cursor
-it rewound from, and `covered`, the receival accounts it covers in
-`DashPayBackfillRecord::covered_bytes` form (72 bytes per `(owner, contact,
-account_index, covered_from)` entry, the layout the FFI hosts store). Every
-write replaces the whole record; an empty record deletes the row. An absent
-row, or a `covered` blob that is not a whole number of entries, restores the
-empty record, which upstream answers by re-running the backfill
-(dashpay/platform#4302).
-
-- PK: `wallet_id`.
-- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
-- `covered` CHECK: non-empty and a multiple of 72 bytes.
-- No trigger reaches it on identity delete: coverage for a receival account the wallet no longer restores is dropped upstream on load.
 
 ### `ignored_senders`
 
@@ -873,4 +869,4 @@ table-rebuild migration, as V004 does.
 | V017 | `V017__identity_scan_state.rs` | Adds `identity_scan_states` (one row per wallet: the last gap-limit identity-scan verdict — `complete`, `probed_from`/`probed_through`, `unlocated_gap`) and `identity_scan_failed_indices` (indices probed without an answer, cascading from the verdict row via `wallet_id`). Purely additive; an upgraded database reads back "no verdict recorded" for every wallet until the next scan (dashpay/platform#4365). |
 | V018 | `V018__identity_hard_delete.rs` | Retires identity tombstoning. Adds `cascade_children_on_identity_delete` (brooms `identity_keys` / `contacts` / `ignored_senders` / `pending_contact_crypto` by the deleted identity id, covering the rows no live FK reaches) plus its access-path indexes `idx_contacts_owner`, `idx_ignored_senders_owner`, and `idx_pending_contact_crypto_owner`; purges every already-tombstoned identity and its dependents; drops `identities.tombstoned`. |
 | V019 | `V019__asset_lock_operation_id.rs` | Adds the nullable `asset_locks.operation_id BLOB` column (CHECK: NULL or exactly 16 bytes) that correlates a wallet-drain operation with its funding outpoint; the lifecycle blob is untouched. Adds the unique partial index `asset_locks_wallet_operation_id` on `(wallet_id, operation_id) WHERE operation_id IS NOT NULL` and the `asset_locks_operation_id_immutable` BEFORE UPDATE trigger, which aborts any change to a non-NULL `operation_id`. Purely additive; existing rows read back NULL. |
-| V019 | `V019__dashpay_backfill.rs` | Adds `dashpay_backfill` (one row per wallet: the DashPay coreHeight backfill's `floor` / `rewound_from` and its `covered` receival accounts as one `covered_bytes` blob), plus nullable `contacts.external_account_reference` (outbound-account marker). Purely additive; an upgraded database reads back "no backfill recorded" and no marker for every wallet, so the first launch re-runs the backfill once (dashpay/platform#4302). |
+| V022 | `V022__dashpay_backfill.rs` | Adds the DashPay coreHeight backfill record as nullable columns: `core_sync_state.dashpay_backfill_floor` / `dashpay_backfill_rewound_from` (its extent, both set or both NULL) and `account_registrations.dashpay_covered_from` (per covered `'dashpay_receiving'` account), plus nullable `contacts.external_account_reference` (outbound-account marker). Purely additive; an upgraded database reads back "no backfill recorded" and no marker for every wallet, so the first launch re-runs the backfill once (dashpay/platform#4302). |
