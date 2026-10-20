@@ -1,9 +1,13 @@
 use super::broadcast::BroadcastStateTransition;
 use super::validation::ensure_valid_state_transition_structure;
-use super::waitable::{wait_for_document_and_owner_balance, Waitable};
+use super::waitable::{
+    wait_for_document_and_owner_balance, wait_for_document_and_owner_balance_with_metadata,
+    Waitable,
+};
 use crate::platform::documents::contest_fund::with_contest_fund_to_join;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -81,6 +85,52 @@ pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
             .await?;
 
         wait_for_document_and_owner_balance(sdk, state_transition, settings).await
+    }
+
+    /// Puts a document on platform, waits for the confirmation proof and
+    /// returns the confirmed document, the credit balance of its owner after
+    /// the write (`None` for a proof made before protocol version 14) and the
+    /// verified metadata of the response, whose height is the block the
+    /// balance is a snapshot at.
+    ///
+    /// The proof is checked as strictly as
+    /// [`put_to_platform_and_wait_for_response`](Self::put_to_platform_and_wait_for_response)
+    /// checks it: it must prove this write executed, unless the document type
+    /// is indexOnly. [`put_to_platform_and_wait_for_response_with_owner_balance`](Self::put_to_platform_and_wait_for_response_with_owner_balance)
+    /// accepts an affected-state snapshot for any document type.
+    #[allow(clippy::too_many_arguments)]
+    async fn put_to_platform_and_wait_for_response_with_owner_balance_and_metadata(
+        &self,
+        sdk: &Sdk,
+        document_type: DocumentType,
+        document_state_transition_entropy: Option<[u8; 32]>,
+        identity_public_key: IdentityPublicKey,
+        token_payment_info: Option<TokenPaymentInfo>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<(Document, Option<Credits>, ResponseMetadata), Error> {
+        // An indexOnly document keeps no row: its proof shows the entry the
+        // create leaves, not that this create executed.
+        let execution_proof_required = !document_type.index_only();
+        let state_transition = self
+            .put_to_platform(
+                sdk,
+                document_type,
+                document_state_transition_entropy,
+                identity_public_key,
+                token_payment_info,
+                signer,
+                settings,
+            )
+            .await?;
+
+        wait_for_document_and_owner_balance_with_metadata(
+            sdk,
+            state_transition,
+            settings,
+            execution_proof_required,
+        )
+        .await
     }
 }
 

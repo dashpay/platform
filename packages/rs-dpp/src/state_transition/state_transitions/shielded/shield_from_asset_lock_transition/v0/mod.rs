@@ -49,6 +49,10 @@ pub struct ShieldFromAssetLockTransitionV0 {
     /// Halo2 proof bytes
     pub proof: Vec<u8>,
     /// RedPallas binding signature
+    #[cfg_attr(
+        all(feature = "serde-conversion", not(feature = "json-conversion")),
+        serde(with = "crate::serialization::serde_bytes")
+    )]
     pub binding_signature: [u8; 64],
     /// Optional platform-address output that receives the asset-lock surplus
     /// (`asset_lock_value − value_balance − fee`, where `fee = compute_minimum_shielded_fee
