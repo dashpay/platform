@@ -27,8 +27,8 @@
 //!    and dropped from the in-memory tracked-lock map.
 
 use crate::wallet::asset_lock::orchestration::{
-    needs_chain_lock_proof, out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding,
-    FundingResolution, ResolvedFunding,
+    needs_chain_lock_proof, out_point_from_proof, submit_with_cl_height_retry,
+    AssetLockBuiltObserver, AssetLockFunding, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
@@ -106,6 +106,9 @@ impl PlatformAddressWallet {
     ///   this value on consensus-10506 to bypass Tenderdash's
     ///   invalid-tx hash cache; the caller's initial value is the
     ///   starting point.
+    /// * `on_asset_lock_built` — Receives the outpoint of a newly built
+    ///   asset lock before its row is persisted or it is broadcast; see
+    ///   [`AssetLockBuiltObserver`]. Not called on resume.
     ///
     /// # Latency budget
     ///
@@ -167,6 +170,7 @@ impl PlatformAddressWallet {
         address_signer: &S,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
+        on_asset_lock_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError>
     where
         S: Signer<PlatformAddress> + Send + Sync,
@@ -180,6 +184,7 @@ impl PlatformAddressWallet {
             asset_lock_signer,
             settings,
             RecipientOwnership::AllOwned,
+            on_asset_lock_built,
         )
         .await
     }
@@ -239,6 +244,7 @@ impl PlatformAddressWallet {
         address_signer: &S,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
+        on_asset_lock_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError>
     where
         S: Signer<PlatformAddress> + Send + Sync,
@@ -252,6 +258,7 @@ impl PlatformAddressWallet {
             asset_lock_signer,
             settings,
             RecipientOwnership::ExternalExplicitOutputs,
+            on_asset_lock_built,
         )
         .await
     }
@@ -282,6 +289,7 @@ impl PlatformAddressWallet {
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
         ownership: RecipientOwnership,
+        on_asset_lock_built: Option<&AssetLockBuiltObserver<'_>>,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError>
     where
         S: Signer<PlatformAddress> + Send + Sync,
@@ -323,6 +331,7 @@ impl PlatformAddressWallet {
                 AssetLockFundingType::AssetLockAddressTopUp,
                 /* destination_index */ 0,
                 asset_lock_signer,
+                on_asset_lock_built,
             )
             .await?
         {
@@ -1427,6 +1436,7 @@ mod tests {
                 vec![],
                 &NullAddressSigner,
                 &NullAssetLockSigner,
+                None,
                 None,
             )
             .await
