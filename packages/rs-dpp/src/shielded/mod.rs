@@ -292,6 +292,12 @@ pub struct SerializedAction {
     /// value_balance, anchor, and any bound transparent fields). Verified against
     /// `rk` during batch validation. This prevents replay attacks — a valid
     /// signature from one transition cannot be reused in another.
+    // `#[json_safe_fields]` gives this field `serde_bytes` when `json-conversion` is on; serde
+    // has no impl for arrays longer than 32, so a serde build without it needs the same here.
+    #[cfg_attr(
+        all(feature = "serde-conversion", not(feature = "json-conversion")),
+        serde(with = "crate::serialization::serde_bytes")
+    )]
     pub spend_auth_sig: [u8; 64],
 }
 
