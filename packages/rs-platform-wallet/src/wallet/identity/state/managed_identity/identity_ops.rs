@@ -440,16 +440,21 @@ impl ManagedIdentity {
     }
 
     /// Fold `fetched` (see [`Self::take_fetched_identity`]) and store the row
-    /// of every key the fold adds or changes (a disable, a raised limit, a
-    /// key added at a newer revision) with the identity's scalar snapshot as
-    /// one changeset (see `store_keys_and_balance`). Used where a fetch comes
-    /// without derived breadcrumbs (refresh), so the rows carry none: every
-    /// persister keeps the breadcrumb a row already holds, and a key with no
-    /// row yet is stored watch-only until a load or discovery derives it,
-    /// rather than with derivation coordinates inferred from the identity's
-    /// wallet slot. Storing what the fold changes makes any refresh bring the
-    /// store up to the fetch, a refresh after a restart included, which a
-    /// queue held in memory cannot.
+    /// of every key the cache held that the fold changes (a disable, a raised
+    /// limit) with the identity's scalar snapshot as one changeset (see
+    /// `store_keys_and_balance`). Used where a fetch comes without derived
+    /// breadcrumbs (refresh), so the rows carry none and every persister
+    /// keeps the breadcrumb the row holds; a key's state reaches the store on
+    /// any refresh, a refresh after a restart included, which a queue held
+    /// in memory cannot.
+    ///
+    /// A key the fold adds gets no row here. Only a path that knows where a
+    /// key came from creates its row: a load or discovery, which derive its
+    /// breadcrumb from the seed, or a landed update, whose caller declares
+    /// it. A row created here would have to call the key watch-only, which
+    /// the store would then keep for a wallet-derived key until one of those
+    /// paths ran. The key is in memory meanwhile, and a refused row of one of
+    /// those paths rides the next store (see `store_with_queued_key_rows`).
     ///
     /// A failed store is returned; memory holds the fold (the revision above
     /// all, which the next update is built from), and the refused key rows
@@ -466,8 +471,9 @@ impl ManagedIdentity {
         let identity_id = self.id();
         let mut keys_cs = IdentityKeysChangeSet::default();
         for (key_id, key) in self.identity.public_keys() {
-            if before.get(key_id) == Some(key) {
-                continue;
+            match before.get(key_id) {
+                Some(held) if held != key => {}
+                _ => continue,
             }
             keys_cs.upserts.insert(
                 (identity_id, *key_id),

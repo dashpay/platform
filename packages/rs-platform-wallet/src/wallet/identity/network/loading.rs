@@ -321,9 +321,11 @@ impl IdentityWallet {
     /// holds: the cache keeps its revision, key set and every disable, and
     /// takes only a disable or a raised limit the fetch shows
     /// ([`ManagedIdentity::take_fetched_identity`]). The row of every key the
-    /// fold adds or changes is stored with the scalar snapshot, without a
-    /// derivation breadcrumb, and so are key rows an earlier refused store
-    /// queued; when that store fails, the error
+    /// cache held that the fold changes is stored with the scalar snapshot,
+    /// without a derivation breadcrumb (the persisters keep the one they
+    /// hold), and so are key rows an earlier refused store queued; a key the
+    /// fold adds gets its row from a load or discovery, which derive its
+    /// breadcrumb; when that store fails, the error
     /// is returned, memory keeps the fold and the rows stay queued for the
     /// identity's next key store (a refresh, load, discovery or landed
     /// update; [`ManagedIdentity::store_fetched_identity`]).
@@ -801,8 +803,9 @@ mod tests {
     }
 
     /// A disable a refresh brings, from an answer older or newer than the
-    /// cache, is stored with its key row, as is a key a newer answer adds. A
-    /// store that refuses them fails the
+    /// cache, is stored with its key row; a key a newer answer adds is not,
+    /// since only a load or discovery knows its breadcrumb. A store that
+    /// refuses them fails the
     /// refresh and queues the row, which the next refresh stores although
     /// memory already holds the disable.
     #[tokio::test]
@@ -879,12 +882,15 @@ mod tests {
                     "key {key_id} answered at {revision}"
                 );
             }
-            // A key a newer answer adds is stored too, without derivation
-            // coordinates the refresh cannot know; an older answer adds
-            // none.
-            let key_4 = store.stored_key(identity_id, 4);
-            assert_eq!(key_4.is_some(), revision > 6, "answered at {revision}");
-            assert!(key_4.is_none_or(|row| row.derivation_indices.is_none()));
+            // A key a newer answer adds is in memory, but gets no row: a
+            // refresh cannot know its breadcrumb, and a row without one
+            // would call it watch-only. A load or discovery stores it.
+            assert_eq!(
+                held(wallet).await.public_keys().contains_key(&4),
+                revision > 6,
+                "answered at {revision}"
+            );
+            assert!(store.stored_key(identity_id, 4).is_none());
         }
     }
 

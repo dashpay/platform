@@ -141,7 +141,8 @@ fn read_key_ids(env: &mut JNIEnv, ids: &jni::objects::JIntArray) -> Option<Vec<u
         return Some(Vec::new());
     }
     match env.get_array_length(ids) {
-        Ok(len) if len > 0 => {
+        Ok(0) => Some(Vec::new()),
+        Ok(len) => {
             let mut buf = vec![0i32; len as usize];
             if env.get_int_array_region(ids, 0, &mut buf).is_err() {
                 let _ = env.exception_clear();
@@ -154,9 +155,10 @@ fn read_key_ids(env: &mut JNIEnv, ids: &jni::objects::JIntArray) -> Option<Vec<u
             }
             Some(buf.into_iter().map(|i| i as u32).collect())
         }
-        _ => {
+        Err(_) => {
             let _ = env.exception_clear();
-            Some(Vec::new())
+            throw_sdk_exception(env, 1, "keyIds could not be read");
+            None
         }
     }
 }
@@ -199,7 +201,10 @@ fn read_key_ids(env: &mut JNIEnv, ids: &jni::objects::JIntArray) -> Option<Vec<u
 /// empty). At least one of add / disable must be non-empty for the FFI to
 /// build a transition. `externalKeyIds` is a JVM `int[]` (may be empty) of
 /// the added keys that do not come from the wallet's derivation; they are
-/// stored without derivation coordinates. Returns nothing on success (throws on error) — Room
+/// stored without derivation coordinates. With `hasRevision`, the update
+/// must carry `revision`, and one the cached identity would give another
+/// revision is refused before anything is signed
+/// (`platform_wallet_update_identity_with_signer_at_revision`). Returns nothing on success (throws on error) — Room
 /// learns of the change through the persistence changeset.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_updateIdentity(
@@ -211,6 +216,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
     disable_public_key_ids: jni::objects::JIntArray,
     signer_handle: jlong,
     external_key_ids: jni::objects::JIntArray,
+    has_revision: jni::sys::jboolean,
+    revision: jlong,
 ) {
     guard(&mut env, (), |env| {
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
@@ -244,30 +251,52 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
         // Build the FFI rows referencing the owned buffers in `decoded`.
         let ffi_rows: Vec<IdentityPubkeyFFI> = decoded.iter().map(|row| row.to_ffi()).collect();
 
+        let rows = if ffi_rows.is_empty() {
+            ptr::null()
+        } else {
+            ffi_rows.as_ptr()
+        };
+        let external = if external_ids.is_empty() {
+            ptr::null()
+        } else {
+            external_ids.as_ptr()
+        };
+        let disable = if disable_ids.is_empty() {
+            ptr::null()
+        } else {
+            disable_ids.as_ptr()
+        };
+        if has_revision != 0 && revision < 0 {
+            throw_sdk_exception(env, 1, "revision must be non-negative");
+            return;
+        }
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_update_identity_with_signer(
-                wallet_handle as Handle,
-                id.as_ptr(),
-                if ffi_rows.is_empty() {
-                    ptr::null()
-                } else {
-                    ffi_rows.as_ptr()
-                },
-                ffi_rows.len(),
-                if external_ids.is_empty() {
-                    ptr::null()
-                } else {
-                    external_ids.as_ptr()
-                },
-                external_ids.len(),
-                if disable_ids.is_empty() {
-                    ptr::null()
-                } else {
-                    disable_ids.as_ptr()
-                },
-                disable_ids.len(),
-                signer_handle as *mut SignerHandle,
-            )
+            if has_revision != 0 {
+                platform_wallet_ffi::platform_wallet_update_identity_with_signer_at_revision(
+                    wallet_handle as Handle,
+                    id.as_ptr(),
+                    rows,
+                    ffi_rows.len(),
+                    external,
+                    external_ids.len(),
+                    disable,
+                    disable_ids.len(),
+                    revision as u64,
+                    signer_handle as *mut SignerHandle,
+                )
+            } else {
+                platform_wallet_ffi::platform_wallet_update_identity_with_signer(
+                    wallet_handle as Handle,
+                    id.as_ptr(),
+                    rows,
+                    ffi_rows.len(),
+                    external,
+                    external_ids.len(),
+                    disable,
+                    disable_ids.len(),
+                    signer_handle as *mut SignerHandle,
+                )
+            }
         };
         // `decoded` / `ffi_rows` / `external_ids` / `disable_ids` own the buffers the pointers
         // reference; they stay in scope through the FFI call above.

@@ -72,6 +72,48 @@ impl IdentityKeyWire {
     }
 }
 
+/// The breadcrumb a stored row holds for `entry`'s key, to keep on an upsert
+/// that carries none. Only a row that passes the checks `load_state` applies
+/// (its blob agrees with its typed columns and its wallet scope) and stores
+/// the same public key gives one: a breadcrumb belongs to one key's
+/// derivation. A row that fails them, or does not decode, holds nothing to
+/// keep; the write replaces it, as it did before rows kept breadcrumbs.
+fn held_breadcrumb(
+    (blob_len, payload, typed_public_key_hash): (i64, Vec<u8>, Vec<u8>),
+    entry: &IdentityKeyEntry,
+    wallet_id: &WalletId,
+) -> Option<(Option<[u8; 32]>, IdentityKeyDerivationIndices)> {
+    let held = blob::check_size(blob_len).and_then(|()| decode_entry(&payload));
+    let held = match held {
+        Ok(held) => held,
+        Err(e) => {
+            tracing::warn!(
+                key_id = entry.key_id,
+                error = %e,
+                "identity_keys: stored row does not decode; replacing it",
+            );
+            return None;
+        }
+    };
+    let consistent = held.identity_id == entry.identity_id
+        && held.key_id == entry.key_id
+        && held.public_key.id() == entry.key_id
+        && held.public_key_hash[..] == typed_public_key_hash[..]
+        && held.public_key_hash == entry.public_key_hash
+        && held.public_key.data() == entry.public_key.data()
+        && held
+            .wallet_id
+            .is_none_or(|held_wallet_id| held_wallet_id == *wallet_id);
+    if !consistent {
+        tracing::warn!(
+            key_id = entry.key_id,
+            "identity_keys: stored row contradicts its columns or the key; replacing it",
+        );
+        return None;
+    }
+    Some((held.wallet_id, held.derivation_indices?))
+}
+
 /// SQLite's extended result code for a foreign-key constraint failure
 /// (`SQLITE_CONSTRAINT_FOREIGNKEY`). Discriminated numerically — never by
 /// matching the driver's message text.
@@ -167,7 +209,8 @@ pub fn apply(
         // knows the key's new state (a raised limit, a disable, a refresh)
         // must not turn a wallet-derived key watch-only.
         let mut stored = tx.prepare_cached(
-            "SELECT public_key_blob FROM identity_keys \
+            "SELECT length(public_key_blob), public_key_blob, public_key_hash \
+             FROM identity_keys \
              WHERE identity_id = ?1 AND key_id = ?2 AND wallet_id IS ?3",
         )?;
         for ((identity_id, key_id), entry) in &cs.upserts {
@@ -183,26 +226,17 @@ pub fn apply(
             }
             let mut wire = IdentityKeyWire::from_entry(entry)?;
             if wire.derivation_indices.is_none() {
-                let held: Option<Vec<u8>> = stored
+                let held: Option<(i64, Vec<u8>, Vec<u8>)> = stored
                     .query_row(
                         params![identity_id.as_slice(), i64::from(*key_id), wallet_id_param],
-                        |row| row.get(0),
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                     )
                     .optional()?;
-                // A stored row that does not decode holds no breadcrumb
-                // to keep; the write replaces it, as it did before rows
-                // kept their breadcrumbs.
-                match held.map(|held| blob::decode::<IdentityKeyWire>(&held)) {
-                    Some(Ok(held)) if held.derivation_indices.is_some() => {
-                        wire.wallet_id = held.wallet_id;
-                        wire.derivation_indices = held.derivation_indices;
-                    }
-                    Some(Err(e)) => tracing::warn!(
-                        key_id = *key_id,
-                        error = %e,
-                        "identity_keys: stored row does not decode; replacing it",
-                    ),
-                    _ => {}
+                if let Some((wallet_id_kept, derivation_indices)) =
+                    held.and_then(|held| held_breadcrumb(held, entry, wallet_id))
+                {
+                    wire.wallet_id = wallet_id_kept;
+                    wire.derivation_indices = Some(derivation_indices);
                 }
             }
             let entry_blob = blob::encode(&wire)?;

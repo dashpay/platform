@@ -111,6 +111,48 @@ fn should_keep_a_stored_breadcrumb_when_an_upsert_carries_none() {
     assert_eq!(cs.upserts.get(&(id, 1)), Some(&watch_only_disabled));
 }
 
+/// A breadcrumb belongs to one key: an upsert of another public key under a
+/// stored row's key id does not take the row's breadcrumb.
+#[test]
+fn should_not_keep_a_breadcrumb_for_another_public_key() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xD3);
+    ensure_wallet_meta(&persister, &w);
+    let id = Identifier::from([0x0D; 32]);
+    platform_wallet_storage::sqlite::schema::identities::ensure_exists(
+        &persister.lock_conn_for_test(),
+        &w,
+        id.as_slice().try_into().unwrap(),
+    )
+    .unwrap();
+    let store = |entry: IdentityKeyEntry| {
+        let mut keys = IdentityKeysChangeSet::default();
+        keys.upserts
+            .insert((entry.identity_id, entry.key_id), entry);
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    identity_keys: Some(keys),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    };
+    store(key_entry(id, 0, 0x11));
+    let mut other = key_entry(id, 0, 0x44);
+    other.derivation_indices = None;
+    store(other.clone());
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let cs = identity_keys::load_state(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+        .expect("load_state");
+    drop(conn);
+    assert_eq!(cs.upserts.get(&(id, 0)), Some(&other));
+}
+
 /// Identity-key rows round-trip bit-exact into the keyless
 /// `IdentityKeysChangeSet`.
 #[test]

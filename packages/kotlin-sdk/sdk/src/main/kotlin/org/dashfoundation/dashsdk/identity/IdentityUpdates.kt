@@ -217,6 +217,15 @@ class IdentityUpdates internal constructor(
      * derivation coordinates. Every other added key is stored as derived at
      * the identity's index and the key's id. An id that names no added key
      * is refused before anything is signed.
+     *
+     * The transition carries the cached identity's revision plus one, read
+     * when the update starts. With [revision] set, an update that would carry
+     * another one throws [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityRevisionMismatch]
+     * before anything is signed or broadcast, so a caller that recorded
+     * [revision] beforehand knows the only revision this update can land at
+     * (Drive takes an identity update only at one above the identity's
+     * revision). `null` takes whatever the cache gives. Port of the
+     * `revision:` argument of Swift `ManagedPlatformWallet.updateIdentity`.
      */
     suspend fun update(
         walletHandle: Long,
@@ -225,6 +234,7 @@ class IdentityUpdates internal constructor(
         disablePublicKeyIds: List<Int> = emptyList(),
         signerHandle: Long,
         externalKeyIds: List<Int> = emptyList(),
+        revision: Long? = null,
     ) = gate.op {
         require(identityId.size == 32) {
             "identityId must be 32 bytes, got ${identityId.size}"
@@ -238,6 +248,9 @@ class IdentityUpdates internal constructor(
         require(externalKeyIds.all { it >= 0 }) {
             "every external key id must be non-negative, got $externalKeyIds"
         }
+        require(revision == null || revision >= 0) {
+            "revision must be non-negative, got $revision"
+        }
         mapNativeErrors {
             TransactionsNative.updateIdentity(
                 walletHandle,
@@ -246,6 +259,8 @@ class IdentityUpdates internal constructor(
                 disablePublicKeyIds.toIntArray(),
                 signerHandle,
                 externalKeyIds.toIntArray(),
+                revision != null,
+                revision ?: 0L,
             )
         }
     }

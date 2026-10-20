@@ -47,6 +47,10 @@ internal object TransactionsNative {
      * @param externalKeyIds ids of the added keys that do not come from the
      *   wallet's derivation; they are stored without derivation coordinates.
      *   May be empty.
+     * @param hasRevision whether the update must carry [revision]: one the
+     *   cached identity would give another revision is refused before
+     *   anything is signed (bridges
+     *   `platform_wallet_update_identity_with_signer_at_revision`).
      */
     external fun updateIdentity(
         walletHandle: Long,
@@ -55,6 +59,8 @@ internal object TransactionsNative {
         disablePublicKeyIds: IntArray,
         signerHandle: Long,
         externalKeyIds: IntArray,
+        hasRevision: Boolean,
+        revision: Long,
     )
 
     /**
