@@ -5,7 +5,9 @@
 //! durable, so every launch restored a cursor inside the climb and rewound
 //! again. These tests drive the public [`PlatformWalletPersistence`] surface
 //! and assert on what `load()` hands back, plus the stored cursor the record
-//! vouches for.
+//! vouches for. The record has no table: its extent is two `core_sync_state`
+//! columns and each covered entry is `dashpay_covered_from` on the receiving
+//! account's `account_registrations` row.
 
 use crate::common;
 
@@ -15,8 +17,10 @@ use common::{
     ensure_wallet_meta, fresh_persister, fresh_persister_with_mode, store_and_flush, wid,
 };
 use dpp::prelude::Identifier;
+use key_wallet::account::AccountType;
+use key_wallet::bip32::ExtendedPubKey;
 use platform_wallet::changeset::{
-    persists_backfill_coverage, ClientWalletStartState, CoreChangeSet,
+    persists_backfill_coverage, AccountRegistrationEntry, ClientWalletStartState, CoreChangeSet,
     DashPayBackfillCoveredContact, DashPayBackfillRecord, IdentityChangeSet, IdentityEntry,
     PlatformWalletChangeSet, PlatformWalletPersistence, SentContactRequestKey,
 };
@@ -27,7 +31,7 @@ use platform_wallet_storage::sqlite::schema::{blob, contacts, dashpay_backfill};
 use platform_wallet_storage::{
     FlushMode, LoadCtx, SqlitePersister, SqlitePersisterConfig, WalletStorageError,
 };
-use rusqlite::{params, Connection, ErrorCode};
+use rusqlite::{params, Connection, ErrorCode, OptionalExtension};
 
 fn covered(owner: u8, contact: u8, account_index: u32, from: u32) -> DashPayBackfillCoveredContact {
     DashPayBackfillCoveredContact {
@@ -46,8 +50,47 @@ fn record(
     DashPayBackfillRecord::from_entries(floor, rewound_from, entries)
 }
 
+/// A distinct extended public key per `seed` byte.
+fn xpub(seed: u8) -> ExtendedPubKey {
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::Wallet;
+    Wallet::from_seed_bytes(
+        [seed; 64],
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("wallet")
+    .accounts
+    .all_accounts()
+    .first()
+    .expect("at least one account")
+    .account_xpub
+}
+
+/// The receiving account a covered entry names, registered under `xpub_seed`.
+fn receiving_account(
+    entry: &DashPayBackfillCoveredContact,
+    xpub_seed: u8,
+) -> AccountRegistrationEntry {
+    AccountRegistrationEntry {
+        account_type: AccountType::DashpayReceivingFunds {
+            index: entry.account_index,
+            user_identity_id: entry.owner.to_buffer(),
+            friend_identity_id: entry.contact.to_buffer(),
+        },
+        account_xpub: xpub(xpub_seed),
+    }
+}
+
+/// The record plus the receiving accounts it covers, registered in the same
+/// round as the wallet does before it can cover one.
 fn record_cs(record: DashPayBackfillRecord) -> PlatformWalletChangeSet {
     PlatformWalletChangeSet {
+        account_registrations: record
+            .covered()
+            .iter()
+            .map(|entry| receiving_account(entry, 0x01))
+            .collect(),
         dashpay_backfill: Some(record),
         ..Default::default()
     }
@@ -79,15 +122,36 @@ fn stored_cursor(persister: &SqlitePersister, wallet_id: &WalletId) -> Option<u3
         .expect("core_sync_state row")
 }
 
-fn stored_records(persister: &SqlitePersister, wallet_id: &WalletId) -> i64 {
-    persister
-        .lock_conn_for_test()
+/// What is on file for the record: its stored extent (`None` when unset or
+/// when the wallet has no `core_sync_state` row) and how many account rows
+/// carry a covered height.
+fn stored_record_parts(
+    persister: &SqlitePersister,
+    wallet_id: &WalletId,
+) -> (Option<(i64, i64)>, i64) {
+    let conn = persister.lock_conn_for_test();
+    let extent: Option<(Option<i64>, Option<i64>)> = conn
         .query_row(
-            "SELECT COUNT(*) FROM dashpay_backfill WHERE wallet_id = ?1",
+            "SELECT dashpay_backfill_floor, dashpay_backfill_rewound_from \
+             FROM core_sync_state WHERE wallet_id = ?1",
+            params![wallet_id.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .expect("read extent");
+    let covered = conn
+        .query_row(
+            "SELECT COUNT(*) FROM account_registrations \
+             WHERE wallet_id = ?1 AND dashpay_covered_from IS NOT NULL",
             params![wallet_id.as_slice()],
             |row| row.get(0),
         )
-        .expect("count dashpay_backfill")
+        .expect("count covered accounts");
+    let extent = match extent {
+        Some((Some(floor), Some(rewound_from))) => Some((floor, rewound_from)),
+        _ => None,
+    };
+    (extent, covered)
 }
 
 /// Reopen the database at `path` and return what `load()` restored for
@@ -196,13 +260,11 @@ fn should_restore_an_empty_record_for_a_wallet_that_never_backfilled() {
     assert!(reload_wallet(&path, &w).dashpay_backfill.is_empty());
 }
 
-/// A cover set that is not a whole number of entries must not be read as a
-/// shorter one: the reader treats it as "no record", which only costs a
-/// re-run. (The CHECK constraint keeps one off disk, and the open-time
-/// integrity check refuses a file that holds one anyway, so this pins the
-/// reader's own fallback on a raw connection.)
+/// Covered accounts with no extent beside them are not a record the writer
+/// ever leaves; the reader takes them as "no record", which only costs a
+/// re-run, rather than inventing an extent.
 #[test]
-fn should_read_a_torn_cover_set_as_no_record() {
+fn should_read_coverage_without_an_extent_as_no_record() {
     let mut conn = Connection::open_in_memory().expect("open in-memory db");
     mig::run(&mut conn).expect("migrate");
     let w = wid(0x5D);
@@ -211,18 +273,83 @@ fn should_read_a_torn_cover_set_as_no_record() {
         params![w.as_slice()],
     )
     .expect("insert wallet");
-    conn.pragma_update(None, "ignore_check_constraints", true)
-        .expect("bypass CHECK");
     conn.execute(
-        "INSERT INTO dashpay_backfill (wallet_id, floor, rewound_from, covered) \
-         VALUES (?1, 1000, 5000, ?2)",
-        params![w.as_slice(), vec![0u8; 71]],
+        "INSERT INTO account_registrations \
+            (wallet_id, account_type, account_index, user_identity_id, friend_identity_id, \
+             account_xpub_bytes, dashpay_covered_from) \
+         VALUES (?1, 'dashpay_receiving', 0, ?2, ?3, x'00', 1000)",
+        params![
+            w.as_slice(),
+            [0x01u8; 32].as_slice(),
+            [0x02u8; 32].as_slice()
+        ],
     )
-    .expect("insert torn record");
+    .expect("insert covered account");
 
     assert!(dashpay_backfill::load_for_wallet(&conn, &w)
         .expect("backfill load")
         .is_empty());
+}
+
+/// A covered entry is stored on its receiving account's row, so an entry whose
+/// account has no row is dropped — re-armed, never lost the other way. When
+/// nothing is left the extent goes too, and the record reads back empty.
+#[test]
+fn should_drop_coverage_for_a_receiving_account_with_no_row() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0x60);
+    ensure_wallet_meta(&persister, &w);
+    let registered = covered(0x01, 0x02, 0, 1_200);
+    let unregistered = covered(0x01, 0x09, 0, 1_000);
+    store_and_flush(
+        &persister,
+        w,
+        PlatformWalletChangeSet {
+            account_registrations: vec![receiving_account(&registered, 0x01)],
+            dashpay_backfill: Some(record(1_000, 5_000, vec![registered, unregistered])),
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        stored_record_parts(&persister, &w),
+        (Some((1_000, 5_000)), 1)
+    );
+
+    store_and_flush(
+        &persister,
+        w,
+        PlatformWalletChangeSet {
+            dashpay_backfill: Some(record(900, 5_000, vec![unregistered])),
+            ..Default::default()
+        },
+    );
+    assert_eq!(stored_record_parts(&persister, &w), (None, 0));
+    drop(persister);
+
+    assert!(reload_wallet(&path, &w).dashpay_backfill.is_empty());
+}
+
+/// Re-registering an account (a rotated xpub) rewrites its row; the covered
+/// height on that row must survive, or the next launch would backfill again.
+#[test]
+fn should_keep_coverage_when_its_receiving_account_is_re_registered() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0x61);
+    ensure_wallet_meta(&persister, &w);
+    let entry = covered(0x01, 0x02, 0, 1_200);
+    let written = record(1_000, 5_000, vec![entry]);
+    store_and_flush(&persister, w, record_cs(written.clone()));
+    store_and_flush(
+        &persister,
+        w,
+        PlatformWalletChangeSet {
+            account_registrations: vec![receiving_account(&entry, 0x02)],
+            ..Default::default()
+        },
+    );
+    drop(persister);
+
+    assert_eq!(reload_wallet(&path, &w).dashpay_backfill, written);
 }
 
 /// Every write carries the whole record: an account missing from the new one
@@ -261,7 +388,7 @@ fn should_clear_the_stored_record_when_an_empty_one_is_written() {
         record_cs(record(1_000, 5_000, vec![covered(0x01, 0x02, 0, 1_000)])),
     );
     store_and_flush(&persister, w, record_cs(DashPayBackfillRecord::default()));
-    assert_eq!(stored_records(&persister, &w), 0);
+    assert_eq!(stored_record_parts(&persister, &w), (None, 0));
     drop(persister);
 
     assert!(reload_wallet(&path, &w).dashpay_backfill.is_empty());
@@ -311,8 +438,8 @@ fn should_restore_the_rewound_cursor_beside_its_record() {
         &persister,
         w,
         PlatformWalletChangeSet {
-            dashpay_backfill: Some(written.clone()),
-            ..cursor_cs(1_000, true)
+            core: cursor_cs(1_000, true).core,
+            ..record_cs(written.clone())
         },
     );
     drop(persister);
@@ -358,7 +485,7 @@ fn should_drop_the_backfill_record_when_its_wallet_is_deleted() {
 
     persister.delete_wallet(w).expect("delete_wallet");
 
-    assert_eq!(stored_records(&persister, &w), 0);
+    assert_eq!(stored_record_parts(&persister, &w), (None, 0));
 }
 
 /// A buffered rewind has to survive the advances merged around it: the
@@ -473,14 +600,14 @@ fn contact_request(sender: Identifier, recipient: Identifier) -> ContactRequest 
 /// established contact reads back with no outbound marker (one rebuild) and
 /// every wallet with no backfill recorded (one re-run).
 #[test]
-fn should_upgrade_a_v018_database_to_no_marker_and_no_backfill() {
+fn should_upgrade_a_pre_v022_database_to_no_marker_and_no_backfill() {
     let mut conn = Connection::open_in_memory().expect("open in-memory db");
     conn.pragma_update(None, "foreign_keys", true)
         .expect("enable foreign keys");
     mig::runner()
-        .set_target(refinery::Target::Version(18))
+        .set_target(refinery::Target::Version(19))
         .run(&mut conn)
-        .expect("migrate to the last pre-V019 schema");
+        .expect("migrate to the last pre-V022 schema");
 
     let w = wid(0x5C);
     let owner = Identifier::from([0x71; 32]);
@@ -503,6 +630,19 @@ fn should_upgrade_a_v018_database_to_no_marker_and_no_backfill() {
         ],
     )
     .expect("insert established contact");
+    conn.execute(
+        "INSERT INTO core_sync_state (wallet_id, synced_height) VALUES (?1, 5000)",
+        params![w.as_slice()],
+    )
+    .expect("insert sync state");
+    conn.execute(
+        "INSERT INTO account_registrations \
+            (wallet_id, account_type, account_index, user_identity_id, friend_identity_id, \
+             account_xpub_bytes) \
+         VALUES (?1, 'dashpay_receiving', 0, ?2, ?3, x'00')",
+        params![w.as_slice(), owner.as_slice(), contact.as_slice()],
+    )
+    .expect("insert receiving account");
 
     mig::run(&mut conn).expect("migrate to the newest version");
 
@@ -542,8 +682,8 @@ fn should_restore_a_rewound_cursor_below_the_wallet_birth() {
         &persister,
         w,
         PlatformWalletChangeSet {
-            dashpay_backfill: Some(record(100, 1_000, vec![covered(0x01, 0x02, 0, 100)])),
-            ..cursor_cs(100, true)
+            core: cursor_cs(100, true).core,
+            ..record_cs(record(100, 1_000, vec![covered(0x01, 0x02, 0, 100)]))
         },
     );
     drop(persister);
@@ -561,55 +701,4 @@ fn should_restore_a_rewound_cursor_below_the_wallet_birth() {
         ),
         Some(100)
     );
-}
-
-/// A record whose encoded cover set the loader would refuse must be refused
-/// by the writer instead, before anything is written: the round fails whole,
-/// and the record and cursor already on file stand.
-#[test]
-fn should_refuse_a_cover_set_the_loader_could_not_read() {
-    let limit = platform_wallet_storage::sqlite::schema::blob::BLOB_SIZE_LIMIT_BYTES;
-    let max_entries = limit / DashPayBackfillRecord::COVERED_ENTRY_LEN;
-    let entries = |n: usize| -> Vec<DashPayBackfillCoveredContact> {
-        (0..n)
-            .map(|i| covered(0x01, 0x02, u32::try_from(i).expect("index fits"), 100))
-            .collect()
-    };
-
-    let (persister, _tmp, path) = fresh_persister();
-    let w = wid(0x5F);
-    ensure_wallet_meta(&persister, &w);
-    store_and_flush(&persister, w, cursor_cs(5_000, false));
-
-    // At the limit: stored, and readable on the next load.
-    let at_limit = record(1_000, 5_000, entries(max_entries));
-    store_and_flush(
-        &persister,
-        w,
-        PlatformWalletChangeSet {
-            dashpay_backfill: Some(at_limit.clone()),
-            ..cursor_cs(1_000, true)
-        },
-    );
-
-    // One entry over: refused, with nothing of the round written.
-    let err = persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                dashpay_backfill: Some(record(10, 5_000, entries(max_entries + 1))),
-                ..cursor_cs(10, true)
-            },
-        )
-        .expect_err("an unreadable cover set must be refused");
-    assert!(
-        !err.is_transient(),
-        "a retry would only be refused again: {err:?}"
-    );
-    assert_eq!(stored_cursor(&persister, &w), Some(1_000));
-    drop(persister);
-
-    let wallet = reload_wallet(&path, &w);
-    assert_eq!(wallet.dashpay_backfill, at_limit);
-    assert_eq!(wallet.wallet_info.metadata.synced_height, 1_000);
 }
