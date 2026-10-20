@@ -3,6 +3,7 @@ pub mod builder;
 
 mod compute_minimum_shielded_fee;
 pub mod memo;
+#[cfg(feature = "state-transitions")]
 mod sighash;
 
 use crate::util::hash::hash_single;
@@ -60,6 +61,7 @@ pub fn serialized_actions_digest(actions: &[SerializedAction]) -> [u8; 32] {
     hash_single(bytes)
 }
 
+#[cfg(feature = "state-transitions")]
 pub use sighash::{
     compute_platform_sighash, credit_pool_output_only_extra_sighash_data_v0,
     document_token_payment_extra_sighash_data, document_token_payment_extra_sighash_data_v0,
