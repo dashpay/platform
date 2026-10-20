@@ -41,6 +41,7 @@ describe('TransactionsSyncWorker', () => {
     sinon.spy(worker, 'scheduleProgressUpdate');
 
     worker.importTransactions = sinon.stub().returns([]);
+    worker.importInstantLock = sinon.stub();
 
     const transactionsReader = new EventEmitter();
     transactionsReader.startHistoricalSync = sinon.spy();
@@ -781,6 +782,34 @@ describe('TransactionsSyncWorker', () => {
         expect(storage.scheduleStateSave).to.have.not.been.called();
         expect(transactionsSyncWorker.scheduleProgressUpdate).to.have.not.been.called();
       });
+
+      it('should reject an invalid merkle tree without mutating pending transactions', function test() {
+        const transaction = new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000);
+        transactionsSyncWorker.historicalTransactionsToVerify.set(transaction.hash, transaction);
+
+        const merkleBlock = mockMerkleBlock([transaction.hash]);
+        merkleBlock.header.merkleRoot = Buffer.alloc(32, 1);
+        const merkleBlockHeight = 500;
+        chainStore.state.headersMetadata.set(merkleBlock.header.hash, {
+          height: merkleBlockHeight,
+          time: merkleBlock.header.time,
+        });
+        const dataEventPayload = {
+          merkleBlock,
+          acceptMerkleBlock: this.sinon.spy(),
+          rejectMerkleBlock: this.sinon.spy(),
+        };
+
+        transactionsSyncWorker.historicalMerkleBlockHandler(dataEventPayload);
+
+        expect(dataEventPayload.rejectMerkleBlock).to.have.been.calledOnce();
+        expect(dataEventPayload.acceptMerkleBlock).to.have.not.been.called();
+        expect(transactionsSyncWorker.importTransactions).to.have.not.been.called();
+        expect(transactionsSyncWorker.historicalTransactionsToVerify.has(transaction.hash))
+          .to.equal(true);
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(storage.scheduleStateSave).to.have.not.been.called();
+      });
     });
   });
 
@@ -1085,6 +1114,70 @@ describe('TransactionsSyncWorker', () => {
       });
 
       // TODO: should reject in case merkle block verification failed
+      it('should reject an invalid merkle tree before confirming a transaction', function test() {
+        const transaction = new Transaction().to(ADDRESSES_KEYCHAIN_1[0], 1000);
+        transactionsSyncWorker.historicalTransactionsToVerify.set(transaction.hash, transaction);
+
+        const merkleBlock = mockMerkleBlock([transaction.hash]);
+        merkleBlock.header.merkleRoot = Buffer.alloc(32, 1);
+        chainStore.state.headersMetadata.set(merkleBlock.header.hash, {
+          height: 500,
+          time: merkleBlock.header.time,
+        });
+        const dataEventPayload = {
+          merkleBlock,
+          acceptMerkleBlock: this.sinon.spy(),
+          rejectMerkleBlock: this.sinon.spy(),
+        };
+
+        transactionsSyncWorker.newMerkleBlockHandler(dataEventPayload);
+
+        expect(dataEventPayload.rejectMerkleBlock).to.have.been.calledOnce();
+        expect(dataEventPayload.acceptMerkleBlock).to.have.not.been.called();
+        expect(transactionsSyncWorker.importTransactions).to.have.not.been.called();
+        expect(transactionsSyncWorker.historicalTransactionsToVerify.has(transaction.hash))
+          .to.equal(true);
+        expect(chainStore.updateLastSyncedBlockHeight).to.have.not.been.called();
+        expect(storage.scheduleStateSave).to.have.not.been.called();
+      });
+    });
+  });
+
+  describe('#instantLocksHandler', () => {
+    beforeEach(function beforeEach() {
+      transactionsSyncWorker = createTransactionsSyncWorker(this.sinon);
+    });
+
+    it('should reject locks when no trusted verifier is configured', async () => {
+      await transactionsSyncWorker.instantLocksHandler([{ txid: 'unverified' }]);
+
+      expect(transactionsSyncWorker.importInstantLock).to.have.not.been.called();
+    });
+
+    it('should import only locks accepted by the trusted verifier', async function test() {
+      const verifiedLock = { txid: 'verified' };
+      const rejectedLock = { txid: 'rejected' };
+      transactionsSyncWorker.verifyInstantLock = this.sinon.stub();
+      transactionsSyncWorker.verifyInstantLock.withArgs(verifiedLock).resolves(true);
+      transactionsSyncWorker.verifyInstantLock.withArgs(rejectedLock).resolves(false);
+
+      await transactionsSyncWorker.instantLocksHandler([verifiedLock, rejectedLock]);
+
+      expect(transactionsSyncWorker.verifyInstantLock).to.have.been.calledTwice();
+      expect(transactionsSyncWorker.importInstantLock)
+        .to.have.been.calledOnceWith(verifiedLock);
+    });
+
+    it('should contain verifier errors without importing the lock', async function test() {
+      const verificationError = new Error('quorum state unavailable');
+      transactionsSyncWorker.verifyInstantLock = this.sinon.stub().rejects(verificationError);
+      transactionsSyncWorker.parentEvents.on('error', () => {});
+
+      await transactionsSyncWorker.instantLocksHandler([{ txid: 'unverified' }]);
+
+      expect(transactionsSyncWorker.importInstantLock).to.have.not.been.called();
+      expect(transactionsSyncWorker.parentEvents.emit)
+        .to.have.been.calledWith('error', verificationError);
     });
   });
 });

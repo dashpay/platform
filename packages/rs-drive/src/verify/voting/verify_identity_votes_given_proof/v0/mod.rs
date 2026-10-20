@@ -1,12 +1,11 @@
-use crate::drive::votes::storage_form::contested_document_resource_reference_storage_form::ContestedDocumentResourceVoteReferenceStorageForm;
 use crate::drive::votes::storage_form::contested_document_resource_storage_form::ContestedDocumentResourceVoteStorageForm;
 use crate::drive::votes::tree_path_storage_form::TreePathStorageForm;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use crate::query::ContractLookupFn;
+use crate::verify::bounded_decode::decode_vote_reference;
 use crate::verify::RootHash;
-use dpp::bincode;
 use dpp::identifier::Identifier;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use grovedb::GroveDb;
@@ -32,19 +31,7 @@ impl ContestedResourceVotesGivenByIdentityQuery {
             .filter_map(|(path, key, element)| element.map(|element| (path, key, element)))
             .map(|(path, key, element)| {
                 let serialized_reference = element.into_item_bytes()?;
-                let bincode_config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
-                let reference_storage_form: ContestedDocumentResourceVoteReferenceStorageForm =
-                    bincode::decode_from_slice(&serialized_reference, bincode_config)
-                        .map_err(|e| {
-                            Error::Drive(DriveError::CorruptedSerialization(format!(
-                                "serialization of reference {} is corrupted: {}",
-                                hex::encode(serialized_reference),
-                                e
-                            )))
-                        })?
-                        .0;
+                let reference_storage_form = decode_vote_reference(&serialized_reference)?;
                 let absolute_path = reference_storage_form
                     .reference_path_type
                     .absolute_path(path.as_slice(), Some(key.as_slice()))?;

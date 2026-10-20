@@ -31,6 +31,10 @@ describe('TransactionsSyncWorker', () => {
     // Create worker
     const worker = new TransactionsSyncWorker({
       executeOnStart: false,
+      // This integration fixture supplies synthetic locks, so explicitly
+      // provide the trusted-verifier seam instead of relying on production's
+      // fail-closed default.
+      verifyInstantLock: async () => true,
     });
 
     // Integrate worker with wallet
@@ -253,8 +257,9 @@ describe('TransactionsSyncWorker', () => {
         });
 
         // TODO: also implement confirmation with instant locks
-        it('should send instant locks', () => {
+        it('should send instant locks', async () => {
           const sentInstantLocks = sendNewInstantLocks({ forTransactions: transactions });
+          await waitOneTick();
           const chainStore = wallet.storage.getDefaultChainStore();
 
           expect(Array.from(chainStore.state.instantLocks.values()))

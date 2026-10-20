@@ -1,15 +1,22 @@
 use versioned_feature_core::FeatureVersion;
 
 pub mod v1;
+pub mod v2;
+pub mod v3;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyMethodVersions {
     pub contract: DriveVerifyContractMethodVersions,
     pub document: DriveVerifyDocumentMethodVersions,
+    pub chained_document: DriveVerifyChainedDocumentMethodVersions,
+    pub composite_document: DriveVerifyCompositeDocumentMethodVersions,
     pub document_count: DriveVerifyDocumentCountMethodVersions,
     pub document_sum: DriveVerifyDocumentSumMethodVersions,
+    pub document_ranked: DriveVerifyDocumentRankedMethodVersions,
     pub identity: DriveVerifyIdentityMethodVersions,
     pub group: DriveVerifyGroupMethodVersions,
+    pub contract_group: DriveVerifyContractGroupMethodVersions,
+    pub contract_moderation: DriveVerifyContractModerationMethodVersions,
     pub token: DriveVerifyTokenMethodVersions,
     pub single_document: DriveVerifySingleDocumentMethodVersions,
     pub system: DriveVerifySystemMethodVersions,
@@ -17,6 +24,29 @@ pub struct DriveVerifyMethodVersions {
     pub address_funds: DriveVerifyAddressFundsMethodVersions,
     pub state_transition: DriveVerifyStateTransitionMethodVersions,
     pub shielded: DriveVerifyShieldedMethodVersions,
+}
+
+/// Versions for the contract group proof verifiers: one group with its members, and the
+/// groups a contract (or its document types and tokens) belongs to.
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyContractGroupMethodVersions {
+    pub verify_contract_group_info: FeatureVersion,
+    pub verify_contract_group_members: FeatureVersion,
+    pub verify_contract_group_memberships_for_contract: FeatureVersion,
+}
+
+/// Versions for the contract moderation proof verifiers: one identity's status on a contract
+/// (banned, suspended until, or neither) and one page of a contract's banlist or suspensions.
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyContractModerationMethodVersions {
+    pub verify_contract_moderation_status: FeatureVersion,
+    pub verify_contract_moderation_entries: FeatureVersion,
+    pub verify_contract_fee_pots: FeatureVersion,
+    pub verify_contract_document_removals: FeatureVersion,
+    pub verify_contract_team_actions: FeatureVersion,
+    pub verify_contract_team_action_signers: FeatureVersion,
+    pub verify_contract_team_action_signature: FeatureVersion,
+    pub verify_contract_moderation_action_counts: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -34,6 +64,8 @@ pub struct DriveVerifyContractMethodVersions {
     pub verify_contract: FeatureVersion,
     pub verify_contract_history: FeatureVersion,
     pub verify_contract_return_serialization: FeatureVersion,
+    pub verify_contracts_by_range: FeatureVersion,
+    pub verify_contracts_versions: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -42,6 +74,22 @@ pub struct DriveVerifyDocumentMethodVersions {
     pub verify_proof_keep_serialized: FeatureVersion,
     pub verify_document_history: FeatureVersion,
     pub verify_start_at_document_in_proof: FeatureVersion,
+}
+
+/// Versions for the chained document query (provable semi-join)
+/// prove-path verifier (grovedb-level — the tenderdash composition
+/// layer lives in rs-drive-proof-verifier).
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyChainedDocumentMethodVersions {
+    pub verify_chained_documents_proof: FeatureVersion,
+}
+
+/// Versions for the composite document query (page plus derived
+/// sub-queries) prove-path verifier (grovedb-level — the tenderdash
+/// composition layer lives in rs-drive-proof-verifier).
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyCompositeDocumentMethodVersions {
+    pub verify_composite_documents_proof: FeatureVersion,
 }
 
 /// Versions for the `GetDocumentsCount` prove-path verifiers
@@ -71,6 +119,17 @@ pub struct DriveVerifyDocumentSumMethodVersions {
     pub verify_point_lookup_count_and_sum_proof: FeatureVersion,
 }
 
+/// Versions for the indexed-axis prove-path verifiers: the ranked
+/// (top-k) verifier and the boolean-`HAVING` range verifier. Both are
+/// implemented on the respective drive query types and delegate to
+/// grovedb's unified `verify_path_query` over the query's axis
+/// `PathQuery` (`new_axis_top_k` / `new_axis_bounded`).
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyDocumentRankedMethodVersions {
+    pub verify_ranked_top_k_proof: FeatureVersion,
+    pub verify_having_range_proof: FeatureVersion,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyIdentityMethodVersions {
     pub verify_full_identities_by_public_key_hashes: FeatureVersion,
@@ -88,6 +147,7 @@ pub struct DriveVerifyIdentityMethodVersions {
     pub verify_identity_revision_for_identity_id: FeatureVersion,
     pub verify_full_identity_by_non_unique_public_key_hash: FeatureVersion,
     pub verify_identity_id_by_non_unique_public_key_hash: FeatureVersion,
+    pub verify_identity_keys_remaining_budgets: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

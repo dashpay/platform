@@ -1,0 +1,31 @@
+---
+
+x-default-logging: &default-logging
+  driver: local
+  options:
+    max-size: "500m"
+    max-file: "5"
+    compress: "true"
+
+services:
+  # Shares Core's network namespace: Core reaches the SOCKS and control ports on
+  # loopback, and the onion service Core registers targets loopback too. Tor is
+  # therefore not exposed to the host or to other containers. Compose starts it
+  # after Core because of the shared namespace; Core keeps retrying the control
+  # port until Tor is up, so no depends_on is needed (and one would be a cycle).
+  core_tor:
+    image: ${CORE_TOR_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "Core Tor"
+    restart: unless-stopped
+    logging: *default-logging
+    network_mode: "service:core"
+    volumes:
+      - core_tor_data:/var/lib/tor
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/core/tor/torrc:/etc/tor/torrc:ro
+    stop_grace_period: 30s
+    profiles:
+      - core
+
+volumes:
+  core_tor_data:

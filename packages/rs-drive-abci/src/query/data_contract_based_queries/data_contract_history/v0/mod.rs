@@ -10,6 +10,8 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::{check_validation_result_with_data, ProtocolError};
 use dapi_grpc::platform::v0::get_data_contract_history_response::get_data_contract_history_response_v0::DataContractHistoryEntry;
+use drive::drive::contract::MAX_CONTRACT_HISTORY_FETCH_LIMIT;
+use drive::error::query::QuerySyntaxError;
 use drive::util::grove_operations::GroveDBToUse;
 use crate::query::response_metadata::CheckpointUsed;
 use crate::platform_types::platform_state::PlatformState;
@@ -36,8 +38,19 @@ impl<C> Platform<C> {
 
         let limit = check_validation_result_with_data!(limit
             .map(|limit| {
-                u16::try_from(limit)
-                    .map_err(|_| QueryError::InvalidArgument("limit out of bounds".to_string()))
+                let limit = u16::try_from(limit)
+                    .map_err(|_| QueryError::InvalidArgument("limit out of bounds".to_string()))?;
+
+                // Drive refuses the same range with an internal error, which clients retry on
+                // every other node.
+                if !(1..=MAX_CONTRACT_HISTORY_FETCH_LIMIT).contains(&limit) {
+                    return Err(QueryError::InvalidArgument(format!(
+                        "limit {} out of bounds of [1, {}]",
+                        limit, MAX_CONTRACT_HISTORY_FETCH_LIMIT,
+                    )));
+                }
+
+                Ok(limit)
             })
             .transpose());
 
@@ -47,6 +60,14 @@ impl<C> Platform<C> {
                     .map_err(|_| QueryError::InvalidArgument("offset out of bounds".to_string()))
             })
             .transpose());
+
+        if prove && offset.is_some_and(|offset| offset > 0) {
+            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                QuerySyntaxError::RequestingProofWithOffset(
+                    "proof requests do not support offsets".to_string(),
+                ),
+            )));
+        }
 
         let response = if prove {
             let proof = self.drive.prove_contract_history(
@@ -112,7 +133,9 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::platform_types::platform_state::PlatformStateV0Methods;
-    use crate::query::tests::{assert_invalid_identifier, setup_platform};
+    use crate::query::tests::{
+        assert_invalid_argument_status, assert_invalid_identifier, setup_platform,
+    };
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
@@ -123,7 +146,7 @@ mod tests {
     use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::data_contract::DataContract;
     use dpp::platform_value::platform_value;
-    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+    use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use drive::drive::Drive;
     use std::sync::Arc;
@@ -376,18 +399,24 @@ mod tests {
 
         assert_eq!(first_entry.date, 1000);
         let first_entry_data_contract = first_entry.value;
-        let first_data_contract_update =
-            DataContract::versioned_deserialize(&first_entry_data_contract, true, version)
-                .expect("To decode data contract");
+        let first_data_contract_update = DataContract::versioned_deserialize_untrusted(
+            &first_entry_data_contract,
+            true,
+            version,
+        )
+        .expect("To decode data contract");
         assert_eq!(first_data_contract_update, original_data_contract);
 
         assert_eq!(second_entry.date, 2000);
 
         let second_entry_data_contract = second_entry.value;
 
-        let second_data_contract_update =
-            DataContract::versioned_deserialize(&second_entry_data_contract, true, version)
-                .expect("To decode data contract");
+        let second_data_contract_update = DataContract::versioned_deserialize_untrusted(
+            &second_entry_data_contract,
+            true,
+            version,
+        )
+        .expect("To decode data contract");
 
         let updated_doc = second_data_contract_update
             .document_type_for_name("niceDocument")
@@ -494,5 +523,28 @@ mod tests {
                 metadata: Some(_),
             })
         ));
+    }
+
+    /// Drive fetches between 1 and 10 history entries and refuses any other limit with an
+    /// internal error, so the handler refuses it first as the request's fault.
+    #[test]
+    fn should_refuse_a_limit_outside_the_fetch_range_as_invalid_argument() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        for limit in [0, MAX_CONTRACT_HISTORY_FETCH_LIMIT as u32 + 1] {
+            for prove in [false, true] {
+                let request = GetDataContractHistoryRequestV0 {
+                    id: vec![1; 32],
+                    limit: Some(limit),
+                    offset: None,
+                    start_at_ms: 0,
+                    prove,
+                };
+
+                assert_invalid_argument_status(
+                    platform.query_data_contract_history_v0(request, &state, version),
+                );
+            }
+        }
     }
 }

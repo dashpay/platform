@@ -152,94 +152,92 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// Invariant: the flat `compute_minimum_shielded_fee` must cover the *actual* GroveDB write
-    /// cost (`Drive::calculate_fee`) of a shielded transition's operations.
+    /// Invariant: the flat `compute_minimum_shielded_fee` covers the **amortized**
+    /// real GroveDB write cost of a shielded transfer, and stays above the
+    /// amortized real storage so the pool-paid booking split
+    /// (`storage_fee = min(actual_storage, flat)`, `processing = flat -
+    /// storage_fee`) never starves the proposer.
     ///
-    /// A shielded transfer is the cleanest per-action case — insert nullifiers + notes +
-    /// pool-balance update, with no contract document — so it isolates the dominant variable
-    /// cost (note storage). We use production-sized notes (216-byte encrypted note → 280-byte
-    /// commitment-tree item) and measure the real cost in estimation mode (`apply = false`).
+    /// Amortized, because the fee is flat and pool-paid: whatever the
+    /// epoch-boundary append that compacts the dense buffer into a chunk
+    /// blob meters, the pool absorbs it by design, and a client cannot land
+    /// on it more than once per epoch. Under the GROVE_V4 fixed per-append
+    /// model (grovedb #829/#830) every append — the compacting one included —
+    /// meters the same figure, so the epoch average IS the per-append cost;
+    /// the measurement spans a full epoch anyway so the floor stays honest
+    /// under any cost model. Measured on a real pool, one epoch of real
+    /// appends including the compacting one (see `fee_floor_support`).
     ///
-    /// The flat fee covers it with large margin because it also bundles a flat 100M
-    /// proof-verification fee that `calculate_fee` never charges (Halo 2 verification is CPU,
-    /// not a GroveDB op). 16 is the max actions per bundle.
+    /// The booking split is checked at its worst point too: even the
+    /// compacting append's real storage must stay below the flat fee, so
+    /// `min()` never zeroes the proposer's processing share on any append.
     #[test]
     fn test_minimum_shielded_fee_covers_actual_grovedb_write_cost() {
-        use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-        use dpp::block::block_info::BlockInfo;
+        use super::super::fee_floor_support::transfer_epoch;
         use dpp::shielded::compute_minimum_shielded_fee;
 
-        let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
-        let epoch = Epoch::new(0).unwrap();
+        let epoch = transfer_epoch();
 
-        // Production-sized note: 216-byte encrypted note, distinct nullifier/cmx per action.
-        let realistic_note = |i: u8| ShieldedActionNote {
-            nullifier: [i.wrapping_add(1); 32],
-            cmx: [i.wrapping_add(101); 32],
-            cv_net: [i.wrapping_add(201); 32],
-            encrypted_note: vec![0x77; 216],
-        };
-
-        for num_actions in [1usize, 8, 16] {
-            let fee_amount = compute_minimum_shielded_fee(num_actions, platform_version)
+        for num_actions in [1u64, 8, 16] {
+            let fee_amount = compute_minimum_shielded_fee(num_actions as usize, platform_version)
                 .expect("fee computation should not overflow");
-            let notes: Vec<_> = (0..num_actions as u8).map(realistic_note).collect();
-            let action = ShieldedTransferTransitionAction::V0(ShieldedTransferTransitionActionV0 {
-                notes,
-                anchor: [0xAA; 32],
-                fee_amount,
-                current_total_balance: fee_amount + 1_000_000,
-            });
-
-            let ops = action
-                .into_high_level_drive_operations(&epoch, platform_version)
-                .expect("operations");
-
-            // apply = false → estimation mode: no DB mutation, returns the real cost.
-            let fee_result = drive
-                .apply_drive_operations(
-                    ops,
-                    false,
-                    &BlockInfo::default(),
-                    None,
-                    platform_version,
-                    None,
-                )
-                .expect("estimate write cost");
-            let actual_cost = fee_result.total_base_fee();
-
-            // The fee must cover the real write cost. Measured margins over GroveDB cost
-            // (estimation mode, production-sized notes): ~10.9x at 1 action down to ~5.8x at
-            // the 16-action max. The margin is large and stays well above 1x because the
-            // per-action fee also prices the per-action Halo 2 verification CPU (which
-            // calculate_fee does not charge), so it exceeds the per-action GroveDB cost by
-            // design; see `shielded_per_action_processing_fee`.
+            // Each action is one note append + one nullifier; the amortized
+            // per-append cost scales linearly, and the flat fee also carries
+            // the fixed proof-verification term, so this holds with margin.
             assert!(
-                fee_amount >= actual_cost,
-                "compute_minimum_shielded_fee({num_actions}) = {fee_amount} must cover the actual \
-                 GroveDB write cost {actual_cost} (storage {} + processing {})",
-                fee_result.storage_fee,
-                fee_result.processing_fee
+                fee_amount >= num_actions * epoch.avg_total,
+                "compute_minimum_shielded_fee({num_actions}) = {fee_amount} must cover the \
+                 amortized real write cost {} x {} (epoch of {} appends; compacting append \
+                 total {}, ordinary append total {})",
+                num_actions,
+                epoch.avg_total,
+                epoch.appends,
+                epoch.boundary_total,
+                epoch.ordinary_total
             );
-
-            // Pin the booking-split invariant directly. The pool-paid booking in
-            // `execute_event/v0` splits the flat carved fee as
-            //   storage_fee = min(real_metered_storage, flat_fee)
-            //   processing_fee = flat_fee - storage_fee
-            // The `min()` only ever binds — zeroing the proposer's processing reward and
-            // undercharging storage — if the real metered storage EXCEEDS the flat fee. Asserting
-            // `flat_fee > real_metered_storage` here is exactly the condition that guarantees the
-            // `min()` is a no-op, so the proposer is always paid the processing remainder and
-            // storage is never undercharged. (Strict `>` because the flat fee also bundles the 100M
-            // proof-verification fee that GroveDB never meters.)
             assert!(
-                fee_amount > fee_result.storage_fee,
-                "compute_minimum_shielded_fee({num_actions}) = {fee_amount} must strictly exceed the \
-                 real metered storage {} so the booking split's min(real_storage, flat_fee) never \
-                 binds (proposer processing reward never zeroed, storage never undercharged)",
-                fee_result.storage_fee
+                fee_amount > num_actions * epoch.avg_storage,
+                "flat fee {fee_amount} must exceed the amortized real storage {} x {} so the \
+                 pool-paid booking split never starves the proposer",
+                num_actions,
+                epoch.avg_storage
             );
         }
+        let fee_one = compute_minimum_shielded_fee(1, platform_version).expect("fee");
+        assert!(
+            epoch.boundary_storage < fee_one,
+            "even the compacting append's real storage ({}) must stay below the flat fee \
+             ({fee_one}), or `min(actual_storage, flat)` would zero the proposer's share",
+            epoch.boundary_storage
+        );
+
+        // Component independence: the fee's resource reservations must each
+        // cover their own cost, with nothing subsidized by the compute
+        // budget. The proof-verification fee is reserved for Halo 2 CPU and
+        // takes part in NO database assertion here.
+        let constants = &platform_version
+            .drive_abci
+            .validation_and_processing
+            .event_constants;
+        let storage = &platform_version.fee_version.storage;
+        let per_byte_rate =
+            storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte;
+        let storage_component = constants.shielded_storage_bytes_per_action * per_byte_rate;
+        assert!(
+            storage_component >= epoch.avg_storage,
+            "the per-action storage allowance alone ({} bytes = {storage_component} credits) \
+             must cover the amortized real storage per append ({}); raise \
+             `shielded_storage_bytes_per_action`",
+            constants.shielded_storage_bytes_per_action,
+            epoch.avg_storage
+        );
+        assert!(
+            constants.shielded_per_action_processing_fee >= epoch.avg_total - epoch.avg_storage,
+            "the per-action processing fee ({}) must cover the amortized metered GroveDB \
+             processing per append ({}) on top of its verification work",
+            constants.shielded_per_action_processing_fee,
+            epoch.avg_total - epoch.avg_storage
+        );
     }
 }

@@ -37,6 +37,7 @@ impl DriveDocumentQuery<'_> {
         document_id: [u8; 32],
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<Document>), Error> {
+        self.ensure_no_sub_queries("verify_start_at_document_in_proof")?;
         match platform_version
             .drive
             .methods
@@ -94,6 +95,8 @@ mod tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         let result =

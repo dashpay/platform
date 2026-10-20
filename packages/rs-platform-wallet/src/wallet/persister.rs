@@ -10,9 +10,42 @@ use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 use crate::changeset::{
-    ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, DpnsNameStateEntry, PersistenceCapabilities, PersistenceError,
+    PlatformWalletChangeSet, PlatformWalletPersistence,
 };
+use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::WalletId;
+use dpp::prelude::Identifier;
+
+/// Transient tx-record misses collapsed during one wait or sweep, reported as
+/// a single line when it ends.
+///
+/// Owned by the caller and dropped at its exit, so every path out — success,
+/// timeout, early return — reports exactly once, and a backend that is merely
+/// busy cannot flood the log from inside an unbounded poll loop.
+#[derive(Debug, Default)]
+pub(crate) struct TransientMissTally {
+    misses: usize,
+}
+
+impl TransientMissTally {
+    #[cfg(test)]
+    pub(crate) fn misses(&self) -> usize {
+        self.misses
+    }
+}
+
+impl Drop for TransientMissTally {
+    fn drop(&mut self) {
+        if self.misses > 0 {
+            tracing::debug!(
+                transient_misses = self.misses,
+                "Core tx-record reads hit transient backend failures during this pass; \
+                 each was read as a miss and will be retried"
+            );
+        }
+    }
+}
 
 /// Per-wallet persistence handle.
 ///
@@ -23,19 +56,84 @@ use crate::wallet::platform_wallet::WalletId;
 pub struct WalletPersister {
     wallet_id: WalletId,
     inner: Arc<dyn PlatformWalletPersistence>,
+    contact_payment_gate: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl WalletPersister {
     pub fn new(wallet_id: WalletId, inner: Arc<dyn PlatformWalletPersistence>) -> Self {
-        Self { wallet_id, inner }
+        Self {
+            wallet_id,
+            inner,
+            contact_payment_gate: Arc::new(tokio::sync::Mutex::new(())),
+        }
     }
 
-    pub(crate) fn store(&self, changeset: PlatformWalletChangeSet) -> Result<(), PersistenceError> {
+    /// Keep contact-pool snapshots in reservation order across Core and
+    /// withdrawal sends, including a Core broadcast rejection's pool rollback.
+    ///
+    /// The gate is shared by clones of this handle, not by every handle for
+    /// the same `wallet_id`: each [`Self::new`] mints its own. Ordering holds
+    /// because the only lockers (the DashPay payment paths) run on the handle
+    /// `PlatformWallet::new` builds once per wallet. Any new writer of DashPay
+    /// external-account pool snapshots must lock through a clone of that
+    /// handle; a separately constructed one (such as the incoming-payment
+    /// hook's) would silently bypass the ordering.
+    pub(crate) async fn lock_contact_payments(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.contact_payment_gate.lock().await
+    }
+
+    /// Store `changeset` for this wallet.
+    ///
+    /// On a backend that cannot keep outbound-account markers durably (see
+    /// [`persists_outbound_account_markers`](crate::changeset::persists_outbound_account_markers)),
+    /// every established-contact row is written without its marker: a marker
+    /// that reached disk without its account — through a buffered round that
+    /// was later dropped, or a host that skips account writes — would be
+    /// trusted on restart beside the previous account. The in-memory marker is
+    /// untouched, so the running process keeps its rotation self-heal.
+    pub(crate) fn store(
+        &self,
+        mut changeset: PlatformWalletChangeSet,
+    ) -> Result<(), PersistenceError> {
+        if !self.persists_outbound_account_markers() {
+            if let Some(contacts) = changeset.contacts.as_mut() {
+                for established in contacts.established.values_mut() {
+                    established.external_account_reference = None;
+                }
+            }
+        }
         self.inner.store(self.wallet_id, changeset)
+    }
+
+    /// Whether the backend keeps outbound-account markers durably (see
+    /// [`persists_outbound_account_markers`](crate::changeset::persists_outbound_account_markers)).
+    pub(crate) fn persists_outbound_account_markers(&self) -> bool {
+        crate::changeset::persists_outbound_account_markers(self.inner.as_ref())
+    }
+
+    /// Preserve backend failure kinds, granting retry only when the backend
+    /// guarantees a failed store retained and committed nothing.
+    pub(crate) fn classify_store_failure(&self, error: PersistenceError) -> PlatformWalletError {
+        PlatformWalletError::from_store_failure(self.inner.as_ref(), error)
     }
 
     pub(crate) fn flush(&self) -> Result<(), PersistenceError> {
         self.inner.flush(self.wallet_id)
+    }
+
+    pub(crate) fn store_commits_inline(&self) -> bool {
+        self.inner.store_commits_inline()
+    }
+
+    /// Whether the backend can hold a durable DashPay backfill record (see
+    /// [`persists_backfill_coverage`](crate::changeset::persists_backfill_coverage)).
+    pub(crate) fn persists_backfill_coverage(&self) -> bool {
+        crate::changeset::persists_backfill_coverage(self.inner.as_ref())
+    }
+
+    /// Feature-specific persistence contracts exposed by the backend.
+    pub(crate) fn persistence_capabilities(&self) -> PersistenceCapabilities {
+        self.inner.persistence_capabilities()
     }
 
     pub(crate) fn load(&self) -> Result<ClientStartState, PersistenceError> {
@@ -52,12 +150,78 @@ impl WalletPersister {
     ) -> Result<Option<TransactionRecord>, PersistenceError> {
         self.inner.get_core_tx_record(self.wallet_id, txid)
     }
+
+    /// [`Self::get_core_tx_record`] with the shared transient-as-miss policy.
+    ///
+    /// A busy store is indistinguishable in outcome from "the row is not
+    /// readable right now", and every caller here already retries a miss on its
+    /// next pass, so a transient failure collapses to `Ok(None)`. A permanent
+    /// one stays an `Err`: it will not fix itself, so swallowing it would
+    /// repeat the same doomed work forever with no signal. Use
+    /// [`Self::get_core_tx_record`] directly to tell the two apart.
+    ///
+    /// Every caller is a poll loop or a per-txid sweep, so the collapse is
+    /// counted into `tally` and reported once when that wait or sweep ends,
+    /// rather than logged per call.
+    pub(crate) fn get_core_tx_record_or_transient_miss(
+        &self,
+        txid: &Txid,
+        tally: &mut TransientMissTally,
+    ) -> Result<Option<TransactionRecord>, PersistenceError> {
+        match self.get_core_tx_record(txid) {
+            Err(e) if e.is_transient() => {
+                tally.misses += 1;
+                tracing::trace!(
+                    %txid,
+                    error = %e,
+                    "Core tx-record read hit a transient backend failure; reading as a miss"
+                );
+                Ok(None)
+            }
+            other => other,
+        }
+    }
+
+    /// Enumerate the persisted Core transaction ids scoped to this
+    /// wallet, tagged with the host's wallet-funded verdict. Used by
+    /// DashPay sent-payment reconstruction to fetch the full records
+    /// via [`Self::get_core_tx_record`]. `None` means the backend does
+    /// not support wallet-scoped enumeration (never "empty table").
+    pub(crate) fn list_wallet_core_txids(
+        &self,
+    ) -> Result<Option<Vec<crate::changeset::traits::ListedCoreTxid>>, PersistenceError> {
+        self.inner.list_wallet_core_txids(self.wallet_id)
+    }
+
+    /// Look up the persisted DPNS marketplace row for
+    /// `(wallet_identity_id, normalized_label)` within this wallet.
+    ///
+    /// The durable fallback the DPNS marketplace sync pass uses to
+    /// recover a departed name's `document_id` once a process restart
+    /// has left the session-scoped in-memory map empty — see
+    /// [`PlatformWalletPersistence::get_dpns_name_state`] for the full
+    /// contract. `Ok(None)` means the backend does not index DPNS rows
+    /// by label (or holds no such row); it is not an error.
+    pub(crate) fn get_dpns_name_state(
+        &self,
+        wallet_identity_id: &Identifier,
+        normalized_label: &str,
+    ) -> Result<Option<DpnsNameStateEntry>, PersistenceError> {
+        self.inner
+            .get_dpns_name_state(self.wallet_id, wallet_identity_id, normalized_label)
+    }
 }
 
 /// No-op platform persistence for standalone wallets.
 pub struct NoPlatformPersistence;
 
 impl PlatformWalletPersistence for NoPlatformPersistence {
+    /// Nothing is ever written, so nothing survives a restart. (Redundant
+    /// with the trait's fail-closed default — kept explicit as documentation.)
+    fn persists_durably(&self) -> bool {
+        false
+    }
+
     fn store(
         &self,
         _wallet_id: WalletId,
@@ -72,5 +236,37 @@ impl PlatformWalletPersistence for NoPlatformPersistence {
 
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         Ok(ClientStartState::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `persists_durably` is a fail-closed security capability: an
+    /// implementation that does NOT explicitly attest durability must read as
+    /// non-durable, so a backend author who forgets the override gets a loud
+    /// "requires durable persistence" refusal from the invitation flow
+    /// instead of being silently trusted with a re-exportable bearer key.
+    #[test]
+    fn durability_attestation_defaults_to_fail_closed() {
+        struct BareMinimum;
+        impl PlatformWalletPersistence for BareMinimum {
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+        assert!(!BareMinimum.persists_durably());
+        assert!(!NoPlatformPersistence.persists_durably());
     }
 }

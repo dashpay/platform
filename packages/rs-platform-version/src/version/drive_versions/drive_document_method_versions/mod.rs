@@ -1,8 +1,9 @@
-use versioned_feature_core::FeatureVersion;
+use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentMethodVersions {
@@ -14,11 +15,39 @@ pub struct DriveDocumentMethodVersions {
     pub estimation_costs: DriveDocumentEstimationCostsMethodVersions,
     pub index_uniqueness: DriveDocumentIndexUniquenessMethodVersions,
     pub primary_key_tree_type: FeatureVersion,
+    pub expiration: DriveDocumentExpirationMethodVersions,
+    /// `Drive::fetch_property_constraint_aggregate`: a `countOf` or `sumOf` total a
+    /// `propertyConstraints` rule reads, from the count or sum tree keeping it. Reachable
+    /// from protocol version 14 only, the first version whose parser reads a rule; the slot
+    /// is 0 in every table.
+    pub fetch_property_constraint_aggregate: FeatureVersion,
+}
+
+/// Drive methods of document expiry: the expirations tree under `Misc` that indexes every
+/// document of a type declaring a `ttl` by the time it expires, and the cleanup that
+/// deletes expired documents after each block's state transitions. Reachable from protocol
+/// version 14 only, the first version whose parser reads the `ttl` keyword; the slots are
+/// 0 in every table.
+#[derive(Clone, Debug, Default)]
+pub struct DriveDocumentExpirationMethodVersions {
+    pub insert_document_ttl_trees: FeatureVersion,
+    pub add_document_expiration_operations: FeatureVersion,
+    pub remove_document_expiration_operations: FeatureVersion,
+    pub fetch_expired_documents: FeatureVersion,
+    pub remove_expired_documents: FeatureVersion,
+    pub add_estimation_costs_for_document_expiration: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
     pub query_documents: FeatureVersion,
+    /// Chained document queries (provable semi-join): the version slot
+    /// shared by the no-proof and the two-proof execution paths.
+    pub query_chained_documents: FeatureVersion,
+    /// Composite document queries (a page plus sub-queries derived from
+    /// its results, one merged proof): the version slot shared by the
+    /// no-proof and the proof execution paths.
+    pub query_composite_documents: FeatureVersion,
     pub query_contested_documents: FeatureVersion,
     pub query_contested_documents_vote_state: FeatureVersion,
     pub query_documents_with_flags: FeatureVersion,
@@ -33,6 +62,57 @@ pub struct DriveDocumentQueryMethodVersions {
     /// Mode-detection routing table for `SELECT SUM` queries. Same
     /// versioning rationale as `detect_count_mode`.
     pub detect_sum_mode: FeatureVersion,
+    /// Mode-detection routing table for ranked (`HAVING ... TOP/BOTTOM/
+    /// MIN/MAX`) aggregate queries served from an indexed index tree.
+    /// Same versioning rationale as `detect_count_mode`. Present in
+    /// every version table so the slot exists for older protocol
+    /// versions; the routing itself is unreachable before the ranked
+    /// contract grammar activates.
+    pub detect_ranked_mode: FeatureVersion,
+    /// Mode-detection routing table for boolean `HAVING` range queries
+    /// (`GROUP BY p HAVING <agg> <op> <value> LIMIT n`) served from an
+    /// indexed tree's axis secondary. Same versioning rationale and
+    /// same dormancy pattern as `detect_ranked_mode`: the slot exists
+    /// in every table, and the routing is unreachable before both the
+    /// ranked contract grammar and the v2 aggregate-routing helper
+    /// activate (protocol v14).
+    pub detect_having_mode: FeatureVersion,
+    /// Lowering of a `DriveDocumentQuery` over a secondary index into a
+    /// grovedb `PathQuery`. Versioned because the set of accepted query
+    /// shapes is part of the consensus query contract: v0 rejects more
+    /// than one non-primary-key `In` clause per query; v1 (protocol
+    /// version 14) accepts multiple `In` clauses on consecutive index
+    /// properties, lowering them to multi-level key-set path queries.
+    pub non_primary_key_path_query: FeatureVersion,
+    /// Lowering for query shapes with at most one non-primary-key `In`
+    /// clause. Same consensus rationale as
+    /// `non_primary_key_path_query`, which routes those shapes here
+    /// from its v1 on. Present in every version table so the slot
+    /// exists for older protocol versions; unreachable while
+    /// `non_primary_key_path_query` is 0, whose v0 lowering carries its
+    /// own frozen single-`In` construction.
+    pub non_primary_key_single_in_path_query: FeatureVersion,
+    /// Lowering for query shapes with multiple non-primary-key `In`
+    /// clauses on consecutive index properties, producing multi-level
+    /// key-set path queries. Same consensus rationale and reachability
+    /// as `non_primary_key_single_in_path_query`.
+    pub non_primary_key_multiple_in_path_query: FeatureVersion,
+    /// Grouping of a query's raw where clauses into equality / range /
+    /// in buckets (`WhereClause::group_clauses`). Versioned because the
+    /// error surface for rejected shapes is part of the query contract:
+    /// v0 rejects any query with more than one non-primary-key `In`
+    /// clause with `MultipleInClauses` before any other same-field
+    /// checks; v1 (protocol version 14) groups multiple `In` clauses
+    /// structurally and reports duplicate-field and overlap errors
+    /// instead. Flips together with `non_primary_key_path_query`.
+    pub where_clause_grouping: FeatureVersion,
+    /// Reading a query's `startAt`/`startAfter` cursor document from the
+    /// type's primary-key tree. v0 decodes only a plain `Item` and refuses
+    /// any other element as a corrupted path, so a cursor on a
+    /// `documentsSummable` type, whose documents are stored as
+    /// `ItemWithSumItem`, fails every query; v1 (protocol version 14)
+    /// decodes any item element, as the proof verifier always has.
+    pub start_at_document: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -45,6 +125,7 @@ pub struct DriveDocumentEstimationCostsMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentInsertMethodVersions {
     pub add_document: FeatureVersion,
+    pub add_history_operations: FeatureVersion,
     pub add_document_for_contract: FeatureVersion,
     pub add_document_for_contract_apply_and_add_to_operations: FeatureVersion,
     pub add_document_for_contract_operations: FeatureVersion,
@@ -64,6 +145,11 @@ pub struct DriveDocumentInsertContestedMethodVersions {
     pub add_contested_indices_for_contract_operations: FeatureVersion,
     pub add_contested_reference_and_vote_subtree_to_document_operations: FeatureVersion,
     pub add_contested_vote_subtree_for_non_identities_operations: FeatureVersion,
+    /// Reads the join window and the vote window of a moderation election (an
+    /// `electedCharter` contest) from the elected moderation declaration of the contract it
+    /// contends for. `None` before protocol version 14, when no such contest exists and every
+    /// contest keeps the generic windows.
+    pub fetch_charter_election_windows: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -90,6 +176,13 @@ pub struct DriveDocumentDeleteMethodVersions {
     pub delete_document_for_contract_id_with_named_type_operations: FeatureVersion,
     pub delete_document_for_contract_with_named_type_operations: FeatureVersion,
     pub delete_document_for_contract_operations: FeatureVersion,
+    /// indexOnly delete-by-values (dormant slot: present in every table at 0;
+    /// only reachable for indexOnly document types, which cannot exist below
+    /// PV14).
+    pub delete_index_only_document_for_contract_operations: FeatureVersion,
+    /// The fee-applying indexOnly deletion wrapper (dormant slot, 0 in
+    /// every table; only reachable for indexOnly document types).
+    pub delete_index_only_document_for_contract: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -99,6 +192,12 @@ pub struct DriveDocumentIndexUniquenessMethodVersions {
     pub validate_document_transfer_transition_action_uniqueness: FeatureVersion,
     pub validate_document_purchase_transition_action_uniqueness: FeatureVersion,
     pub validate_document_update_price_transition_action_uniqueness: FeatureVersion,
+    pub validate_moderated_document_uniqueness: FeatureVersion,
+    /// The shared uniqueness check every method above reaches. 0 takes the
+    /// V0 request (protocol versions 1 to 9), 1 the V1 request (10 to 13),
+    /// 2 the V1 request and reads a dotted index property name as a path
+    /// into nested objects, the way the insert path reads it (14 on).
+    pub validate_uniqueness_of_data: FeatureVersion,
 }
 
 #[cfg(test)]

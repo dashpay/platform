@@ -1,5 +1,6 @@
 use crate::abci::app::PlatformApplication;
 use crate::abci::handler;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
@@ -95,7 +96,14 @@ where
 }
 
 pub fn error_into_status(error: Error) -> tonic::Status {
-    tonic::Status::internal(error.to_string())
+    match error {
+        Error::Execution(ExecutionError::CheckTxProofVerificationBusy) => {
+            tonic::Status::resource_exhausted(
+                "check tx verification capacity is temporarily unavailable",
+            )
+        }
+        error => tonic::Status::internal(error.to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -119,6 +127,16 @@ mod tests {
         let status = error_into_status(error);
 
         assert!(status.message().contains("no active transaction"));
+    }
+
+    #[test]
+    fn error_into_status_marks_proof_capacity_as_retryable() {
+        let status = error_into_status(Error::Execution(
+            ExecutionError::CheckTxProofVerificationBusy,
+        ));
+
+        assert_eq!(status.code(), tonic::Code::ResourceExhausted);
+        assert!(!status.message().contains("proof"));
     }
 
     #[test]

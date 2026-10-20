@@ -1,75 +1,59 @@
 //! Platform version validation utilities
 
 use crate::utils::error::{format_error, ErrorCategory};
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, INITIAL_PROTOCOL_VERSION, LATEST_VERSION};
 use wasm_bindgen::JsValue;
 
 /// Minimum supported platform version
-pub const MIN_PLATFORM_VERSION: u32 = 1;
+pub const MIN_PLATFORM_VERSION: u32 = INITIAL_PROTOCOL_VERSION;
 
 /// Maximum supported platform version
-/// This should be updated when new versions are released
-pub const MAX_PLATFORM_VERSION: u32 = 9;
+pub const MAX_PLATFORM_VERSION: u32 = LATEST_VERSION;
 
 /// Validate and get a platform version with range checks
 pub fn get_platform_version_with_validation(
     version_number: u32,
 ) -> Result<&'static PlatformVersion, JsValue> {
-    // Range check
+    validate_platform_version(version_number)
+        .map_err(|details| format_error(ErrorCategory::PlatformVersionError, &details))
+}
+
+// JsValue-free so the range checks stay testable on non-wasm targets
+fn validate_platform_version(version_number: u32) -> Result<&'static PlatformVersion, String> {
     if version_number < MIN_PLATFORM_VERSION {
-        return Err(format_error(
-            ErrorCategory::PlatformVersionError,
-            &format!(
-                "platform version {} is below minimum supported version {}",
-                version_number, MIN_PLATFORM_VERSION
-            ),
+        return Err(format!(
+            "platform version {} is below minimum supported version {}",
+            version_number, MIN_PLATFORM_VERSION
         ));
     }
 
     if version_number > MAX_PLATFORM_VERSION {
-        return Err(format_error(
-            ErrorCategory::PlatformVersionError,
-            &format!(
-                "platform version {} exceeds maximum supported version {}",
-                version_number, MAX_PLATFORM_VERSION
-            ),
+        return Err(format!(
+            "platform version {} exceeds maximum supported version {}",
+            version_number, MAX_PLATFORM_VERSION
         ));
     }
 
-    // Get the version - this should not fail for valid range
-    PlatformVersion::get(version_number).map_err(|e| {
-        format_error(
-            ErrorCategory::PlatformVersionError,
-            &format!("failed to get platform version {}: {:?}", version_number, e),
-        )
-    })
+    PlatformVersion::get(version_number)
+        .map_err(|e| format!("failed to get platform version {}: {:?}", version_number, e))
 }
 
-#[cfg(all(test, target_arch = "wasm32"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_valid_platform_versions() {
-        // Test all valid versions
+    fn should_resolve_every_supported_platform_version() {
         for version in MIN_PLATFORM_VERSION..=MAX_PLATFORM_VERSION {
-            let result = get_platform_version_with_validation(version);
+            let result = validate_platform_version(version);
             assert!(result.is_ok(), "Version {} should be valid", version);
         }
     }
 
     #[test]
-    fn test_invalid_platform_versions() {
-        // Test below minimum
-        let result = get_platform_version_with_validation(0);
-        assert!(result.is_err());
-
-        // Test above maximum
-        let result = get_platform_version_with_validation(MAX_PLATFORM_VERSION + 1);
-        assert!(result.is_err());
-
-        // Test very large number
-        let result = get_platform_version_with_validation(u32::MAX);
-        assert!(result.is_err());
+    fn should_reject_platform_versions_outside_supported_range() {
+        assert!(validate_platform_version(MIN_PLATFORM_VERSION - 1).is_err());
+        assert!(validate_platform_version(MAX_PLATFORM_VERSION + 1).is_err());
+        assert!(validate_platform_version(u32::MAX).is_err());
     }
 }

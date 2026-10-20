@@ -58,11 +58,24 @@ describe('BlockHeadersProvider - integration', function describe() {
   let headers;
 
   before(async function () {
-    headers = await mockHeadersChain('testnet', numHeaders);
+    const chainWithCheckpoint = await mockHeadersChain(
+      'regtest',
+      numHeaders + 1,
+      undefined,
+      { mine: true },
+    );
+    const trustedCheckpoint = chainWithCheckpoint[0];
+    headers = chainWithCheckpoint.slice(1);
 
     await createBlockHeadersProvider(this.sinon, {
+      network: 'regtest',
       targetBatchSize: historicalBatchSize,
     });
+    blockHeadersProvider.spvChain.reset();
+    await blockHeadersProvider.initializeChainWith(
+      [trustedCheckpoint],
+      fromBlockHeight - 1,
+    );
   });
 
   beforeEach(function () {
@@ -89,7 +102,7 @@ describe('BlockHeadersProvider - integration', function describe() {
 
     // Headers added from the tail should be orphaned
     expect(spvChain.getOrphanChunks()).to.have.length(4);
-    expect(spvChain.getLongestChain()).to.have.length(0);
+    expect(spvChain.getLongestChain()).to.have.length(1);
     expect(blockHeadersProvider.emit.callCount).to.equal(5);
     expect(blockHeadersProvider.emit)
       .to.have.been.calledWith(BlockHeadersProvider.EVENTS.CHAIN_UPDATED);
@@ -119,7 +132,7 @@ describe('BlockHeadersProvider - integration', function describe() {
 
     const { spvChain } = blockHeadersProvider;
     expect(spvChain.getLongestChain({ withPruned: true }))
-      .to.have.length(historicalHeadersAmount);
+      .to.have.length(historicalHeadersAmount + 1);
     expect(blockHeadersProvider.emit).to
       .have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
 
@@ -142,7 +155,7 @@ describe('BlockHeadersProvider - integration', function describe() {
     const { spvChain } = blockHeadersProvider;
 
     expect(spvChain.getLongestChain({ withPruned: true }))
-      .to.have.length(headers.length);
+      .to.have.length(headers.length + 1);
     const { args } = blockHeadersProvider.emit.lastCall;
 
     const expectedHeaders = headersToSend.slice(1).map((header) => header.toString());
@@ -152,5 +165,28 @@ describe('BlockHeadersProvider - integration', function describe() {
     expect(emittedHeaders).to.deep.equal(expectedHeaders);
     expect(headHeight).to.equal(chainHeight + 1);
     await blockHeadersProvider.stop();
+  });
+
+  it('should accept the first historical batch after initializing from genesis', async function shouldAcceptFirstHistoricalBatch() {
+    const chainFromGenesis = await mockHeadersChain(
+      'regtest',
+      2,
+      undefined,
+      { mine: true },
+    );
+    await createBlockHeadersProvider(this.sinon, {
+      network: 'regtest',
+      targetBatchSize: historicalBatchSize,
+    });
+    this.sinon.spy(blockHeadersProvider, 'emit');
+
+    await blockHeadersProvider.readHistorical(1, 1);
+    historicalStreams[0].sendHeaders(chainFromGenesis.slice(1));
+    historicalStreams[0].end();
+
+    expect(blockHeadersProvider.spvChain.getLongestChain({ withPruned: true }))
+      .to.have.length(2);
+    expect(blockHeadersProvider.emit)
+      .to.have.been.calledWith(BlockHeadersProvider.EVENTS.HISTORICAL_DATA_OBTAINED);
   });
 });

@@ -1,4 +1,5 @@
 use crate::version::drive_versions::drive_state_transition_method_versions::{
+    DriveDocumentFromActionVersions,
     DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions,
     DriveStateTransitionMethodVersions, DriveStateTransitionOperationMethodVersions,
 };
@@ -19,6 +20,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodV
                 data_contract_update_transition: 0,
                 document_create_transition: 0,
                 document_delete_transition: 0,
+                document_index_only_delete_transition: 0,
                 document_purchase_transition: 0,
                 document_replace_transition: 0,
                 document_transfer_transition: 0,
@@ -34,6 +36,9 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodV
                 identity_top_up_transition: 0,
                 identity_top_up_from_addresses_transition: 0,
                 identity_update_transition: 1, //changed
+                identity_key_limits_update_transition: 0,
+                contract_user_moderation_transition: 0,
+                contract_fee_claim_transition: 0,
                 masternode_vote_transition: 0,
                 bump_identity_data_contract_nonce: 0,
                 bump_identity_nonce: 0,
@@ -46,6 +51,13 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodV
                 token_claim_transition: 0,
                 token_direct_purchase_transition: 0,
                 token_set_price_for_direct_purchase_transition: 0,
+                token_shield_transition: 0,
+                token_unshield_transition: 0,
+                token_shielded_transfer_transition: 0,
+                token_mint_to_pool_transition: 0,
+                token_burn_from_pool_transition: 0,
+                token_claim_to_pool_transition: 0,
+                token_direct_purchase_to_pool_transition: 0,
                 identity_credit_transfer_to_addresses_transition: 0,
                 address_funds_transfer_transition: 0,
                 address_credit_withdrawal_transition: 0,
@@ -56,5 +68,14 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodV
                 unshield_transition: 0,
                 shielded_withdrawal_transition: 0,
                 identity_create_from_shielded_pool_transition: 0,
+                shield_from_identity_transition: 0,
+                identity_top_up_from_shielded_pool_transition: 0,
+                token_shielded_transfer_with_shielded_fee_transition: 0,
+                token_unshield_with_shielded_fee_transition: 0,
+                token_purchase_from_shielded_pool_transition: 0,
             },
+        document_from_action: DriveDocumentFromActionVersions {
+            document_from_create_transition_action: 0,
+            document_from_replace_transition_action: 0,
+        },
     };

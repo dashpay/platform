@@ -10,7 +10,7 @@ mod transfer_tests {
     ) {
         run_document_transfer_on_document_type_that_is_transferable_that_has_no_owner_indices_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            1997120,
+            1997860, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -84,6 +84,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -213,7 +216,7 @@ mod transfer_tests {
     async fn test_document_transfer_on_document_type_that_is_transferable_before_creator_id() {
         run_document_transfer_on_document_type_that_is_transferable_before_creator_id_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            3380960,
+            3381700, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -295,6 +298,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -350,6 +356,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -360,6 +367,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -496,7 +504,20 @@ mod transfer_tests {
     async fn test_document_transfer_on_document_type_that_is_transferable() {
         run_document_transfer_on_document_type_that_is_transferable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            3643400,
+            // v14: transferred documents carry the contract-version stamp
+            3644600, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_13: pre-stamp fee — document serialization format 3
+    /// (the contract-version stamp) activates at v14, so v13 costs must be
+    /// exactly what they were before the `requiredSince` changes. Pinned so
+    /// v13 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_transfer_on_document_type_that_is_transferable_protocol_version_13() {
+        run_document_transfer_on_document_type_that_is_transferable_at_protocol_version(
+            13, 3643400,
         )
         .await;
     }
@@ -549,6 +570,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -604,6 +628,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -614,6 +639,7 @@ mod transfer_tests {
             creator_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -624,6 +650,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -779,7 +806,7 @@ mod transfer_tests {
     async fn test_document_transfer_on_document_type_that_is_transferable_contract_v0() {
         run_document_transfer_on_document_type_that_is_transferable_contract_v0_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            3380960,
+            3381700, // +740 per document write from protocol version 14: the contract's version item is one more node to rehash
         )
         .await;
     }
@@ -863,6 +890,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -918,6 +948,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -928,6 +959,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1114,6 +1146,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -1169,6 +1204,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1179,6 +1215,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1332,6 +1369,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1342,6 +1380,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1467,9 +1506,18 @@ mod transfer_tests {
     async fn test_document_delete_after_transfer() {
         run_document_delete_after_transfer_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            4004260,
+            4005460, // v14: stamped documents (see transferable baseline note)
         )
         .await;
+    }
+
+    /// PROTOCOL_VERSION_13: pre-stamp fee — document serialization format 3
+    /// (the contract-version stamp) activates at v14, so v13 costs must be
+    /// exactly what they were before the `requiredSince` changes. Pinned so
+    /// v13 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_delete_after_transfer_protocol_version_13() {
+        run_document_delete_after_transfer_at_protocol_version(13, 4004260).await;
     }
 
     /// PROTOCOL_VERSION_11: pre-B4 fee — query_documents cost was discarded.
@@ -1518,6 +1566,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -1573,6 +1624,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1583,6 +1635,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1815,6 +1868,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document
+            .set_id_for_creation(card_document_type, &entropy.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document.set("attack", 4.into());
         document.set("defense", 7.into());
@@ -1876,6 +1932,7 @@ mod transfer_tests {
             sender_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -1886,6 +1943,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2091,6 +2149,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document1
+            .set_id_for_creation(card_document_type, &entropy1.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document1.set("attack", 5.into());
         document1.set("defense", 8.into());
@@ -2154,6 +2215,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document2
+            .set_id_for_creation(card_document_type, &entropy2.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document2.set("attack", 3.into());
         document2.set("defense", 6.into());
@@ -2260,6 +2324,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2290,6 +2355,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document3
+            .set_id_for_creation(card_document_type, &entropy3.0, 5, platform_version)
+            .expect("expected to set the document id");
 
         document3.set("attack", 7.into());
         document3.set("defense", 4.into());
@@ -2416,6 +2484,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document4
+            .set_id_for_creation(card_document_type, &entropy4.0, 6, platform_version)
+            .expect("expected to set the document id");
 
         document4.set("attack", 9.into());
         document4.set("defense", 2.into());
@@ -2474,6 +2545,7 @@ mod transfer_tests {
             creator_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2492,6 +2564,7 @@ mod transfer_tests {
             creator_id_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -2615,6 +2688,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document1
+            .set_id_for_creation(card_document_type, &entropy1.0, 2, platform_version)
+            .expect("expected to set the document id");
 
         document1.set("attack", 5.into());
         document1.set("defense", 8.into());
@@ -2678,6 +2754,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document2
+            .set_id_for_creation(card_document_type, &entropy2.0, 3, platform_version)
+            .expect("expected to set the document id");
 
         document2.set("attack", 3.into());
         document2.set("defense", 6.into());
@@ -2791,6 +2870,9 @@ mod transfer_tests {
                 platform_version,
             )
             .expect("expected a random document");
+        document3
+            .set_id_for_creation(card_document_type, &entropy3.0, 5, platform_version)
+            .expect("expected to set the document id");
 
         document3.set("attack", 7.into());
         document3.set("defense", 4.into());
@@ -3049,6 +3131,7 @@ mod transfer_tests {
             creator_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 
@@ -3066,6 +3149,7 @@ mod transfer_tests {
             receiver_documents_sql_string.as_str(),
             &contract,
             Some(&platform.config.drive),
+            platform_version,
         )
         .expect("expected document query");
 

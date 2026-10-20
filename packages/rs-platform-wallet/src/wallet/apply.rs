@@ -1,7 +1,7 @@
 //! Apply a [`PlatformWalletChangeSet`] onto a [`PlatformWalletInfo`]
 //! during restore.
 //!
-//! Inverse of the mutation methods that emit changesets in Phase 9a-2:
+//! Inverse of the mutation methods that emit changesets:
 //! given a persisted [`PlatformWalletChangeSet`], it replays each
 //! sub-changeset onto the in-memory state so the wallet converges to
 //! the same state the original mutations produced.
@@ -11,6 +11,9 @@
 //! - **Idempotent.** Applying the same changeset N times produces the
 //!   same state as applying it once. Callers may re-run apply on
 //!   startup or after a partial write without additional bookkeeping.
+//! - **Monotonic asset-lock recovery.** A stale snapshot cannot erase an
+//!   operation UUID or regress a consumed tombstone. A conflicting UUID
+//!   cannot rebind the existing operation.
 //! - **No re-emission.** `apply_changeset` returns `Result<(), _>`, not
 //!   a new changeset. Mutation bookkeeping that internally produces
 //!   changesets (e.g. `update_balance`) discards them.
@@ -18,14 +21,13 @@
 //!   isn't present in the wallet are logged with `tracing::warn!` and
 //!   skipped — orphans usually mean a stale persisted entry from
 //!   before the owner identity was removed.
-//! - **Loud on core failures.** If `key_wallet`'s core apply fails (HD
-//!   account derivation cascade), the platform apply fails too. Core
-//!   state must land before any platform-specific bucket runs.
+//! - **Core is not replayed.** `cs.core` is dropped. `key_wallet` keeps
+//!   core state current at runtime, and boot restores it from the
+//!   persister's `ClientStartState`, not from changeset replay.
 //!
 //! # Ordering
 //!
-//! 1. `cs.core` — runs first via `ManagedWalletInfo::apply_changeset`.
-//!    Wallet account state must exist before balance recompute.
+//! 1. `cs.core` — dropped (see the invariant above).
 //! 2. `cs.identities` — insert/update entries, then `removed`, then
 //!    primary identity fixup.
 //! 3. `cs.contacts` — sent/incoming inserts, tombstone removes,
@@ -42,7 +44,7 @@
 //!    callback. There is nothing on `PlatformWalletInfo` to apply
 //!    them onto.
 //! 7. `update_balance()` — recompute the cached `WalletBalance` from
-//!    the now-restored UTXO set; the returned changeset is discarded.
+//!    the current UTXO set; the returned changeset is discarded.
 
 use key_wallet::wallet::Wallet;
 
@@ -64,6 +66,9 @@ pub enum ApplyError {
     ///
     /// Stored as `String` to keep the platform-wallet public API
     /// decoupled from `key_wallet`'s error enum.
+    ///
+    /// Not constructed today: `apply_changeset` drops `cs.core` instead of
+    /// replaying it (see the module docs).
     #[error("core wallet apply failed: {0}")]
     CoreApply(String),
 
@@ -99,6 +104,18 @@ impl PlatformWalletInfo {
             token_balances,
             dashpay_profiles,
             dashpay_payments_overlay,
+            // DashPay invitations (DIP-13) are persistence-only here: the
+            // "Sent invitations" list is the Swift SwiftData mirror, and the
+            // Rust manager holds no in-memory invitation state in v1 (reclaim
+            // is future). Drop explicitly so future readers don't expect a
+            // replay hook.
+            invitations: _,
+            dpns_name_states,
+            identity_scan_state,
+            // The backfill record is persistence-only here: the reconcile
+            // sweep mutates `PlatformWalletInfo::dashpay_backfill` directly
+            // and the start-state path restores it at load. No replay hook.
+            dashpay_backfill: _,
             // Registration-round metadata / per-account specs /
             // per-pool snapshots are persistence-only — the
             // canonical in-memory wallet state is built up at
@@ -119,8 +136,7 @@ impl PlatformWalletInfo {
             // mutates its store directly during sync / spend); the
             // canonical in-memory state lives there and the
             // changeset is persistence-side only. Drop here.
-            #[cfg(feature = "shielded")]
-                shielded: _,
+            shielded: _,
         } = cs;
 
         // 1. Core wallet state. In the new event-bus model, a
@@ -133,7 +149,7 @@ impl PlatformWalletInfo {
         //    not through changeset replay. The core field on `cs` is
         //    therefore informational here and intentionally not
         //    applied; we drop it explicitly so future readers don't
-        //    expect a re-application path that no longer exists.
+        //    expect a re-application path that does not exist.
         drop(core);
 
         // 2. Identities.
@@ -146,12 +162,36 @@ impl PlatformWalletInfo {
             for (_id, entry) in identities {
                 self.identity_manager.apply_identity_entry(entry);
             }
-            // Best-effort tombstones across both buckets. Routed
+            // Best-effort removals across both buckets. Routed
             // through `remove_for_apply` so the manager's side-index
             // stays in lockstep with the buckets without us having to
             // reach in and touch the index from out here.
             for removed_id in &removed {
                 self.identity_manager.remove_for_apply(removed_id);
+            }
+        }
+
+        // 2a'. Identity-scan verdict. Replayed rather than dropped: unlike the
+        //      registration metadata below it, this one has live in-memory
+        //      state on the identity manager, and it is read on the next
+        //      bring-up to decide whether the identity set may be treated as
+        //      settled. A verdict that survived to persistence and then got
+        //      dropped on the way back in would leave a partial scan looking
+        //      complete — the exact failure the verdict exists to prevent.
+        if let Some(scan) = identity_scan_state {
+            self.identity_manager
+                .record_identity_scan(wallet.wallet_id, scan);
+        }
+
+        // 2a. DPNS name states (username marketplace): upserts land
+        //     first, then tombstones, into the in-memory working set —
+        //     same LWW-then-remove discipline as the rest of this
+        //     function.
+        if let Some(dpns_cs) = dpns_name_states {
+            let crate::changeset::DpnsNameStateChangeSet { names, removed } = dpns_cs;
+            self.dpns_name_states.extend(names);
+            for document_id in &removed {
+                self.dpns_name_states.remove(document_id);
             }
         }
 
@@ -312,37 +352,50 @@ impl PlatformWalletInfo {
         //    `Transaction` inside the entry transfers ownership
         //    directly into the wallet map with no clone.
         //
-        //    `Consumed` is the terminal post-consumption state: it
-        //    means an identity registration / top-up has burned this
-        //    asset lock. We drop the entry from the in-memory map
-        //    (the wallet has no further use for it; nothing should be
-        //    waiting on its proof) but the changeset's `asset_locks`
-        //    entry still flows through to the Swift persister so the
-        //    `PersistentAssetLock` row is upserted with `statusRaw=4`
-        //    for historical lookups (e.g. the Transactions list
-        //    rendering the original locked amount on a consumed
-        //    funding tx).
+        //    `Consumed` is a terminal tombstone. Keep it in memory so
+        //    exact-outpoint retries produce `AssetLockAlreadyConsumed`
+        //    rather than the less truthful `AssetLockNotTracked`; proof
+        //    waiters and actionable-list consumers exclude it by status.
+        //    Replaying the persisted tombstone therefore preserves the
+        //    same classification after a restart.
         if let Some(al_cs) = asset_locks {
-            for (out_point, entry) in al_cs.asset_locks {
-                if entry.status == AssetLockStatus::Consumed {
-                    self.tracked_asset_locks.remove(&out_point);
-                } else {
-                    self.tracked_asset_locks.insert(
-                        out_point,
-                        TrackedAssetLock {
-                            out_point: entry.out_point,
-                            transaction: entry.transaction,
-                            account_index: entry.account_index,
-                            funding_type: entry.funding_type,
-                            identity_index: entry.identity_index,
-                            amount: entry.amount_duffs,
-                            status: entry.status,
-                            proof: entry.proof,
-                        },
-                    );
+            for (out_point, mut entry) in al_cs.asset_locks {
+                if let Some(existing) = self.tracked_asset_locks.get_mut(&out_point) {
+                    if !entry.preserve_recovery_metadata(existing.operation_id) {
+                        continue;
+                    }
+                    if existing.status == AssetLockStatus::DrainCompleted
+                        || (existing.status.is_consumed() && !entry.status.is_consumed())
+                    {
+                        existing.operation_id = entry.operation_id;
+                        continue;
+                    }
                 }
+                self.tracked_asset_locks.insert(
+                    out_point,
+                    TrackedAssetLock {
+                        operation_id: entry.operation_id,
+                        out_point: entry.out_point,
+                        transaction: entry.transaction,
+                        account_index: entry.account_index,
+                        funding_type: entry.funding_type,
+                        identity_index: entry.identity_index,
+                        amount: entry.amount_duffs,
+                        status: entry.status,
+                        proof: entry.proof,
+                    },
+                );
             }
             for out_point in al_cs.removed {
+                // Match changeset folding and durable stores: a stale removal
+                // cannot erase the terminal operation-recovery tombstone.
+                if self
+                    .tracked_asset_locks
+                    .get(&out_point)
+                    .is_some_and(|entry| entry.status.is_consumed())
+                {
+                    continue;
+                }
                 self.tracked_asset_locks.remove(&out_point);
             }
         }
@@ -361,7 +414,7 @@ impl PlatformWalletInfo {
         // Mirror the recomputed balance into the lock-free Arc that the
         // UI reads.
         let core_balance = &self.core_wallet.balance;
-        self.balance.set(
+        self.generation.set(
             core_balance.confirmed(),
             core_balance.unconfirmed(),
             core_balance.immature(),
@@ -391,7 +444,7 @@ mod tests {
         ReceivedContactRequestKey, SentContactRequestKey, TokenBalanceChangeSet,
     };
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
-    use crate::wallet::core::WalletBalance;
+    use crate::wallet::core::WalletGeneration;
     use crate::wallet::identity::state::managed_identity::ManagedIdentity;
     use crate::wallet::identity::IdentityManager;
     use crate::wallet::identity::{ContactRequest, EstablishedContact};
@@ -412,9 +465,13 @@ mod tests {
     fn empty_info(wallet: &Wallet) -> PlatformWalletInfo {
         PlatformWalletInfo {
             core_wallet: ManagedWalletInfo::from_wallet(wallet, 0),
-            balance: std::sync::Arc::new(WalletBalance::new()),
+            generation: std::sync::Arc::new(WalletGeneration::new()),
             identity_manager: IdentityManager::new(),
             tracked_asset_locks: BTreeMap::new(),
+            observed_input_conflicts: Default::default(),
+            dpns_name_states: BTreeMap::new(),
+            dashpay_backfill: Default::default(),
+            rewind_barrier: Default::default(),
         }
     }
 
@@ -692,6 +749,7 @@ mod tests {
         al_cs.asset_locks.insert(
             out_point,
             AssetLockEntry {
+                operation_id: None,
                 out_point,
                 transaction: dashcore::Transaction {
                     version: 3,
@@ -717,18 +775,195 @@ mod tests {
             .expect("lock present");
         assert_eq!(lock.amount, 5_000);
 
-        // Tombstone removes it.
+        // A restart replays the persisted Consumed upsert. Retain that
+        // terminal snapshot so an exact-outpoint retry is still classified
+        // as already consumed rather than unknown.
+        let mut consumed_entry: AssetLockEntry = lock.into();
+        consumed_entry.status = AssetLockStatus::Consumed;
+        consumed_entry.proof = None;
+        let mut al_cs = AssetLockChangeSet::default();
+        al_cs.asset_locks.insert(out_point, consumed_entry);
+        let mut cs = PlatformWalletChangeSet::default();
+        cs.asset_locks = Some(al_cs);
+        info.apply_changeset(&mut wallet, cs)
+            .expect("apply consumed replay");
+        assert_eq!(
+            info.tracked_asset_locks
+                .get(&out_point)
+                .expect("consumed tombstone restored")
+                .status,
+            AssetLockStatus::Consumed
+        );
+
+        // A stale removal cannot discard the terminal recovery tombstone.
         let mut al_cs = AssetLockChangeSet::default();
         al_cs.removed.insert(out_point);
         let mut cs = PlatformWalletChangeSet::default();
         cs.asset_locks = Some(al_cs);
         info.apply_changeset(&mut wallet, cs).expect("apply remove");
-        assert!(!info.tracked_asset_locks.contains_key(&out_point));
+        assert_eq!(
+            info.tracked_asset_locks[&out_point].status,
+            AssetLockStatus::Consumed
+        );
+    }
+
+    fn recovery_asset_lock(
+        status: AssetLockStatus,
+        operation_id: Option<[u8; 16]>,
+    ) -> AssetLockEntry {
+        AssetLockEntry {
+            operation_id,
+            out_point: OutPoint::default(),
+            transaction: dashcore::Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::AssetLockShieldedAddressTopUp,
+            identity_index: 0,
+            amount_duffs: 5_000,
+            status,
+            proof: None,
+        }
+    }
+
+    fn apply_recovery_asset_lock(
+        info: &mut PlatformWalletInfo,
+        wallet: &mut Wallet,
+        entry: AssetLockEntry,
+    ) {
+        let mut locks = AssetLockChangeSet::default();
+        locks.asset_locks.insert(entry.out_point, entry);
+        info.apply_changeset(
+            wallet,
+            PlatformWalletChangeSet {
+                asset_locks: Some(locks),
+                ..Default::default()
+            },
+        )
+        .expect("apply asset-lock snapshot");
+    }
+
+    #[test]
+    fn should_preserve_asset_lock_recovery_metadata_when_applying_stale_snapshots() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let operation_id = Some([42; 16]);
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::Broadcast, operation_id),
+        );
+
+        // A stale snapshot without the UUID keeps the association.
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::RecoveredFromChain, None),
+        );
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.operation_id, operation_id);
+        assert_eq!(restored.status, AssetLockStatus::RecoveredFromChain);
+
+        let newest = recovery_asset_lock(AssetLockStatus::ChainLocked, operation_id);
+        apply_recovery_asset_lock(&mut info, &mut wallet, newest.clone());
+        apply_recovery_asset_lock(&mut info, &mut wallet, newest);
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.operation_id, operation_id);
+        assert_eq!(restored.status, AssetLockStatus::ChainLocked);
+    }
+
+    #[test]
+    fn should_keep_consumed_asset_locks_terminal_when_applying_stale_snapshots() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let operation_id = Some([42; 16]);
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::Consumed, operation_id),
+        );
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::Broadcast, None),
+        );
+        let mut removed = AssetLockChangeSet::default();
+        removed.removed.insert(OutPoint::default());
+        info.apply_changeset(
+            &mut wallet,
+            PlatformWalletChangeSet {
+                asset_locks: Some(removed),
+                ..Default::default()
+            },
+        )
+        .expect("apply stale removal");
+        let restored = &info.tracked_asset_locks[&OutPoint::default()];
+        assert_eq!(restored.operation_id, operation_id);
+        assert_eq!(restored.status, AssetLockStatus::Consumed);
+    }
+
+    #[test]
+    fn should_preserve_proven_drain_completion_over_generic_consumption_and_removal() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        for status in [
+            AssetLockStatus::Consumed,
+            AssetLockStatus::DrainCompleted,
+            AssetLockStatus::Consumed,
+            AssetLockStatus::Broadcast,
+        ] {
+            apply_recovery_asset_lock(
+                &mut info,
+                &mut wallet,
+                recovery_asset_lock(status.clone(), Some([42; 16])),
+            );
+            if status == AssetLockStatus::DrainCompleted {
+                assert_eq!(
+                    info.tracked_asset_locks[&OutPoint::default()].status,
+                    status
+                );
+            }
+        }
+        let mut removed = AssetLockChangeSet::default();
+        removed.removed.insert(OutPoint::default());
+        info.apply_changeset(
+            &mut wallet,
+            PlatformWalletChangeSet {
+                asset_locks: Some(removed),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            info.tracked_asset_locks[&OutPoint::default()].status,
+            AssetLockStatus::DrainCompleted
+        );
+    }
+
+    #[test]
+    fn should_ignore_conflicting_asset_lock_operation_snapshots() {
+        let mut wallet = build_test_wallet();
+        let mut info = empty_info(&wallet);
+        let original = recovery_asset_lock(AssetLockStatus::Broadcast, Some([42; 16]));
+        apply_recovery_asset_lock(&mut info, &mut wallet, original.clone());
+        apply_recovery_asset_lock(
+            &mut info,
+            &mut wallet,
+            recovery_asset_lock(AssetLockStatus::Consumed, Some([43; 16])),
+        );
+        assert_eq!(
+            AssetLockEntry::from(&info.tracked_asset_locks[&OutPoint::default()]),
+            original
+        );
     }
 
     /// Token-balance changesets are accepted by `apply_changeset` for
     /// shape compatibility but are not replayed onto
-    /// `PlatformWalletInfo` (which no longer has token_balances /
+    /// `PlatformWalletInfo` (which has no token_balances /
     /// token_watched fields). The canonical balance cache lives on
     /// `IdentitySyncManager` and is rebuilt by the next sync pass; the
     /// FFI persister surfaces the upserts/tombstones to the Swift side
@@ -754,7 +989,7 @@ mod tests {
     }
 
     // ----------------------------------------------------------------------
-    // Round-trip tests (Phase 9a-4)
+    // Round-trip tests
     //
     // The shape of every test is identical:
     //   1. Build two empty `PlatformWalletInfo`s — A is the wallet that gets
@@ -768,14 +1003,14 @@ mod tests {
     //
     // These verify the round-trip contract: changesets emitted by mutations
     // are faithful enough that apply rebuilds the same in-memory state. This
-    // is what makes the persister adapter (Phase 9a-5) safe — it can
+    // is what makes the persister adapter safe — it can
     // serialize the captured changeset and deserialize it back into a
     // sibling wallet on restart with no information loss.
     //
-    // Out of scope: AssetLockManager / TokenWallet / PlatformAddressWallet
+    // Out of scope: AssetLockManager / token sync / PlatformAddressWallet
     // mutations are async and require an `Sdk` + broadcaster + Notify, so
     // they can't run as plain unit tests. Their round-trip coverage will
-    // come from integration tests (Phase 9a-4 follow-up). The
+    // come from integration tests (not written yet). The
     // synthesized-data tests above already cover the apply side; the gap
     // is verifying the *mutation side* emits a faithful changeset.
     // ----------------------------------------------------------------------
@@ -1244,7 +1479,7 @@ mod tests {
     }
 
     // ----------------------------------------------------------------------
-    // Reviewer test gaps (Phase 9a-3 followup)
+    // Reviewer test gaps
     // ----------------------------------------------------------------------
 
     /// Reviewer #6a: removing the sole identity drops it cleanly.
@@ -1350,9 +1585,8 @@ mod tests {
         assert_eq!(restored.identity.revision(), 5);
     }
 
-    /// Reviewer #6d: contact tombstone for a present (non-orphan) owner
-    /// must drop the matching pending request — happy-path coverage
-    /// previously only existed via the orphan-skip test.
+    /// A contact tombstone for a present (non-orphan) owner
+    /// must drop the matching pending request.
     #[test]
     fn apply_contact_tombstone_drops_pending_for_present_owner() {
         let mut wallet = build_test_wallet();
@@ -1809,10 +2043,9 @@ mod tests {
         });
 
         // Token balance changesets are accepted for shape compat but
-        // no longer drive `PlatformWalletInfo` state — the manager
+        // do not drive `PlatformWalletInfo` state — the manager
         // owns the balance cache. Include one anyway to confirm the
-        // double-apply still works once the field has been replaced
-        // with a `drop`.
+        // double-apply still works while the field is simply dropped.
         let mut tok_cs = TokenBalanceChangeSet::default();
         let token = Identifier::from([8u8; 32]);
         tok_cs.balances.insert((identity, token), 42);

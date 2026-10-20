@@ -4,8 +4,8 @@
 > transient `research/` directory was trimmed — older citations of
 > "`research/06`" refer to this file. Kept in the shipped docs because it is
 > the evidence base for the consensus-facing wire-format decisions
-> (69-byte compact xpub, key-purpose envelope, ASK28 byte order) cited by
-> `SPEC.md` and `DIP_CONFORMANCE_GAPS.md`.
+> (69-byte compact xpub, key-purpose envelope, ASK28 byte order) the wallet
+> implements.
 
 Research date: 2026-06-10 (Milestone 1, task 5 — verify-only).
 Question: do THIS stack's DashPay wire formats match the reference clients (iOS DashSync,
@@ -463,3 +463,48 @@ is unbound, and mobile recipients have no DECRYPTION key for us to select when s
   (e.g. legacy 2024 AUTHENTICATION docs), degrade to a warning/skip — do **not**
   permanently mark the payment channel broken, since on-chain history demonstrably
   contains nonconforming-but-honest documents.
+
+## Addendum (2026-08-11): the receive side accepts legacy key purposes
+
+The alignment recommendation above is superseded on the receive side by
+[#4372](https://github.com/dashpay/platform/pull/4372). A mainnet wallet with 29
+contacts established through the legacy Android/dashj client had 27 inbound
+requests that reference the recipient's AUTHENTICATION or TRANSFER key, and the
+documents are immutable, so rejecting them left those contacts unpayable. The
+rules now are (rs-sdk `platform/dashpay/contact_request.rs`):
+
+- **Send (documents we create):** unchanged. The sender key must be ENCRYPTION
+  (`sender_key_purpose_is_valid`) and the recipient key DECRYPTION or ENCRYPTION
+  (`recipient_key_purpose_is_valid`).
+- **Receive (documents already on chain):** the recipient key may be DECRYPTION,
+  ENCRYPTION, AUTHENTICATION or TRANSFER
+  (`recipient_key_purpose_is_acceptable_on_receive`), and the sender key
+  ENCRYPTION or AUTHENTICATION (`sender_key_purpose_is_acceptable_on_receive`).
+  Any other purpose is a mismatch that is skipped and retried, never a
+  permanently broken channel.
+
+## Re-checking against the reference clients
+
+The Android sources to compare against are `dashpay/kotlin-platform`
+(`org.dashj.platform.dashpay`, the live library), `dashpay/dashj` (core crypto
+and keychains) and `dashpay/dash-wallet` (the app: sync, UI, DAOs), all on
+`master`. `android-dashpay`, cited in the source table at the top, is the stale
+predecessor (last push 2024-01); do not diff against it.
+
+| Concern | Reference-client anchor |
+|---|---|
+| `accountReference` ASK28 byte order | `BlockchainIdentity.getAccountReference` = `wrapReversed(ASK).toBigInteger().toInt() ushr 4` (= `u32_le(ASK[0..4])>>4`; we use the iOS `be(ASK[28..32])>>4`, see section (3)) |
+| Friendship path (receive vs send account) | `FriendKeyChain.getContactPath`: `contact.getUserAccount()` (receive) / `getFriendAccountReference()` (send) |
+| `contactRequest` pagination (past 100) | `Documents.getAll` loops `startAt = last.id` while `size >= 100`; `retrieveAll` means `limit(-1)` |
+| High-water + 10-minute skew overlap | `PlatformSyncService.kt` (high-water sync), `DashPayContactRequestDao.kt` (`MAX(timestamp)` per direction) |
+| Batched contact-profile fetch | `updateContactProfiles` calls `Profiles.getList` (chunks of 100, `whereIn $ownerId`) |
+| Non-destructive profile update | `Profiles.replace`: read-modify-write (`profileData.putAll(currentProfile.toObject())`, then overlay) |
+| `encryptedAccountLabel` padding | `padAccountLabel()`: pad to at least 16 chars with spaces, always emit |
+| Recipient-key selection | ENCRYPTION first, with an AUTHENTICATION/HIGH fallback |
+| Sent-tx status | derived live from `TransactionConfidence`, not stored |
+| Transaction to contact (both directions) | `getFriendFromTransaction` scans the sent and received pools |
+| Account/keychain self-heal | `checkDatabaseIntegrity` |
+
+Never assert that `avatarFingerprint` bytes match across clients: the dHash
+pixel pipelines differ, so fingerprints are compared by Hamming distance (see
+`calculate_dhash_fingerprint`).

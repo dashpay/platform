@@ -83,7 +83,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;
-        let signing_key = self.token_resolve_signing_key(&identity_id).await?;
+        let signing_key = self.token_resolve_signing_key(&identity_id, signer).await?;
 
         let pricing_schedule = if price_per_token == 0 {
             None
@@ -103,6 +103,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             None,
         )
         .await
-        .map_err(|e| PlatformWalletError::TokenError(format!("Token set price failed: {}", e)))
+        // Keeps the SDK error, so a consensus rejection reaches the FFI
+        // boundary with its code instead of as rendered text.
+        .map_err(|e| PlatformWalletError::token_operation_failed("set price", e))
     }
 }

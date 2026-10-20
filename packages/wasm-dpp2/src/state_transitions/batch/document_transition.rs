@@ -52,6 +52,7 @@ impl DocumentTransitionWasm {
             DocumentTransitionActionType::Purchase => 4,
             DocumentTransitionActionType::UpdatePrice => 5,
             DocumentTransitionActionType::IgnoreWhileBumpingRevision => 6,
+            DocumentTransitionActionType::IndexOnlyDelete => 7,
         }
     }
 

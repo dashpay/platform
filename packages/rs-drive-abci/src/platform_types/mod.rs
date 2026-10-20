@@ -2,6 +2,8 @@
 pub mod block_execution_outcome;
 /// The block proposal
 pub mod block_proposal;
+/// CheckTx proof-verification admission control
+pub(crate) mod check_tx_proof_verifier;
 /// A clean version of the request to finalize a block
 pub mod cleaned_abci_messages;
 /// The commit

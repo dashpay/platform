@@ -1,0 +1,255 @@
+package org.dashfoundation.example.ui.contracts
+
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import org.dashfoundation.dashsdk.errors.DashSdkError
+import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
+import org.dashfoundation.dashsdk.queries.Contracts
+import org.dashfoundation.example.util.LenientJson
+
+/**
+ * Parsed view over [DataContractEntity.serializedContract] — the stored
+ * contract JSON. The iOS app materializes the same structure into
+ * SwiftData child rows via `DataContractParser`; here the detail screens
+ * parse it on demand from the JSON blob instead.
+ *
+ * Like `DataContractParser`, it reads the contract with its property type
+ * shorthands (protocol version 14) written in full: a `"type": "identifier"`
+ * or `"type": "bytes"` property is a byte array here, so the screens offer
+ * the input they offer for the long form. The stored JSON stays as sent.
+ */
+data class ParsedContract(
+    val root: JsonObject,
+    /** Document type name → schema object (`documents` / `documentSchemas`). */
+    val documentTypes: Map<String, JsonObject>,
+    /** Token position key → token configuration object. */
+    val tokens: Map<String, JsonObject>,
+    /** Group position key → group definition object. */
+    val groups: Map<String, JsonObject>,
+) {
+    companion object {
+        fun from(entity: DataContractEntity): ParsedContract? = try {
+            val root = LenientJson
+                .parseToJsonElement(longForm(entity.serializedContract.decodeToString()))
+                .jsonObject
+            val documents = (root["documents"] as? JsonObject)
+                ?: (root["documentSchemas"] as? JsonObject)
+                ?: JsonObject(emptyMap())
+            ParsedContract(
+                root = root,
+                documentTypes = documents.mapValues { (_, v) -> v as? JsonObject ?: JsonObject(emptyMap()) },
+                tokens = (root["tokens"] as? JsonObject).orEmpty()
+                    .mapValues { (_, v) -> v as? JsonObject ?: JsonObject(emptyMap()) },
+                groups = (root["groups"] as? JsonObject).orEmpty()
+                    .mapValues { (_, v) -> v as? JsonObject ?: JsonObject(emptyMap()) },
+            )
+        } catch (_: Exception) {
+            null
+        }
+
+        /**
+         * [json] with its property type shorthands written in full by Rust
+         * ([Contracts.expandPropertyTypeShorthands]), or [json] as stored when
+         * that fails (JVM unit tests never load the native library).
+         */
+        private fun longForm(json: String): String = try {
+            Contracts.expandPropertyTypeShorthands(json)
+        } catch (_: DashSdkError) {
+            json
+        } catch (_: LinkageError) {
+            json
+        }
+
+        private fun JsonObject?.orEmpty(): JsonObject = this ?: JsonObject(emptyMap())
+    }
+}
+
+internal fun JsonObject.stringField(key: String): String? =
+    (this[key] as? JsonPrimitive)?.content
+
+internal fun JsonObject.intField(key: String): Int? =
+    (this[key] as? JsonPrimitive)?.content?.toIntOrNull()
+
+/** For u64-ranged schema fields (e.g. timeRange seconds) that can exceed Int.MAX_VALUE. */
+internal fun JsonObject.longField(key: String): Long? =
+    (this[key] as? JsonPrimitive)?.content?.toLongOrNull()
+
+internal fun JsonObject.boolField(key: String): Boolean? =
+    (this[key] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
+
+internal fun JsonObject.arrayField(key: String): JsonArray? = this[key] as? JsonArray
+
+internal fun JsonObject.objectField(key: String): JsonObject? = this[key] as? JsonObject
+
+/** Effective DPP capability flags for a document type. */
+internal data class DocumentTypeCapabilities(
+    val documentsMutable: Boolean,
+    val canBeDeleted: Boolean,
+)
+
+/**
+ * Reproduce DPP's effective document-type capability flags: the per-type
+ * [schema] value when present, else the contract [config] default, else
+ * DPP's ultimate default of `true`.
+ *
+ * `DocumentType::try_from_schema` reads `documentsMutable` / `canBeDeleted`
+ * from the document schema and, when absent, falls back to the contract
+ * config's `documentsMutableContractDefault` /
+ * `documentsCanBeDeletedContractDefault` (both defaulting to `true`). There
+ * is no `documentsCanBeDeleted` schema key. UI capability gates must match
+ * this — Drive treats a submit against a disabled capability as a PAID
+ * invalid transition (fees + a burned nonce for a guaranteed rejection).
+ */
+internal fun documentTypeCapabilities(
+    schema: JsonObject?,
+    config: JsonObject?,
+): DocumentTypeCapabilities =
+    DocumentTypeCapabilities(
+        documentsMutable = schema?.boolField("documentsMutable")
+            ?: config?.boolField("documentsMutableContractDefault") ?: true,
+        canBeDeleted = schema?.boolField("canBeDeleted")
+            ?: config?.boolField("documentsCanBeDeletedContractDefault") ?: true,
+    )
+
+/**
+ * The per-property immutability a mutable document type declares (protocol
+ * version 14): [immutable] lists the top-level properties frozen at document
+ * creation, [allowSetting] the subset a replace may still set while the
+ * stored document has no value for them (frozen from then on). Consensus
+ * enforces both on every replace (code 40128), so the UI locks the fields
+ * up front instead of paying for a guaranteed rejection.
+ */
+internal data class DocumentTypeImmutability(
+    val immutable: Set<String>,
+    val allowSetting: Set<String>,
+) {
+    val isEmpty: Boolean get() = immutable.isEmpty()
+
+    companion object {
+        val NONE = DocumentTypeImmutability(emptySet(), emptySet())
+    }
+}
+
+/**
+ * Read the `immutable` and `immutableAllowSetting` keywords off a document
+ * type schema. Non-string entries are ignored, and an `immutableAllowSetting`
+ * entry outside `immutable` is dropped: DPP refuses such a contract at
+ * registration, so it can only appear in hand-edited JSON.
+ */
+internal fun documentTypeImmutability(schema: JsonObject?): DocumentTypeImmutability {
+    val immutable = schema?.arrayField("immutable")
+        ?.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+        ?.toSet()
+        .orEmpty()
+    val allowSetting = schema?.arrayField("immutableAllowSetting")
+        ?.mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+        ?.filter { it in immutable }
+        ?.toSet()
+        .orEmpty()
+    return DocumentTypeImmutability(immutable, allowSetting)
+}
+
+/** How the replace form treats one property of a document. */
+internal enum class ImmutablePropertyLock {
+    /** Not immutable: editable as usual. */
+    EDITABLE,
+
+    /** Frozen: any change, addition or removal is rejected by consensus. */
+    FROZEN,
+
+    /**
+     * Listed under `immutableAllowSetting` and absent from the stored
+     * document: may be set exactly once, after which it is frozen.
+     */
+    SETTABLE_ONCE,
+}
+
+/**
+ * The lock state of [property] for a replace of a document that
+ * [hasStoredValue] for it. A settable-once property that already has a value
+ * is frozen: the allowance covers only the transition from absent to present.
+ */
+internal fun immutablePropertyLock(
+    property: String,
+    immutability: DocumentTypeImmutability,
+    hasStoredValue: Boolean,
+): ImmutablePropertyLock = when {
+    property !in immutability.immutable -> ImmutablePropertyLock.EDITABLE
+    property in immutability.allowSetting && !hasStoredValue -> ImmutablePropertyLock.SETTABLE_ONCE
+    else -> ImmutablePropertyLock.FROZEN
+}
+
+/**
+ * Human-readable descriptors for an index's protocol-v14 count / sum /
+ * ranking axes, in display order. Empty for a pre-v14 index. `countable`
+ * may be authored as a boolean or one of its string variants, and the
+ * `averageable` / `rangeAverageable` sugar is desugared into
+ * countable + summable exactly as DPP does. A ranking reads as `true` or as
+ * `{ "at": ... }`, naming the levels it ranks at.
+ */
+internal fun indexAxisDescriptors(index: JsonObject): List<String> {
+    val descriptors = mutableListOf<String>()
+    val averageable = index.stringField("averageable")
+    val countableRaw = (index["countable"] as? JsonPrimitive)?.content
+    val rangeAverageable = index.boolField("rangeAverageable") == true
+    when {
+        countableRaw == "countableAllowingOffset" -> descriptors += "Countable (offsets)"
+        countableRaw == "true" || countableRaw == "countable" -> descriptors += "Countable"
+        countableRaw == null && averageable != null -> descriptors += "Countable"
+    }
+    if (index.boolField("rangeCountable") == true || rangeAverageable) {
+        descriptors += "Range Count"
+    }
+    val summable = index.stringField("summable") ?: averageable
+    if (summable != null) {
+        descriptors += "Summable ($summable)"
+    }
+    index.stringField("summableOffCountIndex")?.let { source ->
+        descriptors += "Counter of $source"
+    }
+    if (index.boolField("rangeSummable") == true || rangeAverageable) {
+        descriptors += "Range Sum"
+    }
+    rankingDescriptor(index, "rankedCountable", "Ranked by Count")?.let { descriptors += it }
+    rankingDescriptor(index, "rankedSummable", "Ranked by Sum")?.let { descriptors += it }
+    rankingDescriptor(index, "rankedAverageable", "Ranked by Average")?.let { descriptors += it }
+    return descriptors
+}
+
+/**
+ * [label] for a ranking keyword authored as `true`, or with the levels of
+ * its `{ "at": <property or properties> }` form; `null` when absent.
+ *
+ * Ported from `AuthoredIndexKeywords.rankedAtLevels` in
+ * packages/swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentIndex.swift.
+ */
+private fun rankingDescriptor(index: JsonObject, key: String, label: String): String? {
+    if (index.boolField(key) == true) return label
+    val levels = when (val at = (index[key] as? JsonObject)?.get("at")) {
+        is JsonPrimitive -> listOf(at.content)
+        is JsonArray -> at.mapNotNull { (it as? JsonPrimitive)?.content }
+        else -> emptyList()
+    }
+    return if (levels.isEmpty()) null else "$label at ${levels.joinToString(", ")}"
+}
+
+/**
+ * The index's member key on an indexOnly document type: the declared
+ * `terminal` (a property name, or the ordered component names of a
+ * composite terminal joined with ` ‖ ` for display), defaulting to
+ * `$ownerId` exactly as DPP normalizes an omitted terminal. `null` on
+ * stored (non-indexOnly) document types, where entries are keyed by
+ * document id, and on a `summableOffCountIndex` index, which keeps one
+ * counter per group in place of entries.
+ */
+internal fun indexTerminal(index: JsonObject, indexOnly: Boolean): String? = when {
+    index["summableOffCountIndex"] != null -> null
+    else -> index.stringField("terminal")
+        ?: (index["terminal"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.content }
+            ?.takeIf { it.isNotEmpty() }
+            ?.joinToString(" ‖ ")
+        ?: if (indexOnly) "\$ownerId" else null
+}

@@ -1,18 +1,16 @@
 use dashcore::{ProTxHash, PubkeyHash};
 use std::fmt::{Debug, Formatter};
 
-use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
+use crate::bls::PublicKey as BlsPublicKey;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "core-types-serialization")]
-use bincode::de::Decoder;
 #[cfg(feature = "core-types-serialization")]
 use bincode::enc::Encoder;
 #[cfg(feature = "core-types-serialization")]
 use bincode::error::{DecodeError, EncodeError};
 #[cfg(feature = "core-types-serialization")]
-use bincode::{Decode, Encode};
+use bincode::Encode;
 #[cfg(feature = "core-types-serialization")]
 use dashcore::hashes::Hash;
 
@@ -23,14 +21,12 @@ pub struct ValidatorV0 {
     /// The proTxHash
     pub pro_tx_hash: ProTxHash,
     /// The public key share of this validator for this quorum
-    // `BlsPublicKey` is a dashcore type, so its serde wrapper lives in
-    // `serialization::dashcore::bls_pubkey` (now self-sufficient — no upstream
-    // dependency; accepts hex string or byte sequence through any deserializer).
+    // Tagged enum buffers can carry either hex strings or byte sequences.
     #[cfg_attr(
         feature = "serde-conversion",
-        serde(with = "crate::serialization::dashcore::bls_pubkey::option")
+        serde(with = "crate::bls::serde::option")
     )]
-    pub public_key: Option<BlsPublicKey<Bls12381G2Impl>>,
+    pub public_key: Option<BlsPublicKey>,
     /// The node address
     pub node_ip: String,
     /// The node id
@@ -58,7 +54,7 @@ impl Encode for ValidatorV0 {
         match &self.public_key {
             Some(public_key) => {
                 true.encode(encoder)?; // Indicate that public_key is present
-                public_key.0.to_compressed().encode(encoder)?;
+                public_key.to_bytes().encode(encoder)?;
             }
             None => {
                 false.encode(encoder)?; // Indicate that public_key is not present
@@ -84,58 +80,71 @@ impl Encode for ValidatorV0 {
     }
 }
 
-#[cfg(feature = "core-types-serialization")]
-impl<C> Decode<C> for ValidatorV0 {
-    fn decode<D: Decoder<Context = C>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        // Decode each field in the same order as they were encoded
+// Share the wire schema and domain checks across both decoding APIs.
+macro_rules! impl_validator_v0_decode {
+    ($decode:ident, $decoder:ident, $method:ident, $untrusted:expr) => {
+        impl<C> bincode::$decode<C> for ValidatorV0 {
+            fn $method<D: bincode::de::$decoder<Context = C>>(
+                decoder: &mut D,
+            ) -> Result<Self, DecodeError> {
+                // Decode each field in the same order as they were encoded
 
-        // Decode ProTxHash
-        let pro_tx_hash_bytes = <[u8; 32]>::decode(decoder)?;
-        let pro_tx_hash = ProTxHash::from_slice(&pro_tx_hash_bytes)
-            .map_err(|_| DecodeError::OtherString("Failed to decode ProTxHash".to_string()))?;
+                // Decode ProTxHash
+                let pro_tx_hash_bytes = <[u8; 32]>::$method(decoder)?;
+                let pro_tx_hash = ProTxHash::from_slice(&pro_tx_hash_bytes).map_err(|_| {
+                    DecodeError::OtherString("Failed to decode ProTxHash".to_string())
+                })?;
 
-        // Decode Option<BlsPublicKey>
-        let has_public_key = bool::decode(decoder)?;
-        let public_key = if has_public_key {
-            let public_key_bytes = <[u8; 48]>::decode(decoder)?;
+                // Decode Option<BlsPublicKey>
+                let has_public_key = bool::$method(decoder)?;
+                let public_key = if has_public_key {
+                    let public_key_bytes = <[u8; 48]>::$method(decoder)?;
 
-            Some(
-                BlsPublicKey::try_from(public_key_bytes.as_slice()).map_err(|_| {
-                    DecodeError::OtherString("Failed to decode BlsPublicKey".to_string())
-                })?,
-            )
-        } else {
-            None
-        };
+                    Some(
+                        BlsPublicKey::try_from(public_key_bytes.as_slice()).map_err(|_| {
+                            DecodeError::OtherString("Failed to decode BlsPublicKey".to_string())
+                        })?,
+                    )
+                } else {
+                    None
+                };
 
-        // Decode node_ip as a string
-        let node_ip = String::decode(decoder)?;
+                // Decode node_ip as a string
+                let node_ip = String::$method(decoder)?;
 
-        // Decode node_id
-        let node_id_bytes = <[u8; 20]>::decode(decoder)?;
-        let node_id = PubkeyHash::from_slice(&node_id_bytes)
-            .map_err(|_| DecodeError::OtherString("Failed to decode NodeId".to_string()))?;
+                // Decode node_id
+                let node_id_bytes = <[u8; 20]>::$method(decoder)?;
+                let node_id = PubkeyHash::from_slice(&node_id_bytes)
+                    .map_err(|_| DecodeError::OtherString("Failed to decode NodeId".to_string()))?;
 
-        // Decode core_port, platform_http_port, and platform_p2p_port as u16
-        let core_port = u16::decode(decoder)?;
-        let platform_http_port = u16::decode(decoder)?;
-        let platform_p2p_port = u16::decode(decoder)?;
+                // Decode core_port, platform_http_port, and platform_p2p_port as u16
+                let core_port = u16::$method(decoder)?;
+                let platform_http_port = u16::$method(decoder)?;
+                let platform_p2p_port = u16::$method(decoder)?;
 
-        // Decode is_banned as a boolean
-        let is_banned = bool::decode(decoder)?;
+                // Decode is_banned as a boolean
+                let is_banned = bool::$method(decoder)?;
 
-        Ok(ValidatorV0 {
-            pro_tx_hash,
-            public_key,
-            node_ip,
-            node_id,
-            core_port,
-            platform_http_port,
-            platform_p2p_port,
-            is_banned,
-        })
-    }
+                Ok(ValidatorV0 {
+                    pro_tx_hash,
+                    public_key,
+                    node_ip,
+                    node_id,
+                    core_port,
+                    platform_http_port,
+                    platform_p2p_port,
+                    is_banned,
+                })
+            }
+        }
+    };
 }
+#[cfg(feature = "core-types-serialization")]
+impl_validator_v0_decode!(Decode, Decoder, decode, false);
+#[cfg(feature = "core-types-serialization")]
+impl_validator_v0_decode!(DecodeUntrusted, UntrustedDecoder, decode_untrusted, true);
+#[cfg(feature = "core-types-serialization")]
+bincode::impl_borrow_decode_untrusted!(ValidatorV0);
 
 impl Debug for ValidatorV0 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -157,7 +166,7 @@ pub trait ValidatorV0Getters {
     /// Returns the proTxHash of the validator.
     fn pro_tx_hash(&self) -> &ProTxHash;
     /// Returns the public key share of this validator for this quorum.
-    fn public_key(&self) -> &Option<BlsPublicKey<Bls12381G2Impl>>;
+    fn public_key(&self) -> &Option<BlsPublicKey>;
     /// Returns the node address of the validator.
     fn node_ip(&self) -> &String;
     /// Returns the node id of the validator.
@@ -177,7 +186,7 @@ pub trait ValidatorV0Setters {
     /// Sets the proTxHash of the validator.
     fn set_pro_tx_hash(&mut self, pro_tx_hash: ProTxHash);
     /// Sets the public key share of this validator for this quorum.
-    fn set_public_key(&mut self, public_key: Option<BlsPublicKey<Bls12381G2Impl>>);
+    fn set_public_key(&mut self, public_key: Option<BlsPublicKey>);
     /// Sets the node address of the validator.
     fn set_node_ip(&mut self, node_ip: String);
     /// Sets the node id of the validator.
@@ -197,7 +206,7 @@ impl ValidatorV0Getters for ValidatorV0 {
         &self.pro_tx_hash
     }
 
-    fn public_key(&self) -> &Option<BlsPublicKey<Bls12381G2Impl>> {
+    fn public_key(&self) -> &Option<BlsPublicKey> {
         &self.public_key
     }
 
@@ -231,7 +240,7 @@ impl ValidatorV0Setters for ValidatorV0 {
         self.pro_tx_hash = pro_tx_hash;
     }
 
-    fn set_public_key(&mut self, public_key: Option<BlsPublicKey<Bls12381G2Impl>>) {
+    fn set_public_key(&mut self, public_key: Option<BlsPublicKey>) {
         self.public_key = public_key;
     }
 
@@ -263,8 +272,8 @@ impl ValidatorV0Setters for ValidatorV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bls::SecretKey;
     use bincode::config;
-    use dashcore::blsful::SecretKey;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
 
@@ -273,7 +282,7 @@ mod tests {
         // Sample data for testing
         let pro_tx_hash = ProTxHash::from_slice(&[1; 32]).unwrap();
         let mut rng = StdRng::seed_from_u64(0);
-        let public_key = Some(SecretKey::<Bls12381G2Impl>::random(&mut rng).public_key());
+        let public_key = Some(SecretKey::random(&mut rng).public_key());
         let node_ip = "127.0.0.1".to_string();
         let node_id = PubkeyHash::from_slice(&[3; 20]).unwrap();
         let core_port = 9999;

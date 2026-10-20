@@ -3,20 +3,222 @@ use crate::platform::types::epoch::Epoch;
 use crate::{Error, Sdk};
 use bip37_bloom_filter::{BloomFilter, BloomFilterData};
 use dapi_grpc::core::v0::{
-    transactions_with_proofs_request, transactions_with_proofs_response, GetTransactionRequest,
-    GetTransactionResponse, TransactionsWithProofsRequest, TransactionsWithProofsResponse,
+    get_block_request, transactions_with_proofs_request, transactions_with_proofs_response,
+    GetBlockRequest, GetTransactionRequest, GetTransactionResponse, TransactionsWithProofsRequest,
+    TransactionsWithProofsResponse,
 };
 use dpp::dashcore::consensus::Decodable;
-use dpp::dashcore::{Address, InstantLock, MerkleBlock, OutPoint, Transaction, Txid};
+use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::{
+    Address, Block, BlockHash, InstantLock, MerkleBlock, OutPoint, Transaction, Txid,
+};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::prelude::AssetLockProof;
 
-use rs_dapi_client::{DapiRequestExecutor, IntoInner, RequestSettings};
+use dapi_grpc::tonic::Code;
+use rs_dapi_client::transport::TransportError;
+use rs_dapi_client::{DapiClientError, DapiRequestExecutor, IntoInner, RequestSettings};
 use std::time::Duration;
 use tokio::time::{sleep, timeout};
 
+/// A Core transaction fetched by id, plus the finality metadata needed to
+/// reconstruct an asset-lock proof from it (an InstantSend proof when the
+/// InstantLock is known, otherwise a ChainLock proof once chain-locked).
+#[derive(Clone, Debug)]
+pub struct FetchedCoreTransaction {
+    /// The decoded transaction.
+    pub transaction: Transaction,
+    /// Height of the block the transaction was mined in (0 if unconfirmed).
+    pub height: u32,
+    /// Whether the transaction's block is ChainLocked.
+    pub is_chain_locked: bool,
+    /// Whether the transaction is InstantSend-locked. Deliberately surfaced but
+    /// not required by the invitation claim: the proof carries the islock from
+    /// the link, and consensus re-verifies it — this flag is informational.
+    pub is_instant_locked: bool,
+}
+
+/// Where a Core transaction was mined, as the queried DAPI node reports it.
+///
+/// Everything here is self-reported by one node. In particular `block_hash`
+/// is not verified: a caller that builds anything on the placement must check
+/// the hash against a header chain it verified itself.
+#[derive(Clone, Debug)]
+#[non_exhaustive]
+pub struct CoreTransactionPlacement {
+    /// The decoded transaction.
+    pub transaction: Transaction,
+    /// Height of the block the transaction was mined in (0 if unconfirmed).
+    pub height: u32,
+    /// Hash of the block the transaction was mined in; `None` when unconfirmed
+    /// or when the reported bytes are not a 32-byte hash.
+    pub block_hash: Option<BlockHash>,
+    /// Whether the transaction's block is ChainLocked.
+    pub is_chain_locked: bool,
+    /// Whether the transaction is InstantSend-locked.
+    pub is_instant_locked: bool,
+}
+
+/// Whether an SDK error is a gRPC `NOT_FOUND` (the requested tx is unknown to
+/// the node), as opposed to a transient/transport failure. Used to distinguish
+/// "retry with a reversed txid" from "surface the error".
+fn error_is_not_found(err: &Error) -> bool {
+    match err {
+        Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status))) => {
+            status.code() == Code::NotFound
+        }
+        Error::NoAvailableAddressesToRetry(inner) => error_is_not_found(inner),
+        _ => false,
+    }
+}
+
+/// DAPI fills `GetTransactionResponse.block_hash` by hex-decoding Core's
+/// display string, so the bytes arrive reversed relative to the hash's
+/// internal order.
+fn block_hash_from_display_bytes(bytes: &[u8]) -> Option<BlockHash> {
+    let mut hash: [u8; 32] = bytes.try_into().ok()?;
+    hash.reverse();
+    Some(BlockHash::from_byte_array(hash))
+}
+
+/// Decode the consensus-encoded transaction bytes of a `getTransaction` reply.
+fn decode_transaction(bytes: &[u8]) -> Result<Transaction, Error> {
+    Transaction::consensus_decode(&mut &bytes[..]).map_err(|e| Error::CoreError(e.into()))
+}
+
+/// Decode the consensus-encoded block bytes of a `getBlock` reply.
+fn decode_block(bytes: &[u8]) -> Result<Block, Error> {
+    Block::consensus_decode(&mut &bytes[..]).map_err(|e| Error::CoreError(e.into()))
+}
+
 impl Sdk {
+    /// Fetch a Core transaction by its id via DAPI `getTransaction`.
+    ///
+    /// `txid` is the transaction id as a hex string (big-endian display form).
+    /// Returns `Ok(Some(..))` with the decoded transaction plus its
+    /// confirmation/lock metadata; `Ok(None)` when the node does not know the tx
+    /// (empty response or gRPC `NOT_FOUND`) so the caller can retry with the id
+    /// byte-reversed; and `Err` for a transient/transport failure that must not
+    /// be masked by a doomed reversed-id retry.
+    pub async fn get_transaction(
+        &self,
+        txid: &str,
+    ) -> Result<Option<FetchedCoreTransaction>, Error> {
+        let Some(response) = self
+            .fetch_core_transaction(txid, RequestSettings::default())
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        Ok(Some(FetchedCoreTransaction {
+            transaction: decode_transaction(&response.transaction)?,
+            height: response.height,
+            is_chain_locked: response.is_chain_locked,
+            is_instant_locked: response.is_instant_locked,
+        }))
+    }
+
+    /// Fetch where a Core transaction was mined via DAPI `getTransaction`,
+    /// including the block hash the node reports.
+    ///
+    /// Same `txid` form and `Ok(None)` / `Err` contract as
+    /// [`Sdk::get_transaction`]; `settings` override the SDK's request
+    /// settings for this call, so a caller on a deadline can bound it. The
+    /// placement is unverified — see [`CoreTransactionPlacement`].
+    pub async fn get_transaction_placement(
+        &self,
+        txid: &str,
+        settings: RequestSettings,
+    ) -> Result<Option<CoreTransactionPlacement>, Error> {
+        let Some(response) = self.fetch_core_transaction(txid, settings).await? else {
+            return Ok(None);
+        };
+
+        Ok(Some(CoreTransactionPlacement {
+            transaction: decode_transaction(&response.transaction)?,
+            height: response.height,
+            block_hash: block_hash_from_display_bytes(&response.block_hash),
+            is_chain_locked: response.is_chain_locked,
+            is_instant_locked: response.is_instant_locked,
+        }))
+    }
+
+    /// Fetch a Core block by hash via DAPI `getBlock`.
+    ///
+    /// Returns `Ok(None)` when the node does not serve the block (gRPC
+    /// `NOT_FOUND` or an empty reply) and `Err` for any other failure,
+    /// including bytes that do not decode as a block. The bytes are
+    /// self-reported by the queried node: check `block_hash()` against a
+    /// header chain you trust before relying on anything in the block.
+    pub async fn get_block_by_hash(
+        &self,
+        hash: &BlockHash,
+        settings: RequestSettings,
+    ) -> Result<Option<Block>, Error> {
+        let response = match self
+            .execute(
+                GetBlockRequest {
+                    // Core's `getblock` takes the display-order hex `BlockHash` formats to.
+                    block: Some(get_block_request::Block::Hash(hash.to_string())),
+                },
+                settings,
+            )
+            .await
+            .into_inner()
+        {
+            Ok(response) => response,
+            Err(e) => {
+                let err: Error = e.into();
+                return if error_is_not_found(&err) {
+                    Ok(None)
+                } else {
+                    Err(err)
+                };
+            }
+        };
+
+        if response.block.is_empty() {
+            return Ok(None);
+        }
+        decode_block(&response.block).map(Some)
+    }
+
+    /// Run `getTransaction`, mapping an unknown transaction (gRPC `NOT_FOUND`
+    /// or an empty reply) to `Ok(None)` and every other failure to `Err`.
+    async fn fetch_core_transaction(
+        &self,
+        txid: &str,
+        settings: RequestSettings,
+    ) -> Result<Option<GetTransactionResponse>, Error> {
+        let response = match self
+            .execute(
+                GetTransactionRequest {
+                    id: txid.to_string(),
+                },
+                settings,
+            )
+            .await
+            .into_inner()
+        {
+            Ok(response) => response,
+            Err(e) => {
+                let err: Error = e.into();
+                return if error_is_not_found(&err) {
+                    Ok(None)
+                } else {
+                    Err(err)
+                };
+            }
+        };
+
+        if response.transaction.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(response))
+    }
+
     /// Starts the stream to listen for instant send lock messages
     pub async fn start_instant_send_lock_stream(
         &self,
@@ -248,5 +450,46 @@ impl Sdk {
             })?,
             None => stream_processing.await,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// DAPI's display-order bytes come back as the hash's internal order.
+    #[test]
+    fn block_hash_from_display_bytes_reverses_the_bytes() {
+        let mut display = [0u8; 32];
+        display[0] = 0xaa;
+        display[31] = 0x01;
+        let hash = block_hash_from_display_bytes(&display).expect("32 bytes");
+        let internal = hash.to_byte_array();
+        assert_eq!(internal[0], 0x01);
+        assert_eq!(internal[31], 0xaa);
+    }
+
+    /// Anything but a 32-byte hash, including an unconfirmed tx's empty field,
+    /// yields no hash.
+    #[test]
+    fn block_hash_from_display_bytes_rejects_wrong_lengths() {
+        assert!(block_hash_from_display_bytes(&[]).is_none());
+        assert!(block_hash_from_display_bytes(&[0u8; 31]).is_none());
+        assert!(block_hash_from_display_bytes(&[0u8; 33]).is_none());
+    }
+
+    /// A block Core v24 mined at height 15146 on a devnet, as DAPI `getBlock`
+    /// returns it: its coinbase is a version 4 CbTx and it holds a version 3
+    /// ProRegTx.
+    const CORE_V24_BLOCK: &str = "00000020624025135b0936675af8abbe364e7d21c8e1e42eab3f2b6f6528d6ea875dad51e2664e33e00b3bf6b05a67603cddadf9daa4149e9130c7e5180e38426d20a695d5a6c76affff7f20010000000203000500010000000000000000000000000000000000000000000000000000000000000000ffffffff016affffffff036de1f505000000001976a91456208a8adff9433262bffee3c4894d2a160c21bd88ac209db40600000000016a26072d0b000000001976a91456208a8adff9433262bffee3c4894d2a160c21bd88ac00000000cf04002a3b0000db318d0bad75d80a6e14088f71657af817056edee711360d25c729905f33ed502692b21d078be4bc3103156612ba6bdcf387efdd6320a50a97985f5cdce4ead8008df9d40906f1c7c36c545b06daec45a84ffd43b5caf4045c9c9a39a146a7771de6cbdd11f5d16b22e9e358f5c483e35b12a5f3cab190026c5445dec34e632c36a0ba36a1f87bb411d7d292c5fd55cd36128877c707747286e40abec1aee7e4812eb72a56c407000000000000000000000000000000000000000000000000000000000000000000000300010001d02a36181466f1f3ec0f61a73114bdf31fa7f137fa880441d7e5e7b672493c04010000006a473044022004f9bb946ee7fab7d823a812cfb27b576f2c0cda4e597a8c92be26d8af33f155022034d05190a9b7a9aaae89fc89148639af1eb7f0601d9c959232b7a159cb2ca991012102c861a156ca6c6abecdeea95eab3ec7c93c6a37d63a5a6f62368ac94a424af15ffeffffff0200e87648170000001976a914fc52fb4219926f353f5475da7885b213c384a24188ac4d4fbfb88b0000001976a914c39aa109a7f20cefa69079374c7324e01998a12488ac00000000d10300000000000000000000000000000000000000000000000000000000000000000000000000000000000100c1dad84fdab5738de910b64d3a9ae7baf6afbd69806b8889b4ed6ccecefe7861fc3d69b7598f6ab9621fe2568403f94a1c5df398891433cdf301c67fda82f80bfe7f321465e088b8b1360c62946afcbea403cf927d5bfe230000011976a91431389f57b2f32565dcf713d2b2420914885bedcd88ac1027000000000000000000000000004f8f8fe9fd4ad5565cd6c4887bc54e2910a340bb7583c0d8d6a92d52b324095700";
+
+    /// A Core v24 block decodes with every transaction, so its merkle root
+    /// matches the header.
+    #[test]
+    fn decode_block_reads_a_core_v24_block() {
+        let bytes = hex::decode(CORE_V24_BLOCK).expect("vector is hex");
+        let block = decode_block(&bytes).expect("a Core v24 block decodes");
+        assert!(block.check_merkle_root());
+        assert_eq!(block.txdata.len(), 2);
     }
 }

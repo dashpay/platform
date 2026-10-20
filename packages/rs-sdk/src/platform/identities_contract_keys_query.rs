@@ -88,6 +88,8 @@ impl Query<GetIdentitiesContractKeysRequest> for IdentitiesContractKeysQuery {
     }
 }
 
+impl crate::platform::query::WireQuery for IdentitiesContractKeysQuery {}
+
 impl TransportRequest for IdentitiesContractKeysQuery {
     type Client = <GetIdentitiesContractKeysRequest as TransportRequest>::Client;
     type Response = <GetIdentitiesContractKeysRequest as TransportRequest>::Response;
@@ -102,6 +104,12 @@ impl TransportRequest for IdentitiesContractKeysQuery {
         "get_identities_contract_keys"
     }
 
+    fn names_nothing(&self) -> Option<&'static str> {
+        GetIdentitiesContractKeysRequest::try_from(self.clone())
+            .ok()
+            .and_then(|request| request.names_nothing())
+    }
+
     fn execute_transport<'c>(
         self,
         client: &'c mut Self::Client,
@@ -111,5 +119,40 @@ impl TransportRequest for IdentitiesContractKeysQuery {
             .try_into()
             .expect("IdentitiesContractKeysQuery should always be valid");
         request.execute_transport(client, settings)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_name_nothing_like_the_request_it_sends() {
+        let query = |identities_ids: Vec<Identifier>, purposes: Vec<Purpose>| {
+            IdentitiesContractKeysQuery::new(
+                identities_ids,
+                Identifier::from([2; 32]),
+                None,
+                purposes,
+            )
+            .expect("valid query")
+        };
+
+        assert_eq!(
+            query(vec![], vec![Purpose::AUTHENTICATION]).names_nothing(),
+            Some("identities_ids must contain at least one identifier when requesting a proof")
+        );
+        assert_eq!(
+            query(vec![Identifier::from([1; 32])], vec![]).names_nothing(),
+            Some("purposes must contain at least one purpose when requesting a proof")
+        );
+        assert_eq!(
+            query(
+                vec![Identifier::from([1; 32])],
+                vec![Purpose::AUTHENTICATION]
+            )
+            .names_nothing(),
+            None
+        );
     }
 }

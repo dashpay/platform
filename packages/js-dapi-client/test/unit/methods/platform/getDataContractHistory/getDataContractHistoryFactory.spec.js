@@ -180,6 +180,16 @@ describe('getDataContractHistoryFactory', () => {
       .to.deep.equal(metadataFixture.protocolVersion);
   });
 
+  it('should reject prove=true when the response has no proof', async () => {
+    options.prove = true;
+    const contractId = dataContractFixture.getId().toBuffer();
+
+    await expect(
+      getDataContractHistory(contractId, BigInt(0), 10, 0, options),
+    ).to.be.rejectedWith('missing proof');
+    expect(grpcTransportMock.request).to.have.been.calledThrice();
+  });
+
   it('should throw unknown error', async () => {
     const error = new Error('Unknown found');
     const contractId = dataContractFixture.getId();

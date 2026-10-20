@@ -4,12 +4,14 @@ const clone = require('lodash/clone');
 
 const fundWallet = require('@dashevo/wallet-lib/src/utils/fundWallet');
 
+const createPlatformProofVerifier = require('./createPlatformProofVerifier');
+
 /**
  * Create and fund DashJS client
  *
  * @param {number} amount
  * @param {Object} config
- * @param {{host: string, port: string}[]} config.seeds
+ * @param {RawDAPIAddress[]} config.seeds
  * @param {string} config.network
  * @param {string} config.faucetPrivateKey
  * @param {number} [config.skipSyncBeforeHeight]
@@ -30,6 +32,7 @@ async function createClientWithFundedWallet(amount, config) {
   const clientOpts = {
     seeds: config.seeds,
     network: config.network,
+    platformProofVerifier: createPlatformProofVerifier(),
     wallet: walletOptions,
   };
 

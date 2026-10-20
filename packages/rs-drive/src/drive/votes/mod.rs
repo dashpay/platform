@@ -14,6 +14,8 @@ use dpp::ProtocolError;
 
 #[cfg(feature = "server")]
 mod cleanup;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 
 #[cfg(feature = "server")]
 mod insert;
@@ -73,7 +75,7 @@ impl TreePath for ResourceVote {
                     .get(&contested_document_vote_poll.index_name)
                     .ok_or(ProtocolError::UnknownContestedIndexResolution(format!(
                         "no index named {} for document type {} on contract with id {}",
-                        &contested_document_vote_poll.index_name,
+                        contested_document_vote_poll.index_name,
                         document_type.name(),
                         contract.id()
                     )))?;

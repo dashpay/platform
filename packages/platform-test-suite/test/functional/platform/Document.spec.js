@@ -25,6 +25,10 @@ const getDocumentObject = (document) => {
   delete documentObject.$createdAt;
   delete documentObject.$updatedAt;
 
+  // Drive stamps the contract version on stored documents (protocol v14+),
+  // so a fetched document carries it while a locally created one does not
+  delete documentObject.$contractVersion;
+
   return documentObject;
 };
 

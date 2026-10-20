@@ -36,7 +36,7 @@ impl<C> Platform<C> {
             .drive
             .cache
             .system_data_contracts
-            .load_masternode_reward_shares();
+            .load_masternode_reward_shares(platform_version)?;
 
         let document_type =
             masternode_rewards_contract.document_type_for_name(MN_REWARD_SHARES_DOCUMENT_TYPE)?;
@@ -47,7 +47,7 @@ impl<C> Platform<C> {
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
                 primary_key_equal_clause: None,
-                in_clause: None,
+                in_clauses: Vec::new(),
                 range_clause: None,
                 equal_clauses: BTreeMap::from([(
                     "$ownerId".to_string(),
@@ -64,6 +64,8 @@ impl<C> Platform<C> {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_ranges: vec![],
+            sub_queries: vec![],
         };
 
         // todo: deal with cost of this operation

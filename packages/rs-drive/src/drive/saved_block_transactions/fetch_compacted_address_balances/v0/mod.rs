@@ -187,13 +187,17 @@ impl Drive {
         Ok(compacted_changes)
     }
 
-    /// Version 0 implementation for proving compacted address balance changes.
+    /// Version 0 implementation for proving compacted address balance changes
+    /// — legacy single-proof wire format used by protocol versions whose
+    /// `prove_compacted_address_balance_changes` feature version is 0.
     ///
     /// Uses a two-step approach:
     /// 1. First query (non-proving): descending to find any range containing start_block_height
     /// 2. Second query (proving): ascending from the found start_block or start_block_height
     ///
-    /// This ensures the proof covers all relevant ranges efficiently.
+    /// Kept byte-for-byte wire-compatible with the legacy
+    /// `verify_compacted_address_balance_changes_v0` decoder. The two-proof
+    /// envelope (predecessor authentication) lives in v1.
     pub(super) fn prove_compacted_address_balance_changes_v0(
         &self,
         start_block_height: u64,

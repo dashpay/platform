@@ -79,6 +79,18 @@ impl DocumentTypeV0Getters for DocumentTypeV0 {
         self.documents_keep_history
     }
 
+    fn documents_keep_transfer_history(&self) -> bool {
+        self.documents_keep_transfer_history
+    }
+
+    fn documents_keep_purchase_history(&self) -> bool {
+        self.documents_keep_purchase_history
+    }
+
+    fn documents_keep_pricing_history(&self) -> bool {
+        self.documents_keep_pricing_history
+    }
+
     fn documents_mutable(&self) -> bool {
         self.documents_mutable
     }

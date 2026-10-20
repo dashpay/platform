@@ -44,18 +44,36 @@ struct WalletDetailView: View {
     // multiple accounts / wallets), so we can't filter
     // `PersistentTransaction` by walletId directly. We query the
     // wallet's TXOs instead and count the distinct creating-or-
-    // spending transactions in the body — same union the list view
+    // spending transactions in the body, then union in each account's
+    // payload-only `involvedTransactions` — same union the list view
     // uses.
     @Query private var walletTxos: [PersistentTxo]
+    /// This wallet's accounts, for the payload-only
+    /// `involvedTransactions` contribution to `transactionCount` —
+    /// special txs that matched an account by payload with no TXO,
+    /// which the `walletTxos` join can't see. Scoped to this wallet
+    /// row's network as well as its walletId: the same 32-byte
+    /// walletId legitimately exists once per network (same mnemonic
+    /// imported on mainnet and testnet), and matching on walletId
+    /// alone would fold the sibling network's payload-only txs into
+    /// this wallet's badge.
+    @Query private var walletAccounts: [PersistentAccount]
 
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
+        let networkRaw = wallet.networkRaw
         var descriptor = FetchDescriptor<PersistentTxo>(
             predicate: #Predicate { $0.walletId == walletId }
         )
         descriptor.propertiesToFetch = [\.walletId]
         _walletTxos = Query(descriptor)
+        _walletAccounts = Query(
+            filter: #Predicate<PersistentAccount> {
+                $0.wallet.walletId == walletId
+                    && $0.wallet.networkRaw == networkRaw
+            }
+        )
         _walletAssetLocks = Query(
             filter: PersistentAssetLock.predicate(walletId: walletId),
             sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)]
@@ -67,6 +85,11 @@ struct WalletDetailView: View {
         for txo in walletTxos {
             if let tx = txo.transaction { seen.insert(tx.txid) }
             if let spending = txo.spendingTransaction { seen.insert(spending.txid) }
+        }
+        // Payload-only involvement: special txs matched by payload with
+        // no TXO in the wallet, invisible to the `walletTxos` join.
+        for account in walletAccounts {
+            for tx in account.involvedTransactions { seen.insert(tx.txid) }
         }
         return seen.count
     }
@@ -255,7 +278,20 @@ struct WalletDetailView: View {
             WithdrawPlatformAddressView(wallet: wallet)
         }
         .sheet(item: $resumingAssetLock) { lock in
-            FundFromAssetLockPlatformAddressView(wallet: wallet, resumeFromLock: lock)
+            // Route by funding type. Both top-up types reach this sheet from
+            // `PendingPlatformFundFromAssetLocksList`, and they consume their
+            // locks through DIFFERENT transitions: type 4 resumes via
+            // `resumeFundFromAssetLock` (credit a Platform address), type 5
+            // via `shieldedResumeFundFromAssetLock` (Type 18 shield into the
+            // Orchard pool). Sending a shielded lock to the address view
+            // would submit the wrong transition against it, so surfacing the
+            // row without this branch would only move the dead end one tap
+            // later.
+            if lock.fundingTypeRaw == 5 {
+                ShieldedFundFromAssetLockView(wallet: wallet, resumeFromLock: lock)
+            } else {
+                FundFromAssetLockPlatformAddressView(wallet: wallet, resumeFromLock: lock)
+            }
         }
         .sheet(isPresented: $showShieldFromAssetLock) {
             ShieldedFundFromAssetLockView(wallet: wallet)
@@ -811,11 +847,6 @@ struct WalletInfoView: View {
         isUpdatingNetworks = true
         defer { isUpdatingNetworks = false }
 
-        // `createWallet` below is a synchronous @MainActor FFI call that
-        // blocks the main thread, so without yielding first SwiftUI never
-        // paints the overlay. Let it render one frame before we block.
-        try? await Task.sleep(nanoseconds: 50_000_000) // ~50ms, one frame
-
         // Add the existing wallet to another network by re-creating it
         // from the stored mnemonic in that network's manager. The
         // `walletId` is now network-scoped — the same mnemonic produces
@@ -841,7 +872,7 @@ struct WalletInfoView: View {
             // Enabling an existing wallet on another network: the mnemonic is
             // pre-existing and may already have on-chain history there — scan
             // from genesis (birthHeight 0) so prior funds/payments are seen.
-            let created = try mgr.createWallet(
+            let created = try await mgr.createWallet(
                 mnemonic: mnemonic,
                 network: network,
                 name: wallet.name ?? wallet.label,
@@ -1019,18 +1050,16 @@ struct BalanceCardView: View {
         shieldedNotes.reduce(0) { $0 + $1.value }
     }
 
-    /// Confirmed core-chain balance summed from Rust's in-memory
-    /// per-account state via FFI.
-    private var confirmedBalance: UInt64 {
+    /// Core-chain balance summed from one Rust in-memory account snapshot.
+    /// Reading every component from the same FFI result keeps the card
+    /// internally consistent while sync updates account state.
+    private var coreBalance: WalletCoreBalance {
         walletManager.accountBalances(for: wallet.walletId)
-            .reduce(0) { $0 + $1.confirmed }
-    }
-
-    /// Unconfirmed core-chain balance summed from Rust's in-memory
-    /// per-account state via FFI.
-    private var unconfirmedBalance: UInt64 {
-        walletManager.accountBalances(for: wallet.walletId)
-            .reduce(0) { $0 + $1.unconfirmed }
+            .reduce(into: WalletCoreBalance()) { total, account in
+                total.confirmed += account.confirmed
+                total.unconfirmed += account.unconfirmed
+                total.immature += account.immature
+            }
     }
 
     /// Platform balance from BLAST sync (preferred) or identity sum (fallback).
@@ -1101,8 +1130,14 @@ struct BalanceCardView: View {
     }
 
     var body: some View {
-        let totalCore = confirmedBalance + unconfirmedBalance
-        let allZero = totalCore == 0 && platformBalance == 0 && shieldedBalance == 0
+        let core = coreBalance
+        let allZero = WalletBalanceCardState.isEmpty(
+            confirmedCore: core.confirmed,
+            unconfirmedCore: core.unconfirmed,
+            immatureCore: core.immature,
+            platform: platformBalance,
+            shielded: shieldedBalance
+        )
 
         VStack(spacing: 12) {
             if allZero {
@@ -1113,8 +1148,9 @@ struct BalanceCardView: View {
                 // Core Balance row
                 WalletBalanceRow(
                     label: "Core Balance",
-                    amount: confirmedBalance,
-                    incoming: unconfirmedBalance,
+                    amount: core.confirmed,
+                    incoming: core.unconfirmed,
+                    immature: core.immature,
                     color: .primary,
                     unit: .duffs
                 )
@@ -1178,6 +1214,31 @@ struct BalanceCardView: View {
     }
 }
 
+struct WalletCoreBalance {
+    var confirmed: UInt64 = 0
+    var unconfirmed: UInt64 = 0
+    var immature: UInt64 = 0
+}
+
+/// Pure balance-card state used by the SwiftUI view and unit tests. Keeping
+/// the empty-state decision here prevents a future UI refactor from silently
+/// dropping non-spendable-but-owned Core value such as immature coinbase funds.
+enum WalletBalanceCardState {
+    static func isEmpty(
+        confirmedCore: UInt64,
+        unconfirmedCore: UInt64,
+        immatureCore: UInt64,
+        platform: UInt64,
+        shielded: UInt64
+    ) -> Bool {
+        confirmedCore == 0
+            && unconfirmedCore == 0
+            && immatureCore == 0
+            && platform == 0
+            && shielded == 0
+    }
+}
+
 /// A single balance row showing label, amount, and optional incoming amount.
 private enum WalletBalanceUnit {
     case duffs
@@ -1209,6 +1270,7 @@ private struct WalletBalanceRow: View {
     let label: String
     var amount: UInt64
     var incoming: UInt64 = 0
+    var immature: UInt64 = 0
     var color: Color
     var unit: WalletBalanceUnit = .duffs
     var showSyncIndicator: Bool = false
@@ -1248,6 +1310,11 @@ private struct WalletBalanceRow: View {
                     Text("(+\(formatBalance(incoming)) incoming)")
                         .font(.caption2)
                         .foregroundColor(.orange)
+                }
+                if immature > 0 {
+                    Text("(\(formatBalance(immature)) immature)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
             }
             if let menu = trailingMenu {

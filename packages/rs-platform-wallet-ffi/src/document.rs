@@ -55,13 +55,21 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 /// schema-driven sanitize step on the Rust side converts them to the
 /// protocol's native types. Pass `"{}"` for a document type with no
 /// required properties.
+///
+/// `contest_fund` is the most, in credits, a contested document pays
+/// into the contest it joins (the fund to join doubles once a contest
+/// holds 250 contenders and again for every 50 more). `0` states the
+/// fund to join read just before the document is submitted. A document
+/// that joins no contest ignores it.
 #[no_mangle]
+#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_create_document_with_signer(
     wallet_handle: Handle,
     owner_identity_id: *const u8,
     contract_id: *const u8,
     document_type_name: *const c_char,
     properties_json: *const c_char,
+    contest_fund: u64,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
@@ -82,6 +90,11 @@ pub unsafe extern "C" fn platform_wallet_create_document_with_signer(
     let document_type_str =
         unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_string();
     let properties_str = unwrap_result_or_return!(CStr::from_ptr(properties_json).to_str());
+    let contest_fund = if contest_fund == 0 {
+        None
+    } else {
+        Some(contest_fund)
+    };
 
     let signer_addr = signer_handle as usize;
     let owner_id_for_async = owner_id;
@@ -98,6 +111,7 @@ pub unsafe extern "C" fn platform_wallet_create_document_with_signer(
                         &contract_id_for_async,
                         &document_type_str,
                         properties_str,
+                        contest_fund,
                         signer,
                     )
                     .await?;
@@ -278,6 +292,83 @@ pub unsafe extern "C" fn platform_wallet_document_delete(
                     &contract_id_value,
                     &document_type_str,
                     &document_id_value,
+                    signing_key_id,
+                    signer,
+                )
+                .await?;
+            Ok::<_, PlatformWalletError>(deleted_id)
+        });
+        result
+    });
+    let result = unwrap_option_or_return!(option);
+    let deleted_id = unwrap_result_or_return!(result);
+
+    let bytes = deleted_id.to_buffer();
+    let dst = slice::from_raw_parts_mut(out_document_id, 32);
+    dst.copy_from_slice(&bytes);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Delete + broadcast a document by its values: the delete an `indexOnly`
+/// document type needs, which [`platform_wallet_document_delete`] (ids
+/// only) cannot perform.
+///
+/// Goes through `IdentityWallet::delete_document_by_values_with_signer`.
+/// `document_id` is the id the document was created under and
+/// `properties_json` a NUL-terminated UTF-8 JSON object holding the
+/// document's own properties as it was created with them, in the format
+/// [`platform_wallet_create_document_with_signer`] takes, plus a
+/// `"$createdAt"` number of milliseconds for a type whose entries commit to
+/// it. A type that is not `indexOnly`, a property the type does not
+/// declare and any other `$` field are refused before anything is signed.
+/// On success the deleted document's 32-byte id is written to
+/// `out_document_id`.
+///
+/// # Safety
+/// `owner_identity_id`, `contract_id` and `document_id` must each point to
+/// 32 readable bytes; `document_type_name` and `properties_json` must be
+/// valid NUL-terminated strings; `signer_handle` must be a live signer;
+/// `out_document_id` must point to 32 writable bytes.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_document_delete_by_values(
+    wallet_handle: Handle,
+    owner_identity_id: *const u8,
+    contract_id: *const u8,
+    document_type_name: *const c_char,
+    document_id: *const u8,
+    properties_json: *const c_char,
+    signing_key_id: u32,
+    signer_handle: *mut SignerHandle,
+    out_document_id: *mut u8,
+) -> PlatformWalletFFIResult {
+    check_ptr!(signer_handle);
+    check_ptr!(document_type_name);
+    check_ptr!(properties_json);
+    check_ptr!(out_document_id);
+
+    let owner_id = unwrap_result_or_return!(read_identifier(owner_identity_id));
+    let contract_id_value = unwrap_result_or_return!(read_identifier(contract_id));
+    let document_id_value = unwrap_result_or_return!(read_identifier(document_id));
+
+    let document_type_str =
+        unwrap_result_or_return!(CStr::from_ptr(document_type_name).to_str()).to_string();
+    let properties_str =
+        unwrap_result_or_return!(CStr::from_ptr(properties_json).to_str()).to_string();
+
+    let signer_addr = signer_handle as usize;
+
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        let identity_wallet = wallet.identity().clone();
+        let result: Result<Identifier, PlatformWalletError> = block_on_worker(async move {
+            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+            let deleted_id: Identifier = identity_wallet
+                .delete_document_by_values_with_signer(
+                    &owner_id,
+                    &contract_id_value,
+                    &document_type_str,
+                    &document_id_value,
+                    &properties_str,
                     signing_key_id,
                     signer,
                 )
@@ -532,6 +623,7 @@ mod tests {
         );
 
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::from([1u8; 32]),
             owner_id: Identifier::from([2u8; 32]),
             properties,
@@ -546,6 +638,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         let json: serde_json::Value =
@@ -569,5 +663,47 @@ mod tests {
             "unset $createdAt must be present and null, got {:?}",
             json.get("$createdAt")
         );
+    }
+
+    #[test]
+    fn should_refuse_null_pointers_for_delete_by_values() {
+        let id = [0u8; 32];
+        let mut out = [0u8; 32];
+        let name = CString::new("loginKeyResponse").unwrap();
+        let properties = CString::new("{}").unwrap();
+        // A dangling but non-null signer: every call below returns at a
+        // pointer check before the signer is read.
+        let signer = ptr::NonNull::<SignerHandle>::dangling().as_ptr();
+
+        let call = |type_name: *const c_char,
+                    properties_json: *const c_char,
+                    signer_handle: *mut SignerHandle,
+                    out_document_id: *mut u8| unsafe {
+            platform_wallet_document_delete_by_values(
+                0,
+                id.as_ptr(),
+                id.as_ptr(),
+                type_name,
+                id.as_ptr(),
+                properties_json,
+                0,
+                signer_handle,
+                out_document_id,
+            )
+        };
+
+        for result in [
+            call(ptr::null(), properties.as_ptr(), signer, out.as_mut_ptr()),
+            call(name.as_ptr(), ptr::null(), signer, out.as_mut_ptr()),
+            call(
+                name.as_ptr(),
+                properties.as_ptr(),
+                ptr::null_mut(),
+                out.as_mut_ptr(),
+            ),
+            call(name.as_ptr(), properties.as_ptr(), signer, ptr::null_mut()),
+        ] {
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        }
     }
 }

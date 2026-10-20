@@ -8,10 +8,25 @@ token-history-contract: &token-history-contract
   - packages/token-history-contract/schema/**
   - packages/token-history-contract/Cargo.toml
 
+document-history-contract: &document-history-contract
+  - packages/document-history-contract/src/**
+  - packages/document-history-contract/schema/**
+  - packages/document-history-contract/Cargo.toml
+
 keyword-search-contract: &keyword-search-contract
   - packages/keyword-search-contract/src/**
   - packages/keyword-search-contract/schema/**
   - packages/keyword-search-contract/Cargo.toml
+
+app-connect-contract: &app-connect-contract
+  - packages/app-connect-contract/src/**
+  - packages/app-connect-contract/schema/**
+  - packages/app-connect-contract/Cargo.toml
+
+moderation-charters-contract: &moderation-charters-contract
+  - packages/moderation-charters-contract/src/**
+  - packages/moderation-charters-contract/schema/**
+  - packages/moderation-charters-contract/Cargo.toml
 
 dashpay-contract: &dashpay-contract
   - packages/dashpay-contract/src/**
@@ -45,6 +60,9 @@ data-contracts: &data-contracts
   - *wallet-utils-contract
   - *token-history-contract
   - *keyword-search-contract
+  - *document-history-contract
+  - *app-connect-contract
+  - *moderation-charters-contract
 
 dpp: &dpp
   - packages/rs-dpp/**
@@ -121,9 +139,13 @@ rs-dapi-client: &dapi_client
 platform-encryption: &platform_encryption
   - packages/rs-platform-encryption/**
 
+dash-platform-queries: &platform_queries
+  - packages/dash-platform-queries/**
+
 dash-sdk: &sdk
   - packages/rs-drive-proof-verifier/**
   - packages/rs-sdk/**
+  - *platform_queries
   - *dash_async
   - *context_provider
   - *sdk_trusted_context_provider
@@ -158,6 +180,11 @@ platform-wallet-ffi: &platform_wallet_ffi
 
 rs-unified-sdk-ffi:
   - packages/rs-unified-sdk-ffi/**
+  - *platform_wallet_ffi
+  - *sdk_ffi
+
+rs-unified-sdk-jni:
+  - packages/rs-unified-sdk-jni/**
   - *platform_wallet_ffi
   - *sdk_ffi
 

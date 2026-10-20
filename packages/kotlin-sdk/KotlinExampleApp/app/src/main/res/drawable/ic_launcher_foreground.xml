@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simplified Dash "D" mark for the adaptive launcher icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,34 L62,34 A20,20 0 0 1 62,74 L40,74 L43,66 L60,66 A12,12 0 0 0 60,42 L43,42 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,50 L56,50 L54,58 L32,58 Z" />
+</vector>

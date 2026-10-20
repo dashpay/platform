@@ -17,8 +17,15 @@ key-wallet = { workspace = true }
 key-wallet-manager = { workspace = true, features = [] }
 dash-spv = { workspace = true }
 
-# Core dependencies
-dashcore = { workspace = true }
+# Core dependencies.
+#
+# `base64` is NOT among dashcore's default features (those are `secp-recovery`
+# and `bincode`), but `MessageSignature::to_base64` / `from_base64` are gated on
+# it — and base64 is the only wire form a classic Dash signed message has, the
+# one CrowdNode and Dash Core's `verifymessage` RPC accept. `secp-recovery`
+# arrives by default and carries `secp256k1/recovery`, which
+# `RecoverableSignature` / `recover_ecdsa` need. See `wallet::core::sign_message`.
+dashcore = { workspace = true, features = ["base64"] }
 
 # SPV context provider dependency (optional). `dash-spv` and `tokio` are
 # already non-optional dependencies above, so the `spv-context` feature only
@@ -36,6 +43,7 @@ bimap = "0.6"
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
 tokio-util = { version = "0.7.12" }
+dash-async = { path = "../rs-dash-async" }
 
 # Logging
 tracing = "0.1"
@@ -53,8 +61,12 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # Security
 zeroize = "1"
 
+# `log` facade: the JNI layer routes `log` to Android logcat, while `tracing`
+# output is discarded there.
+log = "0.4"
+
 # Shielded pool (optional, behind `shielded` feature)
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", tag = "v5.0.0", optional = true }
+grovedb-commitment-tree = { workspace = true, optional = true }
 # Direct `rusqlite` access so `FileBackedShieldedStore::open_path` can set
 # WAL + synchronous=NORMAL pragmas before handing the connection to
 # `ClientPersistentCommitmentTree`. Version locked to match the rev grovedb
@@ -85,6 +97,12 @@ name = "shielded_chunk_timing_bench"
 required-features = ["shielded"]
 
 [dev-dependencies]
+tempfile = "3.27.0"
+# `tests::fixtures` for the state transition summary tests.
+dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
+# In-process Signer<IdentityPublicKey> for the manual testnet
+# verification example (`examples/dpns_marketplace_testnet.rs`).
+simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 # Used by `examples/shielded_chunk_timing_bench.rs` and
 # `tests/shielded_decrypt_bench.rs` to assemble per-chunk wire
 # fixtures and decode the `ShieldedEncryptedNote` wire type.
@@ -93,6 +111,9 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 # (via `dashcore/test-utils`) for building funded, signable test wallets.
 # Dev-only, so the production build stays on the leaner default features.
 key-wallet = { workspace = true, features = ["test-utils"] }
+# `test-utils` exposes the SPV client's masternode list engine, so a test can
+# hold a quorum at a known verification status.
+dash-spv = { workspace = true, features = ["test-utils"] }
 rand = "0.8"
 # Drives the parallel decrypt benchmark in `shielded_decrypt_bench.rs`.
 rayon = "1.10"
@@ -122,6 +143,7 @@ default = ["bls", "eddsa"]
 # context-provider trait crate plus `rt-multi-thread` (the sync->async bridge
 # in `spv_context_provider` uses `tokio::task::block_in_place`).
 spv-context = ["dep:dash-context-provider", "tokio/rt-multi-thread"]
+test-utils = ["key-wallet/test-utils"]
 bls = ["key-wallet/bls", "key-wallet-manager/bls"]
 eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
 shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dep:futures", "dash-sdk/shielded", "dpp/shielded-client"]

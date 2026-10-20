@@ -14,7 +14,9 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "dash-sdk-features",
     "bls-signatures",
 ] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+# TLS backend target-gated (see [target] sections below): Android gets rustls
+# + bundled webpki roots; all other targets keep default native-tls so iOS
+# still validates against the system trust store.
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
@@ -23,6 +25,11 @@ lru = "0.16.3"
 arc-swap = "1.7.1"
 hex = "0.4.3"
 url = "2.5"
+# `try_join!` / `join!` for the concurrent quorum fetches in `update_quorum_caches`
+# and `refresh_quorum_caches`, and `Shared` for the refreshes misses share.
+futures = { version = "0.3.30" }
+# Monotonic clock that also works on wasm32, for spacing out refreshes.
+web-time = "1.1"
 
 [features]
 default = []
@@ -36,6 +43,9 @@ all-system-contracts = [
     "wallet-utils-contract",
     "token-history-contract",
     "keywords-contract",
+    "document-history-contract",
+    "app-connect-contract",
+    "moderation-charters-contract",
 ]
 
 # Individual contract features - these enable specific contracts in DPP
@@ -45,6 +55,24 @@ dashpay-contract = ["dpp/dashpay-contract"]
 wallet-utils-contract = ["dpp/wallet-utils-contract"]
 token-history-contract = ["dpp/token-history-contract"]
 keywords-contract = ["dpp/keywords-contract"]
+document-history-contract = ["dpp/document-history-contract"]
+app-connect-contract = ["dpp/app-connect-contract"]
+moderation-charters-contract = ["dpp/moderation-charters-contract"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Runs the browser's non-`Send` quorum fetches and timers on the local executor.
+wasm-bindgen-futures = { version = "0.4.58" }
+gloo-timers = { version = "0.3.0", features = ["futures"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Waits out the gap between two refreshes of the quorum lists.
+tokio = { version = "1.40", features = ["time"] }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+reqwest = { version = "0.12", features = ["json"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }

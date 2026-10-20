@@ -55,7 +55,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let document = &*(document_handle as *const Document);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
@@ -149,7 +149,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform(
             .await
             .map_err(|e| {
                 error!(error = %e, key_id = identity_public_key.id(), "[DOCUMENT REPLACE] failed to sign transition");
-                FFIError::InternalError(format!("Failed to create replace transition: {}", e))
+                FFIError::sdk_call_failed("Failed to create replace transition", e)
             })?;
 
         debug!("[DOCUMENT REPLACE] state transition created, serializing");
@@ -206,7 +206,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
 
     info!("[DOCUMENT REPLACE] starting document replace operation");
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let document = &*(document_handle as *const Document);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
@@ -357,7 +357,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
                     "❌ [DOCUMENT REPLACE] Failed with key ID: {}",
                     identity_public_key.id()
                 );
-                FFIError::InternalError(format!("Failed to replace document and wait: {}", e))
+                FFIError::sdk_call_failed("Failed to replace document and wait", e)
             })?;
 
         eprintln!("✅ [DOCUMENT REPLACE] SDK call completed successfully");
@@ -413,6 +413,7 @@ mod tests {
         properties.insert("age".to_string(), Value::U64(25));
 
         let document = Document::V0(DocumentV0 {
+            contract_version: None,
             id,
             owner_id,
             properties,
@@ -427,6 +428,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         Box::new(document)

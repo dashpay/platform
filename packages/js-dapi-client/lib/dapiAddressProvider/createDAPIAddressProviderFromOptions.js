@@ -94,6 +94,7 @@ function createDAPIAddressProviderFromOptions(options) {
       smlProvider,
       listDAPIAddressProvider,
       dapiAddressesWhiteList.map((rawAddress) => new DAPIAddress(rawAddress)),
+      options,
     );
   }
 

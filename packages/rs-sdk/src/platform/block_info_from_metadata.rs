@@ -1,47 +1,30 @@
-use crate::Error;
+//! SDK-facing wrapper over the transport-free block-info helper.
+//!
+//! The implementation lives in
+//! [`dash_platform_queries::block_info_from_metadata`] so embedders that skip
+//! `dash-sdk` can use it. This module keeps the historical `dash-sdk`
+//! signature — `Result<BlockInfo, dash_sdk::Error>` — because a `From`
+//! conversion on the error type does not preserve explicit return types,
+//! direct variant matching, or function-pointer signatures for existing
+//! callers.
+
+use crate::error::Error;
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::block::block_info::BlockInfo;
-use dpp::block::epoch::MAX_EPOCH;
-use drive::error::proof::ProofError;
 
-/// Constructs a `BlockInfo` structure from the provided response metadata. This function
-/// translates metadata received from a platform response into a format that is specific to the
-/// application's needs, particularly focusing on block-related information. It ensures that
-/// the epoch value from the metadata does not exceed `MAX_EPOCH`,
-/// as this is a constraint for the `Epoch` type used in the `BlockInfo` structure.
+/// Constructs a [`BlockInfo`] from the provided response metadata.
 ///
-/// # Parameters
-/// - `response_metadata`: A reference to `ResponseMetadata` obtained from a platform response.
-///   This metadata includes various block-related information such as time in milliseconds,
-///   height, core chain locked height, and epoch.
-///
-/// # Returns
-/// If successful, returns `Ok(BlockInfo)` where `BlockInfo` contains:
-/// - `time_ms`: The timestamp of the block in milliseconds.
-/// - `height`: The height of the block.
-/// - `core_height`: The core chain locked height, indicating the height of the block in the core blockchain that is considered final and securely linked to this block.
-/// - `epoch`: The epoch number, converted to an `Epoch` struct via a 16-bit number.
+/// Thin forwarder over
+/// [`dash_platform_queries::block_info_from_metadata::block_info_from_metadata`];
+/// see there for the full contract. The only difference is the error type,
+/// which stays [`crate::Error`] for source compatibility.
 ///
 /// # Errors
-/// Returns an error if:
-/// - The `epoch` value in the response metadata exceeds `MAX_EPOCH`. This is considered a data validity error as it indicates Platform returned an unexpectedly high epoch number.
 ///
-/// The function encapsulates errors into the application's own `Error` type, providing a unified interface for error handling across the application.
+/// Returns an error if the metadata's `epoch` exceeds
+/// [`MAX_EPOCH`](dpp::block::epoch::MAX_EPOCH), which means Platform returned
+/// an unexpectedly high epoch number.
 pub fn block_info_from_metadata(response_metadata: &ResponseMetadata) -> Result<BlockInfo, Error> {
-    if response_metadata.epoch > MAX_EPOCH as u32 {
-        return Err(
-            drive::error::Error::Proof(ProofError::InvalidMetadata(format!(
-                "platform returned an epoch {} that was higher than the maximum allowed epoch",
-                response_metadata.epoch
-            )))
-            .into(),
-        );
-    }
-
-    Ok(BlockInfo {
-        time_ms: response_metadata.time_ms,
-        height: response_metadata.height,
-        core_height: response_metadata.core_chain_locked_height,
-        epoch: (response_metadata.epoch as u16).try_into()?,
-    })
+    dash_platform_queries::block_info_from_metadata::block_info_from_metadata(response_metadata)
+        .map_err(Error::from)
 }

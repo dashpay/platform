@@ -12,6 +12,7 @@ use crate::execution::validation::state_transition::state_transitions::shielded_
 };
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
@@ -45,6 +46,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
+        check_tx_proof_verifier: Option<&CheckTxProofVerifier>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -58,6 +60,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
+        check_tx_proof_verifier: Option<&CheckTxProofVerifier>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -65,6 +68,12 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
         // Step 1: Get the shield amount (value_balance is u64, the amount entering the pool)
         let shield_amount: Credits = match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.value_balance,
+            // Protocol versions 12 and 13 are the only ones that select this generation, and a
+            // version 1 transition cannot exist there: `StateTransition::active_version_range`
+            // gives it `14..=LATEST_VERSION`, refused while decoding by the one funnel both block
+            // processing and CheckTx go through. The version 1 arms here and below exist only
+            // because the enum has the variant; none of them is reachable at 12 or 13.
+            ShieldFromAssetLockTransition::V1(v1) => v1.value_balance,
         };
 
         // Step 3: Calculate minimum required fee from platform_version.
@@ -84,6 +93,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
         let albc = required_balance;
         let num_actions = match self {
             ShieldFromAssetLockTransition::V0(v0) => v0.actions.len(),
+            ShieldFromAssetLockTransition::V1(v1) => v1.actions.len(),
         };
         let shielded_fee = compute_minimum_shielded_fee(num_actions, platform_version)?;
         let pool_fee =
@@ -257,6 +267,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
 
         let surplus_output = match self {
             ShieldFromAssetLockTransition::V0(v0) => &v0.surplus_output,
+            ShieldFromAssetLockTransition::V1(v1) => &v1.surplus_output,
         };
 
         // When no surplus_output is set, the surplus is donated to the fee pools — but only up to
@@ -283,6 +294,17 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
         let current_total_balance =
             read_pool_total_balance(platform.drive, tx, &mut drive_operations, platform_version)?;
 
+        // CheckTx admits the expensive proof only after the asset lock, its
+        // signature, funding, fee cap, and current pool state have all passed.
+        // Proposal and block processing pass `None` and retain the existing
+        // penalty action when proof verification fails.
+        let _check_tx_permit = match check_tx_proof_verifier {
+            Some(verifier) => Some(verifier.try_acquire(num_actions).ok_or(Error::Execution(
+                ExecutionError::CheckTxProofVerificationBusy,
+            ))?),
+            None => None,
+        };
+
         // Step 9: Verify Orchard ZK proof via reconstruct_and_verify_bundle()
         // Use EMPTY extra_sighash_data -- no transparent binding needed since
         // the asset lock proof authenticates the source of funds.
@@ -292,6 +314,17 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
                 &v0.anchor,
                 v0.proof.as_slice(),
                 &v0.binding_signature,
+            ),
+            // This verifies a version 1 body against the empty preimage, which at protocol
+            // version 14 would be exactly the unbound check version 1 was introduced to close.
+            // It is unreachable: 14 selects transform_into_action 1, and 12 and 13 cannot decode
+            // a version 1 at all. Do not treat this arm as the verification path for version 1 —
+            // that is transform_into_action/v1.
+            ShieldFromAssetLockTransition::V1(v1) => (
+                &v1.actions,
+                &v1.anchor,
+                v1.proof.as_slice(),
+                &v1.binding_signature,
             ),
         };
 

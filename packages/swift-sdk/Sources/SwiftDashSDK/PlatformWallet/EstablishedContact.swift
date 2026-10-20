@@ -54,17 +54,6 @@ public final class EstablishedContact: @unchecked Sendable {
         return String(cString: ptr)
     }
 
-    /// Set the contact's alias
-    public func setAlias(_ alias: String) throws {
-        let aliasCStr = (alias as NSString).utf8String
-        try established_contact_set_alias(handle, aliasCStr).check()
-    }
-
-    /// Clear the contact's alias
-    public func clearAlias() throws {
-        try established_contact_clear_alias(handle).check()
-    }
-
     /// Get the contact's note. Returns `nil` when no note is set —
     /// see `getAlias()` for the `NotFound` rationale.
     public func getNote() throws -> String? {
@@ -91,31 +80,10 @@ public final class EstablishedContact: @unchecked Sendable {
         return String(cString: ptr)
     }
 
-    /// Set the contact's note
-    public func setNote(_ note: String) throws {
-        let noteCStr = (note as NSString).utf8String
-        try established_contact_set_note(handle, noteCStr).check()
-    }
-
-    /// Clear the contact's note
-    public func clearNote() throws {
-        try established_contact_clear_note(handle).check()
-    }
-
     /// Check if the contact is hidden
     public func isHidden() throws -> Bool {
         var hidden: Bool = false
         try established_contact_is_hidden(handle, &hidden).check()
         return hidden
-    }
-
-    /// Hide the contact
-    public func hide() throws {
-        try established_contact_hide(handle).check()
-    }
-
-    /// Unhide the contact
-    public func unhide() throws {
-        try established_contact_unhide(handle).check()
     }
 }

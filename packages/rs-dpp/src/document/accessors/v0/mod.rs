@@ -48,6 +48,13 @@ pub trait DocumentV0Getters {
     fn updated_at_core_block_height(&self) -> Option<u32>;
     fn transferred_at_core_block_height(&self) -> Option<u32>;
     fn creator_id(&self) -> Option<Identifier>;
+    /// The data contract version this document's bytes conform to (the
+    /// serialization format 3 stamp); `None` for pre-stamp documents.
+    fn contract_version(&self) -> Option<u32>;
+    /// The block time at which a moderator last wrote the document's moderator fields.
+    fn moderated_at(&self) -> Option<TimestampMillis>;
+    /// The moderator who last wrote the document's moderator fields.
+    fn moderated_by(&self) -> Option<Identifier>;
 }
 
 pub trait DocumentV0Setters: DocumentV0Getters {
@@ -158,4 +165,11 @@ pub trait DocumentV0Setters: DocumentV0Getters {
     /// - `creator_id`: An `Option<Identifier>` to set as the document's creator ID.
     ///   `None` indicates the creator ID is not available.
     fn set_creator_id(&mut self, creator_id: Option<Identifier>);
+    /// Sets the contract-version stamp: the data contract version this
+    /// document's bytes conform to.
+    fn set_contract_version(&mut self, contract_version: Option<u32>);
+    /// Sets the block time at which a moderator last wrote the document's moderator fields.
+    fn set_moderated_at(&mut self, moderated_at: Option<TimestampMillis>);
+    /// Sets the moderator who last wrote the document's moderator fields.
+    fn set_moderated_by(&mut self, moderated_by: Option<Identifier>);
 }

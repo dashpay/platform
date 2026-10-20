@@ -7,15 +7,17 @@ use dpp::consensus::state::document::document_contest_document_with_same_id_alre
 use dpp::consensus::state::document::document_contest_identity_already_contestant::DocumentContestIdentityAlreadyContestantError;
 use dpp::consensus::state::document::document_contest_not_joinable_error::DocumentContestNotJoinableError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentFromCreateTransitionAction;
 use dpp::prelude::{ConsensusValidationResult, Identifier};
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::{ContestedDocumentVotePollStatus, ContestedDocumentVotePollStoredInfoV0Getters};
+use drive::drive::document::ContestWindows;
 use drive::error::drive::DriveError;
 use drive::query::TransactionArg;
 use crate::error::Error;
@@ -72,6 +74,91 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
                 InvalidDocumentTypeError::new(document_type_name.clone(), contract.id()).into(),
             ));
         };
+
+        // indexOnly document types have no primary-storage tree to probe by
+        // id, and the unique-index engine does not apply (their indexes are
+        // non-unique by declaration; uniqueness is structural). Instead,
+        // probe every index's entry computed from the action's values and
+        // owner: the create writes all of them atomically, so ANY existing
+        // entry is a duplicate — which is also what makes a shorter or
+        // owner-less index act as a uniqueness constraint over its value
+        // projection. `index_only()` can only be true on a PV14+ contract,
+        // so this branch is unreachable for every historical transition.
+        if document_type.index_only() {
+            let document = dpp::document::Document::try_from_create_transition_action(
+                self,
+                owner_id,
+                platform_version,
+            )?;
+
+            let mut probe_operations = vec![];
+            let mut duplicate_index = None;
+            // An index whose entries outlive a delete may hold an entry an
+            // earlier document with the same values left: the create keeps
+            // it rather than colliding, so it is not probed. The rest of the
+            // create's entries still decide whether it is a duplicate. A
+            // summableOffCountIndex index keeps no entries (it yields no paths),
+            // so it decides nothing. Nor is an index of a typed array (protocol
+            // version 14) probed: registration puts the whole key of another
+            // probed index, one keeping each document once, inside its key
+            // without the array, so a create colliding on one of its element
+            // entries collides on that index's entry, and the reads per element
+            // would never be the first to find it.
+            for index in document_type
+                .indexes()
+                .values()
+                .filter(|index| !index.outlives_delete && index.indexed_array.is_none())
+            {
+                let entry_exists = platform
+                    .drive
+                    .has_index_only_document_entry(
+                        contract.id(),
+                        document_type,
+                        index,
+                        &document,
+                        transaction,
+                        &mut probe_operations,
+                        platform_version,
+                    )
+                    .map_err(Error::Drive)?;
+                if entry_exists {
+                    duplicate_index = Some(index);
+                    break;
+                }
+            }
+
+            // Every probe is a stateful grove read validators actually
+            // perform — bill them all, on the duplicate path included.
+            let fee_result = drive::drive::Drive::calculate_fee(
+                None,
+                Some(probe_operations),
+                &block_info.epoch,
+                platform.drive.config.epochs_per_era,
+                platform_version,
+                None,
+            )
+            .map_err(Error::Drive)?;
+            execution_context
+                .add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+
+            if let Some(index) = duplicate_index {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ConsensusError::StateError(StateError::DuplicateUniqueIndexError(
+                        dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError::new(
+                            self.base().id(),
+                            index
+                                .properties
+                                .iter()
+                                .map(|property| property.name.clone())
+                                .chain(index.terminal_components().iter().cloned())
+                                .collect(),
+                        ),
+                    )),
+                ));
+            }
+
+            return Ok(SimpleConsensusValidationResult::new());
+        }
 
         // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
         // We should check to see if a document already exists in the state
@@ -178,9 +265,33 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
                         // We need to make sure that if there is a contest, it is in its first week
                         // The week might be more or less, as it's a versioned parameter
                         let time_ms_since_start = block_info.time_ms.checked_sub(start_block.time_ms).ok_or(Error::Drive(drive::error::Error::Drive(DriveError::CorruptedDriveState(format!("it makes no sense that the start block time {} is before our current block time {}", start_block.time_ms, block_info.time_ms)))))?;
-                        let join_time_allowed = match platform.config.network {
-                            Network::Mainnet => platform_version.dpp.validation.voting.allow_other_contenders_time_mainnet_ms,
-                            _ => platform_version.dpp.validation.voting.allow_other_contenders_time_testing_ms
+                        // A moderation election (protocol version 14) is joinable for the join
+                        // window its target contract declares. Before 14 the method's version is
+                        // `None`: it reads nothing, bills nothing and answers `None`, so every
+                        // protocol version that selects this module directly keeps the generic
+                        // window below
+                        let (charter_election_fee, charter_election_windows) = platform
+                            .drive
+                            .fetch_charter_election_windows(
+                                contested_document_resource_vote_poll,
+                                &block_info.epoch,
+                                transaction,
+                                platform_version,
+                            )
+                            .map_err(Error::Drive)?;
+                        // The target is read, and billed, exactly for a moderation election
+                        let is_charter_election = charter_election_fee.is_some();
+                        if let Some(fee_result) = charter_election_fee {
+                            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee_result));
+                        }
+                        let join_time_allowed = match charter_election_windows {
+                            Some(windows) => windows.join_window_ms,
+                            // A moderation election whose target is missing or declares no
+                            // elected moderation has no join window to refuse it by: the
+                            // reference validation that follows at 14 refuses it with the
+                            // error that names why
+                            None if is_charter_election => u64::MAX,
+                            None => ContestWindows::generic(platform.config.network, platform_version).join_window_ms,
                         };
                         if time_ms_since_start > join_time_allowed {
                             return Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::StateError(StateError::DocumentContestNotJoinableError(

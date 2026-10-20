@@ -2,6 +2,7 @@ use crate::version::drive_versions::drive_group_method_versions::{
     DriveAddressFundsMethodVersions, DriveShieldedMethodVersions,
 };
 use crate::version::FeatureVersion;
+use drive_contract_group_method_versions::DriveContractGroupMethodVersions;
 use drive_contract_method_versions::DriveContractMethodVersions;
 use drive_credit_pool_method_versions::DriveCreditPoolMethodVersions;
 use drive_document_method_versions::DriveDocumentMethodVersions;
@@ -16,6 +17,7 @@ use drive_vote_method_versions::DriveVoteMethodVersions;
 use grovedb_version::version::GroveVersion;
 
 pub mod drive_address_funds_method_versions;
+pub mod drive_contract_group_method_versions;
 pub mod drive_contract_method_versions;
 pub mod drive_credit_pool_method_versions;
 pub mod drive_document_method_versions;
@@ -34,6 +36,8 @@ pub mod v4;
 pub mod v5;
 pub mod v6;
 pub mod v7;
+pub mod v8;
+pub mod v9;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVersion {
@@ -67,6 +71,7 @@ pub struct DriveMethodVersions {
     pub state_transitions: DriveStateTransitionMethodVersions,
     pub platform_state: DrivePlatformStateMethodVersions,
     pub group: DriveGroupMethodVersions,
+    pub contract_group: DriveContractGroupMethodVersions,
     pub address_funds: DriveAddressFundsMethodVersions,
     pub shielded: DriveShieldedMethodVersions,
     pub saved_block_transactions: DriveSavedBlockTransactionsMethodVersions,
@@ -76,12 +81,24 @@ pub struct DriveMethodVersions {
 pub struct DrivePlatformStateMethodVersions {
     pub fetch_platform_state_bytes: FeatureVersion,
     pub store_platform_state_bytes: FeatureVersion,
+    pub fetch_platform_state_recent_bytes: FeatureVersion,
+    pub store_platform_state_recent_bytes: FeatureVersion,
+    pub fetch_platform_state_entries_bytes: FeatureVersion,
+    pub store_platform_state_entry_bytes: FeatureVersion,
+    pub delete_platform_state_entry: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveSavedBlockTransactionsMethodVersions {
     pub store_address_balances: FeatureVersion,
     pub fetch_address_balances: FeatureVersion,
+    /// Wire format of the compacted address-balance-changes proof. 0 emits a
+    /// single GroveDB proof; 1 emits the two-proof
+    /// `CompactedAddressBalanceProof` bincode envelope (predecessor +
+    /// forward). Must move in lockstep with
+    /// `DriveVerifyAddressFundsMethodVersions::verify_compacted_address_balance_changes`,
+    /// which selects the matching decoder on the client side.
+    pub prove_compacted_address_balance_changes: FeatureVersion,
     pub compact_address_balances: FeatureVersion,
     pub cleanup_expired_address_balances: FeatureVersion,
     /// Maximum number of blocks to store before compaction is triggered

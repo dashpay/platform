@@ -99,7 +99,6 @@ __pycache__/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 .mcp.json
-.codex/
 
 # Security audit reports (local-only, not committed)
 audits/

@@ -1,8 +1,10 @@
-use versioned_feature_core::FeatureVersion;
+use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPValidationVersions {
@@ -39,6 +41,10 @@ pub struct DataContractValidationVersions {
     pub validate_property_definition: FeatureVersion,
     pub validate_token_config_groups_exist: FeatureVersion,
     pub validate_localizations: FeatureVersion,
+    /// `TokenDistributionRules::validate_once_per_identity_distribution`. `None` below protocol
+    /// version 14: version 1 distribution rules and once-per-identity claims are rejected as
+    /// unsupported, matching older software that can not decode them.
+    pub validate_once_per_identity_distribution: OptionalFeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

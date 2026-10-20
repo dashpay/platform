@@ -120,6 +120,119 @@ fn build_success_action(
 }
 
 #[test]
+fn should_validate_bound_authentication_keys_through_shielded_creation_dispatch() {
+    use super::StateTransitionStateValidationForIdentityCreateFromShieldedPoolTransitionV0;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::identifier::Identifier;
+    use dpp::identity::contract_bounds::ContractBounds;
+
+    let version = PlatformVersion::latest();
+    let platform = setup_platform();
+    set_pool_total_balance(&platform, DENOMINATION * 10);
+    insert_anchor_into_state(&platform, &ANCHOR);
+    insert_dummy_encrypted_notes(
+        &platform,
+        version
+            .drive_abci
+            .validation_and_processing
+            .event_constants
+            .minimum_pool_notes_for_outgoing
+            .max(1),
+    );
+    let contract = platform
+        .drive
+        .cache
+        .system_data_contracts
+        .load_dashpay(version)
+        .unwrap();
+    let (valid_master, _) =
+        IdentityPublicKey::random_ecdsa_master_authentication_key(0, Some(31), version).unwrap();
+    let state = platform.state.load();
+    let platform_ref = PlatformRef {
+        drive: &platform.drive,
+        state: &state,
+        config: &platform.config,
+        core_rpc: &platform.core_rpc,
+    };
+
+    for (case, id, document_type, error_code) in [
+        ("valid", contract.id(), "contactRequest", None),
+        (
+            "unknown contract",
+            Identifier::from([0x71; 32]),
+            "contactRequest",
+            Some(10400),
+        ),
+        ("unknown document", contract.id(), "missing", Some(10406)),
+    ] {
+        let key = IdentityPublicKeyInCreationV0 {
+            id: 1,
+            key_type: KeyType::ECDSA_HASH160,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: Some(ContractBounds::SingleContractDocumentType {
+                id,
+                document_type_name: document_type.into(),
+            }),
+            data: vec![0x72; 20].into(),
+            read_only: false,
+            signature: Default::default(),
+        };
+        let st = transition(
+            vec![valid_master.clone().into(), key.into()],
+            vec![action(30), action(31)],
+        );
+        let mut context =
+            StateTransitionExecutionContext::default_for_platform_version(version).unwrap();
+        let success = build_success_action(&platform, &st, &mut context, version);
+        let expected_notes = success.notes().to_vec();
+        let block_info = BlockInfo {
+            time_ms: 99,
+            ..Default::default()
+        };
+        // Exercise the public version dispatcher, not a hard-coded v0/v1 implementation.
+        let result = st
+            .validate_state_for_identity_create_from_shielded_pool_transition(
+                success,
+                &platform_ref,
+                &block_info,
+                &mut context,
+                None,
+            )
+            .unwrap();
+        if let Some(error_code) = error_code {
+            assert_eq!(result.errors.len(), 1, "{case}: {:?}", result.errors);
+            assert_eq!(result.errors[0].code(), error_code);
+            let StateTransitionAction::UnshieldAction(fallback) = result.into_data().unwrap()
+            else {
+                panic!(
+                    "{case}: invalid bounds must finalize the spend through the charged fallback"
+                );
+            };
+            assert!(fallback.chargeable_failure(), "{case}");
+            assert_eq!(fallback.output_address(), &FALLBACK_ADDRESS);
+            assert_eq!(fallback.amount(), DENOMINATION);
+            assert_eq!(fallback.notes().len(), expected_notes.len());
+            for (actual, expected) in fallback.notes().iter().zip(&expected_notes) {
+                assert_eq!(actual.nullifier, expected.nullifier);
+                assert_eq!(actual.cmx, expected.cmx);
+                assert_eq!(actual.cv_net, expected.cv_net);
+                assert_eq!(actual.encrypted_note, expected.encrypted_note);
+            }
+            assert_eq!(fallback.anchor(), &ANCHOR);
+            assert!(fallback.fee_amount() > 0 && fallback.fee_amount() < DENOMINATION);
+        } else {
+            assert!(result.is_valid(), "{:?}", result.errors);
+            assert_matches!(
+                result.into_data().unwrap(),
+                StateTransitionAction::IdentityCreateFromShieldedPoolAction(_)
+            );
+        }
+    }
+}
+
+#[test]
 fn validate_state_rejects_when_identity_already_exists_at_derived_id() {
     let platform_version = PlatformVersion::latest();
     let platform = setup_platform();
@@ -464,6 +577,7 @@ fn failure_path_charge_executes_through_execute_event() {
             &block_info,
             &transaction,
             None,
+            &mut 0,
             platform_version,
             &fee_versions,
         )
@@ -933,6 +1047,7 @@ fn executed_transition_result_proof_roundtrips() {
             &block_info,
             &transaction,
             None,
+            &mut 0,
             platform_version,
             &fee_versions,
         )
@@ -968,6 +1083,7 @@ fn executed_transition_result_proof_roundtrips() {
         &|_| Ok(None),
         platform_version,
     )
+    .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
     .expect(
         "the honest result proof must verify — absence-proof verification rejects the unbounded \
          all-keys identity sub-query",
@@ -1002,6 +1118,199 @@ fn executed_transition_result_proof_roundtrips() {
             expected_nullifiers.contains(nf),
             "proved nullifier {} should be one of the transition's nullifiers",
             hex::encode(nf)
+        );
+    }
+}
+
+/// `validate_shielded_proof` v1 refuses a key bound to a contract group before it verifies
+/// proofs of possession or the bundle, and before the Orchard sighash preimage is built.
+#[test]
+fn should_refuse_a_key_bound_to_a_contract_group_before_verifying_the_proof() {
+    use crate::execution::validation::state_transition::processor::traits::shielded_proof::StateTransitionShieldedProofValidationV0;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::identity::contract_bounds::ContractBounds;
+    use dpp::prelude::Identifier;
+    use dpp::state_transition::StateTransition;
+
+    let version = PlatformVersion::latest();
+    let bound_key = IdentityPublicKeyInCreationV0 {
+        id: 1,
+        key_type: KeyType::ECDSA_HASH160,
+        purpose: Purpose::AUTHENTICATION,
+        security_level: SecurityLevel::HIGH,
+        contract_bounds: Some(ContractBounds::ContractGroup {
+            id: Identifier::from([0x73; 32]),
+        }),
+        data: vec![0x72; 20].into(),
+        read_only: false,
+        signature: Default::default(),
+    };
+    let st: StateTransition =
+        transition(vec![master_key(), bound_key.into()], vec![action(30)]).into();
+    let result = st
+        .validate_shielded_proof(version)
+        .expect("a refusal is a consensus error, not an internal one");
+    assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
+    assert_eq!(result.errors[0].code(), 10535);
+
+    // Without the group bound the same transition gets past the refusal and fails later, on
+    // its placeholder proofs of possession.
+    let st: StateTransition = transition(vec![master_key()], vec![action(30)]).into();
+    let result = st
+        .validate_shielded_proof(version)
+        .expect("expected a consensus result");
+    assert!(
+        result.errors.iter().all(|error| error.code() != 10535),
+        "{:?}",
+        result.errors
+    );
+}
+
+/// `validate_shielded_proof` v1 refuses a key that carries a budget or an expiry before the
+/// Orchard sighash preimage is built: the preimage lists the key fields it binds, the limits are
+/// not among them, and when every key is hash based there is no proof of possession that would
+/// bind them instead. A version 1 key without limits holds nothing the preimage misses, so it is
+/// accepted.
+#[test]
+fn should_refuse_a_key_with_limits_before_verifying_the_proof() {
+    use crate::execution::validation::state_transition::processor::traits::shielded_proof::StateTransitionShieldedProofValidationV0;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
+    use dpp::state_transition::StateTransition;
+
+    let version = PlatformVersion::latest();
+    let version_1_key = |total_budget, expires_at| IdentityPublicKeyInCreationV1 {
+        id: 1,
+        key_type: KeyType::ECDSA_HASH160,
+        purpose: Purpose::AUTHENTICATION,
+        security_level: SecurityLevel::HIGH,
+        contract_bounds: None,
+        read_only: false,
+        data: vec![0x72; 20].into(),
+        total_budget,
+        expires_at,
+        signature: Default::default(),
+    };
+    let errors_for = |key: IdentityPublicKeyInCreationV1| {
+        let st: StateTransition =
+            transition(vec![master_key(), key.into()], vec![action(30)]).into();
+        st.validate_shielded_proof(version)
+            .expect("a refusal is a consensus error, not an internal one")
+            .errors
+    };
+
+    // Either limit is enough to be refused.
+    for key in [
+        version_1_key(Some(1_000), None),
+        version_1_key(None, Some(2_000)),
+        version_1_key(Some(1_000), Some(2_000)),
+    ] {
+        let errors = errors_for(key);
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(errors[0].code(), 10538);
+    }
+
+    // Without limits the version 1 key gets past the refusal and the transition fails later, on
+    // its placeholder proofs of possession, like one made of version 0 keys.
+    let errors = errors_for(version_1_key(None, None));
+    assert!(
+        errors.iter().all(|error| error.code() != 10538),
+        "{errors:?}"
+    );
+
+    // Why the refusal has to exist: the preimage does not see the limits.
+    let identity_id = [7u8; 32];
+    let fallback = dpp::address_funds::PlatformAddress::P2pkh([9u8; 20]);
+    let preimage =
+        |key: dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation| {
+            dpp::shielded::identity_create_from_shielded_extra_sighash_data(
+                &identity_id,
+                1_000,
+                &fallback,
+                &[key],
+                version,
+            )
+            .expect("expected a preimage")
+        };
+    assert_eq!(
+        preimage(version_1_key(Some(1_000), Some(2_000)).into()),
+        preimage(version_1_key(None, None).into())
+    );
+
+    // Why a version 1 key without limits is safe to accept: it binds the same bytes as the
+    // version 0 key with the same fields, so there is nothing a relay could change about it.
+    let version_0_key = IdentityPublicKeyInCreationV0 {
+        id: 1,
+        key_type: KeyType::ECDSA_HASH160,
+        purpose: Purpose::AUTHENTICATION,
+        security_level: SecurityLevel::HIGH,
+        contract_bounds: None,
+        read_only: false,
+        data: vec![0x72; 20].into(),
+        signature: Default::default(),
+    };
+    assert_eq!(
+        preimage(version_1_key(None, None).into()),
+        preimage(version_0_key.into())
+    );
+}
+
+/// A hash key's data is the hash itself, so from protocol version 14 `validate_shielded_proof`
+/// refuses a hash key whose data is not 20 bytes, before it verifies proofs of possession or the
+/// bundle. Without the check, a transition with a valid proof would fail once its key hash is
+/// taken, as an internal error.
+#[test]
+fn should_refuse_a_hash_key_of_the_wrong_size_before_verifying_the_proof() {
+    use crate::execution::validation::state_transition::processor::traits::shielded_proof::StateTransitionShieldedProofValidationV0;
+    use dpp::consensus::codes::ErrorWithCode;
+    use dpp::state_transition::StateTransition;
+
+    const INVALID_IDENTITY_PUBLIC_KEY_DATA: u32 = 10511;
+
+    let errors_for = |data_len: usize, version: &PlatformVersion| {
+        let hash_key = IdentityPublicKeyInCreationV0 {
+            id: 1,
+            key_type: KeyType::ECDSA_HASH160,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            read_only: false,
+            data: vec![0x72; data_len].into(),
+            signature: Default::default(),
+        };
+        let st: StateTransition =
+            transition(vec![master_key(), hash_key.into()], vec![action(31)]).into();
+        st.validate_shielded_proof(version)
+            .expect("a refusal is a consensus error, not an internal one")
+            .errors
+    };
+
+    for data_len in [0, 19, 21] {
+        let errors = errors_for(data_len, PlatformVersion::latest());
+        assert_eq!(errors.len(), 1, "{data_len} bytes: {errors:?}");
+        assert_eq!(
+            errors[0].code(),
+            INVALID_IDENTITY_PUBLIC_KEY_DATA,
+            "{data_len} bytes"
+        );
+    }
+
+    // A 20 byte hash key gets past the check, and so does a key of the wrong size at protocol
+    // version 13, which does not check the size of a hash key's data: the transition fails
+    // later, on the placeholder proof of possession of its master key.
+    for (data_len, version) in [
+        (20, PlatformVersion::latest()),
+        (
+            19,
+            PlatformVersion::get(13).expect("expected protocol version 13"),
+        ),
+    ] {
+        let errors = errors_for(data_len, version);
+        assert_matches!(
+            errors.as_slice(),
+            [ConsensusError::SignatureError(_)],
+            "{data_len} bytes at protocol version {}",
+            version.protocol_version
         );
     }
 }

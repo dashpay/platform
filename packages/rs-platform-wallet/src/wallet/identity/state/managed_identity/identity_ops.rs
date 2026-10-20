@@ -1,6 +1,6 @@
 //! Core identity operations for ManagedIdentity
 
-use super::key_storage::{DpnsNameInfo, IdentityStatus};
+use super::key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus};
 use super::ManagedIdentity;
 use crate::changeset::{IdentityChangeSet, IdentityEntry, IdentityKeyEntry, IdentityKeysChangeSet};
 use crate::wallet::persister::WalletPersister;
@@ -42,8 +42,8 @@ impl ManagedIdentity {
     /// [`IdentityKeyEntry`] upsert per registered public key on this
     /// identity.
     ///
-    /// Private-key bytes / derivation breadcrumbs no longer ride along
-    /// here — `ManagedIdentity` doesn't carry `key_storage` anymore,
+    /// Private-key bytes / derivation breadcrumbs do not ride along
+    /// here — `ManagedIdentity` carries no `key_storage`,
     /// so every emitted entry has `wallet_id == None` and
     /// `derivation_indices == None`. Callers that need the
     /// breadcrumb (e.g. registration / discovery) emit a dedicated
@@ -80,6 +80,7 @@ impl ManagedIdentity {
             identity,
             identity_index: Some(identity_index),
             last_updated_balance_block_time: None,
+            pending_balance_snapshot: None,
             last_synced_keys_block_time: None,
             status: Default::default(),
             dpns_names: Vec::new(),
@@ -100,6 +101,7 @@ impl ManagedIdentity {
             identity,
             identity_index: None,
             last_updated_balance_block_time: None,
+            pending_balance_snapshot: None,
             last_synced_keys_block_time: None,
             status: Default::default(),
             dpns_names: Vec::new(),
@@ -157,9 +159,23 @@ impl ManagedIdentity {
         // A failed overwrite restores the previous entry rather than deleting
         // it. Either way the persist result is returned, not swallowed: the
         // user-initiated send path (`send_payment`) surfaces it in the UI.
-        let previous = self.dashpay.payments.insert(tx_id.clone(), entry);
-        let cs = self.snapshot_changeset();
-        if let Err(e) = persister.store(cs.into()) {
+        let previous = self.dashpay.payments.insert(tx_id.clone(), entry.clone());
+        let mut cs: crate::changeset::PlatformWalletChangeSet = self.snapshot_changeset().into();
+        // Ride the changed row on `dashpay_payments_overlay` as well: the
+        // identity snapshot above carries the FULL payments map (blob-style
+        // persisters overwrite the whole entry), so a delta-style persister
+        // projecting the snapshot would replay the identity's complete
+        // history on every recorded payment — unbounded per-call work as
+        // history grows, against the `PlatformWalletPersistence` bounded-
+        // work guidance. The single-row overlay is the bounded carrier
+        // those persisters (the FFI vtable) project instead; every payment
+        // mutation funnels through this method, so the overlay sees every
+        // write.
+        cs.dashpay_payments_overlay = Some(BTreeMap::from([(
+            self.id(),
+            BTreeMap::from([(tx_id.clone(), entry)]),
+        )]));
+        if let Err(e) = persister.store(cs) {
             match previous {
                 Some(prev) => {
                     self.dashpay.payments.insert(tx_id, prev);
@@ -226,6 +242,111 @@ impl ManagedIdentity {
         }
     }
 
+    /// Merge fetched DPNS names into the list, skipping labels already
+    /// present, and persist the result as one snapshot. Returns how many
+    /// names were added; nothing is persisted when that is zero.
+    ///
+    /// Use this for a batch instead of calling [`Self::add_dpns_name`] per
+    /// name: every persisted snapshot is read downstream as the identity's
+    /// complete owned set, so a snapshot per name makes the first one look
+    /// like the others were lost. Add-only — DPNS queries are capped by a
+    /// limit, so a label missing from a fetch is not proof it left.
+    pub fn merge_dpns_names(
+        &mut self,
+        names: impl IntoIterator<Item = DpnsNameInfo>,
+        persister: &WalletPersister,
+    ) -> u32 {
+        let mut merged = self.dpns_names.clone();
+        let mut added = 0u32;
+        for name in names {
+            if merged.iter().any(|existing| existing.label == name.label) {
+                continue;
+            }
+            merged.push(name);
+            added += 1;
+        }
+        if added > 0 {
+            self.set_dpns_names(merged, persister);
+        }
+        added
+    }
+
+    /// Apply one DPNS username fetch for this identity; returns how many
+    /// labels are new.
+    ///
+    /// On a [`DpnsFetch::Complete`] fetch (the identity's whole owned set)
+    /// of an identity the wallet only watches (no `wallet_id`) the list is
+    /// replaced with it — departed names drop out, an empty result clears
+    /// the list — while labels already known keep their `acquired_at`, and
+    /// nothing is persisted when the list is unchanged.
+    ///
+    /// A wallet-owned identity only ever merges new labels
+    /// ([`Self::merge_dpns_names`]): the DPNS marketplace sweep discovers its
+    /// departures from this list and classifies them (sale, transfer,
+    /// deletion), so a username fetch must not remove a label first. A
+    /// [`DpnsFetch::Partial`] fetch cannot prove that a missing label left,
+    /// so it only merges too. Either way one snapshot at most.
+    pub fn apply_fetched_dpns_names(
+        &mut self,
+        names: Vec<DpnsNameInfo>,
+        fetch: DpnsFetch,
+        persister: &WalletPersister,
+    ) -> u32 {
+        if fetch == DpnsFetch::Partial || self.wallet_id.is_some() {
+            return self.merge_dpns_names(names, persister);
+        }
+        // Known labels still owned, in their existing order, then new ones.
+        let mut next: Vec<DpnsNameInfo> = self
+            .dpns_names
+            .iter()
+            .filter(|known| names.iter().any(|name| name.label == known.label))
+            .cloned()
+            .collect();
+        let mut added = 0u32;
+        for name in names {
+            if next.iter().any(|existing| existing.label == name.label) {
+                continue;
+            }
+            next.push(name);
+            added += 1;
+        }
+        if next != self.dpns_names {
+            self.set_dpns_names(next, persister);
+        }
+        added
+    }
+
+    /// Replace the DPNS-name list wholesale.
+    ///
+    /// Use this when a sync round (or a confirmed sale/transfer) has the
+    /// canonical set of names owned by this identity. `IdentityChangeSet::merge`
+    /// and replay both treat this field as a complete last-write-wins
+    /// snapshot, so names that left the identity (sold / transferred
+    /// away) are removed, including by an empty snapshot — the same
+    /// policy as [`Self::set_contested_dpns_names`].
+    pub fn set_dpns_names(&mut self, names: Vec<DpnsNameInfo>, persister: &WalletPersister) {
+        self.dpns_names = names;
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+    }
+
+    /// Remove one DPNS name by label (the sold / transferred-away case).
+    ///
+    /// No-op (no changeset emitted) when the label isn't present.
+    pub fn remove_dpns_name(&mut self, label: &str, persister: &WalletPersister) {
+        let before = self.dpns_names.len();
+        self.dpns_names.retain(|n| n.label != label);
+        if self.dpns_names.len() == before {
+            return;
+        }
+        let cs = self.snapshot_changeset();
+        if let Err(e) = persister.store(cs.into()) {
+            tracing::error!("Failed to persist changeset: {}", e);
+        }
+    }
+
     /// Append a contested DPNS label this identity is contending for.
     ///
     /// Dedup is enforced — the same label isn't added twice. When a
@@ -249,12 +370,9 @@ impl ManagedIdentity {
     /// Replace the contested-name list wholesale.
     ///
     /// Use this when a sync round pulls the canonical set of
-    /// contested names from Platform — the merge-time dedup-append
-    /// policy on `IdentityChangeSet` would otherwise accumulate
-    /// stale labels (contests that resolved but still appear in
-    /// the local cache). Emitting a full snapshot here + running
-    /// the sync path on identity reapply bakes the authoritative
-    /// set into state.
+    /// contested names from Platform. `IdentityChangeSet::merge` and replay
+    /// both treat this field as a complete last-write-wins snapshot so
+    /// resolved contests are removed, including by an empty snapshot.
     pub fn set_contested_dpns_names(&mut self, labels: Vec<String>, persister: &WalletPersister) {
         self.contested_dpns_names = labels;
         let cs = self.snapshot_changeset();
@@ -353,6 +471,54 @@ impl ManagedIdentity {
         // restored identity signable. Swallowing a failed store here would
         // leave the keys in memory but absent from the client store, so the
         // identity comes back watch-only after restart with no signal.
+        persister.store(cs)?;
+        Ok(())
+    }
+
+    /// Replace one public key of the identity with `public_key`, the key as it is stored
+    /// after a key limits update, and emit a single-key [`IdentityKeysChangeSet`] upsert for
+    /// it: the limits-side counterpart to [`Self::add_key`] and [`Self::disable_keys`].
+    ///
+    /// The key is layered by id, so a key the identity did not hold is added. The entry carries
+    /// no derivation breadcrumb: a limits update changes nothing about where the key came from,
+    /// and the managed identity does not know per key whether it was derived from the wallet
+    /// seed or supplied from outside. Every persister keeps the breadcrumb it already holds for
+    /// the key when an upsert arrives without one, so the private-key linkage survives the
+    /// upsert; inventing coordinates here would overwrite it for an external key.
+    ///
+    /// Does **not** touch the identity revision: a key limits update claims none.
+    pub fn replace_key(
+        &mut self,
+        public_key: dpp::identity::IdentityPublicKey,
+        persister: &WalletPersister,
+    ) -> Result<(), crate::changeset::PersistenceError> {
+        use dpp::identity::accessors::IdentitySettersV0;
+
+        let identity_id = self.id();
+        let key_id = public_key.id();
+        let public_key_hash = pubkey_hash_of(&public_key);
+
+        let mut keys = self.identity.public_keys().clone();
+        keys.insert(key_id, public_key.clone());
+        self.identity.set_public_keys(keys);
+
+        let mut keys_cs = IdentityKeysChangeSet::default();
+        keys_cs.upserts.insert(
+            (identity_id, key_id),
+            IdentityKeyEntry {
+                identity_id,
+                key_id,
+                public_key,
+                public_key_hash,
+                wallet_id: None,
+                derivation_indices: None,
+            },
+        );
+        let cs = crate::changeset::PlatformWalletChangeSet {
+            identities: Some(self.snapshot_changeset()),
+            identity_keys: Some(keys_cs),
+            ..Default::default()
+        };
         persister.store(cs)?;
         Ok(())
     }
@@ -532,6 +698,201 @@ mod tests {
         })
     }
 
+    /// A batch of fetched names lands as one snapshot carrying every name,
+    /// skips labels already held, and persists nothing when all are known.
+    /// One snapshot per name made the first read as the complete owned set.
+    #[test]
+    fn merge_dpns_names_persists_one_complete_snapshot() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
+        let name = |label: &str| DpnsNameInfo {
+            label: label.to_string(),
+            acquired_at: None,
+        };
+
+        managed.add_dpns_name(name("alice"), &p);
+        let added = managed.merge_dpns_names([name("alice"), name("bob"), name("carol")], &p);
+
+        assert_eq!(added, 2);
+        let stores = persister.stores.lock().unwrap();
+        assert_eq!(
+            stores.len(),
+            2,
+            "one store for add_dpns_name, one for the merge"
+        );
+        let labels: Vec<_> = stores[1]
+            .identities
+            .as_ref()
+            .expect("identity snapshot")
+            .identities
+            .values()
+            .next()
+            .expect("one identity")
+            .dpns_names
+            .iter()
+            .map(|n| n.label.as_str())
+            .collect();
+        assert_eq!(labels, ["alice", "bob", "carol"]);
+        drop(stores);
+
+        assert_eq!(managed.merge_dpns_names([name("bob")], &p), 0);
+        assert_eq!(
+            persister.stores.lock().unwrap().len(),
+            2,
+            "nothing new, nothing stored"
+        );
+    }
+
+    fn dpns_test_identity() -> (
+        ManagedIdentity,
+        std::sync::Arc<CapturingPersister>,
+        WalletPersister,
+    ) {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
+        (ManagedIdentity::new(identity, 0), persister, p)
+    }
+
+    fn dpns_name(label: &str, acquired_at: Option<u64>) -> DpnsNameInfo {
+        DpnsNameInfo {
+            label: label.to_string(),
+            acquired_at,
+        }
+    }
+
+    fn dpns_store_count(persister: &CapturingPersister) -> usize {
+        persister.stores.lock().unwrap().len()
+    }
+
+    /// A complete fetch is the owned set: a departed label drops out, a known
+    /// label keeps its timestamp, a new one is added — in one store.
+    #[test]
+    fn complete_dpns_fetch_replaces_the_list_in_one_store() {
+        let (mut managed, persister, p) = dpns_test_identity();
+        managed.set_dpns_names(
+            vec![dpns_name("alice", Some(10)), dpns_name("bob", Some(20))],
+            &p,
+        );
+        let before = dpns_store_count(&persister);
+
+        let added = managed.apply_fetched_dpns_names(
+            vec![dpns_name("bob", Some(99)), dpns_name("carol", Some(99))],
+            DpnsFetch::Complete,
+            &p,
+        );
+
+        assert_eq!(added, 1);
+        assert_eq!(
+            managed.dpns_names,
+            vec![dpns_name("bob", Some(20)), dpns_name("carol", Some(99))]
+        );
+        assert_eq!(dpns_store_count(&persister), before + 1);
+    }
+
+    /// An empty complete fetch means the identity owns no names any more.
+    #[test]
+    fn empty_complete_dpns_fetch_clears_the_list() {
+        let (mut managed, persister, p) = dpns_test_identity();
+        managed.set_dpns_names(vec![dpns_name("alice", Some(10))], &p);
+        let before = dpns_store_count(&persister);
+
+        assert_eq!(
+            managed.apply_fetched_dpns_names(Vec::new(), DpnsFetch::Complete, &p),
+            0
+        );
+
+        assert!(managed.dpns_names.is_empty());
+        assert_eq!(dpns_store_count(&persister), before + 1);
+    }
+
+    /// A full page may be truncated: a label missing from it stays.
+    #[test]
+    fn partial_dpns_fetch_only_adds() {
+        let (mut managed, _persister, p) = dpns_test_identity();
+        managed.set_dpns_names(vec![dpns_name("alice", Some(10))], &p);
+
+        let added =
+            managed.apply_fetched_dpns_names(vec![dpns_name("bob", None)], DpnsFetch::Partial, &p);
+
+        assert_eq!(added, 1);
+        assert_eq!(
+            managed.dpns_names,
+            vec![dpns_name("alice", Some(10)), dpns_name("bob", None)]
+        );
+    }
+
+    /// A wallet-owned identity never loses a label to a username fetch, even
+    /// a complete one (including an empty complete fetch): it only gains the
+    /// new labels. The marketplace sweep discovers its departures from this
+    /// list, so pruning here would erase the only trigger.
+    #[test]
+    fn complete_dpns_fetch_on_a_wallet_identity_only_adds() {
+        let (mut managed, _persister, p) = dpns_test_identity();
+        managed.wallet_id = Some([0xAB; 32]);
+        managed.set_dpns_names(
+            vec![dpns_name("alice", Some(10)), dpns_name("bob", Some(20))],
+            &p,
+        );
+
+        let added = managed.apply_fetched_dpns_names(
+            vec![dpns_name("carol", None)],
+            DpnsFetch::Complete,
+            &p,
+        );
+        assert_eq!(added, 1);
+        let labels: Vec<&str> = managed
+            .dpns_names
+            .iter()
+            .map(|n| n.label.as_str())
+            .collect();
+        assert_eq!(labels, ["alice", "bob", "carol"]);
+
+        assert_eq!(
+            managed.apply_fetched_dpns_names(Vec::new(), DpnsFetch::Complete, &p),
+            0
+        );
+        assert_eq!(
+            managed.dpns_names.len(),
+            3,
+            "an empty complete fetch prunes nothing"
+        );
+    }
+
+    /// Re-fetching the same complete set (even in another order, with fresh
+    /// timestamps) changes nothing and stores nothing.
+    #[test]
+    fn unchanged_complete_dpns_fetch_stores_nothing() {
+        let (mut managed, persister, p) = dpns_test_identity();
+        managed.set_dpns_names(
+            vec![dpns_name("alice", Some(10)), dpns_name("bob", Some(20))],
+            &p,
+        );
+        let before = dpns_store_count(&persister);
+
+        let added = managed.apply_fetched_dpns_names(
+            vec![dpns_name("bob", Some(99)), dpns_name("alice", Some(99))],
+            DpnsFetch::Complete,
+            &p,
+        );
+
+        assert_eq!(added, 0);
+        assert_eq!(dpns_store_count(&persister), before);
+        assert_eq!(managed.dpns_names[0], dpns_name("alice", Some(10)));
+    }
+
     /// `add_keys` records each key's breadcrumb (or `None` for watch-only)
     /// in one batched changeset and lands every key in the DPP identity.
     /// Pins the materialization side of the imported-identity-signing fix.
@@ -594,6 +955,64 @@ mod tests {
         assert_eq!(upserts[&(id, 1)].wallet_id, None);
     }
 
+    /// `replace_key` emits the updated key without a derivation breadcrumb. The managed
+    /// identity does not track per key whether it was wallet-derived, so coordinates built
+    /// from `(wallet_id, identity_index, key_id)` would be invented for an external key and
+    /// overwrite the linkage the client persisted; every persister keeps its existing
+    /// breadcrumb when an upsert carries none.
+    #[test]
+    fn replace_key_carries_no_breadcrumb() {
+        use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 7);
+        let wallet_id: WalletId = [0xAB; 32];
+        managed.wallet_id = Some(wallet_id);
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new(wallet_id, std::sync::Arc::clone(&persister) as _);
+
+        // Key 1 came from outside the wallet: no breadcrumb.
+        managed
+            .add_keys(
+                vec![crate::changeset::KeyWithBreadcrumb {
+                    key: key(1),
+                    breadcrumb: None,
+                }],
+                &p,
+            )
+            .expect("add_keys persists in test");
+
+        managed
+            .replace_key(key(1).with_limits(Some(1_000), None), &p)
+            .expect("replace_key persists in test");
+
+        let stores = persister.stores.lock().unwrap();
+        let cs = stores.last().expect("a changeset was stored");
+        let id = managed.id();
+        let entry = &cs
+            .identity_keys
+            .as_ref()
+            .expect("identity_keys present")
+            .upserts[&(id, 1)];
+        assert_eq!(entry.public_key.total_budget(), Some(1_000));
+        assert_eq!(
+            entry.derivation_indices, None,
+            "a limits-only upsert must not invent derivation coordinates"
+        );
+        assert_eq!(entry.wallet_id, None);
+        assert!(cs.identities.is_some(), "the identity snapshot rides along");
+        assert_eq!(
+            managed.identity.public_keys()[&1].total_budget(),
+            Some(1_000),
+            "the in-memory key is replaced"
+        );
+    }
+
     /// An empty `add_keys` is a no-op — no changeset stored.
     #[test]
     fn add_keys_empty_is_noop() {
@@ -641,6 +1060,94 @@ mod tests {
             result.is_err(),
             "a failed key-persist must surface, not be swallowed"
         );
+    }
+
+    /// Recording a payment emits BOTH carriers with the right granularity:
+    /// the identity snapshot keeps the full payments map (blob-style
+    /// persisters overwrite the whole entry) while
+    /// `dashpay_payments_overlay` carries EXACTLY the one changed
+    /// `(owner, txid)` row — never the accumulated history. Delta-style
+    /// persisters (the FFI vtable) project only the overlay, so this
+    /// single-row shape is what keeps per-store work bounded as history
+    /// grows: N recorded payments must emit N overlay rows total, not
+    /// 1 + 2 + … + N.
+    #[test]
+    fn record_dashpay_payment_emits_single_row_overlay() {
+        let owner_id = Identifier::from([1u8; 32]);
+        let identity = Identity::V0(IdentityV0 {
+            id: owner_id,
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let capturing = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new([0xAB; 32], capturing.clone() as _);
+        let alice = Identifier::from([0xAA; 32]);
+
+        managed
+            .record_dashpay_payment(
+                "tx1".into(),
+                PaymentEntry::new_sent(alice, 100, Some("rent".into())),
+                &p,
+            )
+            .expect("record tx1");
+        managed
+            .record_dashpay_payment(
+                "tx2".into(),
+                PaymentEntry::new_received(alice, 250, None),
+                &p,
+            )
+            .expect("record tx2");
+
+        let stores = capturing.stores.lock().unwrap();
+        assert_eq!(stores.len(), 2);
+
+        // Second store: the snapshot map has both rows, the overlay only
+        // the newly recorded one.
+        let cs = &stores[1];
+        let snapshot = cs
+            .identities
+            .as_ref()
+            .expect("identity snapshot rides along")
+            .identities
+            .get(&owner_id)
+            .expect("owner entry");
+        assert_eq!(
+            snapshot.dashpay_payments.len(),
+            2,
+            "full map on the blob carrier"
+        );
+        let overlay = cs
+            .dashpay_payments_overlay
+            .as_ref()
+            .expect("overlay must carry the delta")
+            .get(&owner_id)
+            .expect("owner overlay");
+        assert_eq!(
+            overlay.len(),
+            1,
+            "the overlay must carry only the changed row, not the history"
+        );
+        let row = overlay.get("tx2").expect("the just-recorded txid");
+        assert_eq!(row.amount_duffs, 250);
+
+        // A status flip re-emits the same single (owner, txid) row.
+        let mut confirmed = PaymentEntry::new_sent(alice, 100, Some("rent".into()));
+        confirmed.status = crate::wallet::identity::PaymentStatus::Confirmed;
+        drop(stores);
+        managed
+            .record_dashpay_payment("tx1".into(), confirmed.clone(), &p)
+            .expect("flip tx1");
+        let stores = capturing.stores.lock().unwrap();
+        let overlay = stores[2]
+            .dashpay_payments_overlay
+            .as_ref()
+            .expect("overlay on the flip")
+            .get(&owner_id)
+            .expect("owner overlay");
+        assert_eq!(overlay.len(), 1);
+        assert_eq!(overlay.get("tx1"), Some(&confirmed));
     }
 
     /// A failed payment persist must NOT strand the entry in memory — else a

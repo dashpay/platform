@@ -16,6 +16,58 @@ use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
 use drive::util::grove_operations::GroveDBToUse;
 
+const MAX_PATH_COMPONENTS: usize = 256;
+const MAX_GROVEDB_KEY_BYTES: usize = 255;
+const MAX_PATH_QUERY_BYTES: usize = 64 * 1024;
+
+fn validate_path_elements_input(
+    path: &[Vec<u8>],
+    keys: &[Vec<u8>],
+    max_keys: usize,
+) -> Result<(), QueryError> {
+    if keys.len() > max_keys {
+        return Err(QueryError::Query(QuerySyntaxError::InvalidLimit(format!(
+            "trying to get {} values, maximum is {}",
+            keys.len(),
+            max_keys
+        ))));
+    }
+
+    if path.len() > MAX_PATH_COMPONENTS {
+        return Err(QueryError::InvalidArgument(format!(
+            "path has {} components, maximum is {}",
+            path.len(),
+            MAX_PATH_COMPONENTS
+        )));
+    }
+
+    let total_bytes = path
+        .iter()
+        .chain(keys)
+        .try_fold(0usize, |total, component| {
+            if component.len() > MAX_GROVEDB_KEY_BYTES {
+                return Err(QueryError::InvalidArgument(format!(
+                    "path or key component has {} bytes, maximum is {}",
+                    component.len(),
+                    MAX_GROVEDB_KEY_BYTES
+                )));
+            }
+
+            total.checked_add(component.len()).ok_or_else(|| {
+                QueryError::InvalidArgument("path query byte count overflow".to_string())
+            })
+        })?;
+
+    if total_bytes > MAX_PATH_QUERY_BYTES {
+        return Err(QueryError::InvalidArgument(format!(
+            "path query has {} component bytes, maximum is {}",
+            total_bytes, MAX_PATH_QUERY_BYTES
+        )));
+    }
+
+    Ok(())
+}
+
 impl<C> Platform<C> {
     // Security note: this endpoint intentionally allows querying ANY path in GroveDB.
     // All platform state is public and authenticated -- every element has a Merkle
@@ -29,14 +81,12 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
         platform_version: &PlatformVersion,
     ) -> Result<QueryValidationResult<GetPathElementsResponseV0>, Error> {
-        if keys.len() > platform_version.drive_abci.query.max_returned_elements as usize {
-            return Ok(QueryValidationResult::new_with_error(QueryError::Query(
-                QuerySyntaxError::InvalidLimit(format!(
-                    "trying to get {} values, maximum is {}",
-                    keys.len(),
-                    platform_version.drive_abci.query.max_returned_elements
-                )),
-            )));
+        if let Err(error) = validate_path_elements_input(
+            &path,
+            &keys,
+            platform_version.drive_abci.query.max_returned_elements as usize,
+        ) {
+            return Ok(QueryValidationResult::new_with_error(error));
         }
         let response = if prove {
             let proof = check_validation_result_with_data!(self.drive.prove_elements(
@@ -164,6 +214,40 @@ mod tests {
                 drive::error::query::QuerySyntaxError::InvalidLimit(_)
             )]
         ));
+    }
+
+    #[test]
+    fn test_query_path_elements_enforces_path_and_component_byte_budgets() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let invalid_requests = [
+            GetPathElementsRequestV0 {
+                path: vec![vec![]; MAX_PATH_COMPONENTS + 1],
+                keys: vec![],
+                prove: false,
+            },
+            GetPathElementsRequestV0 {
+                path: vec![vec![0; MAX_GROVEDB_KEY_BYTES + 1]],
+                keys: vec![],
+                prove: true,
+            },
+            GetPathElementsRequestV0 {
+                path: vec![vec![0; MAX_GROVEDB_KEY_BYTES]; MAX_PATH_COMPONENTS],
+                keys: vec![vec![0; 255], vec![1; 255]],
+                prove: false,
+            },
+        ];
+
+        for request in invalid_requests {
+            let result = platform
+                .query_path_elements_v0(request, &state, version)
+                .expect("expected validation to succeed");
+            assert!(matches!(
+                result.errors.as_slice(),
+                [QueryError::InvalidArgument(_)]
+            ));
+            assert!(result.data.is_none());
+        }
     }
 
     #[test]

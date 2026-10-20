@@ -159,7 +159,7 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
 
         let state_transition = create_address_funding_from_asset_lock_transition(
             asset_lock_proof,
-            asset_lock_private_key.inner.as_ref(),
+            asset_lock_private_key.inner.as_secret_bytes(),
             BTreeMap::new(),
             self.clone(),
             fee_strategy,
@@ -238,7 +238,9 @@ async fn broadcast_and_collect_address_infos(
 ) -> Result<(AddressInfos, u64), Error> {
     ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
     let (st_result, metadata) = state_transition
-        .broadcast_and_wait_with_metadata::<StateTransitionProofResult>(sdk, settings)
+        .broadcast_and_wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
+            sdk, settings,
+        )
         .await?;
     match st_result {
         StateTransitionProofResult::VerifiedAddressInfos(address_infos) => {

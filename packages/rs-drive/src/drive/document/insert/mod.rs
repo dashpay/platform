@@ -7,6 +7,8 @@
 // This module contains functionality for adding a document
 mod add_document;
 
+mod add_history_operations;
+
 // Module: add_document_for_contract
 // This module contains functionality for adding a document for a given contract
 mod add_document_for_contract;
@@ -30,6 +32,11 @@ mod add_indices_for_index_level_for_contract_operations;
 // Module: add_indices_for_top_index_level_for_contract_operations
 // This module contains functionality for adding indices for the top index level for contract operations
 mod add_indices_for_top_index_level_for_contract_operations;
+
+// Module: add_preallocated_index_tree_operations
+// This module contains functionality for preallocating refersTo-determined
+// indexOnly index trees when the referenced document is inserted
+mod add_preallocated_index_tree_operations;
 
 // Module: add_reference_for_index_level_for_contract_operations
 // This module contains functionality for adding a reference for an index level for contract operations
@@ -328,13 +335,15 @@ mod tests {
             .expect("expected to override a document successfully");
     }
 
-    #[test]
-    fn test_add_dashpay_contact_request_with_fee() {
+    /// Inserts a dashpay contact request under a contract stored with `platform_version`
+    /// and asserts the exact fee.
+    fn do_test_add_dashpay_contact_request_with_fee(
+        platform_version: &PlatformVersion,
+        expected_processing_fee: u64,
+    ) {
         let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
-
-        let platform_version = PlatformVersion::latest();
 
         let contract = setup_contract(
             &drive,
@@ -343,7 +352,7 @@ mod tests {
             None,
             None::<fn(&mut DataContract)>,
             Some(&db_transaction),
-            None,
+            Some(platform_version),
         );
 
         let document_type = contract
@@ -390,10 +399,24 @@ mod tests {
                         &EPOCH_CHANGE_FEE_VERSION_TEST,
                         StorageDiskUsageCreditPerByte,
                     ),
-                processing_fee: 1695100,
+                processing_fee: expected_processing_fee,
                 ..Default::default()
             }
         );
+    }
+
+    #[test]
+    fn test_add_dashpay_contact_request_with_fee() {
+        // From protocol version 14 the contract's root subtree also holds the contract's
+        // version item, one more node to rehash on every document insert.
+        do_test_add_dashpay_contact_request_with_fee(PlatformVersion::latest(), 1695840);
+    }
+
+    #[test]
+    fn test_add_dashpay_contact_request_with_fee_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+
+        do_test_add_dashpay_contact_request_with_fee(platform_version, 1695100);
     }
 
     #[test]
@@ -405,11 +428,18 @@ mod tests {
                     &EPOCH_CHANGE_FEE_VERSION_TEST,
                     StorageDiskUsageCreditPerByte,
                 ),
-            processing_fee: 900400,
+            // the contract stored under the latest protocol version carries its
+            // version item, one more node to rehash on the insert
+            processing_fee: 901140,
             ..Default::default()
         };
 
-        do_test_add_dashpay_profile_with_fee(true, platform_version, expected_fee_result);
+        do_test_add_dashpay_profile_with_fee(
+            true,
+            PlatformVersion::latest(),
+            platform_version,
+            expected_fee_result,
+        );
     }
 
     #[test]
@@ -425,7 +455,12 @@ mod tests {
             ..Default::default()
         };
 
-        do_test_add_dashpay_profile_with_fee(false, platform_version, expected_fee_result);
+        do_test_add_dashpay_profile_with_fee(
+            false,
+            PlatformVersion::latest(),
+            platform_version,
+            expected_fee_result,
+        );
     }
 
     #[test]
@@ -437,11 +472,18 @@ mod tests {
                     &EPOCH_CHANGE_FEE_VERSION_TEST,
                     StorageDiskUsageCreditPerByte,
                 ),
-            processing_fee: 900400,
+            // the contract stored under the latest protocol version carries its
+            // version item, one more node to rehash on the insert
+            processing_fee: 901140,
             ..Default::default()
         };
 
-        do_test_add_dashpay_profile_with_fee(true, platform_version, expected_fee_result);
+        do_test_add_dashpay_profile_with_fee(
+            true,
+            PlatformVersion::latest(),
+            platform_version,
+            expected_fee_result,
+        );
     }
 
     #[test]
@@ -453,11 +495,41 @@ mod tests {
                     &EPOCH_CHANGE_FEE_VERSION_TEST,
                     StorageDiskUsageCreditPerByte,
                 ),
-            processing_fee: 73253660,
+            // estimated_size v1 adds the contract-version stamp varint to
+            // the worst-case document size
+            processing_fee: 73323060,
             ..Default::default()
         };
 
-        do_test_add_dashpay_profile_with_fee(false, platform_version, expected_fee_result);
+        do_test_add_dashpay_profile_with_fee(
+            false,
+            PlatformVersion::latest(),
+            platform_version,
+            expected_fee_result,
+        );
+    }
+
+    /// Before protocol version 14 the contract's root subtree has no version item, so the
+    /// insert rehashes one node fewer than under the latest version.
+    #[test]
+    fn test_add_dashpay_profile_with_fee_protocol_version_13_apply() {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+        let expected_fee_result = FeeResult {
+            storage_fee: 1305
+                * Epoch::new(0).unwrap().cost_for_known_cost_item(
+                    &EPOCH_CHANGE_FEE_VERSION_TEST,
+                    StorageDiskUsageCreditPerByte,
+                ),
+            processing_fee: 900400,
+            ..Default::default()
+        };
+
+        do_test_add_dashpay_profile_with_fee(
+            true,
+            platform_version,
+            platform_version,
+            expected_fee_result,
+        );
     }
 
     /// This helper sets up the environment, adds a dashpay profile document,
@@ -465,10 +537,14 @@ mod tests {
     ///
     /// `apply`: if true, we commit the transaction (applying the changes).
     ///          if false, we do not commit, so changes are only estimated.
-    /// `platform_version`: which PlatformVersion to use.
+    /// `contract_platform_version`: which PlatformVersion stores the contract; from
+    ///          protocol version 14 that adds the contract's version item to its root
+    ///          subtree, one more node to rehash on every document insert.
+    /// `platform_version`: which PlatformVersion to use for the document insert.
     /// `expected_fee_result`: the FeeResult we expect in the test assertion.
     fn do_test_add_dashpay_profile_with_fee(
         apply: bool,
+        contract_platform_version: &PlatformVersion,
         platform_version: &PlatformVersion,
         expected_fee_result: FeeResult,
     ) {
@@ -484,7 +560,7 @@ mod tests {
             None,
             None::<fn(&mut DataContract)>,
             Some(&db_transaction),
-            None,
+            Some(contract_platform_version),
         );
 
         let document_type = contract
@@ -702,13 +778,15 @@ mod tests {
         assert_eq!(actual_drive_operations.len(), fee_drive_operations.len());
     }
 
-    #[test]
-    fn test_add_dpns_document_with_fee() {
+    /// Inserts a DPNS domain under a contract stored with `platform_version` and asserts
+    /// the exact fee.
+    fn do_test_add_dpns_document_with_fee(
+        platform_version: &PlatformVersion,
+        expected_processing_fee: u64,
+    ) {
         let drive = setup_drive_with_initial_state_structure(None);
 
         let db_transaction = drive.grove.start_transaction();
-
-        let platform_version = PlatformVersion::latest();
 
         let contract = setup_contract(
             &drive,
@@ -717,7 +795,7 @@ mod tests {
             None,
             None::<fn(&mut DataContract)>,
             Some(&db_transaction),
-            None,
+            Some(platform_version),
         );
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
@@ -763,7 +841,7 @@ mod tests {
                         &EPOCH_CHANGE_FEE_VERSION_TEST,
                         StorageDiskUsageCreditPerByte,
                     ),
-                processing_fee: 1264300,
+                processing_fee: expected_processing_fee,
                 ..Default::default()
             }
         );
@@ -773,6 +851,20 @@ mod tests {
             .commit_transaction(db_transaction)
             .unwrap()
             .expect("unable to commit transaction");
+    }
+
+    #[test]
+    fn test_add_dpns_document_with_fee() {
+        // From protocol version 14 the contract's root subtree also holds the contract's
+        // version item, one more node to rehash on every document insert.
+        do_test_add_dpns_document_with_fee(PlatformVersion::latest(), 1265040);
+    }
+
+    #[test]
+    fn test_add_dpns_document_with_fee_protocol_version_13() {
+        let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+
+        do_test_add_dpns_document_with_fee(platform_version, 1264300);
     }
 
     #[test]
@@ -1012,9 +1104,13 @@ mod tests {
 
         // Fetch the document back and verify content matches
         let sql_string = "select * from profile";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)
@@ -1131,9 +1227,13 @@ mod tests {
 
         // Fetch both documents back and verify they exist with correct content
         let sql_string = "select * from person order by firstName asc limit 100";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None, platform_version)
@@ -1318,9 +1418,13 @@ mod tests {
 
         // Verify both documents were inserted by fetching them
         let sql_string = "select * from contactRequest";
-        let query =
-            DriveDocumentQuery::from_sql_expr(sql_string, &contract, Some(&DriveConfig::default()))
-                .expect("should build query");
+        let query = DriveDocumentQuery::from_sql_expr(
+            sql_string,
+            &contract,
+            Some(&DriveConfig::default()),
+            platform_version,
+        )
+        .expect("should build query");
 
         let (results, _, _) = query
             .execute_raw_results_no_proof(&drive, None, Some(&db_transaction), platform_version)

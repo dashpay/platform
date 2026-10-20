@@ -41,7 +41,7 @@ services:
       - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/core/dash.conf:/home/dash/.dashcore/dash.conf:ro
     command:
       - dashd
-    stop_grace_period: 30s
+    stop_grace_period: 120s
     environment:
       # Solving issue under WSL when after restart container volume is not being mounted properly
       # https://github.com/docker/for-win/issues/4812
@@ -233,6 +233,7 @@ services:
       - DASH_RPC_USER=quorum_list
       - DASH_RPC_PASSWORD=${CORE_RPC_USERS_QUORUM_LIST_PASSWORD:?err}
       - QUORUM_PREVIOUS_BLOCKS_OFFSET=${PLATFORM_QUORUM_LIST_PREVIOUS_BLOCKS_OFFSET:?err}
+      - QUORUM_CACHE_TTL_SECONDS=${PLATFORM_QUORUM_LIST_CACHE_TTL_SECONDS:?err}
       - DASH_NETWORK=${DASH_CORE_NETWORK:?err}
       - VERSION_CHECK_HOST=${PLATFORM_QUORUM_LIST_VERSION_CHECK_HOST:-}
       - ADDRESS_HOST_OVERRIDE=${PLATFORM_QUORUM_LIST_ADDRESS_HOST_OVERRIDE:-}

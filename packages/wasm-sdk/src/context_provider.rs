@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
-use dash_sdk::platform::ContextProvider;
+use dash_sdk::dpp::dashcore::Network;
+use dash_sdk::platform::{ContextProvider, QuorumKeyFuture};
 use dash_sdk::{
     dpp::{data_contract::TokenConfiguration, prelude::CoreBlockHeight, version::PlatformVersion},
     error::ContextProviderError,
     platform::{DataContract, Identifier},
 };
+use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::error::WasmSdkError;
@@ -16,15 +18,22 @@ pub struct WasmContext {}
 
 /// A wrapper for TrustedHttpContextProvider that works in WASM.
 ///
-/// Holds pre-fetched quorum keys and discovered masternode addresses for
-/// proof verification and network connectivity. Create one via the async
-/// `prefetchMainnet()`, `prefetchTestnet()`, `prefetchDevnet()`, or
-/// `prefetchLocal()` factory methods, then pass it to a builder via
-/// `withTrustedContext()`.
+/// Holds pre-fetched quorum keys for proof verification and, unless discovery
+/// was skipped, the masternode addresses the quorum service advertises. Create
+/// one via the async `prefetchMainnet()`, `prefetchTestnet()`,
+/// `prefetchDevnet()`, or `prefetchLocal()` factory methods, then pass it to a
+/// builder via `withTrustedContext()`.
+///
+/// Every factory takes an optional trailing `discoverAddresses` flag. The
+/// current and previous quorum lists are always fetched, concurrently; the
+/// masternode list is fetched alongside them unless the flag is `false`. A
+/// builder created with `WasmSdkBuilder.withAddresses(...)` ignores discovered
+/// addresses, so callers with explicit addresses should pass `false` and save
+/// the round trip.
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct WasmTrustedContext {
-    inner: std::sync::Arc<rs_sdk_trusted_context_provider::TrustedHttpContextProvider>,
+    inner: std::sync::Arc<TrustedHttpContextProvider>,
     discovered_addresses: Vec<rs_dapi_client::Address>,
 }
 
@@ -86,6 +95,19 @@ impl ContextProvider for WasmTrustedContext {
             .get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
     }
 
+    fn fetch_quorum_public_key(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Option<QuorumKeyFuture> {
+        // The prefetched keys are never refetched inside the synchronous
+        // lookup, where wasm cannot block; this is how a newer quorum's key
+        // is fetched.
+        self.inner
+            .fetch_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height)
+    }
+
     fn get_data_contract(
         &self,
         id: &Identifier,
@@ -113,48 +135,60 @@ impl WasmTrustedContext {
     ///
     /// Returns a ready-to-use `WasmTrustedContext` that can be passed to
     /// `WasmSdkBuilder.mainnet().withTrustedContext(context)`.
+    ///
+    /// Pass `discoverAddresses: false` to skip the masternode discovery request
+    /// when the SDK is built with `WasmSdkBuilder.withAddresses(...)`, which
+    /// ignores discovered addresses anyway. Defaults to `true`.
     #[wasm_bindgen(js_name = "prefetchMainnet")]
-    pub async fn prefetch_mainnet() -> Result<WasmTrustedContext, WasmSdkError> {
-        Self::prefetch_for(dash_sdk::dpp::dashcore::Network::Mainnet, None, None).await
+    pub async fn prefetch_mainnet(
+        #[wasm_bindgen(js_name = "discoverAddresses")] discover_addresses: Option<bool>,
+    ) -> Result<WasmTrustedContext, WasmSdkError> {
+        Self::prefetch_for(Network::Mainnet, None, None, discover_addresses).await
     }
 
     /// Pre-fetch quorum keys and masternode addresses for mainnet using a
     /// fully-specified quorum base URL (useful for testing against a staging
     /// or self-hosted quorums endpoint).
+    ///
+    /// Pass `discoverAddresses: false` to skip the masternode discovery request
+    /// when the SDK is built with `WasmSdkBuilder.withAddresses(...)`, which
+    /// ignores discovered addresses anyway. Defaults to `true`.
     #[wasm_bindgen(js_name = "prefetchMainnetWithUrl")]
     pub async fn prefetch_mainnet_with_url(
         base_url: String,
+        #[wasm_bindgen(js_name = "discoverAddresses")] discover_addresses: Option<bool>,
     ) -> Result<WasmTrustedContext, WasmSdkError> {
-        Self::prefetch_for(
-            dash_sdk::dpp::dashcore::Network::Mainnet,
-            None,
-            Some(base_url),
-        )
-        .await
+        Self::prefetch_for(Network::Mainnet, None, Some(base_url), discover_addresses).await
     }
 
     /// Pre-fetch quorum keys and masternode addresses for testnet.
     ///
     /// Returns a ready-to-use `WasmTrustedContext` that can be passed to
     /// `WasmSdkBuilder.testnet().withTrustedContext(context)`.
+    ///
+    /// Pass `discoverAddresses: false` to skip the masternode discovery request
+    /// when the SDK is built with `WasmSdkBuilder.withAddresses(...)`, which
+    /// ignores discovered addresses anyway. Defaults to `true`.
     #[wasm_bindgen(js_name = "prefetchTestnet")]
-    pub async fn prefetch_testnet() -> Result<WasmTrustedContext, WasmSdkError> {
-        Self::prefetch_for(dash_sdk::dpp::dashcore::Network::Testnet, None, None).await
+    pub async fn prefetch_testnet(
+        #[wasm_bindgen(js_name = "discoverAddresses")] discover_addresses: Option<bool>,
+    ) -> Result<WasmTrustedContext, WasmSdkError> {
+        Self::prefetch_for(Network::Testnet, None, None, discover_addresses).await
     }
 
     /// Pre-fetch quorum keys and masternode addresses for testnet using a
     /// fully-specified quorum base URL (useful for testing against a staging
     /// or self-hosted quorums endpoint).
+    ///
+    /// Pass `discoverAddresses: false` to skip the masternode discovery request
+    /// when the SDK is built with `WasmSdkBuilder.withAddresses(...)`, which
+    /// ignores discovered addresses anyway. Defaults to `true`.
     #[wasm_bindgen(js_name = "prefetchTestnetWithUrl")]
     pub async fn prefetch_testnet_with_url(
         base_url: String,
+        #[wasm_bindgen(js_name = "discoverAddresses")] discover_addresses: Option<bool>,
     ) -> Result<WasmTrustedContext, WasmSdkError> {
-        Self::prefetch_for(
-            dash_sdk::dpp::dashcore::Network::Testnet,
-            None,
-            Some(base_url),
-        )
-        .await
+        Self::prefetch_for(Network::Testnet, None, Some(base_url), discover_addresses).await
     }
 
     /// Pre-fetch quorum keys and masternode addresses for a devnet.
@@ -164,14 +198,16 @@ impl WasmTrustedContext {
     ///
     /// Returns a ready-to-use `WasmTrustedContext` that can be passed to
     /// `WasmSdkBuilder.newDevnet().withTrustedContext(context)`.
+    ///
+    /// Pass `discoverAddresses: false` to skip the masternode discovery request
+    /// when the SDK is built with `WasmSdkBuilder.withAddresses(...)`, which
+    /// ignores discovered addresses anyway. Defaults to `true`.
     #[wasm_bindgen(js_name = "prefetchDevnet")]
-    pub async fn prefetch_devnet(devnet_name: String) -> Result<WasmTrustedContext, WasmSdkError> {
-        Self::prefetch_for(
-            dash_sdk::dpp::dashcore::Network::Devnet,
-            Some(devnet_name),
-            None,
-        )
-        .await
+    pub async fn prefetch_devnet(
+        devnet_name: String,
+        #[wasm_bindgen(js_name = "discoverAddresses")] discover_addresses: Option<bool>,
+    ) -> Result<WasmTrustedContext, WasmSdkError> {
+        Self::prefetch_for(Network::Devnet, Some(devnet_name), None, discover_addresses).await
     }
 
     /// Pre-fetch quorum keys and masternode addresses for a devnet using a
@@ -181,16 +217,16 @@ impl WasmTrustedContext {
     /// `https://quorums.<devnet_name>.networks.dash.org` URL produced by
     /// `prefetchDevnet` is not yet deployed for a devnet, or when pointing
     /// at a non-standard quorums endpoint.
+    ///
+    /// Pass `discoverAddresses: false` to skip the masternode discovery request
+    /// when the SDK is built with `WasmSdkBuilder.withAddresses(...)`, which
+    /// ignores discovered addresses anyway. Defaults to `true`.
     #[wasm_bindgen(js_name = "prefetchDevnetWithUrl")]
     pub async fn prefetch_devnet_with_url(
         base_url: String,
+        #[wasm_bindgen(js_name = "discoverAddresses")] discover_addresses: Option<bool>,
     ) -> Result<WasmTrustedContext, WasmSdkError> {
-        Self::prefetch_for(
-            dash_sdk::dpp::dashcore::Network::Devnet,
-            None,
-            Some(base_url),
-        )
-        .await
+        Self::prefetch_for(Network::Devnet, None, Some(base_url), discover_addresses).await
     }
 
     /// Pre-fetch quorum keys and masternode addresses for a local network.
@@ -199,57 +235,79 @@ impl WasmTrustedContext {
     ///
     /// Returns a ready-to-use `WasmTrustedContext` that can be passed to
     /// `WasmSdkBuilder.local().withTrustedContext(context)`.
+    ///
+    /// Pass `discoverAddresses: false` to skip the masternode discovery request
+    /// when the SDK is built with `WasmSdkBuilder.withAddresses(...)`, which
+    /// ignores discovered addresses anyway. Defaults to `true`.
     #[wasm_bindgen(js_name = "prefetchLocal")]
-    pub async fn prefetch_local() -> Result<WasmTrustedContext, WasmSdkError> {
-        Self::prefetch_local_with_url("http://127.0.0.1:22444".to_string()).await
+    pub async fn prefetch_local(
+        #[wasm_bindgen(js_name = "discoverAddresses")] discover_addresses: Option<bool>,
+    ) -> Result<WasmTrustedContext, WasmSdkError> {
+        Self::prefetch_local_with_url("http://127.0.0.1:22444".to_string(), discover_addresses)
+            .await
     }
 
     /// Pre-fetch quorum keys and masternode addresses for a local network
     /// using a custom quorum sidecar URL.
+    ///
+    /// Pass `discoverAddresses: false` to skip the masternode discovery request
+    /// when the SDK is built with `WasmSdkBuilder.withAddresses(...)`, which
+    /// ignores discovered addresses anyway. Defaults to `true`.
     #[wasm_bindgen(js_name = "prefetchLocalWithUrl")]
     pub async fn prefetch_local_with_url(
         base_url: String,
+        #[wasm_bindgen(js_name = "discoverAddresses")] discover_addresses: Option<bool>,
     ) -> Result<WasmTrustedContext, WasmSdkError> {
-        Self::prefetch_for(
-            dash_sdk::dpp::dashcore::Network::Regtest,
-            None,
-            Some(base_url),
-        )
-        .await
+        Self::prefetch_for(Network::Regtest, None, Some(base_url), discover_addresses).await
     }
 }
 
 impl WasmTrustedContext {
+    /// Refresh quorum keys before proof verification.
+    pub(crate) async fn refresh_quorums(&self) -> Result<(), WasmSdkError> {
+        self.inner
+            .refresh_quorum_caches()
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to refresh quorums: {}", e)))
+    }
+
     /// Shared constructor used by every `prefetch*` factory. When `base_url`
     /// is `Some`, it overrides the default URL derived from `network` +
     /// `devnet_name` (the validator inside `new_with_url` still runs).
+    /// `discover_addresses` defaults to `true`; see the type-level docs.
     async fn prefetch_for(
-        network: dash_sdk::dpp::dashcore::Network,
+        network: Network,
         devnet_name: Option<String>,
         base_url: Option<String>,
+        discover_addresses: Option<bool>,
     ) -> Result<WasmTrustedContext, WasmSdkError> {
         let cache_size = std::num::NonZeroUsize::new(100).unwrap();
         let inner = match base_url {
-            Some(url) => rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
-                network, url, cache_size,
-            ),
-            None => rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
-                network,
-                devnet_name,
-                cache_size,
-            ),
+            Some(url) => TrustedHttpContextProvider::new_with_url(network, url, cache_size),
+            None => TrustedHttpContextProvider::new(network, devnet_name, cache_size),
         }
         .map_err(|e| WasmSdkError::generic(format!("Failed to create context provider: {}", e)))?
         .with_refetch_if_not_found(false);
 
         let inner = Arc::new(inner);
 
-        inner
-            .update_quorum_caches()
-            .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to prefetch quorums: {}", e)))?;
-
-        let discovered_addresses = Self::fetch_addresses_from(&inner).await?;
+        // The quorum keys are what the context is for; the masternode list only
+        // feeds `withTrustedContext` on builders without explicit addresses.
+        // Everything that is fetched goes out at once, so the boot path pays a
+        // single round trip instead of one per request.
+        let quorums = async {
+            inner
+                .update_quorum_caches()
+                .await
+                .map_err(|e| WasmSdkError::generic(format!("Failed to prefetch quorums: {}", e)))
+        };
+        let discovered_addresses = if discover_addresses.unwrap_or(true) {
+            let ((), addresses) = futures::try_join!(quorums, Self::fetch_addresses_from(&inner))?;
+            addresses
+        } else {
+            quorums.await?;
+            Vec::new()
+        };
 
         Ok(WasmTrustedContext {
             inner,
@@ -259,7 +317,7 @@ impl WasmTrustedContext {
 
     /// Fetch masternode addresses from the trusted provider and convert to `Vec<Address>`.
     async fn fetch_addresses_from(
-        inner: &rs_sdk_trusted_context_provider::TrustedHttpContextProvider,
+        inner: &TrustedHttpContextProvider,
     ) -> Result<Vec<rs_dapi_client::Address>, WasmSdkError> {
         let urls = inner
             .fetch_masternode_addresses()
@@ -280,7 +338,8 @@ impl WasmTrustedContext {
         Ok(addresses)
     }
 
-    /// Get the discovered addresses (for use by the builder).
+    /// Get the discovered addresses (for use by the builder). Empty when the
+    /// context was prefetched with `discoverAddresses: false`.
     pub(crate) fn discovered_addresses(&self) -> &[rs_dapi_client::Address] {
         &self.discovered_addresses
     }
@@ -288,6 +347,11 @@ impl WasmTrustedContext {
     /// Add a data contract to the known contracts cache
     pub fn add_known_contract(&self, contract: DataContract) {
         self.inner.add_known_contract(contract);
+    }
+
+    /// Keep the strictly newer contract, preserving the existing body on ties.
+    pub(crate) fn add_known_contract_if_newer(&self, contract: DataContract) -> Arc<DataContract> {
+        self.inner.add_known_contract_if_newer(contract)
     }
 
     /// Get a data contract from the known contracts cache
@@ -307,24 +371,348 @@ impl WasmTrustedContext {
 
     /// Build a `WasmTrustedContext` with the given `discovered_addresses` for
     /// use in unit tests. The inner provider is constructed against a local
-    /// loopback URL — its quorum/contract caches are unused by the tests and
-    /// the URL is never dialled — so we get a real `Arc<TrustedHttpContextProvider>`
-    /// without any network side effects.
+    /// loopback URL that these tests do not dial, providing a real
+    /// `Arc<TrustedHttpContextProvider>` without network side effects.
     #[cfg(test)]
     pub(crate) fn for_testing(
         discovered_addresses: Vec<rs_dapi_client::Address>,
     ) -> WasmTrustedContext {
+        Self::for_testing_with_url(discovered_addresses, "http://127.0.0.1:22444".to_string())
+    }
+
+    /// Build a test context whose provider reads from a controllable endpoint.
+    #[cfg(test)]
+    pub(crate) fn for_testing_with_url(
+        discovered_addresses: Vec<rs_dapi_client::Address>,
+        base_url: String,
+    ) -> WasmTrustedContext {
         let cache_size = std::num::NonZeroUsize::new(1).unwrap();
-        let inner = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
-            dash_sdk::dpp::dashcore::Network::Regtest,
-            "http://127.0.0.1:22444".to_string(),
-            cache_size,
-        )
-        .expect("loopback URL must construct a TrustedHttpContextProvider");
+        let inner =
+            TrustedHttpContextProvider::new_with_url(Network::Regtest, base_url, cache_size)
+                .expect("test URL must construct a TrustedHttpContextProvider")
+                .with_refetch_if_not_found(false);
 
         WasmTrustedContext {
             inner: Arc::new(inner),
             discovered_addresses,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::dpp::bls::SecretKey;
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    fn quorum_key(seed: u8) -> [u8; 48] {
+        SecretKey::from_ikm(&[seed; 32])
+            .expect("32 bytes of keying material")
+            .public_key()
+            .to_bytes()
+    }
+
+    fn quorums_body(hash: u8, key: u8) -> String {
+        serde_json::json!({
+            "success": true,
+            "data": [{
+                "quorum_hash": hex::encode([hash; 32]),
+                "key": hex::encode(quorum_key(key)),
+                "height": 1,
+                "valid_members_count": 3
+            }]
+        })
+        .to_string()
+    }
+
+    fn previous_body(hash: u8, key: u8) -> String {
+        serde_json::json!({
+            "success": true,
+            "data": {
+                "height": 1,
+                "quorums": [{
+                    "quorum_hash": hex::encode([hash; 32]),
+                    "key": hex::encode(quorum_key(key)),
+                    "height": 1,
+                    "valid_members_count": 3
+                }]
+            }
+        })
+        .to_string()
+    }
+
+    fn masternodes_body() -> String {
+        serde_json::json!({
+            "success": true,
+            "data": [
+                {
+                    "address": "203.0.113.5:9999",
+                    "status": "ENABLED",
+                    "versionCheck": "success",
+                    "platformHTTPPort": 1443
+                },
+                {
+                    "address": "203.0.113.6:9999",
+                    "status": "POSE_BANNED",
+                    "versionCheck": "success",
+                    "platformHTTPPort": 1443
+                }
+            ]
+        })
+        .to_string()
+    }
+
+    /// Serve one `200` response per `(path, body)`, matched by request path.
+    /// With `hold_until_all_connected`, every expected connection is accepted
+    /// before any is answered: a client that issued the requests one after
+    /// another would never open the next one, the accept deadline would fire,
+    /// and the held connection would drop, failing the client. Passing proves
+    /// the requests were in flight together. A request for a path with no
+    /// pending entry panics the server thread, which `join()` reports.
+    fn spawn_endpoint(
+        responses: Vec<(&str, String)>,
+        hold_until_all_connected: bool,
+    ) -> (String, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind mock quorum endpoint");
+        listener
+            .set_nonblocking(true)
+            .expect("make mock endpoint bounded");
+        let address = listener.local_addr().expect("read mock endpoint address");
+        let mut pending = responses
+            .into_iter()
+            .map(|(path, body)| (path.to_string(), body))
+            .collect::<Vec<_>>();
+
+        let handle = thread::spawn(move || {
+            let mut held = Vec::new();
+            while !pending.is_empty() {
+                let mut stream = accept_before(&listener, Instant::now() + Duration::from_secs(5));
+                let path = read_request_path(&stream);
+                let index = pending
+                    .iter()
+                    .position(|(expected_path, _)| *expected_path == path)
+                    .unwrap_or_else(|| panic!("unexpected quorum request path {path}"));
+                let (_, body) = pending.remove(index);
+                if hold_until_all_connected {
+                    held.push((stream, body));
+                } else {
+                    write_response(&mut stream, &body);
+                }
+            }
+            for (mut stream, body) in held {
+                write_response(&mut stream, &body);
+            }
+        });
+
+        (format!("http://{}", address), handle)
+    }
+
+    fn accept_before(listener: &TcpListener, deadline: Instant) -> TcpStream {
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    // On BSD-derived systems an accepted socket inherits the
+                    // listener's non-blocking mode, so reading the request
+                    // could otherwise fail before the client has written it.
+                    stream
+                        .set_nonblocking(false)
+                        .expect("make accepted quorum request blocking");
+                    return stream;
+                }
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && Instant::now() < deadline =>
+                {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("accept quorum request: {}", error),
+            }
+        }
+    }
+
+    fn read_request_path(stream: &TcpStream) -> String {
+        let mut reader = BufReader::new(stream.try_clone().expect("clone quorum request stream"));
+        let mut request_line = String::new();
+        reader
+            .read_line(&mut request_line)
+            .expect("read quorum request line");
+        let path = request_line
+            .split_whitespace()
+            .nth(1)
+            .expect("quorum request line must carry a path")
+            .to_string();
+        loop {
+            let mut header = String::new();
+            reader
+                .read_line(&mut header)
+                .expect("read quorum request header");
+            if header == "\r\n" || header.is_empty() {
+                break;
+            }
+        }
+        path
+    }
+
+    fn write_response(stream: &mut TcpStream, body: &str) {
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .expect("write quorum response");
+        stream.flush().expect("flush quorum response");
+    }
+
+    #[tokio::test]
+    async fn prefetch_skips_masternode_discovery_when_disabled() {
+        let (base_url, server) = spawn_endpoint(
+            vec![
+                ("/quorums", quorums_body(0x11, 0x41)),
+                ("/previous", previous_body(0x12, 0x42)),
+            ],
+            false,
+        );
+
+        let context =
+            WasmTrustedContext::prefetch_for(Network::Regtest, None, Some(base_url), Some(false))
+                .await
+                .expect("quorum-only prefetch must succeed");
+
+        assert!(context.discovered_addresses().is_empty());
+        assert_eq!(
+            context
+                .get_quorum_public_key(1, [0x11; 32], 1)
+                .expect("current quorum key must be cached"),
+            quorum_key(0x41)
+        );
+        assert_eq!(
+            context
+                .get_quorum_public_key(1, [0x12; 32], 1)
+                .expect("previous quorum key must be cached"),
+            quorum_key(0x42)
+        );
+        server
+            .join()
+            .expect("the endpoint must see exactly the two quorum requests");
+    }
+
+    #[tokio::test]
+    async fn prefetch_discovers_addresses_in_the_same_round_trip_as_quorums() {
+        let (base_url, server) = spawn_endpoint(
+            vec![
+                ("/quorums", quorums_body(0x21, 0x51)),
+                ("/previous", previous_body(0x22, 0x52)),
+                ("/masternodes", masternodes_body()),
+            ],
+            true,
+        );
+
+        let context =
+            WasmTrustedContext::prefetch_for(Network::Regtest, None, Some(base_url), None)
+                .await
+                .expect("prefetch with discovery must succeed");
+
+        let discovered: Vec<(Option<&str>, Option<u16>)> = context
+            .discovered_addresses()
+            .iter()
+            .map(|address| (address.uri().host(), address.uri().port_u16()))
+            .collect();
+        assert_eq!(discovered, vec![(Some("203.0.113.5"), Some(1443))]);
+        assert_eq!(
+            context
+                .get_quorum_public_key(1, [0x21; 32], 1)
+                .expect("current quorum key must be cached"),
+            quorum_key(0x51)
+        );
+        server
+            .join()
+            .expect("all three requests must have been in flight together");
+    }
+
+    /// A browser app keeps its SDK for the whole session, but the context
+    /// fetched its quorum keys when it connected. Through the SDK it builds, a
+    /// quorum newer than that prefetch must be fetchable, or every proof it
+    /// signs fails until the page reloads.
+    #[tokio::test]
+    async fn should_fetch_a_quorum_newer_than_the_prefetch_through_the_sdk() {
+        let (base_url, server) = spawn_endpoint(
+            vec![
+                ("/quorums", quorums_body(0x11, 0x41)),
+                ("/previous", previous_body(0x12, 0x42)),
+                ("/quorums", quorums_body(0x13, 0x43)),
+                ("/previous", previous_body(0x12, 0x42)),
+            ],
+            false,
+        );
+        let context =
+            WasmTrustedContext::prefetch_for(Network::Regtest, None, Some(base_url), Some(false))
+                .await
+                .expect("prefetch");
+        let sdk = crate::sdk::WasmSdkBuilder::new_local()
+            .with_trusted_context(&context)
+            .build()
+            .expect("build");
+        let provider = sdk
+            .inner_sdk()
+            .context_provider()
+            .expect("the trusted context is the SDK's provider");
+
+        let key = provider
+            .fetch_quorum_public_key(6, [0x13; 32], 1)
+            .expect("the trusted context must fetch keys newer than its prefetch")
+            .await
+            .expect("the quorum service answered");
+
+        assert_eq!(key, Some(quorum_key(0x43)));
+        server.join().expect("the endpoint served both refreshes");
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests {
+    use super::*;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    /// In the browser the quorum lists are fetched with `fetch`, and the wait
+    /// between two refreshes is a browser timer; neither is `Send`, so both
+    /// run on the local executor and only their results reach the SDK's
+    /// future. A miss right after a failed refresh waits out the gap, asks
+    /// again, and reports the unreachable quorum service.
+    #[wasm_bindgen_test]
+    async fn should_fetch_through_the_browser_and_wait_out_the_gap() {
+        let context =
+            WasmTrustedContext::for_testing_with_url(Vec::new(), "http://127.0.0.1:1".to_string());
+        let started = web_time::Instant::now();
+        assert!(
+            context.refresh_quorums().await.is_err(),
+            "nothing listens on the quorum URL"
+        );
+        let initial_elapsed = started.elapsed();
+        wasm_bindgen_test::console_log!("initial quorum refresh took {initial_elapsed:?}");
+        assert!(
+            initial_elapsed < std::time::Duration::from_millis(500),
+            "the initial refresh must leave most of the gap for the timer: {initial_elapsed:?}"
+        );
+
+        let result = context
+            .fetch_quorum_public_key(6, [0x11; 32], 1)
+            .expect("the trusted context fetches keys")
+            .await;
+
+        assert!(
+            matches!(
+                result,
+                Err(ContextProviderError::QuorumSourceUnavailable(_))
+            ),
+            "got {result:?}"
+        );
+        assert!(
+            started.elapsed() >= std::time::Duration::from_millis(900),
+            "the miss waited for a refresh newer than itself"
+        );
     }
 }

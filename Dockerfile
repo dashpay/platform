@@ -72,7 +72,7 @@ ARG DEPS_IMAGE=deps-${DEPS_IMAGE:-base}
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
 #
-FROM node:20-alpine${ALPINE_VERSION} AS deps-base
+FROM node:22-alpine${ALPINE_VERSION} AS deps-base
 
 #
 # Install some dependencies
@@ -306,7 +306,7 @@ ONBUILD ARG CARGO_BUILD_PROFILE=dev
 
 RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
-git clone https://github.com/facebook/rocksdb.git -b v10.4.2 --depth 1 .
+git clone https://github.com/facebook/rocksdb.git -b v11.8.1 --depth 1 .
 source /root/env
 
 make -j$(nproc) static_lib
@@ -351,13 +351,15 @@ RUN --mount=type=secret,id=AWS \
     DOWNLOAD_URL="https://github.com/cargo-bins/cargo-binstall/releases/download/v${BINSTALL_VERSION}/cargo-binstall-${CARGO_BINSTALL_ARCH}.tgz"; \
     # Download and extract the cargo-binstall binary
     curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/81.0" -L --proto '=https' --tlsv1.2 -sSf "$DOWNLOAD_URL" | tar -xvzf -;  \
-    ./cargo-binstall -y --force cargo-binstall@${BINSTALL_VERSION}; \
-    rm ./cargo-binstall; \
+    # The archive already holds this cargo-binstall version, so install it directly. Letting it
+    # reinstall itself queries the GitHub API and, when that is rate limited, falls back to a
+    # source build that no longer compiles with the current Rust toolchain
+    mv ./cargo-binstall "${CARGO_HOME:-$HOME/.cargo}/bin/cargo-binstall"; \
     cargo binstall -V
 
 RUN --mount=type=secret,id=AWS \
     source /root/env; \
-    cargo binstall wasm-bindgen-cli@0.2.108 cargo-chef@0.1.72 \
+    cargo binstall wasm-bindgen-cli@0.2.108 cargo-chef@0.1.72 wasm-pack \
     --locked \
     --no-discover-github-token \
     --disable-telemetry \
@@ -399,7 +401,10 @@ COPY --parents \
     packages/dpns-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
+    packages/document-history-contract \
     packages/keyword-search-contract \
+    packages/app-connect-contract \
+    packages/moderation-charters-contract \
     packages/data-contracts \
     packages/strategy-tests \
     packages/simple-signer \
@@ -414,9 +419,11 @@ COPY --parents \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
+    packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
     packages/rs-unified-sdk-ffi \
+    packages/rs-unified-sdk-jni \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
@@ -450,7 +457,7 @@ ARG SDK_TEST_DATA
 ARG SHIELDED_TEST_DATA
 ARG ADDITIONAL_FEATURES=""
 
-SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
+SHELL ["/bin/bash", "-o", "pipefail", "-e", "-c"]
 
 WORKDIR /platform
 
@@ -462,9 +469,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     --mount=type=secret,id=GITHUB_TOKEN \
-    set -ex; \
-    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
-    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    trap 'rm -f "${HOME}/.gitconfig"' EXIT; \
+    if [ -s /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
     fi && \
     source /root/env && \
     export FEATURES_FLAG=""; \
@@ -491,8 +498,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --package drive-abci \
     ${FEATURES_FLAG} \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
-    rm -f ~/.gitconfig || true
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 COPY --parents \
     Cargo.lock \
@@ -519,7 +525,10 @@ COPY --parents \
     packages/dashpay-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
+    packages/document-history-contract \
     packages/keyword-search-contract \
+    packages/app-connect-contract \
+    packages/moderation-charters-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
@@ -539,9 +548,11 @@ COPY --parents \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
+    packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
     packages/rs-unified-sdk-ffi \
+    packages/rs-unified-sdk-jni \
     packages/check-features \
     packages/dash-platform-balance-checker \
     packages/wasm-sdk \
@@ -642,8 +653,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     --mount=type=secret,id=GITHUB_TOKEN \
-    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
-    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    trap 'rm -f "${HOME}/.gitconfig"' EXIT; \
+    if [ -s /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
     fi && \
     source /root/env && \
     unset CFLAGS CXXFLAGS && \
@@ -651,10 +663,10 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --recipe-path recipe.json \
     --profile "$CARGO_BUILD_PROFILE" \
     --package wasm-dpp \
+    --package wasm-sdk \
     --target wasm32-unknown-unknown \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
-    rm -f ~/.gitconfig || true
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 
 # Rust deps
@@ -663,6 +675,7 @@ COPY --parents \
     Cargo.toml \
     rust-toolchain.toml \
     .cargo \
+    packages/scripts \
     packages/rs-dapi \
     packages/rs-dash-async \
     packages/rs-dash-event-bus \
@@ -677,15 +690,29 @@ COPY --parents \
     packages/rs-platform-value-convertible \
     packages/rs-platform-wallet-ffi \
     packages/rs-unified-sdk-ffi \
+    packages/rs-unified-sdk-jni \
     packages/rs-json-schema-compatibility-validator \
+    # rs-sdk stack (needed to build wasm-sdk / evo-sdk for the test suite)
+    packages/rs-context-provider \
+    packages/rs-dapi-client \
+    packages/rs-dash-platform-macros \
+    packages/rs-drive \
+    packages/rs-drive-proof-verifier \
+    packages/dash-platform-queries \
+    packages/rs-sdk \
+    packages/rs-sdk-trusted-context-provider \
     # Common
     packages/wasm-dpp \
     packages/wasm-dpp2 \
+    packages/wasm-sdk \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
+    packages/document-history-contract \
     packages/keyword-search-contract \
+    packages/app-connect-contract \
+    packages/moderation-charters-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
     packages/data-contracts \
@@ -701,6 +728,7 @@ COPY --parents \
     packages/wallet-lib \
     packages/js-dash-sdk \
     packages/dash-spv \
+    packages/js-evo-sdk \
     /platform/
 
 # We unset CFLAGS CXXFLAGS because they hold `march` flags which break wasm32 build
@@ -717,6 +745,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     export SKIP_GRPC_PROTO_BUILD=1 && \
     # Build JS Dash SDK and dependencies
     yarn run ultra -r --filter '+dash' --build && \
+    # Build Evo SDK (and wasm-sdk) — the platform test suite's proof verifier
+    yarn run ultra -r --filter '+@dashevo/evo-sdk' --build && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
     # Remove target directory and rust packages to save space
     rm -rf target packages/rs-*
@@ -800,7 +830,10 @@ RUN yarn workspaces focus --production dashmate
 #
 #  STAGE: FINAL DASHMATE HELPER IMAGE
 #
-FROM node:20-alpine${ALPINE_VERSION} AS dashmate-helper
+# Node 24 is the newest usable LTS line: on Node 26 `cbor` (through
+# nofilter 3.1.0) fails every decode with "Insufficient data", which breaks
+# js-dapi-client, and the image ships neither Yarn nor Corepack.
+FROM node:24-alpine${ALPINE_VERSION} AS dashmate-helper
 
 RUN apk add --no-cache docker-cli docker-cli-compose curl
 
@@ -823,7 +856,10 @@ COPY --from=build-dashmate-helper /platform/packages/dapi-grpc packages/dapi-grp
 COPY --from=build-dashmate-helper /platform/packages/dash-spv packages/dash-spv
 COPY --from=build-dashmate-helper /platform/packages/wallet-utils-contract packages/wallet-utils-contract
 COPY --from=build-dashmate-helper /platform/packages/token-history-contract packages/token-history-contract
+COPY --from=build-dashmate-helper /platform/packages/document-history-contract packages/document-history-contract
 COPY --from=build-dashmate-helper /platform/packages/keyword-search-contract packages/keyword-search-contract
+COPY --from=build-dashmate-helper /platform/packages/app-connect-contract packages/app-connect-contract
+COPY --from=build-dashmate-helper /platform/packages/moderation-charters-contract packages/moderation-charters-contract
 COPY --from=build-dashmate-helper /platform/packages/withdrawals-contract packages/withdrawals-contract
 COPY --from=build-dashmate-helper /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY --from=build-dashmate-helper /platform/packages/dpns-contract packages/dpns-contract
@@ -849,7 +885,7 @@ RUN yarn workspaces focus --production @dashevo/platform-test-suite
 #
 #  STAGE: FINAL TEST SUITE IMAGE
 #
-FROM node:20-alpine${ALPINE_VERSION} AS test-suite
+FROM node:22-alpine${ALPINE_VERSION} AS test-suite
 
 RUN apk add --no-cache bash
 
@@ -873,7 +909,7 @@ USER node
 #
 FROM deps AS build-rs-dapi
 
-SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
+SHELL ["/bin/bash", "-o", "pipefail", "-e", "-c"]
 
 WORKDIR /platform
 
@@ -885,9 +921,9 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --mount=type=cache,sharing=locked,id=cargo_git,target=${CARGO_HOME}/git/db \
     --mount=type=secret,id=AWS \
     --mount=type=secret,id=GITHUB_TOKEN \
-    set -ex; \
-    if [ -f /run/secrets/GITHUB_TOKEN ]; then \
-    git config --global url."https://$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
+    trap 'rm -f "${HOME}/.gitconfig"' EXIT; \
+    if [ -s /run/secrets/GITHUB_TOKEN ]; then \
+    git config --global url."https://x-access-token:$(cat /run/secrets/GITHUB_TOKEN)@github.com/".insteadOf "https://github.com/"; \
     fi && \
     source /root/env && \
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
@@ -898,8 +934,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     --profile "$CARGO_BUILD_PROFILE" \
     --package rs-dapi \
     --locked && \
-    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
-    rm -f ~/.gitconfig || true
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
 
 COPY --parents \
     Cargo.lock \
@@ -926,7 +961,10 @@ COPY --parents \
     packages/dashpay-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
+    packages/document-history-contract \
     packages/keyword-search-contract \
+    packages/app-connect-contract \
+    packages/moderation-charters-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
     packages/dpns-contract \
@@ -942,9 +980,11 @@ COPY --parents \
     packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
+    packages/dash-platform-queries \
     packages/rs-sdk \
     packages/rs-sdk-ffi \
     packages/rs-unified-sdk-ffi \
+    packages/rs-unified-sdk-jni \
     packages/rs-platform-wallet \
     packages/rs-platform-wallet-storage \
     packages/check-features \

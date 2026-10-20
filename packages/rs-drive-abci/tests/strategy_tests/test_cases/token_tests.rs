@@ -541,7 +541,15 @@ mod tests {
         // let's see how many blocks were proposed in each epoch
         let epochs: BTreeMap<EpochIndex, FinalizedEpochInfo> = platform
             .drive
-            .get_finalized_epoch_infos(0, true, 3, false, None, platform_version)
+            .get_finalized_epoch_infos(
+                0,
+                true,
+                3,
+                false,
+                platform_version.drive_abci.query.max_returned_elements,
+                None,
+                platform_version,
+            )
             .expect("expected to get epoch infos");
         let epoch_0 = epochs.get(&0).expect("expected to find epoch 0");
         let epoch_1 = epochs.get(&1).expect("expected to find epoch 1");
@@ -838,7 +846,15 @@ mod tests {
         // let's see how many blocks were proposed in each epoch
         let epochs: BTreeMap<EpochIndex, FinalizedEpochInfo> = platform
             .drive
-            .get_finalized_epoch_infos(0, true, 3, false, None, platform_version)
+            .get_finalized_epoch_infos(
+                0,
+                true,
+                3,
+                false,
+                platform_version.drive_abci.query.max_returned_elements,
+                None,
+                platform_version,
+            )
             .expect("expected to get epoch infos");
         let epoch_0 = epochs.get(&0).expect("expected to find epoch 0");
         let epoch_1 = epochs.get(&1).expect("expected to find epoch 1");
@@ -1030,7 +1046,15 @@ mod tests {
         // let's see how many blocks were proposed in each epoch
         let epochs: BTreeMap<EpochIndex, FinalizedEpochInfo> = platform
             .drive
-            .get_finalized_epoch_infos(3, true, 6, false, None, platform_version)
+            .get_finalized_epoch_infos(
+                3,
+                true,
+                6,
+                false,
+                platform_version.drive_abci.query.max_returned_elements,
+                None,
+                platform_version,
+            )
             .expect("expected to get epoch infos");
         let epoch_3 = epochs.get(&3).expect("expected to find epoch 3");
         let epoch_4 = epochs.get(&4).expect("expected to find epoch 4");
@@ -1422,7 +1446,15 @@ mod tests {
         // let's see how many blocks were proposed in each epoch
         let epochs: BTreeMap<EpochIndex, FinalizedEpochInfo> = platform
             .drive
-            .get_finalized_epoch_infos(0, true, 6, false, None, platform_version)
+            .get_finalized_epoch_infos(
+                0,
+                true,
+                6,
+                false,
+                platform_version.drive_abci.query.max_returned_elements,
+                None,
+                platform_version,
+            )
             .expect("expected to get epoch infos");
         let epoch_0 = epochs.get(&0).expect("expected to find epoch 0");
         let epoch_1 = epochs.get(&1).expect("expected to find epoch 1");
@@ -1631,7 +1663,15 @@ mod tests {
         // let's see how many blocks were proposed in each epoch
         let epochs: BTreeMap<EpochIndex, FinalizedEpochInfo> = platform
             .drive
-            .get_finalized_epoch_infos(6, true, 9, false, None, platform_version)
+            .get_finalized_epoch_infos(
+                6,
+                true,
+                9,
+                false,
+                platform_version.drive_abci.query.max_returned_elements,
+                None,
+                platform_version,
+            )
             .expect("expected to get epoch infos");
         let epoch_6 = epochs.get(&6).expect("expected to find epoch 3");
         let epoch_7 = epochs.get(&7).expect("expected to find epoch 4");
@@ -2024,7 +2064,15 @@ mod tests {
         // let's see how many blocks were proposed in each epoch
         let epochs: BTreeMap<EpochIndex, FinalizedEpochInfo> = platform
             .drive
-            .get_finalized_epoch_infos(0, true, 6, false, None, platform_version)
+            .get_finalized_epoch_infos(
+                0,
+                true,
+                6,
+                false,
+                platform_version.drive_abci.query.max_returned_elements,
+                None,
+                platform_version,
+            )
             .expect("expected to get epoch infos");
         let epoch_0 = epochs.get(&0).expect("expected to find epoch 0");
         let epoch_1 = epochs.get(&1).expect("expected to find epoch 1");
@@ -2233,7 +2281,15 @@ mod tests {
         // let's see how many blocks were proposed in each epoch
         let epochs: BTreeMap<EpochIndex, FinalizedEpochInfo> = platform
             .drive
-            .get_finalized_epoch_infos(6, true, 9, false, None, platform_version)
+            .get_finalized_epoch_infos(
+                6,
+                true,
+                9,
+                false,
+                platform_version.drive_abci.query.max_returned_elements,
+                None,
+                platform_version,
+            )
             .expect("expected to get epoch infos");
         let epoch_6 = epochs.get(&6).expect("expected to find epoch 3");
         let epoch_7 = epochs.get(&7).expect("expected to find epoch 4");

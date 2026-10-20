@@ -52,7 +52,7 @@
 //!   seed, and the final derived 32-byte scalar.
 //! - **The `WipingSecretKey` RAII guard** scrubs the raw
 //!   [`secp256k1::SecretKey`] copies at the two sign sites, where the
-//!   scalar comes back out of `SecretKey::from_slice`. `SecretKey` is an
+//!   scalar comes back out of `SecretKey::from_secret_bytes`. `SecretKey` is an
 //!   upstream secp256k1 type with no `Zeroize` impl (only
 //!   `non_secure_erase()`), so it can't ride a `Zeroizing` wrapper; the
 //!   guard wipes it on every exit path — normal return, `?`-early-return,
@@ -67,7 +67,12 @@ use std::os::raw::c_char;
 
 use async_trait::async_trait;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
-use key_wallet::dashcore::secp256k1::{self, Secp256k1};
+use key_wallet::dashcore::secp256k1;
+use key_wallet::dip9::{
+    DASHPAY_CONTACT_INFO_ENC_TO_USER_ID_CHILD, DASHPAY_CONTACT_INFO_PRIVATE_DATA_CHILD,
+    FEATURE_PURPOSE, FEATURE_PURPOSE_DASHPAY_AUTO_ACCEPT, FEATURE_PURPOSE_IDENTITIES,
+    FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_INVITATIONS,
+};
 use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::Network;
 use thiserror::Error;
@@ -104,7 +109,21 @@ pub enum MnemonicResolverSignerError {
     /// The Swift-side resolver reported that no mnemonic is stored for
     /// the wallet_id this signer was constructed with. Translates the
     /// FFI `NOT_FOUND` return code.
-    #[error("mnemonic not found in keychain for the given wallet_id")]
+    ///
+    /// Renders with
+    /// [`DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX`](crate::signer::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX)
+    /// at position 0: this is the missing-key completion of the
+    /// `Signer` surface, whose error is only `Display`, so the reserved
+    /// machine marker at the START of the rendering is the one typed
+    /// signal a caller may recognize (position-0 check, never a
+    /// substring sniff — dashpay/platform#4183 review).
+    /// `platform-wallet`'s message signing promotes it to its typed
+    /// key-unavailable error, which the FFI maps to code 31
+    /// (`ErrorSigningKeyUnavailable`).
+    #[error(
+        "{}mnemonic not found in keychain for the given wallet_id",
+        crate::signer::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX
+    )]
     NotFound,
 
     /// The resolver requested a longer output buffer than this signer
@@ -311,11 +330,10 @@ impl MnemonicResolverCoreSigner {
         let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
         drop(mnemonic);
 
-        let secp = Secp256k1::new();
         let master = ExtendedPrivKey::new_master(self.network, seed.as_ref())
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("master: {e}")))?;
         let derived = master
-            .derive_priv(&secp, path)
+            .derive_priv(path)
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("path: {e}")))?;
 
         Ok(extract(&derived))
@@ -331,10 +349,10 @@ impl MnemonicResolverCoreSigner {
         &self,
         path: &DerivationPath,
     ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
-        // `secret_bytes()` copies the scalar out of the borrowed key; the
+        // `to_secret_bytes()` copies the scalar out of the borrowed key; the
         // `ExtendedPrivKey` itself never leaves `resolve_and_derive`.
         self.resolve_and_derive(path, |derived| {
-            Zeroizing::new(derived.private_key.secret_bytes())
+            Zeroizing::new(derived.private_key.to_secret_bytes())
         })
     }
 
@@ -354,14 +372,59 @@ impl MnemonicResolverCoreSigner {
         &self,
         path: &DerivationPath,
     ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
-        let purpose9 = ChildNumber::from_hardened_idx(9)
+        let purpose9 = ChildNumber::from_hardened_idx(FEATURE_PURPOSE)
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
-        let feature16 = ChildNumber::from_hardened_idx(16)
+        let feature16 = ChildNumber::from_hardened_idx(FEATURE_PURPOSE_DASHPAY_AUTO_ACCEPT)
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
         let comps: &[ChildNumber] = path.as_ref();
         if comps.len() != 4 || comps[0] != purpose9 || comps[2] != feature16 {
             return Err(MnemonicResolverSignerError::DerivationFailed(
                 "export_auto_accept_private_key: path is not an auto-accept path".to_string(),
+            ));
+        }
+        self.derive_priv(path)
+    }
+
+    /// Export the raw DIP-13 invitation-funding private scalar at `path`
+    /// (`m/9'/coin_type'/5'/3'/funding_index'`) — the second deliberate raw-key
+    /// export from this signer. An invitation hands the one-time voucher key to
+    /// the invitee so they can register their own identity from the funded asset
+    /// lock, so this key must leave the signer (a scoped, documented bearer
+    /// credential like the auto-accept `dapk`).
+    ///
+    /// Gated to the **exact** invitation sub-feature: `path` MUST have 5
+    /// components with `9'` purpose, `5'` identity feature, and `3'` invitation
+    /// sub-feature. This is deliberately stricter than checking the feature
+    /// alone — feature `5'` is shared with identity authentication (`5'/0'`),
+    /// registration funding (`5'/1'`), and top-up (`5'/2'`), so a looser gate
+    /// could be repurposed to exfiltrate the user's own identity keys. Returns
+    /// the 32-byte scalar `Zeroizing`-wrapped.
+    pub fn export_invitation_private_key(
+        &self,
+        path: &DerivationPath,
+    ) -> Result<Zeroizing<[u8; 32]>, MnemonicResolverSignerError> {
+        let purpose9 = ChildNumber::from_hardened_idx(FEATURE_PURPOSE)
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
+        let feature5 = ChildNumber::from_hardened_idx(FEATURE_PURPOSE_IDENTITIES)
+            .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
+        let subfeature3 =
+            ChildNumber::from_hardened_idx(FEATURE_PURPOSE_IDENTITIES_SUBFEATURE_INVITATIONS)
+                .map_err(|e| MnemonicResolverSignerError::DerivationFailed(e.to_string()))?;
+        let comps: &[ChildNumber] = path.as_ref();
+        // Bind the fixed purpose / feature / sub-feature only. `coin_type`
+        // (comps[1]) and `funding_index` (comps[4]) are deliberately left
+        // unconstrained: the whole `9'/*/5'/3'/*` subtree is invitation-vouchers
+        // only (the user's own keys live at sub-features `5'/0'`, `5'/1'`, `5'/2'`,
+        // all excluded by `comps[3] == 3'`), so this gate cannot exfiltrate a
+        // user key regardless of their hardening. Constraining them additionally
+        // rejects real voucher paths whose coin_type is non-hardened.
+        if comps.len() != 5
+            || comps[0] != purpose9
+            || comps[2] != feature5
+            || comps[3] != subfeature3
+        {
+            return Err(MnemonicResolverSignerError::DerivationFailed(
+                "export_invitation_private_key: path is not an invitation-funding path".to_string(),
             ));
         }
         self.derive_priv(path)
@@ -473,8 +536,16 @@ impl MnemonicResolverCoreSigner {
         private_data_plaintext: &[u8],
         private_data_iv: &[u8; 16],
     ) -> Result<ContactInfoSealed, MnemonicResolverSignerError> {
-        let enc_key = self.derive_contact_info_aes_key(root_path, 65536, derivation_index)?;
-        let priv_key = self.derive_contact_info_aes_key(root_path, 65537, derivation_index)?;
+        let enc_key = self.derive_contact_info_aes_key(
+            root_path,
+            DASHPAY_CONTACT_INFO_ENC_TO_USER_ID_CHILD,
+            derivation_index,
+        )?;
+        let priv_key = self.derive_contact_info_aes_key(
+            root_path,
+            DASHPAY_CONTACT_INFO_PRIVATE_DATA_CHILD,
+            derivation_index,
+        )?;
         Ok(ContactInfoSealed {
             enc_to_user_id: platform_encryption::encrypt_enc_to_user_id(&enc_key, contact_id),
             private_data: platform_encryption::encrypt_private_data(
@@ -494,8 +565,16 @@ impl MnemonicResolverCoreSigner {
         enc_to_user_id: &[u8; 32],
         private_data_blob: &[u8],
     ) -> Result<ContactInfoOpened, MnemonicResolverSignerError> {
-        let enc_key = self.derive_contact_info_aes_key(root_path, 65536, derivation_index)?;
-        let priv_key = self.derive_contact_info_aes_key(root_path, 65537, derivation_index)?;
+        let enc_key = self.derive_contact_info_aes_key(
+            root_path,
+            DASHPAY_CONTACT_INFO_ENC_TO_USER_ID_CHILD,
+            derivation_index,
+        )?;
+        let priv_key = self.derive_contact_info_aes_key(
+            root_path,
+            DASHPAY_CONTACT_INFO_PRIVATE_DATA_CHILD,
+            derivation_index,
+        )?;
         let private_data = platform_encryption::decrypt_private_data(&priv_key, private_data_blob)
             .map_err(|e| {
                 MnemonicResolverSignerError::DerivationFailed(format!("contactInfo decrypt: {e}"))
@@ -527,7 +606,7 @@ pub struct ContactInfoOpened {
 ///
 /// `SecretKey` is an upstream secp256k1 type with no `Zeroize` impl (only
 /// `non_secure_erase()`), so it can't ride a `Zeroizing` wrapper. Wrapping the
-/// `SecretKey::from_slice` copy here wipes it on every exit path — normal
+/// `SecretKey::from_secret_bytes` copy here wipes it on every exit path — normal
 /// return, `?`-early-return, and panic-unwind — closing the leak window a bare
 /// inline `non_secure_erase()` would leave open between construction and the
 /// manual scrub. This is the one key intermediate that upstream key-wallet's
@@ -557,31 +636,29 @@ impl Signer for MnemonicResolverCoreSigner {
         sighash: [u8; 32],
     ) -> Result<(secp256k1::ecdsa::Signature, secp256k1::PublicKey), Self::Error> {
         let secret_bytes = self.derive_priv(path)?;
-        let secp = Secp256k1::new();
-        // `SecretKey::from_slice` validates the 32-byte scalar is a
+        // `SecretKey::from_secret_bytes` validates the 32-byte scalar is a
         // legitimate field element. The `WipingSecretKey` guard scrubs this
         // separate copy on every exit path, including a panic between here and
         // the return — `Zeroizing<[u8;32]>` already covers `secret_bytes`.
         let secret = WipingSecretKey(
-            secp256k1::SecretKey::from_slice(secret_bytes.as_ref())
+            secp256k1::SecretKey::from_secret_bytes(*secret_bytes)
                 .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?,
         );
         let msg = secp256k1::Message::from_digest(sighash);
-        let signature = secp.sign_ecdsa(&msg, &secret.0);
-        let pubkey = secp256k1::PublicKey::from_secret_key(&secp, &secret.0);
+        let signature = secret.0.sign_ecdsa(msg);
+        let pubkey = secp256k1::PublicKey::from_secret_key(&secret.0);
         Ok((signature, pubkey))
     }
 
     async fn public_key(&self, path: &DerivationPath) -> Result<secp256k1::PublicKey, Self::Error> {
         let secret_bytes = self.derive_priv(path)?;
-        let secp = Secp256k1::new();
-        // `WipingSecretKey` scrubs this `from_slice` copy on every exit path,
+        // `WipingSecretKey` scrubs this `from_secret_bytes` copy on every exit path,
         // including panic-unwind — `Zeroizing<[u8;32]>` covers `secret_bytes`.
         let secret = WipingSecretKey(
-            secp256k1::SecretKey::from_slice(secret_bytes.as_ref())
+            secp256k1::SecretKey::from_secret_bytes(*secret_bytes)
                 .map_err(|e| MnemonicResolverSignerError::InvalidScalar(e.to_string()))?,
         );
-        let pubkey = secp256k1::PublicKey::from_secret_key(&secp, &secret.0);
+        let pubkey = secp256k1::PublicKey::from_secret_key(&secret.0);
         Ok(pubkey)
     }
 }
@@ -600,10 +677,9 @@ impl ExtendedPubKeySigner for MnemonicResolverCoreSigner {
         &self,
         path: &DerivationPath,
     ) -> Result<ExtendedPubKey, Self::Error> {
-        let secp = Secp256k1::new();
         // `ExtendedPubKey` carries only public material (chain code + point);
         // the borrowed private key never leaves `resolve_and_derive`.
-        self.resolve_and_derive(path, |derived| ExtendedPubKey::from_priv(&secp, derived))
+        self.resolve_and_derive(path, ExtendedPubKey::from_priv)
     }
 }
 
@@ -670,9 +746,8 @@ mod tests {
             .await
             .expect("signing succeeds");
 
-        let secp = Secp256k1::new();
         let msg = secp256k1::Message::from_digest(sighash);
-        secp.verify_ecdsa(&msg, &sig, &pk)
+        sig.verify(msg, &pk)
             .expect("signature must verify against returned pubkey");
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
@@ -711,6 +786,49 @@ mod tests {
                     Err(MnemonicResolverSignerError::DerivationFailed(_))
                 ),
                 "non-auto-accept path {bad} must be rejected, not exported"
+            );
+        }
+
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// The invitation export gate binds the fixed `9'/*/5'/3'/*` shape (purpose,
+    /// feature, sub-feature), because feature `5'` is shared with the user's own
+    /// identity-auth / registration-funding / top-up keys — a gate that checked
+    /// only the feature could be repurposed to exfiltrate those keys. coin_type
+    /// and funding_index are intentionally unconstrained (the whole sub-feature-3'
+    /// subtree is vouchers-only, and real voucher paths use a non-hardened coin).
+    #[test]
+    fn export_invitation_private_key_gates_to_the_invitation_path() {
+        let resolver = make_resolver(english_resolve);
+        let signer =
+            unsafe { MnemonicResolverCoreSigner::new(resolver, [0u8; 32], Network::Testnet) };
+
+        // A well-formed invitation-funding path exports its 32-byte scalar.
+        let invitation = DerivationPath::from_str("m/9'/1'/5'/3'/0'").expect("valid path");
+        let scalar = signer
+            .export_invitation_private_key(&invitation)
+            .expect("a well-formed invitation path exports its scalar");
+        assert_ne!(*scalar, [0u8; 32], "exported scalar must be non-zero");
+
+        // Every non-invitation path MUST be rejected — especially the sibling
+        // sub-features that share feature `5'` (auth/registration/top-up).
+        for bad in [
+            "m/9'/1'/5'/0'/0'/0'/0'", // identity authentication (sub-feature 0')
+            "m/9'/1'/5'/1'/0'",       // registration funding (sub-feature 1')
+            "m/9'/1'/5'/2'/0'",       // top-up funding (sub-feature 2')
+            "m/9'/1'/16'/123'",       // auto-accept (feature 16', not 5')
+            "m/8'/1'/5'/3'/0'",       // wrong purpose (comps[0] != 9')
+            "m/9'/1'/5'/3'",          // too short (len != 5)
+            "m/9'/1'/5'/3'/0'/0'",    // too long (len != 5)
+        ] {
+            let path = DerivationPath::from_str(bad).expect("valid path string");
+            assert!(
+                matches!(
+                    signer.export_invitation_private_key(&path),
+                    Err(MnemonicResolverSignerError::DerivationFailed(_))
+                ),
+                "non-invitation path {bad} must be rejected, not exported"
             );
         }
 
@@ -776,12 +894,11 @@ mod tests {
 
         // Independently derive the expected xpub straight from the known
         // BIP-39 vector — same network + path, no resolver in the loop.
-        let secp = Secp256k1::new();
         let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).expect("valid phrase");
         let master = ExtendedPrivKey::new_master(Network::Testnet, &mnemonic.to_seed(""))
             .expect("master derivation");
-        let derived = master.derive_priv(&secp, &path).expect("path derivation");
-        let expected = ExtendedPubKey::from_priv(&secp, &derived);
+        let derived = master.derive_priv(&path).expect("path derivation");
+        let expected = ExtendedPubKey::from_priv(&derived);
 
         // Field-level checks run first so a silently-dropped BIP-32 metadatum
         // fails here with a precise message — not just the public point. The
@@ -820,7 +937,7 @@ mod tests {
     #[tokio::test]
     async fn extended_public_key_matches_wallet_derivation_for_dashpay_path() {
         use key_wallet::account::AccountType;
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
 
@@ -837,8 +954,7 @@ mod tests {
         .expect("DashPay receiving path");
 
         // Old route: resident-seed wallet from the same mnemonic.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -876,21 +992,20 @@ mod tests {
     /// this pins them equal.
     #[tokio::test]
     async fn ecdh_shared_secret_matches_wallet_derivation() {
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
 
         let path = test_path();
 
         // A fixed peer keypair (the contact's encryption key).
-        let secp = Secp256k1::new();
-        let peer_sk = secp256k1::SecretKey::from_slice(&[0x42u8; 32]).expect("peer secret key");
-        let peer_pk = secp256k1::PublicKey::from_secret_key(&secp, &peer_sk);
+        let peer_sk =
+            secp256k1::SecretKey::from_secret_bytes([0x42u8; 32]).expect("peer secret key");
+        let peer_pk = secp256k1::PublicKey::from_secret_key(&peer_sk);
 
         // Old route: resident-seed wallet from the same mnemonic → derive the
         // scalar at `path` → ECDH through the single crypto source.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -930,7 +1045,7 @@ mod tests {
     /// this pins the signer route equal to `Wallet`'s and confirms the inverse.
     #[tokio::test]
     async fn account_reference_matches_wallet_derivation_and_round_trips() {
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
 
@@ -942,8 +1057,7 @@ mod tests {
 
         // Old route: resident-seed wallet from the same mnemonic → derive the
         // scalar at `path` → mask through the single accountReference source.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -952,7 +1066,7 @@ mod tests {
             .derive_extended_private_key(&path)
             .expect("wallet derives the private key at path")
             .private_key
-            .secret_bytes();
+            .to_secret_bytes();
         let expected = platform_encryption::calculate_account_reference(
             &secret,
             &compact_xpub,
@@ -994,7 +1108,7 @@ mod tests {
     /// so contactInfo the signer seals is readable by the reference clients.
     #[tokio::test]
     async fn contact_info_seal_open_round_trips_and_matches_wallet_derivation() {
-        use key_wallet::mnemonic::{Language, Mnemonic};
+        use key_wallet::mnemonic::Mnemonic;
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
         use key_wallet::wallet::Wallet;
 
@@ -1030,8 +1144,7 @@ mod tests {
         );
 
         // Parity: encToUserId equals a resident wallet's derive+encrypt.
-        let mnemonic =
-            Mnemonic::from_phrase(ENGLISH_PHRASE, Language::English).expect("valid mnemonic");
+        let mnemonic = Mnemonic::from_phrase(ENGLISH_PHRASE).expect("valid mnemonic");
         let seed = mnemonic.to_seed("");
         let wallet =
             Wallet::from_seed_bytes(seed, Network::Testnet, WalletAccountCreationOptions::None)
@@ -1045,7 +1158,7 @@ mod tests {
                 .derive_extended_private_key(&path)
                 .expect("derive encToUserId key")
                 .private_key
-                .secret_bytes()
+                .to_secret_bytes()
         };
         let expected_enc = platform_encryption::encrypt_enc_to_user_id(&enc_key, &contact_id);
         assert_eq!(
@@ -1075,6 +1188,21 @@ mod tests {
         );
 
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// The producer half of the key-unavailable contract: `NotFound` renders
+    /// with the reserved machine marker at position 0. Consumers of the
+    /// `Signer` surface (whose error is only `Display`) recognize the missing
+    /// key by exactly this start-of-rendering marker — a mid-string move
+    /// would silently break the promotion to FFI code 31 without failing any
+    /// structural match.
+    #[test]
+    fn not_found_renders_the_key_unavailable_marker_at_position_zero() {
+        let rendered = MnemonicResolverSignerError::NotFound.to_string();
+        assert!(
+            rendered.starts_with(crate::signer::DASH_SDK_SIGNER_ERR_KEY_UNAVAILABLE_PREFIX),
+            "NotFound must stamp the reserved marker at position 0, got: {rendered:?}"
+        );
     }
 
     #[tokio::test]

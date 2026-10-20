@@ -119,6 +119,7 @@ mod tests {
 
     fn make_document() -> Document {
         Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::from([0x11; 32]),
             owner_id: Identifier::from([0x22; 32]),
             properties: Default::default(),
@@ -133,6 +134,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         })
     }
 
@@ -532,7 +535,11 @@ mod tests {
             // Insert the withdrawals contract so the `AddWithdrawalDocument` op has a real document
             // tree to write into during the apply.
             let tx = drive.grove.start_transaction();
-            let withdrawals = drive.cache.system_data_contracts.load_withdrawals();
+            let withdrawals = drive
+                .cache
+                .system_data_contracts
+                .load_withdrawals(platform_version)
+                .expect("expected the withdrawals contract");
             drive
                 .apply_contract(
                     &withdrawals,

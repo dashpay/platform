@@ -11,14 +11,14 @@ use crate::shielded::SerializedAction;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use platform_serialization_derive::PlatformSignable;
 use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "json-conversion", json_safe_fields)]
-#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable, DecodeUntrusted)]
 #[cfg_attr(
     feature = "serde-conversion",
     derive(Serialize, Deserialize),
@@ -166,7 +166,7 @@ mod tests {
         );
 
         let mut other_denom = base.clone();
-        other_denom.denomination = 30_000_000_000;
+        other_denom.denomination = 25_000_000_000;
         assert_ne!(
             base_bytes,
             other_denom.signable_bytes().expect("signable bytes"),

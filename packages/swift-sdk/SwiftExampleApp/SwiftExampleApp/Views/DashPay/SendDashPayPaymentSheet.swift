@@ -364,7 +364,7 @@ struct SendDashPayPaymentSheet: View {
                 // useful to pass. The Rust-side
                 // `PaymentEntry.memo` slot stays available for
                 // future local-note wiring.
-                let txid = try await wallet.sendDashPayPayment(
+                let (txid, _) = try await wallet.sendDashPayPayment(
                     fromIdentityId: senderIdentity.identityId,
                     toContactIdentityId: contact.identityId,
                     amountDuffs: duffs,

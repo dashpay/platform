@@ -6,6 +6,22 @@
   - .github/workflows/tests*
   - packages/token-history-contract/**
 
+'@dashevo/document-history-contract': &document-history-contract
+  - .github/workflows/tests*
+  - packages/document-history-contract/**
+
+'@dashevo/keyword-search-contract': &keyword-search-contract
+  - .github/workflows/tests*
+  - packages/keyword-search-contract/**
+
+'@dashevo/app-connect-contract': &app-connect-contract
+  - .github/workflows/tests*
+  - packages/app-connect-contract/**
+
+'@dashevo/moderation-charters-contract': &moderation-charters-contract
+  - .github/workflows/tests*
+  - packages/moderation-charters-contract/**
+
 '@dashevo/dashpay-contract': &dashpay-contract
   - .github/workflows/tests*
   - packages/dashpay-contract/**
@@ -35,6 +51,10 @@
   - *withdrawals-contract
   - *wallet-utils-contract
   - *token-history-contract
+  - *document-history-contract
+  - *keyword-search-contract
+  - *app-connect-contract
+  - *moderation-charters-contract
   - packages/rs-platform-serialization/**
   - packages/rs-platform-serialization-derive/**
   - packages/rs-platform-value/**

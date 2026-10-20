@@ -3,16 +3,24 @@ use crate::services::platform_service::error_mapping::decode_consensus_error;
 use crate::services::platform_service::{PlatformServiceImpl, TenderdashStatus};
 use crate::services::streaming_service::FilterType;
 use base64::Engine;
+use dapi_grpc::platform::v0::get_identity_balance_request::GetIdentityBalanceRequestV0;
+use dapi_grpc::platform::v0::wait_for_state_transition_result_response::SuccessWithOwnerBalance;
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
 use dapi_grpc::platform::v0::{
-    Proof, ResponseMetadata, WaitForStateTransitionResultRequest,
-    WaitForStateTransitionResultResponse, wait_for_state_transition_result_request,
+    GetIdentityBalanceRequest, Proof, ResponseMetadata, WaitForStateTransitionResultRequest,
+    WaitForStateTransitionResultResponse, get_identity_balance_request,
+    get_identity_balance_response, wait_for_state_transition_result_request,
     wait_for_state_transition_result_response,
 };
 use dapi_grpc::tonic::{Request, Response};
+use dpp::prelude::Identifier;
+use dpp::serialization::PlatformDeserializableUntrusted;
+use dpp::state_transition::StateTransition;
 use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{Instrument, debug, trace};
+
+const STATE_TRANSITION_HASH_SIZE: usize = 32;
 
 impl PlatformServiceImpl {
     /// Wait for a state transition result by subscribing to platform events and returning proofs when requested.
@@ -32,14 +40,20 @@ impl PlatformServiceImpl {
 
         // Validate state transition hash
         let state_transition_hash = v0.state_transition_hash;
-        if state_transition_hash.is_empty() {
-            return Err(DapiError::InvalidArgument(
-                "state transition hash is not specified".to_string(),
-            ));
-        }
+        validate_state_transition_hash(&state_transition_hash)?;
+
+        let _wait_permit = self
+            .state_transition_wait_permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| {
+                DapiError::ResourceExhausted(
+                    "too many pending state transition result waits".to_string(),
+                )
+            })?;
 
         // Convert hash to commonly used representations
-        let hash_hex = hex::encode(&state_transition_hash).to_uppercase();
+        let hash_hex = hex::encode_upper(&state_transition_hash);
         let hash_base64 = base64::prelude::BASE64_STANDARD.encode(&state_transition_hash);
 
         let span = tracing::trace_span!("wait_for_state_transition_result", tx = %hash_hex);
@@ -69,7 +83,9 @@ impl PlatformServiceImpl {
             match self.tenderdash_client.tx(hash_base64).await {
                 Ok(tx) => {
                     debug!(tx = hash_hex, "Transaction already exists, returning it");
-                    return self.build_response_from_existing_tx(tx, v0.prove).await;
+                    return self
+                        .build_response_from_existing_tx(tx, v0.prove, v0.request_user_balance)
+                        .await;
                 }
                 Err(error) => {
                     debug!(?error, "Transaction not found, will wait for future events");
@@ -92,7 +108,9 @@ impl PlatformServiceImpl {
                     match result {
                         Some(crate::services::streaming_service::StreamingEvent::PlatformTx { event }) => {
                             debug!(tx = hash_hex, "Received matching transaction event");
-                            return self.build_response_from_event(event, v0.prove).await;
+                            return self
+                                .build_response_from_event(event, v0.prove, v0.request_user_balance)
+                                .await;
                         }
                         Some(message) => {
                             // Ignore other message types
@@ -130,6 +148,7 @@ impl PlatformServiceImpl {
         &self,
         tx_response: crate::clients::tenderdash_client::TxResponse,
         prove: bool,
+        request_user_balance: bool,
     ) -> Result<Response<WaitForStateTransitionResultResponse>, DapiError> {
         let mut response_v0 =
             wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
@@ -160,24 +179,19 @@ impl PlatformServiceImpl {
             return Ok(error.into());
         }
 
-        // No error; generate proof if requested
-        if prove
-            && !tx_response.tx.is_empty()
+        // No error; generate proof if requested, else report what can be read without one
+        if !tx_response.tx.is_empty()
             && let Ok(tx_data) =
                 base64::prelude::Engine::decode(&base64::prelude::BASE64_STANDARD, &tx_response.tx)
         {
-            match self.fetch_proof_for_state_transition(tx_data).await {
-                Ok((proof, metadata)) => {
-                    response_v0.result = Some(
-                        wait_for_state_transition_result_response_v0::Result::Proof(proof),
-                    );
-                    response_v0.metadata = Some(metadata);
-                }
-                Err(e) => {
-                    debug!("Failed to fetch proof: {}", e);
-                    // Continue without proof
-                }
-            }
+            self.fill_success_result(
+                &mut response_v0,
+                tx_data,
+                prove,
+                request_user_balance,
+                u64::try_from(tx_response.height).unwrap_or(0),
+            )
+            .await;
         }
 
         let body = WaitForStateTransitionResultResponse {
@@ -194,6 +208,7 @@ impl PlatformServiceImpl {
         &self,
         transaction_event: crate::clients::TransactionEvent,
         prove: bool,
+        request_user_balance: bool,
     ) -> Result<Response<WaitForStateTransitionResultResponse>, DapiError> {
         // Check transaction result
         match transaction_event.result {
@@ -203,20 +218,17 @@ impl PlatformServiceImpl {
                         result: None,
                         metadata: None,
                 };
-                // Success case - generate proof if requested
-                if prove && let Some(tx_bytes) = transaction_event.tx {
-                    match self.fetch_proof_for_state_transition(tx_bytes).await {
-                        Ok((proof, metadata)) => {
-                            response_v0.result = Some(
-                        wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(proof),
-                    );
-                            response_v0.metadata = Some(metadata);
-                        }
-                        Err(e) => {
-                            debug!("Failed to fetch proof: {}", e);
-                            // Continue without proof
-                        }
-                    }
+                // Success case - generate proof if requested, else report what
+                // can be read without one
+                if let Some(tx_bytes) = transaction_event.tx {
+                    self.fill_success_result(
+                        &mut response_v0,
+                        tx_bytes,
+                        prove,
+                        request_user_balance,
+                        transaction_event.height,
+                    )
+                    .await;
                 }
 
                 let body = WaitForStateTransitionResultResponse {
@@ -244,6 +256,106 @@ impl PlatformServiceImpl {
                 let result: Response<WaitForStateTransitionResultResponse> = error.into();
 
                 Ok(result)
+            }
+        }
+    }
+
+    /// Complete a successful wait: with `prove`, the proof of the transition's
+    /// execution (which carries the owner's balance for an owned, fee-paying
+    /// transition from protocol version 14); else with `request_user_balance`,
+    /// the balance of the identity that owns the transition read from Drive
+    /// unverified, and only from a state at or past `executed_at_height`, the
+    /// block that executed the transition (a read behind it answers with its
+    /// metadata and no balance). Either read failing leaves the response as it
+    /// was, which still tells the caller the transition succeeded.
+    async fn fill_success_result(
+        &self,
+        response_v0: &mut wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0,
+        tx_bytes: Vec<u8>,
+        prove: bool,
+        request_user_balance: bool,
+        executed_at_height: u64,
+    ) {
+        if prove {
+            match self.fetch_proof_for_state_transition(tx_bytes).await {
+                Ok((proof, metadata)) => {
+                    response_v0.result = Some(
+                        wait_for_state_transition_result_response_v0::Result::Proof(proof),
+                    );
+                    response_v0.metadata = Some(metadata);
+                }
+                Err(e) => {
+                    debug!("Failed to fetch proof: {}", e);
+                    // Continue without proof
+                }
+            }
+        } else if request_user_balance
+            && let Some(owner_id) = transition_owner_id(&tx_bytes)
+            && let Some((owner_balance, metadata)) =
+                self.fetch_identity_balance_unproved(owner_id).await
+        {
+            if metadata.height < executed_at_height {
+                // The read predates the executing block: answer with that
+                // state's metadata and no balance, so the caller can tell a
+                // lagging node (metadata height below its transaction's
+                // block) from a node that was not asked.
+                tracing::warn!(
+                    balance_height = metadata.height,
+                    executed_at_height,
+                    "Drive's state predates the block that executed the transition; not reporting the owner's balance"
+                );
+                response_v0.metadata = Some(metadata);
+                return;
+            }
+            response_v0.result = Some(
+                wait_for_state_transition_result_response_v0::Result::SuccessWithOwnerBalance(
+                    SuccessWithOwnerBalance { owner_balance },
+                ),
+            );
+            response_v0.metadata = Some(metadata);
+        }
+    }
+
+    /// An identity's credit balance as Drive holds it now, without a proof,
+    /// with the metadata of the state it was read from. `None` when Drive
+    /// cannot answer, which is logged and not an error of the wait.
+    async fn fetch_identity_balance_unproved(
+        &self,
+        identity_id: Identifier,
+    ) -> Option<(u64, ResponseMetadata)> {
+        let request = GetIdentityBalanceRequest {
+            version: Some(get_identity_balance_request::Version::V0(
+                GetIdentityBalanceRequestV0 {
+                    id: identity_id.to_vec(),
+                    prove: false,
+                },
+            )),
+        };
+        let mut client = self.drive_client.get_client();
+        let response = match client.get_identity_balance(request).await {
+            Ok(response) => response.into_inner(),
+            Err(e) => {
+                debug!(
+                    "Failed to fetch the transition owner's balance from Drive: {}",
+                    e
+                );
+                return None;
+            }
+        };
+        let Some(get_identity_balance_response::Version::V0(v0)) = response.version else {
+            debug!("Drive returned an identity balance response without a version");
+            return None;
+        };
+        match (v0.result, v0.metadata) {
+            (
+                Some(get_identity_balance_response::get_identity_balance_response_v0::Result::Balance(
+                    balance,
+                )),
+                Some(metadata),
+            ) => Some((balance, metadata)),
+            _ => {
+                debug!("Drive returned no balance for the transition owner");
+                None
             }
         }
     }
@@ -285,6 +397,26 @@ impl PlatformServiceImpl {
     }
 }
 
+/// The identity that owns a state transition: the one whose credit balance a
+/// wait that asks for the user's balance reports back. `None` for a transition
+/// without an owner and for bytes that do not decode.
+fn transition_owner_id(state_transition_bytes: &[u8]) -> Option<Identifier> {
+    StateTransition::deserialize_from_bytes_untrusted(state_transition_bytes)
+        .ok()?
+        .owner_id()
+}
+
+fn validate_state_transition_hash(hash: &[u8]) -> Result<(), DapiError> {
+    if hash.len() != STATE_TRANSITION_HASH_SIZE {
+        return Err(DapiError::InvalidArgument(format!(
+            "state transition hash must be {STATE_TRANSITION_HASH_SIZE} bytes, got {}",
+            hash.len()
+        )));
+    }
+
+    Ok(())
+}
+
 /// Convert a `DapiError` into the gRPC error response expected by waitForStateTransitionResult callers.
 pub(super) fn build_wait_for_state_transition_error_response(
     error: &DapiError,
@@ -315,6 +447,67 @@ pub(super) fn build_wait_for_state_transition_error_response(
 mod tests {
     use super::*;
     use dapi_grpc::platform::v0::StateTransitionBroadcastError;
+    use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::batch_transition::BatchTransitionV0;
+    use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+    use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransition;
+    use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransitionV0;
+    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+
+    fn document_batch_bytes(owner_id: Identifier) -> Vec<u8> {
+        let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+            id: Identifier::new([3u8; 32]),
+            identity_contract_nonce: 1,
+            document_type_name: "note".to_string(),
+            data_contract_id: Identifier::new([4u8; 32]),
+        });
+        StateTransition::Batch(BatchTransition::V0(BatchTransitionV0 {
+            owner_id,
+            transitions: vec![DocumentTransition::Delete(DocumentDeleteTransition::V0(
+                DocumentDeleteTransitionV0 { base },
+            ))],
+            ..Default::default()
+        }))
+        .serialize_to_bytes()
+        .expect("a document batch serializes")
+    }
+
+    #[test]
+    fn transition_owner_is_the_identity_whose_balance_is_reported() {
+        let owner_id = Identifier::new([7u8; 32]);
+        assert_eq!(
+            transition_owner_id(&document_batch_bytes(owner_id)),
+            Some(owner_id)
+        );
+        let transfer = StateTransition::IdentityCreditTransfer(
+            IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0::default()),
+        )
+        .serialize_to_bytes()
+        .expect("a transfer serializes");
+        assert_eq!(transition_owner_id(&transfer), Some(Identifier::default()));
+    }
+
+    #[test]
+    fn undecodable_bytes_report_no_owner() {
+        assert_eq!(transition_owner_id(&[0xff; 8]), None);
+        assert_eq!(transition_owner_id(&[]), None);
+    }
+
+    #[test]
+    fn state_transition_hash_must_be_exact_width() {
+        assert!(validate_state_transition_hash(&[0; STATE_TRANSITION_HASH_SIZE]).is_ok());
+
+        for length in [0, 1, 31, 33, 20 * 1024] {
+            assert!(matches!(
+                validate_state_transition_hash(&vec![0; length]),
+                Err(DapiError::InvalidArgument(message)) if message.contains("must be 32 bytes")
+            ));
+        }
+    }
 
     /// Extract the `StateTransitionBroadcastError` from a
     /// `WaitForStateTransitionResultResponse`, unwrapping the V0 / Error layers.

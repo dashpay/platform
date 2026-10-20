@@ -196,6 +196,7 @@ mod tests {
         #[test]
         fn test_payout_to_proposers() {
             let platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(13)
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 

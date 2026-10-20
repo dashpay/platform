@@ -1,4 +1,5 @@
 use crate::version::drive_versions::drive_address_funds_method_versions::v1::DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1;
+use crate::version::drive_versions::drive_contract_group_method_versions::v1::DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_contract_method_versions::v1::DRIVE_CONTRACT_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_credit_pool_method_versions::v1::CREDIT_POOL_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_document_method_versions::v1::DRIVE_DOCUMENT_METHOD_VERSIONS_V1;
@@ -90,6 +91,11 @@ pub const DRIVE_VERSION_V2: DriveVersion = DriveVersion {
         platform_state: DrivePlatformStateMethodVersions {
             fetch_platform_state_bytes: 0,
             store_platform_state_bytes: 0,
+            fetch_platform_state_recent_bytes: 0,
+            store_platform_state_recent_bytes: 0,
+            fetch_platform_state_entries_bytes: 0,
+            store_platform_state_entry_bytes: 0,
+            delete_platform_state_entry: 0,
         },
         fetch: DriveFetchMethodVersions { fetch_elements: 0 },
         prefunded_specialized_balances: DrivePrefundedSpecializedMethodVersions {
@@ -103,6 +109,7 @@ pub const DRIVE_VERSION_V2: DriveVersion = DriveVersion {
             empty_prefunded_specialized_balance: 0,
         },
         group: DRIVE_GROUP_METHOD_VERSIONS_V1,
+        contract_group: DRIVE_CONTRACT_GROUP_METHOD_VERSIONS_V1,
         address_funds: DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1,
         shielded: DriveShieldedMethodVersions {
             insert_note: 0,
@@ -118,6 +125,7 @@ pub const DRIVE_VERSION_V2: DriveVersion = DriveVersion {
         saved_block_transactions: DriveSavedBlockTransactionsMethodVersions {
             store_address_balances: 0,
             fetch_address_balances: 0,
+            prove_compacted_address_balance_changes: 0,
             compact_address_balances: 0,
             cleanup_expired_address_balances: 0,
             max_blocks_before_compaction: 64,

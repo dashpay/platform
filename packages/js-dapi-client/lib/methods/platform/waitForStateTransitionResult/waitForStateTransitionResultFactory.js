@@ -26,6 +26,7 @@ function waitForStateTransitionResultFactory(grpcTransport) {
       // Set default timeout
       timeout: 120000,
       prove: false,
+      requestUserBalance: false,
       retry: 0,
       throwDeadlineExceeded: true,
       ...options,
@@ -36,7 +37,8 @@ function waitForStateTransitionResultFactory(grpcTransport) {
     waitForStateTransitionResultRequest.setV0(
       new WaitForStateTransitionResultRequestV0()
         .setStateTransitionHash(stateTransitionHash)
-        .setProve(options.prove),
+        .setProve(options.prove)
+        .setRequestUserBalance(options.requestUserBalance),
     );
 
     let lastError;
@@ -44,7 +46,6 @@ function waitForStateTransitionResultFactory(grpcTransport) {
     // TODO: simple retry before the dapi versioning is properly implemented
     for (let i = 0; i < 3; i += 1) {
       try {
-        // eslint-disable-next-line no-await-in-loop
         const waitForStateTransitionResultResponse = await grpcTransport.request(
           PlatformPromiseClient,
           'waitForStateTransitionResult',
@@ -52,9 +53,17 @@ function waitForStateTransitionResultFactory(grpcTransport) {
           options,
         );
 
-        return WaitForStateTransitionResultResponse.createFromProto(
+        const parsedResponse = WaitForStateTransitionResultResponse.createFromProto(
           waitForStateTransitionResultResponse,
         );
+        if (options.prove && !parsedResponse.getError()
+          && (!parsedResponse.getProof() || !parsedResponse.getMetadata())) {
+          throw new InvalidResponseError(
+            'Proved state transition confirmation is missing proof or metadata',
+          );
+        }
+
+        return parsedResponse;
       } catch (e) {
         if (e instanceof InvalidResponseError) {
           lastError = e;

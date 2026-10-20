@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+
+reviews:
+  # Don't fail the "CodeRabbit" commit status when a review can't be performed
+  # (e.g. "Review rate limited"). The "AI Review" workflow enforces that either
+  # CodeRabbit or thepastaclaw has reviewed the PR instead.
+  fail_commit_status: false

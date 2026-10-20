@@ -283,6 +283,7 @@ final class IntegrationTestEnv: @unchecked Sendable {
     }
 
     private static func runSecurityDelete(service: String) -> Bool {
+#if os(macOS)
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/security")
         proc.arguments = ["delete-generic-password", "-s", service]
@@ -291,6 +292,10 @@ final class IntegrationTestEnv: @unchecked Sendable {
         do { try proc.run() } catch { return false }
         proc.waitUntilExit()
         return proc.terminationStatus == 0
+#else
+        _ = service
+        return false
+#endif
     }
 
     private static func keychainHasItems() -> Bool {

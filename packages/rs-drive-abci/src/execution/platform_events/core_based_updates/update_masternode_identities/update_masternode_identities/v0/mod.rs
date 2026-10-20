@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
@@ -46,15 +47,21 @@ where
         // We should don't trust the order of added mns or updated mns
 
         // Sort added_mns based on pro_tx_hash
-        added_mns.sort_by(|a, b| a.pro_tx_hash.cmp(&b.pro_tx_hash));
+        added_mns.sort_by_key(|mn| mn.pro_tx_hash);
 
         // Sort updated_mns based on pro_tx_hash (the first element of the tuple)
-        updated_mns.sort_by(|a, b| a.0.cmp(&b.0));
+        updated_mns.sort_by_key(|mn| mn.0);
 
         let mut drive_operations = vec![];
 
         for masternode in added_mns {
-            let owner_identity = Self::create_owner_identity(&masternode, platform_version)?;
+            // Protocol versions 1 to 13, the ones that select this generation, select
+            // create_owner_identity 0 or 1, which create an identity or fail, and never return
+            // `None`.
+            let owner_identity = Self::create_owner_identity(&masternode, platform_version)?
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "create_owner_identity 0 and 1 always create an owner identity",
+                )))?;
 
             tracing::trace!(
                 identity = ?owner_identity,

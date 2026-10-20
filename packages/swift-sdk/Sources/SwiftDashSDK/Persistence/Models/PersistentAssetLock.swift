@@ -38,9 +38,10 @@ import SwiftData
 /// - **Platform address** (`fundingTypeRaw == 4` —
 ///   AssetLockAddressTopUp):
 ///   `recipientPlatformAddressHash` + `recipientPlatformAddressType`
-///   identify the destination. Set by Swift on the controller's
-///   `.completed` phase because the recipient is picked at
-///   ST-submit time on the host side; Rust never sees it.
+///   identify the destination, and `recipientIsExternal` says whether
+///   it belongs to this wallet or to a third party. Set by Swift on
+///   the controller's `.completed` phase because the recipient is
+///   picked at ST-submit time on the host side; Rust never sees it.
 ///
 /// - **Shielded address** (`fundingTypeRaw == 5` —
 ///   AssetLockShieldedAddressTopUp, not yet wired): will add a
@@ -114,10 +115,16 @@ public final class PersistentAssetLock {
 
     /// Discriminant of [`AssetLockStatus`]:
     /// 0 = Built, 1 = Broadcast, 2 = InstantSendLocked, 3 = ChainLocked,
-    /// 4 = Consumed. Stored as `Int` so `#Predicate` can match raw
-    /// values directly (the progress bar compares against 0/1/2/3 and
-    /// the resumable-locks filter against 4 to hide already-spent
-    /// rows).
+    /// 4 = Consumed, 5 = RecoveredFromChain, 6 = DrainCompleted (proven owned output).
+    /// Stored as `Int` so
+    /// `#Predicate` can match raw values directly (the progress bar
+    /// compares against 0/1/2/3 and the resumable-locks filter against
+    /// 4 to hide already-spent rows).
+    ///
+    /// `5` (RecoveredFromChain) rows are written by restore reconstruction or
+    /// live reconciliation of an unauthenticated already-consumed report. The
+    /// lock is confirmed on Core but its Platform-side consumption is unknown,
+    /// so UIs must treat it as neither pending (1…3) nor done (4).
     public var statusRaw: Int
 
     /// Bincode-encoded `AssetLockProof` (`dpp::bincode::config::standard()`).
@@ -153,6 +160,52 @@ public final class PersistentAssetLock {
     /// whenever `recipientPlatformAddressHash` is `nil`.
     public var recipientPlatformAddressType: UInt8?
 
+    /// Whether `recipientPlatformAddressHash` is a THIRD PARTY's
+    /// address (`true`) or one of this wallet's own addresses
+    /// (`false`) — the own/external discriminator for the funding
+    /// type 4 field-family.
+    ///
+    /// Without it, a populated recipient hash is ambiguous. Consumers
+    /// read that hash as "this lock topped up an address of mine" —
+    /// `PlatformAddressActivityStore.matchesOwnAssetLockTopUp` in
+    /// dashwallet-ios does exactly that — so an outgoing payment to
+    /// someone else would be rendered as an incoming credit to the
+    /// user. `true` marks the row as an outgoing send whose recipient
+    /// hash names a stranger and therefore will NEVER have a matching
+    /// `PersistentPlatformAddress` row.
+    ///
+    /// Written by the caller that picked the recipient, alongside the
+    /// hash and type: `false` for `fundFromAssetLock`, `true` for
+    /// `fundFromAssetLockExternal`.
+    ///
+    /// `nil` for:
+    /// - Identity-funding asset locks (no platform-address recipient).
+    /// - Address-funding locks that haven't completed yet.
+    /// - Pre-this-commit address-funding locks that completed before
+    ///   the field existed. Treat `nil` alongside a populated
+    ///   `recipientPlatformAddressHash` as "own" — that was the only
+    ///   flow those rows could have come from.
+    ///
+    /// ## Migration
+    ///
+    /// Adding this property is a lightweight-migratable change (a new
+    /// optional column backfilled `NULL`), but it is NOT a free one: a
+    /// `VersionedSchema` identifies a store by the CHECKSUM of the
+    /// entities it declares, so adding a property to the live model
+    /// mutates the checksum of every registered schema version that
+    /// references it. The model LIST being unchanged is irrelevant.
+    ///
+    /// V1 retains its frozen copy without this property. The collapsed
+    /// V2 adds the column along with the other unreleased model changes;
+    /// migration backfills NULL. After publication, freeze its exact graph
+    /// before introducing a subsequent version for further shape changes.
+    public var recipientIsExternal: Bool?
+
+    /// Stable UUID bytes for a wallet-drain operation. Legacy rows are nil.
+    /// Retained on consumed locks so restart recovery can distinguish a
+    /// completed transfer from an operation that never reached broadcast.
+    public var operationId: Data?
+
     /// Record timestamps.
     public var createdAt: Date
     public var updatedAt: Date
@@ -166,7 +219,8 @@ public final class PersistentAssetLock {
         accountIndexRaw: Int32 = 0,
         amountDuffs: Int64,
         statusRaw: Int,
-        proofBytes: Data? = nil
+        proofBytes: Data? = nil,
+        operationId: Data? = nil
     ) {
         self.outPointHex = outPointHex
         self.walletId = walletId
@@ -177,6 +231,7 @@ public final class PersistentAssetLock {
         self.amountDuffs = amountDuffs
         self.statusRaw = statusRaw
         self.proofBytes = proofBytes
+        self.operationId = operationId
         self.createdAt = Date()
         self.updatedAt = Date()
     }

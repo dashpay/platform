@@ -1,9 +1,16 @@
 use wasm_bindgen::prelude::wasm_bindgen;
 
+mod browser_storage;
 pub mod context_provider;
+mod contract_store;
+pub mod document_create_cost;
+pub mod document_type_layout;
 pub mod dpns;
+pub mod encrypted_for;
 pub mod error;
 pub mod logging;
+pub mod moderation_charters;
+mod protocol_version_store;
 pub mod queries;
 pub mod sdk;
 pub mod serialization;

@@ -2,6 +2,7 @@ import { Args } from '@oclif/core';
 import ConfigBaseCommand from '../../oclif/command/ConfigBaseCommand.js';
 import Config from '../../config/Config.js';
 import InvalidOptionPathError from '../../config/errors/InvalidOptionPathError.js';
+import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js';
 
 export default class ConfigSetCommand extends ConfigBaseCommand {
   static description = `Set config option
@@ -39,6 +40,8 @@ Sets a configuration option in the default config
     },
     flags,
     config,
+    configFileRepository,
+    writeConfigTemplates,
   ) {
     // Validate the path against the schema, not against the currently-set
     // value. `config.get(...)` would throw `InvalidOptionPathError` for any
@@ -59,7 +62,26 @@ Sets a configuration option in the default config
       value = optionValue;
     }
 
-    config.set(optionPath, value);
+    // Read, change and save in one locked step, against the config name resolved
+    // for this command rather than re-resolving the default, which another
+    // process may have changed. Mutating the copy loaded at startup and saving it
+    // on exit would write a snapshot that is already out of date, reverting
+    // anything saved in between.
+    const configName = config.getName();
+
+    configFileRepository.update((freshConfigFile) => {
+      const freshConfig = freshConfigFile.getConfig(configName);
+
+      freshConfig.set(optionPath, value);
+
+      // Enabling platform on a fullnode, or leaving masternode mode, needs a
+      // node identity saved before the service files are rendered.
+      ensureTenderdashNodeKey(freshConfig);
+    }, {
+      // Rendered after saving and inside the lock, so two commands changing the
+      // same config cannot save in one order and render in the other.
+      onSaved: (freshConfigFile) => writeConfigTemplates(freshConfigFile.getConfig(configName)),
+    });
 
     // eslint-disable-next-line no-console
     console.log(`${optionPath} set to ${optionValue}`);

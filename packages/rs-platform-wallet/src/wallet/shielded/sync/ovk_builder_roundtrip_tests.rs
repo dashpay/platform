@@ -237,14 +237,15 @@ async fn live_recorder_builds_entry_from_real_shield_bundle() {
         panic!("expected a Shield state transition");
     };
 
-    let cmxs = visible_output_cmxs(&v0.actions, &keys);
+    let views = keys.viewing_keys();
+    let cmxs = visible_output_cmxs(&v0.actions, &views);
     assert!(
         !cmxs.is_empty(),
         "recorder must recover the wallet-visible output cmx from a real bundle"
     );
 
     let entry = build_pending_entry(
-        &keys,
+        &views,
         LiveEntryParams {
             kind: ShieldedActivityKind::Shield,
             direction: ShieldedDirection::In,

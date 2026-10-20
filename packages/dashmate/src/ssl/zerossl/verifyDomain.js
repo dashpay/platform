@@ -14,7 +14,7 @@ export default async function verifyDomain(id, apiKey) {
     validation_method: 'HTTP_CSR_HASH',
   });
 
-  const url = `https://api.zerossl.com/certificates/${id}/challenges?access_key=${apiKey}`;
+  const url = `https://api.zerossl.com/certificates/${id}/challenges`;
 
   const requestOptions = {
     method: 'POST',
@@ -24,5 +24,5 @@ export default async function verifyDomain(id, apiKey) {
     },
   };
 
-  return requestApi(url, requestOptions);
+  return requestApi(apiKey, url, requestOptions);
 }

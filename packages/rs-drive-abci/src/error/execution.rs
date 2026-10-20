@@ -1,4 +1,4 @@
-use dpp::bls_signatures::BlsError;
+use dpp::bls::BlsError;
 use dpp::dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use dpp::identity::TimestampMillis;
 use dpp::version::FeatureVersion;
@@ -139,4 +139,8 @@ pub enum ExecutionError {
     /// General IO Error
     #[error("io error: {0}")]
     IOError(#[from] std::io::Error),
+
+    /// CheckTx proof-verification capacity is currently unavailable.
+    #[error("check tx proof verification capacity is temporarily unavailable")]
+    CheckTxProofVerificationBusy,
 }

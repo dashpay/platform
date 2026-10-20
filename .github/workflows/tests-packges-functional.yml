@@ -5,7 +5,8 @@ jobs:
   test-functional:
     name: Run functional tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Cold helper-image pulls can consume most of 15 minutes before tests start.
+    timeout-minutes: 30
     env:
       ECR_HOST: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
     steps:

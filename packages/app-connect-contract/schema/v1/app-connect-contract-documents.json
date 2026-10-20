@@ -1,0 +1,55 @@
+{
+  "loginKeyResponse": {
+    "type": "object",
+    "documentsMutable": false,
+    "canBeDeleted": true,
+    "creationRestrictionMode": 0,
+    "indices": [
+      {
+        "name": "byRequest",
+        "terminal": [
+          "appEphemeralPubKeyHash",
+          "$ownerId"
+        ]
+      }
+    ],
+    "properties": {
+      "appEphemeralPubKeyHash": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 20,
+        "maxItems": 20,
+        "description": "hash160 of the ephemeral public key the app put in its connect request; identifies the request",
+        "position": 0
+      },
+      "walletEphemeralPubKey": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 33,
+        "maxItems": 33,
+        "description": "The wallet's compressed ephemeral public key; the app derives the shared secret from it and its own ephemeral private key",
+        "position": 1
+      },
+      "encryptedPayload": {
+        "type": "array",
+        "byteArray": true,
+        "minItems": 60,
+        "maxItems": 572,
+        "description": "The granted private keys encrypted to the app: a 28-byte envelope plus 32 bytes per key, one to seventeen keys (the session key plus up to eight bindings with both purposes)",
+        "position": 2
+      }
+    },
+    "required": [
+      "appEphemeralPubKeyHash",
+      "walletEphemeralPubKey",
+      "encryptedPayload"
+    ],
+    "description": "A wallet's response after approving a login request. The flat entry is keyed by the request hash and wallet identity, so other identities cannot block its write. On re-login the wallet deletes its previous response by values and creates a response for the new request.",
+    "additionalProperties": false,
+    "indexOnly": true,
+    "entryPayload": [
+      "walletEphemeralPubKey",
+      "encryptedPayload"
+    ]
+  }
+}

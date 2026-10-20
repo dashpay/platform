@@ -27,6 +27,14 @@ class AppState: ObservableObject {
 
     @Published var dataStatistics: (identities: Int, documents: Int, contracts: Int, tokenBalances: Int)?
 
+    /// The connected network's protocol version, learned by
+    /// `refreshProtocolVersion(for:)` on app start and every network
+    /// switch. `nil` until the refresh completes (or if it failed) —
+    /// consumers that gate behavior on a protocol version (e.g. the
+    /// shielded denomination picker in `CreateIdentityView`) should
+    /// fall back to the currently-active network behavior when `nil`.
+    @Published var platformProtocolVersion: UInt32?
+
     /// Monotonic tick incremented when a wallet-scoped service rebind
     /// is needed but neither of the standard triggers
     /// (`currentNetwork.onChange`, `wallets.keys.onChange`) will fire.
@@ -45,6 +53,11 @@ class AppState: ObservableObject {
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostPlatform")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostCore")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhost")
+            // Docker endpoints only matter on regtest. The Options picker turns
+            // Docker off after it has published the next network, whose own
+            // `currentNetwork` rebuild then picks the flag up; rebuilding here
+            // too would race that rebuild.
+            guard currentNetwork == .regtest else { return }
             Task { await switchNetwork(to: currentNetwork) }
         }
     }
@@ -248,10 +261,19 @@ class AppState: ObservableObject {
     /// the network's real version. Failure is non-fatal: the SDK still
     /// learns the version later from response metadata.
     private func refreshProtocolVersion(for sdk: SDK) {
+        // Reset so a network switch never carries the previous
+        // network's version while the refresh is in flight.
+        platformProtocolVersion = nil
         Task.detached {
             do {
                 let version = try sdk.refreshProtocolVersion()
                 NSLog("✅ AppState: refreshed protocol version to \(version)")
+                await MainActor.run { [weak self] in
+                    // Drop a stale result if the SDK was swapped (e.g.
+                    // another network switch) while we were querying.
+                    guard let self, self.sdk === sdk else { return }
+                    self.platformProtocolVersion = version
+                }
             } catch {
                 NSLog("⚠️ AppState: protocol version refresh failed (non-fatal): \(error.localizedDescription)")
             }
@@ -384,12 +406,15 @@ class AppState: ObservableObject {
                         NSLog("   Platform version: \(version)")
                     } else if let id = dict["id"] as? String {
                         NSLog("   ID: \(id)")
-                    } else if let balance = dict["balance"] as? UInt64 {
+                    } else if let balance = UInt64(jsonValue: dict["balance"]) {
+                        // Credits are a protocol `u64`: DPP writes one above
+                        // 2^53 - 1 as a decimal string, which a bare cast
+                        // dropped to the generic "Result:" line below.
                         NSLog("   Balance: \(balance)")
                     } else {
                         NSLog("   Result: \(dict.keys.prefix(3).joined(separator: ", "))...")
                     }
-                } else if let uint = result as? UInt64 {
+                } else if let uint = UInt64(jsonValue: result) {
                     NSLog("   Value: \(uint)")
                 } else if let bool = result as? Bool {
                     NSLog("   Available: \(bool)")

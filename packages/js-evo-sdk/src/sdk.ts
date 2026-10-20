@@ -11,8 +11,11 @@ import { ProtocolFacade } from './protocol/facade.js';
 import { StateTransitionsFacade } from './state-transitions/facade.js';
 import { SystemFacade } from './system/facade.js';
 import { GroupFacade } from './group/facade.js';
+import { ContractGroupsFacade } from './contract-groups/facade.js';
 import { VotingFacade } from './voting/facade.js';
 import { ShieldedFacade } from './shielded/facade.js';
+import { EncryptedForFacade } from './encrypted-for/facade.js';
+import { ModerationChartersFacade } from './moderation-charters/facade.js';
 
 export interface ConnectionOptions {
   version?: number;
@@ -35,7 +38,9 @@ export interface EvoSDKOptions extends ConnectionOptions {
   // Custom masternode addresses to seed the SDK with. `network` still
   // controls which Network enum the underlying builder uses (and, for
   // trusted mode, which quorums endpoint is prefetched); the addresses
-  // here replace the network's built-in defaults at seed time.
+  // here replace the network's built-in defaults at seed time. In trusted
+  // mode they also take precedence over the addresses the quorum service
+  // advertises, so `connect()` skips that discovery request when they are set.
   // Example: ['https://127.0.0.1:1443', 'https://192.168.1.100:1443']
   addresses?: string[];
   // Short name of the devnet (e.g. 'paloma'). Required when network === 'devnet'
@@ -67,8 +72,11 @@ export class EvoSDK {
   public stateTransitions!: StateTransitionsFacade;
   public system!: SystemFacade;
   public group!: GroupFacade;
+  public contractGroups!: ContractGroupsFacade;
   public voting!: VotingFacade;
   public shielded!: ShieldedFacade;
+  public encryptedFor!: EncryptedForFacade;
+  public moderationCharters!: ModerationChartersFacade;
   constructor(options: EvoSDKOptions = {}) {
     // Apply defaults while preserving any future connection options
     const { network = 'testnet', trusted = false, addresses, devnetName, quorumUrl, ...connection } = options;
@@ -104,8 +112,11 @@ export class EvoSDK {
     this.stateTransitions = new StateTransitionsFacade(this);
     this.system = new SystemFacade(this);
     this.group = new GroupFacade(this);
+    this.contractGroups = new ContractGroupsFacade(this);
     this.voting = new VotingFacade(this);
     this.shielded = new ShieldedFacade(this);
+    this.encryptedFor = new EncryptedForFacade(this);
+    this.moderationCharters = new ModerationChartersFacade(this);
   }
 
   get wasm(): wasm.WasmSdk {
@@ -132,26 +143,29 @@ export class EvoSDK {
 
     const { network, trusted, version, proofs, settings, logs, addresses, devnetName, quorumUrl } = this.options;
 
-    // Prefetch trusted context only when trusted mode is requested
+    // Prefetch trusted context only when trusted mode is requested. Explicit
+    // addresses win over discovered ones in `withTrustedContext`, so the
+    // masternode discovery request is skipped when they are given.
+    const discoverAddresses = !(addresses && addresses.length > 0);
     let context: wasm.WasmTrustedContext | undefined;
     if (trusted) {
       if (network === 'mainnet') {
         context = quorumUrl
-          ? await wasm.WasmTrustedContext.prefetchMainnetWithUrl(quorumUrl)
-          : await wasm.WasmTrustedContext.prefetchMainnet();
+          ? await wasm.WasmTrustedContext.prefetchMainnetWithUrl(quorumUrl, discoverAddresses)
+          : await wasm.WasmTrustedContext.prefetchMainnet(discoverAddresses);
       } else if (network === 'testnet') {
         context = quorumUrl
-          ? await wasm.WasmTrustedContext.prefetchTestnetWithUrl(quorumUrl)
-          : await wasm.WasmTrustedContext.prefetchTestnet();
+          ? await wasm.WasmTrustedContext.prefetchTestnetWithUrl(quorumUrl, discoverAddresses)
+          : await wasm.WasmTrustedContext.prefetchTestnet(discoverAddresses);
       } else if (network === 'local') {
         context = quorumUrl
-          ? await wasm.WasmTrustedContext.prefetchLocalWithUrl(quorumUrl)
-          : await wasm.WasmTrustedContext.prefetchLocal();
+          ? await wasm.WasmTrustedContext.prefetchLocalWithUrl(quorumUrl, discoverAddresses)
+          : await wasm.WasmTrustedContext.prefetchLocal(discoverAddresses);
       } else if (network === 'devnet') {
         if (quorumUrl) {
-          context = await wasm.WasmTrustedContext.prefetchDevnetWithUrl(quorumUrl);
+          context = await wasm.WasmTrustedContext.prefetchDevnetWithUrl(quorumUrl, discoverAddresses);
         } else if (devnetName) {
-          context = await wasm.WasmTrustedContext.prefetchDevnet(devnetName);
+          context = await wasm.WasmTrustedContext.prefetchDevnet(devnetName, discoverAddresses);
         } else {
           throw new Error("EvoSDK: trusted devnet requires devnetName or quorumUrl");
         }
@@ -221,6 +235,37 @@ export class EvoSDK {
   static async getLatestVersionNumber(): Promise<number> {
     await initWasm();
     return wasm.WasmSdkBuilder.getLatestVersionNumber();
+  }
+
+  /**
+   * Hard ceiling on a ranked / having-range `limit`. A request above it is
+   * rejected, not truncated.
+   */
+  static async maxRankedLimit(): Promise<number> {
+    await initWasm();
+    return wasm.WasmSdk.maxRankedLimit();
+  }
+
+  /**
+   * Hard ceiling on the element count of a branching `in` prefix pin on a
+   * ranked / having-range query. Each element is its own secondary walk and
+   * its own proof branch, so this bounds the fan-out one request can ask
+   * for. A pin above it is rejected, not truncated.
+   */
+  static async maxPrefixInBranches(): Promise<number> {
+    await initWasm();
+    return wasm.WasmSdk.maxPrefixInBranches();
+  }
+
+  /**
+   * Fixed-point divisor for the `avg` axis of a ranked / having-range
+   * result. Exposed so a caller who persisted a `DocumentsGroupEntry.value`
+   * can re-render it without holding on to the result that produced it.
+   * Never hardcode the number.
+   */
+  static async rankedAverageScale(): Promise<bigint> {
+    await initWasm();
+    return wasm.WasmSdk.rankedAverageScale();
   }
 
   // Factory helpers that return configured instances (not connected)
@@ -293,7 +338,10 @@ export { ProtocolFacade } from './protocol/facade.js';
 export { StateTransitionsFacade } from './state-transitions/facade.js';
 export { SystemFacade } from './system/facade.js';
 export { GroupFacade } from './group/facade.js';
+export { ContractGroupsFacade } from './contract-groups/facade.js';
 export { VotingFacade } from './voting/facade.js';
 export { ShieldedFacade } from './shielded/facade.js';
+export { EncryptedForFacade } from './encrypted-for/facade.js';
+export { ModerationChartersFacade } from './moderation-charters/facade.js';
 export { wallet } from './wallet/functions.js';
 export * from './wasm.js';

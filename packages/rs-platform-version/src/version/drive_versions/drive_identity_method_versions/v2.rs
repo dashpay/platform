@@ -1,0 +1,235 @@
+use crate::version::drive_versions::drive_identity_method_versions::{
+    DriveIdentityContractInfoMethodVersions, DriveIdentityCostEstimationMethodVersions,
+    DriveIdentityFetchAttributesMethodVersions, DriveIdentityFetchFullIdentityMethodVersions,
+    DriveIdentityFetchMethodVersions, DriveIdentityFetchPartialIdentityMethodVersions,
+    DriveIdentityFetchPublicKeyHashesMethodVersions, DriveIdentityInsertMethodVersions,
+    DriveIdentityKeyHashesToIdentityInsertMethodVersions, DriveIdentityKeysBudgetMethodVersions,
+    DriveIdentityKeysFetchMethodVersions, DriveIdentityKeysInsertMethodVersions,
+    DriveIdentityKeysMethodVersions, DriveIdentityKeysProveMethodVersions,
+    DriveIdentityMethodVersions, DriveIdentityProveMethodVersions,
+    DriveIdentityUpdateMethodVersions, DriveIdentityWithdrawalDocumentMethodVersions,
+    DriveIdentityWithdrawalMethodVersions, DriveIdentityWithdrawalTransactionIndexMethodVersions,
+    DriveIdentityWithdrawalTransactionMethodVersions,
+    DriveIdentityWithdrawalTransactionQueueMethodVersions,
+};
+
+/// V2 is protocol version 14's identity-method table. It differs from V1 in
+/// its contract-bound key indexing and withdrawal methods:
+///
+/// * `contract_info.add_potential_contract_info_for_contract_bounded_key` 0 -> 1 and
+///   `contract_info.refresh_potential_contract_info_key_references` 0 -> 1:
+///   write and refresh contract-bound authentication-key references. Both v0s preserve the
+///   historical rejection of authentication keys with contract bounds before v14. Both v1s also
+///   store the current-key alias of a contract-level encryption or decryption key bound under
+///   `MultipleReferenceToLatest` in the key's purpose subtree, where the current-key query reads
+///   it; both v0s wrote it one level up, where the sibling reference could not resolve, so such
+///   keys could never be registered before v14 (nothing is stored at the v0 path on any network).
+/// * `keys.insert.insert_new_unique_key` 0 -> 1 and `keys.insert.insert_new_non_unique_key`
+///   0 -> 1: a key that carries a budget also gets its remaining budget written to the identity's
+///   key budgets subtree. Keys cannot carry a budget before v14, so both v0s never write it.
+/// * `keys.budget.*` `None -> Some(0)`: the key budgets subtree and the methods that write, read
+///   and deduct from it. The subtree does not exist before v14, so V1 keeps the slots `None`.
+/// * `update.update_identity_key_limits` and `keys.budget.add_to_identity_key_budget`
+///   `None -> Some(0)`: the identity key limits update transition rewrites a key with a raised
+///   total budget or a later expiry and raises its remaining budget by the same amount.
+/// * `update.add_to_identity_balance` 0 -> 1 and
+///   `update.apply_balance_change_from_fee_to_identity` 0 -> 1: credits an identity receives
+///   while it carries a debt (a negative credit balance) still repay the debt first, and the
+///   repaid part now reaches the processing fee pool of the block's epoch. Both v0s left it in
+///   no balance the credit sum counts.
+/// * `update.disable_identity_keys` 0 -> 1: fee estimation reads the stored keys so a
+///   bound key's reference refreshes are priced; v0 estimated with an unbounded
+///   stand-in key.
+/// * `withdrawals.document.find_withdrawal_documents_by_status_and_transaction_indices`
+///   0 -> 1, selecting the v1 withdrawal-by-transaction-index query builder
+///   that carries the transaction-index `In` clause in
+///   `InternalClauses.in_clauses` instead of smuggling it through
+///   `equal_clauses`. The two builders lower to the identical grovedb path
+///   query (pinned by `withdrawal_in_clause_placement_equivalence` in
+///   rs-drive's query tests), so this is a structural version bump, not a
+///   behavior change; v0 stays byte-frozen for protocol versions up to 13.
+/// * `withdrawals.calculate_current_withdrawal_limit` 0 -> 1: the daily
+///   maximum derives from the total credits Platform held a day ago (the
+///   relative daily withdrawal limit) instead of the current total. The
+///   credit inflows from the active window are added on top so matching
+///   deposit-withdraw cycles do not consume the budget of others.
+/// * `withdrawals.record_total_credits_history` and
+///   `withdrawals.fetch_total_credits_in_platform_a_day_ago` `None -> Some(0)`:
+///   the per-block total credits history under the withdrawals tree that the
+///   lagged limit reads; the subtree does not exist before v14, so V1 keeps
+///   both slots `None`.
+/// * `withdrawals.record_credit_inflows` `None -> Some(0)`: every credit mint
+///   (asset locks, epoch Core rewards) is recorded in the credit inflows sum
+///   tree so the daily withdrawal limit counts net outflow instead of gross —
+///   a deposit -> withdraw cycle no longer consumes the budget of other users.
+///   The subtree does not exist before v14, so V1 keeps the slot `None`.
+/// * `withdrawals.record_core_credit_pool_blocks`,
+///   `withdrawals.fetch_core_credit_pool_balances` and
+///   `withdrawals.fetch_in_flight_withdrawal_amount` `None -> Some(0)`: the
+///   Core-anchored withdrawal limit, which reads Core's credit pool balance as
+///   recorded per Core block and what pooled withdrawals take out of the pool
+///   once mined. The subtree does not exist before v14, so V1 keeps the slots
+///   `None`.
+pub const DRIVE_IDENTITY_METHOD_VERSIONS_V2: DriveIdentityMethodVersions =
+    DriveIdentityMethodVersions {
+        fetch: DriveIdentityFetchMethodVersions {
+            public_key_hashes: DriveIdentityFetchPublicKeyHashesMethodVersions {
+                fetch_full_identities_by_unique_public_key_hashes: 0,
+                fetch_full_identity_by_unique_public_key_hash: 0,
+                fetch_identity_id_by_unique_public_key_hash: 0,
+                fetch_identity_ids_by_non_unique_public_key_hash: 0,
+                fetch_identity_ids_by_unique_public_key_hashes: 0,
+                fetch_serialized_full_identity_by_unique_public_key_hash: 0,
+                has_any_of_unique_public_key_hashes: 0,
+                has_non_unique_public_key_hash: 0,
+                has_non_unique_public_key_hash_already_for_identity: 0,
+                has_unique_public_key_hash: 0,
+                fetch_full_identity_by_non_unique_public_key_hash: 0,
+            },
+            attributes: DriveIdentityFetchAttributesMethodVersions {
+                revision: 0,
+                nonce: 0,
+                identity_contract_nonce: 0,
+                balance: 0,
+                balance_include_debt: 0,
+                negative_balance: 0,
+            },
+            partial_identity: DriveIdentityFetchPartialIdentityMethodVersions {
+                fetch_identity_revision_with_keys: 0,
+                fetch_identity_balance_with_keys: 0,
+                fetch_identity_balance_with_keys_and_revision: 0,
+                fetch_identity_with_balance: 0,
+                fetch_identity_keys: 0,
+            },
+            full_identity: DriveIdentityFetchFullIdentityMethodVersions {
+                fetch_full_identity: Some(0),
+                fetch_full_identities: Some(0),
+            },
+        },
+        prove: DriveIdentityProveMethodVersions {
+            full_identity: 0,
+            full_identities: 0,
+            identity_nonce: 0,
+            identity_contract_nonce: 0,
+            identities_contract_keys: 0,
+            prove_full_identities_by_unique_public_key_hashes: 0,
+            prove_full_identity_by_unique_public_key_hash: 0,
+            prove_identity_id_by_unique_public_key_hash: 0,
+            prove_identity_ids_by_unique_public_key_hashes: 0,
+            prove_full_identity_by_non_unique_public_key_hash: 0,
+        },
+        keys: DriveIdentityKeysMethodVersions {
+            fetch: DriveIdentityKeysFetchMethodVersions {
+                fetch_all_current_identity_keys: 0,
+                fetch_all_identity_keys: 0,
+                fetch_identities_all_keys: 0,
+                fetch_identity_keys: 0,
+                fetch_identities_contract_keys: 0,
+            },
+            prove: DriveIdentityKeysProveMethodVersions {
+                prove_identities_all_keys: 0,
+                prove_identity_keys: 0,
+            },
+            insert: DriveIdentityKeysInsertMethodVersions {
+                create_key_tree_with_keys: 0,
+                create_new_identity_key_query_trees: 0,
+                insert_key_searchable_references: 0,
+                insert_key_to_storage: 0,
+                insert_new_non_unique_key: 1,
+                insert_new_unique_key: 1,
+                replace_key_in_storage: 0,
+            },
+            insert_key_hash_identity_reference:
+                DriveIdentityKeyHashesToIdentityInsertMethodVersions {
+                    add_estimation_costs_for_insert_non_unique_public_key_hash_reference: 0,
+                    add_estimation_costs_for_insert_unique_public_key_hash_reference: 0,
+                    insert_non_unique_public_key_hash_reference_to_identity: 0,
+                    insert_reference_to_non_unique_key: 0,
+                    insert_reference_to_unique_key: 0,
+                    insert_unique_public_key_hash_reference_to_identity: 0,
+                },
+            budget: DriveIdentityKeysBudgetMethodVersions {
+                insert_identity_key_budget: Some(0),
+                fetch_identity_key_remaining_budget: Some(0),
+                deduct_from_identity_key_budget: Some(0),
+                add_estimation_costs_for_key_budgets: Some(0),
+                fetch_identity_keys_remaining_budgets: Some(0),
+                prove_identity_keys_remaining_budgets: Some(0),
+                add_to_identity_key_budget: Some(0),
+            },
+        },
+        update: DriveIdentityUpdateMethodVersions {
+            update_identity_revision: 0,
+            merge_identity_nonce: 0,
+            update_identity_negative_credit_operation: 0,
+            initialize_identity_revision: 0,
+            disable_identity_keys: 1,
+            re_enable_identity_keys: 0,
+            add_new_non_unique_keys_to_identity: 0,
+            add_new_unique_keys_to_identity: 0,
+            add_new_keys_to_identity: 0,
+            insert_identity_balance: 0,
+            initialize_negative_identity_balance: 0,
+            add_to_identity_balance: 1, // changed: credits that repay an identity's debt are owed to the processing fee pool
+            add_to_previous_balance: 0,
+            apply_balance_change_from_fee_to_identity: 1, // changed: routes the debt a balance change repaid to the processing fee pool
+            remove_from_identity_balance: 0,
+            refresh_identity_key_reference_operations: 0,
+            update_identity_key_limits: Some(0),
+        },
+        insert: DriveIdentityInsertMethodVersions {
+            add_new_identity: 0,
+        },
+        contract_info: DriveIdentityContractInfoMethodVersions {
+            add_potential_contract_info_for_contract_bounded_key: 1,
+            refresh_potential_contract_info_key_references: 1,
+            merge_identity_contract_nonce: 0,
+        },
+        cost_estimation: DriveIdentityCostEstimationMethodVersions {
+            for_authentication_keys_security_level_in_key_reference_tree: 0,
+            for_balances: 0,
+            for_token_balances: 0,
+            for_token_total_supply: 0,
+            for_contract_info: 0,
+            for_contract_info_group: 0,
+            for_contract_info_group_keys: 0,
+            for_contract_info_group_key_purpose: 0,
+            for_keys_for_identity_id: 0,
+            for_negative_credit: 0,
+            for_purpose_in_key_reference_tree: 0,
+            for_root_key_reference_tree: 0,
+            for_update_revision: 0,
+            for_token_identity_infos: 0,
+            for_token_perpetual_distribution: 0,
+            for_token_once_per_identity_distribution: 0,
+            for_token_pre_programmed_distribution: 0,
+            for_root_token_ms_interval_distribution: 0,
+            for_token_selling_prices: 0,
+            for_token_contract_infos: 0,
+        },
+        withdrawals: DriveIdentityWithdrawalMethodVersions {
+            document: DriveIdentityWithdrawalDocumentMethodVersions {
+                fetch_oldest_withdrawal_documents_by_status: 0,
+                find_withdrawal_documents_by_status_and_transaction_indices: 1,
+            },
+            transaction: DriveIdentityWithdrawalTransactionMethodVersions {
+                index: DriveIdentityWithdrawalTransactionIndexMethodVersions {
+                    fetch_next_withdrawal_transaction_index: 0,
+                    add_update_next_withdrawal_transaction_index_operation: 0,
+                },
+                queue: DriveIdentityWithdrawalTransactionQueueMethodVersions {
+                    add_enqueue_untied_withdrawal_transaction_operations: 0,
+                    dequeue_untied_withdrawal_transactions: 0,
+                    remove_broadcasted_withdrawal_transactions_after_completion_operations: 0,
+                    move_broadcasted_withdrawal_transactions_back_to_queue_operations: 0,
+                },
+            },
+            calculate_current_withdrawal_limit: 1, // changed in v14: daily maximum is a percentage of the total credits a day ago plus the credit inflows of the last 25 hours
+            record_total_credits_history: Some(0), // new in v14: total credits history for the day-lagged daily withdrawal limit
+            fetch_total_credits_in_platform_a_day_ago: Some(0), // new in v14
+            record_credit_inflows: Some(0), // new in v14: credit inflows sum tree for the net daily withdrawal limit
+            record_core_credit_pool_blocks: Some(0), // new in v14: Core credit pool balances for the Core-anchored withdrawal limit
+            fetch_core_credit_pool_balances: Some(0), // new in v14
+            fetch_in_flight_withdrawal_amount: Some(0), // new in v14
+        },
+    };

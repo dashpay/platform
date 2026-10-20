@@ -1,15 +1,30 @@
 use crate::consensus::basic::data_contract::UnknownStorageKeyRequirementsError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+#[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
+use crate::serialization::JsonConvertible;
+#[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
+use crate::serialization::ValueConvertible;
 use crate::ProtocolError;
-use bincode::{Decode, Encode};
+use bincode::{Decode, DecodeUntrusted, Encode};
 use serde_repr::*;
 use std::convert::TryFrom;
 
 /// The Storage Key requirements
 // @append_only
 #[repr(u8)]
-#[derive(Serialize_repr, Deserialize_repr, Debug, PartialEq, Eq, Copy, Clone, Encode, Decode)]
+#[derive(
+    Serialize_repr,
+    Deserialize_repr,
+    Debug,
+    PartialEq,
+    Eq,
+    Copy,
+    Clone,
+    Encode,
+    Decode,
+    DecodeUntrusted,
+)]
 pub enum StorageKeyRequirements {
     Unique = 0,
     Multiple = 1,
@@ -52,10 +67,10 @@ impl TryFrom<i128> for StorageKeyRequirements {
 
 // --- canonical conversion trait impls (unification pass 1) ---
 #[cfg(all(feature = "json-conversion", feature = "serde-conversion"))]
-impl crate::serialization::JsonConvertible for StorageKeyRequirements {}
+impl JsonConvertible for StorageKeyRequirements {}
 
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
-impl crate::serialization::ValueConvertible for StorageKeyRequirements {}
+impl ValueConvertible for StorageKeyRequirements {}
 
 #[cfg(all(
     test,

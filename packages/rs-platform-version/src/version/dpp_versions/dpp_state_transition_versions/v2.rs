@@ -2,7 +2,7 @@ use crate::version::dpp_versions::dpp_state_transition_versions::{
     AddressFundsTransitionVersions, ContractTransitionVersions, DPPStateTransitionVersions,
     DocumentTransitionVersions, DocumentsBatchTransitionValidationVersions,
     DocumentsBatchTransitionVersions, IdentityCreditWithdrawalTransitionVersions,
-    IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
+    IdentityTransitionAssetLockVersions, IdentityTransitionVersions, ShieldedTransitionVersions,
 };
 
 pub const STATE_TRANSITION_VERSIONS_V2: DPPStateTransitionVersions = DPPStateTransitionVersions {
@@ -37,9 +37,13 @@ pub const STATE_TRANSITION_VERSIONS_V2: DPPStateTransitionVersions = DPPStateTra
     address_funds: AddressFundsTransitionVersions {
         address_funds_transition_default_version: 0,
         credit_withdrawal: 0,
+        validate_credit_withdrawal_structure: 0,
         min_output_amount: 500_000,
         min_input_amount: 100_000,
         min_identity_funding_amount: 200_000,
+    },
+    shielded: ShieldedTransitionVersions {
+        validate_withdrawal_structure: 0,
     },
     max_address_inputs: 16,
     max_address_outputs: 128,

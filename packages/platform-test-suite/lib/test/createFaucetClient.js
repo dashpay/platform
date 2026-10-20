@@ -17,6 +17,7 @@ if (typeof window === 'undefined') {
 const { contractId } = require('@dashevo/dpns-contract/lib/systemIds');
 
 const getDAPISeeds = require('./getDAPISeeds');
+const createPlatformProofVerifier = require('./createPlatformProofVerifier');
 
 let faucetClient;
 
@@ -31,6 +32,7 @@ function createFaucetClient() {
       ? { dapiAddresses }
       : { seeds: getDAPISeeds() }),
     network: process.env.NETWORK,
+    platformProofVerifier: createPlatformProofVerifier(),
     apps: {
       dpns: {
         contractId,

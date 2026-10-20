@@ -22,7 +22,7 @@ mod tests {
     use dpp::identity::signer::Signer;
     use dpp::prelude::AddressNonce;
     use dpp::serialization::{PlatformSerializable, Signable};
-    use dpp::shielded::SerializedAction;
+    use dpp::shielded::{shield_extra_sighash_data, SerializedAction};
     use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
     use dpp::state_transition::shield_transition::ShieldTransition;
     use dpp::state_transition::StateTransition;
@@ -130,6 +130,20 @@ mod tests {
             AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]),
         )
         .await
+    }
+
+    /// The Orchard sighash consensus checks a `Shield` funded from `funding` against. Only the
+    /// funding addresses are bound, not their nonces or contributions, so a fixture can prove its
+    /// bundle before it settles what each address contributes.
+    fn shield_sighash(
+        bundle_commitment: &[u8; 32],
+        funding: &[PlatformAddress],
+        platform_version: &PlatformVersion,
+    ) -> [u8; 32] {
+        let inputs = funding.iter().map(|address| (*address, (0, 0))).collect();
+        let extra_sighash_data =
+            shield_extra_sighash_data(&inputs, platform_version).expect("shield sighash data");
+        compute_platform_sighash(bundle_commitment, &extra_sighash_data)
     }
 
     // (Orchard ProvingKey and serialize_authorized_bundle are now shared
@@ -810,7 +824,7 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_sighash(&bundle_commitment, &[input_address], platform_version);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
@@ -1007,7 +1021,7 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_sighash(&bundle_commitment, &[input_address], platform_version);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
@@ -1123,7 +1137,7 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_sighash(&bundle_commitment, &[input_address], platform_version);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
@@ -1188,8 +1202,9 @@ mod tests {
         use super::*;
         use dpp::block::block_info::BlockInfo;
         use dpp::serialization::PlatformSerializable;
-        use dpp::state_transition::proof_result::StateTransitionProofResult;
         use drive::drive::Drive;
+        use drive::error::proof::ProofError;
+        use drive::error::Error as DriveError;
         use grovedb_commitment_tree::{
             Anchor, Builder, BundleType, DashMemo, Flags as OrchardFlags, FullViewingKey,
             NoteValue, Scope, SpendingKey,
@@ -1197,7 +1212,7 @@ mod tests {
         use rand::rngs::OsRng;
 
         #[tokio::test]
-        async fn test_shield_prove_and_verify_address_balances() {
+        async fn test_shield_state_proof_verifies_balances_but_not_execution() {
             let platform_version = PlatformVersion::latest();
             let mut platform = setup_platform();
             let mut rng = OsRng;
@@ -1228,10 +1243,13 @@ mod tests {
                 )
                 .unwrap();
 
+            // --- The address that funds the shield, which the bundle's sighash binds ---
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            // Shield sighash extra_data is empty (no transparent output fields)
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_sighash(&bundle_commitment, &[input_address], platform_version);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
@@ -1244,8 +1262,6 @@ mod tests {
             let shield_amount = (-value_balance) as u64;
 
             // --- Set up input address with enough balance ---
-            let mut signer = TestAddressSigner::new();
-            let input_address = signer.add_p2pkh([1u8; 32]);
             let input_amount = shield_amount + dash_to_credits!(0.01);
             setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
 
@@ -1325,23 +1341,19 @@ mod tests {
                 .into_data()
                 .expect("expected proof data, not an error");
 
-            // --- Verify proof ---
-            let (root_hash, proof_result) = Drive::verify_state_transition_was_executed_with_proof(
-                &st,
-                &BlockInfo::default(),
+            // The state proof still authenticates the resulting address balance.
+            let (root_hash, address_infos): (
+                _,
+                BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+            ) = Drive::verify_addresses_infos(
                 &proof_bytes,
-                &|_| Ok(None),
+                [&input_address],
+                false,
                 platform_version,
             )
-            .expect("expected to verify shield proof");
+            .expect("expected to verify the shield address state proof");
 
             assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
-
-            // --- Assert result is VerifiedAddressInfos containing the input address ---
-            let StateTransitionProofResult::VerifiedAddressInfos(address_infos) = proof_result
-            else {
-                panic!("expected VerifiedAddressInfos, got {:?}", proof_result);
-            };
 
             assert!(
                 address_infos.contains_key(&input_address),
@@ -1367,6 +1379,678 @@ mod tests {
             assert!(
                 balance_after < dash_to_credits!(1.0),
                 "balance should be less than original after shield"
+            );
+
+            // A post-state balance alone cannot prove that this specific shield
+            // transition executed; the outcome must therefore stay tagged as
+            // an affected-state snapshot rather than execution evidence.
+            let (_outcome_root_hash, outcome) =
+                Drive::verify_state_transition_was_executed_with_proof(
+                    &st,
+                    &BlockInfo::default(),
+                    &proof_bytes,
+                    &|_| Ok(None),
+                    platform_version,
+                )
+                .expect("shield affected-state verification should succeed");
+
+            assert!(
+                !outcome.is_execution_proved(),
+                "a shield state proof must not be treated as execution evidence, got {outcome:?}"
+            );
+        }
+    }
+
+    // ==========================================
+    // NULLIFIER TESTS (every revealed nullifier is recorded once)
+    // ==========================================
+
+    mod nullifiers {
+        use super::*;
+        use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+        use crate::execution::validation::state_transition::shield::StateTransitionShieldTransitionActionTransformer;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            build_outputs_only_bundle, build_outputs_only_bundle_bound, has_recorded_nullifier,
+            process_transition_and_commit, setup_platform_at_protocol_version,
+            shielded_transfer_errors_revealing, OutputsOnlyBundle,
+        };
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            insert_anchor_into_state, serialize_authorized_bundle_u64,
+        };
+        use crate::platform_types::platform::PlatformRef;
+        use crate::platform_types::platform_state::PlatformStateV0Methods;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::state_transition::shielded_transfer_transition::{
+            v0::ShieldedTransferTransitionV0, ShieldedTransferTransition,
+        };
+        use dpp::validation::ConsensusValidationResult;
+        use dpp::version::DefaultForPlatformVersion;
+        use drive::drive::shielded::paths::{shielded_credit_pool_path, SHIELDED_NOTES_KEY};
+        use drive::grovedb::Transaction;
+        use drive::state_transition_action::StateTransitionAction;
+        use grovedb_commitment_tree::{
+            ClientMemoryCommitmentTree, Note, Position, Retention, SpendAuthorizingKey,
+        };
+        use rand::{rngs::StdRng, SeedableRng};
+        use std::sync::OnceLock;
+
+        /// One proven, unbound bundle, shared by the protocol-version-13 test: 13 binds nothing,
+        /// so there a single bundle still verifies under any input set, which is what that test
+        /// submits twice.
+        fn unbound_bundle() -> &'static OutputsOnlyBundle {
+            static BUNDLE: OnceLock<OutputsOnlyBundle> = OnceLock::new();
+            BUNDLE.get_or_init(|| build_outputs_only_bundle(5_000))
+        }
+
+        /// A bundle proved against the addresses that fund the shield. `shield_funding_digest_v0`
+        /// hashes the input addresses and nothing else — neither the nonce nor the credits — so the
+        /// bundle verifies under no other set of funders, while one bundle still serves several
+        /// shields from the same funder.
+        fn bound_bundle(
+            address: PlatformAddress,
+            platform_version: &PlatformVersion,
+        ) -> OutputsOnlyBundle {
+            // `signed_shield` derives the inputs from the amount the bundle pays, so the amount is
+            // fixed here rather than read back off a bundle that would have to exist first. The
+            // nonce below reaches no hash; it is here because the map the digest reads is keyed
+            // this way.
+            const SHIELDED: u64 = 5_000;
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                address,
+                (1 as AddressNonce, SHIELDED + dash_to_credits!(0.01)),
+            );
+            let extra_sighash_data = shield_extra_sighash_data(&inputs, platform_version)
+                .expect("the binding of the funding inputs");
+            build_outputs_only_bundle_bound(SHIELDED, &extra_sighash_data)
+        }
+
+        /// Rebuilds the same Orchard actions while signing their binding in the requested
+        /// protocol context. The randomness deliberately does not depend on that context.
+        fn historical_bundle(extra_sighash_data: &[u8], seed: u64) -> OutputsOnlyBundle {
+            historical_bundle_with_notes(5_000, extra_sighash_data, seed).0
+        }
+
+        fn historical_bundle_with_notes(
+            value: u64,
+            extra_sighash_data: &[u8],
+            seed: u64,
+        ) -> (OutputsOnlyBundle, Vec<(usize, Note)>) {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let sk = SpendingKey::from_bytes([0u8; 32]).expect("spending key");
+            let recipient = FullViewingKey::from(&sk).address_at(0u32, Scope::External);
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                Anchor::empty_tree(),
+            );
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(value), [0u8; 36])
+                .expect("output");
+            let (unauthorized, _) = builder
+                .build::<i64>(&mut rng)
+                .expect("bundle")
+                .expect("nonempty bundle");
+            let commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&commitment, extra_sighash_data);
+            let bundle = unauthorized
+                .create_proof(get_proving_key(), &mut rng)
+                .expect("proof")
+                .apply_signatures(rng, sighash, &[])
+                .expect("binding signature");
+            let (actions, _, value_balance, anchor, proof, binding_signature) =
+                serialize_authorized_bundle_with_flags(&bundle);
+            let notes = bundle
+                .decrypt_outputs_with_keys(&[FullViewingKey::from(&sk).to_ivk(Scope::External)])
+                .into_iter()
+                .map(|(index, _, note, _, _)| (index, note))
+                .collect();
+            (
+                OutputsOnlyBundle {
+                    actions,
+                    amount: value_balance.unsigned_abs(),
+                    anchor,
+                    proof,
+                    binding_signature,
+                },
+                notes,
+            )
+        }
+
+        fn spend_historical_note(
+            note: Note,
+            position: u64,
+            tree: &ClientMemoryCommitmentTree,
+            seed: u64,
+            pv: &PlatformVersion,
+        ) -> (StateTransition, Vec<SerializedAction>, Vec<(usize, Note)>) {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let sk = SpendingKey::from_bytes([0; 32]).expect("key");
+            let fvk = FullViewingKey::from(&sk);
+            let anchor = tree.anchor().expect("anchor");
+            let witness = tree
+                .witness(Position::from(position), 0)
+                .expect("witness")
+                .expect("marked note");
+            let amount = note.value().inner()
+                - dpp::shielded::compute_minimum_shielded_fee(2, pv).expect("fee");
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+            builder
+                .add_spend(fvk.clone(), note, witness)
+                .expect("spend");
+            builder
+                .add_output(
+                    None,
+                    fvk.address_at(0u32, Scope::External),
+                    NoteValue::from_raw(amount),
+                    [0; 36],
+                )
+                .expect("output");
+            let (unsigned, _) = builder
+                .build::<i64>(&mut rng)
+                .expect("bundle")
+                .expect("nonempty");
+            let commitment: [u8; 32] = unsigned.commitment().into();
+            let sighash = compute_platform_sighash(&commitment, &[]);
+            let bundle = unsigned
+                .create_proof(get_proving_key(), &mut rng)
+                .expect("proof")
+                .apply_signatures(rng, sighash, &[SpendAuthorizingKey::from(&sk)])
+                .expect("spend signatures");
+            let notes = bundle
+                .decrypt_outputs_with_keys(&[fvk.to_ivk(Scope::External)])
+                .into_iter()
+                .map(|(index, _, note, _, _)| (index, note))
+                .collect();
+            let (actions, value_balance, anchor, proof, binding_signature) =
+                serialize_authorized_bundle_u64(&bundle);
+            let transition = StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(
+                ShieldedTransferTransitionV0 {
+                    actions: actions.clone(),
+                    value_balance,
+                    anchor,
+                    proof,
+                    binding_signature,
+                },
+            ));
+            (transition, actions, notes)
+        }
+
+        #[tokio::test]
+        async fn should_backfill_real_mixed_history_and_allow_a_legitimate_spend_of_a_historical_output(
+        ) {
+            let old = PlatformVersion::get(13).expect("PV13");
+            let latest = PlatformVersion::latest();
+            let mut platform = setup_platform_at_protocol_version(13);
+            let (signer, address) = funded_address(&mut platform);
+            let (historical, mut notes) = historical_bundle_with_notes(1_000_000_000, &[], 13014);
+            let shield = signed_shield(&signer, address, 1, &historical).await;
+            assert_matches!(
+                process_transition_and_commit(&platform, shield, old)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            for action in &historical.actions {
+                tree.append(action.cmx, Retention::Marked)
+                    .expect("historical commitment");
+            }
+            tree.checkpoint(0).expect("checkpoint");
+            insert_anchor_into_state(&platform, &tree.anchor().expect("anchor").to_bytes());
+            let (position, note) = notes.pop().expect("decrypted historical output");
+            let (spend, actions, mut outputs) =
+                spend_historical_note(note, position as u64, &tree, 13015, old);
+            assert_matches!(
+                process_transition_and_commit(&platform, spend, old)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            for action in &actions {
+                tree.append(action.cmx, Retention::Marked)
+                    .expect("spend-created commitment");
+            }
+            tree.checkpoint(1).expect("checkpoint");
+            insert_anchor_into_state(&platform, &tree.anchor().expect("anchor").to_bytes());
+            let tx = platform.drive.grove.start_transaction();
+            let mut state = platform.state.load().as_ref().clone();
+            state.set_current_protocol_version_in_consensus(latest.protocol_version);
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &state,
+                    &BlockInfo::default(),
+                    &tx,
+                    13,
+                    latest,
+                )
+                .expect("migration over output-only and spend-created notes");
+            for action in historical.actions.iter().chain(&actions) {
+                assert!(platform
+                    .drive
+                    .has_nullifier(&action.nullifier, Some(&tx), &mut vec![], latest)
+                    .expect("historical rho union"));
+            }
+            let (output_index, note) = outputs.pop().expect("decrypted spend-created output");
+            let (legitimate, _, _) = spend_historical_note(
+                note,
+                historical.actions.len() as u64 + output_index as u64,
+                &tree,
+                13016,
+                latest,
+            );
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[legitimate
+                        .serialize_to_bytes()
+                        .expect("legitimate spend bytes")],
+                    &state,
+                    &BlockInfo::default(),
+                    &tx,
+                    latest,
+                    false,
+                    None,
+                )
+                .expect("legitimate spend processing");
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "backfilled public rho must not prevent spending a note with its derived nullifier"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_refuse_historical_credit_rho_reuse_on_first_pv14_candidate() {
+            let old_version = PlatformVersion::get(13).expect("protocol 13");
+            let new_version = PlatformVersion::latest();
+            let mut platform = setup_platform_at_protocol_version(13);
+            let (signer, address) = funded_address(&mut platform);
+            let historical = historical_bundle(&[], 14013);
+            let first = signed_shield(&signer, address, 1, &historical).await;
+            assert_matches!(
+                process_transition_and_commit(&platform, first, old_version)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            let page = platform
+                .drive
+                .grove
+                .commitment_tree_get_range(
+                    shielded_credit_pool_path().as_slice(),
+                    &[SHIELDED_NOTES_KEY],
+                    0,
+                    10,
+                    None,
+                    &old_version.drive.grove_version,
+                )
+                .unwrap()
+                .expect("stored historical notes");
+            assert_eq!(page.entries.len(), historical.actions.len());
+            for ((_, row), action) in page.entries.iter().zip(&historical.actions) {
+                assert_eq!(&row[..32], &action.cmx);
+                assert_eq!(&row[32..64], &action.nullifier);
+                assert!(!has_recorded_nullifier(&platform, &action.nullifier));
+            }
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(address, (2, historical.amount + dash_to_credits!(0.01)));
+            let binding = shield_extra_sighash_data(&inputs, new_version).expect("PV14 binding");
+            let rebound = historical_bundle(&binding, 14013);
+            for (old, new) in historical.actions.iter().zip(&rebound.actions) {
+                assert_eq!(old.nullifier, new.nullifier);
+                assert_eq!(old.cmx, new.cmx);
+            }
+            assert_ne!(historical.binding_signature, rebound.binding_signature);
+            let reuse = signed_shield(&signer, address, 2, &rebound).await;
+            let mut candidate_state = platform.state.load().as_ref().clone();
+            candidate_state.set_current_protocol_version_in_consensus(new_version.protocol_version);
+            let process = |transition: &StateTransition, transaction: &Transaction| {
+                platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &[transition.serialize_to_bytes().expect("transition bytes")],
+                        &candidate_state,
+                        &BlockInfo::default(),
+                        transaction,
+                        new_version,
+                        false,
+                        None,
+                    )
+                    .expect("transition processing")
+            };
+            let control = platform.drive.grove.start_transaction();
+            assert_matches!(
+                process(&reuse, &control).execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "the freshly signed PV14 reuse is otherwise valid without the migration"
+            );
+            drop(control);
+            platform.drive.cache.data_contracts.clear_block_cache();
+
+            let candidate = platform.drive.grove.start_transaction();
+            platform
+                .perform_events_on_first_block_of_protocol_change(
+                    &candidate_state,
+                    &BlockInfo::default(),
+                    &candidate,
+                    13,
+                    new_version,
+                )
+                .expect("first PV14 events");
+            let result = process(&reuse, &candidate);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))
+                )] if e.nullifier() == rebound.nullifiers()[0],
+                "activation must reject historical rho reuse specifically as nullifier reuse"
+            );
+            let fresh = historical_bundle(&binding, 14014);
+            let fresh_transition = signed_shield(&signer, address, 2, &fresh).await;
+            assert_matches!(
+                process(&fresh_transition, &candidate)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "activation must still allow a fresh rho"
+            );
+        }
+
+        /// A shield of `bundle` from `address` at `nonce`, signed by `signer`.
+        async fn signed_shield(
+            signer: &TestAddressSigner,
+            address: PlatformAddress,
+            nonce: AddressNonce,
+            bundle: &OutputsOnlyBundle,
+        ) -> StateTransition {
+            let mut inputs = BTreeMap::new();
+            inputs.insert(address, (nonce, bundle.amount + dash_to_credits!(0.01)));
+
+            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                inputs: inputs.clone(),
+                actions: bundle.actions.clone(),
+                amount: bundle.amount,
+                anchor: bundle.anchor,
+                proof: bundle.proof.clone(),
+                binding_signature: bundle.binding_signature,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }));
+            let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for input in inputs.keys() {
+                witnesses.push(
+                    signer
+                        .sign_create_witness(input, &signable_bytes)
+                        .await
+                        .expect("should sign"),
+                );
+            }
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+                v0.input_witnesses = witnesses;
+            }
+            st
+        }
+
+        /// A funded address on `platform` and the signer for it.
+        fn funded_address(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+        ) -> (TestAddressSigner, PlatformAddress) {
+            let mut signer = TestAddressSigner::new();
+            let address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(platform, address, 0, dash_to_credits!(1.0));
+            (signer, address)
+        }
+
+        /// Runs the shield transform directly on a shield whose two actions reveal the same
+        /// nullifier. Block processing verifies the proof in the stateless step before this
+        /// transform, and no Orchard builder emits a bundle that repeats a nullifier, so the
+        /// check is reached here directly, as block processing reaches it after the proof.
+        fn transform_shield_revealing(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            nullifiers: &[[u8; 32]],
+            platform_version: &PlatformVersion,
+        ) -> ConsensusValidationResult<StateTransitionAction> {
+            let address = create_platform_address(1);
+            let requested = dash_to_credits!(0.1);
+            let mut inputs = BTreeMap::new();
+            inputs.insert(address, (1 as AddressNonce, requested));
+            let transition = ShieldTransition::V0(ShieldTransitionV0 {
+                inputs,
+                actions: nullifiers
+                    .iter()
+                    .map(|nullifier| SerializedAction {
+                        nullifier: *nullifier,
+                        ..create_dummy_serialized_action()
+                    })
+                    .collect(),
+                amount: 1_000,
+                anchor: [0u8; 32],
+                proof: vec![0u8; 100],
+                binding_signature: [0u8; 64],
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            });
+            // The address held exactly `requested`, all of it debited by the balance check.
+            let mut remaining = BTreeMap::new();
+            remaining.insert(address, (1 as AddressNonce, 0));
+
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("execution context");
+            transition
+                .transform_into_action_for_shield_transition(
+                    &platform_ref,
+                    remaining,
+                    &BlockInfo::default(),
+                    &mut execution_context,
+                    None,
+                )
+                .expect("expected the shield transform to run")
+        }
+
+        #[tokio::test]
+        async fn should_record_the_nullifiers_a_shield_reveals() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (signer, address) = funded_address(&mut platform);
+
+            let bundle = bound_bundle(address, platform_version);
+            let st = signed_shield(&signer, address, 1, &bundle).await;
+            let result = process_transition_and_commit(&platform, st, platform_version);
+
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            for nullifier in bundle.nullifiers() {
+                assert!(
+                    has_recorded_nullifier(&platform, &nullifier),
+                    "every nullifier the shield reveals must be recorded"
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn should_refuse_a_shield_repeating_a_recorded_nullifier() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (signer, address) = funded_address(&mut platform);
+
+            let bundle = bound_bundle(address, platform_version);
+            let first = signed_shield(&signer, address, 1, &bundle).await;
+            let result = process_transition_and_commit(&platform, first, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            // The same bundle again under the next address nonce: the same note, the same
+            // nullifiers. The binding does not stop this — it covers the funding addresses, not
+            // the transition carrying them — so the repeat travels the whole block path and the
+            // recorded nullifier is what refuses it.
+            let repeat = signed_shield(&signer, address, 2, &bundle).await;
+            let result = process_transition_and_commit(&platform, repeat, platform_version);
+
+            let first_nullifier = bundle.nullifiers()[0];
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))
+                )] if e.nullifier() == first_nullifier
+            );
+        }
+
+        #[test]
+        fn should_refuse_a_nullifier_repeated_inside_the_bundle() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let repeated = create_dummy_serialized_action().nullifier;
+            let result =
+                transform_shield_revealing(&platform, &[repeated, repeated], platform_version);
+
+            assert!(!result.has_data(), "no action for a refused shield");
+            assert_matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
+                    if e.nullifier() == create_dummy_serialized_action().nullifier
+            );
+        }
+
+        #[tokio::test]
+        async fn should_refuse_a_shield_repeating_a_nullifier_in_the_same_block() {
+            let pv = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (signer, address) = funded_address(&mut platform);
+            let bundle = bound_bundle(address, pv);
+            let first = signed_shield(&signer, address, 1, &bundle).await;
+            let repeat = signed_shield(&signer, address, 2, &bundle).await;
+            let state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[
+                        first.serialize_to_bytes().expect("first shield"),
+                        repeat.serialize_to_bytes().expect("repeated shield"),
+                    ],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    pv,
+                    false,
+                    None,
+                )
+                .expect("block processing");
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::StateError(StateError::NullifierAlreadySpentError(error))
+                    )
+                ] if error.nullifier() == bundle.nullifiers()[0]
+            );
+            assert_eq!(
+                platform
+                    .drive
+                    .read_shielded_pool_total_balance(Some(&transaction), &mut vec![], pv)
+                    .expect("pool balance"),
+                bundle.amount,
+                "the repeated shield adds no credits"
+            );
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_balance_and_nonce(&address, Some(&transaction), pv)
+                    .expect("address")
+                    .expect("funded address")
+                    .0,
+                1,
+                "the nullifier refusal does not consume another nonce"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_refuse_a_spend_revealing_a_nullifier_a_shield_recorded() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let (signer, address) = funded_address(&mut platform);
+
+            let bundle = bound_bundle(address, platform_version);
+            let st = signed_shield(&signer, address, 1, &bundle).await;
+            let result = process_transition_and_commit(&platform, st, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            assert!(
+                shielded_transfer_errors_revealing(&platform, [0xEE; 32]).is_empty(),
+                "a spend revealing an unrecorded nullifier passes the spend-side check"
+            );
+            let recorded = bundle.nullifiers()[1];
+            assert_matches!(
+                shielded_transfer_errors_revealing(&platform, recorded).as_slice(),
+                [ConsensusError::StateError(StateError::NullifierAlreadySpentError(e))]
+                    if e.nullifier() == recorded
+            );
+        }
+
+        #[tokio::test]
+        async fn should_neither_record_nor_check_nullifiers_before_protocol_version_14() {
+            let platform_version = PlatformVersion::get(13).expect("protocol version 13");
+            let mut platform = setup_platform_at_protocol_version(13);
+            let (signer, address) = funded_address(&mut platform);
+            let bundle = unbound_bundle();
+
+            let first = signed_shield(&signer, address, 1, bundle).await;
+            let result = process_transition_and_commit(&platform, first, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+            for nullifier in bundle.nullifiers() {
+                assert!(
+                    !has_recorded_nullifier(&platform, &nullifier),
+                    "protocol version 13 records no shield nullifier"
+                );
+            }
+
+            let repeat = signed_shield(&signer, address, 2, bundle).await;
+            let result = process_transition_and_commit(&platform, repeat, platform_version);
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "protocol version 13 accepts a repeated shield"
+            );
+
+            let repeated = create_dummy_serialized_action().nullifier;
+            let result =
+                transform_shield_revealing(&platform, &[repeated, repeated], platform_version);
+            assert!(
+                result.is_valid_with_data(),
+                "protocol version 13 does not check a nullifier repeated inside the bundle"
             );
         }
     }
@@ -1468,7 +2152,7 @@ mod tests {
 
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_sighash(&bundle_commitment, &[input_address], platform_version);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
@@ -1651,7 +2335,7 @@ mod tests {
                 .unwrap();
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
-            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let sighash = shield_sighash(&bundle_commitment, &[addr_a, addr_b], platform_version);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
             let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
             let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
@@ -1725,6 +2409,993 @@ mod tests {
                 shield_amount as i64,
                 "shielded pool must gain exactly the shield amount"
             );
+        }
+    }
+
+    /// MAINNET HALT INVESTIGATION (evo1, 2026-08-14/15: ~2h stalls after 415652 and after 415661).
+    ///
+    /// `execute_event_v0` validates a `Shield`'s fee TWICE against two DIFFERENT cost models:
+    /// `validate_fees_of_event` estimates with `apply_drive_operations(.., apply=false, ..)`, which
+    /// prices the batch from a SYNTHETIC layer model, while `paid_from_address_inputs_and_outputs`
+    /// re-meters with `apply=true` against the REAL tree. If the synthetic estimate can come in
+    /// LOWER than the real cost, there is a band of funding levels where validation ACCEPTS the
+    /// transition and execution then rejects it — and that rejection (`CorruptedCodeExecution`,
+    /// "address-input fee not fully covered at execution") happens AFTER the shield's writes were
+    /// already applied to the shared block transaction, with no per-transition rollback.
+    ///
+    /// These tests answer, empirically: does such a band exist, and does a transition landing in it
+    /// leave state behind?
+    mod mainnet_halt_repro {
+        use super::*;
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::insert_dummy_encrypted_notes;
+        use dpp::block::block_info::BlockInfo;
+
+        /// Note count on mainnet's shielded commitment tree around the halt.
+        const MAINNET_NOTES: u64 = 494;
+
+        #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+        enum Outcome {
+            Success,
+            NotEnoughFunds,
+            Internal,
+            Other,
+        }
+
+        /// The reusable pieces of a valid shield bundle. Orchard proof generation dominates the
+        /// runtime, so it is done once and the transition re-signed per funding level.
+        struct Bundle {
+            actions: Vec<SerializedAction>,
+            shield_amount: u64,
+            anchor: [u8; 32],
+            proof: Vec<u8>,
+            binding_sig: [u8; 64],
+        }
+
+        /// The address every run in this module funds its shield from, derived from the seed the
+        /// runs use.
+        fn funding_address() -> PlatformAddress {
+            TestAddressSigner::new().add_p2pkh([1u8; 32])
+        }
+
+        fn build_bundle(pv: &PlatformVersion) -> Bundle {
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                Anchor::empty_tree(),
+            );
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(5000u64), [0u8; 36])
+                .unwrap();
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = shield_sighash(&commitment, &[funding_address()], pv);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+
+            let (actions, _flags, value_balance, anchor, proof, binding_sig) =
+                serialize_authorized_bundle_with_flags(&bundle);
+            assert!(
+                value_balance < 0,
+                "a shield must have negative value balance"
+            );
+            Bundle {
+                actions,
+                shield_amount: (-value_balance) as u64,
+                anchor,
+                proof,
+                binding_sig,
+            }
+        }
+
+        /// Build a signed `Shield` spending `declared_input` credits from `addr`.
+        async fn build_signed(
+            b: &Bundle,
+            signer: &TestAddressSigner,
+            addr: PlatformAddress,
+            declared_input: u64,
+        ) -> StateTransition {
+            let mut inputs = BTreeMap::new();
+            inputs.insert(addr, (1 as AddressNonce, declared_input));
+
+            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                inputs: inputs.clone(),
+                actions: b.actions.clone(),
+                amount: b.shield_amount,
+                anchor: b.anchor,
+                proof: b.proof.clone(),
+                binding_signature: b.binding_sig,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }));
+            let signable = st.signable_bytes().expect("should compute signable bytes");
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for a in inputs.keys() {
+                witnesses.push(
+                    signer
+                        .sign_create_witness(a, &signable)
+                        .await
+                        .expect("sign"),
+                );
+            }
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+                v0.input_witnesses = witnesses;
+            }
+            st
+        }
+
+        /// Run the shield on a fresh platform whose input address holds exactly
+        /// `shield_amount + headroom`, i.e. `headroom` credits are available to pay the fee.
+        async fn run_at(headroom: u64, b: &Bundle, pv: &PlatformVersion) -> (Outcome, String) {
+            let mut platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
+
+            let mut signer = TestAddressSigner::new();
+            let addr = signer.add_p2pkh([1u8; 32]);
+            assert_eq!(addr, funding_address(), "the bundle binds this address");
+            let declared_input = b.shield_amount + headroom;
+            setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
+
+            let st = build_signed(b, &signer, addr, declared_input).await;
+            let result = process_transition(&platform, st, pv);
+            match result.execution_results().first() {
+                Some(StateTransitionExecutionResult::SuccessfulExecution { .. }) => {
+                    (Outcome::Success, String::new())
+                }
+                Some(StateTransitionExecutionResult::InternalError(msg)) => {
+                    (Outcome::Internal, msg.clone())
+                }
+                Some(StateTransitionExecutionResult::UnpaidConsensusError(e)) => {
+                    let rendered = format!("{:?}", e);
+                    if rendered.contains("AddressesNotEnoughFunds") {
+                        (Outcome::NotEnoughFunds, rendered)
+                    } else {
+                        (Outcome::Other, rendered)
+                    }
+                }
+                other => (Outcome::Other, format!("{:?}", other)),
+            }
+        }
+
+        /// Measure the lower edge of the funding range — the least headroom
+        /// `validate_fees_of_event` accepts — and require that exact headroom to EXECUTE.
+        ///
+        /// If the two cost models agreed everywhere, the least accepted headroom would execute;
+        /// any gap is a band of funding levels where the transition is accepted by validation
+        /// and then dropped at execution — no longer a chain halt since the proposer-side
+        /// per-transition rollback (shipped in 4.1.1), but still a transition that can never
+        /// confirm despite paying the quoted fee. Because execution's metered cost is a fixed
+        /// function of the state, "the least accepted headroom executes" is equivalent to the
+        /// band being empty at every funding level, so one edge search plus one execution probe
+        /// replaces the old two-edge search at half the cost.
+        ///
+        /// Under protocol version 13 (GROVE_V3) the estimated-cost path skips the keyless
+        /// commitment-tree append entirely (dashpay/grovedb#812, locked for replay), so the band
+        /// is measurably open there (18,919,200 credits, 10.7% of the fee, at 494 notes). From
+        /// protocol version 14 (GROVE_V4) the estimator prices the fixed per-append model
+        /// (grovedb #829/#830) and the band is closed EXACTLY: measured at 494 notes, the least
+        /// accepted headroom and the metered fee coincide (the estimate IS the metered fee, so
+        /// an address funds precisely what it is charged). ~30 fresh-platform runs; the Orchard
+        /// proof is built once.
+        #[tokio::test]
+        async fn shield_fee_estimate_and_actual_must_not_leave_a_halting_band() {
+            let pv = PlatformVersion::latest();
+            let b = build_bundle(pv);
+            const CEILING: u64 = 5_000_000_000; // 0.05 DASH, far above any plausible shield fee
+
+            let (top, top_msg) = run_at(CEILING, &b, pv).await;
+            assert_eq!(
+                top,
+                Outcome::Success,
+                "sanity: the upper bound must comfortably fund the shield ({top_msg})"
+            );
+
+            // Least headroom that EXECUTES. Success is the one monotone
+            // predicate over the whole funding range — below it the outcome
+            // is some rejection whose error class varies with the gate that
+            // fires (the input-minimum gate at tiny headroom, the structural
+            // fee minimum, then the metered-affordability rejection), so
+            // searching on any single rejection class would not converge.
+            let (mut lo, mut hi) = (0u64, CEILING);
+            while lo + 1 < hi {
+                let mid = lo + (hi - lo) / 2;
+                if run_at(mid, &b, pv).await.0 == Outcome::Success {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            let admission = hi;
+
+            let (below, below_msg) = run_at(admission - 1, &b, pv).await;
+
+            println!("shield_amount      = {}", b.shield_amount);
+            println!("least executing    = {admission}");
+            println!("just below         = {below:?} :: {below_msg}");
+
+            // One credit below the least headroom that executes must be a
+            // VALIDATION rejection. If it is instead the InternalError drop,
+            // validation accepted a transition execution then rejected — the
+            // mainnet-halt band is open at every funding level in the gap
+            // between the two thresholds.
+            assert_ne!(
+                below,
+                Outcome::Internal,
+                "HALTING BAND: headroom {} is accepted by validation and dropped at \
+                 execution ({below_msg})",
+                admission - 1
+            );
+            assert_ne!(
+                below,
+                Outcome::Success,
+                "binary search must have found the least executing headroom"
+            );
+        }
+
+        /// The consequence: a transition rejected this way is reported as `InternalError`, which
+        /// `prepare_proposal` maps to `TxAction::Removed` — Tenderdash strips it from the gossiped
+        /// block. But nothing rolls its writes back, so the proposer's app hash (computed over the
+        /// block transaction) reflects a shield the block does not contain. Validators replaying
+        /// the block without it compute a different app hash and can never agree.
+        ///
+        /// This pins the invariant that a dropped transition must not mutate state.
+        ///
+        /// Runs under protocol version 13 — the version mainnet was on at the halt, the one
+        /// whose estimation path leaves the funding band open (the estimated-cost model skips
+        /// the keyless commitment-tree append, dashpay/grovedb#812). The band's absolute edges
+        /// move whenever fee constants or grovedb cost models move — and parts of execution
+        /// resolve constants through the platform state's own version rather than the passed
+        /// one — so a hardcoded headroom goes stale. The test therefore calibrates itself: it
+        /// binary-searches the least headroom validation lets through and the least headroom
+        /// that executes, asserts the band between them is still open, and drops a shield
+        /// funded at the midpoint.
+        /// From protocol version 14 (GROVE_V4) the estimator prices the fixed per-append
+        /// model exactly (grovedb #829/#830), so the mid-band shield this test needs cannot be
+        /// built there — see `shield_fee_estimate_and_actual_must_not_leave_a_halting_band`.
+        #[tokio::test]
+        async fn dropped_shield_must_not_mutate_state() {
+            let pv = PlatformVersion::get(13).expect("protocol version 13 should exist");
+            // `setup_platform` starts at the latest protocol version, and
+            // `process_state_transition` validates at the platform state's version, not at `pv`,
+            // so the bundle is bound the way the latest version's proof check rebuilds it.
+            let b = build_bundle(PlatformVersion::latest());
+
+            // Least headroom validation lets through to execution.
+            const CEILING: u64 = 5_000_000_000;
+            let (top, top_msg) = run_at(CEILING, &b, pv).await;
+            assert_eq!(
+                top,
+                Outcome::Success,
+                "sanity: the ceiling must comfortably fund the shield ({top_msg})"
+            );
+            // "Accepted" means validation let the transition through to
+            // execution: the outcome is either a successful execution or the
+            // mid-band InternalError drop. Everything below the band is a
+            // clean rejection — the structural-minimum gate at tiny
+            // headroom, then AddressesNotEnoughFunds — so the predicate is
+            // monotone across the funding range.
+            let is_accepted =
+                |outcome: Outcome| matches!(outcome, Outcome::Internal | Outcome::Success);
+            let (mut lo, mut hi) = (0u64, CEILING);
+            while lo + 1 < hi {
+                let mid = lo + (hi - lo) / 2;
+                if is_accepted(run_at(mid, &b, pv).await.0) {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            let accepted = hi;
+            // Least headroom that actually executes.
+            let (mut lo, mut hi) = (accepted, CEILING);
+            while lo + 1 < hi {
+                let mid = lo + (hi - lo) / 2;
+                if run_at(mid, &b, pv).await.0 == Outcome::Success {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            let executes = hi;
+            println!("band at protocol 13: [{accepted}, {executes})");
+            assert!(
+                accepted < executes,
+                "the protocol-13 funding band must be open (its estimator skips the keyless \
+                 commitment-tree append); if it has closed, this reproduction is no longer \
+                 constructible and should be retired deliberately"
+            );
+            // Mid-band: accepted by validation, rejected by execution.
+            let headroom = accepted + (executes - accepted) / 2;
+
+            let mut platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
+            let mut signer = TestAddressSigner::new();
+            let addr = signer.add_p2pkh([1u8; 32]);
+            assert_eq!(addr, funding_address(), "the bundle binds this address");
+            let declared_input = b.shield_amount + headroom;
+            setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
+
+            let pool_before = platform
+                .drive
+                .read_shielded_pool_total_balance(None, &mut vec![], pv)
+                .expect("pool balance");
+            let notes_before = platform
+                .drive
+                .shielded_pool_notes_count(None, &mut vec![], pv)
+                .expect("notes count");
+            let hash_before = platform
+                .drive
+                .grove
+                .root_hash(None, &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+
+            let st = build_signed(&b, &signer, addr, declared_input).await;
+            let bytes = st.serialize_to_bytes().expect("serialize");
+            let state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![bytes],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    pv,
+                    true, // proposing, exactly as prepare_proposal does
+                    None,
+                )
+                .expect("processing must not be a block-level error");
+
+            let dropped = matches!(
+                result.execution_results().first(),
+                Some(StateTransitionExecutionResult::InternalError(_))
+            );
+            assert!(
+                dropped,
+                "expected the mid-band shield to be dropped as InternalError, got {:?}",
+                result.execution_results()
+            );
+
+            let pool_after = platform
+                .drive
+                .read_shielded_pool_total_balance(Some(&transaction), &mut vec![], pv)
+                .expect("pool balance");
+            let notes_after = platform
+                .drive
+                .shielded_pool_notes_count(Some(&transaction), &mut vec![], pv)
+                .expect("notes count");
+            let hash_after = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+
+            println!("shielded pool : {pool_before} -> {pool_after}");
+            println!("notes in tree : {notes_before} -> {notes_after}");
+            println!(
+                "app hash      : {} -> {}",
+                hex::encode(hash_before),
+                hex::encode(hash_after)
+            );
+
+            assert_eq!(
+                pool_after,
+                pool_before,
+                "STATE LEAK: a transition that was DROPPED from the block still credited the \
+                 shielded pool by {}. Tenderdash gossips the block without this transition, so \
+                 every other validator computes an app hash without this credit.",
+                pool_after.saturating_sub(pool_before)
+            );
+            assert_eq!(
+                notes_after, notes_before,
+                "STATE LEAK: a dropped transition still appended a note commitment"
+            );
+            assert_eq!(
+                hash_before, hash_after,
+                "APP HASH DIVERGENCE: a dropped transition changed the proposer's app hash. \
+                 Validators replaying the gossiped block (which excludes it) cannot reproduce this \
+                 hash, so the proposal is rejected every round and the chain stalls."
+            );
+        }
+
+        /// Can a per-transition savepoint undo a shield's writes mid-transaction?
+        ///
+        /// The candidate fix for the leak above is `set_savepoint()` before each transition and
+        /// `rollback_to_savepoint()` on failure, inside `process_raw_state_transitions`. That is
+        /// only sound if a rollback restores everything the apply touched — including GroveDB's
+        /// in-memory Merk state, not just the RocksDB write batch. This runs a fully-funded shield
+        /// (so the writes are the same ones a mid-band shield leaks), rolls it back, and checks
+        /// pool balance, note count, and root hash against the pre-apply snapshot.
+        #[tokio::test]
+        async fn savepoint_rollback_must_undo_an_applied_shield() {
+            let pv = PlatformVersion::latest();
+            let b = build_bundle(pv);
+            // Generous headroom: this shield must SUCCEED so its writes all land.
+            let headroom = 5_000_000_000u64;
+
+            let mut platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
+            let mut signer = TestAddressSigner::new();
+            let addr = signer.add_p2pkh([1u8; 32]);
+            assert_eq!(addr, funding_address(), "the bundle binds this address");
+            let declared_input = b.shield_amount + headroom;
+            setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
+
+            let st = build_signed(&b, &signer, addr, declared_input).await;
+            let bytes = st.serialize_to_bytes().expect("serialize");
+            let state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let pool_before = platform
+                .drive
+                .read_shielded_pool_total_balance(Some(&transaction), &mut vec![], pv)
+                .expect("pool balance");
+            let notes_before = platform
+                .drive
+                .shielded_pool_notes_count(Some(&transaction), &mut vec![], pv)
+                .expect("notes count");
+            let hash_before = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+
+            // Note on savepoint provenance: while proposing at a non-genesis height the
+            // processing loop sets its OWN savepoint (recording this same state — nothing is
+            // written in between) on top of this one, and leaves it on the stack for a kept
+            // transition. The `rollback_to_savepoint()` below therefore pops the LOOP's
+            // savepoint, not this one, which stays on the stack unused. Both record identical
+            // state, so every assertion is unaffected; this savepoint documents the mechanism
+            // under test and kept the test meaningful before the loop rolled back on its own.
+            transaction.set_savepoint();
+
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![bytes],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    pv,
+                    true,
+                    None,
+                )
+                .expect("processing must not be a block-level error");
+            assert!(
+                matches!(
+                    result.execution_results().first(),
+                    Some(StateTransitionExecutionResult::SuccessfulExecution { .. })
+                ),
+                "sanity: the fully-funded shield must execute, got {:?}",
+                result.execution_results()
+            );
+
+            let hash_applied = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+            assert_ne!(
+                hash_before, hash_applied,
+                "sanity: the applied shield must have changed the root hash"
+            );
+
+            transaction
+                .rollback_to_savepoint()
+                .expect("rollback to savepoint");
+
+            let pool_after = platform
+                .drive
+                .read_shielded_pool_total_balance(Some(&transaction), &mut vec![], pv)
+                .expect("pool balance");
+            let notes_after = platform
+                .drive
+                .shielded_pool_notes_count(Some(&transaction), &mut vec![], pv)
+                .expect("notes count");
+            let hash_after = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+
+            println!("shielded pool : {pool_before} -> {pool_after} (want {pool_before})");
+            println!("notes in tree : {notes_before} -> {notes_after} (want {notes_before})");
+            println!(
+                "root hash     : applied {} -> rolled back {} (want {})",
+                hex::encode(hash_applied),
+                hex::encode(hash_after),
+                hex::encode(hash_before)
+            );
+
+            assert_eq!(
+                pool_after, pool_before,
+                "savepoint rollback did not undo the shielded pool credit"
+            );
+            assert_eq!(
+                notes_after, notes_before,
+                "savepoint rollback did not undo the note commitment append"
+            );
+            assert_eq!(
+                hash_before, hash_after,
+                "savepoint rollback did not restore the root hash: GroveDB's in-memory Merk \
+                 state survives a RocksDB-level rollback, so a per-transition savepoint is NOT a \
+                 sound implementation of the leak fix (use proposal re-execution instead)"
+            );
+
+            // Rollback restoring READS is necessary but not sufficient: in the fix, the next
+            // transition in the block applies onto the rolled-back transaction. If any in-memory
+            // Merk state survived the rollback, that second apply would build on phantom nodes and
+            // diverge. Re-applying the identical shield onto the restored state is deterministic,
+            // so it must reproduce the first apply's root hash exactly.
+            let bytes_again = st.serialize_to_bytes().expect("serialize");
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![bytes_again],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    pv,
+                    true,
+                    None,
+                )
+                .expect("processing must not be a block-level error");
+            assert!(
+                matches!(
+                    result.execution_results().first(),
+                    Some(StateTransitionExecutionResult::SuccessfulExecution { .. })
+                ),
+                "the shield must execute again on the rolled-back state (its nonce and balance \
+                 were restored), got {:?}",
+                result.execution_results()
+            );
+            let hash_reapplied = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+            println!(
+                "root hash     : re-applied {} (want {})",
+                hex::encode(hash_reapplied),
+                hex::encode(hash_applied)
+            );
+            assert_eq!(
+                hash_applied, hash_reapplied,
+                "applying onto a rolled-back transaction diverged from applying onto the \
+                 original state: stale in-memory Merk state survived the rollback, so a \
+                 per-transition savepoint is NOT a sound implementation of the leak fix"
+            );
+        }
+
+        struct RunOutcome {
+            dropped_as_internal_error: bool,
+            pool_delta: i128,
+            notes_delta: i128,
+            hash_changed: bool,
+        }
+
+        /// Run a fully-funded shield with the post-apply fault injected, on the proposing or
+        /// validating path, and report what it left behind.
+        async fn run_injected(proposing: bool) -> RunOutcome {
+            use crate::execution::platform_events::state_transition_processing::test_fault_injection::FAIL_NEXT_SUCCESSFUL_EXECUTION;
+
+            let pv = PlatformVersion::latest();
+            let b = build_bundle(pv);
+            // Fully funded: without the injected failure this shield would execute and land.
+            let headroom = 5_000_000_000u64;
+
+            let mut platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, MAINNET_NOTES);
+            let mut signer = TestAddressSigner::new();
+            let addr = signer.add_p2pkh([1u8; 32]);
+            assert_eq!(addr, funding_address(), "the bundle binds this address");
+            let declared_input = b.shield_amount + headroom;
+            setup_address_with_balance_and_system_credits(&mut platform, addr, 0, declared_input);
+
+            let st = build_signed(&b, &signer, addr, declared_input).await;
+            let bytes = st.serialize_to_bytes().expect("serialize");
+            let state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let pool_before = platform
+                .drive
+                .read_shielded_pool_total_balance(Some(&transaction), &mut vec![], pv)
+                .expect("pool balance");
+            let notes_before = platform
+                .drive
+                .shielded_pool_notes_count(Some(&transaction), &mut vec![], pv)
+                .expect("notes count");
+            let hash_before = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+
+            FAIL_NEXT_SUCCESSFUL_EXECUTION.with(|flag| flag.set(true));
+
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![bytes],
+                    &state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    pv,
+                    proposing,
+                    None,
+                )
+                .expect("processing must not be a block-level error");
+
+            assert!(
+                !FAIL_NEXT_SUCCESSFUL_EXECUTION.with(|flag| flag.get()),
+                "sanity: the injection must have been consumed (the shield must have executed \
+                 successfully before being overridden)"
+            );
+
+            let dropped_as_internal_error = matches!(
+                result.execution_results().first(),
+                Some(StateTransitionExecutionResult::InternalError(_))
+            );
+
+            let pool_after = platform
+                .drive
+                .read_shielded_pool_total_balance(Some(&transaction), &mut vec![], pv)
+                .expect("pool balance");
+            let notes_after = platform
+                .drive
+                .shielded_pool_notes_count(Some(&transaction), &mut vec![], pv)
+                .expect("notes count");
+            let hash_after = platform
+                .drive
+                .grove
+                .root_hash(Some(&transaction), &pv.drive.grove_version)
+                .unwrap()
+                .expect("root hash");
+
+            RunOutcome {
+                dropped_as_internal_error,
+                pool_delta: pool_after as i128 - pool_before as i128,
+                notes_delta: notes_after as i128 - notes_before as i128,
+                hash_changed: hash_after != hash_before,
+            }
+        }
+
+        /// Generic leak guard, independent of the fee bug: force a fully-funded shield — one
+        /// that executes successfully and therefore definitely wrote — to be reported as
+        /// `InternalError` after the fact, and assert the processing loop rolls its writes
+        /// back while PROPOSING. An `InternalError` maps to `TxAction::Removed`, so any path
+        /// that produces one after `apply_drive_operations(apply = true)` must leave no trace
+        /// in the proposal state. This pins the proposer-side per-transition rollback even
+        /// after the estimation gap (dashpay/grovedb#812) is closed and no real transition can
+        /// reach execution under-funded anymore.
+        #[tokio::test]
+        async fn injected_post_apply_failure_must_not_mutate_state() {
+            let outcome = run_injected(true).await;
+            assert!(
+                outcome.dropped_as_internal_error,
+                "expected the injected InternalError"
+            );
+            assert_eq!(
+                outcome.pool_delta, 0,
+                "STATE LEAK: a transition dropped from the proposal still credited the \
+                 shielded pool"
+            );
+            assert_eq!(
+                outcome.notes_delta, 0,
+                "STATE LEAK: a transition dropped from the proposal still appended note \
+                 commitments"
+            );
+            assert!(
+                !outcome.hash_changed,
+                "APP HASH POISONED: a transition dropped from the proposal changed the app \
+                 hash; validators replaying the block (which omits it) can never reproduce it"
+            );
+        }
+
+        /// The consensus-invisibility guarantee of the proposer-side fix: the VALIDATING path
+        /// must not roll anything back — no savepoint is set there, and the leak is preserved
+        /// bit-for-bit. Rolling back while validating would change what state a received
+        /// block evaluates to, a consensus change; the guard on that path is instead
+        /// `process_proposal`'s `unexpected_execution_results` gate, which rejects any block
+        /// carrying such a transition wholesale. If this test ever fails because the deltas
+        /// became zero, the node has silently forked from un-upgraded peers.
+        #[tokio::test]
+        async fn validating_must_not_roll_back_and_preserves_prior_behavior() {
+            let outcome = run_injected(false).await;
+            assert!(
+                outcome.dropped_as_internal_error,
+                "expected the injected InternalError"
+            );
+            assert_eq!(
+                outcome.pool_delta, 5000,
+                "the validating path must keep prior behavior bit-for-bit (leak preserved)"
+            );
+            assert_eq!(
+                outcome.notes_delta, 2,
+                "the validating path must keep prior behavior bit-for-bit (leak preserved)"
+            );
+            assert!(
+                outcome.hash_changed,
+                "the validating path must keep prior behavior bit-for-bit (leak preserved)"
+            );
+        }
+    }
+
+    // ==========================================
+    // Bundle binding
+    // ==========================================
+
+    /// The bundle's sighash binds its kind and the addresses that fund it. Every negative test here
+    /// starts from a transition the public builder made and shows it admitted by CheckTx and
+    /// executed first, so a refusal that follows is about where the bundle was moved, not about
+    /// the bundle.
+    mod bundle_binding {
+        use super::*;
+        use crate::config::{PlatformConfig, PlatformTestConfig};
+        use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+            check_tx_errors, test_orchard_recipient, TestOrchardProver,
+        };
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+        use dpp::dashcore::{Network, PrivateKey};
+        use dpp::identity::KeyType;
+        use dpp::shielded::builder::{
+            build_shield_from_asset_lock_transition, build_shield_transition,
+        };
+        use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+        use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        const SHIELD_AMOUNT: u64 = 5_000;
+
+        /// A funded address and the inputs that spend from it.
+        fn funding(
+            platform: &mut TempPlatform<MockCoreRPCLike>,
+            signer: &mut TestAddressSigner,
+            seed: u8,
+        ) -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
+            let address = signer.add_p2pkh([seed; 32]);
+            setup_address_with_balance(platform, address, 0, dash_to_credits!(1.0));
+            let mut inputs = BTreeMap::new();
+            inputs.insert(address, (1, SHIELD_AMOUNT + dash_to_credits!(0.01)));
+            inputs
+        }
+
+        async fn builder_made_shield(
+            inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+            signer: &TestAddressSigner,
+            platform_version: &PlatformVersion,
+        ) -> StateTransition {
+            build_shield_transition(
+                &test_orchard_recipient(),
+                SHIELD_AMOUNT,
+                inputs,
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                signer,
+                0,
+                &TestOrchardProver,
+                [0u8; 36],
+                None,
+                platform_version,
+            )
+            .await
+            .expect("client-built shield")
+        }
+
+        /// Wraps `bundle` pieces in a `Shield` funded and signed from `inputs`.
+        async fn wrap(
+            inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+            signer: &TestAddressSigner,
+            actions: Vec<SerializedAction>,
+            amount: u64,
+            anchor: [u8; 32],
+            proof: Vec<u8>,
+            binding_signature: [u8; 64],
+        ) -> StateTransition {
+            let mut transition =
+                StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                    inputs: inputs.clone(),
+                    actions,
+                    amount,
+                    anchor,
+                    proof,
+                    binding_signature,
+                    fee_strategy: AddressFundsFeeStrategy::from(vec![
+                        AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    ]),
+                    user_fee_increase: 0,
+                    input_witnesses: vec![],
+                }));
+            let signable_bytes = transition.signable_bytes().expect("signable bytes");
+            let mut witnesses = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                witnesses.push(
+                    signer
+                        .sign_create_witness(address, &signable_bytes)
+                        .await
+                        .expect("should sign"),
+                );
+            }
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = transition {
+                v0.input_witnesses = witnesses;
+            }
+            transition
+        }
+
+        fn assert_admitted_and_executed(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) {
+            let admission = check_tx_errors(platform, transition);
+            assert!(admission.is_empty(), "CheckTx must admit it: {admission:?}");
+            assert_matches!(
+                process_transition(platform, transition.clone(), platform_version)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+        }
+
+        fn assert_refused_for_its_proof(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) {
+            let admission = check_tx_errors(platform, transition);
+            assert_matches!(
+                admission.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::InvalidShieldedProofError(_)
+                )],
+                "CheckTx must refuse it for its proof"
+            );
+            assert_matches!(
+                process_transition(platform, transition.clone(), platform_version)
+                    .execution_results()
+                    .as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )]
+            );
+        }
+
+        /// Somebody funds a `Shield` from their own addresses and wraps it around a bundle proved
+        /// for somebody else's. Without the funding in the sighash its proof verifies and a second
+        /// note with the same nullifier lands in the pool.
+        #[tokio::test]
+        async fn should_refuse_a_bundle_resubmitted_by_another_funder() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+            let mut victim_signer = TestAddressSigner::new();
+            let victim_inputs = funding(&mut platform, &mut victim_signer, 50);
+            let mut copier_signer = TestAddressSigner::new();
+            let copier_inputs = funding(&mut platform, &mut copier_signer, 51);
+
+            let shield = builder_made_shield(victim_inputs, &victim_signer, platform_version).await;
+            // Positive control: the builder's bundle is what both CheckTx and the block accept.
+            assert_admitted_and_executed(&platform, &shield, platform_version);
+
+            let StateTransition::Shield(ShieldTransition::V0(proven)) = &shield else {
+                panic!("expected a shield transition");
+            };
+            let copy = wrap(
+                copier_inputs,
+                &copier_signer,
+                proven.actions.clone(),
+                proven.amount,
+                proven.anchor,
+                proven.proof.clone(),
+                proven.binding_signature,
+            )
+            .await;
+
+            assert_refused_for_its_proof(&platform, &copy, platform_version);
+        }
+
+        /// A `ShieldFromAssetLock` bundle and a `Shield` bundle are indistinguishable to the proof:
+        /// same flags, same empty-tree anchor, same value balance. Moving one into the other kind
+        /// must fail on the kind and the owner it binds.
+        #[tokio::test]
+        async fn should_refuse_a_shield_from_asset_lock_bundle_resubmitted_as_a_shield() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            let mut rng = StdRng::seed_from_u64(52);
+            let (_, lock_key) = KeyType::ECDSA_SECP256K1
+                .random_public_and_private_key_data(&mut rng, platform_version)
+                .expect("asset lock key");
+            let from_lock = build_shield_from_asset_lock_transition(
+                &test_orchard_recipient(),
+                SHIELD_AMOUNT,
+                instant_asset_lock_proof_fixture(
+                    Some(PrivateKey::from_byte_array(&lock_key, Network::Testnet).expect("key")),
+                    None,
+                ),
+                &lock_key,
+                &TestOrchardProver,
+                [0u8; 36],
+                None,
+                Some(PlatformAddress::P2pkh([0x33; 20])),
+                0,
+                platform_version,
+            )
+            .expect("client-built shield from asset lock");
+            // Positive control: the bundle is valid for the kind it was proved for.
+            assert_admitted_and_executed(&platform, &from_lock, platform_version);
+
+            let StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(proven)) =
+                &from_lock
+            else {
+                panic!("expected a shield from asset lock transition");
+            };
+            let mut copier_signer = TestAddressSigner::new();
+            let copier_inputs = funding(&mut platform, &mut copier_signer, 53);
+            let copy = wrap(
+                copier_inputs,
+                &copier_signer,
+                proven.actions.clone(),
+                proven.value_balance,
+                proven.anchor,
+                proven.proof.clone(),
+                proven.binding_signature,
+            )
+            .await;
+
+            assert_refused_for_its_proof(&platform, &copy, platform_version);
+        }
+
+        /// Protocol versions 12 and 13 shipped `Shield` verified by `validate_shielded_proof` v0,
+        /// which binds nothing, and they still select it through validation versions V8 and V9:
+        /// the binding lives in v1, which only V10, protocol version 14, selects. A client
+        /// building for 12 or 13 reads the same `credit_pool_bundle_binding` field consensus
+        /// does, so what it builds is accepted there, while a bundle bound the way 14 binds it is
+        /// refused, exactly as those versions always have.
+        #[tokio::test]
+        async fn should_keep_the_unbound_bundle_at_protocol_versions_12_and_13() {
+            for protocol_version in [12u32, 13] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("known protocol version");
+                let mut platform = TestPlatformBuilder::new()
+                    .with_config(PlatformConfig {
+                        testing_configs: PlatformTestConfig {
+                            disable_instant_lock_signature_verification: true,
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .with_initial_protocol_version(protocol_version)
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                let mut signer = TestAddressSigner::new();
+                let inputs = funding(&mut platform, &mut signer, 54);
+                let shield = builder_made_shield(inputs.clone(), &signer, platform_version).await;
+                assert_admitted_and_executed(&platform, &shield, platform_version);
+
+                let bound = builder_made_shield(inputs, &signer, PlatformVersion::latest()).await;
+                assert_refused_for_its_proof(&platform, &bound, platform_version);
+            }
         }
     }
 }

@@ -138,10 +138,17 @@ class Fetcher {
     startAMs: bigint,
     limit: number,
     offset: number,
+    prove: boolean,
   ): Promise<GetDataContractHistoryResponse> {
     // Define query
     const query = async (): Promise<GetDataContractHistoryResponse> => this
-      .dapiClient.platform.getDataContractHistory(id, startAMs, limit, offset);
+      .dapiClient.platform.getDataContractHistory(
+        id,
+        startAMs,
+        limit,
+        offset,
+        { prove },
+      );
 
     // Define retry attempts.
     // In case we acknowledged this identifier, we want to retry to mitigate

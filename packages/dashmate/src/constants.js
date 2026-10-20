@@ -38,7 +38,8 @@ export const QUORUM_TYPES = {
 export const MASTERNODE_COLLATERAL_AMOUNT = 1000;
 export const HPMN_COLLATERAL_AMOUNT = 4000;
 
-// number of blocks to wait before core DKG exchange session
+// Restart margin before a Core DKG session. Keep at most Core's WORK_DIFF_DEPTH
+// (8): upcoming_dkgs only includes sessions whose work block is already mined.
 export const MIN_BLOCKS_BEFORE_DKG = 6;
 
 export const PACKAGE_ROOT_DIR = path.join(url.fileURLToPath(import.meta.url), '../..');
@@ -53,6 +54,18 @@ export const OUTPUT_FORMATS = {
   JSON: 'json',
   PLAIN: 'plain',
 };
+
+/**
+ * ACME directory certificates are requested from.
+ *
+ * Let's Encrypt is the only public CA that issues certificates for IP
+ * addresses over ACME, and Dashmate identifies a node by its external IP, so
+ * this is the only value that obtains a publicly trusted certificate today.
+ * It is configurable so an operator can rehearse against the staging directory
+ * without spending the production failed-validation budget, and so a test can
+ * point at a local ACME server.
+ */
+export const LETSENCRYPT_ACME_DIRECTORY_URL = 'https://acme-v02.api.letsencrypt.org/directory';
 
 export const SSL_PROVIDERS = {
   ZEROSSL: 'zerossl',

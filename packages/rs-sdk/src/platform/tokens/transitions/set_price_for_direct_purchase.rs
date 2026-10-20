@@ -75,7 +75,11 @@ impl Sdk {
             .await?;
 
         let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
+            // Whether this operation's proof binds execution depends on the token's
+            // keeps-history configuration (and group usage), which the SDK cannot
+            // know statically: accept the affected-state tag and treat no-history
+            // results as height-pinned snapshots, not execution evidence.
+            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
         match proof_result {

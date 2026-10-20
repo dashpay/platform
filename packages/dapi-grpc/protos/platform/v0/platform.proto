@@ -18,6 +18,8 @@ service Platform {
       returns (GetIdentityNonceResponse);
   rpc getIdentityContractNonce(GetIdentityContractNonceRequest)
       returns (GetIdentityContractNonceResponse);
+  rpc getIdentityKeysRemainingBudgets(GetIdentityKeysRemainingBudgetsRequest)
+      returns (GetIdentityKeysRemainingBudgetsResponse);
   rpc getIdentityBalance(GetIdentityBalanceRequest)
       returns (GetIdentityBalanceResponse);
   rpc getIdentitiesBalances(GetIdentitiesBalancesRequest)
@@ -33,8 +35,33 @@ service Platform {
   rpc getDataContract(GetDataContractRequest) returns (GetDataContractResponse);
   rpc getDataContractHistory(GetDataContractHistoryRequest)
       returns (GetDataContractHistoryResponse);
+  rpc getDataContractsLatestVersions(GetDataContractsLatestVersionsRequest)
+      returns (GetDataContractsLatestVersionsResponse);
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
+  rpc getDataContractsByRange(GetDataContractsByRangeRequest)
+      returns (GetDataContractsResponse);
+  rpc getContractGroupInfo(GetContractGroupInfoRequest)
+      returns (GetContractGroupInfoResponse);
+  rpc getContractGroupMembers(GetContractGroupMembersRequest)
+      returns (GetContractGroupMembersResponse);
+  rpc getContractGroupsForContract(GetContractGroupsForContractRequest)
+      returns (GetContractGroupsForContractResponse);
+  rpc getContractModerationStatus(GetContractModerationStatusRequest)
+      returns (GetContractModerationStatusResponse);
+  rpc getContractModerationEntries(GetContractModerationEntriesRequest)
+      returns (GetContractModerationEntriesResponse);
+  rpc getContractDocumentRemovals(GetContractDocumentRemovalsRequest)
+      returns (GetContractDocumentRemovalsResponse);
+  rpc getContractTeamActions(GetContractTeamActionsRequest)
+      returns (GetContractTeamActionsResponse);
+  rpc getContractTeamActionSigners(GetContractTeamActionSignersRequest)
+      returns (GetContractTeamActionSignersResponse);
+  rpc getContractModerationActionCounts(
+      GetContractModerationActionCountsRequest)
+      returns (GetContractModerationActionCountsResponse);
+  rpc getContractFeePots(GetContractFeePotsRequest)
+      returns (GetContractFeePotsResponse);
   rpc getDocumentHistory(GetDocumentHistoryRequest)
       returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
@@ -261,6 +288,40 @@ message GetIdentityContractNonceResponse {
   }
 
   oneof version { GetIdentityContractNonceResponseV0 v0 = 1; }
+}
+
+// What is left of the budgets of keys of one identity. A key may carry a
+// total budget (protocol version 14); the key itself never changes, so what
+// remains of it is tracked next to it and read with this query.
+message GetIdentityKeysRemainingBudgetsRequest {
+  message GetIdentityKeysRemainingBudgetsRequestV0 {
+    bytes identity_id = 1;        // ID of the identity
+    repeated uint32 key_ids = 2;  // IDs of the keys to look up, at least one
+    bool prove = 3;               // Flag to request a proof as the response
+  }
+  oneof version { GetIdentityKeysRemainingBudgetsRequestV0 v0 = 1; }
+}
+
+message GetIdentityKeysRemainingBudgetsResponse {
+  message GetIdentityKeysRemainingBudgetsResponseV0 {
+    message KeyRemainingBudgetEntry {
+      uint32 key_id = 1; // ID of the key
+      // Credits left of the key's total budget. Absent when the key has no
+      // budget (or does not exist). Zero means the key can no longer sign.
+      optional uint64 remaining_budget = 2 [ jstype = JS_STRING ];
+    }
+
+    message KeysRemainingBudgets {
+      repeated KeyRemainingBudgetEntry entries = 1; // One entry per requested key
+    }
+
+    oneof result {
+      KeysRemainingBudgets keys_remaining_budgets = 1; // The remaining budgets
+      Proof proof = 2; // Proof of the remaining budgets, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetIdentityKeysRemainingBudgetsResponseV0 v0 = 1; }
 }
 
 message GetIdentityBalanceResponse {
@@ -497,6 +558,584 @@ message GetDataContractResponse {
   oneof version { GetDataContractResponseV0 v0 = 1; }
 }
 
+// Returns the current version number of each requested data contract: the
+// cheap way for a client to check that the contracts it already holds are
+// still current. Every distinct requested id gets an entry; an id no contract has gets
+// an entry without `version`. Serialized contracts are added only when
+// `include_contracts` is set.
+//
+// From protocol version 14 every contract carries a four-byte version item
+// beside it in state. Without `include_contracts`, the unproved form answers
+// from Drive's contract cache or that item without loading a contract, and
+// the proof covers the items, a few hundred bytes of hash path per contract.
+// With `include_contracts`, and on earlier protocol versions, the unproved
+// form reads the contracts through the cache and the proof is the
+// multi-contract proof `getDataContracts` returns, which carries the
+// contracts.
+message GetDataContractsLatestVersionsRequest {
+  message GetDataContractsLatestVersionsRequestV0 {
+    repeated bytes ids =
+        1; // The IDs of the data contracts, at least one and at most 100
+    bool include_contracts =
+        2; // When set, found entries also carry the serialized contract
+    bool prove = 3; // Flag to request a proof as the response
+  }
+  oneof version { GetDataContractsLatestVersionsRequestV0 v0 = 1; }
+}
+
+message GetDataContractsLatestVersionsResponse {
+  message DataContractLatestVersionEntry {
+    bytes identifier = 1; // The requested contract id
+    optional uint32 version =
+        2; // The contract's current version number; absent when no contract has this id
+    optional bytes data_contract =
+        3; // The serialized contract, only when `include_contracts` was set and the contract exists
+  }
+
+  message DataContractsLatestVersions {
+    repeated DataContractLatestVersionEntry entries =
+        1; // One entry per requested contract id
+  }
+
+  message GetDataContractsLatestVersionsResponseV0 {
+    oneof result {
+      DataContractsLatestVersions data_contracts_latest_versions =
+          1; // The current versions, and the contracts if requested
+      Proof proof =
+          2; // Cryptographic proof of the data contracts, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetDataContractsLatestVersionsResponseV0 v0 = 1; }
+}
+
+// A document type that belongs to a contract group: the contract and the
+// document type name.
+message ContractGroupDocumentTypeMember {
+  bytes contract_id = 1;         // The contract the document type belongs to
+  string document_type_name = 2; // The document type name within the contract
+}
+
+// A token that belongs to a contract group: the contract and the token's
+// position within it.
+message ContractGroupTokenMember {
+  bytes contract_id = 1;      // The contract the token belongs to
+  uint32 token_position = 2;  // The token's position in the contract (u16)
+}
+
+message GetContractGroupInfoRequest {
+  message GetContractGroupInfoRequestV0 {
+    bytes contract_group_id = 1; // The 32-byte id of the contract group
+    bool prove = 2;              // Flag to request a proof as the response
+  }
+  oneof version { GetContractGroupInfoRequestV0 v0 = 1; }
+}
+
+message GetContractGroupInfoResponse {
+  message ContractGroupInfo {
+    bytes owner_id = 1; // The identity that registered the group and owns it
+    repeated bytes admin_ids =
+        2; // Identities that may add members besides the owner; empty for a
+           // single owner
+    optional string name = 3;        // The group's name, when it has one
+    optional string description = 4; // The group's description, when it has one
+  }
+
+  message GetContractGroupInfoResponseV0 {
+    oneof result {
+      ContractGroupInfo contract_group_info =
+          1; // The group's stored information; absent when no such group exists
+      Proof proof = 2; // Cryptographic proof of the information, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractGroupInfoResponseV0 v0 = 1; }
+}
+
+message GetContractGroupMembersRequest {
+  // Contracts that belong to the group as a whole, in contract id order.
+  message ContractMembersQuery {
+    optional bytes start_after =
+        1; // 32-byte contract id; the page starts after it
+  }
+
+  // Document types that belong to the group, in contract id then document
+  // type name order.
+  message DocumentTypeMembersQuery {
+    optional ContractGroupDocumentTypeMember start_after =
+        1; // The page starts after this document type
+  }
+
+  // Tokens that belong to the group, in contract id then token position order.
+  message TokenMembersQuery {
+    optional ContractGroupTokenMember start_after =
+        1; // The page starts after this token
+  }
+
+  message GetContractGroupMembersRequestV0 {
+    bytes contract_group_id = 1; // The 32-byte id of the contract group
+    oneof members {
+      ContractMembersQuery contracts = 2;          // Read the member contracts
+      DocumentTypeMembersQuery document_types = 3; // Read the member document types
+      TokenMembersQuery tokens = 4;                // Read the member tokens
+    }
+    optional uint32 limit =
+        5; // Maximum number of members to return, 1..=100; absent means 100
+    bool prove = 6; // Flag to request a proof as the response
+  }
+  oneof version { GetContractGroupMembersRequestV0 v0 = 1; }
+}
+
+message GetContractGroupMembersResponse {
+  message ContractMembers {
+    repeated bytes contract_ids = 1; // Member contracts, in contract id order
+  }
+
+  message DocumentTypeMembers {
+    repeated ContractGroupDocumentTypeMember document_types =
+        1; // Member document types, in contract id then name order
+  }
+
+  message TokenMembers {
+    repeated ContractGroupTokenMember tokens =
+        1; // Member tokens, in contract id then position order
+  }
+
+  message GetContractGroupMembersResponseV0 {
+    oneof result {
+      ContractMembers contracts = 1;          // One page of member contracts
+      DocumentTypeMembers document_types = 2; // One page of member document types
+      TokenMembers tokens = 3;                // One page of member tokens
+      Proof proof = 4; // Cryptographic proof of the page, if requested
+    }
+    ResponseMetadata metadata = 5; // Metadata about the blockchain state
+  }
+  oneof version { GetContractGroupMembersResponseV0 v0 = 1; }
+}
+
+// One of the moderation lists a moderated data contract may keep (protocol version 14).
+enum ContractModerationList {
+  CONTRACT_MODERATION_LIST_UNSPECIFIED = 0; // Not a list: a request that leaves the field out is refused
+  CONTRACT_MODERATION_LIST_BANLIST = 1;     // Identities barred until an unban
+  CONTRACT_MODERATION_LIST_SUSPENSIONS = 2; // Identities barred until a block time
+  CONTRACT_MODERATION_LIST_WARNINGS = 3;    // Identities warned, barred from nothing
+}
+
+// A document a moderation reason is about.
+message ContractModerationDocument {
+  string document_type_name = 1; // The document type, on the moderated contract
+  bytes document_id = 2;         // The 32-byte id of the document
+}
+
+// Why a moderator banned, suspended or warned an identity, or deleted a
+// document. Nothing checks what a moderator writes, and the documents cited
+// are not looked up, except the reason document a seated elected team names.
+message ContractModerationReason {
+  optional uint32 code =
+      1; // Reserved for the ban codes a contract may declare in a later
+         // protocol version; a u16, expected unset today, never checked
+  string text = 2; // Free text, at most 1024 bytes of UTF-8, may be empty
+  repeated ContractModerationDocument documents =
+      3; // The documents the reason is about, at most 16, none twice
+  optional bytes reason_document_id =
+      4; // The 32-byte id of the moderation charters contract's `reason`
+         // document the action is taken on; one the seated team's proposal
+         // lists for a seated elected team's action, unchecked otherwise
+}
+
+// One warning an identity carries on a contract's warning list.
+message ContractWarning {
+  uint64 warned_at = 1; // The time of the block that issued it, in milliseconds
+  ContractModerationReason reason = 2; // Why
+}
+
+message GetContractModerationStatusRequest {
+  message GetContractModerationStatusRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the moderated contract
+    bytes identity_id = 2; // The 32-byte id of the identity
+    repeated ContractModerationList lists =
+        3; // The lists to read, which the contract's config must declare; at
+           // least one, no repeats
+    bool prove = 4; // Flag to request a proof as the response
+  }
+  oneof version { GetContractModerationStatusRequestV0 v0 = 1; }
+}
+
+message GetContractModerationStatusResponse {
+  // The identity's status on the lists the request named, and on no other: a
+  // list that was not read says nothing, so its field is left unset.
+  message ContractModerationStatus {
+    optional bool banned =
+        1; // Set only when the banlist was read: the identity is on it
+    optional uint64 suspended_until =
+        2; // The block time, in milliseconds, until which the identity is
+           // suspended; a lapsed suspension stays until it is swept. Unset
+           // when the identity is not suspended or the list was not read
+    repeated ContractModerationList lists =
+        3; // The lists this status covers, as the request named them
+    optional ContractModerationReason ban_reason =
+        4; // Set when the identity is banned: why
+    optional ContractModerationReason suspension_reason =
+        5; // Set when the identity is suspended: why
+    repeated ContractWarning warnings =
+        6; // When the warning list was read: the identity's warnings, oldest
+           // first; empty when it carries none
+  }
+
+  message GetContractModerationStatusResponseV0 {
+    oneof result {
+      ContractModerationStatus status = 1; // The identity's status on the lists read
+      Proof proof = 2;                     // Cryptographic proof of the status, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractModerationStatusResponseV0 v0 = 1; }
+}
+
+message GetContractModerationEntriesRequest {
+  message GetContractModerationEntriesRequestV0 {
+    bytes contract_id = 1;           // The 32-byte id of the moderated contract
+    ContractModerationList list = 2; // The list to read, which the contract's config must declare
+    optional bytes start_after =
+        3; // 32-byte identity id; the page starts after it
+    optional uint32 limit =
+        4; // Maximum number of entries to return, from 1 to the protocol's
+           // max_returned_elements (100); absent means that maximum
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetContractModerationEntriesRequestV0 v0 = 1; }
+}
+
+message GetContractModerationEntriesResponse {
+  message ContractModerationEntry {
+    bytes identity_id = 1; // The identity on the list
+    optional uint64 until =
+        2; // For a suspension list entry: the block time, in milliseconds, at
+           // which it lapses
+    ContractModerationReason reason =
+        3; // Why the identity is on the list: the ban's reason or the
+           // suspension's. Unset for a warning list entry, whose reasons
+           // are its warnings'
+    repeated ContractWarning warnings =
+        4; // For a warning list entry: every warning the identity carries,
+           // oldest first; the latest is why it is on the list
+  }
+
+  message ContractModerationEntries {
+    repeated ContractModerationEntry entries = 1; // The page, in identity id order
+  }
+
+  message GetContractModerationEntriesResponseV0 {
+    oneof result {
+      ContractModerationEntries entries = 1; // One page of the list
+      Proof proof = 2;                       // Cryptographic proof of the page, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractModerationEntriesResponseV0 v0 = 1; }
+}
+
+// The records of the documents a contract's moderators deleted, within one
+// document type whose documents they may delete (`moderatorAbilities.delete`):
+// the ones of the document ids named, or one page in document id order.
+message GetContractDocumentRemovalsRequest {
+  message DocumentIds {
+    repeated bytes document_ids =
+        1; // 32-byte document ids, from 1 to the protocol's
+           // max_returned_elements (100), none twice; an id with no record is
+           // left out of the response, and proved absent when a proof is asked
+  }
+
+  message Page {
+    optional bytes start_after =
+        1; // 32-byte document id; the page starts after it
+    optional uint32 limit =
+        2; // Maximum number of records to return, from 1 to the protocol's
+           // max_returned_elements (100); absent means that maximum
+  }
+
+  message GetContractDocumentRemovalsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the moderated contract
+    string document_type_name =
+        2; // The document type, which must let moderators delete its documents
+    oneof selection {
+      DocumentIds document_ids = 3; // The records of these documents
+      Page page = 4;                // One page of the type's records
+    }
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetContractDocumentRemovalsRequestV0 v0 = 1; }
+}
+
+message GetContractDocumentRemovalsResponse {
+  message ContractDocumentRestoration {
+    bytes moderator_id =
+        1; // The contract owner or moderator that restored the document
+    uint64 restored_at =
+        2; // The time of the block that restored it, in milliseconds
+  }
+
+  message ContractDocumentRemoval {
+    bytes document_id = 1;       // The id the removed document had
+    bytes document_owner_id = 2; // The identity that owned it
+    bytes moderator_id = 3; // The contract owner or moderator that removed it
+    uint64 removed_at =
+        4; // The time of the block that removed it, in milliseconds
+    ContractModerationReason reason = 5; // Why the moderator removed it
+    bytes document_hash =
+        6; // A 32-byte double SHA-256 of the document as it was serialized
+           // under its document type when it was removed: what a restore must
+           // bring back byte for byte
+    ContractDocumentRestoration restoration =
+        7; // Set once a moderator restored the document, which is then live
+           // again as it was; absent while the removal stands
+    bytes kept_fields =
+        8; // The values the record keeps of the document, as the record stores
+           // them: for each path its document type lists under
+           // moderatorAbilities.deleteKeepsFields, in the list's order, 0 when
+           // the document held no value there, or 1 and the value encoded as
+           // the document encodes its properties. Read under the contract's
+           // document type, as a document is. Empty when the type keeps none
+  }
+
+  message ContractDocumentRemovals {
+    repeated ContractDocumentRemoval removals =
+        1; // The records, in document id order
+  }
+
+  message GetContractDocumentRemovalsResponseV0 {
+    oneof result {
+      ContractDocumentRemovals removals = 1; // The records read
+      Proof proof = 2; // Cryptographic proof of the records, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractDocumentRemovalsResponseV0 v0 = 1; }
+}
+
+message GetContractTeamActionsRequest {
+  enum ActionStatus {
+    ACTIVE = 0; // Actions still gathering approvals
+    CLOSED = 1; // Actions whose approvals met their rule, which ran
+  }
+
+  message StartAtActionId {
+    bytes start_action_id = 1;        // 32-byte action id the page starts at
+    bool start_action_id_included = 2; // Whether the page includes that action
+  }
+
+  message GetContractTeamActionsRequestV0 {
+    bytes contract_id =
+        1; // The 32-byte id of the elected contract whose seated moderation
+           // team votes on the actions
+    ActionStatus status = 2; // Active or closed actions
+    optional StartAtActionId start_at_action_id =
+        3; // Where the page starts, in action id order; absent means the first
+    optional uint32 count =
+        4; // Maximum number of actions to return, from 1 to the protocol's
+           // max_returned_elements (100); absent means that maximum
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetContractTeamActionsRequestV0 v0 = 1; }
+}
+
+message GetContractTeamActionsResponse {
+  // The deletion of a settled document: one past its type's deleteWithin
+  // window, which its type's moderatorAbilities.deleteSettled lets the team
+  // delete together
+  message DeleteSettledDocument {
+    string document_type_name = 1; // The document's type
+    bytes document_id = 2;         // The 32-byte id of the document
+    uint64 document_last_modified_at =
+        3; // The document's $updatedAt (or $createdAt) when proposed: the
+           // approvals are of the document as it was then
+    optional uint64 document_revision =
+        4; // The document's $revision when proposed, absent on a type whose
+           // documents carry none: an approval of a document changed since is
+           // refused
+    ContractModerationReason reason = 5; // Why, as the proposer gave it
+  }
+
+  // One action the seated team votes on: proposed by one member, approved by
+  // the others by its id, run once the approvals meet its rule
+  message ContractTeamAction {
+    bytes action_id = 1;   // The 32-byte id of the action
+    bytes proposer_id = 2; // The 32-byte id of the member that proposed it
+    uint64 proposed_at =
+        3; // The time of the block of the proposal, in milliseconds
+    oneof event {
+      DeleteSettledDocument delete_settled_document = 4; // What it does
+    }
+    uint32 approval_count =
+        5; // How many approvals it holds, the proposer's among them; an active
+           // action's is an upper bound, counting a member who left the team
+           // until a later approval reads the team and drops it; the exact
+           // figure is its signers still on the team
+  }
+
+  message ContractTeamActions {
+    repeated ContractTeamAction actions = 1; // The actions, in action id order
+  }
+
+  message GetContractTeamActionsResponseV0 {
+    oneof result {
+      ContractTeamActions actions = 1; // The actions read
+      Proof proof = 2; // Cryptographic proof of the actions, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractTeamActionsResponseV0 v0 = 1; }
+}
+
+message GetContractTeamActionSignersRequest {
+  enum ActionStatus {
+    ACTIVE = 0; // An action still gathering approvals
+    CLOSED = 1; // An action whose approvals met its rule, which ran
+  }
+
+  message GetContractTeamActionSignersRequestV0 {
+    bytes contract_id =
+        1; // The 32-byte id of the elected contract whose seated moderation
+           // team votes on the action
+    ActionStatus status = 2; // Whether the action is active or closed
+    bytes action_id = 3;     // The 32-byte id of the action
+    bool prove = 4;          // Flag to request a proof as the response
+  }
+  oneof version { GetContractTeamActionSignersRequestV0 v0 = 1; }
+}
+
+message GetContractTeamActionSignersResponse {
+  message ContractTeamActionSigners {
+    repeated bytes signer_ids =
+        1; // The 32-byte ids of the members that approved, the proposer among
+           // them unless it left the team and its approval was dropped, in id
+           // order; none when there is no such action
+  }
+
+  message GetContractTeamActionSignersResponseV0 {
+    oneof result {
+      ContractTeamActionSigners signers = 1; // The approvals read
+      Proof proof = 2; // Cryptographic proof of the approvals, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractTeamActionSignersResponseV0 v0 = 1; }
+}
+
+message GetContractModerationActionCountsRequest {
+  message GetContractModerationActionCountsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the elected contract whose
+                           // seated moderation team's actions are counted
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractModerationActionCountsRequestV0 v0 = 1; }
+}
+
+message GetContractModerationActionCountsResponse {
+  // How many counted moderation actions (a ban, a suspension, a warning or a
+  // document deletion) one member of the seated team signed since the
+  // moderators pot was last paid out, which resets every count
+  message ContractModerationActionCount {
+    bytes identity_id = 1; // The 32-byte id of the member
+    uint32 count = 2;      // How many
+  }
+  message ContractModerationActionCounts {
+    repeated ContractModerationActionCount counts =
+        1; // The counts, in identity id order; a member that did not act since
+           // the last payout has none
+  }
+  message GetContractModerationActionCountsResponseV0 {
+    oneof result {
+      ContractModerationActionCounts counts = 1; // The counts read
+      Proof proof = 2; // Cryptographic proof of the counts, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractModerationActionCountsResponseV0 v0 = 1; }
+}
+
+message GetContractFeePotsRequest {
+  message GetContractFeePotsRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the data contract
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractFeePotsRequestV0 v0 = 1; }
+}
+
+message GetContractFeePotsResponse {
+  // The last payout of a pot, which the claim that made it left in state
+  message ContractFeePotLastClaim {
+    uint32 epoch = 1; // The epoch (u16) the pot was paid out in; a pot is paid
+                      // out at most once per epoch
+    uint64 time_ms = 2
+        [ jstype = JS_STRING ]; // The time of the block that paid the pot out
+    bytes claimant_id = 3; // The identity that signed the claim: the contract
+                           // owner for the owner pot, the member of the
+                           // moderation team that claimed for the moderators pot
+  }
+
+  // One of the two pots a contract's document action fees collect in
+  message ContractFeePot {
+    uint64 credits = 1 [ jstype = JS_STRING ]; // What the pot holds
+    ContractFeePotLastClaim last_claim =
+        2; // Unset when the pot was never paid out
+  }
+
+  message ContractFeePots {
+    ContractFeePot owner = 1;      // The pot the contract owner claims
+    ContractFeePot moderators = 2; // The pot the moderation team shares
+  }
+
+  message GetContractFeePotsResponseV0 {
+    oneof result {
+      ContractFeePots pots = 1; // Both pots of the contract
+      Proof proof = 2;          // Cryptographic proof of the pots, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractFeePotsResponseV0 v0 = 1; }
+}
+
+message GetContractGroupsForContractRequest {
+  message GetContractGroupsForContractRequestV0 {
+    bytes contract_id = 1; // The 32-byte id of the contract
+    bool prove = 2;        // Flag to request a proof as the response
+  }
+  oneof version { GetContractGroupsForContractRequestV0 v0 = 1; }
+}
+
+message GetContractGroupsForContractResponse {
+  message DocumentTypeMemberships {
+    string document_type_name = 1; // The document type within the contract
+    repeated bytes contract_group_ids =
+        2; // The groups the document type belongs to
+  }
+
+  message TokenMemberships {
+    uint32 token_position = 1; // The token's position in the contract (u16)
+    repeated bytes contract_group_ids = 2; // The groups the token belongs to
+  }
+
+  message ContractGroupMemberships {
+    repeated bytes contract_group_ids =
+        1; // The groups the whole contract belongs to
+    repeated DocumentTypeMemberships document_types =
+        2; // The groups each document type belongs to
+    repeated TokenMemberships tokens = 3; // The groups each token belongs to
+  }
+
+  message GetContractGroupsForContractResponseV0 {
+    oneof result {
+      ContractGroupMemberships contract_group_memberships =
+          1; // The memberships; every list is empty when the contract belongs
+             // to no group
+      Proof proof = 2; // Cryptographic proof of the memberships, if requested
+    }
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetContractGroupsForContractResponseV0 v0 = 1; }
+}
+
 message GetDataContractsRequest {
   message GetDataContractsRequestV0 {
     repeated bytes ids =
@@ -504,6 +1143,28 @@ message GetDataContractsRequest {
     bool prove = 2; // Flag to request a proof as the response
   }
   oneof version { GetDataContractsRequestV0 v0 = 1; }
+}
+
+// Enumerates every data contract on Platform, one page at a time, in
+// ascending contract id order. Answered with `GetDataContractsResponse`:
+// each `DataContractEntry` carries the contract id and, unless `ids_only`
+// is set, the serialized contract. An empty page (no more contracts) is an
+// empty `data_contract_entries` list, never NotFound. A page shorter than
+// `limit` is the last page; otherwise pass the last entry's identifier as
+// `start_after` to fetch the next one.
+message GetDataContractsByRangeRequest {
+  message GetDataContractsByRangeRequestV0 {
+    optional uint32 limit =
+        1; // Maximum number of contracts to return, 1..=100; absent means 100
+    oneof start {
+      bytes start_after = 2; // 32-byte contract id; the page starts after it
+      bytes start_at = 3;    // 32-byte contract id; the page starts at it
+    }
+    bool ids_only =
+        4; // When set, entries carry only `identifier`; `data_contract` is unset
+    bool prove = 5; // Flag to request a proof as the response
+  }
+  oneof version { GetDataContractsByRangeRequestV0 v0 = 1; }
 }
 
 message GetDataContractsResponse {
@@ -579,9 +1240,9 @@ message GetDocumentsRequest {
   //
   // `BETWEEN*` operators expect the right-hand operand to be a
   // 2-element `DocumentFieldValue.list` carrying `[lower, upper]`;
-  // `IN` expects a `list` of candidate values; all other operators
-  // expect a scalar `DocumentFieldValue` matching the indexed
-  // field's type.
+  // `IN` and `CONTAINS_ANY` expect a `list` of candidate values; all
+  // other operators expect a scalar `DocumentFieldValue` matching the
+  // indexed field's type (for `CONTAINS`, the type of one element).
   enum WhereOperator {
     EQUAL = 0;
     GREATER_THAN = 1;
@@ -594,6 +1255,43 @@ message GetDocumentsRequest {
     BETWEEN_EXCLUDE_RIGHT = 8;
     IN = 9;
     STARTS_WITH = 10;
+    // Time-range bucket selection (v1 only; the v0 CBOR surface is
+    // unaffected). `field` names a timestamp covered by a `timeRange`
+    // index. The operand is `WhereClause.time_range` (a
+    // `TimeRangeSelection`); `WhereClause.value` must be unset. For the
+    // relative selectors (`NEWEST` / `OLDEST`) the server resolves the
+    // selection to a bucket-start equality from current block time and
+    // the verifier re-derives the same bucket from the quorum-signed
+    // metadata time; `BY_START` names the window absolutely, so both
+    // sides read the start straight from the query — an ordinary
+    // index/count proof either way. See `timeRange` in the document
+    // meta-schema and `drive::query::resolve_time_range_bucket_clause`.
+    IN_TIME_RANGE = 11;
+    // Integer-range window selection (v1 only). `field` names an integer
+    // property covered by an `integerRange` index. The operand is
+    // `WhereClause.integer_range` (an `IntegerRangeSelection`);
+    // `WhereClause.value` must be unset. The window is named by its
+    // start, so the server and the verifier both resolve it from the
+    // query alone to a window-start equality — an ordinary index/count
+    // proof. See `integerRange` in the document meta-schema and
+    // `drive::query::resolve_integer_range_bucket_clause`.
+    IN_INTEGER_RANGE = 12;
+    // An element of a typed array equals the operand (v1 only; protocol
+    // version 14). `field` names a typed array an index keys by its
+    // elements: the index holds a document once per distinct element,
+    // so the clause is an equality on one element's key and may page
+    // with a cursor whose document holds the element. No other
+    // operator may name a typed array. See "Indexes on typed arrays"
+    // in the book's indexes chapter.
+    CONTAINS = 13;
+    // An element of a typed array is one of the operands (v1 only;
+    // protocol version 14): an `IN` over the elements. A document
+    // holding several of them is under each, and a documents page
+    // returns it once, where it first appears; the limit counts every
+    // entry the walk passes. Takes an `ORDER BY` on the array (the
+    // order the elements are walked in) and no cursor. Counts, sums and
+    // averages read several elements only grouped by them.
+    CONTAINS_ANY = 14;
   }
 
   // Tagged scalar (or list) operand for a `WhereClause`. The
@@ -646,6 +1344,80 @@ message GetDocumentsRequest {
     }
   }
 
+  // Operand of an `IN_TIME_RANGE` where clause: which window of a
+  // `timeRange` grid the query selects. Typed rather than riding
+  // `DocumentFieldValue` — the selection is not a field value, and a
+  // structured message keeps the selector an enum instead of a
+  // magic string.
+  //
+  // The relative selectors are resolved server-side: `NEWEST` is the
+  // freshest started window (largest grid start <= block time; the
+  // latest partial slice of history), `OLDEST` the oldest window still
+  // active at block time (a near-full trailing window of ~`range` —
+  // best for "trending over the last window"). The proof verifier
+  // re-derives the same window from the quorum-signed response
+  // metadata time, so neither side trusts the other's clock.
+  //
+  // `BY_START` names a window absolutely — any window, current or
+  // historic — by its start. `start_ms` is then required and must lie
+  // on the grid (`start_ms == phase + k * step`, in milliseconds);
+  // an unaligned start is rejected rather than snapped. A window with
+  // no documents (including one that has not started yet) is a
+  // provable empty answer, not an error. The relative selectors must
+  // NOT carry `start_ms` — one wire spelling per meaning.
+  message TimeRangeSelection {
+    enum Selector {
+      NEWEST = 0;
+      OLDEST = 1;
+      BY_START = 2;
+    }
+    // Names one of the field's declared grids, in the contract's own
+    // seconds — verbatim from the contract's `timeRange` declaration.
+    // Required when more than one `timeRange` grid buckets the field
+    // (the bare selector is ambiguous there and rejected); optional
+    // while exactly one grid does. A zero `phase` is the proto3
+    // default, matching the contract grammar where `phase` is an
+    // omittable key — every grid has exactly one wire spelling by
+    // construction.
+    message Grid {
+      uint64 range = 1 [jstype = JS_STRING];
+      uint64 step = 2 [jstype = JS_STRING];
+      uint64 phase = 3 [jstype = JS_STRING];
+    }
+    Selector selector = 1;
+    // `BY_START` only: the selected window's start, as a millisecond
+    // timestamp on the grid (see the message docstring). Rejected on
+    // the relative selectors.
+    optional uint64 start_ms = 2 [jstype = JS_STRING];
+    Grid grid = 3;
+  }
+
+  // Operand of an `IN_INTEGER_RANGE` where clause: which window of an
+  // `integerRange` grid the query selects, named by its start.
+  //
+  // `start` is required and must be a window start of the grid:
+  // `phase + k * step` within the property's integer type, or the
+  // type's minimum (0 for a property with a non-negative minimum), which
+  // starts the bottom window when the grid clamps it. An unaligned start
+  // is rejected rather than snapped. It rides as a `DocumentFieldValue`
+  // (`int64_value` or `uint64_value`) and is coerced through the schema
+  // like any value of the field. A window with no documents is a
+  // provable empty answer, not an error.
+  message IntegerRangeSelection {
+    // Names one of the field's declared grids, verbatim from the
+    // contract's `integerRange` declaration. Required when more than one
+    // grid buckets the field; optional while exactly one does. A zero
+    // `phase` is the proto3 default, matching the contract grammar where
+    // `phase` is an omittable key.
+    message Grid {
+      uint64 range = 1 [jstype = JS_STRING];
+      uint64 step = 2 [jstype = JS_STRING];
+      uint64 phase = 3 [jstype = JS_STRING];
+    }
+    DocumentFieldValue start = 1;
+    Grid grid = 2;
+  }
+
   // Single `field <op> value` clause. The server reassembles a
   // `Vec<WhereClause>` from the request's `where_clauses` field,
   // runs the same `WhereClause::group_clauses` validator (rejects
@@ -654,16 +1426,28 @@ message GetDocumentsRequest {
   // then hands the structured clauses to the executor. Wire
   // semantics are identical to v0's CBOR `[field, op, value]`
   // triples — only the envelope differs.
+  //
+  // Exactly one operand field is set, keyed by the operator:
+  // `operator = IN_TIME_RANGE` carries its operand in `time_range`,
+  // `operator = IN_INTEGER_RANGE` in `integer_range` (`value` unset in
+  // both); every other operator carries `value` (`time_range` and
+  // `integer_range` unset). Any mismatch is rejected.
   message WhereClause {
     string field = 1;
     WhereOperator operator = 2;
     DocumentFieldValue value = 3;
+    TimeRangeSelection time_range = 4;
+    IntegerRangeSelection integer_range = 5;
   }
 
   // Per-group aggregate operand for the left side of a
-  // `HavingClause`. Only the per-group aggregates live here:
-  // `MIN` / `MAX` / `TOP` / `BOTTOM` are **cross-group** ranking
-  // primitives and appear on the right side via `HavingRanking`.
+  // `HavingClause`, and the aggregate-function target of an
+  // `OrderClause`. Only the per-group aggregates live here —
+  // `HAVING` is a boolean predicate over one group's own aggregate,
+  // and nothing on this message reaches across groups. Cross-group
+  // ranking ("which groups score highest?") is expressed with SQL's
+  // ordering surface instead: `ORDER BY <the selected aggregate>
+  // DESC LIMIT n [OFFSET m]`. See `GetDocumentsRequestV1.order_by`.
   //
   // **Field semantics by function**:
   // - `COUNT`: empty `field` means `COUNT(*)` (group cardinality);
@@ -682,45 +1466,38 @@ message GetDocumentsRequest {
     string field = 2;
   }
 
-  // Cross-group ranking primitive on the right side of a
-  // `HavingClause`. The ranking is computed over the set of
-  // group-aggregate results (one per `GROUP BY` row), so
-  // `HAVING COUNT(*) EQ MAX` selects groups whose count equals
-  // the maximum count across all groups, and
-  // `HAVING COUNT(*) IN TOP(5)` selects groups whose count is
-  // among the five largest. Concise way to express top-N /
-  // bottom-N selection without window functions or
-  // `ORDER BY` + `LIMIT`.
-  //
-  // **Operator compatibility**:
-  // - Scalar operators (`=`, `!=`, `<`, `<=`, `>`, `>=`) work
-  //   with `MIN` / `MAX`. `TOP` / `BOTTOM` with scalar operators
-  //   only make sense when `n=1` (the single largest / smallest);
-  //   evaluation rejects other combinations as ambiguous.
-  // - `IN` works with `TOP(n)` / `BOTTOM(n)` for set membership.
-  // - `BETWEEN*` doesn't compose meaningfully with rankings and
-  //   is rejected at evaluation time.
-  message HavingRanking {
-    enum Kind {
-      MIN = 0;
-      MAX = 1;
-      TOP = 2;
-      BOTTOM = 3;
-    }
-    Kind kind = 1;
-    // N-th rank for `TOP` / `BOTTOM` (1-indexed: `n=1` is the
-    // single largest / smallest). Required for those two kinds;
-    // must be unset for `MIN` / `MAX`. The wire allows setting
-    // it on `MIN` / `MAX` for forward compatibility, but
-    // evaluation rejects it as a malformed ranking.
-    optional uint64 n = 2 [jstype = JS_STRING];
-  }
-
-  // Single `HAVING <aggregate> <op> <right>` clause. Multiple
+  // Single `HAVING <aggregate> <op> <value>` clause. Multiple
   // entries in `GetDocumentsRequestV1.having` combine with
   // implicit AND — same semantics as multiple `where_clauses`
   // entries. `HAVING COUNT(*) > 5 AND SUM(amount) > 100` is two
   // `HavingClause` rows, not a tree.
+  //
+  // **`HAVING` is a boolean per-group predicate and nothing else.**
+  // Its right operand is always a literal `DocumentFieldValue`; it
+  // never names another group or the set of groups. Cross-group
+  // ranking — "the 5 highest-scoring groups" — is `ORDER BY <the
+  // selected aggregate> DESC LIMIT 5`, exactly as in SQL, and is
+  // served by the ranked executor (protocol v14+). An earlier draft
+  // of this surface carried the ranking on the right of a `HAVING`
+  // (`HAVING AVG(grade) IN TOP(5)`); that spelling was removed
+  // before release rather than deprecated, because it invented
+  // non-SQL grammar for something SQL already expresses.
+  //
+  // **From protocol v14 a single `HAVING` clause is served as a
+  // bounded range read** (having-range mode): `SELECT <agg> GROUP BY
+  // p HAVING <agg> <op> <value> [ORDER BY <order-key> ASC|DESC]
+  // LIMIT n` answers from the same per-axis secondary as ranked
+  // mode, on an index declaring the matching ranked axis. The
+  // clause's aggregate must be the selected aggregate, the operator
+  // must describe one contiguous range (`NOT_EQUAL` / `IN` are
+  // rejected), and the optional `ORDER BY` picks the walk direction
+  // using the same order-key spelling as ranked mode: `f` for
+  // `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)` —
+  // never an explicit `OrderClause.aggregate` target, which is
+  // rejected. See the supported-shape table on
+  // `GetDocumentsRequestV1`. On protocol v13 and earlier every
+  // non-empty `having` stays rejected with `Unsupported`, exactly as
+  // before.
   //
   // The operator set mirrors `WhereOperator` minus `STARTS_WITH`
   // (prefix matching has no natural meaning against a scalar
@@ -728,12 +1505,12 @@ message GetDocumentsRequest {
   // `IN` operand semantics match `WhereOperator`: `BETWEEN*`
   // expects a 2-element `DocumentFieldValue.list` carrying
   // `[lower, upper]`, and `IN` expects a `list` of candidate
-  // values (or a ranking set via `right.ranking`).
+  // values.
   //
-  // The `right` oneof carries either a concrete
-  // `DocumentFieldValue` (literal comparison target) or a
-  // `HavingRanking` (cross-group reference). Exactly one is set;
-  // the wire rejects an unset `right`.
+  // The `right` oneof exists (rather than a bare
+  // `DocumentFieldValue` field) so the "unset right operand" case
+  // stays distinguishable from "the literal null value"; the wire
+  // rejects an unset `right`.
   message HavingClause {
     enum Operator {
       EQUAL = 0;
@@ -752,33 +1529,65 @@ message GetDocumentsRequest {
     Operator operator = 2;
     oneof right {
       DocumentFieldValue value = 3;
-      HavingRanking ranking = 4;
     }
   }
 
-  // Single `ORDER BY field <direction>` clause. Multi-field
+  // Single `ORDER BY <target> <direction>` clause. Multi-field
   // ordering is expressed by repeating this message at the
   // request level (`repeated OrderClause order_by = 4`), matching
   // SQL's `ORDER BY a ASC, b DESC` shape.
-  // Single ORDER BY entry. Multi-entry ordering is expressed by
-  // repeating this message at the request level.
   //
   // The `target` oneof carries either a plain field name
   // (`ORDER BY field`) or an aggregate function applied to a
-  // field (`ORDER BY COUNT(*)`, `ORDER BY SUM(amount)`) — the
-  // latter sorts per-group result rows produced by `GROUP BY`,
-  // useful with `LIMIT` for top-N / bottom-N selection at the
-  // routing layer (overlapping `HavingRanking::Top` / `Bottom`
-  // but more general because the ranking field can be any
-  // aggregate, not just count).
+  // field (`ORDER BY COUNT(*)`, `ORDER BY SUM(amount)`).
   //
-  // **Aggregate target currently rejected** with
-  // `Unsupported("ORDER BY on aggregate is not yet implemented")`.
-  // The wire surface is shipped now so callers can encode the
-  // shape ahead of server support landing.
+  // **Two distinct roles ride the `field` target.**
+  //
+  // 1. *Row ordering* — `select = DOCUMENTS`. `field` names a
+  //    document property and the matched rows come back in that
+  //    order. This is v0's behaviour, unchanged.
+  //
+  // 2. *Aggregate ordering* — the **ranked** surface (protocol
+  //    v14+). With a `GROUP BY` and a single aggregate `select`,
+  //    exactly one `order_by` clause naming that select's
+  //    aggregate orders the *groups* by their aggregate value and
+  //    routes the request to the ranked executor:
+  //
+  //    ```text
+  //    SELECT AVG(grade) GROUP BY restaurantId
+  //      ORDER BY grade DESC LIMIT 3          -- 3 best restaurants
+  //    SELECT COUNT(*)   GROUP BY restaurantId
+  //      ORDER BY $count DESC LIMIT 10 OFFSET 10  -- busiest, page 2
+  //    ```
+  //
+  //    `SUM(f)` / `AVG(f)` are named by `f` — the same property the
+  //    projection aggregates, which is how `ORDER BY avg(grade)`
+  //    reads once `SELECT` has already fixed the function.
+  //    `COUNT(*)` aggregates no property, so it is named by the
+  //    reserved sentinel **`$count`**. The `$` prefix is what keeps
+  //    the sentinel from colliding with a real document property:
+  //    document properties cannot start with `$` (that namespace is
+  //    the system fields' `$id` / `$ownerId` / …), so `$count` can
+  //    never be mistaken for a column. `DESC` is the "top n"
+  //    reading, `ASC` the "bottom n" reading.
+  //
+  //    An `order_by` naming anything other than the selected
+  //    aggregate — a second clause, the `GROUP BY` property, an
+  //    unrelated field — is rejected rather than normalized: it
+  //    asks for an ordering the ranked secondary cannot produce.
+  //
+  // **Aggregate target still rejected** with
+  // `Unsupported("ORDER BY on aggregate keys is not yet
+  // implemented")`. It is the *explicit* spelling of role 2
+  // (`ORDER BY AVG(grade)` rather than `ORDER BY grade` under a
+  // `SELECT AVG(grade)`) and is wire-stable so it can start being
+  // evaluated without another version bump; today the field-target
+  // spelling above is the one the ranked executor reads.
   message OrderClause {
     oneof target {
-      // Plain field name. Today's evaluated form.
+      // Plain field name. Today's evaluated form — a document
+      // property for row ordering, or the selected aggregate's
+      // property (`$count` for `COUNT(*)`) for aggregate ordering.
       string field = 1;
       // Aggregate function applied to a field, sorted by the
       // per-group result. `function = DOCUMENTS` is invalid
@@ -823,12 +1632,22 @@ message GetDocumentsRequest {
   //   other shapes return `Unsupported` (see supported-shape table
   //   below).
   //
-  // `having` is wire-reserved for a future server capability. Any
-  // non-empty `having` list currently returns
-  // `Unsupported("HAVING clause is not yet implemented")`
-  // regardless of `select` / `group_by`. The wire shape is
-  // `repeated WhereClause` so when execution lands the surface is
-  // already typed end-to-end and callers don't need to re-encode.
+  // **Ranked mode** is served from protocol v14 and is selected by
+  // `group_by` + a single `order_by` naming the selected aggregate —
+  // SQL's own top-n spelling, `ORDER BY <agg> DESC LIMIT n OFFSET m`.
+  // It returns `ResultData.ranked`. See `order_by` and the
+  // supported-shape table below.
+  //
+  // **Having-range mode** is served from protocol v14: a single
+  // `having` clause whose aggregate is the selected aggregate turns
+  // the request into a bounded range read over the same per-axis
+  // secondary ranked mode walks, answered in `ResultData.ranked`.
+  // On protocol v13 and earlier every non-empty `having` is rejected
+  // (`"HAVING clause is not yet implemented"`). `having` carries no
+  // ranking spelling: an earlier draft put cross-group ranking on the
+  // right of a `HAVING` (`HAVING AVG(grade) IN TOP(5)`) and that
+  // grammar was removed before release in favour of `ORDER BY` +
+  // `LIMIT`. See the supported-shape table below.
   //
   // **Supported shapes** (everything else rejects with a typed
   // `QuerySyntaxError::Unsupported` so callers can detect un-wired
@@ -853,8 +1672,17 @@ message GetDocumentsRequest {
   // `select=COUNT, group_by=[a, b]`:
   // - a is the In field AND b is the range field, in that order → existing compound distinct shape; entries carry both `in_key` (= a's value) and `key` (= b's value).
   //
+  // `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], order_by=[<the selected aggregate>]` (protocol v14+) — **ranked mode**:
+  // - exactly one `group_by` property, exactly one `order_by` clause naming the select's aggregate (`f` for `SUM(f)` / `AVG(f)`, the `$count` sentinel for `COUNT(*)`), a `limit` in `1 ..= 100`, an optional `offset`, and no `having` / `start_at`, on an index declaring the matching `rankedCountable` / `rankedSummable` / `rankedAverageable` axis → ranked executor, answered in `ResultData.ranked`. On a single-property ranked index no `where` is accepted; on a compound ranked index every leading index property must be pinned (one clause per property, `group_by` names the trailing property) — `EQUAL` pins one prefix, and **at most one** clause may be `IN` (2..=10 distinct elements, `null` legal; a single-element `IN` normalizes to the equality pin; an element whose prefix was never written — at any depth of its pinned chain — contributes an empty branch, union semantics), fanning the walk out across one prefix branch per element and merging by `(aggregate, encoded prefix, group key)`; merged entries carry `in_key`. A non-zero `offset` is rejected together with `IN` (rank-skip is per-secondary; `OFFSET 0` is the offset-free request).
+  // - `DESC` is the "top n" reading (walk the axis from the largest aggregate down), `ASC` the "bottom n" reading. Worked example: `SELECT AVG(grade) GROUP BY restaurantId ORDER BY grade DESC LIMIT 1 OFFSET 4` is the 5th-best restaurant.
+  //
+  // `select=<COUNT(*)|SUM(f)|AVG(f)>, group_by=[p], having=[<the selected aggregate> <op> <value>]` (protocol v14+) — **having-range mode**:
+  // - exactly one `group_by` property, exactly one `having` clause whose aggregate is the select's aggregate, an operator describing one contiguous range (`EQUAL`, `GREATER_THAN[_OR_EQUALS]`, `LESS_THAN[_OR_EQUALS]`, `BETWEEN*`; `NOT_EQUAL` / `IN` rejected), a `limit` in `1 ..= 100`, an optional `order_by` naming the same aggregate (walk direction; ascending by default), and no `offset` / `start_at` / `start_after`, on an index declaring the matching ranked axis → having-range executor, answered in `ResultData.ranked`. `where` follows the same rule as ranked mode: none on a single-property ranked index; exactly one pin per leading index property on a compound ranked index, at most one of them an `IN` (2..=10 distinct elements; a never-written element contributes an empty branch) that fans the bound out across prefix branches and merges, entries carrying `in_key`.
+  // - no offset or cursor pagination: a page cut at `limit` continues only by tightening the bound past the last *distinct* aggregate value seen; a cut inside a tie (several groups sharing the boundary aggregate) cannot be continued, so size `limit` above the widest expected tie.
+  //
   // **Rejected shapes** (return `Unsupported`):
-  // - any non-empty `having` (always — pending future server capability).
+  // - any non-empty `having` on protocol v13 and earlier; at v14+, any `having` shape outside having-range mode above (multiple clauses, an aggregate other than the select's, `NOT_EQUAL` / `IN` as the having operator, a `where` shape other than the compound-index prefix pins above — equality pins plus at most one bounded `IN` — or a carried `offset` / cursor).
+  // - at v14+: a ranked-shaped request carrying a `where` shape other than the compound-index prefix pins above (an operator other than `EQUAL` or the one permitted `IN`, more than one `IN`, a `null` pin combined with an `IN`, a repeated or non-leading property, or a missing pin), a `start_at` / `start_after` cursor, more than one `order_by`, or an `order_by` naming anything but the selected aggregate.
   // - `select=DOCUMENTS` with non-empty `group_by`.
   // - `select=COUNT` with `group_by` on a field that is not constrained by an `In` or range where clause.
   // - `select=COUNT` with `group_by.len() > 2`.
@@ -927,11 +1755,11 @@ message GetDocumentsRequest {
         AVG = 3;
         // Per-group MIN / MAX — `SELECT MIN(field) GROUP BY
         // category` returns the smallest `field` value in each
-        // category. Semantically distinct from
-        // `HavingRanking::Min` / `Max` (which are cross-group
-        // meta-aggregates over group results). MIN/MAX here
-        // operate over the row values within each group, the
-        // same way `SUM` and `AVG` do.
+        // category. These operate over the row values *within*
+        // each group, the same way `SUM` and `AVG` do; they are
+        // not a cross-group ranking. To pick out the extreme
+        // *group*, order by the aggregate instead:
+        // `ORDER BY <agg> ASC|DESC LIMIT 1` (see `order_by`).
         MIN = 4;
         MAX = 5;
       }
@@ -1044,34 +1872,181 @@ message GetDocumentsRequest {
     // message-level docstring for the supported-shape table.
     repeated string group_by = 10;
 
-    // SQL `HAVING` clauses — aggregate filters that apply to the
-    // grouped rows produced by `select=COUNT, group_by=[…]`. The
-    // wire shape is `HavingClause`, not `WhereClause`, because
-    // HAVING evaluates against per-group aggregates
-    // (`COUNT`/`SUM`/`AVG`/`MIN`/`MAX`/`TOP`/`BOTTOM`) rather than
-    // row field values. Multiple entries combine with implicit
-    // AND. See `HavingClause` / `HavingAggregate` for the
-    // operator and aggregate-function catalogs.
+    // SQL `HAVING` clauses — **boolean** aggregate filters that
+    // apply to the grouped rows produced by `select=<COUNT|SUM|AVG>,
+    // group_by=[…]`. The wire shape is `HavingClause`, not
+    // `WhereClause`, because HAVING evaluates against per-group
+    // aggregates (`COUNT` / `SUM` / `AVG`) rather than row field
+    // values. Multiple entries combine with implicit AND. See
+    // `HavingClause` / `HavingAggregate` for the operator and
+    // aggregate-function catalogs.
     //
-    // **Always rejected when non-empty** today with
-    // `Unsupported("HAVING clause is not yet implemented")`. The
-    // wire shape is shipped now so the future server capability
-    // can land without another version bump — and so callers can
-    // construct full `HAVING COUNT(*) > 5 AND SUM(amount) > 100`
-    // requests in their builders even before the server evaluates
-    // them.
+    // **From protocol v14 a single clause is served** as a bounded
+    // range read — having-range mode; see the message-level
+    // supported-shape table. On v13 and earlier every non-empty
+    // `having` is rejected with `Unsupported("HAVING clause is not
+    // yet implemented")`. Multi-clause `HAVING COUNT(*) > 5 AND
+    // SUM(amount) > 100` requests can still be constructed on the
+    // wire, but stay rejected until a multi-clause evaluator lands.
+    //
+    // **`having` does not express ranking.** "The n highest-scoring
+    // groups" is `ORDER BY <the selected aggregate> DESC LIMIT n`
+    // (see `order_by`), which *is* served, from protocol v14. An
+    // earlier draft of this surface spelled it
+    // `HAVING AVG(grade) IN TOP(5)`; that grammar was removed
+    // before release rather than deprecated.
     repeated HavingClause having = 11;
 
     // Row-based pagination offset, on top of the cursor-based
     // `start_after` / `start_at` pagination. `OFFSET N` skips the
-    // first `N` matching rows before applying `limit`. Currently
-    // **always rejected when non-`None`** with
-    // `Unsupported("OFFSET pagination is not yet implemented")`
-    // — the wire surface is shipped now so callers can encode it
-    // ahead of server support landing without another version
-    // bump. Cursor pagination via `start_after` / `start_at`
-    // remains the supported way to page through results.
+    // first `N` result rows before applying `limit`.
+    //
+    // **Consumed in ranked mode** (protocol v14+): on a request that
+    // routes to the ranked executor (`group_by` + a single `order_by`
+    // naming the selected aggregate), `offset` skips that many ranks
+    // before the returned page, so `ORDER BY avg(grade) DESC LIMIT 1
+    // OFFSET 4` is the 5th-best group. The skip is **counted, not
+    // walked**: grovedb descends on each subtree's aggregate count and
+    // collapses whole subtrees that fit inside the remaining offset, so
+    // the work stays `O(log n + k)` at any offset and the response
+    // reports the skip it performed in `RankedEntries.skipped`. On a
+    // proved request that count is additionally *attested* — committed
+    // to by the proof and re-derived by the verifier; on an unproved
+    // one it is the node's own report. See `RankedEntries.skipped`. There is deliberately no ceiling — an
+    // offset of 4 and an offset of four billion cost the same *order*
+    // of work — neither walks the region it skips — so there is no
+    // denial-of-service lever a cap would close. An offset
+    // past the end of the ranking is a provable answer rather than an
+    // error: `entries` comes back empty and `skipped` is the ranking's
+    // whole population.
+    //
+    // **Rejected everywhere else** with
+    // `Unsupported("OFFSET pagination is not yet implemented")` —
+    // including on every path at protocol v13 and earlier, which has
+    // no ranked executor. Cursor pagination via `start_after` /
+    // `start_at` remains the supported way to page through documents.
     optional uint32 offset = 12;
+
+    // Chained mode — a provable semi-join:
+    // `SELECT * FROM <outer_document_type> WHERE $id IN
+    //   (SELECT <join_property> FROM <document_type> WHERE ...)`.
+    //
+    // Presence of this message selects chained mode: this request's
+    // own `document_type` / `where_clauses` / `order_by` / `limit`
+    // describe the INNER indexOnly query, and the outer half is
+    // DERIVED from its results — the request carries no outer
+    // clauses by design, and the verifier re-derives the outer
+    // query from the proven inner values, so the join cannot be
+    // steered by the responding node.
+    //
+    // Mode gates (rejected otherwise): the inner type must be
+    // indexOnly and resolve to an index carrying `join_property`;
+    // `join_property` must declare a same-contract
+    // `refersTo: permanentDocument` targeting
+    // `outer_document_type`; `limit` is REQUIRED (it bounds the
+    // derived outer query — no server-default fallback) and capped
+    // by the outer `$id IN` clause's 100-value limit; `selects`
+    // must be empty or a single DOCUMENTS projection; `group_by`,
+    // `having`, time-range clauses, cursors, and `offset` are all
+    // rejected. Pagination is a range clause on `join_property`.
+    //
+    // The verifier needs nothing beyond the proof itself: it
+    // subset-verifies the inner query against the merged proof to
+    // extract the join values, re-derives the outer component, and
+    // verifies the whole composition. A node that predates this
+    // field ignores it (proto3 unknown field) and serves the plain
+    // inner query — which FAILS CLOSED client-side: an inner-only
+    // proof cannot satisfy the re-derived merged query for a
+    // non-empty page, and an unproven response carries the wrong
+    // ResultData variant.
+    message ChainedJoin {
+      // The inner property whose proven values become the outer
+      // documents' `$id`s.
+      string join_property = 1;
+      // The joined document type — the `refersTo` target.
+      string outer_document_type = 2;
+    }
+    ChainedJoin chained = 13;
+
+    // Composite mode — a page plus sub-queries DERIVED from its
+    // results, answered as ONE merged proof over one state root.
+    //
+    // Presence of any `sub_queries` selects composite mode: this
+    // request's own `data_contract_id` / `document_type` /
+    // `where_clauses` / `order_by` / `limit` describe the PAGE, and
+    // every sub-query's `IN` clause is derived by the node from the
+    // page's (or an earlier sub-query's) proven documents. The
+    // verifier re-derives every sub-query from the proven page with
+    // the same builders, re-merges, and verifies the whole
+    // composition — so the composition cannot be steered by the
+    // responding node, and a node that predates this field (proto3
+    // unknown field) serves a page-only proof that FAILS CLOSED
+    // client-side.
+    //
+    // Mode gates (rejected otherwise): `limit` is REQUIRED on the
+    // page (at most 100 — it bounds every derived clause); `selects`
+    // must be empty or a single DOCUMENTS projection; `group_by`,
+    // `having`, time-range clauses, cursors and `offset` are
+    // rejected (paginate with a range clause on the page's ordering
+    // property); `chained` and `sub_queries` are mutually exclusive.
+    // See `SubQuery` for the per-sub-query rules.
+    message SubQuery {
+      // The contract this sub-query targets. Empty = the page's own
+      // contract; otherwise any contract (profiles keyed by owner,
+      // names keyed by identity).
+      bytes data_contract_id = 1;
+      string document_type = 2;
+      // The FIXED clauses — everything but the derived `IN`, which
+      // must not be named here.
+      repeated WhereClause where_clauses = 3;
+      // Ordering (documents only). Every component of the merged proof
+      // walks in the page's direction: a bound field missing from here
+      // is appended in that direction by the node and the verifier
+      // alike, and an ordering that disagrees with the page's direction
+      // is refused (turning a limited lookup around would change the
+      // rows it returns).
+      repeated OrderClause order_by = 4;
+      // Documents lookups on a non-unique index REQUIRE a limit: it
+      // caps the rows the lookup returns in total, in walk order, like
+      // an ordinary IN query's limit (at most 100). Lookups already
+      // bounded by their values (a unique index, or an indexOnly
+      // terminal with every prefix fixed), by-id joins (completeness is
+      // set equality) and counts take none.
+      optional uint32 limit = 5;
+      enum Kind {
+        // The matching documents.
+        DOCUMENTS = 0;
+        // One count per derived value from the `countable` index
+        // covering the fixed clauses plus the bound field. Must be
+        // bound, and must not share its index path with a documents
+        // component (the count reads the value trees the documents
+        // query descends past).
+        COUNT = 1;
+      }
+      Kind kind = 6;
+      // The derived clause `<field> IN <values>`. Absent = a SIBLING:
+      // an independent documents query proven under the same root.
+      message Binding {
+        // Whose proven documents supply the values: `0` = the page,
+        // `n` = `sub_queries[n - 1]` (which must precede this one and
+        // be a DOCUMENTS sub-query).
+        uint32 source = 1;
+        // The source property read off each document: `$id`,
+        // `$ownerId`, or an identifier-typed property (dotted paths
+        // reach nested properties). Documents without it contribute
+        // nothing.
+        string source_property = 2;
+        // The sub-query field receiving the `IN` clause. `$id` makes
+        // this a by-id JOIN: the source property must then declare
+        // `refersTo: permanentDocument` targeting this document type,
+        // so every derived id resolves and a missing document is an
+        // invalid proof. Otherwise `$ownerId` or an indexed property
+        // (a LOOKUP, where absence is a proven fact).
+        string field = 3;
+      }
+      Binding bind = 7;
+    }
+    repeated SubQuery sub_queries = 14;
   }
 
   oneof version {
@@ -1258,9 +2233,134 @@ message GetDocumentsResponse {
       }
     }
 
+    // One group in a ranked (`GROUP BY … ORDER BY <agg> LIMIT n`)
+    // result: the group's index key plus the aggregate it was ranked
+    // by.
+    //
+    // `key` is the raw index-key bytes of the GROUP BY property's
+    // value — the same bytes that name the group's value tree under
+    // the index (for a `string` property, its UTF-8 bytes). Clients
+    // that want the typed value decode it with the document type's
+    // key deserialization; the wire carries bytes so prover and
+    // verifier agree without a schema round-trip.
+    //
+    // Exactly one `value` variant is set, determined by the
+    // request's SELECT function:
+    //   * `count`  — `SELECT COUNT(*)`, ranked on the index's
+    //     `rankedCountable` axis.
+    //   * `sum`    — `SELECT SUM(field)`, `rankedSummable` axis.
+    //     Signed for the same reason `SumEntry.sum` is.
+    //   * `avg`    — `SELECT AVG(field)`,
+    //     `rankedAverageable` axis.
+    message RankedEntry {
+      bytes key = 1;
+      oneof value {
+        // `jstype = JS_STRING` so JS/Web clients receive a string
+        // and don't round counts > 2^53−1 to the nearest
+        // representable Number — same choice as `CountEntry.count`.
+        uint64 count = 2 [jstype = JS_STRING];
+        // `jstype = JS_STRING` for the same precision reason as
+        // `SumEntry.sum`.
+        sint64 sum = 3 [jstype = JS_STRING];
+        // The group's average, as a **`double` approximation** of the
+        // exact value the Avg axis is ordered by.
+        //
+        // What grovedb actually commits to and sorts by is an `i128`
+        // fixed-point integer: `floor(sum * SCALE / count)` with
+        // euclidean (toward −∞) division, where SCALE is grovedb's
+        // `AVG_FIXED_POINT_SCALE` (currently 10^19). This field is
+        // that integer divided by SCALE in `f64`, i.e.
+        // `fixed_point as f64 / SCALE as f64`.
+        //
+        // A `double` is honest here because `RankedEntry` is only ever
+        // populated on the **no-proof ("quick answer") path**, where
+        // the client has already chosen to trust the server's reply.
+        // A proof-verifying client never reads this field: it
+        // reconstructs each entry from the grovedb proof itself, where
+        // the exact fixed-point `i128` lives, so nothing about proof
+        // verification depends on this number's precision.
+        //
+        // Precision bound: `f64` carries ~15–16 significant decimal
+        // digits, so two groups whose exact fixed-point averages differ
+        // only beyond that can compare equal here. Do not use this
+        // value for equality checks, tie-breaking, or any
+        // reconstruction of the committed integer — request the proof
+        // and read the fixed point from it instead. Entry *order* is
+        // still exact: the server ranks on the i128 before converting.
+        //
+        // SCALE is a grovedb constant, not a wire constant: it moved
+        // from 10^15 to 10^19 before release. Clients that need it
+        // (e.g. to go back to fixed point on the proof path) should
+        // read it from the SDK's re-export (`RANKED_AVG_SCALE`) rather
+        // than hardcoding the literal.
+        double avg = 4;
+      }
+      // The prefix branch this entry came from, set **only** on an
+      // `IN`-pinned request (see the supported-shape table): the
+      // encoded index-key bytes of the `IN` property's pinned value —
+      // empty bytes for the `null` (absent-value) branch. Absent on
+      // single-prefix responses. The same group key can legally appear
+      // under two prefixes, so `(in_key, key)` is the entry's identity
+      // on a merged page, exactly as on `CountEntry`.
+      optional bytes in_key = 5;
+    }
+
+    // Ranked result entries. **Entry order IS the ranking order** —
+    // best-first for `ORDER BY <agg> DESC`, worst-first for `ASC`.
+    // Clients must not re-sort; ties (equal aggregates) come back in
+    // group-key order in the direction of the walk, which is
+    // descending group-key order for `DESC`.
+    //
+    // Fewer than `limit` entries is normal — the index simply has
+    // fewer groups than requested — and is not an error.
+    message RankedEntries {
+      repeated RankedEntry entries = 1;
+
+      // How many groups were skipped before the first entry — the
+      // page's **starting rank base**. Entry `i` of `entries` is the
+      // group at rank `skipped + i` (0-based).
+      //
+      // `0` for an `OFFSET 0` (or offset-less) query, which is what
+      // makes this field additive: a caller that never paginates sees
+      // the value it would have assumed. For `OFFSET m` it is
+      // normally `m`, and it is what turns a page back into a
+      // *ranking* — without it, a caller who asked for
+      // `ORDER BY avg(grade) DESC LIMIT 1 OFFSET 4` receives one
+      // entry with no way to tell that it really is the 5th-best
+      // group rather than the best.
+      //
+      // **When a requested offset exceeds the population**, `entries`
+      // is empty and `skipped` is the ranking's *total* reported
+      // population — a positive, useful answer ("there are only 12
+      // groups") rather than a bare empty list.
+      //
+      // Both paths report the same quantity: the offset you asked for
+      // when the skip succeeded, and the ranking's total population
+      // when the walk ran out of groups first. They no longer disagree
+      // anywhere, including past the end.
+      //
+      // What differs is the *warrant*, not the value. On the proved
+      // path the number is cryptographically attested — re-derived by
+      // the verifier from the counted subtree commitments in the proof
+      // bytes rather than trusted from this field — so a proving client
+      // should use the verified value and ignore this one. On the
+      // unproven path it is an **unverified claim**, exactly like the
+      // entries beside it: it equals the attested value on an honest
+      // node, and nothing forces a node to be honest. Read "the true
+      // population" as "what this node says the population is".
+      // Callers who need to trust it, rather than merely receive it,
+      // must still prove.
+      //
+      // Do not assume this field equals the offset you requested. It
+      // equals the offset only when the skip succeeded; when the walk
+      // ran out of groups first it is smaller, and that is the answer
+      // rather than an inconsistency.
+      optional uint64 skipped = 2 [jstype = JS_STRING];
+    }
+
     // Non-proof result wrapper. The outer `oneof result` switches
     // between this and `proof`; this inner oneof switches between
-    // the four non-proof shapes the v1 surface can return.
+    // the non-proof shapes the v1 surface can return.
     message ResultData {
       oneof variant {
         Documents documents = 1;
@@ -1280,7 +2380,83 @@ message GetDocumentsResponse {
         // `book/src/drive/average-index-examples.md` for the design
         // and the grades-contract worked example.
         AverageResults averages = 4;
+        // Ranked-aggregate result. Routed when the request pairs a
+        // single-property `group_by` with a single `order_by` clause
+        // naming the single aggregate `select` (the `$count` sentinel
+        // for `COUNT(*)`) and a `limit` — SQL's `ORDER BY <agg>
+        // DESC LIMIT n [OFFSET m]`. Answered from the per-axis
+        // secondary of an indexed tree, so the index must declare the
+        // matching `rankedCountable` / `rankedSummable` /
+        // `rankedAverageable` keyword (meta-schema v3, protocol
+        // version 14+). Entry order is the ranking order, and
+        // `skipped` carries the page's starting rank — see
+        // `RankedEntries`.
+        RankedEntries ranked = 5;
+        // Chained-mode result: both halves of the provable
+        // semi-join, in inner order (the last inner projection's
+        // join-property value is the pagination cursor; outer
+        // documents are ordered by first appearance of their id
+        // among the inner projections, deduplicated). Routed when
+        // the request's `chained` message is present.
+        ChainedDocuments chained = 6;
+        // Composite-mode result: the page plus one result per
+        // sub-query, in request order. Routed when the request
+        // carries `sub_queries`.
+        CompositeDocuments composite = 7;
       }
+    }
+
+    // Both halves of a chained (semi-join) query, each serialized
+    // with its own document type.
+    message ChainedDocuments {
+      repeated bytes inner_documents = 1;
+      repeated bytes outer_documents = 2;
+      // The join values that have NO outer document, in first
+      // appearance order: referenced documents deleted after the
+      // inner document was written. Only a join property declaring
+      // `refersTo: deletableDocument` can report any; under
+      // `refersTo: permanentDocument` a missing document fails the
+      // query instead.
+      repeated bytes missing_outer_ids = 3;
+      // The join values whose outer document the contract's
+      // moderators removed, each with its removal record, in first
+      // appearance order. Only a join property declaring `refersTo:
+      // moderatedDocument` can report any; there a join value with
+      // neither a document nor a record fails the query.
+      repeated GetContractDocumentRemovalsResponse.ContractDocumentRemoval
+          removed_outer_documents = 4;
+    }
+
+    // A composite query's page and per-sub-query results, documents
+    // serialized with their own document type.
+    message CompositeDocuments {
+      // The page, exactly as the page query alone would return it.
+      repeated bytes page_documents = 1;
+      message SubQueryResult {
+        oneof result {
+          // DOCUMENTS: a by-id join in first-appearance order of the
+          // derived ids; a lookup or sibling in query order.
+          Documents documents = 1;
+          // COUNT: one entry per derived value that has a count tree
+          // (a value with no entry counts zero), keyed by the
+          // value's index-key bytes.
+          CountEntries counts = 2;
+        }
+        // DOCUMENTS by-id join only: the derived ids that have NO
+        // document, in first appearance order (referenced documents
+        // deleted since). Only a source property declaring
+        // `refersTo: deletableDocument` can report any.
+        repeated bytes missing_ids = 3;
+        // DOCUMENTS by-id join only: the derived ids whose document
+        // the contract's moderators removed, each with its removal
+        // record, in first appearance order. Only a source property
+        // declaring `refersTo: moderatedDocument` can report any; there
+        // a derived id with neither a document nor a record fails the
+        // query.
+        repeated GetContractDocumentRemovalsResponse.ContractDocumentRemoval
+            removed = 4;
+      }
+      repeated SubQueryResult sub_results = 2;
     }
 
     oneof result {
@@ -1375,13 +2551,10 @@ message GetIdentityByNonUniquePublicKeyHashResponse {
   message GetIdentityByNonUniquePublicKeyHashResponseV0 {
     message IdentityResponse { optional bytes identity = 1; }
 
-    message IdentityProvedResponse {
-      Proof grovedb_identity_public_key_hash_proof = 1;
-      optional bytes identity_proof_bytes = 2; // A hack, we return 2 proofs
-    }
+    reserved 2;
     oneof result {
       IdentityResponse identity = 1;
-      IdentityProvedResponse proof = 2;
+      Proof proof = 4;
     }
 
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
@@ -1394,17 +2567,33 @@ message WaitForStateTransitionResultRequest {
     bytes state_transition_hash =
         1;          // The hash of the state transition to wait for
     bool prove = 2; // Flag to request a proof as the response
+    // Flag to request, without a proof, the credit balance of the identity
+    // that owns the transition after it executed. Ignored when a proof is
+    // requested: from protocol version 14 the proof of an owned, fee-paying
+    // transition (document and token batches, contract creates and updates,
+    // identity updates and key limit updates, contract moderation) carries
+    // the owner's balance itself.
+    bool request_user_balance = 3;
   }
   oneof version { WaitForStateTransitionResultRequestV0 v0 = 1; }
 }
 
 message WaitForStateTransitionResultResponse {
+  // The result of a successful wait that asked for the owner's balance and for no proof
+  message SuccessWithOwnerBalance {
+    // The credit balance of the identity that owns the transition after it
+    // executed, read from a Drive state at or past the block that executed it
+    uint64 owner_balance = 1 [ jstype = JS_STRING ];
+  }
   message WaitForStateTransitionResultResponseV0 {
     oneof result {
       StateTransitionBroadcastError error =
           1; // Any error that occurred during the state transition broadcast
       Proof proof =
           2; // Cryptographic proof for the state transition, if requested
+      // Success with the owner's balance, unproved, when the request asked
+      // for it and for no proof
+      SuccessWithOwnerBalance success_with_owner_balance = 4;
     }
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
@@ -2609,6 +3798,20 @@ message GetGroupActionsResponse {
       optional string public_note = 3; // Public note
     }
 
+    // Mint straight into the token's shielded pool (protocol version 14+)
+    message MintToPoolEvent {
+      uint64 amount = 1;               // Amount minted into the pool
+      bytes actions_digest = 2;        // Digest of the Orchard actions every signer commits to
+      optional string public_note = 3; // Public note
+    }
+
+    // Burn of notes held in the token's shielded pool (protocol version 14+)
+    message BurnFromPoolEvent {
+      uint64 amount = 1;               // Amount destroyed
+      bytes actions_digest = 2;        // Digest of the Orchard actions every signer commits to
+      optional string public_note = 3; // Public note
+    }
+
     // Event associated with this action
     message GroupActionEvent {
       oneof event_type {
@@ -2648,6 +3851,8 @@ message GetGroupActionsResponse {
             7; // Token configuration update details
         UpdateDirectPurchasePriceEvent update_price =
             8; // Updating the token direct selling price
+        MintToPoolEvent mint_to_pool = 9;     // Mint into the token shielded pool
+        BurnFromPoolEvent burn_from_pool = 10; // Burn from the token shielded pool
       }
     }
 
@@ -2881,11 +4086,15 @@ message GetRecentCompactedAddressBalanceChangesResponse {
 
 // --- Shielded Pool Queries ---
 
+// Every shielded pool query below targets the credit shielded pool unless `token_id` is set,
+// in which case it targets that token's own shielded pool (protocol version 14+; the 32-byte
+// token id). Responses have the same shape for both pools.
 message GetShieldedEncryptedNotesRequest {
   message GetShieldedEncryptedNotesRequestV0 {
     uint64 start_index = 1;
     uint32 count = 2;
     bool prove = 3;
+    optional bytes token_id = 4; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedEncryptedNotesRequestV0 v0 = 1; }
 }
@@ -2913,6 +4122,7 @@ message GetShieldedEncryptedNotesResponse {
 message GetShieldedAnchorsRequest {
   message GetShieldedAnchorsRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedAnchorsRequestV0 v0 = 1; }
 }
@@ -2934,6 +4144,7 @@ message GetShieldedAnchorsResponse {
 message GetMostRecentShieldedAnchorRequest {
   message GetMostRecentShieldedAnchorRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetMostRecentShieldedAnchorRequestV0 v0 = 1; }
 }
@@ -2952,6 +4163,7 @@ message GetMostRecentShieldedAnchorResponse {
 message GetShieldedPoolStateRequest {
   message GetShieldedPoolStateRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedPoolStateRequestV0 v0 = 1; }
 }
@@ -2977,6 +4189,7 @@ message GetShieldedPoolStateResponse {
 message GetShieldedNotesCountRequest {
   message GetShieldedNotesCountRequestV0 {
     bool prove = 1;
+    optional bytes token_id = 2; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedNotesCountRequestV0 v0 = 1; }
 }
@@ -2996,6 +4209,7 @@ message GetShieldedNullifiersRequest {
   message GetShieldedNullifiersRequestV0 {
     repeated bytes nullifiers = 1;
     bool prove = 2;
+    optional bytes token_id = 3; // target a token's shielded pool instead of the credit pool
   }
   oneof version { GetShieldedNullifiersRequestV0 v0 = 1; }
 }

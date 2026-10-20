@@ -1,0 +1,3869 @@
+//! Document-type parser **generation 3** — protocol version 14 and later.
+//!
+//! Generation 3 is generation 2 plus the ranked index keywords
+//! (`rankedCountable` / `rankedSummable` / `rankedAverageable`), the
+//! indexOnly grammar, the doctype-level `immutable` property list, the
+//! doctype-level `ownerRefersTo` and `creatorRefersTo` references on the
+//! writer and the creator, and the doctype-level `propertyConstraints` rules
+//! over the document's integer properties.
+//!
+//! It exists as its own generation — rather than as a version gate inside the
+//! shipped ones — because that is what keeps a historical block from ever
+//! picking up grammar that did not exist when it was produced: the dispatcher
+//! only routes here from `try_from_schema: 3`, and the grammar this module
+//! admits is spelled out below as literals rather than looked up in a version
+//! table.
+//!
+//! The parsing steps themselves are shared with the earlier generations in
+//! [`super::common`]. What stays here is what only generation 3 has: the ranked
+//! index-key length ceilings, and the constants they are derived from.
+
+use crate::data_contract::config::DataContractConfig;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
+use crate::data_contract::document_type::action_fees::DocumentActionFees;
+use crate::data_contract::document_type::class_methods::{
+    consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
+};
+use crate::data_contract::document_type::index::{
+    parse_derived_index_property_name, referenced_value_kept_on_removal, DerivedIndexField,
+    DerivedIndexProperty, DerivedIndexPropertyName, Index, IndexGrammarAdmissions,
+    PreallocationBinding,
+};
+use crate::data_contract::document_type::property::DocumentPropertyType;
+use crate::data_contract::document_type::property::{is_path_listed, DocumentReferenceKind};
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::property::{
+    is_transient, DocumentPropertyReferenceTarget, PropertyReference, ReferenceHolder,
+    ReferenceOperands,
+};
+use crate::data_contract::document_type::property_names;
+use crate::data_contract::document_type::reference_lookup::{
+    owner_can_change, schema_property_is_fixed_once_written, why_value_can_change,
+};
+use crate::data_contract::document_type::v2::DocumentTypeV2;
+use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
+use crate::data_contract::errors::DataContractError;
+use crate::data_contract::{TokenConfiguration, TokenContractPosition};
+use crate::validation::operations::ProtocolValidationOperation;
+use crate::version::PlatformVersion;
+use crate::ProtocolError;
+use platform_value::{Identifier, Value};
+use std::collections::{BTreeMap, BTreeSet};
+
+#[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::InvalidDocumentTypeNameError;
+#[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::InvalidIndexedPropertyConstraintError;
+#[cfg(feature = "validation")]
+use crate::consensus::ConsensusError;
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
+#[cfg(feature = "validation")]
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+
+use super::common;
+#[cfg(feature = "validation")]
+use super::schema_at_path;
+use super::{
+    apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
+    validate_generated_from_declarations, validate_list_element_sources,
+    validate_reference_lookup_sources, validate_referencing_rules, validate_stored_version_reads,
+};
+
+mod ranked_prefix_overlap;
+use ranked_prefix_overlap::validate_no_ranked_prefix_overlap;
+
+/// grovedb's ceiling on the key of an entry stored directly under an
+/// *indexed* tree's primary when the tree carries only the Count and/or Sum
+/// axes (`grovedb::operations::indexed_tree::MAX_CIDX_ITEM_KEY_LEN`).
+///
+/// Those two axes key their ordered secondary by `sort_key ‖ item_key` with
+/// an 8-byte sort key, and Merk requires every key to stay below 256 bytes,
+/// which leaves `255 - 8 = 247` bytes for the item key. GroveDB enforces it
+/// on both write paths (the dedicated insert and the batch pre-state check),
+/// so a document whose index key exceeded it would abort the whole batch.
+#[cfg(feature = "validation")]
+const MAX_RANKED_COUNT_SUM_INDEX_KEY_LENGTH: u16 = 247;
+
+/// The same ceiling for a ranked tree whose configured axes include Avg
+/// (`grovedb::operations::indexed_tree::MAX_AVG_INDEXED_ITEM_KEY_LEN`).
+///
+/// The avg secondary sorts on a 16-byte fixed-point key rather than an
+/// 8-byte one, so the item key gets 8 fewer bytes: `255 - 16 = 239`.
+#[cfg(feature = "validation")]
+const MAX_RANKED_AVG_INDEX_KEY_LENGTH: u16 = 239;
+
+/// Worst-case bytes one character of a string property can occupy once it has
+/// been encoded into an index key.
+///
+/// `DocumentPropertyType::encode_value_for_tree_keys` stores a string as its
+/// raw UTF-8 bytes, and a single UTF-8 scalar takes at most 4 bytes — which
+/// is exactly the factor `DocumentPropertyType::max_byte_size` applies to
+/// `maxLength`, and the factor the generic
+/// [`MAX_INDEXED_STRING_PROPERTY_LENGTH`] was derived from
+/// (`floor(255 / 4) = 63`).
+#[cfg(feature = "validation")]
+const INDEXED_STRING_WORST_CASE_BYTES_PER_CHARACTER: u16 = 4;
+
+/// The item-key ceiling of the indexed tree at `index_property_name`: the
+/// strictest of the axes the index ranks at that level, or `None` when it
+/// ranks none there (the property is then an ordinary path segment, bound
+/// only by the generic index-key limits).
+///
+/// Each ranked level is its own indexed tree carrying only the axes ranked
+/// at it: the last property those of the boolean forms, any property those
+/// of the `at` lists naming it. Grovedb checks each tree's item keys against
+/// its own axes, so Avg, whose wider sort key leaves the least room, wins at
+/// a level that carries it, and an Avg ranking at another level of the index
+/// does not tighten this one.
+#[cfg(feature = "validation")]
+fn ranked_level_key_length_limit(index: &Index, index_property_name: &str) -> Option<u16> {
+    let is_last = index.properties.last().map(|p| p.name.as_str()) == Some(index_property_name);
+    let names_it = |at_levels: &[String]| at_levels.iter().any(|at| at == index_property_name);
+    let average = (is_last && index.ranked_averageable) || names_it(&index.ranked_averageable_at);
+    let count_or_sum = (is_last && (index.ranked_countable || index.ranked_summable))
+        || names_it(&index.ranked_countable_at)
+        || names_it(&index.ranked_summable_at);
+    if average {
+        Some(MAX_RANKED_AVG_INDEX_KEY_LENGTH)
+    } else if count_or_sum {
+        Some(MAX_RANKED_COUNT_SUM_INDEX_KEY_LENGTH)
+    } else {
+        None
+    }
+}
+
+/// Reject an index property whose *worst-case* encoded key would not fit
+/// under the ceiling its index's ranking axes impose.
+///
+/// A ranked index turns the property-name tree into a grovedb indexed tree
+/// whose children — the per-group value trees, keyed by the encoded property
+/// value — are mirrored into an ordered secondary keyed by
+/// `sort_key ‖ item_key`. The generic index-key limits (255 encoded bytes for
+/// a byte array, 63 characters for a string) were derived against Merk's bare
+/// 256-byte key ceiling and are therefore too loose here by the width of the
+/// sort key. Contracts must fail at registration rather than let a document
+/// insert abort the block's batch on a key grovedb refuses to mirror.
+///
+/// The worst case is derived exactly the way every other size-sensitive path
+/// derives it, through [`DocumentPropertyType::max_byte_size`]: a string of
+/// `maxLength` L characters can reach `4 * L` bytes, a byte array of
+/// `maxItems` N reaches N, and every other indexable type has a fixed
+/// encoding of at most 32 bytes (identifiers) that can never reach a ceiling
+/// in the 239..=247 range.
+#[cfg(feature = "validation")]
+fn validate_ranked_index_property_key_length(
+    document_type_name: &str,
+    index: &Index,
+    index_property_name: &str,
+    reported_property_name: &str,
+    property_type: &DocumentPropertyType,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    // Only a property whose level hosts an indexed tree gets its encoded
+    // value mirrored into the ordered secondary behind the sort key — the
+    // **terminal** property for the boolean axes, the **`at`** property for
+    // a prefix-level ranking, and BOTH when one index declares both — and
+    // that is where the tightened ceiling comes from. Every other property
+    // of a ranked index is an ordinary grovedb path segment, bound by the
+    // generic limits checked after this.
+    let Some(limit) = ranked_level_key_length_limit(index, index_property_name) else {
+        return Ok(());
+    };
+
+    // A typed array an index names is keyed by its elements, and the
+    // index-property check judges it here through the element type, so a
+    // typed array reaching this check whole is the field a derived index
+    // property reads: its byte bound measures the whole list, and the
+    // property-type check right after this one rejects it with the error
+    // that explains the problem.
+    if matches!(property_type, DocumentPropertyType::TypedArray(_)) {
+        return Ok(());
+    }
+
+    // `None` is only produced by the array and object types, which the
+    // property-type check right after this one rejects outright with the
+    // error that actually explains the problem. A string whose `maxLength`
+    // puts its worst case past `u16::MAX` bytes overflows the computation;
+    // it is past every ceiling, so it is refused like any key over the limit.
+    let worst_case_key_length = match property_type.max_byte_size(platform_version) {
+        Ok(Some(length)) => length,
+        Ok(None) => return Ok(()),
+        Err(ProtocolError::Overflow(_)) => u16::MAX,
+        Err(error) => return Err(error),
+    };
+
+    if worst_case_key_length <= limit {
+        return Ok(());
+    }
+
+    // The sort-key width is what the ceiling gives up against Merk's
+    // 255-byte maximum key, so it reads straight back out of the limit.
+    let sort_key_width = 255 - limit;
+
+    let (constraint_name, reason) = match property_type {
+        DocumentPropertyType::String(_) => (
+            "maxLength",
+            format!(
+                "should be less or equal {} on an index declaring a ranked axis: the index key \
+                 is the property's UTF-8 bytes (worst case {} bytes per character), and grovedb \
+                 caps a ranked group key at {} bytes because the ordered secondary is keyed by a \
+                 {}-byte sort key followed by the group key and Merk keys must stay below 256 \
+                 bytes",
+                limit / INDEXED_STRING_WORST_CASE_BYTES_PER_CHARACTER,
+                INDEXED_STRING_WORST_CASE_BYTES_PER_CHARACTER,
+                limit,
+                sort_key_width,
+            ),
+        ),
+        DocumentPropertyType::ByteArray(_) => (
+            "maxItems",
+            format!(
+                "should be less or equal {limit} on an index declaring a ranked axis: grovedb \
+                 caps a ranked group key at {limit} bytes because the ordered secondary is keyed \
+                 by a {sort_key_width}-byte sort key followed by the group key and Merk keys must \
+                 stay below 256 bytes",
+            ),
+        ),
+        // Unreachable for every type the parser admits here — they all
+        // encode to at most 32 bytes — but stated rather than assumed so a
+        // future variable-width type cannot slip past unbounded.
+        _ => (
+            "maximum encoded size",
+            format!(
+                "the property's worst-case encoded index key is {worst_case_key_length} bytes, \
+                 but an index declaring a ranked axis caps its group key at {limit} bytes (the \
+                 ordered secondary is keyed by a {sort_key_width}-byte sort key followed by the \
+                 group key and Merk keys must stay below 256 bytes)",
+            ),
+        ),
+    };
+
+    Err(ProtocolError::ConsensusError(Box::new(
+        InvalidIndexedPropertyConstraintError::new(
+            document_type_name.to_owned(),
+            index.name.to_owned(),
+            reported_property_name.to_owned(),
+            constraint_name.to_string(),
+            reason,
+        )
+        .into(),
+    )))
+}
+
+/// The [`common::RankedIndexKeyLengthCheck`] generation 3 runs on every indexed
+/// property, resolved at compile time.
+///
+/// Without the `validation` feature the shared core never reaches the check at
+/// all (its whole `full_validation` block is compiled out), so the no-op is
+/// exactly equivalent there — this alias exists only so the call site can pass
+/// the check unconditionally.
+#[cfg(feature = "validation")]
+const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
+    validate_ranked_index_property_key_length;
+#[cfg(not(feature = "validation"))]
+const RANKED_INDEX_KEY_LENGTH_CHECK: common::RankedIndexKeyLengthCheck =
+    common::no_ranked_index_key_length_check;
+
+/// Reports a contract this generation refuses as a consensus error.
+///
+/// Some stages report a broken rule as a bare `ProtocolError::DataContractError`,
+/// or a schema value of the wrong shape as a bare `ProtocolError::ValueError`:
+/// the core parse and the doctype-level aggregate stages, which generation 3
+/// shares with generations 1 and 2. A node takes a bare error for a failure of
+/// its own: the transition carrying the contract is refused without a fee or a
+/// nonce bump, and a block carrying it is rejected. As a consensus error it is
+/// a paid rejection instead, like a contract failing any other rule.
+///
+/// The shared stages keep the bare errors, because generations 1 and 2 still
+/// reach them at protocol versions up to 13. A node running this code at those
+/// versions must judge a block exactly as a node running the release that
+/// shipped them, and that release refuses such a transition unpaid.
+///
+/// The mapping is applied once, to everything the generation returns, so a
+/// stage added later cannot bring the bare errors back. Every other error
+/// passes through unchanged: `CorruptedCodeExecution`, a version mismatch or an
+/// arithmetic overflow is the node failing, not the contract.
+fn consensus_or_protocol_generation_3_error(error: ProtocolError) -> ProtocolError {
+    match error {
+        ProtocolError::DataContractError(error) => consensus_or_protocol_data_contract_error(error),
+        ProtocolError::ValueError(error) => consensus_or_protocol_value_error(error),
+        error => error,
+    }
+}
+
+/// Parses a document type schema through the generation-3 grammar: the
+/// generation-2 doctype-level aggregate keywords, plus the ranked index
+/// keywords and the tighter index-key ceilings they impose.
+///
+/// This parser is only reachable from protocol version 14+ (via
+/// CONTRACT_VERSIONS_V6).
+/// Full validation rejects keep-history document types that allow deletion.
+/// Stored contracts bypass this check so legacy contradictory schemas remain
+/// readable and can be repaired by setting `canBeDeleted: false` on update.
+///
+/// # Doctype-level keywords on contracts that predate them
+///
+/// Not every stored contract was validated against the keywords read here.
+/// The document meta-schema v0 admitted every contract created at protocol
+/// versions 1 to 11 and leaves unknown doctype-level keys open, so such a
+/// contract may carry a key named like one of these keywords, of any shape.
+/// Meta-schemas v1 and later refuse unknown doctype-level keys, and the
+/// property and index levels were closed from v0 on.
+///
+/// One rule covers every doctype-level keyword of this generation: it is read
+/// wherever it appears, and its shape is enforced on both the validating and
+/// the stored path. No keyword gets stored-path leniency.
+///
+/// * Nothing this parser receives records which meta-schema admitted the
+///   contract, so a well-formed stray cannot be told apart from a validated
+///   declaration. Leniency could therefore only ever cover the malformed
+///   case, which fails loudly, and never the well-formed one, which would
+///   silently change the meaning of a contract (for `indexOnly`, the storage
+///   layout of documents already written).
+/// * `full_validation: false` is not only the stored path. `check_tx` and
+///   client-side parsing take it too, so leniency there widens what an
+///   unvalidated schema may contain.
+/// * Refusing is the safe failure. It is deterministic across nodes, confined
+///   to the one contract (its transitions end as an internal error, which the
+///   proposer leaves out of the block, so the chain does not halt), and
+///   repairable in a later protocol version.
+///
+/// What makes the rule safe is evidence rather than code: a census of every
+/// contract admitted under meta-schema v0 on mainnet and testnet (2026-09-20)
+/// found none carrying any of these keywords, and that set closed for good
+/// when protocol version 12 activated. `meta_schema_v0_stray_keyword_tests`
+/// records the stray keys those contracts do carry, and fails if a document
+/// meta-schema ever declares one of them as a keyword.
+#[allow(clippy::too_many_arguments)]
+fn try_from_schema_generation_3(
+    data_contract_id: Identifier,
+    data_contract_system_version: u16,
+    contract_config_version: u16,
+    name: &str,
+    schema: Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
+    data_contact_config: &DataContractConfig,
+    full_validation: bool,
+    validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+    platform_version: &PlatformVersion,
+) -> Result<DocumentTypeV2, ProtocolError> {
+    parse_generation_3(
+        data_contract_id,
+        data_contract_system_version,
+        contract_config_version,
+        name,
+        schema,
+        schema_defs,
+        token_configurations,
+        data_contact_config,
+        full_validation,
+        validation_operations,
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_generation_3_error)
+}
+
+/// The body of [`try_from_schema_generation_3`], which maps its bare errors.
+#[allow(clippy::too_many_arguments)]
+fn parse_generation_3(
+    data_contract_id: Identifier,
+    data_contract_system_version: u16,
+    contract_config_version: u16,
+    name: &str,
+    schema: Value,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
+    data_contact_config: &DataContractConfig,
+    full_validation: bool,
+    validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+    platform_version: &PlatformVersion,
+) -> Result<DocumentTypeV2, ProtocolError> {
+    // Generation 3 refuses `-` in a document type name, as meta-schema v3
+    // refuses it in a property name: the path syntax was written for word
+    // characters, and no contract on mainnet or testnet ever used one. A
+    // registration rule, checked under full validation like the shared
+    // name rule; earlier generations keep admitting it.
+    #[cfg(feature = "validation")]
+    if full_validation && name.contains('-') {
+        return Err(ProtocolError::ConsensusError(Box::new(
+            ConsensusError::from(InvalidDocumentTypeNameError::new(name.to_string())),
+        )));
+    }
+
+    // A property type shorthand (`"type": "identifier"`, or `"type": "bytes"`
+    // with a `size`) is read as the long form it stands for: from here on
+    // every stage, the meta-schema, the document validator the core compiles
+    // and the `$ref` walks included, reads the expanded schema and `$defs`,
+    // so a shorthand parses to exactly what its long form parses to. The
+    // document type keeps the schema as sent (restored before returning),
+    // since that is what the contract stores, serializes and proves. Only a
+    // document type's parse expands the contract's `$defs`, so the `$defs` of
+    // a contract without document types stay as sent, unchecked, as before 14.
+    let expanded_schema_defs = schema_defs
+        .map(|schema_defs| {
+            DocumentType::expand_schema_defs_property_type_shorthands(
+                schema_defs,
+                full_validation,
+                platform_version,
+            )
+        })
+        .transpose()?
+        .flatten();
+    let schema_defs = expanded_schema_defs.as_ref().or(schema_defs);
+    let (schema, schema_as_sent) = match DocumentType::expand_property_type_shorthands(
+        &schema,
+        full_validation,
+        platform_version,
+    )? {
+        Some(expanded_schema) => (expanded_schema, Some(schema)),
+        None => (schema, None),
+    };
+
+    // Read the doctype-level keywords before the core parser consumes
+    // `schema`. Each is read wherever it appears, and its shape is enforced on
+    // both paths: see "Doctype-level keywords on contracts that predate them"
+    // above.
+    let aggregates = common::parse_doctype_aggregate_keywords(&schema, name)?;
+    let index_only = common::parse_index_only_keyword(&schema)?;
+    let entry_payload =
+        common::parse_property_name_list_keyword(&schema, name, property_names::ENTRY_PAYLOAD)?;
+    let action_fees = DocumentActionFees::try_from_document_schema(&schema, name)?;
+    let moderator_abilities = common::parse_moderator_abilities_keyword(&schema, name)?;
+    let documents_ttl = common::parse_seconds_keyword(&schema, property_names::TTL)?;
+    let immutable = common::parse_immutable_keyword(&schema, name)?;
+    let deleted_only_when_consumed =
+        common::parse_can_be_deleted_only_when_consumed_keyword(&schema);
+
+    let v1 = common::parse_document_type_core(
+        data_contract_id,
+        data_contract_system_version,
+        contract_config_version,
+        name,
+        schema,
+        schema_defs,
+        token_configurations,
+        data_contact_config,
+        full_validation,
+        // Lets the core default omitted index terminals to `$ownerId` before
+        // it builds the index structure, so the structure's level info is
+        // born normalized (`apply_index_only` below validates the
+        // already-normalized set).
+        index_only,
+        // Lets the core read the owner's delete as refused for
+        // `canBeDeleted: "onlyWhenConsumed"` instead of reading a boolean;
+        // `apply_deleted_only_when_consumed` below records the consumption.
+        deleted_only_when_consumed,
+        validation_operations,
+        &common::ParserGeneration {
+            // Generation 3 exists if and only if `document_type_schema` is 3 —
+            // CONTRACT_VERSIONS_V6 is the only table that selects this parser,
+            // and it is the only table naming meta-schema v3. So every constant
+            // here is a property of the generation, not of a platform version,
+            // and none of them is read out of a table.
+            document_type_schema_version: 3,
+            // Meta-schema v3 carries the `keeps*History` flags forward from v2,
+            // so they are unconditionally part of this generation's grammar.
+            // This is the conditional that was dead in the copied core: at
+            // schema 3 the old `document_type_schema >= 2` could only be true.
+            admit_history: true,
+            // Count indexes arrived at PV12; every version selecting this
+            // generation is far past that boundary.
+            admit_count_indexes: true,
+            meta_schema_method_name: "DocumentType::try_from_schema_v3 (document_type_schema)",
+            // RANKED / TIME RANGE: the keyword admissions that make this
+            // generation 3, read from the shared generation → admission
+            // mapping so the registration-cost re-parse can never drift
+            // from what this parser accepts.
+            admit_ranked: IndexGrammarAdmissions::for_schema_generation(3).ranked,
+            ranked_index_key_length_check: RANKED_INDEX_KEY_LENGTH_CHECK,
+            ranked_index_structure_check: validate_no_ranked_prefix_overlap,
+            admit_time_range: IndexGrammarAdmissions::for_schema_generation(3).time_range,
+            admit_integer_range: IndexGrammarAdmissions::for_schema_generation(3).integer_range,
+            // INDEX ONLY: the `terminal` index keyword, admitted from the
+            // same shared generation → admission mapping as the two above.
+            admit_index_terminal: IndexGrammarAdmissions::for_schema_generation(3).terminal,
+            // PREALLOCATED: the fourth generation-3 index keyword, from the
+            // same shared mapping.
+            admit_index_preallocated: IndexGrammarAdmissions::for_schema_generation(3).preallocated,
+            // OUTLIVES DELETE: from the same shared mapping.
+            admit_index_outlives_delete: IndexGrammarAdmissions::for_schema_generation(3)
+                .outlives_delete,
+            // SKIP IF ABSENT: the fifth generation-3 index keyword, from the
+            // same shared mapping.
+            admit_index_skip_if_absent: IndexGrammarAdmissions::for_schema_generation(3)
+                .skip_if_absent,
+            // SUMMABLE OFF COUNT INDEX: the sixth generation-3 index keyword, from the same
+            // shared mapping.
+            admit_index_summable_off_count_index: IndexGrammarAdmissions::for_schema_generation(3)
+                .summable_off_count_index,
+            // RANGE COUNTABLE IMPLIES COUNTABLE: a generation-3 desugaring rule
+            // rather than a keyword, read from the same shared mapping so the
+            // registration-cost re-parse and the validator agree on it.
+            admit_range_countable_implies_countable: IndexGrammarAdmissions::for_schema_generation(
+                3,
+            )
+            .range_countable_implies_countable,
+            // NO LOCKING RESOLUTION: a contested index resolved without a Lock
+            // choice, a generation-3 value from the same shared mapping.
+            admit_index_no_locking_resolution: IndexGrammarAdmissions::for_schema_generation(3)
+                .no_locking_resolution,
+            // MODERATION STAMPS: `$moderatedAt` and `$moderatedBy`, which only a type keeping
+            // fields for its moderators carries (checked by `apply_moderator_abilities`).
+            admit_moderation_stamp_indexes: true,
+            // DERIVED INDEX PROPERTIES: a value read through a same-contract permanent or
+            // moderated reference (`apply_derived_index_properties`).
+            admit_derived_index_properties: true,
+            // INDEXED ARRAYS: an index keyed by the elements of a typed array
+            // (`validate_indexed_array_index`).
+            admit_indexed_arrays: true,
+        },
+        platform_version,
+    )?;
+
+    let mut v2: DocumentTypeV2 = v1.into();
+    v2.action_fees = action_fees;
+    v2.entry_payload = entry_payload;
+    // Read from the stored schema once the core parse has run the meta-schema,
+    // so under full validation a malformed declaration is the meta-schema's to
+    // report, as a malformed `refersTo` on a property is
+    let owner_reference = parse_doctype_reference(
+        &v2.schema,
+        property_names::OWNER_REFERS_TO,
+        "the writer",
+        v2.documents_mutable,
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+    let creator_reference = parse_doctype_reference(
+        &v2.schema,
+        property_names::CREATOR_REFERS_TO,
+        "the creator",
+        v2.documents_mutable,
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+    // A document that can change owner, by a transfer or a purchase, would end
+    // up held by an owner the declaration never checked, since neither is a
+    // write: the owner's declaration is only admitted where the writer stays
+    // the owner. The creator's is only admitted where the creator is recorded,
+    // on a type that can change owner, since elsewhere the creator is the
+    // owner and `ownerRefersTo` says it. So a type takes at most one of them
+    if owner_reference.is_some() && owner_can_change(DocumentTypeRef::V2(&v2)) {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares ownerRefersTo, but its documents can be \
+                 transferred or traded: a transfer or a purchase would hand a document to an \
+                 owner the declaration never checked; creatorRefersTo checks the creator, who \
+                 never changes",
+            )),
+        ));
+    }
+    if creator_reference.is_some()
+        && !DocumentTypeRef::V2(&v2).should_use_creator_id(
+            data_contract_system_version,
+            contract_config_version,
+            platform_version,
+        )?
+    {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares creatorRefersTo, but it records no creator \
+                 ids: only a transferable or tradeable document type of a format-1 contract \
+                 does; ownerRefersTo checks the writer of a type whose documents stay with it",
+            )),
+        ));
+    }
+    v2.owner_reference = owner_reference;
+    v2.creator_reference = creator_reference;
+    common::apply_doctype_aggregates(&mut v2, aggregates, name)?;
+    // After the aggregates: `apply_index_only` rejects the doctype-level
+    // aggregate flags (they describe the primary-key tree, which an
+    // indexOnly type does not have), so it has to see them already applied.
+    common::apply_index_only(&mut v2, index_only, name, platform_version)?;
+    // After `apply_index_only`: an indexOnly type has nothing a reference could consume.
+    common::apply_deleted_only_when_consumed(&mut v2, deleted_only_when_consumed, name)?;
+    // After the core parse: the lints read the resolved `documentsMutable`
+    // flag (contract default applied) and the parsed top-level properties,
+    // and each condition's reads are checked against the parsed properties.
+    common::apply_immutable_fields(
+        &mut v2,
+        immutable,
+        schema_defs,
+        name,
+        full_validation,
+        platform_version,
+    )?;
+    // After the core parse, for the same reasons: the resolved `documentsMutable`
+    // flag and the parsed properties the condition reads.
+    common::apply_retracted_when(
+        &mut v2,
+        data_contact_config,
+        schema_defs,
+        name,
+        full_validation,
+        platform_version,
+    )?;
+
+    // After the core parse: every property, its transient flag and its schema
+    // are known, so each `encryptedFor` declaration can be checked against the
+    // properties it names. Generation 3 is the only one admitting the keyword.
+    // A schema reached through a `$ref` is read from the contract's `$defs`, as
+    // the core parse read it.
+    validate_encrypted_for_declarations(&v2, schema_defs, name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    // The same for the string property each `generatedFrom` declaration names.
+    validate_generated_from_declarations(&v2, name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    // The same for the properties a `refersTo` lookup reads to assemble its key,
+    // the lookup of the `ownerRefersTo` declaration included.
+    validate_reference_lookup_sources(DocumentTypeRef::V2(&v2), name)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    // The `propertyConstraints` rules are parsed onto the type here, where the
+    // integer properties they read and their transient flags are known; their
+    // limits are checked under full validation only. The `enum`s their string
+    // constants are checked against are read through `$ref`s into the
+    // contract's `$defs` too. The `deleteConstraints` rules with them, once
+    // `canBeDeleted` is resolved against the contract default and `indexOnly`
+    // and `"onlyWhenConsumed"` are applied: only a type whose owner deletes its
+    // stored documents declares them.
+    apply_property_constraints(
+        &mut v2,
+        schema_defs,
+        name,
+        full_validation,
+        platform_version,
+    )
+    .map_err(consensus_or_protocol_data_contract_error)?;
+
+    // After `apply_index_only`, `apply_immutable_fields` and the parse of the
+    // references and generated properties: each ability is refused on an
+    // indexOnly type, and the fields only moderators write may be neither
+    // immutable (with a condition or without), nor read by a reference, nor
+    // generated.
+    common::apply_moderator_abilities(
+        &mut v2,
+        moderator_abilities,
+        data_contact_config,
+        name,
+        full_validation,
+        platform_version,
+    )?;
+    // After `apply_property_constraints` and `apply_moderator_abilities`: whether the type
+    // keeps the revision `$revision` reads, and has a write replacing the stored version a rule
+    // reads through `$old.`, depends on the fields it keeps for its moderators too.
+    validate_stored_version_reads(&v2, name).map_err(consensus_or_protocol_data_contract_error)?;
+    // After `apply_index_only`: `ttl` is refused on an indexOnly type.
+    common::apply_documents_ttl(
+        &mut v2,
+        documents_ttl,
+        name,
+        full_validation,
+        platform_version,
+    )?;
+    // After `apply_index_only`, `apply_immutable_fields` and `apply_moderator_abilities`: the
+    // reference a derived index property reads through must be fixed once written, which the
+    // immutable list and the fields only moderators write decide, on a type storing its
+    // documents.
+    apply_derived_index_properties(&mut v2, data_contract_id, name, full_validation)?;
+
+    // The flags are read from the parsed result (not the raw schema) so
+    // the check sees `canBeDeleted` resolved against the contract config
+    // default (`true` when the key is omitted).
+    if full_validation && v2.documents_keep_history() && v2.documents_can_be_deleted() {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{}\" sets both `documentsKeepHistory: true` and \
+                 `canBeDeleted: true`, but the storage layer unconditionally refuses to \
+                 delete a document whose type keeps history. Set `canBeDeleted` to false or \
+                 disable `documentsKeepHistory`.",
+                name,
+            )),
+        ));
+    }
+
+    #[cfg(feature = "validation")]
+    if full_validation {
+        validate_typed_array_max_items(&v2, name, platform_version)?;
+        validate_contested_summed_value_bounds(&v2, schema_defs, name, platform_version)?;
+        validate_expiring_summed_value_bounds(&v2, schema_defs, name, platform_version)?;
+        validate_reference_expressions(&v2, data_contract_id, name, platform_version)?;
+        validate_reference_count(&v2, name, platform_version)?;
+        validate_no_immutable_deletable_element_references(&v2, name)?;
+        validate_no_immutable_contract_owner_requirements(&v2, name)?;
+        validate_transient_fields(&v2, name)?;
+        validate_no_transient_index_properties(&v2, name)?;
+        validate_integer_range_sources_keyed_in_value_order(&v2, name)?;
+    }
+    // The property an `inList` reference reads the list's document through; the
+    // list itself is checked where the referenced type is in hand. In every
+    // build, like the findBy sources above: without it a same-contract list check
+    // would silently skip a declaration whose property finds no document
+    if full_validation {
+        validate_list_element_sources(DocumentTypeRef::V2(&v2), name)
+            .map_err(consensus_or_protocol_data_contract_error)?;
+        // The declaring side of a rule reading a document a reference points at, once
+        // the references, `indexOnly`, the trade flags and the moderator fields are
+        // known; what it reads of the referenced type is checked where that type is in
+        // hand
+        validate_referencing_rules(DocumentTypeRef::V2(&v2), name)
+            .map_err(consensus_or_protocol_data_contract_error)?;
+    }
+
+    // Every stage above read the expanded schema; the document type holds the
+    // one the contract was sent with
+    if let Some(schema_as_sent) = schema_as_sent {
+        v2.schema = schema_as_sent;
+    }
+
+    Ok(v2)
+}
+
+/// Registers the derived index properties the type's indexes name, each
+/// `"<reference property>.<field>"` (see [`DerivedIndexProperty`]), on every
+/// parse: Drive reads their values through the references whenever it keys a
+/// document, a contract read back from state included. A schema property's
+/// type is filled in by [`resolve_derived_index_properties`], which sees the
+/// referenced document type.
+///
+/// Under full validation it also refuses, on the referring side, what would
+/// let Drive read a value other than the one an entry was written under, or
+/// need one it can not read:
+///
+/// * a reference a replace could repoint: it must be fixed once written (the
+///   type's documents are immutable, or it is listed under `immutable`
+///   without a condition, and moderators do not write it);
+/// * an indexOnly type, whose entries hold every value of its documents and
+///   whose delete carries them;
+/// * a unique or contested index, whose check reads the values a create
+///   carries, which a derived value is not among;
+/// * a derived property bucketed by `timeRange` or `integerRange`, whose
+///   rules read the value off the document itself.
+///
+/// A derived property may be a skip property of `skipIfAbsent`: Drive puts
+/// its value into the document before keying it, null where the reference or
+/// the referenced field is absent, and an index skips a document holding null
+/// for a skip property as it skips one missing it. Whether the value can be
+/// absent at all is judged on the referenced side
+/// ([`resolve_derived_index_properties`]).
+fn apply_derived_index_properties(
+    document_type: &mut DocumentTypeV2,
+    data_contract_id: Identifier,
+    name: &str,
+    full_validation: bool,
+) -> Result<(), ProtocolError> {
+    let mut derived_index_properties = BTreeMap::new();
+    for index in document_type.indices.values() {
+        for index_property in &index.properties {
+            let refusal = |reason: String| {
+                consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "index \"{}\" of document type \"{name}\" reads \"{}\": {reason}",
+                        index.name, index_property.name
+                    )),
+                )
+            };
+            let derived = match parse_derived_index_property_name(
+                &index_property.name,
+                &document_type.flattened_properties,
+                data_contract_id,
+            ) {
+                DerivedIndexPropertyName::NotDerived => continue,
+                DerivedIndexPropertyName::Refused(reason) => {
+                    if full_validation {
+                        return Err(refusal(reason));
+                    }
+                    continue;
+                }
+                DerivedIndexPropertyName::Derived(derived) => derived,
+            };
+            if full_validation {
+                if let Some(reason) = derived_index_property_referring_side_error(
+                    document_type,
+                    index,
+                    &index_property.name,
+                    &derived,
+                ) {
+                    return Err(refusal(reason));
+                }
+            }
+            derived_index_properties.insert(index_property.name.clone(), *derived);
+        }
+    }
+    document_type.derived_index_properties = derived_index_properties;
+    Ok(())
+}
+
+/// Why the referring document type or `index` can not hold `derived`, which
+/// its property `index_property_name` declares, or `None`: see
+/// [`apply_derived_index_properties`].
+fn derived_index_property_referring_side_error(
+    document_type: &DocumentTypeV2,
+    index: &Index,
+    index_property_name: &str,
+    derived: &DerivedIndexProperty,
+) -> Option<String> {
+    let reference_property = derived.reference_property.as_str();
+    if document_type.index_only {
+        return Some(
+            "the type is indexOnly, whose index entries hold every value of its documents: \
+             declare the value as a property"
+                .to_string(),
+        );
+    }
+    if !schema_property_is_fixed_once_written(
+        DocumentTypeRef::V2(document_type),
+        reference_property,
+    ) {
+        return Some(format!(
+            "a replace could point \"{reference_property}\" at another document, and the \
+             entry would no longer be found under the value it was written under: list \
+             \"{reference_property}\" under `immutable` without a condition, or make the \
+             type's documents immutable"
+        ));
+    }
+    if index.unique || index.contested_index.is_some() {
+        return Some(
+            "a unique index is checked against the values a create carries, and a derived \
+             value is read from the referenced document instead"
+                .to_string(),
+        );
+    }
+    let bucketed = index
+        .time_range
+        .as_ref()
+        .is_some_and(|transform| transform.source == index_property_name)
+        || index
+            .integer_range
+            .as_ref()
+            .is_some_and(|transform| transform.source == index_property_name);
+    if bucketed {
+        return Some(
+            "a derived value can not be bucketed by timeRange or integerRange".to_string(),
+        );
+    }
+    None
+}
+
+/// Fills in the type of every derived index property reading a schema
+/// property of the referenced document type, once every document type of the
+/// contract is parsed, on every parse: a key is encoded by its type
+/// ([`derived_index_property_type`](crate::data_contract::document_type::methods::DocumentTypeBasicMethods::derived_index_property_type)). A derived
+/// property whose referenced document type the contract does not have, or
+/// admits another kind of reference, is left without one: registration
+/// refuses the reference itself (`ReferencedDocumentTypeNotFoundError`, or the
+/// kind's error), and a stored contract passed it.
+///
+/// Under full validation it also refuses, on the referenced side, a field
+/// whose value could change or vanish once written, or could not be a key:
+///
+/// * `$ownerId` of a type whose documents can be transferred or traded;
+/// * `$creatorId` of a type that records no creator;
+/// * a schema property the referenced type does not have, one that is
+///   transient or inside a transient object, one a replace or a moderator can
+///   change, and one the index encoding can not key (the shape and ranked
+///   key-length checks every indexed property passes);
+/// * through a `moderatedDocument` reference, a schema property a moderator's
+///   removal record does not keep: one the referenced type lists under
+///   `moderatorAbilities.deleteKeepsFields`, or one inside an object listed
+///   there, is read from the record once the document is removed.
+///
+/// And, for a derived property an index skips on (`skipIfAbsent`), what a
+/// stored type's skip property may not be:
+///
+/// * one that is never absent: the reference property is required, and the
+///   field always holds a value (`$ownerId`, `$creatorId`, or a schema
+///   property required together with every object around it), so the index
+///   could never skip on it;
+/// * a byte array that may be empty, which is keyed like a missing value.
+///
+/// The transient, fixed and key checks of a schema property need the
+/// `validation` feature; the owner, creator, kept and skip checks run in every
+/// build.
+pub(in crate::data_contract) fn resolve_derived_index_properties(
+    document_types: &mut BTreeMap<String, DocumentType>,
+    data_contract_system_version: u16,
+    contract_config_version: u16,
+    full_validation: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let mut resolved = Vec::new();
+    for (name, document_type) in document_types.iter() {
+        let DocumentType::V2(declaring) = document_type else {
+            continue;
+        };
+        for index in declaring.indices.values() {
+            for index_property in &index.properties {
+                let Some(derived) = declaring.derived_index_properties.get(&index_property.name)
+                else {
+                    continue;
+                };
+                let Some(referenced) = document_types.get(&derived.referenced_document_type_name)
+                else {
+                    continue;
+                };
+                let referenced = referenced.as_ref();
+                if referenced.document_reference_kind() != derived.kind {
+                    continue;
+                }
+                let refusal = |reason: String| {
+                    consensus_or_protocol_data_contract_error(
+                        DataContractError::InvalidContractStructure(format!(
+                            "index \"{}\" of document type \"{name}\" reads \"{}\": {reason}",
+                            index.name, index_property.name
+                        )),
+                    )
+                };
+                let referenced_name = derived.referenced_document_type_name.as_str();
+                let reference_property = derived.reference_property.as_str();
+                // A skip property must be able to be absent: here, only when its reference is
+                // optional or the field it reads can be missing on the referenced document
+                let never_absent = |field_always_held: String| {
+                    refusal(format!(
+                        "skipIfAbsent skips on it, but it is never absent: \
+                         \"{reference_property}\" is required and {field_always_held}, so the \
+                         index could never skip on it; remove it from skipIfAbsent, or make \
+                         \"{reference_property}\" optional"
+                    ))
+                };
+                let skipped = full_validation
+                    && index
+                        .skip_if_absent_properties
+                        .contains(&index_property.name);
+                let reference_required = declaring.required_fields.contains(reference_property);
+                match &derived.field {
+                    DerivedIndexField::OwnerId => {
+                        if full_validation && owner_can_change(referenced) {
+                            return Err(refusal(format!(
+                                "documents of \"{referenced_name}\" can be transferred or \
+                                 traded, so the owner an entry was written under could change; \
+                                 $creatorId never does"
+                            )));
+                        }
+                        if skipped && reference_required {
+                            return Err(never_absent(format!(
+                                "every document of \"{referenced_name}\" has an owner"
+                            )));
+                        }
+                    }
+                    DerivedIndexField::CreatorId => {
+                        if full_validation
+                            && !referenced.should_use_creator_id(
+                                data_contract_system_version,
+                                contract_config_version,
+                                platform_version,
+                            )?
+                        {
+                            return Err(refusal(format!(
+                                "\"{referenced_name}\" records no creator: its documents never \
+                                 change hands, so their creator is their owner, $ownerId"
+                            )));
+                        }
+                        if skipped && reference_required {
+                            return Err(never_absent(format!(
+                                "every document of \"{referenced_name}\" records its creator"
+                            )));
+                        }
+                    }
+                    DerivedIndexField::Property(path) => {
+                        let Some(property) = referenced.flattened_properties().get(path) else {
+                            if full_validation {
+                                return Err(refusal(format!(
+                                    "\"{referenced_name}\" has no property \"{path}\""
+                                )));
+                            }
+                            continue;
+                        };
+                        #[cfg(feature = "validation")]
+                        if full_validation {
+                            if let Some(reason) =
+                                derived_index_field_error(referenced, referenced_name, path)
+                            {
+                                return Err(refusal(reason));
+                            }
+                            validate_ranked_index_property_key_length(
+                                name,
+                                index,
+                                &index_property.name,
+                                &index_property.name,
+                                &property.property_type,
+                                platform_version,
+                            )?;
+                            common::check_indexable_property_shape(
+                                name,
+                                &index.name,
+                                &index_property.name,
+                                &property.property_type,
+                            )?;
+                        }
+                        // In every build, like the owner and creator checks, so a client
+                        // refuses what the platform refuses; after the checks above, so a
+                        // field no index could key is not told to be kept
+                        if full_validation
+                            && derived.kind == DocumentReferenceKind::Moderated
+                            && !is_path_listed(referenced.moderator_deletion_kept_fields(), path)
+                        {
+                            return Err(refusal(format!(
+                                "\"{path}\" of \"{referenced_name}\" is not kept by a \
+                                 moderator's removal, which replaces the document a \
+                                 moderatedDocument reference points at with a record keeping \
+                                 its owner and only the fields \"{referenced_name}\" lists under \
+                                 `moderatorAbilities.deleteKeepsFields` (a list fixed when the \
+                                 type is registered, which no update changes)"
+                            )));
+                        }
+                        if skipped {
+                            // A required leaf inside an optional object is only present when
+                            // the object is, so every object around it must be required too
+                            let mut prefix = String::new();
+                            let always_held = path.split('.').all(|segment| {
+                                if !prefix.is_empty() {
+                                    prefix.push('.');
+                                }
+                                prefix.push_str(segment);
+                                referenced.required_fields().contains(&prefix)
+                            });
+                            if reference_required && always_held {
+                                return Err(never_absent(format!(
+                                    "\"{referenced_name}\" requires \"{path}\""
+                                )));
+                            }
+                            if let DocumentPropertyType::ByteArray(sizes) = &property.property_type
+                            {
+                                if sizes.min_size.unwrap_or_default() == 0 {
+                                    return Err(refusal(format!(
+                                        "skipIfAbsent skips on it, but \"{path}\" of \
+                                         \"{referenced_name}\" is a byte array that may be \
+                                         empty, which is indexed under the same key as a \
+                                         missing value: set its `minItems` to at least 1"
+                                    )));
+                                }
+                            }
+                        }
+                        resolved.push((
+                            name.clone(),
+                            index_property.name.clone(),
+                            property.property_type.clone(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    for (name, index_property_name, property_type) in resolved {
+        if let Some(DocumentType::V2(declaring)) = document_types.get_mut(&name) {
+            if let Some(derived) = declaring
+                .derived_index_properties
+                .get_mut(&index_property_name)
+            {
+                derived.property_type = Some(property_type);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Refuses, once every document type of the contract is parsed, a
+/// `preallocated` index whose path only a `moderatedDocument` reference
+/// determines when the removal record of the referenced document would not
+/// keep every key of it: a key the reference's `where` binds must be the
+/// referenced document's `$ownerId` or a field its type lists under
+/// `moderatorAbilities.deleteKeepsFields` (or inside an object listed there).
+/// The trees the referenced document's insert creates then stay a function of
+/// what is public about it once a moderator removes it, and are the ones a
+/// restore needs again. The parse of the referring type sees no other type,
+/// so it admits every binding through such a reference
+/// ([`Index::preallocation_bindings`]); the insert path preallocates only
+/// through one the record keeps
+/// ([`Index::preallocation_bindings_for_target`]), and this check makes sure
+/// every preallocated index has one. A binding whose referenced type the
+/// contract does not have, or which admits another kind of reference, is left
+/// to the reference check, which refuses it.
+///
+/// Full validation only (registration and update), like the derived index
+/// property checks: a contract read back from state passed it. Inert before
+/// protocol version 14: only parser generation 3 admits `preallocated` and
+/// `moderatedDocument`.
+pub(in crate::data_contract) fn validate_preallocated_indexes_kept_on_removal(
+    document_types: &BTreeMap<String, DocumentType>,
+) -> Result<(), ProtocolError> {
+    for (name, document_type) in document_types {
+        let document_type = document_type.as_ref();
+        for index in document_type.indexes().values() {
+            if !index.preallocated {
+                continue;
+            }
+            let bindings = index.preallocation_bindings(
+                document_type.flattened_properties(),
+                document_type.data_contract_id(),
+            );
+            let kept_fields = |binding: &PreallocationBinding| {
+                document_types
+                    .get(binding.target_document_type_name)
+                    .filter(|referenced| referenced.document_reference_kind() == binding.kind)
+                    .map(|referenced| referenced.moderator_deletion_kept_fields())
+            };
+            // A binding whose referenced type is missing, or admits another
+            // kind of reference, is the reference check's to refuse; one
+            // whose record keeps every key holds. Otherwise every binding is
+            // through a moderatedDocument reference whose record drops a
+            // key: name the first one
+            let mut first_dropped = None;
+            for binding in &bindings {
+                match kept_fields(binding).map(|kept| binding.first_key_dropped_on_removal(kept)) {
+                    None | Some(None) => {
+                        first_dropped = None;
+                        break;
+                    }
+                    Some(Some(referenced)) => {
+                        first_dropped.get_or_insert((binding, referenced));
+                    }
+                }
+            }
+            let Some((binding, referenced)) = first_dropped else {
+                continue;
+            };
+            let target = binding.target_document_type_name;
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "index \"{}\" of document type \"{name}\" is preallocated through the \
+                     moderatedDocument reference \"{}\", but \"{referenced}\" of \"{target}\" \
+                     is not kept by a moderator's removal, which replaces the document with a \
+                     record keeping its id, its owner and only the fields \"{target}\" lists \
+                     under `moderatorAbilities.deleteKeepsFields` (a list fixed when the type \
+                     is registered, which no update changes): the trees creating a \"{target}\" \
+                     document preallocates would be keyed by a value its record drops",
+                    index.name, binding.referring_property
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Refuses, once every document type of the contract is parsed, a
+/// `summableOffCountIndex` index whose groups its source fixes through a
+/// referenced value that can change, or that a moderator's removal drops.
+/// The parse of the declaring type checked that every property the source
+/// lacks is a `where` referring value of a reference a source property holds
+/// ([`Index::count_index_derivations`]); the count is lossless only if that value
+/// is the same for every document ever written against one referenced
+/// document, so it must be the referenced document's `$id` or `$creatorId`,
+/// an `$ownerId` no transfer or purchase changes, or a schema property fixed
+/// once written. Through a `moderatedDocument` reference the value must also
+/// stay on record when a moderator removes the document (its `$id`, its
+/// `$ownerId` or a field its type keeps under
+/// `moderatorAbilities.deleteKeepsFields`), so a client can still read back
+/// what an unlike must carry. A derivation whose referenced type the contract
+/// does not have, or which admits another kind of reference, is left to the
+/// reference check, which refuses it.
+///
+/// Full validation only (registration and update), like the preallocation
+/// check: a contract read back from state passed it. Inert before protocol
+/// version 14: only parser generation 3 admits `summableOffCountIndex`.
+pub(in crate::data_contract) fn validate_summable_off_count_indexes_lossless(
+    document_types: &BTreeMap<String, DocumentType>,
+) -> Result<(), ProtocolError> {
+    for (name, document_type) in document_types {
+        let document_type = document_type.as_ref();
+        for index in document_type.indexes().values() {
+            let Some(source) = index
+                .summable_off_count_index
+                .as_deref()
+                .and_then(|source| document_type.indexes().get(source))
+            else {
+                continue;
+            };
+            let Ok(derivations) = index.count_index_derivations(
+                source,
+                document_type.flattened_properties(),
+                document_type.data_contract_id(),
+            ) else {
+                continue;
+            };
+            // A property may be fixed through several source references: it
+            // is lossless when any of them reads a value that never changes
+            // and survives a removal. Refused only when none does, naming the
+            // first one that fails.
+            let mut lossless: BTreeSet<&str> = BTreeSet::new();
+            let mut refusals = Vec::new();
+            for derivation in &derivations {
+                let Some(referenced_type) = document_types
+                    .get(derivation.target_document_type_name)
+                    .filter(|referenced| referenced.document_reference_kind() == derivation.kind)
+                else {
+                    continue;
+                };
+                let referenced_type = referenced_type.as_ref();
+                let referenced = derivation.referenced;
+                let kept = referenced_value_kept_on_removal(
+                    derivation.kind,
+                    referenced,
+                    referenced_type.moderator_deletion_kept_fields(),
+                );
+                let reason = if let Some(why) = why_value_can_change(referenced_type, referenced) {
+                    format!(
+                        ", which {why}, can change after a document is written, so the \
+                         documents of one source group would spread over several groups"
+                    )
+                } else if !kept {
+                    " is not kept by a moderator's removal, which replaces the document with a \
+                     record keeping its id, its owner and only the fields its type lists under \
+                     `moderatorAbilities.deleteKeepsFields`, so a removed document's value could \
+                     no longer be read back"
+                        .to_string()
+                } else {
+                    lossless.insert(derivation.property);
+                    continue;
+                };
+                refusals.push((derivation, reason));
+            }
+            let refused = refusals
+                .into_iter()
+                .find(|(derivation, _)| !lossless.contains(derivation.property));
+            if let Some((derivation, reason)) = refused {
+                let referenced = derivation.referenced;
+                let target = derivation.target_document_type_name;
+                return Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "summableOffCountIndex index \"{}\" of document type \"{name}\" groups by \"{}\", \
+                         which its source \"{}\" fixes through the reference \"{}\" to \
+                         \"{referenced}\" of \"{target}\", but \"{referenced}\"{reason}",
+                        index.name,
+                        derivation.property,
+                        source.name,
+                        derivation.referring_property
+                    )),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Why a schema property `path` of the referenced document type can not be
+/// read by a derived index property, or `None`: it must be stored, and fixed
+/// once written.
+#[cfg(feature = "validation")]
+fn derived_index_field_error(
+    referenced: DocumentTypeRef,
+    referenced_name: &str,
+    path: &str,
+) -> Option<String> {
+    if is_transient(referenced, path) {
+        return Some(format!(
+            "\"{path}\" of \"{referenced_name}\" is transient or inside a transient object: \
+             its value is never stored"
+        ));
+    }
+    if !schema_property_is_fixed_once_written(referenced, path) {
+        return Some(format!(
+            "\"{path}\" of \"{referenced_name}\" can change once written, and the entry would \
+             no longer be found under the value it was written under: make \
+             \"{referenced_name}\" immutable, or list the property under its `immutable` \
+             without a condition, and keep it out of `moderatorAbilities.changeFields`"
+        ));
+    }
+    None
+}
+
+/// Every entry of the `transient` list names a top-level property of the
+/// document type. Drive drops transient values by top-level name before a
+/// document is stored, so an entry naming a nested path, a system property or
+/// nothing at all would mark a property transient in the parsed type and
+/// still leave its value stored: list the object around a nested property.
+///
+/// Full validation only: a contract registered before this version was never
+/// held to it, and a stored contract must stay readable. An update re-parses
+/// the whole contract under full validation, and neither the list nor an index
+/// can change on update, so a contract registered earlier with such a shape
+/// could no longer be updated; a census of every mainnet and testnet contract
+/// (2026-09-23) found none, as for the word-character names rule.
+#[cfg(feature = "validation")]
+fn validate_transient_fields(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    match document_type
+        .transient_fields
+        .iter()
+        .find(|field| !document_type.properties.contains_key(*field))
+    {
+        Some(field) => {
+            let hint = if field.contains('.') && !field.starts_with('$') {
+                ": transient values are dropped by top-level name, so list the object around \
+                 a nested property"
+            } else {
+                ""
+            };
+            Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" lists \"{field}\" as transient, but it is not a \
+                     top-level property of the document type{hint}"
+                )),
+            ))
+        }
+        None => Ok(()),
+    }
+}
+
+/// No index reads a transient property or a property inside a transient
+/// object. Its value is never stored, so every document would sit in the
+/// index's null branch: a query by the value finds nothing, and a unique index
+/// enforces nothing, since a create is checked against stored entries, none
+/// of which holds the value.
+///
+/// Full validation only, like [`validate_transient_fields`].
+#[cfg(feature = "validation")]
+fn validate_no_transient_index_properties(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    for index in document_type.indices.values() {
+        if let Some(property) = index
+            .properties
+            .iter()
+            .find(|property| is_transient(DocumentTypeRef::V2(document_type), &property.name))
+        {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "index \"{}\" of document type \"{name}\" reads \"{}\", which is transient \
+                     or inside a transient object: its value is never stored, so the index \
+                     would never hold it",
+                    index.name, property.name
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// No `integerRange` buckets an unsigned property keyed the earlier way.
+/// A grid reads and writes its source's keys as generation 1 of
+/// `serialize_value_for_key` keys unsigned values (`IntegerRangeKeyType`),
+/// while an unsigned property that ends a `rangeSummable` index keeps
+/// generation 0's keys at every protocol version
+/// ([`Index::ends_range_summable_with`]), so the two can't share a property.
+/// A signed source keeps its signed keys either way.
+///
+/// Full validation only, like the other index checks: only this generation
+/// (protocol version 14) admits `integerRange`.
+#[cfg(feature = "validation")]
+fn validate_integer_range_sources_keyed_in_value_order(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    for index in document_type.indices.values() {
+        let Some(transform) = &index.integer_range else {
+            continue;
+        };
+        if transform.key_type.min_value() < 0
+            || DocumentTypeRef::V2(document_type)
+                .tree_keys_differ_between_generations(&transform.source)
+        {
+            continue;
+        }
+        let summing = document_type
+            .indices
+            .values()
+            .find(|other| other.ends_range_summable_with(&transform.source))
+            .map_or("", |other| other.name.as_str());
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "integerRange.on (\"{}\") of index \"{}\" of document type \"{name}\" names \
+                 a property that the rangeSummable index \"{summing}\" ends with: such a \
+                 property keeps its earlier key encoding, which an integerRange grid does not \
+                 read; bucket another property",
+                transform.source, index.name
+            )),
+        ));
+    }
+    Ok(())
+}
+
+/// Every typed array property's `maxItems` (which the parse requires) is at
+/// most `SystemLimits::max_typed_array_items`, so its worst-case encoded
+/// size stays small. Read off the flattened properties, which reach a typed
+/// array nested in an object too.
+///
+/// Full validation only, like the other registration limits: a stored
+/// contract was checked when it was registered, and a later protocol version
+/// lowering the cap must not make it unreadable.
+#[cfg(feature = "validation")]
+fn validate_typed_array_max_items(
+    document_type: &DocumentTypeV2,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let limit = platform_version.system_limits.max_typed_array_items;
+    for (path, property) in document_type.flattened_properties() {
+        let DocumentPropertyType::TypedArray(typed_array) = &property.property_type else {
+            continue;
+        };
+        if typed_array.max_items > limit {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "typed array property \"{}\" of document type \"{}\" declares maxItems \
+                     {}, above the maximum of {}",
+                    path, name, typed_array.max_items, limit,
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A document type with a contested index and a summed property keeps every summed value
+/// within `SystemLimits::max_contested_summed_value_magnitude`: the property's schema
+/// declares a `maximum` of at most the limit and a `minimum` of at least its negation.
+/// Awarding a contest writes the winner's document into the type's sums after any number of
+/// other documents were written, so no check on the contender's create can keep those sums
+/// in `i64`; values this small keep them there short of 2^36 documents.
+///
+/// The bounds are read from the schema rather than from the inferred type, which is `i64`
+/// whatever they are without `sizedIntegerTypes`. `$ref`s are followed into `schema_defs`.
+///
+/// Full validation only, like the typed array cap: a contract stored before the rule was
+/// checked when it was registered, and must stay readable.
+#[cfg(feature = "validation")]
+fn validate_contested_summed_value_bounds(
+    document_type: &DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(limit) = platform_version
+        .system_limits
+        .max_contested_summed_value_magnitude
+    else {
+        return Ok(());
+    };
+    let Some(contested_index) = document_type
+        .indices
+        .values()
+        .find(|index| index.contested_index.is_some())
+    else {
+        return Ok(());
+    };
+    let Some((summed_property, property_schema)) =
+        summed_property_schema(document_type, schema_defs)?
+    else {
+        return Ok(());
+    };
+    let bounds = property_schema
+        .map(|property_schema| {
+            Ok::<_, DataContractError>((
+                property_schema.get_optional_integer::<i64>(property_names::MINIMUM)?,
+                property_schema.get_optional_integer::<i64>(property_names::MAXIMUM)?,
+            ))
+        })
+        .transpose()
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+    let within_limit = matches!(
+        bounds,
+        Some((Some(minimum), Some(maximum))) if minimum >= -limit && maximum <= limit
+    );
+    if !within_limit {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{}\" sums \"{}\" and has the contested index \"{}\": \
+                 awarding a contest adds the winner's value to the type's sums, so the \
+                 property must declare a minimum of at least -{} and a maximum of at most {}",
+                name, summed_property, contested_index.name, limit, limit,
+            )),
+        ));
+    }
+    Ok(())
+}
+
+/// A document type with a `ttl` and a summed property whose values may be negative keeps them
+/// within `SystemLimits::max_expiring_signed_summed_value_magnitude`: unless the property's
+/// schema declares a `minimum` of at least 0, it declares a `maximum` of at most the limit and
+/// a `minimum` of at least its negation. The platform deletes expired documents at the end of
+/// a block with no transition to refuse, and removing a negative value raises every sum it was
+/// in, each merk node's as well as the total, so sums that stayed in `i64` while it was there
+/// could leave it once it is gone. Removing values that are never negative only lowers sums;
+/// values this small keep them in `i64` short of 2^36 documents.
+///
+/// The bounds are compared as numbers, in whatever form the schema writes them (an integer of
+/// any width, or a float: the meta-schema admits any number, and without `sizedIntegerTypes`
+/// the property is an `i64` whatever they are), so a `maximum` beside a `minimum` of at least 0
+/// is never read. Converting to `f64` keeps every comparison exact: 0 and the limit are exactly
+/// representable, and the conversion preserves order.
+///
+/// Full validation only, like the contested bounds: a contract stored before the rule was
+/// checked when it was registered, and must stay readable.
+#[cfg(feature = "validation")]
+fn validate_expiring_summed_value_bounds(
+    document_type: &DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(limit) = platform_version
+        .system_limits
+        .max_expiring_signed_summed_value_magnitude
+    else {
+        return Ok(());
+    };
+    if document_type.documents_ttl_seconds.is_none() {
+        return Ok(());
+    }
+    let Some((summed_property, property_schema)) =
+        summed_property_schema(document_type, schema_defs)?
+    else {
+        return Ok(());
+    };
+    let bound = |keyword: &str| {
+        property_schema
+            .as_ref()
+            .and_then(|property_schema| property_schema.get(keyword))
+            .and_then(|bound| bound.as_float())
+    };
+    let limit_value = limit as f64;
+    let admitted = match (
+        bound(property_names::MINIMUM),
+        bound(property_names::MAXIMUM),
+    ) {
+        (Some(minimum), _) if minimum >= 0.0 => true,
+        (Some(minimum), Some(maximum)) => minimum >= -limit_value && maximum <= limit_value,
+        _ => false,
+    };
+    if !admitted {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{}\" sets `ttl` and sums \"{}\", which admits negative \
+                 values: deleting an expired document takes its value out of the type's \
+                 sums, so the property must declare a minimum of at least 0, or a minimum of \
+                 at least -{} and a maximum of at most {}",
+                name, summed_property, limit, limit,
+            )),
+        ));
+    }
+    Ok(())
+}
+
+/// The property a document type sums and its schema, `None` when the type sums nothing. The
+/// schema is `None` when it is not found. Every summed declaration of a type (`summable`,
+/// `averageable`, `documentsSummable`, `documentsAverageable`) names the same property
+/// (`apply_doctype_aggregates`). The schema is followed through `$ref`s into `schema_defs`, so
+/// the bounds are read from it rather than from the inferred type, which is `i64` whatever they
+/// are without `sizedIntegerTypes`.
+#[cfg(feature = "validation")]
+#[allow(clippy::type_complexity)]
+fn summed_property_schema<'a>(
+    document_type: &'a DocumentTypeV2,
+    schema_defs: Option<&'a BTreeMap<String, Value>>,
+) -> Result<Option<(&'a str, Option<BTreeMap<String, &'a Value>>)>, ProtocolError> {
+    let Some(property) = document_type.documents_summable.as_ref().or_else(|| {
+        document_type
+            .indices
+            .values()
+            .find_map(|index| index.summable.as_ref())
+    }) else {
+        return Ok(None);
+    };
+    let property_schema = schema_at_path(&document_type.schema, schema_defs, property)
+        .map_err(consensus_or_protocol_data_contract_error)?;
+    Ok(Some((property, property_schema)))
+}
+
+/// Every reference expression (`anyOf` / `allOf`), on an identifier property,
+/// on the elements of a typed array or in the type's `ownerRefersTo` or
+/// `creatorRefersTo`, stays inside the registration limits:
+/// at most `SystemLimits::max_reference_expression_depth` combinators on any
+/// path from the declaration to a leaf, and at most
+/// `SystemLimits::max_reference_operands` operands in any one list (the parse
+/// already requires two or more). No two operands of one list may be alike,
+/// which would bill the same reads twice for nothing, with a leaf naming the
+/// declaring contract (`contract_id`) explicitly taken as the same as one
+/// that omits it, which the parse, knowing no contract id, cannot see. Every
+/// leaf also counts against `max_references_per_document`, checked next.
+///
+/// Full validation only, like the typed array cap: a stored contract was
+/// checked when it was registered.
+#[cfg(feature = "validation")]
+fn validate_reference_expressions(
+    document_type: &DocumentTypeV2,
+    contract_id: Identifier,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let max_depth = platform_version
+        .system_limits
+        .max_reference_expression_depth;
+    let max_operands = platform_version.system_limits.max_reference_operands;
+    // The owner's or the creator's declaration too, named by its keyword
+    for (holder, reference) in DocumentTypeRef::V2(document_type).reference_declarations() {
+        let Some(target) = reference.target() else {
+            continue;
+        };
+        let subject = match holder {
+            ReferenceHolder::Property(path) => format!("property \"{path}\""),
+            ReferenceHolder::Owner | ReferenceHolder::Creator => holder.describe(),
+        };
+        let refuse = |reason: String| {
+            Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "{subject} of document type \"{name}\" declares a refersTo {reason}"
+                )),
+            ))
+        };
+        let depth = target.expression_depth();
+        if depth > usize::from(max_depth) {
+            return refuse(format!(
+                "expression nested {depth} deep, above the maximum of {max_depth}"
+            ));
+        }
+        for (list_path, operands) in operand_lists(target, String::new()) {
+            let count = operands.len();
+            if count > usize::from(max_operands) {
+                return refuse(format!(
+                    "{list_path} of {count} operands, above the maximum of {max_operands}"
+                ));
+            }
+            let normalized: Vec<DocumentPropertyReferenceTarget> = operands
+                .iter()
+                .map(|operand| with_own_contract_id_omitted(operand, contract_id))
+                .collect();
+            for (index, operand) in normalized.iter().enumerate() {
+                if normalized[..index].contains(operand) {
+                    return refuse(format!(
+                        "{list_path} whose operand {index} repeats an earlier one"
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Every operand list of a reference expression, with where it sits
+/// (`anyOf`, `anyOf[1].allOf`); none for a single target.
+#[cfg(feature = "validation")]
+fn operand_lists(
+    target: &DocumentPropertyReferenceTarget,
+    path: String,
+) -> Vec<(String, &[DocumentPropertyReferenceTarget])> {
+    let Some((combinator, operands)) = target.combinator() else {
+        return Vec::new();
+    };
+    let separator = if path.is_empty() { "" } else { "." };
+    let here = format!("{path}{separator}{}", combinator.wire_name());
+    let mut lists = vec![(here.clone(), operands.operands())];
+    for (index, operand) in operands.operands().iter().enumerate() {
+        lists.extend(operand_lists(operand, format!("{here}[{index}]")));
+    }
+    lists
+}
+
+/// `target` with every document leaf naming `contract_id` itself rewritten to
+/// omit it, which means the same, so two spellings of one target compare
+/// equal.
+#[cfg(feature = "validation")]
+fn with_own_contract_id_omitted(
+    target: &DocumentPropertyReferenceTarget,
+    contract_id: Identifier,
+) -> DocumentPropertyReferenceTarget {
+    let mut target = target.clone();
+    match &mut target {
+        DocumentPropertyReferenceTarget::PermanentDocument {
+            contract_id: referenced,
+            ..
+        }
+        | DocumentPropertyReferenceTarget::PermanentDocumentLookup {
+            contract_id: referenced,
+            ..
+        }
+        | DocumentPropertyReferenceTarget::DeletableDocument {
+            contract_id: referenced,
+            ..
+        }
+        | DocumentPropertyReferenceTarget::DeletableDocumentLookup {
+            contract_id: referenced,
+            ..
+        }
+        | DocumentPropertyReferenceTarget::ModeratedDocument {
+            contract_id: referenced,
+            ..
+        } => {
+            if *referenced == Some(contract_id) {
+                *referenced = None;
+            }
+        }
+        DocumentPropertyReferenceTarget::ListElement(reference) => {
+            if reference.contract_id == Some(contract_id) {
+                reference.contract_id = None;
+            }
+        }
+        DocumentPropertyReferenceTarget::AnyOf(operands)
+        | DocumentPropertyReferenceTarget::AllOf(operands) => {
+            *operands = ReferenceOperands::new(
+                operands
+                    .operands()
+                    .iter()
+                    .map(|operand| with_own_contract_id_omitted(operand, contract_id))
+                    .collect(),
+            );
+        }
+        DocumentPropertyReferenceTarget::Identity
+        | DocumentPropertyReferenceTarget::Contract { .. }
+        | DocumentPropertyReferenceTarget::Token
+        | DocumentPropertyReferenceTarget::IdentityPublicKey { .. } => {}
+    }
+    target
+}
+
+/// The references one document of the type can carry, one for each
+/// property declaring `refersTo` (an identifier, or a key id with a key
+/// reference), `maxItems` for each typed array whose elements declare it and
+/// one for the type's `ownerRefersTo` or `creatorRefersTo`, each times the
+/// number of leaves when the declaration is a reference expression, are at
+/// most
+/// `SystemLimits::max_references_per_document`. Every reference is a billed
+/// state read when the document is created or replaced, so the sum bounds
+/// the reads one write can cause; `max_typed_array_items` alone would let a
+/// type declare many arrays of that many references each.
+///
+/// Full validation only, like the typed array cap: a stored contract was
+/// checked when it was registered.
+#[cfg(feature = "validation")]
+fn validate_reference_count(
+    document_type: &DocumentTypeV2,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let limit = platform_version.system_limits.max_references_per_document;
+    let references: u32 = DocumentTypeRef::V2(document_type)
+        .reference_declarations()
+        .map(|(_, reference)| reference.max_references())
+        .fold(0, u32::saturating_add);
+    if references > u32::from(limit) {
+        return Err(consensus_or_protocol_data_contract_error(
+            DataContractError::InvalidContractStructure(format!(
+                "document type \"{name}\" declares references for up to {references} values per \
+                 document (one per property with refersTo, maxItems per typed array of \
+                 referencing elements, one for ownerRefersTo or creatorRefersTo, each times the \
+                 leaves of a reference expression), above the maximum of {limit}",
+            )),
+        ));
+    }
+    Ok(())
+}
+
+/// Whether `document_type` lists the top-level property `top_level` under
+/// `immutable`, with a condition or without. A replace may not change it while
+/// it is frozen, and a condition may hold for good, so the reference rules
+/// below judge both alike.
+#[cfg(feature = "validation")]
+fn lists_as_immutable(document_type: &DocumentTypeV2, top_level: &str) -> bool {
+    document_type.immutable_fields.contains(top_level)
+        || document_type
+            .immutable_field_conditions
+            .contains_key(top_level)
+}
+
+/// An `immutable` property may not hold a `contract` reference whose
+/// `contractRequirements` carry an `owner` requirement when the document type's
+/// documents can be transferred or traded. The requirement relates the
+/// referenced contract's owner to the owner writing the document, and on such
+/// a type every replace re-checks it: after a transfer or a purchase an owner
+/// who does not meet it could not replace the document, and the immutable
+/// property could not be repointed at a contract it does meet. That holds
+/// wherever the reference sits under the immutable property (the property
+/// itself, inside an immutable object, the elements of a typed array) and for
+/// both `self` and `other`. On a type whose documents cannot change owner the
+/// requirement is never re-checked, so the pair is admitted there. A property
+/// listed with a condition is judged alike: while the condition holds it is
+/// as frozen.
+#[cfg(feature = "validation")]
+fn validate_no_immutable_contract_owner_requirements(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    if !owner_can_change(DocumentTypeRef::V2(document_type)) {
+        return Ok(());
+    }
+    for (path, property) in document_type.flattened_properties() {
+        let Some(reference) = property.property_type.reference() else {
+            continue;
+        };
+        let Some(target) = reference.target() else {
+            continue;
+        };
+        let carries_owner_requirement = target.leaves().into_iter().any(|leaf| {
+            matches!(
+                leaf,
+                DocumentPropertyReferenceTarget::Contract {
+                    contract_requirements,
+                } if contract_requirements.owner.is_some()
+            )
+        });
+        if !carries_owner_requirement {
+            continue;
+        }
+        let top_level = path.split('.').next().unwrap_or(path);
+        if lists_as_immutable(document_type, top_level) {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" lists \"{top_level}\" as immutable, but \"{path}\" is \
+                     a contract reference with an `owner` requirement and the type's documents can \
+                     be transferred or traded: every replace re-checks the requirement against the \
+                     owner writing it, so an owner who does not meet it could never replace the \
+                     document, nor repoint the reference. Leave the property mutable, or drop the \
+                     owner requirement",
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// An `immutable` property may not hold a `deletableDocument` reference the
+/// replace state validation could not clear: a typed array of them, at the
+/// top level or inside an immutable object, a single one inside an immutable
+/// object, or one found by `findBy`, alone or as an operand of an
+/// expression, anywhere (on a string or byte array property too), unless a
+/// `findBy` function computes its key: that
+/// reference is judged when the document is created only. Every
+/// replace re-validates such a reference, so once a target is deleted the
+/// property would have to change, which an immutable
+/// property cannot: the document could never be replaced again. The one
+/// such reference that has a way out is a single one held by an immutable
+/// top-level property: a replace may remove it once its target is gone, an
+/// exception that reads the one identifier the removed top-level property
+/// held, which neither a list nor an object gives it.
+///
+/// That property must be listed without a condition. Once the reference is
+/// cleared the stored document has no value for it, and a condition that
+/// does not hold then (`present: "$old.<property>"`, the way to let an absent
+/// value be set once) would let the next replace set it again, to another
+/// document: the frozen reference would be repointed. The condition is refused
+/// here rather than the clear at write time, since without the clear a
+/// document whose target is deleted could never be replaced again. Every other
+/// `deletableDocument` form is refused on any immutable property, with a
+/// condition or without, except one whose key a `findBy` function computes,
+/// which is judged when the document is created only and never re-validated;
+/// such a reference's carrier must be fixed once written, which a property
+/// listed with a condition is not, so the referring-side rules refuse it there.
+#[cfg(feature = "validation")]
+fn validate_no_immutable_deletable_element_references(
+    document_type: &DocumentTypeV2,
+    name: &str,
+) -> Result<(), ProtocolError> {
+    for (path, property) in document_type.flattened_properties() {
+        // On an identifier, or on a string or byte array property whose value
+        // its `findBy` reads
+        let Some(reference) = property.property_type.reference().or_else(|| {
+            property
+                .revealed_reference
+                .as_ref()
+                .map(PropertyReference::Revealed)
+        }) else {
+            continue;
+        };
+        let Some(target) = reference.target() else {
+            continue;
+        };
+        // A deletableDocument found by `findBy`, alone or as an operand of an
+        // expression, is re-validated on every replace too, and the clearing
+        // exception reads a document id, which a findBy key is not. One whose
+        // key a `findBy` function computes is judged on the
+        // create alone and never re-validated, so it may sit on an immutable
+        // property, which it requires
+        let deletable_lookup = target.leaves().into_iter().any(|leaf| {
+            matches!(
+                leaf,
+                DocumentPropertyReferenceTarget::DeletableDocumentLookup { lookup, .. }
+                    if !lookup.is_checked_on_create_only(document_type.documents_mutable)
+            )
+        });
+        if !deletable_lookup
+            && !matches!(
+                target,
+                DocumentPropertyReferenceTarget::DeletableDocument { .. }
+            )
+        {
+            continue;
+        }
+        let top_level = path.split('.').next().unwrap_or(path);
+        let is_list = matches!(reference, PropertyReference::Elements { .. });
+        // A single reference by id that is itself the immutable property can be
+        // cleared once its target is gone, so it may not be frozen only while a
+        // condition holds: the clear makes it absent, and a replace the
+        // condition then leaves free could set it to another document
+        if !deletable_lookup && !is_list && top_level == path {
+            if document_type.immutable_field_conditions.contains_key(path) {
+                return Err(consensus_or_protocol_data_contract_error(
+                    DataContractError::InvalidContractStructure(format!(
+                        "document type \"{name}\" lists \"{path}\" under `immutable` with a \
+                         condition, but it is a deletableDocument reference: a replace may clear \
+                         it once its target is deleted, and a replace the condition leaves free \
+                         could then set it to another document. List it without a condition, or \
+                         use a permanentDocument reference",
+                    )),
+                ));
+            }
+            continue;
+        }
+        if lists_as_immutable(document_type, top_level) {
+            let held_as = if deletable_lookup {
+                "a deletableDocument reference found by findBy"
+            } else if is_list {
+                "a typed array of deletableDocument references"
+            } else {
+                "a deletableDocument reference inside an object"
+            };
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "document type \"{name}\" lists \"{top_level}\" as immutable, but \"{path}\" is \
+                     {held_as}: every replace re-validates it, so once a target is deleted the \
+                     property would have to change and the document could never be replaced \
+                     again. Use permanentDocument references, or leave the property mutable",
+                )),
+            ));
+        }
+    }
+    Ok(())
+}
+
+impl DocumentType {
+    /// Dispatches to this module's generation-3 parser and wraps the result.
+    #[allow(clippy::too_many_arguments)]
+    pub(in crate::data_contract::document_type::class_methods) fn try_from_schema_v3(
+        data_contract_id: Identifier,
+        data_contract_system_version: u16,
+        contract_config_version: u16,
+        name: &str,
+        schema: Value,
+        schema_defs: Option<&BTreeMap<String, Value>>,
+        token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
+        data_contact_config: &DataContractConfig,
+        full_validation: bool,
+        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        try_from_schema_generation_3(
+            data_contract_id,
+            data_contract_system_version,
+            contract_config_version,
+            name,
+            schema,
+            schema_defs,
+            token_configurations,
+            data_contact_config,
+            full_validation,
+            validation_operations,
+            platform_version,
+        )
+        .map(DocumentType::V2)
+    }
+}
+
+#[cfg(all(test, feature = "validation"))]
+mod byte_array_reads_tests;
+#[cfg(all(test, feature = "validation"))]
+mod choose_first_tests;
+#[cfg(all(test, feature = "validation"))]
+mod commit_reveal_lookup_tests;
+#[cfg(all(test, feature = "validation"))]
+mod contested_summed_value_bounds_tests;
+#[cfg(all(test, feature = "validation"))]
+mod delete_constraints_tests;
+#[cfg(all(test, feature = "validation"))]
+mod derived_index_property_tests;
+#[cfg(test)]
+mod documents_ttl_tests;
+#[cfg(all(test, feature = "validation"))]
+mod dotted_aggregate_name_tests;
+#[cfg(all(test, feature = "validation"))]
+mod expiring_summed_value_bounds_tests;
+#[cfg(test)]
+mod immutable_tests;
+#[cfg(test)]
+mod index_only_tests;
+#[cfg(all(test, feature = "validation"))]
+mod indexed_array_tests;
+#[cfg(all(test, feature = "validation"))]
+mod moderated_preallocation_tests;
+#[cfg(all(test, feature = "validation"))]
+mod outlives_delete_tests;
+#[cfg(all(test, feature = "validation"))]
+mod refusal_test_support;
+#[cfg(all(test, feature = "validation"))]
+mod summable_off_count_index_tests;
+
+#[cfg(all(test, feature = "validation"))]
+mod generated_from_tests;
+#[cfg(test)]
+mod keep_history_tests;
+#[cfg(all(test, feature = "validation"))]
+mod list_element_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod max_bytes_tests;
+#[cfg(test)]
+mod meta_schema_v0_stray_keyword_tests;
+#[cfg(test)]
+mod moderator_abilities_tests;
+#[cfg(all(test, feature = "validation"))]
+mod name_rules_tests;
+#[cfg(all(test, feature = "validation"))]
+mod non_transferable_token_cost_tests;
+#[cfg(test)]
+mod only_when_consumed_tests;
+#[cfg(all(test, feature = "validation"))]
+mod owner_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod property_constraint_aggregates_tests;
+#[cfg(all(test, feature = "validation"))]
+mod property_constraints_tests;
+#[cfg(all(test, feature = "validation"))]
+mod property_type_shorthand_tests;
+#[cfg(all(test, feature = "validation"))]
+mod reference_expression_tests;
+#[cfg(all(test, feature = "validation"))]
+mod reference_lookup_tests;
+#[cfg(all(test, feature = "validation"))]
+mod reference_test_helpers;
+#[cfg(all(test, feature = "validation"))]
+mod referenced_rule_tests;
+#[cfg(all(test, feature = "validation"))]
+mod retracted_when_tests;
+#[cfg(all(test, feature = "validation"))]
+mod shared_stage_error_tests;
+#[cfg(all(test, feature = "validation"))]
+mod stored_version_reads_tests;
+#[cfg(all(test, feature = "validation"))]
+mod string_find_by_key_tests;
+#[cfg(all(test, feature = "validation"))]
+mod transient_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_counter_index_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_reference_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_test_helpers;
+#[cfg(all(test, feature = "validation", feature = "random-documents"))]
+mod typed_array_tests;
+#[cfg(all(test, feature = "validation"))]
+mod typed_array_where_tests;
+
+#[cfg(test)]
+mod tests {
+    //! Ranked aggregate index keywords — parser-generation gating.
+    //!
+    //! The keywords live on the *index*, not the document type, but what
+    //! admits them is the parser generation the dispatcher selects
+    //! (`try_from_schema`: 2 at PV13, 3 at PV14), so the tests belong on this
+    //! parser. Two independent halves have to hold on the pre-PV14 side:
+    //!
+    //!   * `full_validation: true`  — the v2 meta-schema has
+    //!     `additionalProperties: false` on index entries and rejects the key.
+    //!   * `full_validation: false` — no meta-schema runs at all (check_tx,
+    //!     cache warm-up, restore), so the *grammar* itself must not know the
+    //!     keyword. That is the smuggling path, and the one worth pinning.
+    //!
+    //! The PV13 half of every test goes through the real dispatcher
+    //! (`DocumentType::try_from_schema`) rather than through anything in this
+    //! module, so what it exercises is generation 2 refusing the keys — the
+    //! cross-generation behavior, not this generation's internals.
+    use super::*;
+    use platform_value::platform_value;
+
+    /// Parse through **this** generation, with the platform version and
+    /// validation mode spelled out. Used for the PV14 side, which has to be
+    /// exercised on both the meta-schema path (`full_validation: true`) and the
+    /// structural path (`full_validation: false`).
+    fn parse_with(
+        schema: Value,
+        platform_version: &PlatformVersion,
+        full_validation: bool,
+    ) -> Result<DocumentTypeV2, ProtocolError> {
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("default config available on this platform version");
+        try_from_schema_generation_3(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "test_doc",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            full_validation,
+            &mut vec![],
+            platform_version,
+        )
+    }
+
+    /// Parse through the **real dispatcher**, which picks the parser generation
+    /// out of the platform version's `try_from_schema` table value. At PV13
+    /// that is generation 2; at PV14, this module.
+    fn parse_dispatched(
+        schema: Value,
+        platform_version: &PlatformVersion,
+        full_validation: bool,
+    ) -> Result<DocumentType, ProtocolError> {
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("default config available on this platform version");
+        DocumentType::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "test_doc",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            full_validation,
+            &mut vec![],
+            platform_version,
+        )
+    }
+
+    /// A `review` doctype with one index over `restaurantId`, averageable on
+    /// `grade`, optionally carrying ranked keywords. The `averageable` +
+    /// `rangeAverageable` sugar satisfies every prerequisite in the v3
+    /// meta-schema (its ranked `if`/`then` pairs accept `rangeAverageable` in
+    /// place of each axis's own range key) and in the structural parser
+    /// (which checks the resolved flags), so any ranked keyword may be added.
+    ///
+    /// `restaurantId` is capped at 32 characters — comfortably inside the
+    /// ranked key bound on every axis, so these grammar tests exercise the
+    /// keywords and nothing else. The bound itself is exercised by
+    /// [`ranked_review_schema_with_max_length`] below.
+    fn ranked_review_schema(ranked_keys: Vec<(&str, bool)>) -> Value {
+        ranked_review_schema_with_max_length(32, ranked_keys)
+    }
+
+    /// [`ranked_review_schema`] with the indexed string property's
+    /// `maxLength` spelled out, for the ranked key-length boundary tests.
+    fn ranked_review_schema_with_max_length(
+        max_length: u32,
+        ranked_keys: Vec<(&str, bool)>,
+    ) -> Value {
+        let mut index_entry: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byRestaurant".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("grade".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+        ];
+        for (key, value) in ranked_keys {
+            index_entry.push((Value::Text(key.to_string()), Value::Bool(value)));
+        }
+
+        Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                platform_value!({
+                    "restaurantId": {
+                        "type": "string",
+                        "maxLength": max_length,
+                        "position": 0,
+                    },
+                    "grade": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "position": 1,
+                    },
+                }),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("indices".to_string()),
+                Value::Array(vec![Value::Map(index_entry)]),
+            ),
+        ])
+    }
+
+    fn pv13() -> &'static PlatformVersion {
+        PlatformVersion::get(13).expect("protocol version 13 exists")
+    }
+
+    /// Generation 3 is the latest parser generation, so its tests run at the latest protocol
+    /// version. When a later protocol version selects a new generation, pin these tests to the
+    /// last version that selects generation 3 (see the coding conventions).
+    fn latest() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    /// The latest protocol version accepts the ranked keywords and carries them onto the parsed index
+    /// — both when parsed through this generation directly and when reached
+    /// the way production reaches it, through the dispatcher. The dispatcher
+    /// half is what pins that `try_from_schema: 3` actually routes here.
+    #[test]
+    fn ranked_keywords_accepted_at_latest() {
+        let schema = ranked_review_schema(vec![("rankedAverageable", true)]);
+        let v2 = parse_with(schema.clone(), latest(), true)
+            .expect("meta-schema v3 must accept the ranked index keywords");
+
+        let index = v2
+            .indices
+            .get("byRestaurant")
+            .expect("index parsed under its name");
+        assert!(index.ranked_averageable);
+        assert!(!index.ranked_countable);
+        assert!(!index.ranked_summable);
+        assert!(index.range_countable && index.range_summable);
+
+        // Same schema, same platform version, through the real dispatcher.
+        let dispatched = parse_dispatched(schema, latest(), true)
+            .expect("the dispatcher must route the latest protocol version to a generation that accepts the keywords");
+        let DocumentType::V2(dispatched) = dispatched else {
+            panic!("generation 3 produces a V2-shaped document type");
+        };
+        assert!(
+            dispatched
+                .indices
+                .get("byRestaurant")
+                .expect("index parsed under its name")
+                .ranked_averageable,
+            "dispatching at the latest protocol version must reach generation 3, not an earlier generation"
+        );
+    }
+
+    /// PV13 + `full_validation`: generation 2's meta-schema rejects the unknown
+    /// index key outright. Routed through the dispatcher so it is genuinely
+    /// generation 2 doing the rejecting.
+    #[test]
+    fn ranked_keywords_rejected_at_pv13_under_full_validation() {
+        let schema = ranked_review_schema(vec![("rankedAverageable", true)]);
+        let result = parse_dispatched(schema, pv13(), true);
+        assert!(
+            result.is_err(),
+            "meta-schema v2 must reject rankedAverageable (additionalProperties: false)"
+        );
+    }
+
+    /// PV13 without `full_validation`: no meta-schema runs, so the structural
+    /// grammar has to do the rejecting. Both `true` and `false` are rejected —
+    /// the key's mere presence is what a pre-PV14 node refuses, and matching
+    /// that exactly is what keeps replay of historical blocks identical.
+    #[test]
+    fn ranked_keywords_rejected_at_pv13_without_full_validation() {
+        for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
+            for value in [true, false] {
+                let schema = ranked_review_schema(vec![(key, value)]);
+                let result = parse_dispatched(schema, pv13(), false);
+                assert!(
+                    result.is_err(),
+                    "{key}: {value} must be rejected by the structural path at PV13 — the \
+                     meta-schema does not run here, so this is the only gate"
+                );
+                let msg = format!("{:?}", result.unwrap_err());
+                assert!(
+                    msg.contains("unexpected property name"),
+                    "PV13 must reject it as an unknown index key, exactly as a node without \
+                     the feature does; got {msg}"
+                );
+            }
+        }
+    }
+
+    /// Same schema, latest protocol version, no full validation: accepted. Pins that the gate
+    /// is the parser *generation* and not the validation mode.
+    #[test]
+    fn ranked_keywords_accepted_at_latest_without_full_validation() {
+        let schema = ranked_review_schema(vec![("rankedAverageable", true)]);
+        let v2 = parse_with(schema, latest(), false).expect(
+            "the latest protocol version's structural parse must accept the ranked keywords",
+        );
+        assert!(
+            v2.indices
+                .get("byRestaurant")
+                .expect("index parsed under its name")
+                .ranked_averageable
+        );
+    }
+
+    /// The meta-schema's ranked `if`/`then` conditionals are the declarative
+    /// half of the structural "ranking needs its range axis" rule, and they
+    /// are sugar-aware: `rankedCountable: true` with `rangeAverageable` and
+    /// no literal `rangeCountable` passes meta validation at PV14, because
+    /// `rangeAverageable` puts the count axis in effect.
+    ///
+    /// Up to `4.2.0-beta.1` this exact shape was refused with
+    /// `"rangeCountable" is a required property`; the rule was corrected in
+    /// place while v3 is still editable.
+    #[test]
+    fn ranked_countable_satisfied_by_range_averageable_in_meta_schema() {
+        let schema = ranked_review_schema(vec![("rankedCountable", true)]);
+        let v2 = parse_with(schema, latest(), true)
+            .expect("rangeAverageable satisfies rankedCountable's range prerequisite");
+        let index = v2
+            .indices
+            .get("byRestaurant")
+            .expect("index parsed under its name");
+        assert!(index.ranked_countable && index.range_countable);
+    }
+
+    /// An index over `restaurantId` carrying exactly one ranked keyword and
+    /// no aggregate layout whatsoever — the shape that separates "the key is
+    /// present" from "a ranking axis was asked for".
+    fn bare_ranked_index_schema(key: &str, value: bool) -> Value {
+        let index_entry = Value::Map(vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byRestaurant".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (Value::Text(key.to_string()), Value::Bool(value)),
+        ]);
+
+        Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                platform_value!({
+                    "restaurantId": {
+                        "type": "string",
+                        "maxLength": 63,
+                        "position": 0,
+                    },
+                }),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![Value::Text("restaurantId".to_string())]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("indices".to_string()),
+                Value::Array(vec![index_entry]),
+            ),
+        ])
+    }
+
+    /// The ranked prerequisites are **value-sensitive**. `dependentRequired`
+    /// fires on key *presence*, so expressing the opt-out explicitly
+    /// (`"rankedCountable": false`) would have been made to demand a range
+    /// axis the index never uses — a contract that says "no ranking here"
+    /// rejected for not declaring the machinery of a ranking it declined.
+    /// The structural parser reads `false` as "no ranking axis"; full
+    /// validation at PV14 must agree.
+    #[test]
+    fn ranked_flags_written_out_as_false_do_not_require_a_range_axis() {
+        for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
+            let v2 = parse_with(bare_ranked_index_schema(key, false), latest(), true)
+                .unwrap_or_else(|e| {
+                    panic!("`{key}: false` is an opt-out and must pass full validation: {e:?}")
+                });
+
+            let index = v2
+                .indices
+                .get("byRestaurant")
+                .expect("index parsed under its name");
+            assert!(
+                !index.ranked_countable && !index.ranked_summable && !index.ranked_averageable,
+                "`{key}: false` must leave every ranking axis off"
+            );
+            assert!(
+                !index.range_countable && !index.range_summable,
+                "`{key}: false` must not have conjured a range axis either"
+            );
+        }
+    }
+
+    /// The other half of the same rule: `true` without the matching range
+    /// axis is still refused under full validation, on every one of the three
+    /// axes. Making the prerequisite value-sensitive must not have made it
+    /// toothless.
+    #[test]
+    fn ranked_flags_set_true_still_require_their_range_axis() {
+        for key in ["rankedCountable", "rankedSummable", "rankedAverageable"] {
+            let result = parse_with(bare_ranked_index_schema(key, true), latest(), true);
+            assert!(
+                result.is_err(),
+                "`{key}: true` with no range axis must be rejected under full validation"
+            );
+        }
+    }
+
+    /// Structural counterpart of the check above, on the path where no
+    /// meta-schema runs: `rankedCountable` with neither `countable` nor
+    /// `rangeCountable` in effect is rejected by the index parser itself.
+    #[test]
+    fn ranked_countable_without_range_countable_rejected_structurally() {
+        let schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "restaurantId": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "position": 0,
+                },
+            },
+            "required": ["restaurantId"],
+            "additionalProperties": false,
+            "indices": [{
+                "name": "byRestaurant",
+                "properties": [{ "restaurantId": "asc" }],
+                "rankedCountable": true,
+            }],
+        });
+        let result = parse_with(schema, latest(), false);
+        assert!(
+            result.is_err(),
+            "rankedCountable with no range-count layout must be rejected structurally"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rankedCountable") && msg.contains("rangeCountable"),
+            "error must name both flags; got {msg}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Ranked index key-length bounds
+    // -----------------------------------------------------------------------
+    //
+    // A ranked index makes the property-name tree a grovedb *indexed* tree
+    // whose children — the per-group value trees, keyed by the encoded
+    // property value — are mirrored into an ordered secondary keyed by
+    // `sort_key ‖ item_key`. Merk keys must stay below 256 bytes, so grovedb
+    // caps the item key at `255 - sort_key_width`: 247 for the 8-byte Count
+    // and Sum sort keys, 239 for the 16-byte Avg one. The generic index-key
+    // limits (255 bytes / 63 characters) were derived against the bare 256
+    // ceiling and are too loose by exactly the sort-key width, so the parser
+    // has to tighten them or a contract would register and then abort the
+    // batch of every document insert carrying an oversized key.
+    //
+    // The character bounds follow from the same worst case
+    // `DocumentPropertyType::max_byte_size` uses — 4 UTF-8 bytes per
+    // character, the very factor the generic 63 was derived from
+    // (`floor(255 / 4)`):
+    //
+    //   Count/Sum: floor(247 / 4) = 61 characters (61 * 4 = 244 ✓, 62 * 4 = 248 ✗)
+    //   Avg:       floor(239 / 4) = 59 characters (59 * 4 = 236 ✓, 60 * 4 = 240 ✗)
+
+    /// A doctype whose indexed `restaurantId` property is given verbatim and
+    /// whose single index carries `index_extras` on top of the mandatory
+    /// name/properties pair. `grade` is always present so the summable and
+    /// averageable layouts have an integer to aggregate.
+    fn ranked_bound_schema(indexed_property: Value, index_extras: Vec<(&str, Value)>) -> Value {
+        let mut index_entry: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byRestaurant".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+        ];
+        index_entry.extend(
+            index_extras
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value)),
+        );
+
+        Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Map(vec![
+                    (Value::Text("restaurantId".to_string()), indexed_property),
+                    (
+                        Value::Text("grade".to_string()),
+                        platform_value!({
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 100,
+                            "position": 1,
+                        }),
+                    ),
+                ]),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("indices".to_string()),
+                Value::Array(vec![Value::Map(index_entry)]),
+            ),
+        ])
+    }
+
+    fn string_property(max_length: u32) -> Value {
+        platform_value!({
+            "type": "string",
+            "maxLength": max_length,
+            "position": 0,
+        })
+    }
+
+    fn byte_array_property(max_items: u32) -> Value {
+        platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "maxItems": max_items,
+            "position": 0,
+        })
+    }
+
+    /// Count axis only — an 8-byte sort key, so the 247-byte ceiling.
+    fn count_ranked_extras() -> Vec<(&'static str, Value)> {
+        vec![
+            ("countable", Value::Text("countable".to_string())),
+            ("rangeCountable", Value::Bool(true)),
+            ("rankedCountable", Value::Bool(true)),
+        ]
+    }
+
+    /// Sum axis only — also an 8-byte sort key, same 247-byte ceiling.
+    fn sum_ranked_extras() -> Vec<(&'static str, Value)> {
+        vec![
+            ("summable", Value::Text("grade".to_string())),
+            ("rangeSummable", Value::Bool(true)),
+            ("rankedSummable", Value::Bool(true)),
+        ]
+    }
+
+    /// Avg axis — a 16-byte sort key, so the tighter 239-byte ceiling.
+    fn avg_ranked_extras() -> Vec<(&'static str, Value)> {
+        vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+        ]
+    }
+
+    fn parse_bound(schema: Value) -> Result<DocumentTypeV2, ProtocolError> {
+        parse_with(schema, latest(), true)
+    }
+
+    /// Count-ranked and sum-ranked indexes share the 8-byte sort key, so both
+    /// stop the indexed string at 61 characters.
+    #[test]
+    fn ranked_count_and_sum_axes_bound_an_indexed_string_at_61_characters() {
+        for (axis, extras) in [
+            ("rankedCountable", count_ranked_extras()),
+            ("rankedSummable", sum_ranked_extras()),
+        ] {
+            parse_bound(ranked_bound_schema(string_property(61), extras.clone()))
+                .unwrap_or_else(|e| panic!("{axis}: 61 * 4 = 244 <= 247 must be accepted: {e:?}"));
+
+            let error = parse_bound(ranked_bound_schema(string_property(62), extras))
+                .expect_err("62 * 4 = 248 > 247 must be rejected");
+            let msg = format!("{error:?}");
+            assert!(
+                msg.contains("maxLength") && msg.contains("61") && msg.contains("247"),
+                "{axis}: the error must name maxLength, the 61-character bound and the \
+                 247-byte key ceiling it derives from; got {msg}"
+            );
+        }
+    }
+
+    /// A `maxLength` whose worst case overflows `u16` bytes is refused with
+    /// the same consensus error as any other key over the ceiling, not as an
+    /// internal overflow.
+    #[test]
+    fn ranked_axes_refuse_a_string_too_long_to_size_as_a_consensus_error() {
+        for extras in [
+            count_ranked_extras(),
+            sum_ranked_extras(),
+            avg_ranked_extras(),
+        ] {
+            let error = parse_bound(ranked_bound_schema(string_property(16384), extras))
+                .expect_err("16384 * 4 bytes overflows u16 and must be rejected");
+            let msg = format!("{error:?}");
+            assert!(
+                msg.starts_with("ConsensusError(BasicError(InvalidIndexedPropertyConstraintError"),
+                "the ranked key ceiling's consensus error must be raised; got {msg}"
+            );
+        }
+    }
+
+    /// The Avg axis's 16-byte sort key costs 8 more bytes, and the string
+    /// bound drops to 59 characters with it.
+    #[test]
+    fn ranked_avg_axis_bounds_an_indexed_string_at_59_characters() {
+        parse_bound(ranked_bound_schema(
+            string_property(59),
+            avg_ranked_extras(),
+        ))
+        .expect("59 * 4 = 236 <= 239 must be accepted");
+
+        let error = parse_bound(ranked_bound_schema(
+            string_property(60),
+            avg_ranked_extras(),
+        ))
+        .expect_err("60 * 4 = 240 > 239 must be rejected");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("maxLength") && msg.contains("59") && msg.contains("239"),
+            "the error must name maxLength, the 59-character bound and the 239-byte key \
+             ceiling it derives from; got {msg}"
+        );
+    }
+
+    /// A compound `[region, restaurantId]` avg-ranked index over the same
+    /// doctype shape as [`ranked_bound_schema`], with independent control
+    /// of the leading and terminal string properties' `maxLength`.
+    fn compound_ranked_bound_schema(leading: Value, terminal: Value) -> Value {
+        let mut index_entry: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byRegionRestaurant".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![
+                    Value::Map(vec![(
+                        Value::Text("region".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                    Value::Map(vec![(
+                        Value::Text("restaurantId".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                ]),
+            ),
+        ];
+        index_entry.extend(
+            avg_ranked_extras()
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value)),
+        );
+
+        Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Map(vec![
+                    (Value::Text("region".to_string()), leading),
+                    (Value::Text("restaurantId".to_string()), terminal),
+                    (
+                        Value::Text("grade".to_string()),
+                        platform_value!({
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 100,
+                            "position": 2,
+                        }),
+                    ),
+                ]),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("region".to_string()),
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("indices".to_string()),
+                Value::Array(vec![Value::Map(index_entry)]),
+            ),
+        ])
+    }
+
+    fn string_property_at(max_length: u32, position: u32) -> Value {
+        platform_value!({
+            "type": "string",
+            "maxLength": max_length,
+            "position": position,
+        })
+    }
+
+    /// The ranked ceiling binds only the **terminal** property — the one
+    /// whose encoded value becomes the indexed tree's item key. A leading
+    /// prefix property is an ordinary grovedb path segment: the generic
+    /// 63-character indexed-string limit is what binds it, not the
+    /// 59-character avg-ranked ceiling.
+    #[test]
+    fn ranked_ceiling_binds_the_terminal_property_not_the_leading_prefix() {
+        // Leading at 63 (over the 59 ranked bound, at the generic bound)
+        // with a terminal that fits the ranked bound: accepted.
+        parse_bound(compound_ranked_bound_schema(
+            string_property_at(63, 0),
+            string_property_at(59, 1),
+        ))
+        .expect("a 63-character leading prefix is a path segment, not an item key");
+
+        // The same 60-character string the single-property tests reject is
+        // still rejected when it is the terminal property of a compound
+        // ranked index.
+        let error = parse_bound(compound_ranked_bound_schema(
+            string_property_at(30, 0),
+            string_property_at(60, 1),
+        ))
+        .expect_err("the terminal property keeps the 239-byte avg ceiling");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("maxLength") && msg.contains("59") && msg.contains("239"),
+            "the error must still name the ranked bound for the terminal; got {msg}"
+        );
+
+        // And the generic indexed-string limit still binds the leading
+        // property: 64 characters is over the 63-character cap whether or
+        // not the index is ranked.
+        parse_bound(compound_ranked_bound_schema(
+            string_property_at(64, 0),
+            string_property_at(59, 1),
+        ))
+        .expect_err("the generic 63-character limit still binds the leading prefix");
+    }
+
+    /// Avg is strictly tighter than Count/Sum, and an index carrying Avg
+    /// *alongside* the other axes has to satisfy the tightest of them: the
+    /// 60-character string that a count-ranked index accepts is refused
+    /// the moment the Avg axis joins.
+    #[test]
+    fn the_avg_axis_bound_wins_when_several_ranking_axes_are_declared() {
+        // Count-only accepts it...
+        parse_bound(ranked_bound_schema(
+            string_property(60),
+            count_ranked_extras(),
+        ))
+        .expect("60 characters fits the count axis's 247-byte ceiling");
+
+        // ...and adding the Avg axis to the same index refuses it.
+        // The meta-schema's `dependentRequired` chain is literal, so
+        // `rangeCountable` has to bring `countable` along explicitly even
+        // though `averageable` already implies it in effect.
+        let mut both = avg_ranked_extras();
+        both.push(("countable", Value::Text("countable".to_string())));
+        both.push(("rangeCountable", Value::Bool(true)));
+        both.push(("rankedCountable", Value::Bool(true)));
+        let error = parse_bound(ranked_bound_schema(string_property(60), both))
+            .expect_err("the Avg axis's 239-byte ceiling must win over the count axis's 247");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("239"),
+            "the strictest axis's ceiling must be the one reported; got {msg}"
+        );
+    }
+
+    /// Byte arrays are stored verbatim, so their bound is the ceiling itself:
+    /// 247 bytes on the count/sum axes, 239 once Avg is in play.
+    #[test]
+    fn ranked_axes_bound_an_indexed_byte_array_at_the_raw_ceiling() {
+        for (axis, extras, limit) in [
+            ("rankedCountable", count_ranked_extras(), 247u32),
+            ("rankedSummable", sum_ranked_extras(), 247),
+            ("rankedAverageable", avg_ranked_extras(), 239),
+        ] {
+            parse_bound(ranked_bound_schema(
+                byte_array_property(limit),
+                extras.clone(),
+            ))
+            .unwrap_or_else(|e| panic!("{axis}: exactly {limit} bytes must be accepted: {e:?}"));
+
+            let error =
+                match parse_bound(ranked_bound_schema(byte_array_property(limit + 1), extras)) {
+                    Ok(_) => panic!("{axis}: {} bytes must be rejected", limit + 1),
+                    Err(error) => error,
+                };
+            let msg = format!("{error:?}");
+            assert!(
+                msg.contains("maxItems") && msg.contains(&limit.to_string()),
+                "{axis}: the error must name maxItems and the {limit}-byte ceiling; got {msg}"
+            );
+        }
+    }
+
+    /// A property whose encoding is fixed and small — an integer group key is
+    /// 8 bytes — can never reach any ranked ceiling, on any axis.
+    #[test]
+    fn a_fixed_width_indexed_property_always_fits_every_ranked_axis() {
+        let integer_property = platform_value!({
+            "type": "integer",
+            "minimum": 0_u32,
+            "maximum": 1_000_000_u32,
+            "position": 0,
+        });
+        for (axis, extras) in [
+            ("rankedCountable", count_ranked_extras()),
+            ("rankedSummable", sum_ranked_extras()),
+            ("rankedAverageable", avg_ranked_extras()),
+        ] {
+            parse_bound(ranked_bound_schema(integer_property.clone(), extras)).unwrap_or_else(
+                |e| panic!("{axis}: a fixed-width integer group key must always fit: {e:?}"),
+            );
+        }
+    }
+
+    /// The tightening is scoped to ranked indexes. Without a ranking axis the
+    /// generic limits are untouched — 63 characters and 255 bytes, both of
+    /// which a ranked index would refuse.
+    #[test]
+    fn a_non_ranked_index_keeps_the_generic_key_limits() {
+        parse_bound(ranked_bound_schema(string_property(63), vec![]))
+            .expect("63 characters is the generic string limit and must still pass");
+        let error = parse_bound(ranked_bound_schema(string_property(64), vec![]))
+            .expect_err("64 characters exceeds the generic string limit");
+        assert!(
+            format!("{error:?}").contains("63"),
+            "a non-ranked index must still report the generic 63-character limit"
+        );
+
+        parse_bound(ranked_bound_schema(byte_array_property(255), vec![]))
+            .expect("255 bytes is the generic byte-array limit and must still pass");
+        let error = parse_bound(ranked_bound_schema(byte_array_property(256), vec![]))
+            .expect_err("256 bytes exceeds the generic byte-array limit");
+        assert!(
+            format!("{error:?}").contains("255"),
+            "a non-ranked index must still report the generic 255-byte limit"
+        );
+
+        // The same aggregating (range) layout the ranking axes extend, minus
+        // the ranking: still the generic limits, since no secondary is keyed
+        // by these values.
+        let mut range_only = avg_ranked_extras();
+        range_only.retain(|(key, _)| *key != "rankedAverageable");
+        parse_bound(ranked_bound_schema(string_property(63), range_only))
+            .expect("a range-averageable index without a ranking axis keeps the generic limit");
+    }
+
+    // -------------------------------------------------------------------
+    // Compound ranked indexes (per-prefix semantics) and the
+    // prefix-overlap conflict
+    // -------------------------------------------------------------------
+
+    /// One extra single-property index for [`compound_ranked_schema`]:
+    /// `(name, property, keys)`.
+    type ExtraIndexSpec<'a> = (&'a str, &'a str, Vec<(&'a str, Value)>);
+
+    /// A doctype with a compound ranked index `[region, restaurantId]`
+    /// (avg axis on `grade`), plus optional extra single-property
+    /// indexes to provoke — or fail to provoke — the prefix-overlap
+    /// conflict.
+    fn compound_ranked_schema(extra_indexes: Vec<ExtraIndexSpec>) -> Value {
+        let compound_entry: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byRegionRestaurant".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![
+                    Value::Map(vec![(
+                        Value::Text("region".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                    Value::Map(vec![(
+                        Value::Text("restaurantId".to_string()),
+                        Value::Text("asc".to_string()),
+                    )]),
+                ]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("grade".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (
+                Value::Text("rankedAverageable".to_string()),
+                Value::Bool(true),
+            ),
+        ];
+        let mut indices = vec![Value::Map(compound_entry)];
+        for (name, property, keys) in extra_indexes {
+            let mut entry: Vec<(Value, Value)> = vec![
+                (
+                    Value::Text("name".to_string()),
+                    Value::Text(name.to_string()),
+                ),
+                (
+                    Value::Text("properties".to_string()),
+                    Value::Array(vec![Value::Map(vec![(
+                        Value::Text(property.to_string()),
+                        Value::Text("asc".to_string()),
+                    )])]),
+                ),
+            ];
+            entry.extend(
+                keys.into_iter()
+                    .map(|(key, value)| (Value::Text(key.to_string()), value)),
+            );
+            indices.push(Value::Map(entry));
+        }
+
+        Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                platform_value!({
+                    "region": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 0,
+                    },
+                    "restaurantId": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 1,
+                    },
+                    "grade": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "position": 2,
+                    },
+                }),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("region".to_string()),
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (Value::Text("indices".to_string()), Value::Array(indices)),
+        ])
+    }
+
+    /// A compound ranked index is accepted at PV14 with per-prefix
+    /// semantics — on both the validating and the structural parse
+    /// paths — and the ranked flags land on the index alongside the
+    /// range axes they require.
+    #[test]
+    fn compound_ranked_index_accepted_at_latest() {
+        for full_validation in [true, false] {
+            let v2 = parse_with(compound_ranked_schema(vec![]), latest(), full_validation)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "a compound ranked index must parse \
+                         (full_validation: {full_validation}): {e}"
+                    )
+                });
+            let index = v2
+                .indices
+                .get("byRegionRestaurant")
+                .expect("index parsed under its name");
+            assert!(index.ranked_averageable);
+            assert!(index.range_countable && index.range_summable);
+            assert_eq!(index.properties.len(), 2);
+            assert_eq!(index.properties[1].name, "restaurantId");
+        }
+    }
+
+    /// The one structurally impossible shape: a countable/summable
+    /// index terminating at the compound ranked index's full leading
+    /// prefix. The ranked terminal tree would sit inside aggregating
+    /// value trees and need the NonCounted/NotSummed shell the storage
+    /// layer rejects for indexed trees — so the contract is refused at
+    /// parse time, on the validating AND the structural path (a
+    /// contract smuggled through check_tx would brick document inserts).
+    #[test]
+    fn compound_ranked_with_aggregating_prefix_index_rejected() {
+        let schema = compound_ranked_schema(vec![(
+            "byRegion",
+            "region",
+            vec![("countable", Value::Text("countable".to_string()))],
+        )]);
+        for full_validation in [true, false] {
+            let error = parse_with(schema.clone(), latest(), full_validation).expect_err(
+                "an aggregating index on the ranked compound's full prefix must be rejected",
+            );
+            let message = format!("{error:?}");
+            assert!(
+                message.contains("byRegionRestaurant")
+                    && message.contains("byRegion")
+                    && message.contains("NonCounted"),
+                "the rejection must name both indexes and the structural conflict \
+                 (full_validation: {full_validation}); got {message}"
+            );
+        }
+    }
+
+    /// Only the **exact** leading prefix conflicts: an aggregating
+    /// index over a different property — same arity as the prefix, but
+    /// not the prefix — coexists with the compound ranked index, as
+    /// does a plain (non-aggregating) index on the prefix property.
+    #[test]
+    fn compound_ranked_with_non_conflicting_indexes_accepted() {
+        // Countable over the *trailing* property's own single-property
+        // index: terminates at [restaurantId], not at the ranked
+        // index's [region] prefix.
+        let aggregating_elsewhere = compound_ranked_schema(vec![(
+            "byRestaurant",
+            "restaurantId",
+            vec![("countable", Value::Text("countable".to_string()))],
+        )]);
+        parse_with(aggregating_elsewhere, latest(), true)
+            .expect("an aggregating index off the prefix must not conflict");
+
+        // A plain index on the prefix property: terminates at [region]
+        // but carries no aggregates, so its value trees stay normal and
+        // no wrapper shell is ever needed.
+        let plain_prefix = compound_ranked_schema(vec![("byRegion", "region", vec![])]);
+        parse_with(plain_prefix, latest(), true)
+            .expect("a non-aggregating index on the prefix must not conflict");
+    }
+
+    // -------------------------------------------------------------------
+    // Prefix-level rankedCountable (`{ "at": … }`) and its structural
+    // rules
+    // -------------------------------------------------------------------
+
+    /// One extra (possibly compound) index for [`prefix_at_schema`]:
+    /// `(name, properties, keys)`.
+    type CompoundExtraIndexSpec<'a> = (&'a str, &'a [&'a str], Vec<(&'a str, Value)>);
+
+    /// A doctype over `region` / `restaurantId` (strings) and `grade`
+    /// (integer) whose main index spans `main_properties` and carries the
+    /// given `rankedCountable` value on a countable + rangeCountable
+    /// layout (unless `include_range_count` is off, for the meta-schema
+    /// prerequisite test), plus optional extra indexes.
+    fn prefix_at_schema(
+        main_properties: &[&str],
+        ranked_countable: Value,
+        include_range_count: bool,
+        region_max_length: u32,
+        extra_indexes: Vec<CompoundExtraIndexSpec>,
+    ) -> Value {
+        let index_properties = |names: &[&str]| {
+            Value::Array(
+                names
+                    .iter()
+                    .map(|name| {
+                        Value::Map(vec![(
+                            Value::Text(name.to_string()),
+                            Value::Text("asc".to_string()),
+                        )])
+                    })
+                    .collect(),
+            )
+        };
+
+        let mut main_entry: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("byMain".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                index_properties(main_properties),
+            ),
+        ];
+        if include_range_count {
+            main_entry.push((
+                Value::Text("countable".to_string()),
+                Value::Text("countable".to_string()),
+            ));
+            main_entry.push((Value::Text("rangeCountable".to_string()), Value::Bool(true)));
+        }
+        main_entry.push((Value::Text("rankedCountable".to_string()), ranked_countable));
+
+        let mut indices = vec![Value::Map(main_entry)];
+        for (name, properties, keys) in extra_indexes {
+            let mut entry: Vec<(Value, Value)> = vec![
+                (
+                    Value::Text("name".to_string()),
+                    Value::Text(name.to_string()),
+                ),
+                (
+                    Value::Text("properties".to_string()),
+                    index_properties(properties),
+                ),
+            ];
+            entry.extend(
+                keys.into_iter()
+                    .map(|(key, value)| (Value::Text(key.to_string()), value)),
+            );
+            indices.push(Value::Map(entry));
+        }
+
+        Value::Map(vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                platform_value!({
+                    "region": {
+                        "type": "string",
+                        "maxLength": region_max_length,
+                        "position": 0,
+                    },
+                    "restaurantId": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 1,
+                    },
+                    "grade": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "position": 2,
+                    },
+                }),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("region".to_string()),
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (Value::Text("indices".to_string()), Value::Array(indices)),
+        ])
+    }
+
+    fn at_value(property: &str) -> Value {
+        Value::Map(vec![(
+            Value::Text("at".to_string()),
+            Value::Text(property.to_string()),
+        )])
+    }
+
+    /// The `at` form parses at PV14 on both the validating and the
+    /// structural path, landing in `ranked_countable_at` with the boolean
+    /// terminal axis off.
+    #[test]
+    fn prefix_ranked_at_accepted_at_latest() {
+        for full_validation in [true, false] {
+            let schema = prefix_at_schema(
+                &["region", "restaurantId"],
+                at_value("region"),
+                true,
+                32,
+                vec![],
+            );
+            let v2 = parse_with(schema, latest(), full_validation).unwrap_or_else(|e| {
+                panic!("the at form must parse (full_validation: {full_validation}): {e}")
+            });
+            let index = v2.indices.get("byMain").expect("index parsed");
+            assert!(!index.ranked_countable);
+            assert_eq!(index.ranked_countable_at, vec!["region".to_string()]);
+        }
+    }
+
+    /// The array form naming both levels passes the meta-schema and
+    /// parses into both flags — the both-rankings-on-one-index shape.
+    #[test]
+    fn prefix_ranked_at_array_form_accepted_at_latest() {
+        for full_validation in [true, false] {
+            let schema = prefix_at_schema(
+                &["region", "restaurantId"],
+                Value::Map(vec![(
+                    Value::Text("at".to_string()),
+                    Value::Array(vec![
+                        Value::Text("region".to_string()),
+                        Value::Text("restaurantId".to_string()),
+                    ]),
+                )]),
+                true,
+                32,
+                vec![],
+            );
+            let v2 = parse_with(schema, latest(), full_validation).unwrap_or_else(|e| {
+                panic!("the array form must parse (full_validation: {full_validation}): {e}")
+            });
+            let index = v2.indices.get("byMain").expect("index parsed");
+            assert!(index.ranked_countable, "the terminal ranking must be on");
+            assert_eq!(index.ranked_countable_at, vec!["region".to_string()]);
+        }
+    }
+
+    /// PV13 rejects the object form on both paths: meta-schema v2 through
+    /// `additionalProperties: false`, the structural grammar through the
+    /// unknown-key arm.
+    #[test]
+    fn prefix_ranked_at_rejected_at_pv13() {
+        for full_validation in [true, false] {
+            let schema = prefix_at_schema(
+                &["region", "restaurantId"],
+                at_value("region"),
+                true,
+                32,
+                vec![],
+            );
+            assert!(
+                parse_dispatched(schema, pv13(), full_validation).is_err(),
+                "PV13 must reject the object form (full_validation: {full_validation})"
+            );
+        }
+    }
+
+    /// The meta-schema's reshaped conditional demands `rangeCountable` for
+    /// the object form exactly as for `rankedCountable: true`.
+    #[test]
+    fn prefix_ranked_at_without_range_countable_rejected_by_meta_schema() {
+        let schema = prefix_at_schema(
+            &["region", "restaurantId"],
+            at_value("region"),
+            false,
+            32,
+            vec![],
+        );
+        assert!(
+            parse_with(schema, latest(), true).is_err(),
+            "meta-schema v3 must demand rangeCountable alongside the at form"
+        );
+    }
+
+    /// Malformed object forms fail meta validation: an unknown field and a
+    /// missing `at`.
+    #[test]
+    fn prefix_ranked_at_malformed_object_rejected_by_meta_schema() {
+        for (value, label) in [
+            (
+                Value::Map(vec![
+                    (
+                        Value::Text("at".to_string()),
+                        Value::Text("region".to_string()),
+                    ),
+                    (
+                        Value::Text("axis".to_string()),
+                        Value::Text("count".to_string()),
+                    ),
+                ]),
+                "unknown field",
+            ),
+            (Value::Map(vec![]), "missing at"),
+        ] {
+            let schema = prefix_at_schema(&["region", "restaurantId"], value, true, 32, vec![]);
+            assert!(
+                parse_with(schema, latest(), true).is_err(),
+                "the meta-schema must reject the {label} object form"
+            );
+        }
+    }
+
+    /// Exclusivity of the `at` level and below, with the one carve-out:
+    /// an index terminating exactly at the `at` level, or reaching it
+    /// with countable/summable/ranked flags, is rejected on both parse
+    /// paths; a PLAIN index continuing below the `at` level is admitted
+    /// — its branch is laid out count-exempt (`Element::NonCounted`)
+    /// beside the chain by the storage layer.
+    #[test]
+    fn prefix_ranked_at_level_must_be_exclusive() {
+        let conflicting = [
+            // An exact-at terminator, even plain.
+            ("byRegion", &["region"][..], vec![]),
+            // A continuing sibling carrying aggregate flags.
+            (
+                "byRegionGrade",
+                &["region", "grade"][..],
+                vec![("countable", Value::Text("countable".to_string()))],
+            ),
+        ];
+        for (name, properties, flags) in conflicting {
+            for full_validation in [true, false] {
+                let schema = prefix_at_schema(
+                    &["region", "restaurantId"],
+                    at_value("region"),
+                    true,
+                    32,
+                    vec![(name, properties, flags.clone())],
+                );
+                let error = parse_with(schema, latest(), full_validation)
+                    .expect_err("an index conflicting with the at level must be rejected");
+                let message = format!("{error:?}");
+                assert!(
+                    message.contains("byMain") && message.contains(name),
+                    "the rejection must name both indexes \
+                     (full_validation: {full_validation}); got {message}"
+                );
+            }
+        }
+
+        // A plain sibling continuing below the at level is admitted on
+        // both parse paths, and its branch level is stamped count-exempt.
+        for full_validation in [true, false] {
+            let schema = prefix_at_schema(
+                &["region", "restaurantId"],
+                at_value("region"),
+                true,
+                32,
+                vec![("byRegionGrade", &["region", "grade"], vec![])],
+            );
+            let v2 = parse_with(schema, latest(), full_validation).unwrap_or_else(|e| {
+                panic!(
+                    "a plain continuing sibling must be admitted \
+                     (full_validation: {full_validation}): {e}"
+                )
+            });
+            let branch = v2
+                .index_structure
+                .sub_levels()
+                .get("region")
+                .and_then(|level| level.sub_levels().get("grade"))
+                .expect("the sibling branch level exists");
+            assert!(
+                branch.count_exempt_branch(),
+                "the sibling branch must be stamped count-exempt"
+            );
+        }
+
+        // Diverging before the at level does not conflict.
+        let schema = prefix_at_schema(
+            &["region", "restaurantId"],
+            at_value("region"),
+            true,
+            32,
+            vec![("byGrade", &["grade"], vec![])],
+        );
+        parse_with(schema, latest(), true)
+            .expect("an index over a different leading property must not conflict");
+    }
+
+    /// The wrapped-indexed impossibility one level above the `at` level: a
+    /// countable index terminating at the prefix above `at` makes those
+    /// value trees aggregating, which cannot shell an indexed tree. A
+    /// plain index on the same prefix stays fine. The main index is a
+    /// three-property compound ranked at its **middle** property (`at`
+    /// naming the last property would canonicalize to the terminal form
+    /// and exercise the pre-existing rule instead).
+    #[test]
+    fn prefix_ranked_at_with_aggregating_prefix_index_rejected() {
+        for full_validation in [true, false] {
+            let schema = prefix_at_schema(
+                &["region", "restaurantId", "grade"],
+                at_value("restaurantId"),
+                true,
+                32,
+                vec![(
+                    "byRegion",
+                    &["region"],
+                    vec![("countable", Value::Text("countable".to_string()))],
+                )],
+            );
+            let error = parse_with(schema, latest(), full_validation)
+                .expect_err("an aggregating index above the at level must be rejected");
+            let message = format!("{error:?}");
+            assert!(
+                message.contains("byMain")
+                    && message.contains("byRegion")
+                    && message.contains("NonCounted"),
+                "the rejection must name both indexes and the structural conflict \
+                 (full_validation: {full_validation}); got {message}"
+            );
+        }
+
+        let schema = prefix_at_schema(
+            &["region", "restaurantId", "grade"],
+            at_value("restaurantId"),
+            true,
+            32,
+            vec![("byRegion", &["region"], vec![])],
+        );
+        parse_with(schema, latest(), true)
+            .expect("a plain index on the prefix above the at level must not conflict");
+    }
+
+    /// The ranked key ceiling binds the `at` property — whose encoded
+    /// value keys the ordered secondary — not the terminal property.
+    #[test]
+    fn prefix_ranked_at_ceiling_binds_the_at_property() {
+        // 61 * 4 = 244 <= 247: accepted.
+        let schema = prefix_at_schema(
+            &["region", "restaurantId"],
+            at_value("region"),
+            true,
+            61,
+            vec![],
+        );
+        parse_with(schema, latest(), true).expect("61 characters fits the 247-byte ceiling");
+
+        // 62 * 4 = 248 > 247: rejected, naming the at property's bound.
+        let schema = prefix_at_schema(
+            &["region", "restaurantId"],
+            at_value("region"),
+            true,
+            62,
+            vec![],
+        );
+        let error = parse_with(schema, latest(), true)
+            .expect_err("62 characters exceeds the 247-byte ceiling");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("maxLength") && msg.contains("61") && msg.contains("247"),
+            "the error must name maxLength, the 61-character bound and the 247-byte \
+             ceiling; got {msg}"
+        );
+    }
+
+    // ---- The `averageable` / `rangeAverageable` sugar and the meta-schema ----
+    //
+    // Meta-schema v3's prerequisite rules are sugar-aware, matching
+    // `Index::try_from_value_map`, which expands the sugar before it checks
+    // the same prerequisites on the resolved flags. `parse_with(.., true)`
+    // runs the meta-schema first in a `validation` build (which is how
+    // `cargo test -p dpp` builds, via the `all_features_without_client`
+    // dev-dependency) and the structural parser after it, so an acceptance
+    // below proves that *both* layers admit the spelling, and a rejection's
+    // message is checked for a word both layers use.
+
+    fn index_entry(pairs: Vec<(&str, Value)>) -> Vec<(Value, Value)> {
+        let mut entry = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("storeRating".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+        ];
+        entry.extend(
+            pairs
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value)),
+        );
+        entry
+    }
+
+    /// The shape rejected live on a `4.2.0-beta.1` devnet: the index declares
+    /// its aggregate layout with the sugar only, then asks for a Count ranking
+    /// on top of the Avg one.
+    fn sugar_multi_axis_index_entry() -> Vec<(Value, Value)> {
+        index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+            ("rankedCountable", Value::Bool(true)),
+        ])
+    }
+
+    fn schema_with_index_entry(entry: Vec<(Value, Value)>) -> Value {
+        schema_with_doctype_flags_and_index_entry(vec![], entry)
+    }
+
+    fn schema_with_doctype_flags_and_index_entry(
+        doctype_flags: Vec<(&str, Value)>,
+        entry: Vec<(Value, Value)>,
+    ) -> Value {
+        let mut schema = vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                platform_value!({
+                    "restaurantId": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "position": 0,
+                    },
+                    "grade": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "position": 1,
+                    },
+                }),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![
+                    Value::Text("restaurantId".to_string()),
+                    Value::Text("grade".to_string()),
+                ]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text("indices".to_string()),
+                Value::Array(vec![Value::Map(entry)]),
+            ),
+        ];
+        schema.extend(
+            doctype_flags
+                .into_iter()
+                .map(|(key, value)| (Value::Text(key.to_string()), value)),
+        );
+        Value::Map(schema)
+    }
+
+    /// The sugar form of a two-axis index is the whole declaration: the
+    /// `rankedCountable` prerequisite is met by `rangeAverageable`, so no
+    /// literal `rangeCountable` (and therefore no literal `countable`) is
+    /// asked for by either layer.
+    #[test]
+    fn averageable_sugar_satisfies_ranked_countable_under_full_validation() {
+        let schema = schema_with_index_entry(sugar_multi_axis_index_entry());
+        let v2 = parse_with(schema, latest(), true)
+            .expect("the sugar form satisfies every prerequisite in both layers");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_countable && index.ranked_averageable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// The same for the Sum axis: `rankedSummable` is met by `rangeAverageable`.
+    #[test]
+    fn averageable_sugar_satisfies_ranked_summable_under_full_validation() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rangeAverageable", Value::Bool(true)),
+            ("rankedSummable", Value::Bool(true)),
+        ]));
+        let v2 = parse_with(schema, latest(), true)
+            .expect("rangeAverageable stands in for rangeSummable");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_summable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// And the other way round: the explicit longhand satisfies
+    /// `rankedAverageable` without a literal `rangeAverageable`.
+    #[test]
+    fn explicit_longhand_satisfies_ranked_averageable_under_full_validation() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("countable", Value::Text("countable".to_string())),
+            ("summable", Value::Text("grade".to_string())),
+            ("rangeCountable", Value::Bool(true)),
+            ("rangeSummable", Value::Bool(true)),
+            ("rankedAverageable", Value::Bool(true)),
+        ]));
+        let v2 = parse_with(schema, latest(), true)
+            .expect("rangeCountable + rangeSummable stand in for rangeAverageable");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_averageable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// Sugar-aware is not rule-free: a ranking with no range axis in effect,
+    /// spelled either way, is still refused, and the error names the flag
+    /// that is missing (the meta-schema says `"rangeCountable" is a required
+    /// property`, the parser says `rankedCountable requires rangeCountable`).
+    #[test]
+    fn ranked_countable_with_no_range_axis_is_still_rejected() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rankedCountable", Value::Bool(true)),
+        ]));
+        let error = parse_with(schema, latest(), true)
+            .expect_err("a Count ranking needs a range axis, however it is spelled");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable"),
+            "the error must name the missing range flag; got {msg}"
+        );
+    }
+
+    /// The ranked rules stay value-sensitive: a written-out
+    /// `"rankedCountable": false` is an opt-out and demands nothing.
+    #[test]
+    fn ranked_opt_out_demands_nothing() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("averageable", Value::Text("grade".to_string())),
+            ("rankedCountable", Value::Bool(false)),
+        ]));
+        let v2 = parse_with(schema, latest(), true)
+            .expect("an explicit rankedCountable: false asks for no ranking axis");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(!index.ranked_countable && !index.range_countable);
+    }
+
+    /// `rangeCountable` implies `countable`, as it does at the doctype level:
+    /// a `rangeCountable: true` with no `countable` beside it is a complete
+    /// declaration in both layers (the meta-schema has no row for it, the
+    /// parser promotes the omitted `countable`).
+    #[test]
+    fn range_countable_alone_implies_countable_under_full_validation() {
+        let schema =
+            schema_with_index_entry(index_entry(vec![("rangeCountable", Value::Bool(true))]));
+        let v2 = parse_with(schema, latest(), true)
+            .expect("rangeCountable alone is a complete declaration");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.range_countable && index.countable.is_countable());
+    }
+
+    /// The other range rows keep their presence semantics: a `rangeSummable`
+    /// key with neither `summable` nor `averageable` beside it is refused,
+    /// and the error names `summable`.
+    #[test]
+    fn range_summable_without_summable_or_averageable_is_still_rejected() {
+        let schema =
+            schema_with_index_entry(index_entry(vec![("rangeSummable", Value::Bool(true))]));
+        let error =
+            parse_with(schema, latest(), true).expect_err("rangeSummable needs something to sum");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("summable"),
+            "the error must name the missing aggregate flag; got {msg}"
+        );
+    }
+
+    /// An explicit `"notCountable"` beside `rangeCountable: true` is the one
+    /// spelling the implication refuses, and the parser names it.
+    #[test]
+    fn range_countable_with_explicit_not_countable_is_rejected() {
+        let schema = schema_with_index_entry(index_entry(vec![
+            ("countable", Value::Text("notCountable".to_string())),
+            ("rangeCountable", Value::Bool(true)),
+        ]));
+        let error = parse_with(schema, latest(), true)
+            .expect_err("countable: notCountable contradicts rangeCountable: true");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable: true implies a countable index"),
+            "the parser's contradiction error must be the one raised; got {msg}"
+        );
+    }
+
+    /// Below protocol version 14 nothing moves: generation 2 keeps rejecting
+    /// `rangeCountable` without `countable`, in the structural parser (which
+    /// is all a `full_validation: false` parse runs) and in the frozen v2
+    /// meta-schema alike.
+    #[test]
+    fn range_countable_alone_is_still_rejected_at_protocol_version_13() {
+        let schema =
+            schema_with_index_entry(index_entry(vec![("rangeCountable", Value::Bool(true))]));
+        for full_validation in [false, true] {
+            let error = parse_dispatched(schema.clone(), pv13(), full_validation)
+                .expect_err("generation 2 demands an explicit countable");
+            let msg = format!("{error:?}");
+            assert!(
+                msg.contains("countable"),
+                "full_validation={full_validation}: the error must name countable; got {msg}"
+            );
+        }
+    }
+
+    /// With the sugar satisfying the presence rows, a contradictory
+    /// `"rangeCountable": false` under `rangeAverageable: true` reaches the
+    /// parser, whose message says what to remove. Before the meta-schema was
+    /// made sugar-aware the same index died one layer earlier with
+    /// `"countable" is a required property`, which pointed at the wrong key.
+    #[test]
+    fn explicit_range_countable_false_under_range_averageable_reaches_the_parser() {
+        let mut entry = sugar_multi_axis_index_entry();
+        entry.push((
+            Value::Text("rangeCountable".to_string()),
+            Value::Bool(false),
+        ));
+        let error = parse_with(schema_with_index_entry(entry), latest(), true)
+            .expect_err("rangeAverageable: true contradicts an explicit rangeCountable: false");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable: false"),
+            "the parser's contradiction error must name the flag to remove; got {msg}"
+        );
+    }
+
+    /// The doctype-level row has the same shape: `documentsAverageable` stands
+    /// in for `documentsSummable` under a doctype-level `rangeSummable`.
+    #[test]
+    fn documents_averageable_sugar_satisfies_doctype_range_summable() {
+        let schema = schema_with_doctype_flags_and_index_entry(
+            vec![
+                ("documentsAverageable", Value::Text("grade".to_string())),
+                ("rangeSummable", Value::Bool(true)),
+            ],
+            index_entry(vec![]),
+        );
+        parse_with(schema, latest(), true).expect(
+            "documentsAverageable implies documentsSummable, so rangeSummable is satisfied",
+        );
+
+        let schema = schema_with_doctype_flags_and_index_entry(
+            vec![("rangeSummable", Value::Bool(true))],
+            index_entry(vec![]),
+        );
+        let error = parse_with(schema, latest(), true)
+            .expect_err("a doctype-level rangeSummable with nothing to sum is refused");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("documentsSummable"),
+            "the error must name the missing doctype flag; got {msg}"
+        );
+    }
+
+    /// A contract already written to state is re-parsed with
+    /// `full_validation: false`; that path never ran either layer and must
+    /// keep reconstructing whatever consensus once admitted.
+    #[test]
+    fn sugar_form_parses_without_full_validation() {
+        let schema = schema_with_index_entry(sugar_multi_axis_index_entry());
+        let v2 = parse_with(schema, latest(), false)
+            .expect("the structural parser is sugar-aware and accepts the short form");
+        let index = v2
+            .indices
+            .get("storeRating")
+            .expect("index parsed under its name");
+        assert!(index.ranked_countable && index.ranked_averageable);
+        assert!(index.range_countable && index.range_summable);
+    }
+
+    /// The SDK-facing entry point reaches the same verdict as consensus.
+    ///
+    /// `DataContract::from_json(.., full_validation = true, ..)` is what
+    /// `DataContractWasm::fromJSON` calls, and drive-abci's data contract
+    /// create validation deserializes the contract with `full_validation =
+    /// true` as well; both land in `DocumentType::try_from_schema`, so
+    /// pinning this entry point pins the pair.
+    #[cfg(feature = "json-conversion")]
+    #[test]
+    fn from_json_full_validation_accepts_the_sugar_short_form() {
+        use crate::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+        use crate::prelude::DataContract;
+        use serde_json::json;
+
+        fn contract_json(index: serde_json::Value) -> serde_json::Value {
+            json!({
+                "$formatVersion": "1",
+                "id": "BmKTJeLL3GfH8FxEx7SUbTog4eAKj8vJRDi97gYkxB9p",
+                "ownerId": "HtQNfXBZJu3WnvjvCFJKgbvfgWYJxWxaFWy23TKoFjg9",
+                "version": 1,
+                "config": {
+                    "$formatVersion": "0",
+                    "canBeDeleted": false,
+                    "readonly": false,
+                    "keepsHistory": false,
+                    "documentsKeepHistoryContractDefault": false,
+                    "documentsMutableContractDefault": true,
+                    "documentsCanBeDeletedContractDefault": false,
+                    "requiresIdentityEncryptionBoundedKey": null,
+                    "requiresIdentityDecryptionBoundedKey": null
+                },
+                "documentSchemas": {
+                    "review": {
+                        "type": "object",
+                        "properties": {
+                            "restaurantId": {"type": "string", "maxLength": 32, "position": 0},
+                            "grade": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 100,
+                                "position": 1
+                            }
+                        },
+                        "required": ["restaurantId", "grade"],
+                        "additionalProperties": false,
+                        "indices": [index]
+                    }
+                },
+                "groups": {},
+                "tokens": {},
+                "keywords": [],
+                "description": null
+            })
+        }
+
+        let short_form = json!({
+            "name": "storeRating",
+            "properties": [{"restaurantId": "asc"}],
+            "averageable": "grade",
+            "rangeAverageable": true,
+            "rankedAverageable": true,
+            "rankedCountable": true
+        });
+        DataContract::from_json(contract_json(short_form), true, latest())
+            .expect("the sugar short form registers, so the SDK must accept it too");
+
+        let no_range_axis = json!({
+            "name": "storeRating",
+            "properties": [{"restaurantId": "asc"}],
+            "averageable": "grade",
+            "rankedCountable": true
+        });
+        let error = DataContract::from_json(contract_json(no_range_axis), true, latest())
+            .expect_err("a ranking with no range axis is refused by both layers");
+        let msg = format!("{error:?}");
+        assert!(
+            msg.contains("rangeCountable"),
+            "the error must name the missing range flag; got {msg}"
+        );
+    }
+}

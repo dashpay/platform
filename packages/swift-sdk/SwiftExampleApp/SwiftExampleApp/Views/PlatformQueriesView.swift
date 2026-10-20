@@ -168,7 +168,8 @@ struct QueryCategoryDetailView: View {
             return [
                 QueryDefinition(name: "getDataContract", label: "Get Data Contract", description: "Fetch a data contract by its identifier"),
                 QueryDefinition(name: "getDataContractHistory", label: "Get Data Contract History", description: "Get the version history of a data contract"),
-                QueryDefinition(name: "getDataContracts", label: "Get Data Contracts", description: "Fetch multiple data contracts by their identifiers")
+                QueryDefinition(name: "getDataContracts", label: "Get Data Contracts", description: "Fetch multiple data contracts by their identifiers"),
+                QueryDefinition(name: "getDataContractsByRange", label: "Get Data Contracts by Range", description: "Enumerate data contracts one page at a time, ordered by id")
             ]
 
         case .documents:
@@ -233,7 +234,8 @@ struct QueryCategoryDetailView: View {
                 QueryDefinition(name: "getGroupInfo", label: "Get Group Info", description: "Get information about a group"),
                 QueryDefinition(name: "getGroupInfos", label: "Get Group Infos", description: "Get information about multiple groups"),
                 QueryDefinition(name: "getGroupActions", label: "Get Group Actions", description: "Get actions for a group"),
-                QueryDefinition(name: "getGroupActionSigners", label: "Get Group Action Signers", description: "Get signers for a group action")
+                QueryDefinition(name: "getGroupActionSigners", label: "Get Group Action Signers", description: "Get signers for a group action"),
+                QueryDefinition(name: "getContractGroupInfo", label: "Get Contract Group Info", description: "Get the owner, admins, name and description of a contract group")
             ]
 
         case .system:

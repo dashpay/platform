@@ -1,3 +1,5 @@
+use crate::data_contract::document_type::class_methods::consensus_or_protocol_required_fields_error;
+use crate::data_contract::document_type::validate_required_since_within_contract_version;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -89,7 +91,7 @@ impl DataContractV1 {
         let document_types = DocumentType::create_document_types_from_document_schemas(
             id,
             1,
-            data_contract_data.config.version(),
+            config.version(),
             document_schemas,
             schema_defs.as_ref(),
             &BTreeMap::new(),
@@ -99,6 +101,9 @@ impl DataContractV1 {
             validation_operations,
             platform_version,
         )?;
+
+        validate_required_since_within_contract_version(&document_types, version)
+            .map_err(consensus_or_protocol_required_fields_error)?;
 
         let data_contract = DataContractV1 {
             id,
@@ -150,7 +155,7 @@ impl DataContractV1 {
         let document_types = DocumentType::create_document_types_from_document_schemas(
             id,
             1,
-            data_contract_data.config.version(),
+            config.version(),
             document_schemas,
             schema_defs.as_ref(),
             &tokens,
@@ -160,6 +165,9 @@ impl DataContractV1 {
             validation_operations,
             platform_version,
         )?;
+
+        validate_required_since_within_contract_version(&document_types, version)
+            .map_err(consensus_or_protocol_required_fields_error)?;
 
         let data_contract = DataContractV1 {
             id,
@@ -193,7 +201,7 @@ mod tests {
     use crate::identity::accessors::IdentityGettersV0;
     use crate::identity::Identity;
     use crate::serialization::{
-        PlatformDeserializableWithPotentialValidationFromVersionedStructure,
+        PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
         PlatformSerializableWithPlatformVersion,
     };
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -214,7 +222,7 @@ mod tests {
             .serialize_to_bytes_with_platform_version(LATEST_PLATFORM_VERSION)
             .expect("expected to serialize");
         let recovered_contract =
-            DataContract::versioned_deserialize(&bytes, false, platform_version)
+            DataContract::versioned_deserialize_untrusted(&bytes, false, platform_version)
                 .expect("expected to deserialize state transition");
         assert_eq!(contract, recovered_contract);
     }
@@ -243,5 +251,117 @@ mod tests {
         assert_eq!(v1.id(), recovered.id());
         assert_eq!(v1.owner_id(), recovered.owner_id());
         assert_eq!(v1.version(), recovered.version());
+    }
+
+    /// A `secret` document type whose `encryptedMessage` carries `encryptedFor`
+    /// when `encrypted` is set, and the same type without the keyword otherwise.
+    #[cfg(feature = "random-identities")]
+    fn secret_schema(encrypted: bool) -> platform_value::Value {
+        use platform_value::platform_value;
+
+        let mut encrypted_message = platform_value!({
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 1040,
+            "position": 3
+        });
+        if encrypted {
+            encrypted_message
+                .insert(
+                    "encryptedFor".to_string(),
+                    platform_value!({
+                        "recipient": "recipientId",
+                        "recipientKey": "recipientKeyId",
+                        "senderKey": "senderKeyId",
+                        "scheme": "ecdh-secp256k1-aes256-cbc"
+                    }),
+                )
+                .expect("expected to insert encryptedFor");
+        }
+        platform_value!({
+            "type": "object",
+            "properties": {
+                "recipientId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "position": 0
+                },
+                "recipientKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295_u64, "position": 1 },
+                "senderKeyId": { "type": "integer", "minimum": 0, "maximum": 4294967295_u64, "position": 2 },
+                "encryptedMessage": encrypted_message
+            },
+            "required": ["recipientId", "recipientKeyId", "senderKeyId", "encryptedMessage"],
+            "additionalProperties": false
+        })
+    }
+
+    /// The declaration lives in the document schema the contract serializes, so
+    /// a contract carrying it round-trips like any other and comes back with
+    /// the declaration parsed; one without it serializes exactly as before.
+    #[test]
+    #[cfg(feature = "random-identities")]
+    fn should_round_trip_a_contract_with_and_without_encrypted_for_through_platform_serialization()
+    {
+        use crate::data_contract::accessors::v0::DataContractV0Getters;
+        use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use crate::data_contract::document_type::{
+            EncryptedFor, EncryptedForRecipient, EncryptionScheme,
+        };
+        use crate::data_contract::schema::DataContractSchemaMethodsV0;
+
+        let platform_version = PlatformVersion::latest();
+        let identity = Identity::random_identity(5, Some(5), platform_version)
+            .expect("expected a random identity");
+
+        for encrypted in [true, false] {
+            let mut contract = get_data_contract_fixture(
+                Some(identity.id()),
+                0,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
+            contract
+                .set_document_schema(
+                    "secret",
+                    secret_schema(encrypted),
+                    true,
+                    &mut Vec::new(),
+                    platform_version,
+                )
+                .expect("expected to add the secret document type");
+
+            let bytes = contract
+                .serialize_to_bytes_with_platform_version(platform_version)
+                .expect("expected to serialize");
+            let recovered =
+                DataContract::versioned_deserialize_untrusted(&bytes, true, platform_version)
+                    .expect("expected to deserialize");
+            assert_eq!(contract, recovered);
+
+            let secret_type = recovered
+                .document_type_for_name("secret")
+                .expect("expected the secret document type");
+            let encrypted_properties = secret_type.encrypted_properties();
+            if encrypted {
+                assert_eq!(
+                    encrypted_properties,
+                    vec![(
+                        &"encryptedMessage".to_string(),
+                        &EncryptedFor {
+                            recipient: EncryptedForRecipient::Property("recipientId".to_string()),
+                            recipient_key: "recipientKeyId".to_string(),
+                            sender_key: "senderKeyId".to_string(),
+                            scheme: EncryptionScheme::EcdhSecp256k1Aes256Cbc,
+                        }
+                    )]
+                );
+            } else {
+                assert!(encrypted_properties.is_empty());
+            }
+        }
     }
 }

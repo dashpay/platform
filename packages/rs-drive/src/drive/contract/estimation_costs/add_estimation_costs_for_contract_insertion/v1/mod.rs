@@ -5,6 +5,7 @@ use crate::drive::contract::estimation_costs::{
 use crate::drive::contract::paths::contract_keeping_history_root_path;
 use crate::drive::document::paths::contract_document_type_path;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes_for_level;
 use crate::drive::Drive;
 use crate::util::storage_flags::StorageFlags;
 
@@ -12,7 +13,6 @@ use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::data_contract::DataContract;
 
 use dpp::serialization::PlatformSerializableWithPlatformVersion;
@@ -25,7 +25,7 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 impl Drive {
     /// v1 of contract-insertion cost estimation. Differs from v0 by computing
@@ -134,19 +134,31 @@ impl Drive {
             let mut tree_weights = TreeTypeWeights::default();
             tree_weights.tally(pk_tree_type);
 
+            // One root sub-level per distinct top tree (grid-qualified keys
+            // for time-range first properties), matching the trees
+            // `insert_contract_v0` actually creates. The map is already
+            // deduped.
             let index_structure = document_type_ref.index_structure();
-            let mut seen_indexes: HashSet<&[u8]> = HashSet::new();
-            for index in document_type_ref.top_level_indices() {
-                let index_bytes = index.name.as_bytes();
-                if !seen_indexes.insert(index_bytes) {
-                    continue;
-                }
-                let terminator_tree_type = index_structure
-                    .sub_levels()
-                    .get(index.name.as_str())
-                    .and_then(|level| level.has_index_with_type())
-                    .map(property_name_tree_type_from_flags)
-                    .unwrap_or(TreeType::NormalTree);
+            for level in index_structure.sub_levels().values() {
+                // A compound index ranked at its FIRST property (a `{ at }`
+                // ranking) makes its top level the grouping tree — the
+                // indexed tree `insert_contract_v0` creates through the
+                // level-aware resolver (Count-axis for a count chain) — even
+                // though no index terminates there. Edited in place in this
+                // generation (protocol versions 12 to 14): no ranking exists
+                // before protocol version 14, so no level is a ranked chain
+                // level there, and a count chain resolves to the
+                // `ProvableCountIndexedTree` it did before; only a
+                // `summableOffCountIndex` index's sum and average chains are
+                // new.
+                let terminator_tree_type = if level.is_ranked_chain_level() {
+                    property_name_tree_type_and_ranked_axes_for_level(level)?.0
+                } else {
+                    level
+                        .has_index_with_type()
+                        .map(property_name_tree_type_from_flags)
+                        .unwrap_or(TreeType::NormalTree)
+                };
                 tree_weights.tally(terminator_tree_type);
             }
 

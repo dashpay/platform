@@ -41,6 +41,10 @@ pub struct ShieldedSubwalletStartState {
     /// Sync watermark: count of note positions scanned = the next
     /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,
+    /// Whether persistence supplied an explicit sync-watermark row. The value
+    /// alone cannot distinguish a completed empty scan from no scan. This is
+    /// restore metadata only; it does not add a field to the durable schema.
+    pub has_sync_state: bool,
 }
 
 /// Whole-client shielded restore state, keyed by `SubwalletId`.
@@ -53,11 +57,21 @@ pub struct ShieldedSubwalletStartState {
 #[derive(Debug, Default)]
 pub struct ShieldedSyncStartState {
     pub per_subwallet: BTreeMap<SubwalletId, ShieldedSubwalletStartState>,
+    /// Persisted per-subwallet Orchard viewing keys, as the raw
+    /// 96-byte FVK encoding (`Vec<u8>` for symmetry with the
+    /// changeset field). Written once at the first seed-backed
+    /// `bind_shielded`; consumed by
+    /// `PlatformWallet::bind_shielded_from_persisted` so a launch
+    /// can rebind viewing-grade state without resolving the
+    /// mnemonic. Kept separate from `per_subwallet` — a subwallet
+    /// can have a viewing key but no notes yet, and vice versa
+    /// (legacy rows persisted before this field existed).
+    pub viewing_keys: BTreeMap<SubwalletId, Vec<u8>>,
 }
 
 impl ShieldedSyncStartState {
     /// `true` iff no subwallet snapshot is restored.
     pub fn is_empty(&self) -> bool {
-        self.per_subwallet.is_empty()
+        self.per_subwallet.is_empty() && self.viewing_keys.is_empty()
     }
 }

@@ -6,6 +6,7 @@ use super::super::{DriveDocumentSumQuery, RangeSumOptions, SumEntry};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::ResolvedTimeRange;
 use crate::query::WhereClause;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -15,14 +16,15 @@ use grovedb::TransactionArg;
 impl Drive {
     /// Range-sum walk against a `rangeSummable: true` index. Returns
     /// a summed entry or per-distinct-value entries depending on
-    /// `options.return_distinct_sums_in_range`.
+    /// `options.walk_mode`.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_sum_range_no_proof(
+    pub(crate) fn execute_document_sum_range_no_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_ranges: &[ResolvedTimeRange],
         sum_property: String,
         options: RangeSumOptions,
         transaction: TransactionArg,
@@ -32,6 +34,7 @@ impl Drive {
             document_type.indexes(),
             &where_clauses,
             &sum_property,
+            resolved_time_ranges,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(

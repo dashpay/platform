@@ -4,24 +4,80 @@
 mod broadcast_state_transition;
 mod error_mapping;
 mod get_status;
+mod shielded_proof_failure_budget;
 mod wait_for_state_transition_result;
 
+#[cfg(test)]
+mod protobuf_request_errors;
+
+use dapi_grpc::platform::v0::get_path_elements_request;
 use dapi_grpc::platform::v0::platform_server::Platform;
 use dapi_grpc::platform::v0::{
-    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetStatusRequest,
-    GetStatusResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+    BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetPathElementsRequest,
+    GetPathElementsResponse, GetStatusRequest, GetStatusResponse,
+    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
+use dpp::version::PlatformVersion;
 use futures::FutureExt;
 use std::any::type_name_of_val;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
 use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
 pub use error_mapping::TenderdashStatus;
+pub use shielded_proof_failure_budget::ShieldedProofFailureBudget;
+
+const MAX_PENDING_STATE_TRANSITION_WAITS: usize = 1_024;
+
+const MAX_PATH_COMPONENTS: usize = 256;
+const MAX_GROVEDB_KEY_BYTES: usize = 255;
+const MAX_PATH_QUERY_BYTES: usize = 64 * 1024;
+
+fn validate_path_elements_request(request: &GetPathElementsRequest) -> Result<(), Status> {
+    let v0 = match request.version.as_ref() {
+        Some(get_path_elements_request::Version::V0(v0)) => v0,
+        None => return Err(Status::invalid_argument("missing request version")),
+    };
+
+    let max_keys = PlatformVersion::latest()
+        .drive_abci
+        .query
+        .max_returned_elements as usize;
+    if v0.path.len() > MAX_PATH_COMPONENTS || v0.keys.len() > max_keys {
+        return Err(Status::resource_exhausted(
+            "too many path or key components",
+        ));
+    }
+
+    let total_bytes = v0
+        .path
+        .iter()
+        .chain(&v0.keys)
+        .try_fold(0usize, |total, component| {
+            if component.len() > MAX_GROVEDB_KEY_BYTES {
+                return Err(Status::resource_exhausted(
+                    "path or key component is too large",
+                ));
+            }
+
+            total
+                .checked_add(component.len())
+                .ok_or_else(|| Status::resource_exhausted("path query size overflow"))
+        })?;
+
+    if total_bytes > MAX_PATH_QUERY_BYTES {
+        return Err(Status::resource_exhausted(
+            "aggregate path query bytes exceed limit",
+        ));
+    }
+
+    Ok(())
+}
 
 /// Macro to generate Platform trait method implementations that delegate to DriveClient
 ///
@@ -99,6 +155,8 @@ pub struct PlatformServiceImpl {
     pub config: Arc<Config>,
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
+    pub state_transition_wait_permits: Arc<Semaphore>,
+    pub shielded_proof_failure_budget: Arc<ShieldedProofFailureBudget>,
     #[allow(dead_code)]
     // workers - dropping will cancel all spawned tasks
     workers: Workers,
@@ -158,6 +216,10 @@ impl PlatformServiceImpl {
                 invalidation_subscription,
             ),
             subscriber_manager,
+            state_transition_wait_permits: Arc::new(Semaphore::new(
+                MAX_PENDING_STATE_TRANSITION_WAITS,
+            )),
+            shielded_proof_failure_budget: Arc::new(ShieldedProofFailureBudget::default()),
             workers,
         }
     }
@@ -276,6 +338,12 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
+        get_identity_keys_remaining_budgets,
+        dapi_grpc::platform::v0::GetIdentityKeysRemainingBudgetsRequest,
+        dapi_grpc::platform::v0::GetIdentityKeysRemainingBudgetsResponse
+    );
+
+    drive_method!(
         get_identity_balance,
         dapi_grpc::platform::v0::GetIdentityBalanceRequest,
         dapi_grpc::platform::v0::GetIdentityBalanceResponse
@@ -337,6 +405,80 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetDataContractsResponse
     );
 
+    drive_method!(
+        get_data_contracts_by_range,
+        dapi_grpc::platform::v0::GetDataContractsByRangeRequest,
+        dapi_grpc::platform::v0::GetDataContractsResponse
+    );
+
+    drive_method!(
+        get_data_contracts_latest_versions,
+        dapi_grpc::platform::v0::GetDataContractsLatestVersionsRequest,
+        dapi_grpc::platform::v0::GetDataContractsLatestVersionsResponse
+    );
+
+    // Contract group methods
+    drive_method!(
+        get_contract_group_info,
+        dapi_grpc::platform::v0::GetContractGroupInfoRequest,
+        dapi_grpc::platform::v0::GetContractGroupInfoResponse
+    );
+
+    // Contract moderation methods
+    drive_method!(
+        get_contract_moderation_status,
+        dapi_grpc::platform::v0::GetContractModerationStatusRequest,
+        dapi_grpc::platform::v0::GetContractModerationStatusResponse
+    );
+
+    drive_method!(
+        get_contract_moderation_entries,
+        dapi_grpc::platform::v0::GetContractModerationEntriesRequest,
+        dapi_grpc::platform::v0::GetContractModerationEntriesResponse
+    );
+
+    drive_method!(
+        get_contract_document_removals,
+        dapi_grpc::platform::v0::GetContractDocumentRemovalsRequest,
+        dapi_grpc::platform::v0::GetContractDocumentRemovalsResponse
+    );
+
+    drive_method!(
+        get_contract_team_actions,
+        dapi_grpc::platform::v0::GetContractTeamActionsRequest,
+        dapi_grpc::platform::v0::GetContractTeamActionsResponse
+    );
+
+    drive_method!(
+        get_contract_team_action_signers,
+        dapi_grpc::platform::v0::GetContractTeamActionSignersRequest,
+        dapi_grpc::platform::v0::GetContractTeamActionSignersResponse
+    );
+
+    drive_method!(
+        get_contract_moderation_action_counts,
+        dapi_grpc::platform::v0::GetContractModerationActionCountsRequest,
+        dapi_grpc::platform::v0::GetContractModerationActionCountsResponse
+    );
+
+    drive_method!(
+        get_contract_fee_pots,
+        dapi_grpc::platform::v0::GetContractFeePotsRequest,
+        dapi_grpc::platform::v0::GetContractFeePotsResponse
+    );
+
+    drive_method!(
+        get_contract_group_members,
+        dapi_grpc::platform::v0::GetContractGroupMembersRequest,
+        dapi_grpc::platform::v0::GetContractGroupMembersResponse
+    );
+
+    drive_method!(
+        get_contract_groups_for_contract,
+        dapi_grpc::platform::v0::GetContractGroupsForContractRequest,
+        dapi_grpc::platform::v0::GetContractGroupsForContractResponse
+    );
+
     // Document methods
     drive_method!(
         get_documents,
@@ -381,11 +523,38 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetFinalizedEpochInfosResponse
     );
 
-    drive_method!(
-        get_path_elements,
-        dapi_grpc::platform::v0::GetPathElementsRequest,
-        dapi_grpc::platform::v0::GetPathElementsResponse
-    );
+    async fn get_path_elements(
+        &self,
+        request: Request<GetPathElementsRequest>,
+    ) -> Result<Response<GetPathElementsResponse>, Status> {
+        use crate::cache::make_cache_key;
+
+        let method = type_name_of_val(request.get_ref());
+        validate_path_elements_request(request.get_ref())?;
+
+        let mut client = self.drive_client.get_client();
+        let cache = self.platform_cache.clone();
+        let result_with_meta: Result<(Response<GetPathElementsResponse>, bool), Status> = async {
+            let key = make_cache_key(method, request.get_ref());
+            if let Some(decoded) = cache.get(&key) {
+                return Ok((Response::new(decoded), true));
+            }
+
+            trace!(method, "Calling Drive method");
+            let response = client.get_path_elements(request).await?;
+            trace!(method, "Caching response");
+            cache.put(key, response.get_ref());
+            Ok((response, false))
+        }
+        .await;
+
+        match &result_with_meta {
+            Ok((_, cache_hit)) => info!(method, cache_hit = *cache_hit, "request succeeded"),
+            Err(status) => warn!(method, error = %status, "request failed"),
+        }
+
+        result_with_meta.map(|(response, _)| response)
+    }
 
     drive_method!(
         get_total_credits_in_platform,
@@ -598,4 +767,53 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetShieldedNullifiersRequest,
         dapi_grpc::platform::v0::GetShieldedNullifiersResponse
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
+
+    fn request(path: Vec<Vec<u8>>, keys: Vec<Vec<u8>>) -> GetPathElementsRequest {
+        GetPathElementsRequest {
+            version: Some(get_path_elements_request::Version::V0(
+                GetPathElementsRequestV0 {
+                    path,
+                    keys,
+                    prove: false,
+                },
+            )),
+        }
+    }
+
+    #[test]
+    fn path_elements_request_enforces_count_and_byte_budgets() {
+        let max_keys = PlatformVersion::latest()
+            .drive_abci
+            .query
+            .max_returned_elements as usize;
+
+        assert!(validate_path_elements_request(&request(vec![], vec![vec![0]; max_keys])).is_ok());
+        assert!(
+            validate_path_elements_request(&request(vec![], vec![vec![]; max_keys + 1])).is_err()
+        );
+        assert!(
+            validate_path_elements_request(&request(vec![vec![]; MAX_PATH_COMPONENTS + 1], vec![]))
+                .is_err()
+        );
+        assert!(
+            validate_path_elements_request(&request(
+                vec![vec![0; MAX_GROVEDB_KEY_BYTES + 1]],
+                vec![]
+            ))
+            .is_err()
+        );
+
+        let path = vec![vec![0; MAX_GROVEDB_KEY_BYTES]; MAX_PATH_COMPONENTS];
+        assert!(validate_path_elements_request(&request(path.clone(), vec![vec![0; 255]])).is_ok());
+        assert!(
+            validate_path_elements_request(&request(path, vec![vec![0; 255], vec![1; 255]]))
+                .is_err()
+        );
+    }
 }

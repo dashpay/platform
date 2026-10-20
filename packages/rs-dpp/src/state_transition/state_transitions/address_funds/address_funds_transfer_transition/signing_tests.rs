@@ -13,13 +13,13 @@ use std::collections::{BTreeMap, HashMap};
 use dashcore::blockdata::opcodes::all::*;
 use dashcore::blockdata::script::ScriptBuf;
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::{PublicKey as RawPublicKey, Secp256k1, SecretKey as RawSecretKey};
+use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 use dashcore::PublicKey;
 use platform_value::BinaryData;
 
 use crate::address_funds::{AddressWitness, PlatformAddress};
 use crate::identity::signer::Signer;
-use crate::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
+use crate::serialization::{PlatformDeserializableUntrusted, PlatformSerializable, Signable};
 use crate::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
 use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
 use crate::state_transition::StateTransition;
@@ -64,16 +64,15 @@ impl TestAddressSigner {
 
     /// Creates a keypair from a 32-byte seed
     fn create_keypair(seed: [u8; 32]) -> (RawSecretKey, PublicKey) {
-        let secp = Secp256k1::new();
-        let secret_key = RawSecretKey::from_byte_array(&seed).expect("valid secret key");
-        let raw_public_key = RawPublicKey::from_secret_key(&secp, &secret_key);
+        let secret_key = RawSecretKey::from_secret_bytes(seed).expect("valid secret key");
+        let raw_public_key = RawPublicKey::from_secret_key(&secret_key);
         let public_key = PublicKey::new(raw_public_key);
         (secret_key, public_key)
     }
 
     /// Signs data with a secret key
     fn sign_data(data: &[u8], secret_key: &RawSecretKey) -> Vec<u8> {
-        dashcore::signer::sign(data, secret_key.as_ref())
+        dashcore::signer::sign(data, secret_key.as_secret_bytes())
             .expect("signing should succeed")
             .to_vec()
     }
@@ -662,8 +661,9 @@ async fn test_signed_transition_serialization_roundtrip() {
         .expect("should serialize");
 
     // Deserialize
-    let deserialized = AddressFundsTransferTransitionV0::deserialize_from_bytes(&serialized)
-        .expect("should deserialize");
+    let deserialized =
+        AddressFundsTransferTransitionV0::deserialize_from_bytes_untrusted(&serialized)
+            .expect("should deserialize");
 
     // Verify equality
     assert_eq!(transition, deserialized);
@@ -706,8 +706,9 @@ async fn test_multisig_transition_serialization_roundtrip() {
     let serialized = AddressFundsTransferTransitionV0::serialize_to_bytes(&transition)
         .expect("should serialize");
 
-    let deserialized = AddressFundsTransferTransitionV0::deserialize_from_bytes(&serialized)
-        .expect("should deserialize");
+    let deserialized =
+        AddressFundsTransferTransitionV0::deserialize_from_bytes_untrusted(&serialized)
+            .expect("should deserialize");
 
     assert_eq!(transition, deserialized);
     verify_transition_signatures(&deserialized).expect("signatures should still be valid");
@@ -749,8 +750,9 @@ async fn test_mixed_transition_serialization_roundtrip() {
     let serialized = AddressFundsTransferTransitionV0::serialize_to_bytes(&transition)
         .expect("should serialize");
 
-    let deserialized = AddressFundsTransferTransitionV0::deserialize_from_bytes(&serialized)
-        .expect("should deserialize");
+    let deserialized =
+        AddressFundsTransferTransitionV0::deserialize_from_bytes_untrusted(&serialized)
+            .expect("should deserialize");
 
     assert_eq!(transition, deserialized);
     verify_transition_signatures(&deserialized).expect("signatures should still be valid");

@@ -20,5 +20,6 @@ This folder documents interactive QA scenarios that can be executed by an agent 
 - [QA001 – Wallet Sync Bars After Fresh Start](QA001_wallet_sync_progress.md)
 - [QA002 – Resume Sync After Pause](QA002_resume_sync.md)
 - [QA003 – Clear Sync Data Resets Progress](QA003_clear_sync_resets.md)
+- [QA004 – Reclaim an Unclaimed Invitation](QA004_invitation_reclaim.md)
 
 Add more scenarios as regressions are discovered or new flows require coverage. Follow the structure used in the existing playbooks.

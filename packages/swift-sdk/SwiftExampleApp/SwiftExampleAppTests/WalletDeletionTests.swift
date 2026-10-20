@@ -136,6 +136,72 @@ final class WalletDeletionTests: XCTestCase {
         XCTAssertEqual(remaining.first?.outPointHex, "cafebabe:1")
     }
 
+    func testDeleteWalletDataPreservesSiblingPayloadOnlyTransactions() throws {
+        // Regression test for the thepastaclaw blocking finding on
+        // dashpay/platform#4108: the post-delete orphan sweep matched
+        // any `PersistentTransaction` with empty outputs / inputs /
+        // pendingInputs. Payload-only special txs (a ProRegTx matching
+        // a provider owner key) have no TXOs anywhere yet belong to a
+        // live account through `involvedAccounts`, so deleting an
+        // UNRELATED wallet swept the other wallet's payload-only
+        // history. The deleted wallet's own payload-only rows must
+        // still be swept — its account deletion nullifies their join
+        // links before the sweep runs.
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        let doomedId = Data(repeating: 0xc3, count: 32)
+        let siblingId = Data(repeating: 0xd4, count: 32)
+
+        let doomedWallet = PersistentWallet(walletId: doomedId, network: .testnet)
+        let siblingWallet = PersistentWallet(walletId: siblingId, network: .testnet)
+        context.insert(doomedWallet)
+        context.insert(siblingWallet)
+
+        // Provider Owner Keys account (tag 9) under each wallet.
+        let doomedAccount = PersistentAccount(
+            wallet: doomedWallet,
+            accountType: 9,
+            accountIndex: 0,
+            accountTypeName: "Provider Owner Keys"
+        )
+        let siblingAccount = PersistentAccount(
+            wallet: siblingWallet,
+            accountType: 9,
+            accountIndex: 0,
+            accountTypeName: "Provider Owner Keys"
+        )
+        context.insert(doomedAccount)
+        context.insert(siblingAccount)
+
+        // Payload-only txs: no TXOs / pending inputs anywhere, linked
+        // to their wallet solely through `involvedAccounts`.
+        let doomedProRegTx = PersistentTransaction(
+            txid: Data(repeating: 0xe5, count: 32),
+            transactionData: Data([0x01])
+        )
+        doomedProRegTx.involvedAccounts.append(doomedAccount)
+        let siblingProRegTx = PersistentTransaction(
+            txid: Data(repeating: 0xf6, count: 32),
+            transactionData: Data([0x02])
+        )
+        siblingProRegTx.involvedAccounts.append(siblingAccount)
+        context.insert(doomedProRegTx)
+        context.insert(siblingProRegTx)
+        try context.save()
+
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        try handler.deleteWalletData(walletId: doomedId)
+
+        // The sibling's payload-only tx survives with its join intact;
+        // the deleted wallet's own payload-only tx is swept.
+        let transactions = try fetch(PersistentTransaction.self, in: container)
+        XCTAssertEqual(transactions.map(\.txid), [siblingProRegTx.txid])
+        XCTAssertEqual(
+            transactions.first?.involvedAccounts.map(\.wallet.walletId),
+            [siblingId]
+        )
+    }
+
     func testDeleteWalletDataKeepsNetworkSyncStateWhenSiblingWalletRemains() throws {
         let container = try DashModelContainer.createInMemory()
         let context = ModelContext(container)

@@ -17,7 +17,7 @@ import SwiftData
 /// globally unique across accounts (an intra-wallet transfer writes a
 /// Sent row on the sending account and a Received row on the receiving
 /// account sharing one `entryId`). Re-persisting the same tuple flips a
-/// `Pending` row to `Confirmed`/`Failed` in place, and a coarse
+/// `Pending` row to `Confirmed`/`Failed`/`Unknown` in place, and a coarse
 /// scan-derived `ShieldedSpend` can be refined to a specific kind when a
 /// richer entry re-emits the same id (the id = sha256 of the visible
 /// output cmxs is identical across both paths by construction).
@@ -46,11 +46,12 @@ public final class PersistentShieldedActivity {
 
     /// Kind discriminant (`ShieldedActivityKind::tag`): 0 Shield,
     /// 1 ShieldFromAssetLock, 2 Received, 3 Sent, 4 Unshield,
-    /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend.
+    /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend,
+    /// 8 ShieldFromIdentity, 9 IdentityTopUp (from the pool).
     public var kindTag: Int
     /// Direction: 0 In, 1 Out, 2 Self.
     public var direction: Int
-    /// Status: 0 Pending, 1 Confirmed, 2 Failed.
+    /// Status: 0 Pending, 1 Confirmed, 2 Failed, 3 Unknown.
     public var status: Int
 
     /// Display amount in credits (principal; excludes self-change /
@@ -59,16 +60,36 @@ public final class PersistentShieldedActivity {
     /// Exact fee in credits when `hasFee == true`; otherwise unknown.
     public var fee: UInt64
     public var hasFee: Bool
-    /// Block height when `hasBlockHeight == true` (confirmed); otherwise
-    /// pending. Canonical sort key (desc) with pendings floated up.
+    /// Block height when `hasBlockHeight == true`. Absent while pending
+    /// — and **permanently absent on scan-derived (restored) entries**:
+    /// the note-fetch proof carries no per-note inclusion height, so
+    /// the SDK models the height as unknown rather than stamping the
+    /// scan-tip height (which differed between devices restoring the
+    /// same wallet). Canonical sort key (desc) with pendings floated up.
     public var blockHeight: UInt64
     public var hasBlockHeight: Bool
     /// Record time in ms since the Unix epoch (display-only / sort
-    /// tiebreak).
+    /// tiebreak). **`0` = unknown**: scan-derived (restored) entries
+    /// have no wall-clock provenance, so the SDK writes the sentinel
+    /// instead of the scan moment. Render `0` as an unknown date, never
+    /// as the epoch and never as "now".
     public var createdAtMs: UInt64
 
-    /// Created identity id (32 bytes) when `kindTag == 6`
-    /// (IdentityCreate); empty otherwise.
+    /// Chain-order key when `hasMinNotePosition == true`: the smallest
+    /// commitment-tree position among the entry's own received notes.
+    /// Tree positions are exact append-only chain order, so this orders
+    /// scan-derived restored entries (whose date and height are
+    /// unknown — `createdAtMs == 0`, no block height) in their true
+    /// on-chain sequence, identically on every device. Absent on
+    /// live-recorded entries (which order by their real `createdAtMs`).
+    /// Defaults cover rows persisted before this field existed.
+    public var minNotePosition: UInt64 = 0
+    public var hasMinNotePosition: Bool = false
+
+    /// Identity id (32 bytes) when the kind carries one: the created
+    /// identity for `kindTag == 6` (IdentityCreate), the debited identity
+    /// for `kindTag == 8` (ShieldFromIdentity), the credited identity for
+    /// `kindTag == 9` (IdentityTopUp from the pool). Empty otherwise.
     public var identityId: Data
     /// Counterparty bytes (43B Orchard / 21B PlatformAddress / Core
     /// script) when present; empty otherwise.
@@ -99,6 +120,8 @@ public final class PersistentShieldedActivity {
         blockHeight: UInt64,
         hasBlockHeight: Bool,
         createdAtMs: UInt64,
+        minNotePosition: UInt64 = 0,
+        hasMinNotePosition: Bool = false,
         identityId: Data,
         counterparty: Data,
         memo: Data,
@@ -117,6 +140,8 @@ public final class PersistentShieldedActivity {
         self.blockHeight = blockHeight
         self.hasBlockHeight = hasBlockHeight
         self.createdAtMs = createdAtMs
+        self.minNotePosition = minNotePosition
+        self.hasMinNotePosition = hasMinNotePosition
         self.identityId = identityId
         self.counterparty = counterparty
         self.memo = memo

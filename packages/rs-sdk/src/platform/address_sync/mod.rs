@@ -82,6 +82,9 @@ const PENDING_UNKNOWN_WARN_THRESHOLD: usize = 1000;
 /// Server limit for compacted address balance changes per request.
 const COMPACTED_BATCH_LIMIT: usize = 25;
 
+#[cfg(all(test, feature = "mocks"))]
+mod signed_trunk_tests;
+
 /// The subtree key for recent (per-block) address balances storage.
 /// Mirrors `drive::drive::saved_block_transactions::queries::ADDRESS_BALANCES_KEY_U8`
 /// which is gated behind the `server` feature.
@@ -146,6 +149,7 @@ impl<P: AddressProvider> TrunkBranchSyncOps for AddressOps<P> {
             trunk: trunk_state.into_inner(),
             height: metadata.height,
             block_time_ms: metadata.time_ms,
+            protocol_version: metadata.protocol_version,
         })
     }
 
@@ -1181,7 +1185,7 @@ fn get_last_recent_block_from_proof(proof: &Proof) -> Result<Option<u64>, Error>
         .with_limit::<{ 256 * 1024 * 1024 }>();
 
     let (grovedb_proof, _): (drive::grovedb::operations::proof::GroveDBProof, usize) =
-        dpp::bincode::decode_from_slice(&proof.grovedb_proof, config).map_err(|e| {
+        dpp::bincode::decode_from_slice_untrusted(&proof.grovedb_proof, config).map_err(|e| {
             Error::Protocol(dpp::ProtocolError::DecodingError(format!(
                 "Failed to decode GroveDB proof: {}",
                 e

@@ -45,6 +45,7 @@ describe('waitForStateTransitionResultFactory', () => {
       timeout: 1000,
       throwDeadlineExceeded: true,
       retry: 0,
+      requestUserBalance: false,
     };
 
     waitForStateTransitionResult = waitForStateTransitionResultFactory(grpcTransportMock);
@@ -66,13 +67,15 @@ describe('waitForStateTransitionResultFactory', () => {
 
     expect(result.getError()).to.equal(undefined);
     expect(result.getProof()).to.equal(undefined);
+    expect(result.getOwnerBalance()).to.equal(undefined);
 
     const { WaitForStateTransitionResultRequestV0 } = WaitForStateTransitionResultRequest;
     const request = new WaitForStateTransitionResultRequest();
     request.setV0(
       new WaitForStateTransitionResultRequestV0()
         .setStateTransitionHash(hash)
-        .setProve(false),
+        .setProve(false)
+        .setRequestUserBalance(false),
     );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
@@ -81,6 +84,21 @@ describe('waitForStateTransitionResultFactory', () => {
       request,
       options,
     );
+  });
+
+  it('should return the owner balance a wait without a proof reports', async () => {
+    options.prove = false;
+    options.requestUserBalance = true;
+    response.getV0().setSuccessWithOwnerBalance(
+      new WaitForStateTransitionResultResponse.SuccessWithOwnerBalance()
+        .setOwnerBalance('123456789012345678'),
+    );
+
+    const result = await waitForStateTransitionResult(hash, options);
+
+    expect(result.getError()).to.equal(undefined);
+    expect(result.getProof()).to.equal(undefined);
+    expect(result.getOwnerBalance()).to.equal(BigInt('123456789012345678'));
   });
 
   it('should return response with proof', async () => {
@@ -123,7 +141,8 @@ describe('waitForStateTransitionResultFactory', () => {
     request.setV0(
       new WaitForStateTransitionResultRequestV0()
         .setStateTransitionHash(hash)
-        .setProve(true),
+        .setProve(true)
+        .setRequestUserBalance(false),
     );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
@@ -132,6 +151,15 @@ describe('waitForStateTransitionResultFactory', () => {
       request,
       options,
     );
+  });
+
+  it('should reject a proved success response without proof', async () => {
+    options.prove = true;
+
+    await expect(waitForStateTransitionResult(hash, options)).to.be.rejectedWith(
+      'missing proof or metadata',
+    );
+    expect(grpcTransportMock.request).to.have.been.calledThrice();
   });
 
   it('should return response with error', async () => {
@@ -169,7 +197,8 @@ describe('waitForStateTransitionResultFactory', () => {
     request.setV0(
       new WaitForStateTransitionResultRequestV0()
         .setStateTransitionHash(hash)
-        .setProve(true),
+        .setProve(true)
+        .setRequestUserBalance(false),
     );
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(

@@ -65,13 +65,13 @@ pub enum SelectFunction {
     /// `MIN(field)` — smallest value of `field` in each group
     /// (or across all matching rows when `group_by` is empty).
     /// Required field. Currently always rejected with "not yet
-    /// implemented"; **semantically distinct** from
-    /// [`crate::query::HavingRankingKind::Min`] which is a
-    /// cross-group ranking primitive on the HAVING right side.
+    /// implemented". **Semantically distinct** from asking for the
+    /// lowest-ranked *group*, which is
+    /// `ORDER BY <aggregate> ASC LIMIT 1` over the ranked surface.
     Min,
     /// `MAX(field)` — symmetric to [`Self::Min`] for the largest
     /// value. Same not-yet-implemented contract; same caveat
-    /// versus [`crate::query::HavingRankingKind::Max`].
+    /// versus `ORDER BY <aggregate> DESC LIMIT 1`.
     Max,
 }
 

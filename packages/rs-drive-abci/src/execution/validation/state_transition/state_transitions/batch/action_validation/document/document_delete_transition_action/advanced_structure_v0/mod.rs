@@ -1,6 +1,6 @@
 use dpp::consensus::basic::document::{InvalidDocumentTransitionActionError, InvalidDocumentTypeError};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
@@ -27,15 +27,33 @@ impl DocumentDeleteTransitionActionStructureValidationV0 for DocumentDeleteTrans
         };
 
         if !document_type.documents_can_be_deleted() {
-            Ok(SimpleConsensusValidationResult::new_with_error(
+            return Ok(SimpleConsensusValidationResult::new_with_error(
                 InvalidDocumentTransitionActionError::new(format!(
                     "documents of type {} can not be deleted",
                     document_type_name
                 ))
                 .into(),
-            ))
-        } else {
-            Ok(SimpleConsensusValidationResult::new())
+            ));
         }
+
+        // Pair the delete KIND with the doctype's storage mode: an
+        // indexOnly document has no primary-storage row a by-id delete
+        // could fetch, so its deletes must come as the indexOnlyDelete
+        // (delete-by-values) kind — its structure validation enforces the
+        // mirror rule. `index_only()` can only be true on a PV14+
+        // contract, so this branch is unreachable for every historical
+        // transition.
+        if document_type.index_only() {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                InvalidDocumentTransitionActionError::new(format!(
+                    "documents of indexOnly type {} must be deleted with an indexOnlyDelete \
+                     (delete-by-values) transition carrying the document's values",
+                    document_type_name
+                ))
+                .into(),
+            ));
+        }
+
+        Ok(SimpleConsensusValidationResult::new())
     }
 }

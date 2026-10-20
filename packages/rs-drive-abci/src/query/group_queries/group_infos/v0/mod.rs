@@ -39,20 +39,24 @@ impl<C> Platform<C> {
                 )
             }));
 
-        let limit = count
-            .map_or(Some(config.default_query_limit), |limit_value| {
+        // A refused limit is a request error: returned through `?` it would reach the client as
+        // an internal error, which clients retry on every other node.
+        let limit = check_validation_result_with_data!(count.map_or(
+            Ok(config.default_query_limit),
+            |limit_value| {
                 if limit_value == 0
                     || limit_value > u16::MAX as u32
                     || limit_value as u16 > config.default_query_limit
                 {
-                    None
+                    Err(QueryError::Query(QuerySyntaxError::InvalidLimit(format!(
+                        "limit {} out of bounds of [1, {}]",
+                        limit_value, config.default_query_limit
+                    ))))
                 } else {
-                    Some(limit_value as u16)
+                    Ok(limit_value as u16)
                 }
-            })
-            .ok_or(drive::error::Error::Query(QuerySyntaxError::InvalidLimit(
-                format!("limit greater than max limit {}", config.max_query_limit),
-            )))?;
+            }
+        ));
 
         let start_at_group_contract_position = match start_at_group_contract_position {
             None => None,
@@ -132,7 +136,9 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::tests::{assert_invalid_identifier, setup_platform};
+    use crate::query::tests::{
+        assert_invalid_argument_status, assert_invalid_identifier, setup_platform,
+    };
     use dapi_grpc::platform::v0::get_group_infos_request::StartAtGroupContractPosition;
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::Network;
@@ -179,51 +185,35 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_limit_zero() {
+    fn should_refuse_a_zero_count_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        let request = GetGroupInfosRequestV0 {
-            contract_id: vec![0; 32],
-            start_at_group_contract_position: None,
-            count: Some(0),
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetGroupInfosRequestV0 {
+                contract_id: vec![0; 32],
+                start_at_group_contract_position: None,
+                count: Some(0),
+                prove,
+            };
 
-        let result = platform.query_group_infos_v0(request, &state, version);
-
-        assert!(
-            matches!(
-                result,
-                Err(crate::error::Error::Drive(drive::error::Error::Query(
-                    QuerySyntaxError::InvalidLimit(_)
-                )))
-            ),
-            "expected InvalidLimit error for zero count"
-        );
+            assert_invalid_argument_status(platform.query_group_infos_v0(request, &state, version));
+        }
     }
 
     #[test]
-    fn test_invalid_limit_exceeds_max() {
+    fn should_refuse_a_count_over_u16_as_invalid_argument() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        let request = GetGroupInfosRequestV0 {
-            contract_id: vec![0; 32],
-            start_at_group_contract_position: None,
-            count: Some(u16::MAX as u32 + 1),
-            prove: false,
-        };
+        for prove in [false, true] {
+            let request = GetGroupInfosRequestV0 {
+                contract_id: vec![0; 32],
+                start_at_group_contract_position: None,
+                count: Some(u16::MAX as u32 + 1),
+                prove,
+            };
 
-        let result = platform.query_group_infos_v0(request, &state, version);
-
-        assert!(
-            matches!(
-                result,
-                Err(crate::error::Error::Drive(drive::error::Error::Query(
-                    QuerySyntaxError::InvalidLimit(_)
-                )))
-            ),
-            "expected InvalidLimit error for count exceeding max"
-        );
+            assert_invalid_argument_status(platform.query_group_infos_v0(request, &state, version));
+        }
     }
 
     #[test]

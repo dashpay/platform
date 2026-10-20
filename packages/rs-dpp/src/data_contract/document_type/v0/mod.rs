@@ -40,6 +40,15 @@ pub struct DocumentTypeV0 {
     pub(in crate::data_contract) transient_fields: BTreeSet<String>,
     /// Should documents keep history?
     pub(in crate::data_contract) documents_keep_history: bool,
+    /// Should transfers of documents of this type be recorded in the document
+    /// history system contract?
+    pub(in crate::data_contract) documents_keep_transfer_history: bool,
+    /// Should purchases of documents of this type be recorded in the document
+    /// history system contract?
+    pub(in crate::data_contract) documents_keep_purchase_history: bool,
+    /// Should price updates on documents of this type be recorded in the
+    /// document history system contract?
+    pub(in crate::data_contract) documents_keep_pricing_history: bool,
     /// Are documents mutable?
     pub(in crate::data_contract) documents_mutable: bool,
     /// Can documents of this type be deleted?

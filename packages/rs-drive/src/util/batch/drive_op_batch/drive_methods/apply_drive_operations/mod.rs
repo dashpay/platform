@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::util::batch::DriveOperation;
 
@@ -55,9 +56,17 @@ impl Drive {
                 platform_version,
                 previous_fee_versions,
             ),
+            1 => self.apply_drive_operations_v1(
+                operations,
+                apply,
+                block_info,
+                transaction,
+                platform_version,
+                previous_fee_versions,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "apply_drive_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

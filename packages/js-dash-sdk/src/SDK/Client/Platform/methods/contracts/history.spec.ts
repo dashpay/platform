@@ -5,7 +5,7 @@ import loadDpp from '@dashevo/wasm-dpp';
 import getDataContractFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture';
 
 import getResponseMetadataFixture from '../../../../../test/fixtures/getResponseMetadataFixture';
-import history from './history';
+import history, { historyUnproved } from './history';
 import identitiesFixtures from '../../../../../../tests/fixtures/identities.json';
 import 'mocha';
 import { ClientApps } from '../../../ClientApps';
@@ -20,6 +20,7 @@ let askedFromDapi;
 let initialize;
 let metadataFixture;
 let dataContractFixture;
+let requestedProofModes;
 
 const factory = {
   createFromBuffer: () => dataContractFixture,
@@ -51,14 +52,19 @@ describe('Client - Platform - Contracts - .history()', () => {
     });
 
     askedFromDapi = 0;
-    const fetchDataContractHistory = async (id) => {
+    requestedProofModes = [];
+    const fetchDataContractHistory = async (id, startAtMs, limit, offset, prove) => {
       const fixtureIdentifier = dataContractFixture.getId();
       askedFromDapi += 1;
+      requestedProofModes.push(prove);
 
       if (id.equals(fixtureIdentifier)) {
         return new GetDataContractHistoryResponse(
-          [new DataContractHistoryEntry(BigInt(1000), dataContractFixture.toBuffer())],
+          prove ? null : [
+            new DataContractHistoryEntry(BigInt(1000), dataContractFixture.toBuffer()),
+          ],
           metadataFixture,
+          prove ? {} : undefined,
         );
       }
 
@@ -70,9 +76,16 @@ describe('Client - Platform - Contracts - .history()', () => {
     };
 
     client = {
+      network: 'testnet',
       getApps(): ClientApps {
         return apps;
       },
+      getPlatformProofVerifier: () => ({
+        verifyDataContractHistory: async () => [{
+          date: BigInt(1000),
+          value: dataContractFixture.toBuffer(),
+        }],
+      }),
     };
 
     initialize = this.sinon.stub();
@@ -82,31 +95,68 @@ describe('Client - Platform - Contracts - .history()', () => {
     it('should get from DAPIClient if there is none locally', async () => {
       const contractHistory = await history.call({
         // @ts-ignore
-        apps, dpp, client, initialize, logger, fetcher,
+        apps, dpp, client, initialize, logger, fetcher, protocolVersion: 42,
       }, dataContractFixture.getId(), 0, 10, 0);
       const contract = contractHistory[1000];
       expect(contract.toJSON()).to.deep.equal(dataContractFixture.toJSON());
       expect(askedFromDapi).to.equal(1);
+      expect(requestedProofModes).to.deep.equal([true]);
     });
 
-    it('should get from local when already fetched once', async () => {
+    it('should re-verify and refetch on a second call', async () => {
       const contractHistory = await history.call({
         // @ts-ignore
-        apps, dpp, client, initialize, logger, fetcher,
+        apps, dpp, client, initialize, logger, fetcher, protocolVersion: 42,
       }, dataContractFixture.getId(), 0, 10, 0);
       const contract = contractHistory[1000];
       expect(contract.toJSON()).to.deep.equal(dataContractFixture.toJSON());
       expect(askedFromDapi).to.equal(2);
+      expect(requestedProofModes).to.deep.equal([true, true]);
     });
   });
 
   describe('other conditions', () => {
-    it('should deal when contract do not exist', async () => {
-      const contract = await history.call({
+    it('should reject an unproved not-found response', async () => {
+      await expect(history.call({
         // @ts-ignore
-        apps, dpp, client, initialize, logger, fetcher,
+        apps, dpp, client, initialize, logger, fetcher, protocolVersion: 42,
+      }, identitiesFixtures.bob.id, 0, 10, 0)).to.be.rejectedWith(NotFoundError);
+    });
+
+    it('should fail before querying when no proof verifier is configured', async () => {
+      const callsBefore = askedFromDapi;
+      const clientWithoutVerifier = {
+        ...client,
+        getPlatformProofVerifier: () => undefined,
+      };
+
+      await expect(history.call({
+        // @ts-ignore
+        apps, dpp, client: clientWithoutVerifier, initialize, logger, fetcher, protocolVersion: 42,
+      }, dataContractFixture.getId(), 0, 10, 0)).to.be.rejectedWith(
+        'requires an authenticated Platform proof verifier',
+      );
+      expect(askedFromDapi).to.equal(callsBefore);
+    });
+
+    it('should expose endpoint-trusted history only through historyUnproved', async () => {
+      const contractHistory = await historyUnproved.call({
+        // @ts-ignore
+        apps, dpp, client, initialize, logger, fetcher, protocolVersion: 42,
+      }, dataContractFixture.getId(), 0, 10, 0);
+
+      expect(contractHistory[1000].toJSON()).to.deep.equal(dataContractFixture.toJSON());
+      expect(requestedProofModes[requestedProofModes.length - 1]).to.equal(false);
+    });
+
+    it('should allow endpoint-trusted not-found through historyUnproved', async () => {
+      const contract = await historyUnproved.call({
+        // @ts-ignore
+        apps, dpp, client, initialize, logger, fetcher, protocolVersion: 42,
       }, identitiesFixtures.bob.id, 0, 10, 0);
+
       expect(contract).to.equal(null);
+      expect(requestedProofModes[requestedProofModes.length - 1]).to.equal(false);
     });
   });
 });

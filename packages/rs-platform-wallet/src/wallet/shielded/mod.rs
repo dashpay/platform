@@ -31,8 +31,13 @@
 //! `BTreeMap<u32, OrchardKeySet>` (with the spend authority);
 //! `PlatformWallet` doesn't need a wrapper struct around it.
 
+pub mod wallet_drain;
+pub use wallet_drain::{WalletDrainPreview, WalletDrainPreviewStatus};
 pub mod activity;
 pub mod activity_recorder;
+pub mod balance;
+#[cfg(test)]
+mod balance_tests;
 pub mod coordinator;
 pub mod file_store;
 pub mod fund_from_asset_lock;
@@ -43,11 +48,19 @@ pub mod prover;
 pub mod seed_pool;
 pub mod store;
 pub mod sync;
+#[cfg(test)]
+mod viewing_key_bind_tests;
+#[cfg(test)]
+mod wallet_drain_tests;
 
 pub use activity::{
     compute_activity_id, derive_activity_from_scan_data, sort_activity_for_display,
     ScanDeriveInput, ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
     ShieldedDirection,
+};
+pub use balance::{
+    ShieldedBalanceSource, ShieldedLocalAccountBalance, ShieldedLocalBalanceSnapshot,
+    ShieldedLocalBalanceState,
 };
 pub use coordinator::NetworkShieldedCoordinator;
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
@@ -55,7 +68,8 @@ pub use keys::{AccountViewingKeys, OrchardKeySet};
 pub use prover::CachedOrchardProver;
 pub use seed_pool::{SeedPoolOutcome, SeedPoolProgress, DEFAULT_SEED_POOL_TARGET_NOTES};
 pub use store::{
-    InMemoryShieldedStore, ShieldedNote, ShieldedOutgoingNote, ShieldedStore, SubwalletId,
+    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, InMemoryShieldedStore, ShieldedNote,
+    ShieldedOutgoingNote, ShieldedStore, SubwalletId,
 };
 pub use sync::{ShieldedSyncSummary, SyncNotesResult};
 

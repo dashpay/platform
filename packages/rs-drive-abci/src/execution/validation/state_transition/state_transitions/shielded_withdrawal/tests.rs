@@ -76,7 +76,9 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let fee = dpp::shielded::compute_shielded_withdrawal_fee(1, platform_version)
             .expect("fee computation should not overflow");
-        let unshielding_amount = fee + platform_version.system_limits.min_withdrawal_amount;
+        let core_fee = dpp::withdrawal::core_fee_in_credits(1).expect("core fee");
+        let unshielding_amount =
+            fee + platform_version.system_limits.min_withdrawal_amount + core_fee;
         create_shielded_withdrawal_transition(
             vec![create_dummy_serialized_action()],
             unshielding_amount,
@@ -1128,7 +1130,9 @@ mod tests {
             // this test exercises rather than short-circuiting on InsufficientShieldedFeeError.
             let fee = dpp::shielded::compute_shielded_withdrawal_fee(2, platform_version)
                 .expect("fee computation should not overflow");
-            let unshielding_amount = fee + platform_version.system_limits.min_withdrawal_amount;
+            let core_fee = dpp::withdrawal::core_fee_in_credits(1).expect("core fee");
+            let unshielding_amount =
+                fee + platform_version.system_limits.min_withdrawal_amount + core_fee;
 
             let transition = create_shielded_withdrawal_transition(
                 vec![action1, action2], // Both have nullifier [1u8; 32]
@@ -1325,6 +1329,7 @@ mod tests {
                 },
                 platform_version,
             )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()))
             .expect("expected to verify shielded withdrawal proof");
 
             assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
@@ -1650,7 +1655,8 @@ mod tests {
                     }
                 },
                 platform_version,
-            );
+            )
+            .map(|(root_hash, outcome)| (root_hash, outcome.into_result()));
             assert!(
                 production_result.is_err(),
                 "production shielded withdrawal verifier must reject a padded proof, got {:?}",

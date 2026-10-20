@@ -13,6 +13,7 @@ pub use signer::IdentitySignerWasm;
 pub use transitions::create_transition::IdentityCreateTransitionWasm;
 pub use transitions::credit_withdrawal_transition::IdentityCreditWithdrawalTransitionWasm;
 pub use transitions::identity_credit_transfer_transition::IdentityCreditTransferWasm;
+pub use transitions::key_limits_update_transition::IdentityKeyLimitsUpdateWasm;
 pub use transitions::masternode_vote_transition::MasternodeVoteTransitionWasm;
 pub use transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
 pub use transitions::top_up_transition::IdentityTopUpTransitionWasm;

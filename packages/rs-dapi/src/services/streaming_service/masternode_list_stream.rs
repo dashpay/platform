@@ -14,6 +14,12 @@ impl StreamingServiceImpl {
         &self,
         _request: Request<MasternodeListRequest>,
     ) -> Result<Response<ReceiverStream<Result<MasternodeListResponse, Status>>>, Status> {
+        let stream_permit = self
+            .masternode_stream_permits
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Status::resource_exhausted("too many active masternode streams"))?;
+
         // Create filter (no filtering needed for masternode list - all updates)
         let filter = FilterType::CoreAllMasternodes;
 
@@ -30,7 +36,16 @@ impl StreamingServiceImpl {
         let sub_handle = subscription_handle.clone();
         let tx_stream = tx.clone();
         let msg_convert_worker = self.workers.spawn(async move {
-            while let Some(message) = sub_handle.recv().await {
+            let _stream_permit = stream_permit;
+            loop {
+                let message = tokio::select! {
+                    biased;
+                    _ = tx_stream.closed() => break,
+                    message = sub_handle.recv() => match message {
+                        Some(message) => message,
+                        None => break,
+                    },
+                };
                 let response = match message {
                     StreamingEvent::CoreMasternodeListDiff { data } => {
                         debug!(

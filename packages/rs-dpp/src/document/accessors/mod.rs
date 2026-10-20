@@ -116,6 +116,24 @@ impl DocumentV0Getters for Document {
             Document::V0(v0) => v0.creator_id,
         }
     }
+
+    fn contract_version(&self) -> Option<u32> {
+        match self {
+            Document::V0(v0) => v0.contract_version,
+        }
+    }
+
+    fn moderated_at(&self) -> Option<TimestampMillis> {
+        match self {
+            Document::V0(v0) => v0.moderated_at,
+        }
+    }
+
+    fn moderated_by(&self) -> Option<Identifier> {
+        match self {
+            Document::V0(v0) => v0.moderated_by,
+        }
+    }
 }
 
 impl DocumentV0Setters for Document {
@@ -213,6 +231,24 @@ impl DocumentV0Setters for Document {
             Document::V0(v0) => v0.creator_id = creator_id,
         }
     }
+
+    fn set_contract_version(&mut self, contract_version: Option<u32>) {
+        match self {
+            Document::V0(v0) => v0.contract_version = contract_version,
+        }
+    }
+
+    fn set_moderated_at(&mut self, moderated_at: Option<TimestampMillis>) {
+        match self {
+            Document::V0(v0) => v0.moderated_at = moderated_at,
+        }
+    }
+
+    fn set_moderated_by(&mut self, moderated_by: Option<Identifier>) {
+        match self {
+            Document::V0(v0) => v0.moderated_by = moderated_by,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -223,6 +259,7 @@ mod tests {
 
     fn make_doc() -> Document {
         Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::new([1u8; 32]),
             owner_id: Identifier::new([2u8; 32]),
             properties: BTreeMap::new(),
@@ -237,6 +274,8 @@ mod tests {
             updated_at_core_block_height: Some(2),
             transferred_at_core_block_height: Some(3),
             creator_id: Some(Identifier::new([9u8; 32])),
+            moderated_at: None,
+            moderated_by: None,
         })
     }
 

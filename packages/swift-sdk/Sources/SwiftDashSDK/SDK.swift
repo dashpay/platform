@@ -1,5 +1,6 @@
 import Foundation
 import DashSDKFFI
+import os.log
 
 // MARK: - Data Extensions
 extension Data {
@@ -420,6 +421,27 @@ public final class SDK: @unchecked Sendable {
     quorumSource = dash_sdk_get_context_provider_source(handle) == 1 ? .spv : .trusted
   }
 
+  /// Offline SDK over the FFI mock (`dash_sdk_create_handle_with_mock`), for
+  /// tests. Its DAPI client never opens a connection: it answers only from
+  /// the recorded `msg_*.json` responses in `vectorsDirectory` (proofs are
+  /// still verified, against its `quorum_pubkey-*.json` keys) and fails any
+  /// other request. `nil` loads no vectors. The FFI builds the mock for
+  /// mainnet, which `network` reports.
+  internal init(mockVectorsDirectory vectorsDirectory: String?) throws {
+    let mockHandle: OpaquePointer?
+    if let vectorsDirectory {
+      mockHandle = vectorsDirectory.withCString { dash_sdk_create_handle_with_mock($0) }
+    } else {
+      mockHandle = dash_sdk_create_handle_with_mock(nil)
+    }
+    guard let mockHandle else {
+      throw SDKError.internalError(
+        "Failed to create mock SDK from \(vectorsDirectory ?? "no vectors")")
+    }
+    handle = mockHandle
+    network = Network(ffiNetwork: dash_sdk_get_network(mockHandle))
+  }
+
   /// Run `body` with two optional C-string pointers. Each input string,
   /// when non-nil, is materialized into a NUL-terminated C buffer that is
   /// valid for the duration of the call; nil inputs pass through as nil
@@ -502,7 +524,16 @@ public final class SDK: @unchecked Sendable {
 
   deinit {
     if let handle = handle {
+      // Timed + thread-stamped: `dash_sdk_destroy` tears down the tokio
+      // runtime synchronously, and the last reference is often released on
+      // the MainActor (host stop / error unwind). This line is the data for
+      // deciding whether destruction ever needs an explicit off-main hop.
+      let started = CFAbsoluteTimeGetCurrent()
+      let offMain = !Thread.isMainThread
       dash_sdk_destroy(handle)
+      let ms = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
+      Logger(subsystem: "dashpay.SwiftDashSDK", category: "SDKLifecycle")
+        .info("dash_sdk_destroy finished in \(ms, privacy: .public)ms offMain=\(offMain, privacy: .public)")
     }
   }
 
@@ -633,10 +664,30 @@ public enum SDKError: Error {
   case timeout(String)
   case notImplemented(String)
   case internalError(String)
+  /// Platform refused the state transition. Carries the rs-dpp consensus
+  /// code and family, so a host can branch on the exact rule that refused it
+  /// (`error.consensusError?.code == 10422` is a violated propertyConstraints
+  /// rule), plus the rendered message the coarse case would have carried.
+  case consensusRejection(PlatformConsensusError, String)
   case unknown(String)
+
+  /// Platform's verdict when this error is a consensus rejection, so a caller
+  /// can write `error.consensusError?.code == 10422` without pattern
+  /// matching. `nil` for every other case.
+  public var consensusError: PlatformConsensusError? {
+    guard case .consensusRejection(let consensus, _) = self else { return nil }
+    return consensus
+  }
 
   public static func fromDashSDKError(_ error: DashSDKError) -> SDKError {
     let message = error.message != nil ? String(cString: error.message!) : "Unknown error"
+
+    // Platform's verdict wins over the coarse code, which rs-sdk-ffi picks
+    // from the rendered text: the same refusal can arrive as ProtocolError or
+    // InternalError depending on its wording.
+    if let consensus = PlatformConsensusError(ffi: error) {
+      return .consensusRejection(consensus, message)
+    }
 
     switch error.code {
     case DashSDKErrorCode(rawValue: 1): // Invalid parameter
@@ -663,6 +714,22 @@ public enum SDKError: Error {
       return .unknown(message)
     }
   }
+
+  /// The error to throw under `message` when an FFI call that signs,
+  /// broadcasts or waits for a state transition fails: `.consensusRejection`
+  /// when `ffiError` carries Platform's verdict, otherwise
+  /// `fallback(message)`, the case the call site threw before the verdict
+  /// crossed the FFI. Read `ffiError` before freeing it.
+  static func stateTransitionFailure(
+    _ message: String,
+    ffiError: DashSDKError?,
+    otherwise fallback: (String) -> SDKError = SDKError.internalError
+  ) -> SDKError {
+    if let ffiError, let consensus = PlatformConsensusError(ffi: ffiError) {
+      return .consensusRejection(consensus, message)
+    }
+    return fallback(message)
+  }
 }
 
 extension SDKError: LocalizedError {
@@ -688,6 +755,8 @@ extension SDKError: LocalizedError {
       return "Feature Not Implemented: \(message)"
     case .internalError(let message):
       return "Internal Error: \(message)"
+    case .consensusRejection(_, let message):
+      return "Rejected by Platform: \(message)"
     case .unknown(let message):
       return "Unknown Error: \(message)"
     }
@@ -734,12 +803,21 @@ public class Identities {
       throw SDKError.internalError("No balance data returned")
     }
 
-    // Parse the balance from result
-    let balancePtr = result.data.assumingMemoryBound(to: UInt64.self)
-    let balance = balancePtr.pointee
+    // `dash_sdk_identity_fetch_balance` returns the balance as a
+    // `success_string` — a NUL-terminated decimal C string (see
+    // rs-sdk-ffi `identity/queries/balance.rs`), NOT a binary `u64`.
+    // Read it as a C string and parse; a previous binary reinterpret
+    // read the ASCII digits as little-endian bytes (garbage balances).
+    let cStr = result.data.assumingMemoryBound(to: CChar.self)
+    let balanceStr = String(cString: cStr)
 
-    // Free the result data
-    dash_sdk_bytes_free(result.data)
+    // String-return results are freed with `dash_sdk_string_free`, like
+    // the other string-returning wrappers in this file.
+    dash_sdk_string_free(cStr)
+
+    guard let balance = UInt64(balanceStr) else {
+      throw SDKError.internalError("Unparseable balance string: \(balanceStr)")
+    }
 
     return balance
   }

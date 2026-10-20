@@ -111,22 +111,39 @@ extension PersistentToken {
     }
 
     public var formattedBaseSupply: String {
-        guard let supplyValue = Double(baseSupply) else { return baseSupply }
+        Self.formatSupply(baseSupply, decimals: decimals)
+    }
 
-        if decimals == 0 {
-            return String(Int(supplyValue))
+    /// Exact formatter for protocol integer strings. It never passes through
+    /// `Double`/`Int`, so `UInt64.max` and decimals-zero supplies are safe.
+    public static func formatSupply(_ raw: String, decimals: Int) -> String {
+        guard !raw.isEmpty, raw.allSatisfy({ $0.isASCII && $0.isNumber }) else {
+            return raw
         }
+        let normalized = String(raw.drop(while: { $0 == "0" }))
+        let digits = normalized.isEmpty ? "0" : normalized
+        let scale = max(0, decimals)
+        let integer: String
+        var fraction = ""
+        if scale == 0 {
+            integer = digits
+        } else if digits.count <= scale {
+            integer = "0"
+            fraction = String(repeating: "0", count: scale - digits.count) + digits
+        } else {
+            let split = digits.index(digits.endIndex, offsetBy: -scale)
+            integer = String(digits[..<split])
+            fraction = String(digits[split...])
+        }
+        while fraction.last == "0" { fraction.removeLast() }
 
-        let divisor = pow(10.0, Double(decimals))
-        let actualSupply = supplyValue / divisor
-
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = decimals
-        formatter.minimumFractionDigits = 0
-        formatter.groupingSeparator = ","
-
-        return formatter.string(from: NSNumber(value: actualSupply)) ?? baseSupply
+        var grouped = ""
+        for (offset, character) in integer.reversed().enumerated() {
+            if offset > 0 && offset.isMultiple(of: 3) { grouped.append(",") }
+            grouped.append(character)
+        }
+        grouped = String(grouped.reversed())
+        return fraction.isEmpty ? grouped : "\(grouped).\(fraction)"
     }
 
     public var contractIdBase58: String {
@@ -167,8 +184,50 @@ extension PersistentToken {
         conventionsChangeRules != nil
     }
 
+    /// The token's once-per-identity distribution: a fixed amount every
+    /// identity may claim exactly once (protocol version 14).
+    ///
+    /// Derived rather than stored in a column of its own. The owning
+    /// contract's `serializedContract` already holds the whole contract JSON,
+    /// distribution rules included, so the value is persisted with every
+    /// contract the parser writes, and a new stored property here would move
+    /// this model's entity hash. Keeping this value derived avoids a redundant
+    /// column and preserves compatibility with released snapshots.
+    /// `perpetualDistribution` and `preProgrammedDistribution` keep their
+    /// existing columns.
+    ///
+    /// Nil both when the token declares no such distribution and when the
+    /// contract JSON cannot be read: a token row whose `dataContract`
+    /// relationship is unset, or a contract persisted without its JSON, has
+    /// nothing to derive from.
+    ///
+    /// Parsing lives in `DataContractParser.parseOncePerIdentityDistribution`
+    /// so the derived read and the contract parser agree on the wire shape,
+    /// and the decode is memoised per contract payload by
+    /// `TokenOncePerIdentityDistributionCache` so reading this per token row
+    /// per paint does not re-parse the whole contract every time.
+    public var oncePerIdentityDistribution: TokenOncePerIdentityDistribution? {
+        guard let contract = dataContract else { return nil }
+        return TokenOncePerIdentityDistributionCache.shared.distribution(
+            contractId: contract.id,
+            serializedContract: contract.serializedContract,
+            lastUpdated: contract.lastUpdated,
+            position: position
+        )
+    }
+
+    /// True when the token carries any distribution kind.
+    ///
+    /// The two column-backed kinds are checked first, so a token that
+    /// already has one answers without touching the contract JSON at all.
+    /// The fall-through is not free even so: the first read of a given
+    /// contract payload decodes it. That decode is paid once per payload
+    /// (see `TokenOncePerIdentityDistributionCache`), not once per call, so
+    /// calling this per row in a list is safe.
     public var hasDistribution: Bool {
-        perpetualDistribution != nil || preProgrammedDistribution != nil
+        perpetualDistribution != nil
+            || preProgrammedDistribution != nil
+            || oncePerIdentityDistribution != nil
     }
 
     public var canChangeTradeMode: Bool {
@@ -186,18 +245,47 @@ extension PersistentToken {
 
     public var totalSupply: String {
         guard let balances = balances, !balances.isEmpty else { return baseSupply }
-        let total = balances.reduce(0) { $0 + $1.balance }
-        return String(total)
+        return Self.sumUnsignedBalances(balances.map(\.unsignedBalance))
     }
 
     public var totalFrozenBalance: String {
         guard let balances = balances else { return "0" }
-        let frozen = balances.filter { $0.frozen }.reduce(0) { $0 + $1.balance }
-        return String(frozen)
+        return Self.sumUnsignedBalances(
+            balances.lazy.filter(\.frozen).map(\.unsignedBalance)
+        )
     }
 
     public var activeHolders: Int {
-        balances?.filter { $0.balance > 0 }.count ?? 0
+        balances?.filter { $0.unsignedBalance > 0 }.count ?? 0
+    }
+
+    /// Sums protocol amounts without narrowing either individual balances or
+    /// the aggregate to a signed/fixed-width integer. Several valid UInt64
+    /// balances can exceed UInt64.max when combined.
+    private static func sumUnsignedBalances<S: Sequence>(_ values: S) -> String
+    where S.Element == UInt64 {
+        var digits: [UInt8] = [0] // little-endian decimal digits
+
+        for value in values {
+            var carry = 0
+            let addend = String(value).utf8.reversed().map { Int($0 - 48) }
+            let width = max(digits.count, addend.count)
+            if digits.count < width {
+                digits.append(contentsOf: repeatElement(0, count: width - digits.count))
+            }
+
+            for index in 0..<width {
+                let sum = Int(digits[index]) + (index < addend.count ? addend[index] : 0) + carry
+                digits[index] = UInt8(sum % 10)
+                carry = sum / 10
+            }
+            while carry > 0 {
+                digits.append(UInt8(carry % 10))
+                carry /= 10
+            }
+        }
+
+        return String(digits.reversed().map { Character(String($0)) })
     }
 
     public var hasMaxSupply: Bool {
@@ -289,10 +377,35 @@ extension PersistentToken {
         }
     }
 
-    public static func distributionTokensPredicate() -> Predicate<PersistentToken> {
+    /// Covers the two column-backed distribution kinds only. A `#Predicate`
+    /// is compiled into a store query over stored properties, so it cannot
+    /// see `oncePerIdentityDistribution`, which is derived from the owning
+    /// contract's JSON. Filter in memory on `hasDistribution` when that kind
+    /// has to count.
+    ///
+    /// The name says "column-backed" because the old one read as "every
+    /// token with a distribution" and no longer is: it disagrees with
+    /// `hasDistribution` on a token whose only distribution is
+    /// once-per-identity.
+    public static func columnBackedDistributionTokensPredicate() -> Predicate<PersistentToken> {
         #Predicate<PersistentToken> { token in
             token.perpetualDistribution != nil || token.preProgrammedDistribution != nil
         }
+    }
+
+    @available(
+        *,
+        deprecated,
+        renamed: "columnBackedDistributionTokensPredicate()",
+        message: """
+            This predicate never matched the once-per-identity kind, which is derived from the \
+            contract JSON rather than stored on the token row. Fetch without it and filter on \
+            `hasDistribution`, or call `columnBackedDistributionTokensPredicate()` when the two \
+            column-backed kinds really are all you want.
+            """
+    )
+    public static func distributionTokensPredicate() -> Predicate<PersistentToken> {
+        columnBackedDistributionTokensPredicate()
     }
 
     public static func pausedTokensPredicate() -> Predicate<PersistentToken> {

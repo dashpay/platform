@@ -3,7 +3,7 @@ const ReconnectableStream = require('@dashevo/dapi-client/lib/transport/Reconnec
 const Worker = require('../../Worker');
 const logger = require('../../../logger');
 const TransactionsReader = require('./TransactionsReader');
-const { getAddressesToSync, getTxHashesFromMerkleBlock } = require('./utils');
+const { getAddressesToSync } = require('./utils');
 const EVENTS = require('../../../EVENTS');
 
 const STATES = {
@@ -64,6 +64,10 @@ class TransactionsSyncWorker extends Worker {
     this.historicalDataObtainedHandler = null;
 
     this.blockHeightChangedHandler = null;
+
+    // InstantLocks are remote assertions. Keep them out of trusted wallet state
+    // unless a caller supplies a verifier backed by trusted quorum history.
+    this.verifyInstantLock = options.verifyInstantLock || (async () => false);
 
     this.historicalTransactionsHandler = this.historicalTransactionsHandler.bind(this);
     this.historicalMerkleBlockHandler = this.historicalMerkleBlockHandler.bind(this);
@@ -427,19 +431,22 @@ class TransactionsSyncWorker extends Worker {
     }
 
     if (headerTime <= 0 || Number.isNaN(headerTime)) {
-      rejectMerkleBlock(rejectMerkleBlock(Error(`Invalid header time: ${headerTime}`)));
+      rejectMerkleBlock(Error(`Invalid header time: ${headerTime}`));
+      return;
+    }
+
+    try {
+      if (!merkleBlock.validMerkleTree()) {
+        rejectMerkleBlock(new Error(`Invalid merkle proof for block ${headerHash}`));
+        return;
+      }
+    } catch (e) {
+      rejectMerkleBlock(e);
       return;
     }
 
     let addressesGenerated = [];
     if (this.historicalTransactionsToVerify.size) {
-      const txHashesInTheBlock = merkleBlock
-        .hashes.reduce((set, hashHex) => {
-          const hash = Buffer.from(hashHex, 'hex').reverse();
-          set.add(hash.toString('hex'));
-          return set;
-        }, new Set());
-
       const metadata = {
         blockHash: headerHash,
         height: headerHeight,
@@ -452,21 +459,21 @@ class TransactionsSyncWorker extends Worker {
 
       try {
         this.historicalTransactionsToVerify.forEach((tx) => {
-          if (!txHashesInTheBlock.has(tx.hash)) {
+          if (!merkleBlock.hasTransaction(tx)) {
             throw new Error(`Transaction ${tx.hash} was not found in merkle block ${headerHash}`);
           }
           transactionsWithMetadata.push([tx, metadata]);
-          this.historicalTransactionsToVerify.delete(tx.hash);
         });
       } catch (e) {
         rejectMerkleBlock(e);
         return;
       }
 
-      // TODO(spv): verify transactions against the merkle block
-
       if (transactionsWithMetadata.length) {
         ({ addressesGenerated } = this.importTransactions(transactionsWithMetadata));
+        transactionsWithMetadata.forEach(([tx]) => {
+          this.historicalTransactionsToVerify.delete(tx.hash);
+        });
       }
     }
 
@@ -565,7 +572,7 @@ class TransactionsSyncWorker extends Worker {
     }
 
     if (headerMetadata.time <= 0 || Number.isNaN(headerMetadata.time)) {
-      rejectMerkleBlock(rejectMerkleBlock(Error(`Invalid header time: ${headerMetadata.time}`)));
+      rejectMerkleBlock(Error(`Invalid header time: ${headerMetadata.time}`));
       return;
     }
 
@@ -577,12 +584,18 @@ class TransactionsSyncWorker extends Worker {
       time: headerTime,
     });
 
+    try {
+      if (!merkleBlock.validMerkleTree()) {
+        rejectMerkleBlock(new Error(`Invalid merkle proof for block ${headerHash}`));
+        return;
+      }
+    } catch (e) {
+      rejectMerkleBlock(e);
+      return;
+    }
+
     let $transactionsFound = 0;
     if (this.historicalTransactionsToVerify.size) {
-      const txHashesInTheBlock = getTxHashesFromMerkleBlock(merkleBlock);
-
-      // TODO: verify merkle block in SPV
-
       const metadata = {
         blockHash: headerHash,
         height: headerHeight,
@@ -595,15 +608,15 @@ class TransactionsSyncWorker extends Worker {
 
       // Traverse through all transactions to verify and re-import ones having metadata
       this.historicalTransactionsToVerify.forEach((tx) => {
-        if (txHashesInTheBlock.has(tx.hash)) {
+        if (merkleBlock.hasTransaction(tx)) {
           transactionsWithMetadata.push([tx, metadata]);
-          this.historicalTransactionsToVerify.delete(tx.hash);
         }
       });
 
       if (transactionsWithMetadata.length) {
         this.importTransactions(transactionsWithMetadata);
         transactionsWithMetadata.forEach(([tx]) => {
+          this.historicalTransactionsToVerify.delete(tx.hash);
           this.parentEvents.emit(EVENTS.CONFIRMED_TRANSACTION, tx);
         });
         $transactionsFound = transactionsWithMetadata.length;
@@ -631,11 +644,20 @@ class TransactionsSyncWorker extends Worker {
    * Processing is locks during the continuous sync
    * @param {InstantLock[]} instantLocks
    */
-  instantLocksHandler(instantLocks) {
-    // TODO: perform IS locks verification
-    instantLocks.forEach((instantLock) => {
-      this.importInstantLock(instantLock);
-    });
+  async instantLocksHandler(instantLocks) {
+    for (const instantLock of instantLocks) {
+      try {
+        const isVerified = await this.verifyInstantLock(instantLock);
+        if (!isVerified) {
+          this.logger.warn('Rejected unverified InstantLock', { txid: instantLock.txid });
+          continue;
+        }
+
+        this.importInstantLock(instantLock);
+      } catch (e) {
+        this.emitError(e);
+      }
+    }
   }
 
   /**

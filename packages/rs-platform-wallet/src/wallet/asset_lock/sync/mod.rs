@@ -4,6 +4,8 @@
 //! recovering locks, waiting for proofs and chain locks, resuming interrupted
 //! locks, and re-deriving private keys.
 
+pub(crate) mod locate;
 mod proof;
-mod recovery;
+pub(crate) mod reconstruction;
+pub(crate) mod recovery;
 mod tracking;

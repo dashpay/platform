@@ -1402,11 +1402,14 @@ private struct TxoSnapshot: Equatable {
 // MARK: - Helper labels
 
 private func addressPoolTypeLabel(_ tag: UInt8) -> String {
+    // Mirrors `PersistentCoreAddress.poolTypeName` — tags 2/3 are the
+    // on-demand "Additional" pools (provider keys etc.), not Rust's
+    // internal "Absent" naming.
     switch tag {
     case 0: return "External"
     case 1: return "Internal"
-    case 2: return "Absent"
-    case 3: return "AbsentHardened"
+    case 2: return "Additional"
+    case 3: return "Additional (Hardened)"
     default: return "Unknown(\(tag))"
     }
 }

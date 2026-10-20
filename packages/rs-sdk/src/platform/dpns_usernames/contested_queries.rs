@@ -18,10 +18,14 @@ use drive::query::vote_poll_vote_state_query::{
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::VotePollsByEndDateDriveQuery;
 use drive_proof_verifier::types::{Contenders, ContestedResource, VotePollsGroupedByTimestamp};
+use futures::{stream, StreamExt};
 use std::collections::BTreeMap;
 
 // DPNS parent domain constant
 const DPNS_PARENT_DOMAIN: &str = "dash";
+/// Keep the fan-out small enough not to overwhelm one DAPI node while avoiding
+/// the previous one-network-round-trip-per-contest serial load.
+const DPNS_VOTE_STATE_QUERY_CONCURRENCY: usize = 8;
 
 /// Represents contest information including contenders and end time
 #[derive(Debug, Clone)]
@@ -327,12 +331,20 @@ impl Sdk {
             .get_current_dpns_contests(None, None, Some(100))
             .await?;
 
-        // Check each name to see if it's resolved and collect contenders with end times
+        // Check each name to see if it's resolved and collect contenders with
+        // end times. `buffered` runs a bounded number of requests concurrently
+        // while yielding them in the BTreeMap's deterministic name order. That
+        // preserves the old limit semantics (the first N unresolved names) and
+        // avoids an unbounded burst against DAPI.
         let mut non_resolved_names: BTreeMap<String, ContestInfo> = BTreeMap::new();
+        let vote_states = stream::iter(current_contests).map(|(name, end_time)| async move {
+            let state = self.get_contested_dpns_vote_state(&name, None).await;
+            (name, end_time, state)
+        });
+        let mut vote_states = vote_states.buffered(DPNS_VOTE_STATE_QUERY_CONCURRENCY);
 
-        for (name, end_time) in current_contests {
-            // Get the vote state for this name
-            match self.get_contested_dpns_vote_state(&name, None).await {
+        while let Some((name, end_time, state)) = vote_states.next().await {
+            match state {
                 Ok(contenders) => {
                     // Check if there's a winner - if not, it's unresolved
                     if contenders.winner.is_none() {

@@ -9,7 +9,7 @@ const mockBlockHeadersProvider = require('../../../../src/test/mocks/mockBlockHe
 const mockStorage = require('../../../../src/test/mocks/mockStorage');
 const BlockHeadersStreamMock = require('../../../../src/test/mocks/BlockHeadersStreamMock');
 const { waitOneTick } = require('../../../../src/test/utils');
-const { mockHeadersChain } = require('../../../../src/test/mocks/dashcore/block');
+const { mineHeadersChain } = require('../../../../src/test/mocks/dashcore/block');
 
 const { BlockHeadersProvider } = DAPIClient;
 const logger = require('../../../../src/logger');
@@ -35,7 +35,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
 
     const { withAdapter } = options;
 
-    headersChain = mockHeadersChain('testnet', NUM_HEADERS);
+    headersChain = await mineHeadersChain('regtest', NUM_HEADERS);
 
     const worker = new BlockHeadersSyncWorker({
       maxHeadersToKeep: HEADERS_TO_KEEP,
@@ -50,6 +50,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
       historicalStreams,
       continuousStream,
       TOTAL_HEADERS_PER_STREAM,
+      'regtest',
     );
     await blockHeadersProvider.initializeChainWith([], 0);
     const storage = await mockStorage({
@@ -177,7 +178,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
         // New headers contains tail of the historical chain,
         // because we are syncing from the chain height
         const tail = headersChain[headersChain.length - 1];
-        const newHeader = mockHeadersChain('testnet', 2, tail)[1];
+        const newHeader = (await mineHeadersChain('regtest', 2, tail))[1];
         headersChain.push(newHeader);
         const newHeaders = [tail, newHeader];
         continuousStream.sendHeaders(newHeaders);
@@ -323,7 +324,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
         // New headers contains tail of the historical chain,
         // because we are syncing from the chain height
         const tail = headersChain[headersChain.length - 1];
-        const newHeader = mockHeadersChain('testnet', 2, tail)[1];
+        const newHeader = (await mineHeadersChain('regtest', 2, tail))[1];
         headersChain.push(newHeader);
         const newHeaders = [tail, newHeader];
         continuousStream.sendHeaders(newHeaders);
@@ -375,7 +376,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
         // Simulate chain update
         const headersToAdd = 50;
         const tail = headersChain[headersChain.length - 1];
-        const newHeaders = mockHeadersChain('testnet', headersToAdd + 1, tail).slice(1);
+        const newHeaders = (await mineHeadersChain('regtest', headersToAdd + 1, tail)).slice(1);
         headersChain = [...headersChain, ...newHeaders];
 
         chainStore.updateChainHeight(prevSyncedHeaderHeight + headersToAdd);
@@ -417,7 +418,7 @@ describe('BlockHeadersSyncWorker - integration', () => {
         // New headers contains tail of the historical chain,
         // because we are syncing from the chain height
         const tail = headersChain[headersChain.length - 1];
-        const newHeader = mockHeadersChain('testnet', 2, tail)[1];
+        const newHeader = (await mineHeadersChain('regtest', 2, tail))[1];
         headersChain.push(newHeader);
         const newHeaders = [tail, newHeader];
         continuousStream.sendHeaders(newHeaders);

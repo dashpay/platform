@@ -4,12 +4,14 @@ use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::identity::identities_contract_keys::IdentitiesContractKeys;
-use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey;
-use dash_sdk::dpp::identity::Purpose;
+use dash_sdk::dpp::identity::{KeyID, Purpose};
 use dash_sdk::platform::identities_contract_keys_query::IdentitiesContractKeysQuery;
+use dash_sdk::platform::identity_keys_remaining_budgets::{
+    IdentityKeysRemainingBudgets, IdentityKeysRemainingBudgetsQuery,
+};
 use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity, IdentityKeysQuery};
-use drive_proof_verifier::types::{IdentityPublicKeys, IndexMap};
+use drive_proof_verifier::types::IdentityPublicKeys;
 use js_sys::{Array, BigInt, Map};
 use rs_dapi_client::IntoInner;
 use serde::{Deserialize, Serialize};
@@ -307,6 +309,54 @@ fn parse_identity_keys_query(
     })
 }
 
+fn build_search_identity_keys_request(
+    identity_id: Identifier,
+    purpose_map: BTreeMap<u32, BTreeMap<u32, IdentityKeysSearchKind>>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> dash_sdk::platform::proto::GetIdentityKeysRequest {
+    use dash_sdk::platform::proto::{
+        get_identity_keys_request::{GetIdentityKeysRequestV0, Version},
+        key_request_type::Request,
+        security_level_map::KeyKindRequestType as GrpcKeyKindRequestType,
+        GetIdentityKeysRequest, KeyRequestType, SearchKey, SecurityLevelMap,
+    };
+
+    let purpose_map = purpose_map
+        .into_iter()
+        .map(|(purpose, levels)| {
+            let security_level_map = levels
+                .into_iter()
+                .map(|(level, kind)| {
+                    let kind_value = match kind {
+                        IdentityKeysSearchKind::Current => {
+                            GrpcKeyKindRequestType::CurrentKeyOfKindRequest as i32
+                        }
+                        IdentityKeysSearchKind::All => {
+                            GrpcKeyKindRequestType::AllKeysOfKindRequest as i32
+                        }
+                    };
+                    (level, kind_value)
+                })
+                .collect::<HashMap<_, _>>();
+
+            (purpose, SecurityLevelMap { security_level_map })
+        })
+        .collect::<HashMap<_, _>>();
+
+    GetIdentityKeysRequest {
+        version: Some(Version::V0(GetIdentityKeysRequestV0 {
+            identity_id: identity_id.to_vec(),
+            prove: true,
+            limit: Some(limit.unwrap_or(100)),
+            offset,
+            request_type: Some(KeyRequestType {
+                request: Some(Request::SearchKey(SearchKey { purpose_map })),
+            }),
+        })),
+    }
+}
+
 #[wasm_bindgen]
 impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentity")]
@@ -384,14 +434,13 @@ impl WasmSdk {
                 result: Some(get_identity_response_v0::Result::Identity(identity_bytes)),
                 ..
             })) => {
-                use dash_sdk::dpp::serialization::PlatformDeserializable;
-                let identity = Identity::deserialize_from_bytes(identity_bytes.as_slice())
-                    .map_err(|e| {
-                        WasmSdkError::serialization(format!(
-                            "Failed to deserialize identity: {}",
-                            e
-                        ))
-                    })?;
+                use dash_sdk::dpp::serialization::PlatformDeserializableUntrusted;
+                let identity = Identity::deserialize_from_bytes_untrusted(
+                    identity_bytes.as_slice(),
+                )
+                .map_err(|e| {
+                    WasmSdkError::serialization(format!("Failed to deserialize identity: {}", e))
+                })?;
                 Ok(identity.into())
             }
             _ => Err(WasmSdkError::not_found("Identity not found")),
@@ -431,96 +480,10 @@ impl WasmSdk {
                 IdentityPublicKey::fetch_many(self.as_ref(), query).await?
             }
             IdentityKeysRequestInput::Search { purpose_map } => {
-                use dash_sdk::platform::proto::{
-                    get_identity_keys_request::{GetIdentityKeysRequestV0, Version},
-                    key_request_type::Request,
-                    security_level_map::KeyKindRequestType as GrpcKeyKindRequestType,
-                    GetIdentityKeysRequest, KeyRequestType, SearchKey, SecurityLevelMap,
-                };
-                use rs_dapi_client::{DapiRequest, RequestSettings};
+                let query =
+                    build_search_identity_keys_request(identity_id, purpose_map, limit, offset);
 
-                let purpose_map = purpose_map
-                    .into_iter()
-                    .map(|(purpose, levels)| {
-                        let security_level_map = levels
-                            .into_iter()
-                            .map(|(level, kind)| {
-                                let kind_value = match kind {
-                                    IdentityKeysSearchKind::Current => {
-                                        GrpcKeyKindRequestType::CurrentKeyOfKindRequest as i32
-                                    }
-                                    IdentityKeysSearchKind::All => {
-                                        GrpcKeyKindRequestType::AllKeysOfKindRequest as i32
-                                    }
-                                };
-                                (level, kind_value)
-                            })
-                            .collect::<HashMap<_, _>>();
-
-                        (purpose, SecurityLevelMap { security_level_map })
-                    })
-                    .collect::<HashMap<_, _>>();
-
-                let request = GetIdentityKeysRequest {
-                    version: Some(Version::V0(GetIdentityKeysRequestV0 {
-                        identity_id: identity_id.to_vec(),
-                        prove: false,
-                        limit: Some(limit.unwrap_or(100)),
-                        offset,
-                        request_type: Some(KeyRequestType {
-                            request: Some(Request::SearchKey(SearchKey { purpose_map })),
-                        }),
-                    })),
-                };
-
-                let response = request
-                    .execute(self.as_ref(), RequestSettings::default())
-                    .await
-                    .map_err(|e| {
-                        WasmSdkError::generic(format!(
-                            "Failed to fetch search identity keys: {}",
-                            e
-                        ))
-                    })?;
-
-                use dash_sdk::platform::proto::{
-                    get_identity_keys_response::Version as ResponseVersion, GetIdentityKeysResponse,
-                };
-                use rs_dapi_client::IntoInner;
-
-                let response: GetIdentityKeysResponse = response.into_inner();
-                match response.version {
-                    Some(ResponseVersion::V0(response_v0)) => {
-                        if let Some(result) = response_v0.result {
-                            match result {
-                                dash_sdk::platform::proto::get_identity_keys_response::get_identity_keys_response_v0::Result::Keys(
-                                    keys_response,
-                                ) => {
-                                    let mut key_map: IdentityPublicKeys = IndexMap::new();
-                                    for key_bytes in keys_response.keys_bytes {
-                                        use dash_sdk::dpp::serialization::PlatformDeserializable;
-                                        let key = dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey::deserialize_from_bytes(
-                                                key_bytes.as_slice(),
-                                            )
-                                            .map_err(|e| WasmSdkError::serialization(
-                                                format!("Failed to deserialize identity public key: {}", e),
-                                            ))?;
-                                        key_map.insert(key.id(), Some(key));
-                                    }
-                                    key_map
-                                }
-                                _ => {
-                                    return Err(
-                                        WasmSdkError::generic("Unexpected response format"),
-                                    );
-                                }
-                            }
-                        } else {
-                            return Err(WasmSdkError::not_found("No keys found in response"));
-                        }
-                    }
-                    _ => return Err(WasmSdkError::generic("Unexpected response version")),
-                }
+                IdentityPublicKey::fetch_many(self.as_ref(), query).await?
             }
         };
 
@@ -749,8 +712,8 @@ impl WasmSdk {
         if let Some(keys_map) = keys_result {
             for (identity_id, purposes_map) in keys_map {
                 let identity_keys: Vec<IdentityPublicKeyWasm> = purposes_map
-                    .into_iter()
-                    .filter_map(|(_, key_opt)| key_opt.map(IdentityPublicKeyWasm::from))
+                    .into_values()
+                    .filter_map(|key_opt| key_opt.map(IdentityPublicKeyWasm::from))
                     .collect();
 
                 if !identity_keys.is_empty() {
@@ -890,10 +853,12 @@ impl WasmSdk {
                 IdentityPublicKey::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
                     .await?
             }
-            IdentityKeysRequestInput::Search { .. } => {
-                return Err(WasmSdkError::invalid_argument(
-                    "Search key requests are not supported with proof",
-                ));
+            IdentityKeysRequestInput::Search { purpose_map } => {
+                let query =
+                    build_search_identity_keys_request(identity_id, purpose_map, limit, offset);
+
+                IdentityPublicKey::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
+                    .await?
             }
         };
 
@@ -1113,8 +1078,8 @@ impl WasmSdk {
         if let Some(keys_map) = keys_result {
             for (identity_id, purposes_map) in keys_map {
                 let identity_keys: Vec<IdentityPublicKeyWasm> = purposes_map
-                    .into_iter()
-                    .filter_map(|(_, key_opt)| key_opt.map(IdentityPublicKeyWasm::from))
+                    .into_values()
+                    .filter_map(|key_opt| key_opt.map(IdentityPublicKeyWasm::from))
                     .collect();
 
                 if !identity_keys.is_empty() {
@@ -1181,5 +1146,151 @@ impl WasmSdk {
             metadata,
             proof,
         ))
+    }
+
+    /// What is left of the budgets of several keys of one identity (protocol version 14).
+    ///
+    /// Every requested key id is in the returned map: a `bigint` for a key with a budget (`0n`
+    /// means the key can no longer sign), `null` for a key without a budget or a key that does
+    /// not exist.
+    #[wasm_bindgen(
+        js_name = "getIdentityKeysRemainingBudgets",
+        unchecked_return_type = "Map<number, bigint | null>"
+    )]
+    pub async fn get_identity_keys_remaining_budgets(
+        &self,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "keyIds", unchecked_param_type = "number[]")] key_ids: Array,
+    ) -> Result<Map, WasmSdkError> {
+        let query = parse_identity_keys_remaining_budgets_query(identity_id, key_ids)?;
+        let key_ids = query.key_ids.clone();
+
+        let budgets = IdentityKeysRemainingBudgets::fetch(self.as_ref(), query)
+            .await?
+            .unwrap_or_default();
+
+        Ok(identity_keys_remaining_budgets_to_map(&key_ids, &budgets))
+    }
+
+    /// [`Self::get_identity_keys_remaining_budgets`] with the proof and the response metadata.
+    #[wasm_bindgen(
+        js_name = "getIdentityKeysRemainingBudgetsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<number, bigint | null>>"
+    )]
+    pub async fn get_identity_keys_remaining_budgets_with_proof_info(
+        &self,
+        #[wasm_bindgen(js_name = "identityId")] identity_id: IdentifierLikeJs,
+        #[wasm_bindgen(js_name = "keyIds", unchecked_param_type = "number[]")] key_ids: Array,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let query = parse_identity_keys_remaining_budgets_query(identity_id, key_ids)?;
+        let key_ids = query.key_ids.clone();
+
+        let (budgets, metadata, proof) =
+            IdentityKeysRemainingBudgets::fetch_with_metadata_and_proof(self.as_ref(), query, None)
+                .await?;
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            JsValue::from(identity_keys_remaining_budgets_to_map(
+                &key_ids,
+                &budgets.unwrap_or_default(),
+            )),
+            metadata,
+            proof,
+        ))
+    }
+}
+
+/// Key ids arrive as JS numbers: anything that is not a whole number a key id can hold is
+/// refused here rather than silently wrapped into another key's id.
+fn parse_identity_keys_remaining_budgets_query(
+    identity_id: IdentifierLikeJs,
+    key_ids: Array,
+) -> Result<IdentityKeysRemainingBudgetsQuery, WasmSdkError> {
+    let identity_id: Identifier = identity_id
+        .try_into()
+        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?;
+
+    let key_ids = key_ids
+        .iter()
+        .map(|value| {
+            value
+                .as_f64()
+                .filter(|id| id.fract() == 0.0 && (0.0..=f64::from(KeyID::MAX)).contains(id))
+                .map(|id| id as KeyID)
+                .ok_or_else(|| {
+                    WasmSdkError::invalid_argument(
+                        "keyIds must be whole numbers between 0 and 4294967295",
+                    )
+                })
+        })
+        .collect::<Result<Vec<KeyID>, WasmSdkError>>()?;
+
+    Ok(IdentityKeysRemainingBudgetsQuery {
+        identity_id,
+        key_ids,
+    })
+}
+
+fn identity_keys_remaining_budgets_to_map(
+    key_ids: &[KeyID],
+    budgets: &IdentityKeysRemainingBudgets,
+) -> Map {
+    let map = Map::new();
+    for key_id in key_ids {
+        let value = match budgets.get(key_id) {
+            Some(Some(remaining)) => JsValue::from(BigInt::from(*remaining)),
+            _ => JsValue::NULL,
+        };
+        map.set(&JsValue::from(*key_id), &value);
+    }
+    map
+}
+
+#[cfg(test)]
+mod identity_keys_search_request_tests {
+    use super::*;
+    use dash_sdk::platform::proto::{
+        get_identity_keys_request::Version, key_request_type::Request,
+        security_level_map::KeyKindRequestType,
+    };
+
+    #[test]
+    fn search_requests_require_proofs_and_preserve_the_selector() {
+        let identity_id = Identifier::new([1; 32]);
+        let mut levels = BTreeMap::new();
+        levels.insert(2, IdentityKeysSearchKind::Current);
+        levels.insert(3, IdentityKeysSearchKind::All);
+        let mut purposes = BTreeMap::new();
+        purposes.insert(1, levels);
+
+        let request = build_search_identity_keys_request(identity_id, purposes, Some(42), Some(7));
+
+        let Version::V0(request) = request.version.expect("request version");
+        assert!(request.prove);
+        assert_eq!(request.identity_id, identity_id.to_vec());
+        assert_eq!(request.limit, Some(42));
+        assert_eq!(request.offset, Some(7));
+
+        let Request::SearchKey(search) = request
+            .request_type
+            .expect("request type")
+            .request
+            .expect("search request")
+        else {
+            panic!("expected search key request");
+        };
+        let levels = &search
+            .purpose_map
+            .get(&1)
+            .expect("purpose")
+            .security_level_map;
+        assert_eq!(
+            levels.get(&2),
+            Some(&(KeyKindRequestType::CurrentKeyOfKindRequest as i32))
+        );
+        assert_eq!(
+            levels.get(&3),
+            Some(&(KeyKindRequestType::AllKeysOfKindRequest as i32))
+        );
     }
 }

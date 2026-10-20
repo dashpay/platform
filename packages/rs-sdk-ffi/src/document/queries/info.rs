@@ -359,8 +359,15 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
         });
     }
 
+    // Keep the allocation length and the exported count under the same
+    // authority. Some Platform values (notably text containing an embedded
+    // NUL) cannot be represented by this C-string ABI and are skipped above;
+    // using the original property count would let consumers walk and free
+    // past the filtered allocation.
+    let data_fields_count = data_fields.len();
+
     // Convert vector to raw pointer
-    let data_fields_ptr = if data_fields.is_empty() {
+    let data_fields_ptr = if data_fields_count == 0 {
         std::ptr::null_mut()
     } else {
         let mut fields = data_fields.into_boxed_slice();
@@ -377,9 +384,94 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
         revision: document.revision().unwrap_or(0),
         created_at: document.created_at().map(|t| t as i64).unwrap_or(0),
         updated_at: document.updated_at().map(|t| t as i64).unwrap_or(0),
-        data_fields_count: properties.len(),
+        data_fields_count,
         data_fields: data_fields_ptr,
     };
 
     Box::into_raw(Box::new(info))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::dash_sdk_document_info_free;
+    use dash_sdk::dpp::document::DocumentV0;
+    use dash_sdk::dpp::platform_value::Identifier;
+    use std::collections::BTreeMap;
+    use std::ffi::CStr;
+
+    fn document_with_properties(properties: BTreeMap<String, Value>) -> Document {
+        Document::V0(DocumentV0 {
+            id: Identifier::new([1; 32]),
+            owner_id: Identifier::new([2; 32]),
+            properties,
+            ..Default::default()
+        })
+    }
+
+    unsafe fn document_info(document: &Document) -> *mut DashSDKDocumentInfo {
+        dash_sdk_document_get_info(document as *const Document as *const DocumentHandle)
+    }
+
+    #[test]
+    fn embedded_nul_value_does_not_inflate_exported_field_count() {
+        let document = document_with_properties(BTreeMap::from([
+            ("kept".to_string(), Value::Text("ordinary".to_string())),
+            (
+                "skipped".to_string(),
+                Value::Text("left\0right".to_string()),
+            ),
+        ]));
+
+        unsafe {
+            let info = document_info(&document);
+            assert!(!info.is_null());
+            assert_eq!((*info).data_fields_count, 1);
+            assert!(!(*info).data_fields.is_null());
+
+            let field = &*(*info).data_fields;
+            assert_eq!(CStr::from_ptr(field.name).to_bytes(), b"kept");
+            assert_eq!(CStr::from_ptr(field.value).to_bytes(), b"ordinary");
+
+            // Exercises the production destructor with the exported count.
+            dash_sdk_document_info_free(info);
+        }
+    }
+
+    #[test]
+    fn all_unrepresentable_fields_export_a_null_empty_slice() {
+        let document = document_with_properties(BTreeMap::from([(
+            "skipped".to_string(),
+            Value::Text("left\0right".to_string()),
+        )]));
+
+        unsafe {
+            let info = document_info(&document);
+            assert!(!info.is_null());
+            assert_eq!((*info).data_fields_count, 0);
+            assert!((*info).data_fields.is_null());
+            dash_sdk_document_info_free(info);
+        }
+    }
+
+    #[test]
+    fn multiple_filtered_fields_preserve_exact_allocation_length() {
+        let document = document_with_properties(BTreeMap::from([
+            ("a-skipped".to_string(), Value::Text("a\0b".to_string())),
+            ("m-kept".to_string(), Value::I64(42)),
+            ("z-skipped".to_string(), Value::Text("c\0d".to_string())),
+        ]));
+
+        unsafe {
+            let info = document_info(&document);
+            assert!(!info.is_null());
+            assert_eq!((*info).data_fields_count, 1);
+            assert!(!(*info).data_fields.is_null());
+            assert_eq!(
+                CStr::from_ptr((*(*info).data_fields).name).to_bytes(),
+                b"m-kept"
+            );
+            dash_sdk_document_info_free(info);
+        }
+    }
 }

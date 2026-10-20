@@ -1483,12 +1483,28 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dashevo/app-connect-contract@workspace:packages/app-connect-contract":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/app-connect-contract@workspace:packages/app-connect-contract"
+  dependencies:
+    "@dashevo/wasm-dpp": "workspace:*"
+    chai: "npm:^4.3.10"
+    dirty-chai: "npm:^2.0.1"
+    eslint: "npm:^9.18.0"
+    mocha: "npm:^11.1.0"
+    sinon: "npm:^18.0.1"
+    sinon-chai: "npm:^3.7.0"
+  languageName: unknown
+  linkType: soft
+
 "@dashevo/bench-suite@workspace:packages/bench-suite":
   version: 0.0.0-use.local
   resolution: "@dashevo/bench-suite@workspace:packages/bench-suite"
   dependencies:
+    "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.22.0"
     "@dashevo/dpns-contract": "workspace:*"
+    "@dashevo/evo-sdk": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
     console-table-printer: "npm:^2.11.0"
@@ -1577,6 +1593,7 @@ __metadata:
     mocha-sinon: "npm:^2.1.2"
     sinon: "npm:^18.0.1"
     sinon-chai: "npm:^3.7.0"
+    ts-protoc-gen: "npm:0.15.0"
   languageName: unknown
   linkType: soft
 
@@ -1589,7 +1606,7 @@ __metadata:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dapi-grpc": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.22.0"
-    "@dashevo/dashd-rpc": "npm:^19.0.0"
+    "@dashevo/dashd-rpc": "npm:^19.1.0"
     "@dashevo/dp-services-ctl": "github:dashevo/js-dp-services-ctl#v0.19-dev"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/wasm-dpp": "workspace:*"
@@ -1677,13 +1694,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@dashevo/dashd-rpc@npm:^19.0.0":
-  version: 19.0.0
-  resolution: "@dashevo/dashd-rpc@npm:19.0.0"
+"@dashevo/dashd-rpc@npm:^19.1.0":
+  version: 19.1.0
+  resolution: "@dashevo/dashd-rpc@npm:19.1.0"
   dependencies:
     async: "npm:^3.2.4"
     bluebird: "npm:^3.7.2"
-  checksum: 10/2eab84af3e9e654601b6bdf02b670352e4a6aec5ee0cdb3b4d0fd81655ff9b4792dbec0fd02cdc72dc54b1867103f53e17264cf5b966a4c51f2d691088d783d1
+  checksum: 10/5d3ebf1f0b1a5547946ca090aa98ad18ca291c811bc40ff9d8e532d0291ea7b1592423e49ed7946da06bb344ebee8065712a6c0be38c6c27e3407588c78367e0
   languageName: node
   linkType: hard
 
@@ -1720,6 +1737,20 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@dashevo/document-history-contract@workspace:packages/document-history-contract":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/document-history-contract@workspace:packages/document-history-contract"
+  dependencies:
+    "@dashevo/wasm-dpp": "workspace:*"
+    chai: "npm:^4.3.10"
+    dirty-chai: "npm:^2.0.1"
+    eslint: "npm:^9.18.0"
+    mocha: "npm:^11.1.0"
+    sinon: "npm:^18.0.1"
+    sinon-chai: "npm:^3.7.0"
+  languageName: unknown
+  linkType: soft
+
 "@dashevo/dp-services-ctl@github:dashevo/js-dp-services-ctl#v0.19-dev":
   version: 0.19.0-dev.1
   resolution: "@dashevo/dp-services-ctl@https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"
@@ -1747,14 +1778,14 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/evo-sdk@workspace:packages/js-evo-sdk":
+"@dashevo/evo-sdk@workspace:*, @dashevo/evo-sdk@workspace:packages/js-evo-sdk":
   version: 0.0.0-use.local
   resolution: "@dashevo/evo-sdk@workspace:packages/js-evo-sdk"
   dependencies:
     "@dashevo/wasm-sdk": "workspace:*"
     "@types/chai": "npm:^4.3.11"
     "@types/mocha": "npm:^10.0.6"
-    "@types/node": "npm:^20.10.0"
+    "@types/node": "npm:^22.0.0"
     "@types/sinon": "npm:^9.0.4"
     "@types/sinon-chai": "npm:^3.2.4"
     assert: "npm:^2.0.0"
@@ -1839,6 +1870,20 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/moderation-charters-contract@workspace:packages/moderation-charters-contract":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/moderation-charters-contract@workspace:packages/moderation-charters-contract"
+  dependencies:
+    "@dashevo/wasm-dpp": "workspace:*"
+    chai: "npm:^4.3.10"
+    dirty-chai: "npm:^2.0.1"
+    eslint: "npm:^9.18.0"
+    mocha: "npm:^11.1.0"
+    sinon: "npm:^18.0.1"
+    sinon-chai: "npm:^3.7.0"
+  languageName: unknown
+  linkType: soft
+
 "@dashevo/platform-test-suite@workspace:packages/platform-test-suite":
   version: 0.0.0-use.local
   resolution: "@dashevo/platform-test-suite@workspace:packages/platform-test-suite"
@@ -1846,6 +1891,7 @@ __metadata:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.22.0"
     "@dashevo/dpns-contract": "workspace:*"
+    "@dashevo/evo-sdk": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
     "@dashevo/wallet-lib": "workspace:*"
@@ -2041,7 +2087,7 @@ __metadata:
   dependencies:
     "@types/chai": "npm:^4.3.11"
     "@types/mocha": "npm:^10.0.6"
-    "@types/node": "npm:^20.10.0"
+    "@types/node": "npm:^22.0.0"
     assert: "npm:^2.0.0"
     bs58: "npm:^4.0.1"
     buffer: "npm:^6.0.3"
@@ -2083,7 +2129,7 @@ __metadata:
     "@dashevo/dashcore-lib": "npm:~0.22.0"
     "@dashevo/dpns-contract": "workspace:*"
     "@types/bs58": "npm:^4.0.1"
-    "@types/node": "npm:^20.10.0"
+    "@types/node": "npm:^22.0.0"
     "@yarnpkg/pnpify": "npm:^4.0.0-rc.42"
     ajv: "npm:^8.18.0"
     assert: "npm:^2.0.0"
@@ -2134,7 +2180,7 @@ __metadata:
   dependencies:
     "@types/chai": "npm:^4.3.11"
     "@types/mocha": "npm:^10.0.6"
-    "@types/node": "npm:^20.10.0"
+    "@types/node": "npm:^22.0.0"
     assert: "npm:^2.0.0"
     buffer: "npm:^6.0.3"
     chai: "npm:^4.3.10"
@@ -3891,12 +3937,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:^20.10.0":
-  version: 20.19.30
-  resolution: "@types/node@npm:20.19.30"
+"@types/node@npm:^22.0.0":
+  version: 22.20.5
+  resolution: "@types/node@npm:22.20.5"
   dependencies:
     undici-types: "npm:~6.21.0"
-  checksum: 10/4a25e5cbcdfc61b9bf45ebbbd199a6ce26efed34bd67c45c3472654a1cf988f7b58ec7c1574ffb5b83c6a772e7eaf1ca9de94fdafc3a36ae6efb852c1f0b6fb0
+  checksum: 10/a223a73e00e948b751b00144523674ecc73e7a3f14f48a0f3a6fca40745ff548a8b0ff5baca090d45ae8b61481cc56c1158db4df312970baeb6fc1b81fc511a1
   languageName: node
   linkType: hard
 
@@ -7236,7 +7282,7 @@ __metadata:
     "@types/chai": "npm:^4.3.11"
     "@types/dirty-chai": "npm:^2.0.2"
     "@types/mocha": "npm:^10.0.6"
-    "@types/node": "npm:^20.10.0"
+    "@types/node": "npm:^22.0.0"
     "@types/sinon": "npm:^9.0.4"
     "@types/sinon-chai": "npm:^3.2.4"
     "@yarnpkg/pnpify": "npm:^4.0.0-rc.42"
@@ -7296,7 +7342,7 @@ __metadata:
     "@dashevo/bls": "npm:~1.2.9"
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": "npm:~0.22.0"
-    "@dashevo/dashd-rpc": "npm:^19.0.0"
+    "@dashevo/dashd-rpc": "npm:^19.1.0"
     "@dashevo/docker-compose": "npm:^0.24.4"
     "@dashevo/wallet-lib": "workspace:*"
     "@dashevo/withdrawals-contract": "workspace:*"
@@ -7334,6 +7380,7 @@ __metadata:
     oclif: "npm:^4.0.3"
     pretty-bytes: "npm:^5.3.0"
     pretty-ms: "npm:^7.0.0"
+    proper-lockfile: "npm:^4.1.2"
     public-ip: "npm:^6.0.1"
     qs: "npm:^6.14.2"
     rxjs: "npm:^6.6.7"
@@ -7344,6 +7391,7 @@ __metadata:
     table: "npm:^6.8.1"
     tar: "npm:7.5.10"
     wrap-ansi: "npm:^7.0.0"
+    write-file-atomic: "npm:^5.0.1"
   bin:
     dashmate: ./bin/run.js
   languageName: unknown
@@ -9954,6 +10002,13 @@ __metadata:
   version: 3.19.1
   resolution: "google-protobuf@npm:3.19.1"
   checksum: 10/fc0e7eab4f1755d7519df5d01538916da96adc42b193a6184aeab9e1afec49ce6a64a9f09716b30772e4d3117a3a57d3ed92b67a7dff64e69f558158a7a0576b
+  languageName: node
+  linkType: hard
+
+"google-protobuf@npm:^3.15.5":
+  version: 3.21.4
+  resolution: "google-protobuf@npm:3.21.4"
+  checksum: 10/0d87fe8ef221d105cbaa808f4024bd577638524d8e461469e3733f2e4933391ad4da86b7fcbd11e8781bee04eacf2e8ba19aaacd5f9deb336a220485841d980f
   languageName: node
   linkType: hard
 
@@ -14752,6 +14807,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"proper-lockfile@npm:^4.1.2":
+  version: 4.1.2
+  resolution: "proper-lockfile@npm:4.1.2"
+  dependencies:
+    graceful-fs: "npm:^4.2.4"
+    retry: "npm:^0.12.0"
+    signal-exit: "npm:^3.0.2"
+  checksum: 10/000a4875f543f591872b36ca94531af8a6463ddb0174f41c0b004d19e231d7445268b422ff1ea595e43d238655c702250cd3d27f408e7b9d97b56f1533ba26bf
+  languageName: node
+  linkType: hard
+
 "protobufjs@npm:^6.11.4":
   version: 6.11.4
   resolution: "protobufjs@npm:6.11.4"
@@ -17418,6 +17484,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"ts-protoc-gen@npm:0.15.0":
+  version: 0.15.0
+  resolution: "ts-protoc-gen@npm:0.15.0"
+  dependencies:
+    google-protobuf: "npm:^3.15.5"
+  bin:
+    protoc-gen-ts: bin/protoc-gen-ts
+  checksum: 10/de1d526b47886e1994995836b1e1e5765193f476ee0aded067a2e4154d60df0bd8fb33a1f56654a1ea779576c158c184b7beca36e59f620c9382217040f91d64
+  languageName: node
+  linkType: hard
+
 "tsconfck@npm:^3.0.0":
   version: 3.0.0
   resolution: "tsconfck@npm:3.0.0"
@@ -18721,6 +18798,16 @@ __metadata:
     imurmurhash: "npm:^0.1.4"
     signal-exit: "npm:^3.0.7"
   checksum: 10/e3edc4917c0ee82b369eb2dfd38251d11a83a26dba2702836225497f68b59b60514d68cdc2fa869348b5c3455e4c68e1fa32c0532c8ad5123cc89755bfd53d96
+  languageName: node
+  linkType: hard
+
+"write-file-atomic@npm:^5.0.1":
+  version: 5.0.1
+  resolution: "write-file-atomic@npm:5.0.1"
+  dependencies:
+    imurmurhash: "npm:^0.1.4"
+    signal-exit: "npm:^4.0.1"
+  checksum: 10/648efddba54d478d0e4330ab6f239976df3b9752b123db5dc9405d9b5af768fa9d70ce60c52fdbe61d1200d24350bc4fbcbaf09288496c2be050de126bd95b7e
   languageName: node
   linkType: hard
 

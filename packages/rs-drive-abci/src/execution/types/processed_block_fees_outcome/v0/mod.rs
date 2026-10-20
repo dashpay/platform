@@ -10,6 +10,10 @@ pub struct ProcessedBlockFeesOutcome {
     pub payouts: Option<proposer_payouts::v0::ProposersPayouts>,
     /// A number of epochs which had refunded
     pub refunded_epochs_count: Option<u16>,
+    /// The credits the applied batch minted into Platform (the epoch Core block rewards, on an
+    /// epoch change): the fee-processing share of the block's credit inflow, recorded for the
+    /// net daily withdrawal limit
+    pub credit_mints: dpp::fee::Credits,
 }
 
 impl fmt::Display for ProcessedBlockFeesOutcome {
@@ -26,12 +30,13 @@ impl fmt::Display for ProcessedBlockFeesOutcome {
         )?;
         writeln!(
             f,
-            "    refunded_epochs_count: {}",
+            "    refunded_epochs_count: {},",
             match self.refunded_epochs_count {
                 Some(count) => count.to_string(),
                 None => "None".to_string(),
             }
         )?;
+        writeln!(f, "    credit_mints: {}", self.credit_mints)?;
         write!(f, "}}")
     }
 }
@@ -54,12 +59,14 @@ mod tests {
                 paid_epoch_index: 5,
             }),
             refunded_epochs_count: Some(2),
+            credit_mints: 5000,
         };
         let output = format!("{}", outcome);
         assert!(output.contains("ProcessedBlockFeesOutcome"));
         assert!(output.contains("fees_in_pools:"));
         assert!(output.contains("proposers_paid_count: 3"));
         assert!(output.contains("refunded_epochs_count: 2"));
+        assert!(output.contains("credit_mints: 5000"));
     }
 
     #[test]
@@ -71,9 +78,11 @@ mod tests {
             },
             payouts: None,
             refunded_epochs_count: None,
+            credit_mints: 0,
         };
         let output = format!("{}", outcome);
         assert!(output.contains("payouts: None"));
+        assert!(output.contains("credit_mints: 0"));
         assert!(output.contains("refunded_epochs_count: None"));
     }
 }

@@ -1,0 +1,592 @@
+import { SSL_PROVIDERS } from '../../../constants.js';
+import ServiceIsNotRunningError from '../../../docker/errors/ServiceIsNotRunningError.js';
+import CertificateUnresolvedError from '../../../ssl/errors/CertificateUnresolvedError.js';
+import ConfigurationLockLostError from '../../../ssl/errors/ConfigurationLockLostError.js';
+import deriveRenewalGuidance, { SAFE_ACTION } from '../../../ssl/renewalGuidance.js';
+import renderObtainCommand from '../../../ssl/renderObtainCommand.js';
+import { RENEWAL_RECORD_STATES } from '../../../ssl/renewalRecord/RenewalRecordRepository.js';
+import {
+  CERTIFICATE_REASONS,
+  CERTIFICATE_STATUS,
+  describeStatus,
+  requiresReplacement,
+} from '../../../ssl/checkGatewayCertificateFactory.js';
+import promptOrThrow from '../../../util/promptOrThrow.js';
+import renderConfigFlag from '../../../util/renderConfigFlag.js';
+
+/**
+ * Below this the switch is offered with Yes preselected. Six of the twenty-one
+ * ZeroSSL certificates still alive on mainnet at the time of the census had a
+ * week or less left.
+ */
+const ZEROSSL_URGENT_DAYS = 14;
+
+/**
+ * What declining actually leaves behind, said only as far as the verdict goes.
+ *
+ * Always the pair installed for the gateway, never what the node is serving:
+ * these checks read files and never opened a connection, so the two are not
+ * known to be the same thing. And never that nothing is wrong in general - only
+ * that nothing stopped this update.
+ *
+ * @param {Object} verdict
+ * @return {string}
+ */
+function renderDeclining(verdict) {
+  if (verdict.status === CERTIFICATE_STATUS.CHECKS_PASSED) {
+    return '  The certificate passed these checks. Declining changes nothing.\n';
+  }
+
+  if (verdict.status !== CERTIFICATE_STATUS.WARN) {
+    return '  Declining leaves the certificate failing the checks above.\n';
+  }
+
+  // Rendered rather than referred to: the warnings are printed after the
+  // command finishes, so pointing at them would point at a blank screen.
+  return `  Declining changes nothing. These checks found:
+
+${verdict.warnings.map(({ message }) => `    - ${message}\n`).join('')}`;
+}
+
+/**
+ * The whole argument for switching, including the port-80 requirement, in the
+ * prompt header - this is the last moment the operator can go and open a
+ * firewall rule instead of failing three times.
+ *
+ * @param {Config} config
+ * @param {string} externalIp
+ * @param {Object} [options]
+ * @param {Object} [options.verdict] - decides what declining leaves behind, and
+ *   carries the warnings the operator is being asked to weigh
+ * @return {string}
+ */
+function renderSwitchOffer(config, externalIp, { verdict } = {}) {
+  return `  Switch to Let's Encrypt and get a free certificate for ${externalIp}.
+
+  You need inbound port 80 reachable from the internet permanently, for
+  certificate reissue. Answer No if it is not open yet.
+${renderDeclining(verdict ?? { status: CERTIFICATE_STATUS.INVALID, warnings: [] })}`;
+}
+
+/**
+ * The operator who just succeeded is the one who never sees a port-80 failure
+ * message, and is quite possibly the one who opened port 80 by hand for this
+ * migration alone. Saying nothing here reproduces the dark-node failure in a
+ * fresh cohort within a week.
+ *
+ * @param {Config} config
+ * @param {Object} verdict - the verdict taken after the obtain
+ * @return {string}
+ */
+function renderSuccess(config, verdict) {
+  const expiresAt = verdict.installed
+    ? verdict.installed.validTo.toISOString().slice(0, 10)
+    : 'unknown';
+  const days = verdict.expiresInDays === null ? '?' : Math.floor(verdict.expiresInDays);
+
+  return `  Certificate obtained for ${config.get('externalIp')}, valid until ${expiresAt} (${days} days).
+
+  Keep inbound port 80 reachable from the internet permanently, for certificate
+  reissue. Nothing will warn you if it lapses.
+
+      dashmate doctor ${renderConfigFlag(config.getName())}
+`;
+}
+
+/**
+ * Carry a verdict's warnings into the run's report.
+ *
+ * The command prints only what is collected here, so a branch that re-checks
+ * and returns without this drops any warning the new state carries - a
+ * provider that still disagrees, or an accepted self-signed certificate on a
+ * fullnode - from everything except machine output.
+ *
+ * @param {Object} ctx
+ * @param {Object} verdict
+ */
+function collectWarnings(ctx, verdict) {
+  if (verdict.warnings.length === 0) {
+    return;
+  }
+
+  ctx.certificateWarnings = [
+    ...(ctx.certificateWarnings ?? []),
+    ...verdict.warnings.map(({ message }) => message),
+  ];
+}
+
+/**
+ * @param {Object} verdict
+ * @param {string} code
+ * @return {boolean}
+ */
+function hasReason(verdict, code) {
+  return verdict.reasons.some((reason) => reason.code === code);
+}
+
+/**
+ * @param {checkGatewayCertificate} checkGatewayCertificate
+ * @param {obtainLetsEncryptCertificateTask} obtainLetsEncryptCertificateTask
+ * @param {installCertificateFilesTask} installCertificateFilesTask
+ * @param {ConfigFileJsonRepository} configFileRepository
+ * @param {ConfigFile} configFile
+ * @param {writeConfigTemplates} writeConfigTemplates
+ * @param {DockerCompose} dockerCompose
+ * @return {gatewayCertificateTask}
+ */
+export default function gatewayCertificateTaskFactory(
+  checkGatewayCertificate,
+  obtainLetsEncryptCertificateTask,
+  installCertificateFilesTask,
+  configFileRepository,
+  configFile,
+  writeConfigTemplates,
+  dockerCompose,
+  renewalRecordRepository,
+) {
+  /**
+   * What the helper last recorded, and whether a certificate could be kept.
+   *
+   * Every branch that prints or runs an obtain asks this. Deciding it per
+   * branch is how the ZeroSSL warning came to print a command the same file
+   * withheld twenty lines further down, and how an unreadable record came to
+   * read as no record at all.
+   *
+   * @param {Config} config
+   * @param {Object} verdict
+   * @return {Object}
+   */
+  function renewalGuidanceFor(config, verdict) {
+    const { state, record } = renewalRecordRepository.read(config.getName());
+    const isManaged = config.get('platform.gateway.ssl.enabled') === true;
+
+    // A record left by a previous provider, one an installed certificate has
+    // already outlived, or one describing a success is not this node's current
+    // state - and a record that exists and cannot be read is not the same as
+    // one that is absent.
+    const applicable = state === RENEWAL_RECORD_STATES.PRESENT
+      && isManaged
+      && record.isFailed()
+      && record.appliesTo({
+        provider: config.get('platform.gateway.ssl.provider'),
+        certificateValidFrom: verdict.installed ? verdict.installed.validFrom : null,
+      })
+      ? record
+      : null;
+
+    return deriveRenewalGuidance({
+      record: applicable,
+      isRecordUnreadable: isManaged && state === RENEWAL_RECORD_STATES.UNREADABLE,
+      // This surface only speaks when the certificate did not pass, so waiting
+      // for the next automatic attempt is never affordable here.
+      isCertificateUsable: false,
+    });
+  }
+  /**
+   * Persist the provider, and only after a certificate exists to back it.
+   *
+   * Writing the provider first and then failing to obtain converts a node that
+   * was working with an expiring certificate into one that is broken:
+   * configuration would name an authority the node has no account with, and
+   * the helper's watcher would reschedule renewal against it within a minute,
+   * forever.
+   *
+   * @param {Config} config
+   */
+  function persistProvider(config) {
+    // Issuance takes minutes, which is long enough for this lease to be lost
+    // and another command to save and render newer state. Rendering from this
+    // configuration would overwrite that.
+    if (!configFileRepository.isExclusive()) {
+      throw new ConfigurationLockLostError('Lost the configuration lock while obtaining the certificate, so the'
+        + ' provider was not saved. The certificate was obtained and installed; re-run once no'
+        + ' other command is changing configuration.');
+    }
+
+    // Written immediately rather than at command exit, because update goes on
+    // into a multi-minute image pull afterwards. Both calls are needed: saving
+    // clears the collection's changed flag but leaves the individual config
+    // marked changed until its templates render.
+    configFileRepository.write(configFile);
+    writeConfigTemplates(config);
+  }
+
+  /**
+   * Envoy reads the certificate files once at startup. Under the documented
+   * upgrade procedure the node is stopped and the new certificate loads at the
+   * next start, but update against a running node is supported too and there
+   * the reload is what makes the change reach the wire.
+   *
+   * A signal is sufficient and nothing here needs to restart the container.
+   * PID 1 in the gateway container is Envoy's hot-restarter, not Envoy: its
+   * SIGHUP handler forks and re-execs Envoy with an incremented restart epoch
+   * against the same envoy.yaml. The new process parses that file from scratch
+   * and opens the certificate by name, so both a renewed certificate and a
+   * changed listener structure take effect while the old process drains. A
+   * container restart would achieve the same thing and cost an outage.
+   *
+   * @param {Config} config
+   * @return {Promise<void>}
+   */
+  async function reloadGateway(config) {
+    try {
+      await dockerCompose.execCommand(config, 'gateway', 'kill -SIGHUP 1');
+    } catch (e) {
+      if (!(e instanceof ServiceIsNotRunningError)) {
+        // The files are already in place by the time this runs, so the raw
+        // signalling error on its own reads as though the certificate work
+        // failed. It did not: what is installed is good and the running gateway
+        // simply has not been told, which is a different thing to recover from.
+        throw new Error(`The certificate is installed, but the gateway could not be signalled`
+          + ` to load it: ${e.message}\n`
+          + 'The node keeps serving the certificate it had until it is loaded:\n'
+          + `    dashmate restart ${renderConfigFlag(config.getName())} --platform`);
+      }
+    }
+  }
+
+  /**
+   * Check the certificate installed for the gateway and, when an operator is
+   * there to answer, offer to repair it.
+   *
+   * @typedef {gatewayCertificateTask}
+   * @param {Config} config
+   * @param {Object} options
+   * @param {boolean} options.interactive
+   * @param {boolean} [options.skipCertificateCheck]
+   * @return {function(Object, Object): Promise<void>}
+   */
+  function gatewayCertificateTask(config, { interactive, skipCertificateCheck = false }) {
+    const cfg = renderConfigFlag(config.getName());
+
+    /**
+     * Run an obtain and decide what its outcome means.
+     *
+     * A failure is judged by re-checking the installed pair rather than by
+     * where it happened. An obtain that failed before touching the gateway
+     * files leaves the node exactly as it was; one that failed between the two
+     * writes can have replaced a working pair with a mismatched one, and
+     * reporting success there would tell an operator their node is fine at the
+     * moment it stopped serving TLS.
+     *
+     * @param {Object} ctx
+     * @param {Function} run
+     * @return {Promise<Object>} the verdict after the attempt
+     */
+    async function attemptObtain(ctx, run) {
+      try {
+        await run();
+      } catch (e) {
+        ctx.certificateObtainError = e;
+
+        return checkGatewayCertificate(config);
+      }
+
+      persistProvider(config);
+
+      await reloadGateway(config);
+
+      return checkGatewayCertificate(config);
+    }
+
+    /**
+     * @param {Object} ctx
+     * @return {Promise<Object>}
+     */
+    async function switchToLetsEncrypt(ctx, verdict) {
+      // Shared with the printed remediation, so the command an operator copies
+      // does what this path does.
+      return attemptObtain(ctx, () => obtainLetsEncryptCertificateTask(config)
+        .run({ ...ctx, interactive, force: ctx.force || requiresReplacement(verdict) }));
+    }
+
+    return async (ctx, task) => {
+      const verdict = checkGatewayCertificate(config);
+
+      ctx.certificate = verdict;
+
+      // The check always runs, even when enforcement is bypassed, so a playbook
+      // carrying the flag keeps surfacing the problem instead of muting it.
+      if (skipCertificateCheck) {
+        ctx.certificateSkipped = true;
+
+        task.skip(`Enforcement skipped, the certificate ${describeStatus(verdict.status)}`);
+
+        return;
+      }
+
+      // Anything short of blocking, not only a spotless verdict. A ZeroSSL node
+      // reaches WARN through any warning at all, including the certificate
+      // running out inside a day - and that is when the switch below matters
+      // most, so gating it on a clean verdict withheld the offer at exactly the
+      // moment it was worth making.
+      if (verdict.status !== CERTIFICATE_STATUS.INVALID) {
+        // Someone who bought a certificate is never nagged. ZeroSSL is the one
+        // exception, because a free account stops being able to renew and the
+        // operator has no way to find that out until it has happened.
+        if (verdict.provider !== SSL_PROVIDERS.ZEROSSL) {
+          collectWarnings(ctx, verdict);
+
+          return;
+        }
+
+        const daysLeft = Math.floor(verdict.expiresInDays ?? 0);
+        // Below a day this floors to zero, and "expires in 0 days" reads as a
+        // rendering fault rather than as the most urgent thing on the page.
+        const remaining = daysLeft < 1 ? 'in less than a day' : `in ${daysLeft} days`;
+
+        // Said on every run, to a human and to a script alike: a free ZeroSSL
+        // account allows three certificates in total, and nothing tells an
+        // operator that renewal has stopped being possible until it has.
+        // This certificate still works, so nothing here is urgent - but it
+        // still ends in a command, and a command is an instruction to run it.
+        // Both endings below used to be chosen without reading the record at
+        // all, so a node that already has an issuance outstanding, or one that
+        // could not save what it obtained, was offered another anyway.
+        const guidance = renewalGuidanceFor(config, verdict);
+        const mayAsk = guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN;
+
+        const withheld = `\n\n    Do not obtain one yet - a certificate may already have been issued.
+    Send a report instead: dashmate doctor report ${cfg}`;
+
+        const warn = () => {
+          ctx.certificateWarnings = [
+            ...(ctx.certificateWarnings ?? []),
+            `This node uses ZeroSSL and its certificate expires ${remaining}.`
+            + ' A free ZeroSSL account allows three certificates in total, so renewals'
+            + ` stop working after about 270 days.${mayAsk
+              ? `\n\n    ${renderObtainCommand({ configName: config.getName(), guidance })}`
+              : withheld}`,
+          ];
+        };
+
+        if (!interactive || !mayAsk) {
+          warn();
+          collectWarnings(ctx, verdict);
+
+          return;
+        }
+
+        const accepted = await promptOrThrow(task, {
+          type: 'toggle',
+          header: renderSwitchOffer(config, config.get('externalIp'), { verdict }),
+          message: "Switch to Let's Encrypt and obtain a certificate now?",
+          enabled: 'Yes',
+          disabled: 'Not now',
+          initial: daysLeft < ZEROSSL_URGENT_DAYS,
+        }, { interactive });
+
+        if (!accepted) {
+          warn();
+          collectWarnings(ctx, verdict);
+
+          return;
+        }
+
+        const after = await switchToLetsEncrypt(ctx, verdict);
+
+        // Nothing was blocking before this ran, so a failure that left the node
+        // as it was is a warning. A failure that damaged the installed pair is
+        // not, and this is the only thing that can tell them apart. Judged the
+        // same way as every other branch - anything short of blocking is a
+        // node that still works, and a certificate can cross the
+        // expiring-soon boundary during a multi-minute failed obtain.
+        if (after.status !== CERTIFICATE_STATUS.INVALID) {
+          ctx.certificate = after;
+
+          if (ctx.certificateObtainError) {
+            // Nothing was touched, so the node still holds the ZeroSSL
+            // certificate and still needs to hear about it.
+            warn();
+
+            ctx.certificateWarnings.push(
+              `The switch to Let's Encrypt did not complete: ${ctx.certificateObtainError.message}`
+              + '\nThe certificate this node was already using is untouched.',
+            );
+
+            collectWarnings(ctx, after);
+          } else {
+            // The node is no longer on ZeroSSL, so its expiry is no longer
+            // this node's problem and repeating it would contradict the
+            // success message.
+            ctx.certificateSuccess = renderSuccess(config, after);
+          }
+
+          return;
+        }
+
+        ctx.certificate = after;
+
+        throw new CertificateUnresolvedError(after);
+      }
+
+      // INVALID from here on. Nothing is acted on without an operator: a
+      // configuration change nobody asked for, made unattended on infrastructure
+      // they own, is not dashmate's to make - and it would replace a diagnosis
+      // with a silent failure.
+      if (!interactive) {
+        throw new CertificateUnresolvedError(verdict);
+      }
+
+      // Nothing can be obtained for an address dashmate does not have - the
+      // obtain command refuses to start - so offering to run one here would
+      // replace a clear diagnosis with a raw failure part way through. The
+      // guidance names the setting that has to come first.
+      if (hasReason(verdict, CERTIFICATE_REASONS.NO_EXTERNAL_IP)) {
+        throw new CertificateUnresolvedError(verdict);
+      }
+
+      // Only when the interrupted switch is the whole problem. The pair being
+      // byte-identical to the one lego produced says nothing about whether it
+      // is still valid, so this state can carry an expired or misaddressed
+      // certificate alongside it - and there the setting is not all that is
+      // missing. Those fall through to the obtain below.
+      if (verdict.reasons.length === 1
+        && hasReason(verdict, CERTIFICATE_REASONS.SWITCH_INCOMPLETE)) {
+        const complete = await promptOrThrow(task, {
+          type: 'toggle',
+          header: `  A Let's Encrypt certificate is installed for the gateway, but the
+  configuration still names ${verdict.provider}, so dashmate's helper is renewing the
+  wrong provider. No certificate needs to be obtained - only the setting has
+  to be saved.\n`,
+          message: 'Finish the interrupted switch now?',
+          enabled: 'Yes',
+          disabled: 'No',
+          initial: true,
+        }, { interactive });
+
+        if (!complete) {
+          throw new CertificateUnresolvedError(verdict);
+        }
+
+        config.set('platform.gateway.ssl.enabled', true);
+        config.set('platform.gateway.ssl.provider', SSL_PROVIDERS.LETSENCRYPT);
+
+        persistProvider(config);
+
+        await reloadGateway(config);
+
+        // Judged by what the node holds afterwards, like every other branch.
+        // Persisting can fail, the reload can fail, and the installed pair can
+        // expire between the check and the write - telling an operator their
+        // node is fixed when it is dark is worse than saying nothing.
+        const after = checkGatewayCertificate(config);
+
+        ctx.certificate = after;
+        collectWarnings(ctx, after);
+
+        if (after.status === CERTIFICATE_STATUS.INVALID) {
+          throw new CertificateUnresolvedError(after);
+        }
+
+        return;
+      }
+
+      // An operator with their own certificate is offered the chance to replace
+      // it before changing authority is even suggested.
+      if ([SSL_PROVIDERS.FILE, SSL_PROVIDERS.SELF_SIGNED].includes(verdict.provider)) {
+        const installFiles = await promptOrThrow(task, {
+          type: 'toggle',
+          header: `  ${verdict.reasons[0].message}
+
+  If you have a replacement certificate and key on disk, dashmate can install
+  them for the gateway now.\n`,
+          message: 'Install new certificate files now?',
+          enabled: 'Yes',
+          disabled: 'No',
+          initial: verdict.provider === SSL_PROVIDERS.FILE,
+        }, { interactive });
+
+        if (installFiles) {
+          await installCertificateFilesTask(config, { interactive }).run({ ...ctx, interactive });
+
+          // The gateway listener is branched on the provider: self-signed
+          // renders a tls_inspector and a raw_buffer filter chain, so the port
+          // goes on accepting plaintext connections. Leaving the setting behind
+          // would keep that chain on a node that now holds a real certificate.
+          //
+          // Written only now, after the files are installed, so configuration
+          // can never name a provider the node has no certificate for. Saved
+          // immediately rather than at command exit, because update carries on
+          // into a multi-minute pull and the end-of-run save is skipped
+          // whenever the run later throws.
+          config.set('platform.gateway.ssl.enabled', true);
+          config.set('platform.gateway.ssl.provider', SSL_PROVIDERS.FILE);
+
+          persistProvider(config);
+
+          await reloadGateway(config);
+
+          const after = checkGatewayCertificate(config);
+          ctx.certificate = after;
+          collectWarnings(ctx, after);
+
+          if (after.status !== CERTIFICATE_STATUS.INVALID) {
+            return;
+          }
+
+          throw new CertificateUnresolvedError(after);
+        }
+      }
+
+      // Let's Encrypt is already configured, so there is nothing to switch to -
+      // it is the only authority that issues IP-address certificates over ACME.
+      // The offer is to try obtaining again.
+      const isAlreadyLetsEncrypt = verdict.provider === SSL_PROVIDERS.LETSENCRYPT;
+
+      const header = isAlreadyLetsEncrypt
+        ? `  ${verdict.reasons[0].message}
+
+  This node is already on Let's Encrypt, so there is no provider to switch to.
+  Renewal has most likely been failing without anyone being told; dashmate has
+  not inspected the helper's history to confirm that.
+
+  The most likely cause is inbound port 80, which Let's Encrypt re-checks on
+  every renewal - permanently, roughly every four days. It is not always port
+  80: half the nodes in this state have it open and stopped renewing anyway.\n`
+        : renderSwitchOffer(config, config.get('externalIp'));
+
+      // What the helper recorded, before offering to spend a certificate. This
+      // prompt used to run without reading it at all - it defaults to Yes and
+      // obtains directly, so a node with an issuance already outstanding, or
+      // one whose storage cannot hold a certificate, could be talked into
+      // spending another from a weekly handful. A guarantee enforced on the
+      // other surfaces and bypassed here is not a guarantee.
+      const guidance = renewalGuidanceFor(config, verdict);
+
+      if (guidance.safeAction === SAFE_ACTION.DO_NOT_OBTAIN) {
+        throw new CertificateUnresolvedError(verdict);
+      }
+
+      const accepted = await promptOrThrow(task, {
+        type: 'toggle',
+        header,
+        message: isAlreadyLetsEncrypt
+          ? 'Try to obtain a new certificate now?'
+          : "Switch to Let's Encrypt and obtain a certificate now?",
+        enabled: 'Yes',
+        disabled: 'No',
+        // Nothing works today, so trying costs the operator nothing they still
+        // have. The exception is a certificate they bought, where changing
+        // authority is a decision only they can make.
+        initial: verdict.provider !== SSL_PROVIDERS.FILE,
+      }, { interactive });
+
+      if (!accepted) {
+        throw new CertificateUnresolvedError(verdict);
+      }
+
+      const after = await switchToLetsEncrypt(ctx, verdict);
+
+      ctx.certificate = after;
+
+      if (after.status === CERTIFICATE_STATUS.INVALID) {
+        throw new CertificateUnresolvedError(after);
+      }
+
+      ctx.certificateSuccess = renderSuccess(config, after);
+    };
+  }
+
+  return gatewayCertificateTask;
+}

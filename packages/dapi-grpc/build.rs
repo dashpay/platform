@@ -5,11 +5,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use prost_build::{Config, Service, ServiceGenerator};
 use tonic_prost_build::Builder;
 
 const SERDE_WITH_BYTES: &str = r#"#[cfg_attr(feature = "serde", serde(with = "serde_bytes"))]"#;
 const SERDE_WITH_BASE64: &str =
     r#"#[cfg_attr(feature = "serde", serde(with = "crate::deserialization::vec_base64string"))]"#;
+const SERDE_DEFAULT: &str = r#"#[cfg_attr(feature = "serde", serde(default))]"#;
 const SERDE_WITH_STRING: &str =
     r#"#[cfg_attr(feature = "serde", serde(with = "crate::deserialization::from_to_string"))]"#;
 
@@ -69,6 +71,7 @@ fn generate_code(typ: ImplType, output_base: &Path) {
 
     println!("cargo:rerun-if-changed=./protos");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_SERDE");
+    println!("cargo:rerun-if-env-changed=CARGO_FEATURE_TRANSPORT");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_TARGET_ARCH");
     println!("cargo:rerun-if-env-changed=DAPI_GRPC_OUT_DIR");
 }
@@ -78,16 +81,52 @@ struct MappingConfig {
     out_dir: PathBuf,
     builder: Builder,
     proto_includes: Vec<PathBuf>,
+    server_generation: bool,
+}
+
+/// Generate clients and servers separately so their codecs can preserve decode direction.
+struct ClientServerGenerator {
+    client: Box<dyn ServiceGenerator>,
+    server: Box<dyn ServiceGenerator>,
+}
+
+impl ServiceGenerator for ClientServerGenerator {
+    fn generate(&mut self, service: Service, buf: &mut String) {
+        self.client.generate(service.clone(), buf);
+        self.server.generate(service, buf);
+    }
+
+    fn finalize(&mut self, buf: &mut String) {
+        self.client.finalize(buf);
+        self.server.finalize(buf);
+    }
+
+    fn finalize_package(&mut self, package: &str, buf: &mut String) {
+        self.client.finalize_package(package, buf);
+        self.server.finalize_package(package, buf);
+    }
 }
 
 fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 56] = [
+    const VERSIONED_REQUESTS: [&str; 69] = [
+        "GetContractModerationStatusRequest",
+        "GetContractModerationEntriesRequest",
+        "GetContractDocumentRemovalsRequest",
+        "GetContractTeamActionsRequest",
+        "GetContractTeamActionSignersRequest",
+        "GetContractModerationActionCountsRequest",
+        "GetContractFeePotsRequest",
+        "GetContractGroupInfoRequest",
+        "GetContractGroupMembersRequest",
+        "GetContractGroupsForContractRequest",
         "GetDataContractHistoryRequest",
+        "GetDataContractsLatestVersionsRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
+        "GetDataContractsByRangeRequest",
         "GetDocumentHistoryRequest",
         "GetDocumentsRequest",
         "GetIdentitiesByPublicKeyHashesRequest",
@@ -95,6 +134,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentitiesBalancesRequest",
         "GetIdentityNonceRequest",
         "GetIdentityContractNonceRequest",
+        "GetIdentityKeysRemainingBudgetsRequest",
         "GetIdentityBalanceAndRevisionRequest",
         "GetIdentityBalanceRequest",
         "GetIdentityByNonUniquePublicKeyHashRequest",
@@ -151,12 +191,21 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetConsensusParamsResponse"
     // - "GetStatusResponse"
     //
-    // The following responses are excluded as they need custom proof handling:
-    // - "GetIdentityByNonUniquePublicKeyHashResponse"
-    //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 54] = [
+    const VERSIONED_RESPONSES: [&str; 67] = [
+        "GetIdentityByNonUniquePublicKeyHashResponse",
+        "GetContractModerationStatusResponse",
+        "GetContractModerationEntriesResponse",
+        "GetContractDocumentRemovalsResponse",
+        "GetContractTeamActionsResponse",
+        "GetContractTeamActionSignersResponse",
+        "GetContractModerationActionCountsResponse",
+        "GetContractFeePotsResponse",
+        "GetContractGroupInfoResponse",
+        "GetContractGroupMembersResponse",
+        "GetContractGroupsForContractResponse",
         "GetDataContractHistoryResponse",
+        "GetDataContractsLatestVersionsResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
         "GetDocumentHistoryResponse",
@@ -168,6 +217,7 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         "GetIdentityBalanceResponse",
         "GetIdentityNonceResponse",
         "GetIdentityContractNonceResponse",
+        "GetIdentityKeysRemainingBudgetsResponse",
         "GetIdentityByPublicKeyHashResponse",
         "GetIdentityKeysResponse",
         "GetIdentityResponse",
@@ -334,6 +384,20 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         .field_attribute("id", SERDE_WITH_BYTES)
         .field_attribute("identity_id", SERDE_WITH_BYTES)
         .field_attribute("ids", SERDE_WITH_BASE64)
+        // Wire-format compat for mock vectors captured before the chained
+        // surface existed: the field deserializes to its default when
+        // absent (same pattern DocumentQuery's own serde defaults follow
+        // for pre-SQL-surface fixtures).
+        .field_attribute("GetDocumentsRequestV1.chained", SERDE_DEFAULT)
+        .field_attribute("GetDocumentsRequestV1.sub_queries", SERDE_DEFAULT)
+        // Same compat rule for the typed IN_TIME_RANGE operand: mock
+        // vectors captured while the operand still rode `value` carry no
+        // `time_range` key.
+        .field_attribute("GetDocumentsRequest.WhereClause.time_range", SERDE_DEFAULT)
+        .field_attribute(
+            "GetDocumentsRequest.WhereClause.integer_range",
+            SERDE_DEFAULT,
+        )
         .field_attribute("ResponseMetadata.height", SERDE_WITH_STRING)
         .field_attribute("ResponseMetadata.time_ms", SERDE_WITH_STRING)
         .field_attribute("start_at_ms", SERDE_WITH_STRING)
@@ -416,15 +480,23 @@ enum ImplType {
 impl ImplType {
     // Configure the builder based on the implementation type.
     pub fn configure(&self, builder: Builder) -> Builder {
+        // The `transport` cargo feature controls whether generated clients get
+        // the `connect()` convenience impls over tonic's own channel. Without
+        // it, clients are still generated but stay generic over the caller's
+        // transport. Never enabled for wasm32, where tonic transport does not
+        // build. Note: cfg!(target_arch) in a build script reflects the HOST,
+        // so the target must be read from CARGO_CFG_TARGET_ARCH.
+        let transport = std::env::var("CARGO_FEATURE_TRANSPORT").is_ok()
+            && std::env::var("CARGO_CFG_TARGET_ARCH").map(|arch| arch != "wasm32") == Ok(true);
         match self {
             Self::Server => builder
                 .build_client(true)
                 .build_server(true)
-                .build_transport(true),
+                .build_transport(transport),
             Self::Client => builder
                 .build_client(true)
                 .build_server(false)
-                .build_transport(true),
+                .build_transport(transport),
             Self::Wasm => builder
                 .build_client(true)
                 .build_server(false)
@@ -466,6 +538,10 @@ impl MappingConfig {
         let builder = typ
             .configure(tonic_prost_build::configure())
             .out_dir(out_dir.clone())
+            // Emit the FileDescriptorSet alongside the generated code so
+            // consumers can enumerate the served rpcs at test time (e.g.
+            // rs-dapi asserts its metrics allowlist covers every method).
+            .file_descriptor_set_path(out_dir.join("descriptor.bin"))
             .protoc_arg("--experimental_allow_proto3_optional");
 
         Self {
@@ -473,6 +549,7 @@ impl MappingConfig {
             out_dir,
             builder,
             proto_includes: vec![abs_path(&PathBuf::from("protos"))],
+            server_generation: matches!(typ, ImplType::Server),
         }
     }
 
@@ -516,8 +593,26 @@ impl MappingConfig {
         }
         create_dir_all(&self.out_dir)?;
 
-        self.builder
-            .compile_protos(&[self.protobuf_file], &self.proto_includes)
+        if self.server_generation {
+            let client = self.builder.clone().build_server(false).service_generator();
+            let server = self
+                .builder
+                .clone()
+                .build_client(false)
+                .codec_path("crate::request_codec::RequestCodec")
+                .service_generator();
+            let mut config = Config::new();
+            config.service_generator(Box::new(ClientServerGenerator { client, server }));
+
+            // Disable the outer generators to retain the supplied composite generator.
+            self.builder
+                .build_client(false)
+                .build_server(false)
+                .compile_with_config(config, &[self.protobuf_file], &self.proto_includes)
+        } else {
+            self.builder
+                .compile_protos(&[self.protobuf_file], &self.proto_includes)
+        }
     }
 }
 

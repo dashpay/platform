@@ -124,7 +124,7 @@ A single unified gRPC endpoint exposes the feature: `GetDocumentsCount`. The res
 
 When `prove=false`, drive-abci calls into `DriveDocumentCountQuery` (in [`packages/rs-drive/src/query/drive_document_count_query/mod.rs`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/mod.rs)). The handler picks a path based on the where clauses:
 
-**Unfiltered total (no where clauses) on a `documentsCountable: true` document type** ([`Drive::read_primary_key_count_tree`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/drive_dispatcher.rs)):
+**Unfiltered total (no where clauses) on a `documentsCountable: true` document type** ([`read_primary_key_count_tree`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-drive/src/query/drive_document_count_query/executors/total.rs)):
 
 The doctype's primary-key tree at `[contract_doc, contract_id, 1, doctype, 0]` is itself a `CountTree`. One grovedb read gives `count_value` — the total document count. O(1).
 
@@ -391,7 +391,11 @@ A few notes about the index-level flag:
 | Future offset-style range queries (not yet released — see above) | `rangeCountable: true` on the document type |
 | Nothing count-aware (default) | Don't set any of these flags. Primary-key tree stays a `NormalTree`. |
 
-A migration check from `dapi-grpc` server logic: every count query requires either `documentsCountable: true` (for unfiltered totals) or a `countable: true` / `rangeCountable: true` index whose properties **exactly match** the query's where-clause fields. No covering index → the call returns a clear `InvalidArgument` describing what the picker was looking for ("requires a `range_countable: true` index whose last property matches the range field" for range queries, "requires a countable index whose properties exactly match the where clause fields" for Equal/In queries). Pick your indexes deliberately at contract creation time — per-index `countable: true` / `rangeCountable: true` flags can't be added later (contract indexes are immutable post-creation).
+A migration check from `dapi-grpc` server logic: every count query requires either `documentsCountable: true` (for unfiltered totals) or a `countable: true` / `rangeCountable: true` index whose properties **exactly match** the query's where-clause fields. No covering index → the call returns a clear `InvalidArgument` describing what the picker was looking for ("requires a `range_countable: true` (or summableOffCountIndex) index whose last property matches the range field" for range queries, "requires a countable index whose properties exactly match the where clause fields" for Equal/In queries). Pick your indexes deliberately at contract creation time — per-index `countable: true` / `rangeCountable: true` flags can't be added later (contract indexes are immutable post-creation).
+
+### Counts Are Public
+
+Anyone can run a count query and verify its proof, so a countable index publishes everything its counts reveal. Encrypting a document's fields does not hide its existence or its indexed values. A countable index keyed first by a recipient and then by the document owner answers "who sent documents to this recipient, and how many" for every recipient. On the DashPay `contactRequest` type, a countable `[toUserId, $ownerId]` index would publish every user's inbound contacts. If a UI only needs a badge, a countable index on the recipient alone (`["toUserId"]`) reveals a total and no per-sender edges.
 
 ## SDK Access at Three Layers
 

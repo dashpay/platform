@@ -1,5 +1,8 @@
 pub use prost::Message;
 
+#[cfg(all(feature = "server", not(target_arch = "wasm32")))]
+mod request_codec;
+
 #[cfg(feature = "core")]
 pub mod core {
     #![allow(non_camel_case_types)]
@@ -25,6 +28,26 @@ pub mod core {
         include!(concat!(
             env!("DAPI_GRPC_OUT_DIR"),
             "/core/wasm/org.dash.platform.dapi.v0.rs"
+        ));
+
+        /// Serialized `FileDescriptorSet` for the Core proto — lets consumers
+        /// enumerate the served rpcs (e.g. to assert metrics allowlists).
+        #[cfg(all(feature = "server", not(target_arch = "wasm32")))]
+        pub const FILE_DESCRIPTOR_SET: &[u8] = include_bytes!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/core/server/descriptor.bin"
+        ));
+
+        /// Serialized `FileDescriptorSet` for the Core proto — lets consumers
+        /// enumerate the served rpcs (e.g. to assert metrics allowlists).
+        #[cfg(all(
+            feature = "client",
+            not(feature = "server"),
+            not(target_arch = "wasm32")
+        ))]
+        pub const FILE_DESCRIPTOR_SET: &[u8] = include_bytes!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/core/client/descriptor.bin"
         ));
     }
 }
@@ -52,6 +75,28 @@ pub mod platform {
         include!(concat!(
             env!("DAPI_GRPC_OUT_DIR"),
             "/platform/wasm/org.dash.platform.dapi.v0.rs"
+        ));
+
+        /// Serialized `FileDescriptorSet` for the Platform proto — lets
+        /// consumers enumerate the served rpcs (e.g. to assert metrics
+        /// allowlists).
+        #[cfg(all(feature = "server", not(target_arch = "wasm32")))]
+        pub const FILE_DESCRIPTOR_SET: &[u8] = include_bytes!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/platform/server/descriptor.bin"
+        ));
+
+        /// Serialized `FileDescriptorSet` for the Platform proto — lets
+        /// consumers enumerate the served rpcs (e.g. to assert metrics
+        /// allowlists).
+        #[cfg(all(
+            feature = "client",
+            not(feature = "server"),
+            not(target_arch = "wasm32")
+        ))]
+        pub const FILE_DESCRIPTOR_SET: &[u8] = include_bytes!(concat!(
+            env!("DAPI_GRPC_OUT_DIR"),
+            "/platform/client/descriptor.bin"
         ));
     }
 

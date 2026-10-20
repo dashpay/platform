@@ -5,7 +5,8 @@ jobs:
   build-js:
     name: Build JS
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Allow for a cold native compiler build and the final artifact upload.
+    timeout-minutes: 25
     steps:
       - uses: softwareforgood/check-artifact-v4-existence@v0
         id: check-artifact
@@ -18,42 +19,16 @@ jobs:
           fetch-depth: 0
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
-      - name: Check DockerHub credentials
-        id: check-dockerhub
-        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
-        run: |
-          if [ -n "$DOCKERHUB_USERNAME" ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-        if: ${{ steps.check-artifact.outputs.exists != 'true' && steps.check-dockerhub.outputs.available == 'true' }}
-
-      - name: Cache protoc Docker image
-        id: cache-protoc
+      - name: Cache native client generators
         uses: actions/cache@v5
         with:
-          path: /tmp/protoc-image.tar
-          key: docker-rvolosatovs-protoc-4.0.0
+          path: ~/.cache/dash/client-codegen
+          key: client-codegen/${{ runner.os }}/${{ runner.arch }}/${{ hashFiles('packages/dapi-grpc/codegen.json') }}
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
-      - name: Load protoc image from cache
-        run: docker load -i /tmp/protoc-image.tar
-        if: ${{ steps.check-artifact.outputs.exists != 'true' && steps.cache-protoc.outputs.cache-hit == 'true' }}
-
-      - name: Pull and cache protoc Docker image
-        run: |
-          docker pull rvolosatovs/protoc:4.0.0
-          docker save rvolosatovs/protoc:4.0.0 -o /tmp/protoc-image.tar
-        if: ${{ steps.check-artifact.outputs.exists != 'true' && steps.cache-protoc.outputs.cache-hit != 'true' }}
+      - name: Install pinned native client generators
+        run: python3 packages/dapi-grpc/scripts/setup-codegen.py --install
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs

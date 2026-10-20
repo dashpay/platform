@@ -9,6 +9,7 @@ use super::super::{DriveDocumentCountQuery, SplitCountEntry};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::ResolvedTimeRange;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
@@ -31,12 +32,13 @@ impl Drive {
     /// [`DriveDocumentCountQuery::detect_mode`] that exactly one
     /// `In` clause is present in `where_clauses`.
     #[allow(clippy::too_many_arguments)]
-    pub fn execute_document_count_per_in_value_no_proof(
+    pub(crate) fn execute_document_count_per_in_value_no_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_ranges: &[ResolvedTimeRange],
         options: RangeCountOptions,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -97,10 +99,11 @@ impl Drive {
             let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
                 document_type.indexes(),
                 &clauses_for_value,
+                resolved_time_ranges,
             )
             .ok_or_else(|| {
                 Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
-                    "count query requires a countable index on the document type that \
+                    "count query requires a countable (or summableOffCountIndex) index on the document type that \
                      matches the where clause properties"
                         .to_string(),
                 ))

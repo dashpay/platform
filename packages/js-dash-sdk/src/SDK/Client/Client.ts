@@ -9,6 +9,7 @@ import { contractId as masternodeRewardSharesContractId } from '@dashevo/mastern
 import { contractId as withdrawalsContractId } from '@dashevo/withdrawals-contract/lib/systemIds';
 import { Platform } from './Platform';
 import { ClientApps, ClientAppsOptions } from './ClientApps';
+import { IPlatformProofVerifier } from './Platform/IPlatformProofVerifier';
 
 export interface WalletOptions extends Wallet.IWalletOptions {
   defaultAccountIndex?: number;
@@ -26,6 +27,7 @@ export interface WalletOptions extends Wallet.IWalletOptions {
  * @param {number} [timeout=2000]
  * @param {number} [retries=3]
  * @param {number} [baseBanTime=60000]
+ * @param {IPlatformProofVerifier} [platformProofVerifier] authenticated Platform proof verifier
  */
 export interface ClientOpts {
   apps?: ClientAppsOptions,
@@ -39,7 +41,8 @@ export interface ClientOpts {
   baseBanTime?: number,
   driveProtocolVersion?: number,
   blockHeadersProviderOptions?: any,
-  blockHeadersProvider?: any
+  blockHeadersProvider?: any,
+  platformProofVerifier?: IPlatformProofVerifier,
 }
 
 /**
@@ -64,6 +67,8 @@ export class Client extends EventEmitter {
 
   private options: ClientOpts;
 
+  private readonly platformProofVerifier?: IPlatformProofVerifier;
+
   /**
      * Construct some instance of SDK Client
      *
@@ -73,6 +78,7 @@ export class Client extends EventEmitter {
     super();
 
     this.options = options;
+    this.platformProofVerifier = options.platformProofVerifier;
 
     this.network = this.options.network ? this.options.network.toString() : 'mainnet';
 
@@ -189,6 +195,11 @@ export class Client extends EventEmitter {
      */
   getDAPIClient() : DAPIClient {
     return this.dapiClient;
+  }
+
+  /** Return the explicitly configured authenticated Platform proof verifier. */
+  getPlatformProofVerifier(): IPlatformProofVerifier | undefined {
+    return this.platformProofVerifier;
   }
 
   /**

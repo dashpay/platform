@@ -7,6 +7,9 @@ pub(in crate::drive::identity::update) struct AddToPreviousBalanceOutcomeV0 {
     pub(in crate::drive::identity::update) balance_modified: Option<Credits>,
     /// Is some if the negative credit balance was modified
     pub(in crate::drive::identity::update) negative_credit_balance_modified: Option<Credits>,
+    /// The part of the added credits that repaid the identity's debt instead of reaching its
+    /// balance
+    pub(in crate::drive::identity::update) repaid_debt: Credits,
 }
 
 /// An accessor trait for after balance modification
@@ -15,4 +18,6 @@ pub trait AddToPreviousBalanceOutcomeV0Methods {
     fn balance_modified(&self) -> Option<Credits>;
     /// the negative credit balance after modification
     fn negative_credit_balance_modified(&self) -> Option<Credits>;
+    /// the part of the added credits that repaid the identity's debt
+    fn repaid_debt(&self) -> Credits;
 }

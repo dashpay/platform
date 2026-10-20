@@ -9,12 +9,19 @@ mod apply;
 mod contract_fetch_info;
 #[cfg(feature = "server")]
 mod estimation_costs;
+/// The fee pots a contract's document action fees accumulate in
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod fee_pots;
 #[cfg(feature = "server")]
 pub(crate) mod get_fetch;
 #[cfg(feature = "server")]
 mod insert;
 #[cfg(feature = "server")]
 mod migration;
+/// The banlist and the suspension list a moderated contract keeps.
+pub mod moderation;
+#[cfg(feature = "server")]
+mod other_tree;
 /// Various paths for contract operations
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod paths;
@@ -22,11 +29,17 @@ pub mod paths;
 pub(crate) mod prove;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub(crate) mod queries;
+#[cfg(feature = "server")]
+mod refresh_cache;
+#[cfg(all(feature = "server", any(test, feature = "structure")))]
+pub(crate) mod structure;
 #[cfg(feature = "fixtures-and-mocks")]
 /// Test helpers and utility methods
 pub mod test_helpers;
 #[cfg(feature = "server")]
 mod update;
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod version_item;
 #[cfg(feature = "server")]
 pub use contract_fetch_info::*;
 #[cfg(feature = "server")]
@@ -2335,10 +2348,16 @@ mod tests {
             )
             .expect("expected to apply contract successfully");
 
-        // Now try to update with the same document type but documentsKeepHistory=true
+        // Now try to update with the same document type but documentsKeepHistory=true.
+        // `canBeDeleted: false` is required alongside `documentsKeepHistory: true` —
+        // the schema parser (try_from_schema v3, protocol version 14+) rejects the
+        // keep-history + canBeDeleted combination (canBeDeleted's config default is
+        // true), so the schema must opt out of delete to reach the intended
+        // `ChangingDocumentTypeKeepsHistory` assertion at `update_contract`.
         let history_schema = platform_value!({
             "type": "object",
             "documentsKeepHistory": true,
+            "canBeDeleted": false,
             "properties": {
                 "name": {
                     "type": "string",

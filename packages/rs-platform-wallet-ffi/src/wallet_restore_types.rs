@@ -117,30 +117,6 @@ impl StandardAccountTypeTagFFI {
     }
 }
 
-/// One pre-derived platform-node (Ed25519) key carried on
-/// [`AccountSpecFFI::derived_platform_node_keys`] for the
-/// `ProviderPlatformKeys` account (`type_tag == 11`).
-///
-/// Ed25519/SLIP-10 is hardened-only, so the wallet can never extend
-/// its platform-node pool without the seed — the batch is pre-derived
-/// at registration (while the seed is in hand) and surfaced here so
-/// the host can persist + display it with no keychain prompt. Plain
-/// POD (no pointers): the `hash160` node id is precomputed on the Rust
-/// side so the host needs no RIPEMD-160 of its own. The private scalar
-/// is never carried — a per-index reveal still routes through
-/// `platform_wallet_provider_key_at_index` with the resolver.
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct ProviderPlatformNodeKeyFFI {
-    /// Hardened key index within the platform-node pool (`#0..`).
-    pub index: u32,
-    /// Raw 32-byte Ed25519 public key at this index.
-    pub public_key: [u8; 32],
-    /// 20-byte platform node id — `hash160` of the Ed25519 public key
-    /// (the ProRegTx `platform_node_id`).
-    pub node_id: [u8; 20],
-}
-
 /// Flat account spec carried in `WalletRestoreEntryFFI.accounts`.
 ///
 /// Field relevance per `type_tag`:
@@ -188,21 +164,6 @@ pub struct AccountSpecFFI {
     /// callback duration only; Swift owns the allocation.
     pub account_xpub_bytes: *const u8,
     pub account_xpub_bytes_len: usize,
-    /// Pre-derived platform-node (Ed25519) public keys — only populated
-    /// on the **write** callback for the `ProviderPlatformKeys` account
-    /// (`type_tag == 11`); `null` / `0` for every other account type.
-    ///
-    /// On the write callback (`on_persist_account_registrations_fn`)
-    /// this is Rust-owned and valid for the callback window only — the
-    /// host copies the rows into its account row so the Node Keys
-    /// screen can list them from persistence without re-deriving. On
-    /// the **load** callback the host leaves this `null` / `0`: the
-    /// Rust load path does not consume it (it is display data the host
-    /// is the sole source of truth for), and the persisted account row
-    /// is never rewritten after registration, so the batch survives the
-    /// SwiftData → restore → re-persist cycle untouched.
-    pub derived_platform_node_keys: *const ProviderPlatformNodeKeyFFI,
-    pub derived_platform_node_keys_count: usize,
 }
 
 /// Per-identity public-key row carried on
@@ -231,7 +192,7 @@ pub struct AccountSpecFFI {
 ///
 /// `contract_bounds_*` mirror the [`IdentityKeyEntryFFI`]
 /// projection of DPP's `ContractBounds` enum (kind tag: 0=none,
-/// 1=SingleContract, 2=SingleContractDocumentType). Including them
+/// 1=SingleContract, 2=SingleContractDocumentType, 3=ContractGroup). Including them
 /// here closes the persist↔restore round-trip — without it, scoped
 /// DashPay keys (registered with `SingleContractDocumentType`) come
 /// back as unbounded on cold restart.
@@ -251,18 +212,28 @@ pub struct IdentityKeyRestoreFFI {
     pub data: *const u8,
     pub data_len: usize,
     /// ContractBounds discriminant: 0=none, 1=SingleContract,
-    /// 2=SingleContractDocumentType. Mirrors the encoding in
+    /// 2=SingleContractDocumentType, 3=ContractGroup. Mirrors the encoding in
     /// [`crate::identity_persistence::IdentityKeyEntryFFI`].
     pub contract_bounds_kind: u8,
-    /// 32-byte contract identifier. Zeroed when
-    /// `contract_bounds_kind == 0`; otherwise the contract id the
-    /// key is bound to.
+    /// 32-byte identifier. Zeroed when `contract_bounds_kind == 0`;
+    /// otherwise the contract id the key is bound to, or the contract
+    /// group id when `contract_bounds_kind == 3`.
     pub contract_bounds_id: [u8; 32],
     /// NUL-terminated UTF-8 doc-type name. Non-null iff
     /// `contract_bounds_kind == 2`. Swift-owned (released by the
     /// same load-callback allocation arena that frees the public-
     /// key data buffer).
     pub contract_bounds_document_type: *const c_char,
+    /// Usage limits (protocol version 14), mirroring
+    /// [`crate::identity_persistence::IdentityKeyEntryFFI`]: the credits
+    /// the key may spend over its lifetime when `total_budget_is_some`,
+    /// and the block time in milliseconds from which it can no longer
+    /// sign when `expires_at_is_some`. Without them a limited key would
+    /// come back unlimited on cold restart.
+    pub total_budget_is_some: bool,
+    pub total_budget: u64,
+    pub expires_at_is_some: bool,
+    pub expires_at: u64,
 }
 
 /// Per-identity entry attached to a [`WalletRestoreEntryFFI`].
@@ -495,36 +466,54 @@ pub struct UtxoRestoreEntryFFI {
 
 /// One persisted transaction record carried back at load time so the
 /// in-memory `transactions()` map can be selectively repopulated for
-/// the small subset of records that matter for chain-lock cascade —
-/// today, the funding transactions of tracked asset locks still at
-/// `Built` / `Broadcast` (`statusRaw < 2`).
+/// the small subset of records that matter at launch. TWO record roles
+/// ride this array, and a host must supply both:
+///
+/// * **Funding transactions** of tracked asset locks still at `Built` /
+///   `Broadcast` (`statusRaw < 2`): their record must live in the
+///   in-memory map at the moment the next chain-lock event fires, or
+///   `WalletManager::apply_chain_lock` finds nothing to promote and
+///   the bridge has no `chain_lock_promotions` to emit.
+/// * **Settled spenders of those locks' inputs** (context `2` / `3`):
+///   the double-spend screen in `resume_asset_lock` scans live
+///   history — empty at load apart from this array — for a confirmed
+///   transaction that already took a lock's input. A host that omits
+///   these leaves startup conflict detection blind, so a doomed resume
+///   expires as an untyped proof-wait timeout instead of the typed
+///   contested verdict. `account_index` for a spender row is the
+///   account of the TXO it spent (the lock's funding account when the
+///   host cannot resolve one).
+///
+/// The Rust decoder classifies each record from its own payload (an
+/// asset-lock special-tx payload marks a funding record), so the two
+/// roles need no tag and a spender cannot masquerade as a funding tx.
 ///
 /// Why selectively rather than wholesale: the wallet's own load path
 /// only bulk-restores UTXOs, not tx records, by design — most tx
 /// history is consumed reactively through SwiftData `@Query`s, not
-/// from the in-memory map. The exception is asset locks waiting for
-/// IS-lock / chain-lock proofs: their funding tx must live in the
-/// in-memory map at the moment the next chain-lock event fires, or
-/// `WalletManager::apply_chain_lock` finds nothing to promote and
-/// the bridge has no `chain_lock_promotions` to emit. Restoring
-/// these specific records closes that gap without breaking the rest
-/// of the lazy-load model.
+/// from the in-memory map. Restoring these specific records closes
+/// the two gaps above without breaking the rest of the lazy-load
+/// model.
 ///
 /// `context_raw` matches `TransactionContext` discriminants:
 /// 0 = Mempool, 1 = InstantSend, 2 = InBlock, 3 = InChainLockedBlock.
 /// Only `2` and `3` are reconstructible from these scalar fields;
 /// `0` / `1` need either no block info (Mempool) or an IS-lock blob
 /// we don't carry (InstantSend), so the Rust load path treats them
-/// as `Mempool` — defensive code for an edge that shouldn't occur in
-/// practice (an asset lock at `Built` / `Broadcast` has by definition
-/// not yet observed IS-lock or block confirmation).
+/// as `Mempool` — defensive for funding records (a `Built` /
+/// `Broadcast` lock has by definition seen neither), and the reason a
+/// host should only ship SETTLED spender records: an unsettled spend
+/// is not evidence, and would be restored as a mempool sighting.
 #[repr(C)]
 pub struct UnresolvedAssetLockTxRecordFFI {
-    /// BIP44 account index the funding tx spent UTXOs from — the
-    /// same `account_index` the Rust `TrackedAssetLock` carries.
-    /// Routes the record into the matching
-    /// `standard_bip44_accounts[account_index].transactions_mut()`
-    /// bucket at load time.
+    /// Family-independent source index the funding tx spent UTXOs
+    /// from — the same `account_index` the Rust `TrackedAssetLock`
+    /// carries. A pooled lock can be funded from BIP44, BIP32 or
+    /// DashPay receiving accounts (CoinJoin backs only the drain
+    /// flow), so load-time routing tries BIP44, then BIP32, then
+    /// CoinJoin at this index, and finally falls back to a receival
+    /// account (searched by txid, index-independent) — see
+    /// `restore_unresolved_asset_lock_tx_records`.
     pub account_index: u32,
     /// Consensus-encoded asset-lock transaction body. Same wire
     /// format `dashcore::consensus::encode::serialize` produces, so
@@ -549,6 +538,71 @@ pub struct UnresolvedAssetLockTxRecordFFI {
     /// rebuilt `TransactionRecord` mirrors what Swift had on disk;
     /// `wait_for_proof` itself reads only `context` + `height()`, so
     /// a zero here is benign for the chain-lock cascade path.
+    pub first_seen: u64,
+}
+
+/// A persisted provider special transaction (ProRegTx / ProUpServTx /
+/// ProUpRegTx / ProUpRevTx) staged back into the wallet at load so its
+/// DIP-3 payload record is resident on the provider-key accounts again.
+///
+/// Without this, key-wallet's rust-dashcore #876 retention has nothing to
+/// retain after a restart (the wallet is rebuilt from staging, which
+/// otherwise stages only UTXOs + asset-lock funding txs), so the
+/// masternode-list aggregation comes back empty until a rescan
+/// re-processes the blocks.
+///
+/// Same raw-tx / height shape as [`UnresolvedAssetLockTxRecordFFI`] but
+/// with NO `account_index`: provider involvement is payload-based (owner
+/// / voting key hashes), not a known BIP44 index, so the load path routes
+/// the record onto the wallet's provider-key accounts directly. `tx_bytes`
+/// is Swift-owned for the callback window and freed by the load
+/// allocation's `release()`.
+#[repr(C)]
+pub struct ProviderSpecialTxRestoreEntryFFI {
+    /// Consensus-encoded transaction body (`Transaction::consensus_decode`
+    /// round-trips). Carries the DIP-3 special-transaction payload.
+    pub tx_bytes: *mut u8,
+    pub tx_bytes_len: usize,
+    /// `TransactionContext` discriminant: `2` = InBlock, `3` =
+    /// InChainLockedBlock; anything else is treated as `Mempool`.
+    pub context_raw: u32,
+    /// Block height (meaningful only when `context_raw` is `2` / `3`).
+    pub block_height: u32,
+    /// Block hash (wire-orientation; meaningful with `context_raw` `2`/`3`).
+    pub block_hash: [u8; 32],
+    /// Block timestamp (Unix seconds; same meaningfulness rule).
+    pub block_timestamp: u64,
+    /// The transaction's index within its block (`block.vtx` order),
+    /// meaningful only when `has_block_position`. Restored onto the
+    /// rebuilt record's `BlockInfo` so the masternode aggregation keeps
+    /// Core's same-block apply order across restarts (rust-dashcore#891).
+    /// `false` for rows persisted before the field existed.
+    pub block_position: u32,
+    pub has_block_position: bool,
+    /// Persisted "first seen" Unix-second timestamp (mirrors on-disk).
+    pub first_seen: u64,
+}
+
+/// One outgoing transaction the host still holds as unconfirmed,
+/// replayed at load so its spend effect survives a restart.
+#[repr(C)]
+pub struct UnconfirmedOutgoingTxRecordFFI {
+    /// Wire-order txid of the row this record came from.
+    ///
+    /// The load path decodes `tx_bytes` and requires the result to hash to
+    /// this, then drops the record if it does not. The replay applies the
+    /// transaction through the ordinary state-update path, so bytes that do
+    /// not belong to the row Swift selected would rewrite accounting for
+    /// inputs and outputs nobody asked about. Fail closed instead.
+    pub txid: [u8; 32],
+    /// Consensus-encoded transaction body, the same wire format
+    /// `dashcore::consensus::encode::serialize` produces. Swift-owned
+    /// for the callback window; freed by `LoadWalletListFreeFn`.
+    pub tx_bytes: *mut u8,
+    pub tx_bytes_len: usize,
+    /// Host's `firstSeen` for the row, in seconds. The load path
+    /// replays in ascending order so a parent send is applied before a
+    /// child that spends its change.
     pub first_seen: u64,
 }
 
@@ -603,7 +657,11 @@ pub struct WalletRestoreEntryFFI {
     /// when the wallet has no persisted tracked locks.
     pub tracked_asset_locks: *const AssetLockEntryFFI,
     pub tracked_asset_locks_count: usize,
-    /// Funding tx records for tracked asset locks at `statusRaw < 2`
+    /// Tx records restored into the in-memory map at load: the funding
+    /// records of unresolved asset locks AND the settled spenders of
+    /// their inputs — see [`UnresolvedAssetLockTxRecordFFI`] for the
+    /// two-role contract. Historically documented as funding-only:
+    /// funding tx records for tracked asset locks at `statusRaw < 2`
     /// (Built / Broadcast). The Rust load path re-inserts each entry
     /// into the matching `standard_bip44_accounts[account_index]
     /// .transactions_mut()` bucket so the next incoming chain-lock
@@ -619,6 +677,14 @@ pub struct WalletRestoreEntryFFI {
     /// unresolved asset locks.
     pub unresolved_asset_lock_tx_records: *const UnresolvedAssetLockTxRecordFFI,
     pub unresolved_asset_lock_tx_records_count: usize,
+    /// Persisted provider special transactions (ProRegTx / ProUpServTx /
+    /// ProUpRegTx / ProUpRevTx) re-staged onto the wallet's provider-key
+    /// accounts so rust-dashcore #876 retention keeps them resident and
+    /// the masternode-list aggregation survives a restart. `null` / `0`
+    /// when the wallet has no provider special txs. Each entry's
+    /// `tx_bytes` buffer is Swift-owned and freed by `LoadWalletListFreeFn`.
+    pub provider_special_txs: *const ProviderSpecialTxRestoreEntryFFI,
+    pub provider_special_txs_count: usize,
     /// Persisted core address pools for this wallet
     pub core_address_pools: *const AccountAddressPoolFFI,
     pub core_address_pools_count: usize,
@@ -637,6 +703,87 @@ pub struct WalletRestoreEntryFFI {
     /// re-apply a fresh chainlock.
     pub last_applied_chain_lock_bytes: *const u8,
     pub last_applied_chain_lock_bytes_len: usize,
+    /// Outgoing transactions the host still holds as unconfirmed
+    /// (mempool context, no block height), oldest `first_seen` first.
+    ///
+    /// Replayed at load through the ordinary mempool check so their
+    /// spend effect is restored — see
+    /// [`UnconfirmedOutgoingTxRecordFFI`]. `null` / `0` when the wallet
+    /// has none. Each entry's `tx_bytes` buffer is Swift-owned and
+    /// freed by `LoadWalletListFreeFn`.
+    ///
+    /// Appended at the end deliberately. This is a `#[repr(C)]` struct
+    /// shared across the FFI boundary, so a field inserted anywhere else
+    /// shifts the offsets of everything after it; keeping additions here
+    /// leaves every existing field where it was.
+    pub unconfirmed_outgoing_tx_records: *const UnconfirmedOutgoingTxRecordFFI,
+    pub unconfirmed_outgoing_tx_records_count: usize,
+    /// Whether the host holds a persisted DashPay backfill record for this
+    /// wallet (dashpay/platform#4302). `false` — the zero-init default — for
+    /// a wallet that never rewound for a contact, a row persisted before the
+    /// record existed, or a host that does not store the slot; the rescan
+    /// sweep then behaves as it always did and writes one. The three fields
+    /// below are read only when this is `true`.
+    pub has_dashpay_backfill: bool,
+    /// Lowest height the backfill rewound the cursor to.
+    pub dashpay_backfill_floor: u32,
+    /// Highest cursor the backfill rewound from — the height the scan climbs
+    /// back to for the backfill to be complete.
+    pub dashpay_backfill_rewound_from: u32,
+    /// Receival contacts the backfill covers, each with the height it is
+    /// covered from. Host-owned for the callback window, freed by
+    /// `LoadWalletListFreeFn`; `null` / `0` when the record covers no one.
+    /// Appended at the end, like every addition to this `#[repr(C)]` struct,
+    /// so no existing offset moves.
+    pub dashpay_backfill_covered: *const crate::core_wallet_types::DashPayBackfillCoveredContactFFI,
+    pub dashpay_backfill_covered_count: usize,
+}
+
+/// Every field named explicitly so that adding a field to this ABI struct
+/// is a compile error here rather than a silently-widened `mem::zeroed()`
+/// in test code: the all-zero bit pattern is valid for today's pointers,
+/// integers and `FFINetwork`, but stops being valid the moment a field
+/// with a validity niche (a `NonNull`, a reference, a gap-ful enum) joins
+/// the struct — and that regression would otherwise be silent UB.
+impl Default for WalletRestoreEntryFFI {
+    fn default() -> Self {
+        Self {
+            wallet_id: [0u8; 32],
+            network: crate::types::FFINetwork::Testnet,
+            accounts: std::ptr::null(),
+            accounts_count: 0,
+            platform_address_balances: std::ptr::null(),
+            platform_address_balances_count: 0,
+            platform_sync_height: 0,
+            platform_sync_timestamp: 0,
+            platform_last_known_recent_block: 0,
+            identities: std::ptr::null(),
+            identities_count: 0,
+            birth_height: 0,
+            synced_height: 0,
+            last_processed_height: 0,
+            last_synced: 0,
+            utxos: std::ptr::null(),
+            utxos_count: 0,
+            tracked_asset_locks: std::ptr::null(),
+            tracked_asset_locks_count: 0,
+            unresolved_asset_lock_tx_records: std::ptr::null(),
+            unresolved_asset_lock_tx_records_count: 0,
+            provider_special_txs: std::ptr::null(),
+            provider_special_txs_count: 0,
+            core_address_pools: std::ptr::null(),
+            core_address_pools_count: 0,
+            last_applied_chain_lock_bytes: std::ptr::null(),
+            last_applied_chain_lock_bytes_len: 0,
+            unconfirmed_outgoing_tx_records: std::ptr::null(),
+            unconfirmed_outgoing_tx_records_count: 0,
+            has_dashpay_backfill: false,
+            dashpay_backfill_floor: 0,
+            dashpay_backfill_rewound_from: 0,
+            dashpay_backfill_covered: std::ptr::null(),
+            dashpay_backfill_covered_count: 0,
+        }
+    }
 }
 
 // SAFETY: Pointers are Swift-owned and lifetime-scoped to the callback.
@@ -652,6 +799,10 @@ unsafe impl Send for WalletRestoreEntryFFI {}
 unsafe impl Sync for WalletRestoreEntryFFI {}
 unsafe impl Send for UtxoRestoreEntryFFI {}
 unsafe impl Sync for UtxoRestoreEntryFFI {}
+// SAFETY: `tx_bytes` is Swift-owned and lifetime-scoped to the load
+// callback, same contract as the other restore entries above.
+unsafe impl Send for ProviderSpecialTxRestoreEntryFFI {}
+unsafe impl Sync for ProviderSpecialTxRestoreEntryFFI {}
 
 /// Paired free callback for the wallet-list load callback. Releases
 /// any memory Swift allocated for the entries array, the per-wallet

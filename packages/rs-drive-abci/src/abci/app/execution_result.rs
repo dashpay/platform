@@ -29,14 +29,14 @@ impl TryIntoPlatformVersioned<Option<ExecTxResult>> for StateTransitionExecution
                 gas_used: 0,
                 ..Default::default()
             }),
-            StateTransitionExecutionResult::PaidConsensusError { error, actual_fees } => {
-                Some(ExecTxResult {
-                    code: HandlerError::from(&error).code(),
-                    info: error.response_info_for_version(platform_version)?,
-                    gas_used: actual_fees.total_base_fee() as SignedCredits,
-                    ..Default::default()
-                })
-            }
+            StateTransitionExecutionResult::PaidConsensusError {
+                error, actual_fees, ..
+            } => Some(ExecTxResult {
+                code: HandlerError::from(&error).code(),
+                info: error.response_info_for_version(platform_version)?,
+                gas_used: actual_fees.total_base_fee() as SignedCredits,
+                ..Default::default()
+            }),
             StateTransitionExecutionResult::InternalError(message) => Some(ExecTxResult {
                 code: HandlerError::Internal(message).code(),
                 // TODO: That would be nice to provide more information about the error for debugging
@@ -118,6 +118,7 @@ mod tests {
         let execution_result = StateTransitionExecutionResult::PaidConsensusError {
             error: consensus_error,
             actual_fees: fee_result.clone(),
+            address_balance_changes: BTreeMap::new(),
         };
 
         let result: Option<ExecTxResult> = execution_result

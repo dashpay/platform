@@ -5,19 +5,17 @@ use crate::fetch::{
     config::Config,
 };
 use dash_sdk::{platform::FetchMany, Error};
-use dpp::{
-    platform_value::Value,
-    voting::{
-        contender_structs::ContenderWithSerializedDocument,
-        vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll,
-    },
+use dpp::platform_value::Value;
+#[cfg(not(feature = "offline-testing"))]
+use dpp::voting::{
+    contender_structs::ContenderWithSerializedDocument,
+    vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll,
 };
-use drive::query::{
-    vote_poll_vote_state_query::{
-        ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
-    },
-    vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery,
+#[cfg(not(feature = "offline-testing"))]
+use drive::query::vote_poll_vote_state_query::{
+    ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
 };
+use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive_proof_verifier::types::ContestedResource;
 
 /// Test that we can fetch contested resources
@@ -370,7 +368,17 @@ async fn contested_resources_fields(
     }
 }
 
+/// Ensure prerequisites for masternode voting tests are met.
+///
+/// Offline runs replay recorded responses, so there is no live network state
+/// to validate; the check only guards network runs.
+#[cfg(feature = "offline-testing")]
+pub async fn check_mn_voting_prerequisites(_cfg: &Config) -> Result<(), Vec<String>> {
+    Ok(())
+}
+
 /// Ensure prerequisites for masternode voting tests are met
+#[cfg(not(feature = "offline-testing"))]
 pub async fn check_mn_voting_prerequisites(cfg: &Config) -> Result<(), Vec<String>> {
     let sdk = cfg.setup_api("check_mn_voting_prerequisites").await;
     let mut errors = Vec::new();

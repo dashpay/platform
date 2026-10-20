@@ -1,3 +1,4 @@
+pub(crate) mod added_key_proofs_of_possession;
 pub(crate) mod advanced_structure;
 mod basic_structure;
 mod nonce;
@@ -25,6 +26,7 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::identity_update::basic_structure::v0::IdentityUpdateStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::identity_update::state::v0::IdentityUpdateStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::identity_update::state::v1::IdentityUpdateStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
@@ -95,8 +97,8 @@ impl StateTransitionStateValidation for IdentityUpdateTransition {
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
-        _block_info: &BlockInfo,
-        _execution_context: &mut StateTransitionExecutionContext,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -108,9 +110,16 @@ impl StateTransitionStateValidation for IdentityUpdateTransition {
             .state
         {
             0 => self.validate_state_v0(platform, tx, platform_version),
+            1 => self.validate_state_v1(
+                platform,
+                block_info,
+                execution_context,
+                tx,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity update transition: validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -124,12 +133,16 @@ mod tests {
         setup_add_key_to_identity, setup_identity_return_master_key,
     };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use crate::test::helpers::contract_groups::{register_group, single_owner_info};
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::codes::ErrorWithCode;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
-    use dpp::dashcore::key::{Keypair, Secp256k1};
+    use dpp::dashcore::key::Keypair;
+    use dpp::dashcore::secp256k1::rand::rngs::StdRng as SecpStdRng;
+    use dpp::dashcore::secp256k1::rand::SeedableRng as _;
     use dpp::dashcore::signer;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identifier::Identifier;
@@ -247,11 +260,9 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(292);
 
-        let mut rng = StdRng::seed_from_u64(292);
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -284,7 +295,7 @@ mod tests {
 
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -363,6 +374,15 @@ mod tests {
             &|_id: &Identifier| Ok(None),
             platform_version,
         )
+        .map(|(root_hash, outcome)| {
+            // From prover version 1 the proof carries the owner's balance.
+            assert_eq!(
+                outcome.owner_balance().is_some(),
+                platform_version.drive.methods.prove.prove_state_transition >= 1,
+                "the proof carries the owner's balance exactly from prover version 1"
+            );
+            (root_hash, outcome.into_result())
+        })
         .map_err(|e| e.to_string())
         .expect("expected to verify state transition");
 
@@ -373,6 +393,1133 @@ mod tests {
                 verification_result
             );
         };
+    }
+
+    #[test]
+    fn should_retain_contract_lookup_fees_only_after_activation() {
+        use super::*;
+        use crate::execution::types::execution_operation::ValidationOperation;
+        use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
+        use dpp::data_contract::factory::DataContractFactory;
+        use dpp::platform_value::platform_value;
+        use dpp::version::DefaultForPlatformVersion;
+
+        for protocol in [13, 14] {
+            let version = PlatformVersion::get(protocol).unwrap();
+            let mut platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(protocol)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, _, _, master) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+            let factory = DataContractFactory::new(protocol).unwrap();
+            let contract = factory
+                .create_with_value_config(
+                    identity.id(),
+                    1,
+                    platform_value!({
+                        "note": { "type": "object", "requiresIdentityDecryptionBoundedKey": 0_u64,
+                            "properties": {"text": {"type": "string", "maxLength": 64, "position": 0}}, "additionalProperties": false }
+                    }),
+                    None,
+                    None,
+                )
+                .unwrap()
+                .data_contract_owned();
+            platform
+                .drive
+                .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+                .unwrap();
+            let state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            for missing in [false, true] {
+                let id = if missing {
+                    Identifier::from([0x73; 32])
+                } else {
+                    contract.id()
+                };
+                platform.drive.cache.data_contracts.clear();
+                let expected = platform
+                    .drive
+                    .get_system_or_user_contract_with_fee(
+                        id.to_buffer(),
+                        &BlockInfo::default().epoch,
+                        None,
+                        version,
+                    )
+                    .unwrap();
+                let expected_fee = expected.fee().unwrap().clone();
+                assert!(expected_fee.processing_fee > 0);
+                platform.drive.cache.data_contracts.clear();
+                let update: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                    identity_id: identity.id(),
+                    revision: 1,
+                    nonce: 1,
+                    add_public_keys: vec![IdentityPublicKeyInCreationV0 {
+                        id: 2,
+                        purpose: Purpose::DECRYPTION,
+                        security_level: SecurityLevel::HIGH,
+                        key_type: KeyType::ECDSA_HASH160,
+                        data: vec![0x74; 20].into(),
+                        read_only: false,
+                        signature: Default::default(),
+                        contract_bounds: Some(ContractBounds::SingleContractDocumentType {
+                            id,
+                            document_type_name: "note".into(),
+                        }),
+                    }
+                    .into()],
+                    disable_public_keys: vec![],
+                    user_fee_increase: 0,
+                    signature_public_key_id: master.id(),
+                    signature: Default::default(),
+                }
+                .into();
+                let mut context =
+                    StateTransitionExecutionContext::default_for_platform_version(version).unwrap();
+                let result = update
+                    .validate_state(
+                        None,
+                        &platform_ref,
+                        ValidationMode::Validator,
+                        &BlockInfo::default(),
+                        &mut context,
+                        None,
+                    )
+                    .unwrap();
+                assert_eq!(
+                    result.is_valid(),
+                    !missing,
+                    "protocol {protocol}: {:?}",
+                    result.errors
+                );
+                if missing {
+                    assert_matches!(
+                        result.into_data().unwrap(),
+                        StateTransitionAction::BumpIdentityNonceAction(_)
+                    );
+                }
+                if protocol == 13 {
+                    assert!(
+                        context.operations_slice().is_empty(),
+                        "historical v0 discards its local validation costs"
+                    );
+                } else {
+                    assert!(context.operations_slice().iter().any(|operation| matches!(operation,
+                        ValidationOperation::PrecalculatedOperation(fee) if fee == &expected_fee
+                    )), "contract lookup costs must reach the caller even on paid failure");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn should_register_bound_authentication_key_and_preserve_proof_metadata() {
+        use drive::drive::identity::key::fetch::{
+            IdentityKeysRequest, KeyKindRequestType, KeyRequestType,
+        };
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, signer, _, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .unwrap();
+        let bounds = ContractBounds::SingleContractDocumentType {
+            id: dashpay.id(),
+            document_type_name: "profile".into(),
+        };
+        let platform_state = platform.state.load();
+        let mut rng = SecpStdRng::seed_from_u64(292);
+        let new_key_pair = Keypair::new(&mut rng);
+        let mut new_key = IdentityPublicKeyInCreationV0 {
+            id: 2,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: ECDSA_SECP256K1,
+            read_only: false,
+            data: new_key_pair.public_key().serialize().to_vec().into(),
+            signature: Default::default(),
+            contract_bounds: Some(bounds.clone()),
+        };
+        let build = |new_key: IdentityPublicKeyInCreationV0| -> StateTransition {
+            IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![IdentityPublicKeyInCreation::V0(new_key)],
+                disable_public_keys: vec![],
+                user_fee_increase: 0,
+                signature_public_key_id: key.id(),
+                signature: Default::default(),
+            })
+            .into()
+        };
+        let signable_bytes = build(new_key.clone()).signable_bytes().unwrap();
+        new_key.signature = signer::sign(
+            &signable_bytes,
+            &new_key_pair.secret_key().to_secret_bytes(),
+        )
+        .unwrap()
+        .to_vec()
+        .into();
+        let mut update_transition = build(new_key);
+        update_transition
+            .set_signature(signer.sign(&key, signable_bytes.as_slice()).await.unwrap());
+
+        let transaction = platform.drive.grove.start_transaction();
+        let processing_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![update_transition.serialize_to_bytes().unwrap()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            processing_result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+
+        // The state transition proof carries the bounds of the registered key.
+        let proof_result = platform
+            .platform
+            .drive
+            .prove_state_transition(&update_transition, None, platform_version)
+            .map_err(|e| e.to_string())
+            .expect("expected to create proof");
+        if let Some(proof_error) = proof_result.first_error() {
+            panic!("proof_result is not valid with error {}", proof_error);
+        }
+        let proof_data = proof_result
+            .into_data()
+            .map_err(|e| e.to_string())
+            .expect("expected to get proof data");
+        let (_, verification_result) = Drive::verify_state_transition_was_executed_with_proof(
+            &update_transition,
+            &BlockInfo::default(),
+            &proof_data,
+            &|_id: &Identifier| Ok(None),
+            platform_version,
+        )
+        .map(|(root_hash, outcome)| {
+            // From prover version 1 the proof carries the owner's balance.
+            assert_eq!(
+                outcome.owner_balance().is_some(),
+                platform_version.drive.methods.prove.prove_state_transition >= 1,
+                "the proof carries the owner's balance exactly from prover version 1"
+            );
+            (root_hash, outcome.into_result())
+        })
+        .map_err(|e| e.to_string())
+        .expect("expected to verify state transition");
+        let StateTransitionProofResult::VerifiedPartialIdentity(proven) = verification_result
+        else {
+            panic!("expected a partial identity, got {verification_result:?}");
+        };
+        assert_eq!(
+            proven.loaded_public_keys.get(&2).unwrap().contract_bounds(),
+            Some(&bounds)
+        );
+        // The key is indexed as the current authentication key of the bound document type.
+        let indexed = platform
+            .drive
+            .fetch_identity_keys_as_partial_identity(
+                IdentityKeysRequest {
+                    identity_id: identity.id().to_buffer(),
+                    request_type: KeyRequestType::ContractDocumentTypeBoundKey(
+                        dashpay.id().to_buffer(),
+                        "profile".into(),
+                        Purpose::AUTHENTICATION,
+                        KeyKindRequestType::CurrentKeyOfKindRequest,
+                    ),
+                    limit: None,
+                    offset: None,
+                },
+                None,
+                platform_version,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            indexed
+                .loaded_public_keys
+                .get(&2)
+                .unwrap()
+                .contract_bounds(),
+            Some(&bounds)
+        );
+
+        // Revocation through the master key keeps the bounds on the disabled key.
+        let mut revoke: StateTransition =
+            IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 2,
+                nonce: 2,
+                add_public_keys: vec![],
+                disable_public_keys: vec![2],
+                user_fee_increase: 0,
+                signature_public_key_id: key.id(),
+                signature: Default::default(),
+            })
+            .into();
+        revoke.set_signature(
+            signer
+                .sign(&key, &revoke.signable_bytes().unwrap())
+                .await
+                .unwrap(),
+        );
+        let block = BlockInfo {
+            time_ms: 50,
+            ..Default::default()
+        };
+        let tx = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![revoke.serialize_to_bytes().unwrap()],
+                &platform_state,
+                &block,
+                &tx,
+                platform_version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_eq!(result.valid_count(), 1);
+        platform
+            .drive
+            .grove
+            .commit_transaction(tx)
+            .unwrap()
+            .unwrap();
+        let fetched = platform
+            .drive
+            .fetch_identity_keys_as_partial_identity(
+                IdentityKeysRequest::new_specific_key_query(&identity.id().to_buffer(), 2),
+                None,
+                platform_version,
+            )
+            .unwrap()
+            .unwrap();
+        let revoked = fetched.loaded_public_keys.get(&2).unwrap();
+        assert_eq!(revoked.disabled_at(), Some(50));
+        assert_eq!(revoked.contract_bounds(), Some(&bounds));
+        assert!(platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .unwrap()
+            .is_empty());
+    }
+
+    /// A key bound to a contract group is registered through the whole pipeline only once the
+    /// group exists; it is then indexed under the group, and stays bound after revocation.
+    #[tokio::test]
+    async fn should_register_and_revoke_an_authentication_key_bound_to_a_contract_group() {
+        use drive::drive::identity::key::fetch::IdentityKeysRequest;
+        let platform_version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, signer, _, key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        let contract_group_id = Identifier::from([0x61; 32]);
+        let bounds = ContractBounds::ContractGroup {
+            id: contract_group_id,
+        };
+        let platform_state = platform.state.load();
+        let mut rng = SecpStdRng::seed_from_u64(293);
+        let new_key_pair = Keypair::new(&mut rng);
+        let build =
+            |revision: u64, nonce: u64, add: Vec<IdentityPublicKeyInCreationV0>, disable| {
+                StateTransition::from(IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                    identity_id: identity.id(),
+                    revision,
+                    nonce,
+                    add_public_keys: add
+                        .into_iter()
+                        .map(IdentityPublicKeyInCreation::V0)
+                        .collect(),
+                    disable_public_keys: disable,
+                    user_fee_increase: 0,
+                    signature_public_key_id: key.id(),
+                    signature: Default::default(),
+                }))
+            };
+        let mut signed_updates = Vec::new();
+        for (revision, nonce) in [(1, 1), (1, 2)] {
+            let mut new_key = IdentityPublicKeyInCreationV0 {
+                id: 2,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                key_type: ECDSA_SECP256K1,
+                read_only: false,
+                data: new_key_pair.public_key().serialize().to_vec().into(),
+                signature: Default::default(),
+                contract_bounds: Some(bounds.clone()),
+            };
+            let signable_bytes = build(revision, nonce, vec![new_key.clone()], vec![])
+                .signable_bytes()
+                .unwrap();
+            new_key.signature = signer::sign(
+                &signable_bytes,
+                &new_key_pair.secret_key().to_secret_bytes(),
+            )
+            .unwrap()
+            .to_vec()
+            .into();
+            let mut update = build(revision, nonce, vec![new_key], vec![]);
+            update.set_signature(signer.sign(&key, signable_bytes.as_slice()).await.unwrap());
+            signed_updates.push(update);
+        }
+
+        // The group does not exist yet: a paid failure that registers nothing.
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![signed_updates[0].serialize_to_bytes().unwrap()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::PaidConsensusError { error, .. }]
+                if error.code() == 41001
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+
+        register_group(
+            &platform,
+            contract_group_id,
+            &single_owner_info(Identifier::from([0x60; 32]), None, None),
+            platform_version,
+        );
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![signed_updates[1].serialize_to_bytes().unwrap()],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+
+        // The key is indexed as the current authentication key of the group.
+        let group_keys_request = || {
+            IdentityKeysRequest::new_contract_group_authentication_keys_query(
+                identity.id().to_buffer(),
+                contract_group_id.to_buffer(),
+            )
+        };
+        let indexed = platform
+            .drive
+            .fetch_identity_keys_as_partial_identity(group_keys_request(), None, platform_version)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            indexed
+                .loaded_public_keys
+                .get(&2)
+                .unwrap()
+                .contract_bounds(),
+            Some(&bounds)
+        );
+
+        // Revocation through the master key refreshes the group references and keeps the
+        // bounds on the disabled key.
+        let mut revoke = build(2, 3, vec![], vec![2]);
+        revoke.set_signature(
+            signer
+                .sign(&key, &revoke.signable_bytes().unwrap())
+                .await
+                .unwrap(),
+        );
+        let block = BlockInfo {
+            time_ms: 50,
+            ..Default::default()
+        };
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![revoke.serialize_to_bytes().unwrap()],
+                &platform_state,
+                &block,
+                &transaction,
+                platform_version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+        let fetched = platform
+            .drive
+            .fetch_identity_keys_as_partial_identity(
+                IdentityKeysRequest::new_specific_key_query(&identity.id().to_buffer(), 2),
+                None,
+                platform_version,
+            )
+            .unwrap()
+            .unwrap();
+        let revoked = fetched.loaded_public_keys.get(&2).unwrap();
+        assert_eq!(revoked.disabled_at(), Some(50));
+        assert_eq!(revoked.contract_bounds(), Some(&bounds));
+        assert!(platform
+            .drive
+            .grove
+            .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn should_refresh_every_bound_key_reference_after_revocation() {
+        use drive::drive::identity::key::fetch::{
+            IdentityKeysRequest, KeyKindRequestType, KeyRequestType,
+        };
+        let version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (mut identity, mut signer, _, master) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(version)
+            .unwrap();
+        let dpns = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dpns(version)
+            .unwrap();
+        let contract_bound = ContractBounds::SingleContract { id: dashpay.id() };
+        let type_bound = ContractBounds::SingleContractDocumentType {
+            id: dpns.id(),
+            document_type_name: "preorder".into(),
+        };
+        let contract_key = setup_add_key_to_identity(
+            &mut platform,
+            &mut identity,
+            &mut signer,
+            4,
+            2,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+            Some(contract_bound.clone()),
+        );
+        let type_key = setup_add_key_to_identity(
+            &mut platform,
+            &mut identity,
+            &mut signer,
+            5,
+            3,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+            Some(type_bound.clone()),
+        );
+        let mut update: StateTransition =
+            IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![],
+                disable_public_keys: vec![contract_key.id(), type_key.id()],
+                user_fee_increase: 0,
+                signature_public_key_id: master.id(),
+                signature: Default::default(),
+            })
+            .into();
+        update.set_signature(
+            signer
+                .sign(&master, &update.signable_bytes().unwrap())
+                .await
+                .unwrap(),
+        );
+        let block = BlockInfo {
+            time_ms: 1001,
+            ..Default::default()
+        };
+        let transaction = platform.drive.grove.start_transaction();
+        let result = platform
+            .platform
+            .process_raw_state_transitions(
+                &vec![update.serialize_to_bytes().unwrap()],
+                &platform.state.load(),
+                &block,
+                &transaction,
+                version,
+                true,
+                None,
+            )
+            .unwrap();
+        assert_matches!(
+            result.execution_results().as_slice(),
+            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+        );
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
+
+        // Both current-key references must resolve to the updated keys, not their old hashes.
+        for (key, bounds, request_type) in [
+            (
+                &contract_key,
+                &contract_bound,
+                KeyRequestType::ContractBoundKey(
+                    dashpay.id().to_buffer(),
+                    Purpose::AUTHENTICATION,
+                    KeyKindRequestType::CurrentKeyOfKindRequest,
+                ),
+            ),
+            (
+                &type_key,
+                &type_bound,
+                KeyRequestType::ContractDocumentTypeBoundKey(
+                    dpns.id().to_buffer(),
+                    "preorder".into(),
+                    Purpose::AUTHENTICATION,
+                    KeyKindRequestType::CurrentKeyOfKindRequest,
+                ),
+            ),
+        ] {
+            let fetched = platform
+                .drive
+                .fetch_identity_keys_as_partial_identity(
+                    IdentityKeysRequest {
+                        identity_id: identity.id().to_buffer(),
+                        request_type,
+                        limit: None,
+                        offset: None,
+                    },
+                    None,
+                    version,
+                )
+                .unwrap()
+                .unwrap();
+            let refreshed = fetched
+                .loaded_public_keys
+                .get(&key.id())
+                .expect("bound key reference");
+            assert_eq!(refreshed.disabled_at(), Some(block.time_ms));
+            assert_eq!(refreshed.contract_bounds(), Some(bounds));
+        }
+        assert!(
+            platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &version.drive.grove_version)
+                .unwrap()
+                .is_empty(),
+            "revocation must leave no stale GroveDB references"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_keep_the_newest_bound_key_current_across_registration_and_revocation() {
+        use drive::config::DriveConfig;
+        use drive::drive::identity::key::fetch::{
+            IdentityKeysRequest, KeyIDVec, KeyKindRequestType, KeyRequestType,
+        };
+        use std::collections::BTreeMap;
+        let version = PlatformVersion::latest();
+        // Consistency verification makes GroveDB reject two pending operations on one slot,
+        // which is what bound keys covering one contract queue for its current-key alias.
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig {
+                drive: DriveConfig {
+                    batching_consistency_verification: true,
+                    ..DriveConfig::default_testnet()
+                },
+                ..Default::default()
+            })
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, signer, _, master) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(version)
+            .unwrap();
+        let bounds = ContractBounds::SingleContract { id: dashpay.id() };
+        let mut rng = SecpStdRng::seed_from_u64(292);
+        let pairs: BTreeMap<u32, Keypair> = [2u32, 3, 4]
+            .into_iter()
+            .map(|id| (id, Keypair::new(&mut rng)))
+            .collect();
+        let bound_key = |id: u32| IdentityPublicKeyInCreationV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: ECDSA_SECP256K1,
+            read_only: false,
+            data: pairs[&id].public_key().serialize().to_vec().into(),
+            signature: Default::default(),
+            contract_bounds: Some(bounds.clone()),
+        };
+        let unsigned = |revision: u64,
+                        add: Vec<IdentityPublicKeyInCreationV0>,
+                        disable: Vec<u32>|
+         -> StateTransition {
+            IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision,
+                nonce: revision,
+                add_public_keys: add
+                    .into_iter()
+                    .map(IdentityPublicKeyInCreation::V0)
+                    .collect(),
+                disable_public_keys: disable,
+                user_fee_increase: 0,
+                signature_public_key_id: master.id(),
+                signature: Default::default(),
+            })
+            .into()
+        };
+        let apply = |transition: &StateTransition, time_ms: u64| {
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition.serialize_to_bytes().unwrap()],
+                    &platform.state.load(),
+                    &BlockInfo {
+                        time_ms,
+                        ..Default::default()
+                    },
+                    &transaction,
+                    version,
+                    true,
+                    None,
+                )
+                .unwrap();
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "update at {time_ms} must apply as one consistent batch"
+            );
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .unwrap();
+        };
+        let key_ids = |kind: KeyKindRequestType| -> Vec<u32> {
+            platform
+                .drive
+                .fetch_identity_keys::<KeyIDVec>(
+                    IdentityKeysRequest {
+                        identity_id: identity.id().to_buffer(),
+                        request_type: KeyRequestType::ContractBoundKey(
+                            dashpay.id().to_buffer(),
+                            Purpose::AUTHENTICATION,
+                            kind,
+                        ),
+                        limit: Some(16),
+                        offset: None,
+                    },
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+        let disabled_at = |key_id: u32| -> Option<u64> {
+            platform
+                .drive
+                .fetch_identity_keys_as_partial_identity(
+                    IdentityKeysRequest {
+                        identity_id: identity.id().to_buffer(),
+                        request_type: KeyRequestType::SpecificKeys(vec![key_id]),
+                        limit: Some(1),
+                        offset: None,
+                    },
+                    None,
+                    version,
+                )
+                .unwrap()
+                .unwrap()
+                .loaded_public_keys[&key_id]
+                .disabled_at()
+        };
+        let assert_slot = |current: u32, all: &[u32]| {
+            assert_eq!(
+                key_ids(KeyKindRequestType::CurrentKeyOfKindRequest),
+                vec![current],
+                "current key"
+            );
+            assert_eq!(
+                key_ids(KeyKindRequestType::AllKeysOfKindRequest),
+                all,
+                "listing must not repeat the current key alias"
+            );
+        };
+
+        // 1. Two bound keys in one update, listed newest first: the highest key id must be
+        //    current regardless of input order.
+        let mut adds = vec![bound_key(3), bound_key(2)];
+        let signable = unsigned(1, adds.clone(), vec![]).signable_bytes().unwrap();
+        for key in &mut adds {
+            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().to_secret_bytes())
+                .unwrap()
+                .to_vec()
+                .into();
+        }
+        let mut registration = unsigned(1, adds, vec![]);
+        registration.set_signature(signer.sign(&master, &signable).await.unwrap());
+        apply(&registration, 1000);
+        assert_slot(3, &[2, 3]);
+
+        // 2. Register a replacement and revoke the current key in the same transition: the
+        //    replacement must become current, not the revoked key or a batch conflict.
+        let mut adds = vec![bound_key(4)];
+        let signable = unsigned(2, adds.clone(), vec![3]).signable_bytes().unwrap();
+        for key in &mut adds {
+            key.signature = signer::sign(&signable, &pairs[&key.id].secret_key().to_secret_bytes())
+                .unwrap()
+                .to_vec()
+                .into();
+        }
+        let mut replacement = unsigned(2, adds, vec![3]);
+        replacement.set_signature(signer.sign(&master, &signable).await.unwrap());
+        apply(&replacement, 2000);
+        assert_slot(4, &[2, 3, 4]);
+        assert_eq!(disabled_at(3), Some(2000));
+        assert_eq!(disabled_at(4), None);
+
+        // 3. Revoking an older key on its own must not repoint the alias at it.
+        let mut revocation = unsigned(3, vec![], vec![2]);
+        revocation.set_signature(
+            signer
+                .sign(&master, &revocation.signable_bytes().unwrap())
+                .await
+                .unwrap(),
+        );
+        apply(&revocation, 3000);
+        assert_slot(4, &[2, 3, 4]);
+        assert_eq!(disabled_at(2), Some(3000));
+        assert!(
+            platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &version.drive.grove_version)
+                .unwrap()
+                .is_empty(),
+            "registration and revocation must leave no stale GroveDB references"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_estimate_bound_key_revocation_at_least_at_its_execution_cost() {
+        let version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (mut identity, mut signer, _, _) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(version)
+            .unwrap();
+        let bound = setup_add_key_to_identity(
+            &mut platform,
+            &mut identity,
+            &mut signer,
+            4,
+            2,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+            Some(ContractBounds::SingleContract { id: dashpay.id() }),
+        );
+        let plain = setup_add_key_to_identity(
+            &mut platform,
+            &mut identity,
+            &mut signer,
+            5,
+            3,
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            KeyType::ECDSA_SECP256K1,
+            None,
+        );
+        let block = BlockInfo {
+            time_ms: 1001,
+            ..Default::default()
+        };
+        let estimate = |key_id: u32| {
+            platform
+                .drive
+                .disable_identity_keys(
+                    identity.id().to_buffer(),
+                    vec![key_id],
+                    block.time_ms,
+                    &block,
+                    false,
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+        let estimated_bound = estimate(bound.id());
+        let estimated_plain = estimate(plain.id());
+        // The bound key has contract-info references to refresh; v0 estimated with an unbounded
+        // stand-in key and priced none of them.
+        assert!(
+            estimated_bound.processing_fee > estimated_plain.processing_fee,
+            "bound revocation estimate {} must exceed the unbounded one {}",
+            estimated_bound.processing_fee,
+            estimated_plain.processing_fee
+        );
+        let actual = platform
+            .drive
+            .disable_identity_keys(
+                identity.id().to_buffer(),
+                vec![bound.id()],
+                block.time_ms,
+                &block,
+                true,
+                None,
+                version,
+            )
+            .unwrap();
+        assert!(
+            estimated_bound.processing_fee >= actual.processing_fee,
+            "estimate {} must cover execution {}",
+            estimated_bound.processing_fee,
+            actual.processing_fee
+        );
+        assert!(estimated_bound.storage_fee >= actual.storage_fee);
+    }
+
+    #[tokio::test]
+    async fn should_estimate_bound_key_fees_from_the_real_contract_lookup() {
+        use dpp::data_contract::factory::DataContractFactory;
+        use dpp::identity::IdentityPublicKey;
+        use dpp::platform_value::{platform_value, Value};
+        let version = PlatformVersion::latest();
+        let mut platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        let (identity, _, _, _) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+        // Two user contracts, one bound at contract level and one at document-type level.
+        // Neither is served from the system-contract cache.
+        let factory = DataContractFactory::new(version.protocol_version).unwrap();
+        let document_type = |n: usize| {
+            (
+                Value::Text(format!("t{n:02}")),
+                platform_value!({"type": "object",
+                    "properties": {"text": {"type": "string", "maxLength": 64, "position": 0},
+                        "note": {"type": "string", "maxLength": 128, "position": 1}},
+                    "additionalProperties": false}),
+            )
+        };
+        let mut contracts = Vec::new();
+        for (nonce, document_types) in [(1u64, 1usize), (2, 16)] {
+            let contract = factory
+                .create_with_value_config(
+                    identity.id(),
+                    nonce,
+                    Value::Map((0..document_types).map(document_type).collect()),
+                    None,
+                    None,
+                )
+                .unwrap()
+                .data_contract_owned();
+            platform
+                .drive
+                .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+                .unwrap();
+            contracts.push(contract);
+        }
+        let mut rng = StdRng::seed_from_u64(77);
+        let keys: Vec<IdentityPublicKey> = contracts
+            .iter()
+            .enumerate()
+            .map(|(index, contract)| {
+                IdentityPublicKey::random_key_with_known_attributes(
+                    2 + index as u32,
+                    &mut rng,
+                    Purpose::AUTHENTICATION,
+                    SecurityLevel::HIGH,
+                    KeyType::ECDSA_SECP256K1,
+                    Some(ContractBounds::SingleContractDocumentType {
+                        id: contract.id(),
+                        document_type_name: "t00".into(),
+                    }),
+                    version,
+                )
+                .unwrap()
+                .0
+            })
+            .collect();
+        let block = BlockInfo {
+            time_ms: 1001,
+            ..Default::default()
+        };
+        let register = |key: &IdentityPublicKey, apply: bool| {
+            platform.drive.cache.data_contracts.clear();
+            platform
+                .drive
+                .add_new_unique_keys_to_identity(
+                    identity.id().to_buffer(),
+                    vec![key.clone()],
+                    &block,
+                    apply,
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+        let revoke = |key: &IdentityPublicKey, apply: bool| {
+            platform.drive.cache.data_contracts.clear();
+            platform
+                .drive
+                .disable_identity_keys(
+                    identity.id().to_buffer(),
+                    vec![key.id()],
+                    block.time_ms,
+                    &block,
+                    apply,
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+
+        let estimated_registration: Vec<_> = keys.iter().map(|key| register(key, false)).collect();
+        let actual_registration: Vec<_> = keys.iter().map(|key| register(key, true)).collect();
+
+        // The estimated operations must bill the same contract lookups as the applied
+        // operations: one real fee per bound group, not a fixed stand-in.
+        use dpp::block::epoch::Epoch;
+        use drive::fees::op::LowLevelDriveOperation;
+        use std::collections::HashMap;
+        let lookup_fees = |operations: &[LowLevelDriveOperation]| -> Vec<u64> {
+            operations
+                .iter()
+                .filter_map(|operation| match operation {
+                    LowLevelDriveOperation::PreCalculatedFeeResult(fee) => Some(fee.processing_fee),
+                    _ => None,
+                })
+                .collect()
+        };
+        let key_ids: Vec<_> = keys.iter().map(|key| key.id()).collect();
+        let revocation_operations = |estimate: bool| {
+            platform.drive.cache.data_contracts.clear();
+            let mut layer_info = estimate.then(HashMap::new);
+            platform
+                .drive
+                .disable_identity_keys_operations(
+                    identity.id().to_buffer(),
+                    key_ids.clone(),
+                    block.time_ms,
+                    &Epoch::new(0).unwrap(),
+                    &mut layer_info,
+                    None,
+                    version,
+                )
+                .unwrap()
+        };
+        let estimated_lookups = lookup_fees(&revocation_operations(true));
+        let applied_lookups = lookup_fees(&revocation_operations(false));
+        assert!(
+            estimated_lookups.len() >= keys.len(),
+            "at least one contract lookup fee per bound key: {estimated_lookups:?}"
+        );
+        assert_eq!(
+            estimated_lookups, applied_lookups,
+            "the estimate must price the same contract lookups the apply path bills"
+        );
+
+        let estimated_revocation: Vec<_> = keys.iter().map(|key| revoke(key, false)).collect();
+        let actual_revocation: Vec<_> = keys.iter().map(|key| revoke(key, true)).collect();
+        for (estimated, actual) in estimated_registration
+            .iter()
+            .zip(&actual_registration)
+            .chain(estimated_revocation.iter().zip(&actual_revocation))
+        {
+            assert!(
+                estimated.processing_fee >= actual.processing_fee,
+                "estimate {} must cover execution {}",
+                estimated.processing_fee,
+                actual.processing_fee
+            );
+            assert!(estimated.storage_fee >= actual.storage_fee);
+        }
     }
 
     #[tokio::test]
@@ -395,7 +1542,12 @@ mod tests {
         let (mut identity, mut signer, _, master_key) =
             setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
 
-        let dashpay = platform.drive.cache.system_data_contracts.load_dashpay();
+        let dashpay = platform
+            .drive
+            .cache
+            .system_data_contracts
+            .load_dashpay(platform_version)
+            .expect("expected the dashpay system contract");
 
         let key = setup_add_key_to_identity(
             &mut platform,
@@ -523,11 +1675,9 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let mut rng = StdRng::seed_from_u64(1292);
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -712,11 +1862,9 @@ mod tests {
         )
         .await;
 
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let mut rng = StdRng::seed_from_u64(1292);
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -752,7 +1900,7 @@ mod tests {
         // Sign the new key with its own private key
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -839,6 +1987,351 @@ mod tests {
             Some(&ContractBounds::SingleContract {
                 id: data_contract.id()
             })
+        );
+    }
+
+    /// A contract-level bound ENCRYPTION or DECRYPTION key whose contract opts in with
+    /// `MultipleReferenceToLatest` (2): the mode the JS SDK publishes by default. Drive used
+    /// to write the current-key alias one level above the purpose subtree, where its sibling
+    /// reference could not resolve, so the update died as an `InternalError`.
+    #[tokio::test]
+    async fn test_identity_update_adding_contract_bound_key_multiple_reference_to_latest() {
+        use crate::execution::validation::state_transition::tests::{
+            register_contract_from_bytes, IdentityTestInfo,
+        };
+        use drive::config::DriveConfig;
+        use drive::drive::identity::key::fetch::{
+            IdentityKeysRequest, KeyIDVec, KeyKindRequestType, KeyRequestType,
+        };
+
+        let platform_config = PlatformConfig {
+            testing_configs: PlatformTestConfig {
+                disable_instant_lock_signature_verification: true,
+                ..Default::default()
+            },
+            // Consistency verification makes GroveDB reject two pending operations on one
+            // slot, so a duplicated alias write would fail here instead of silently winning.
+            drive: DriveConfig {
+                batching_consistency_verification: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let platform_version = PlatformVersion::latest();
+
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(platform_config)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // The bytes below decode to this contract (bound-key requirements `0`); the test
+        // flips both requirements to `2` before registering it.
+        // {
+        //   "$formatVersion": "1",
+        //   "id": "5pkMhyeaFjJfVMkFhLtJdDp2ofx6iqt7i9k6ckkHBwbs",
+        //   "config": {
+        //     "$formatVersion": "1",
+        //     "canBeDeleted": false,
+        //     "readonly": false,
+        //     "keepsHistory": false,
+        //     "documentsKeepHistoryContractDefault": false,
+        //     "documentsMutableContractDefault": true,
+        //     "documentsCanBeDeletedContractDefault": true,
+        //     "requiresIdentityEncryptionBoundedKey": 0,
+        //     "requiresIdentityDecryptionBoundedKey": 0,
+        //     "sizedIntegerTypes": true
+        //   },
+        //   "version": 1,
+        //   "ownerId": "DicUmimv71VqxNBzZHXb887RgssSEjjx7DyLfxrt8q1X",
+        //   "schemaDefs": null,
+        //   "documentSchemas": {
+        //     "preorder": {
+        //       "documentsMutable": false,
+        //       "canBeDeleted": true,
+        //       "type": "object",
+        //       "indices": [
+        //         {
+        //           "name": "saltedHash",
+        //           "properties": [
+        //             {
+        //               "saltedDomainHash": "asc"
+        //             }
+        //           ],
+        //           "unique": true
+        //         }
+        //       ],
+        //       "properties": {
+        //         "saltedDomainHash": {
+        //           "type": "array",
+        //           "byteArray": true,
+        //           "minItems": 32,
+        //           "maxItems": 32,
+        //           "position": 0,
+        //           "description": "Double sha-256 of the concatenation of a 32 byte random salt and a normalized domain name"
+        //         }
+        //       },
+        //       "required": [
+        //         "saltedDomainHash"
+        //       ],
+        //       "additionalProperties": false,
+        //       "$comment": "Preorder documents are immutable: modification and deletion are restricted"
+        //     }
+        //   },
+        //   "createdAt": 1749816974718,
+        //   "updatedAt": null,
+        //   "createdAtBlockHeight": 159130,
+        //   "updatedAtBlockHeight": null,
+        //   "createdAtEpoch": 7906,
+        //   "updatedAtEpoch": null,
+        //   "groups": {},
+        //   "tokens": {},
+        //   "keywords": [],
+        //   "description": null
+        // }
+        let contract_bytes = hex::decode("0147aa11d517710d509edaf84bb54902394dcb8f6cc68775138d1cdd8334600d2e01000000000101010001000101bcf52c1c5d57d2e21530c5d03ef4c6e7b39a91da7c444fdb17e0a7746b6285860001087072656f7264657216081210646f63756d656e74734d757461626c651300120c63616e426544656c65746564130012047479706512066f626a6563741207696e64696365731501160312046e616d65120a73616c74656448617368120a70726f7065727469657315011601121073616c746564446f6d61696e4861736812036173631206756e697175651301120a70726f706572746965731601121073616c746564446f6d61696e486173681606120474797065120561727261791209627974654172726179130112086d696e4974656d73022012086d61784974656d7302201208706f736974696f6e0200120b6465736372697074696f6e1259446f75626c65207368612d323536206f662074686520636f6e636174656e6174696f6e206f66206120333220627974652072616e646f6d2073616c7420616e642061206e6f726d616c697a656420646f6d61696e206e616d65120872657175697265641501121073616c746564446f6d61696e4861736812146164646974696f6e616c50726f706572746965731300120824636f6d6d656e74124a5072656f7264657220646f63756d656e74732061726520696d6d757461626c653a206d6f64696669636174696f6e20616e642064656c6574696f6e20617265207265737472696374656401fd0000019769381d7e0001fc00026d9a0001fb1ee20000000000").expect("expected to decode contract bytes");
+
+        let (identity, signer, critical_key, master_key) =
+            setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(5.0));
+
+        let platform_state = platform.state.load();
+
+        // Same contract, but opting bound ENCRYPTION and DECRYPTION keys in with
+        // `MultipleReferenceToLatest` (2), the mode the DashPay contract and every
+        // contract published from the JS SDK use, instead of `Unique` (0).
+        let contract_bytes = {
+            use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+            use dpp::data_contract::storage_requirements::keys_for_document_type::StorageKeyRequirements;
+            use dpp::serialization::{
+                PlatformDeserializableWithPotentialValidationFromVersionedStructureUntrusted,
+                PlatformSerializableWithPlatformVersion,
+            };
+            let mut contract = dpp::data_contract::DataContract::versioned_deserialize_untrusted(
+                &contract_bytes,
+                false,
+                platform_version,
+            )
+            .expect("expected to deserialize data contract");
+            contract
+                .config_mut()
+                .set_requires_identity_encryption_bounded_key(Some(
+                    StorageKeyRequirements::MultipleReferenceToLatest,
+                ));
+            contract
+                .config_mut()
+                .set_requires_identity_decryption_bounded_key(Some(
+                    StorageKeyRequirements::MultipleReferenceToLatest,
+                ));
+            contract
+                .serialize_to_bytes_with_platform_version(platform_version)
+                .expect("expected to serialize data contract")
+        };
+
+        // Register the contract
+        let data_contract = register_contract_from_bytes(
+            &mut platform,
+            &platform_state,
+            contract_bytes,
+            IdentityTestInfo::Given {
+                identity: &identity,
+                signer: &signer,
+                public_key: &critical_key,
+                identity_nonce: 1,
+            },
+            platform_version,
+        )
+        .await;
+
+        let bounds = ContractBounds::SingleContract {
+            id: data_contract.id(),
+        };
+        let mut rng = SecpStdRng::seed_from_u64(1292);
+        // Two encryption keys, the newer one listed first: both write the encryption
+        // current-key alias, and the one naming the highest key id must win.
+        let pairs: Vec<(u32, Purpose, Keypair)> = vec![
+            (4, Purpose::ENCRYPTION, Keypair::new(&mut rng)),
+            (2, Purpose::ENCRYPTION, Keypair::new(&mut rng)),
+            (3, Purpose::DECRYPTION, Keypair::new(&mut rng)),
+        ];
+        let mut adds: Vec<IdentityPublicKeyInCreationV0> = pairs
+            .iter()
+            .map(|(id, purpose, pair)| IdentityPublicKeyInCreationV0 {
+                id: *id,
+                purpose: *purpose,
+                security_level: SecurityLevel::MEDIUM,
+                key_type: ECDSA_SECP256K1,
+                read_only: false,
+                data: pair.public_key().serialize().to_vec().into(),
+                signature: Default::default(),
+                contract_bounds: Some(bounds.clone()),
+            })
+            .collect();
+        let unsigned = |revision: u64,
+                        nonce: u64,
+                        add: Vec<IdentityPublicKeyInCreationV0>,
+                        disable: Vec<u32>|
+         -> StateTransition {
+            IdentityUpdateTransition::from(IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision,
+                nonce,
+                add_public_keys: add
+                    .into_iter()
+                    .map(IdentityPublicKeyInCreation::V0)
+                    .collect(),
+                disable_public_keys: disable,
+                user_fee_increase: 0,
+                signature_public_key_id: master_key.id(),
+                signature: Default::default(),
+            })
+            .into()
+        };
+        let apply = |transition: &StateTransition, time_ms: u64| {
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition.serialize_to_bytes().unwrap()],
+                    &platform_state,
+                    &BlockInfo {
+                        time_ms,
+                        ..Default::default()
+                    },
+                    &transaction,
+                    platform_version,
+                    true,
+                    None,
+                )
+                .expect("expected to process state transition");
+            assert_matches!(
+                result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "update at {time_ms} must apply"
+            );
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+        };
+        let key_ids = |purpose: Purpose, kind: KeyKindRequestType| -> Vec<u32> {
+            platform
+                .drive
+                .fetch_identity_keys::<KeyIDVec>(
+                    IdentityKeysRequest {
+                        identity_id: identity.id().to_buffer(),
+                        request_type: KeyRequestType::ContractBoundKey(
+                            data_contract.id().to_buffer(),
+                            purpose,
+                            kind,
+                        ),
+                        limit: Some(16),
+                        offset: None,
+                    },
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch bound key ids")
+        };
+        let fetch_key = |key_id: u32| {
+            platform
+                .drive
+                .fetch_identity_keys_as_partial_identity(
+                    IdentityKeysRequest {
+                        identity_id: identity.id().to_buffer(),
+                        request_type: KeyRequestType::SpecificKeys(vec![key_id]),
+                        limit: Some(1),
+                        offset: None,
+                    },
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch identity")
+                .expect("expected identity to exist")
+                .loaded_public_keys
+                .remove(&key_id)
+                .expect("expected the key")
+        };
+        let assert_no_grovedb_issues = || {
+            let issues = platform
+                .drive
+                .grove
+                .visualize_verify_grovedb(None, true, false, &platform_version.drive.grove_version)
+                .expect("expected to verify grovedb");
+            assert!(issues.is_empty(), "grovedb issues: {issues:?}");
+        };
+
+        // Register every key in one update: one current-key alias per purpose subtree.
+        let signable = unsigned(1, 2, adds.clone(), vec![])
+            .signable_bytes()
+            .expect("expected signable bytes");
+        for (key, (_, _, pair)) in adds.iter_mut().zip(&pairs) {
+            key.signature = signer::sign(&signable, &pair.secret_key().to_secret_bytes())
+                .expect("expected to sign")
+                .to_vec()
+                .into();
+        }
+        let mut registration = unsigned(1, 2, adds, vec![]);
+        registration.set_signature(
+            signer
+                .sign(&master_key, &signable)
+                .await
+                .expect("expected to sign"),
+        );
+        apply(&registration, 1000);
+        assert_no_grovedb_issues();
+
+        for (id, _, _) in &pairs {
+            assert_eq!(fetch_key(*id).contract_bounds(), Some(&bounds));
+        }
+        for (purpose, current, all) in [
+            (Purpose::ENCRYPTION, 4, vec![2, 4]),
+            (Purpose::DECRYPTION, 3, vec![3]),
+        ] {
+            assert_eq!(
+                key_ids(purpose, KeyKindRequestType::CurrentKeyOfKindRequest),
+                vec![current],
+                "{purpose:?} current key is the newest, whatever the order in the update"
+            );
+            assert_eq!(
+                key_ids(purpose, KeyKindRequestType::AllKeysOfKindRequest),
+                all,
+                "{purpose:?} listing must not repeat the current key alias"
+            );
+        }
+
+        // Disabling the older encryption key refreshes its references, including the alias,
+        // which keeps naming the newer key.
+        let mut revocation = unsigned(2, 3, vec![], vec![2]);
+        revocation.set_signature(
+            signer
+                .sign(
+                    &master_key,
+                    &revocation
+                        .signable_bytes()
+                        .expect("expected signable bytes"),
+                )
+                .await
+                .expect("expected to sign"),
+        );
+        apply(&revocation, 2000);
+        assert_no_grovedb_issues();
+
+        assert_eq!(fetch_key(2).disabled_at(), Some(2000));
+        assert_eq!(
+            key_ids(
+                Purpose::ENCRYPTION,
+                KeyKindRequestType::CurrentKeyOfKindRequest
+            ),
+            vec![4]
+        );
+        assert_eq!(
+            key_ids(
+                Purpose::DECRYPTION,
+                KeyKindRequestType::CurrentKeyOfKindRequest
+            ),
+            vec![3]
         );
     }
 
@@ -1141,11 +2634,9 @@ mod tests {
         )
         .await;
 
-        let secp = Secp256k1::new();
+        let mut rng = SecpStdRng::seed_from_u64(1292);
 
-        let mut rng = StdRng::seed_from_u64(1292);
-
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 2,
@@ -1182,7 +2673,7 @@ mod tests {
         // Sign the new key with its own private key
         let secret = new_key_pair.secret_key();
         let signature =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         new_key.signature = signature.to_vec().into();
 
@@ -1515,9 +3006,8 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(292);
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let mut rng = SecpStdRng::seed_from_u64(292);
+        let new_key_pair = Keypair::new(&mut rng);
 
         // Add a key with id 2 and also disable key id 2 in the same transition
         let new_key = IdentityPublicKeyInCreationV0 {
@@ -1745,9 +3235,8 @@ mod tests {
 
         let platform_state = platform.state.load();
 
-        let secp = Secp256k1::new();
-        let mut rng = StdRng::seed_from_u64(292);
-        let new_key_pair = Keypair::new(&secp, &mut rng);
+        let mut rng = SecpStdRng::seed_from_u64(292);
+        let new_key_pair = Keypair::new(&mut rng);
 
         let signable_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
             identity_id: identity.id(),
@@ -1780,7 +3269,7 @@ mod tests {
         // Sign the new key
         let secret = new_key_pair.secret_key();
         let key_sig =
-            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+            signer::sign(&signable_bytes, &secret.to_secret_bytes()).expect("expected to sign");
 
         let mut new_key = IdentityPublicKeyInCreationV0 {
             id: 1, // existing key ID
@@ -1838,5 +3327,1361 @@ mod tests {
             processing_result.execution_results().as_slice(),
             [StateTransitionExecutionResult::PaidConsensusError { .. }]
         );
+    }
+    mod key_limits {
+        use super::*;
+        use dpp::consensus::codes::ErrorWithCode;
+        use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+        use dpp::identity::{IdentityPublicKey, TimestampMillis};
+        use dpp::state_transition::public_key_in_creation::v1::IdentityPublicKeyInCreationV1;
+        use drive::drive::identity::key::fetch::{
+            IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap,
+        };
+
+        const IDENTITY_PUBLIC_KEY_LIMITS_NOT_ALLOWED: u32 = 10536;
+        const INVALID_IDENTITY_PUBLIC_KEY_BUDGET: u32 = 10537;
+        const IDENTITY_PUBLIC_KEY_ALREADY_EXPIRED: u32 = 40219;
+
+        const BLOCK_TIME_MS: TimestampMillis = 1_000_000;
+        const NEW_KEY_ID: u32 = 2;
+
+        struct AddedKey {
+            purpose: Purpose,
+            security_level: SecurityLevel,
+            total_budget: Option<u64>,
+            expires_at: Option<TimestampMillis>,
+        }
+
+        /// Processes an identity update, signed by the master key, that adds one version 1 key
+        /// with the given limits, and gives back the platform to look at the outcome.
+        async fn add_key(
+            added_key: AddedKey,
+        ) -> (
+            crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+            Identifier,
+            StateTransitionExecutionResult,
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = TestPlatformBuilder::new()
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let (identity, signer, _, master_key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+            let platform_state = platform.state.load();
+
+            let mut rng = SecpStdRng::seed_from_u64(292);
+            let new_key_pair = Keypair::new(&mut rng);
+            let mut new_key = IdentityPublicKeyInCreationV1 {
+                id: NEW_KEY_ID,
+                purpose: added_key.purpose,
+                security_level: added_key.security_level,
+                key_type: ECDSA_SECP256K1,
+                read_only: false,
+                data: new_key_pair.public_key().serialize().to_vec().into(),
+                contract_bounds: None,
+                total_budget: added_key.total_budget,
+                expires_at: added_key.expires_at,
+                signature: Default::default(),
+            };
+
+            let transition_adding = |new_key: IdentityPublicKeyInCreationV1| -> StateTransition {
+                let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                    identity_id: identity.id(),
+                    revision: 1,
+                    nonce: 1,
+                    add_public_keys: vec![new_key.into()],
+                    disable_public_keys: vec![],
+                    user_fee_increase: 0,
+                    signature_public_key_id: master_key.id(),
+                    signature: Default::default(),
+                }
+                .into();
+                update_transition.into()
+            };
+
+            // The limits are part of the signable bytes: the new key and the master key both
+            // sign over them.
+            let signable_bytes = transition_adding(new_key.clone())
+                .signable_bytes()
+                .expect("expected signable bytes");
+            new_key.signature = signer::sign(
+                &signable_bytes,
+                &new_key_pair.secret_key().to_secret_bytes(),
+            )
+            .expect("expected to sign")
+            .to_vec()
+            .into();
+
+            let mut update_transition = transition_adding(new_key);
+            update_transition.set_signature(
+                signer
+                    .sign(&master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![update_transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize")],
+                    &platform_state,
+                    &BlockInfo {
+                        time_ms: BLOCK_TIME_MS,
+                        ..Default::default()
+                    },
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+            let execution = processing_result.execution_results()[0].clone();
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+            drop(platform_state);
+            (platform, identity.id(), execution)
+        }
+
+        fn stored_key(
+            platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+            identity_id: Identifier,
+        ) -> Option<IdentityPublicKey> {
+            platform
+                .drive
+                .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
+                    IdentityKeysRequest::new_specific_key_query(identity_id.as_bytes(), NEW_KEY_ID),
+                    None,
+                    PlatformVersion::latest(),
+                )
+                .expect("expected to fetch keys")
+                .remove(&NEW_KEY_ID)
+        }
+
+        #[tokio::test]
+        async fn should_register_a_key_with_a_budget_and_an_expiry() {
+            let (platform, identity_id, execution) = add_key(AddedKey {
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                total_budget: Some(5_000_000),
+                expires_at: Some(BLOCK_TIME_MS + 1),
+            })
+            .await;
+            assert_matches!(
+                execution,
+                StateTransitionExecutionResult::SuccessfulExecution { .. }
+            );
+
+            let key = stored_key(&platform, identity_id).expect("expected the new key");
+            assert_eq!(key.total_budget(), Some(5_000_000));
+            assert_eq!(key.expires_at(), Some(BLOCK_TIME_MS + 1));
+            assert_eq!(
+                platform
+                    .drive
+                    .fetch_identity_key_remaining_budget(
+                        identity_id.to_buffer(),
+                        NEW_KEY_ID,
+                        None,
+                        PlatformVersion::latest()
+                    )
+                    .expect("expected to fetch the remaining budget"),
+                Some(5_000_000),
+                "a new key has its whole budget left"
+            );
+        }
+
+        #[tokio::test]
+        async fn should_reject_paid_a_key_that_is_already_expired() {
+            // Seconds instead of milliseconds is the usual way to get here.
+            let (platform, identity_id, execution) = add_key(AddedKey {
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                total_budget: None,
+                expires_at: Some(BLOCK_TIME_MS),
+            })
+            .await;
+            assert!(
+                matches!(&execution, StateTransitionExecutionResult::PaidConsensusError { error, .. } if error.code() == IDENTITY_PUBLIC_KEY_ALREADY_EXPIRED),
+                "{execution:?}"
+            );
+            assert_eq!(stored_key(&platform, identity_id), None);
+        }
+
+        #[tokio::test]
+        async fn should_reject_limits_on_a_key_that_may_not_carry_them() {
+            for (purpose, security_level) in [
+                (Purpose::TRANSFER, SecurityLevel::CRITICAL),
+                (Purpose::AUTHENTICATION, SecurityLevel::MASTER),
+            ] {
+                let (platform, identity_id, execution) = add_key(AddedKey {
+                    purpose,
+                    security_level,
+                    total_budget: Some(5_000_000),
+                    expires_at: None,
+                })
+                .await;
+                assert!(
+                    matches!(&execution, StateTransitionExecutionResult::UnpaidConsensusError(error) if error.code() == IDENTITY_PUBLIC_KEY_LIMITS_NOT_ALLOWED),
+                    "{purpose:?} {security_level:?}: {execution:?}"
+                );
+                assert_eq!(stored_key(&platform, identity_id), None);
+            }
+        }
+
+        #[tokio::test]
+        async fn should_reject_a_budget_of_zero() {
+            let (_, _, execution) = add_key(AddedKey {
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                total_budget: Some(0),
+                expires_at: None,
+            })
+            .await;
+            assert!(
+                matches!(&execution, StateTransitionExecutionResult::UnpaidConsensusError(error) if error.code() == INVALID_IDENTITY_PUBLIC_KEY_BUDGET),
+                "{execution:?}"
+            );
+        }
+    }
+
+    mod hash_key_data {
+        use super::*;
+        use crate::execution::check_tx::CheckTxLevel;
+        use crate::platform_types::platform::PlatformRef;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::consensus::basic::BasicError;
+        use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
+        use simple_signer::signer::SimpleSigner;
+        use std::collections::BTreeMap;
+
+        const HASH_KEY_ID: u32 = 1;
+
+        /// A platform at `platform_version` holding an identity with only a master key, and an
+        /// identity update, signed by that key, adding a hash key of `key_type` whose data has
+        /// `data_len` bytes. Hash keys carry no proof of possession, so the key data is all that
+        /// can be wrong with it.
+        async fn identity_update_adding_a_hash_key(
+            key_type: KeyType,
+            data_len: usize,
+            platform_version: &PlatformVersion,
+        ) -> (TempPlatform<MockCoreRPCLike>, StateTransition) {
+            let platform = TestPlatformBuilder::new()
+                .with_initial_protocol_version(platform_version.protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state();
+            let mut rng = StdRng::seed_from_u64(417);
+            let (master_key, master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+            let mut signer = SimpleSigner::default();
+            signer.add_identity_public_key(master_key.clone(), master_private_key);
+            let identity: Identity = IdentityV0 {
+                id: Identifier::random_with_rng(&mut rng),
+                public_keys: BTreeMap::from([(master_key.id(), master_key.clone())]),
+                balance: dash_to_credits!(0.1),
+                revision: 0,
+            }
+            .into();
+            platform
+                .drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add a new identity");
+
+            let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![IdentityPublicKeyInCreationV0 {
+                    id: HASH_KEY_ID,
+                    key_type,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::HIGH,
+                    contract_bounds: None,
+                    read_only: false,
+                    data: vec![0x5a; data_len].into(),
+                    signature: Default::default(),
+                }
+                .into()],
+                disable_public_keys: vec![],
+                user_fee_increase: 0,
+                signature_public_key_id: master_key.id(),
+                signature: Default::default(),
+            }
+            .into();
+            let mut transition: StateTransition = update_transition.into();
+            let signable_bytes = transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+            transition.set_signature(
+                signer
+                    .sign(&master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+            (platform, transition)
+        }
+
+        fn check_tx(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) -> Vec<ConsensusError> {
+            let platform_state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform_state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            platform
+                .check_tx(
+                    &transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize"),
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform_ref,
+                    platform_version,
+                )
+                .expect("expected to check tx")
+                .errors
+        }
+
+        fn process_block(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) -> StateTransitionExecutionResult {
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize")],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+            processing_result.execution_results()[0].clone()
+        }
+
+        /// A hash key's data is the hash itself, so from protocol version 14 an identity update
+        /// adding one whose data is not 20 bytes fails basic structure validation: check_tx
+        /// refuses it with a consensus error, and a block refuses it unpaid, like any other
+        /// basic structure failure.
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_identity_update_adding_a_hash_key_of_the_wrong_size() {
+            let platform_version = PlatformVersion::latest();
+            for (key_type, data_len) in [
+                (KeyType::ECDSA_HASH160, 0),
+                (KeyType::ECDSA_HASH160, 19),
+                (KeyType::ECDSA_HASH160, 21),
+                (KeyType::BIP13_SCRIPT_HASH, 19),
+                (KeyType::EDDSA_25519_HASH160, 19),
+            ] {
+                let (platform, transition) =
+                    identity_update_adding_a_hash_key(key_type, data_len, platform_version).await;
+
+                let errors = check_tx(&platform, &transition, platform_version);
+                assert_matches!(
+                    errors.as_slice(),
+                    [ConsensusError::BasicError(
+                        BasicError::InvalidIdentityPublicKeyDataError(error)
+                    )] if error.public_key_id() == HASH_KEY_ID,
+                    "{key_type} with {data_len} bytes: {errors:?}"
+                );
+
+                let execution = process_block(&platform, &transition, platform_version);
+                assert_matches!(
+                    execution,
+                    StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::BasicError(BasicError::InvalidIdentityPublicKeyDataError(
+                            _
+                        ))
+                    ),
+                    "{key_type} with {data_len} bytes"
+                );
+            }
+        }
+
+        /// Protocol version 13 does not check the size of a hash key's data, so such a key fails
+        /// once its hash is taken, as an internal error that keeps the transition out of every
+        /// block; that history replays unchanged.
+        #[tokio::test]
+        async fn should_fail_an_identity_update_adding_a_hash_key_of_the_wrong_size_internally_at_protocol_version_13(
+        ) {
+            let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
+            let (platform, transition) =
+                identity_update_adding_a_hash_key(KeyType::ECDSA_HASH160, 19, platform_version)
+                    .await;
+            assert_matches!(
+                process_block(&platform, &transition, platform_version),
+                StateTransitionExecutionResult::InternalError(_)
+            );
+        }
+
+        /// The same identity update with 20 bytes of hash key data adds the key, so the refusals
+        /// above come from the key data alone.
+        #[tokio::test]
+        async fn should_add_a_hash_key_of_20_bytes_at_protocol_versions_13_and_14() {
+            for platform_version in [
+                PlatformVersion::get(13).expect("expected protocol version 13"),
+                PlatformVersion::latest(),
+            ] {
+                let (platform, transition) =
+                    identity_update_adding_a_hash_key(KeyType::ECDSA_HASH160, 20, platform_version)
+                        .await;
+                assert_matches!(
+                    process_block(&platform, &transition, platform_version),
+                    StateTransitionExecutionResult::SuccessfulExecution { .. },
+                    "at protocol version {}",
+                    platform_version.protocol_version
+                );
+            }
+        }
+    }
+
+    mod proofs_of_possession_of_added_keys {
+        use super::*;
+        use crate::error::execution::ExecutionError;
+        use crate::error::Error;
+        use crate::execution::check_tx::CheckTxLevel;
+        use crate::execution::types::execution_event::ExecutionEvent;
+        use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
+        use crate::execution::types::execution_operation::ValidationOperation;
+        use crate::execution::types::state_transition_execution_context::{
+            StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+        };
+        use crate::execution::validation::state_transition::check_tx_verification::state_transition_to_execution_event_for_check_tx;
+        use crate::execution::validation::state_transition::processor::advanced_structure_without_state::StateTransitionAdvancedStructureValidationV0;
+        use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
+        use crate::platform_types::platform::PlatformRef;
+        use crate::platform_types::platform_state::PlatformStateV0Methods;
+        use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
+        use crate::rpc::core::MockCoreRPCLike;
+        use crate::test::helpers::setup::TempPlatform;
+        use dpp::consensus::signature::SignatureError;
+        use dpp::consensus::state::state_error::StateError;
+        use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyID, PartialIdentity};
+        use dpp::version::DefaultForPlatformVersion;
+        use std::collections::BTreeSet;
+        use dpp::prelude::{IdentityNonce, Revision};
+        use dpp::serialization::PlatformMessageSignable;
+        use dpp::state_transition::public_key_in_creation::accessors::{
+            IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV0Setters,
+        };
+        use dpp::version::ProtocolVersion;
+        use platform_version::version::LATEST_VERSION;
+        use simple_signer::signer::SimpleSigner;
+        use std::collections::BTreeMap;
+
+        /// The protocol versions the check_tx tests run at: 1 (the first), 13 and 14 (whose
+        /// identity update advanced structure charges these faults) and the latest (which refuses
+        /// them unpaid).
+        const CHECK_TX_PROTOCOL_VERSIONS: [ProtocolVersion; 4] = [1, 13, 14, LATEST_VERSION];
+
+        /// Protocol versions whose identity update advanced structure charges these faults: the
+        /// first, and the two before they are refused unpaid.
+        const CHARGING_PROTOCOL_VERSIONS: [ProtocolVersion; 3] = [1, 13, 14];
+
+        const AUTHENTICATION_KEY_ID: KeyID = 1;
+        const HASH_KEY_ID: KeyID = 2;
+
+        /// What is wrong with the keys an update adds. The hash key follows the authentication
+        /// key, so `SignatureOnAHashKey` is a failure on a later key after a valid one.
+        #[derive(Clone, Copy, Debug)]
+        enum Fault {
+            /// The added authentication key's proof of possession does not verify
+            InvalidProofOfPossession,
+            /// The added authentication key is a BLS key whose public key data does not decode
+            UndecodableBlsKeyData,
+            /// The added hash key, which must not reveal its public key, carries a signature
+            SignatureOnAHashKey,
+        }
+
+        const FAULTS: [Fault; 3] = [
+            Fault::InvalidProofOfPossession,
+            Fault::UndecodableBlsKeyData,
+            Fault::SignatureOnAHashKey,
+        ];
+
+        impl Fault {
+            fn is_reported_by(self, error: &ConsensusError) -> bool {
+                match self {
+                    Fault::InvalidProofOfPossession => matches!(
+                        error,
+                        ConsensusError::SignatureError(SignatureError::BasicECDSAError(_))
+                    ),
+                    Fault::UndecodableBlsKeyData => matches!(
+                        error,
+                        ConsensusError::SignatureError(SignatureError::BasicBLSError(_))
+                    ),
+                    Fault::SignatureOnAHashKey => matches!(
+                        error,
+                        ConsensusError::SignatureError(
+                            SignatureError::SignatureShouldNotBePresentError(_)
+                        )
+                    ),
+                }
+            }
+        }
+
+        /// An identity with a master key alone, and the signer holding that key.
+        struct Owner {
+            identity: Identity,
+            master_key: IdentityPublicKey,
+            signer: SimpleSigner,
+        }
+
+        fn new_platform(protocol_version: ProtocolVersion) -> TempPlatform<MockCoreRPCLike> {
+            TestPlatformBuilder::new()
+                .with_initial_protocol_version(protocol_version)
+                .build_with_mock_rpc()
+                .set_genesis_state()
+        }
+
+        /// Adds to the platform an identity with a master key alone, at revision 0.
+        fn owner(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            platform_version: &PlatformVersion,
+        ) -> Owner {
+            let mut rng = StdRng::seed_from_u64(831);
+            let (master_key, master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(
+                    0,
+                    &mut rng,
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+            let mut signer = SimpleSigner::default();
+            signer.add_identity_public_key(master_key.clone(), master_private_key);
+            let identity: Identity = IdentityV0 {
+                id: Identifier::random_with_rng(&mut rng),
+                public_keys: BTreeMap::from([(master_key.id(), master_key.clone())]),
+                balance: dash_to_credits!(0.1),
+                revision: 0,
+            }
+            .into();
+            platform
+                .drive
+                .add_new_identity(
+                    identity.clone(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add a new identity");
+            Owner {
+                identity,
+                master_key,
+                signer,
+            }
+        }
+
+        /// An identity update at `revision` and `nonce` adding an ECDSA authentication key with
+        /// its proof of possession and a hash key, with `fault` in the added keys if any, then
+        /// signed by the owner's master key.
+        async fn update(
+            owner: &Owner,
+            fault: Option<Fault>,
+            revision: Revision,
+            nonce: IdentityNonce,
+        ) -> StateTransition {
+            let mut rng = SecpStdRng::seed_from_u64(292);
+            let authentication_key_pair = Keypair::new(&mut rng);
+            let (authentication_key_type, authentication_key_data) = match fault {
+                Some(Fault::UndecodableBlsKeyData) => (KeyType::BLS12_381, vec![0xff; 48]),
+                _ => (
+                    ECDSA_SECP256K1,
+                    authentication_key_pair.public_key().serialize().to_vec(),
+                ),
+            };
+            let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                identity_id: owner.identity.id(),
+                revision,
+                nonce,
+                add_public_keys: vec![
+                    IdentityPublicKeyInCreationV0 {
+                        id: AUTHENTICATION_KEY_ID,
+                        purpose: Purpose::AUTHENTICATION,
+                        security_level: SecurityLevel::HIGH,
+                        key_type: authentication_key_type,
+                        read_only: false,
+                        data: authentication_key_data.into(),
+                        signature: Default::default(),
+                        contract_bounds: None,
+                    }
+                    .into(),
+                    IdentityPublicKeyInCreationV0 {
+                        id: HASH_KEY_ID,
+                        purpose: Purpose::AUTHENTICATION,
+                        security_level: SecurityLevel::HIGH,
+                        key_type: KeyType::ECDSA_HASH160,
+                        read_only: false,
+                        data: vec![0x5a; 20].into(),
+                        signature: Default::default(),
+                        contract_bounds: None,
+                    }
+                    .into(),
+                ],
+                disable_public_keys: vec![],
+                user_fee_increase: 0,
+                signature_public_key_id: owner.master_key.id(),
+                signature: Default::default(),
+            }
+            .into();
+            let mut transition: StateTransition = update_transition.into();
+            let signable_bytes = transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+
+            let StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(update_v0)) =
+                &mut transition
+            else {
+                panic!("expected an identity update v0 transition");
+            };
+            let proof_of_possession = signer::sign(
+                &signable_bytes,
+                &authentication_key_pair.secret_key().to_secret_bytes(),
+            )
+            .expect("expected to sign");
+            update_v0.add_public_keys[0].set_signature(proof_of_possession.to_vec().into());
+            match fault {
+                None => {}
+                Some(Fault::InvalidProofOfPossession) => {
+                    let key = &mut update_v0.add_public_keys[0];
+                    let mut proof_of_possession = key.signature().to_vec();
+                    proof_of_possession[32] ^= 0x01;
+                    key.set_signature(proof_of_possession.into());
+                    assert!(!signable_bytes
+                        .as_slice()
+                        .verify_signature(
+                            key.key_type(),
+                            key.data().as_slice(),
+                            key.signature().as_slice()
+                        )
+                        .is_valid());
+                }
+                Some(Fault::UndecodableBlsKeyData) => {
+                    let key = &mut update_v0.add_public_keys[0];
+                    key.set_signature(vec![0xa0; 96].into());
+                    assert!(!signable_bytes
+                        .as_slice()
+                        .verify_signature(
+                            key.key_type(),
+                            key.data().as_slice(),
+                            key.signature().as_slice()
+                        )
+                        .is_valid());
+                }
+                Some(Fault::SignatureOnAHashKey) => {
+                    update_v0.add_public_keys[1].set_signature(vec![1u8; 65].into());
+                }
+            }
+
+            transition.set_signature(
+                owner
+                    .signer
+                    .sign(&owner.master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+            transition
+        }
+
+        fn check_tx(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+        ) -> Vec<ConsensusError> {
+            let state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            platform
+                .check_tx(
+                    &transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize"),
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform_ref,
+                    state
+                        .current_platform_version()
+                        .expect("expected a platform version"),
+                )
+                .expect("expected to check tx")
+                .errors
+        }
+
+        /// check_tx's first check of the transition at the latest protocol version, with its
+        /// proofs verified under `proof_verifier`'s capacity.
+        fn check_tx_under(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            proof_verifier: &CheckTxProofVerifier,
+        ) -> Result<Vec<ConsensusError>, Error> {
+            let state = platform.state.load();
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+            state_transition_to_execution_event_for_check_tx(
+                &platform_ref,
+                transition,
+                CheckTxLevel::FirstTimeCheck,
+                proof_verifier,
+                PlatformVersion::latest(),
+            )
+            .map(|result| result.errors)
+        }
+
+        /// An identity update at revision 1 and nonce 1 adding `key_count` ECDSA authentication
+        /// keys, each with its proof of possession, signed by the owner's master key.
+        async fn update_adding_ecdsa_keys(owner: &Owner, key_count: usize) -> StateTransition {
+            let mut rng = SecpStdRng::seed_from_u64(517);
+            let key_pairs: Vec<Keypair> = (0..key_count).map(|_| Keypair::new(&mut rng)).collect();
+            let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                identity_id: owner.identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: key_pairs
+                    .iter()
+                    .zip(1..)
+                    .map(|(key_pair, id)| {
+                        IdentityPublicKeyInCreationV0 {
+                            id,
+                            purpose: Purpose::AUTHENTICATION,
+                            security_level: SecurityLevel::HIGH,
+                            key_type: ECDSA_SECP256K1,
+                            read_only: false,
+                            data: key_pair.public_key().serialize().to_vec().into(),
+                            signature: Default::default(),
+                            contract_bounds: None,
+                        }
+                        .into()
+                    })
+                    .collect(),
+                disable_public_keys: vec![],
+                user_fee_increase: 0,
+                signature_public_key_id: owner.master_key.id(),
+                signature: Default::default(),
+            }
+            .into();
+            let mut transition: StateTransition = update_transition.into();
+            let signable_bytes = transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+
+            let StateTransition::IdentityUpdate(IdentityUpdateTransition::V0(update_v0)) =
+                &mut transition
+            else {
+                panic!("expected an identity update v0 transition");
+            };
+            for (key, key_pair) in update_v0.add_public_keys.iter_mut().zip(&key_pairs) {
+                let proof_of_possession =
+                    signer::sign(&signable_bytes, &key_pair.secret_key().to_secret_bytes())
+                        .expect("expected to sign");
+                key.set_signature(proof_of_possession.to_vec().into());
+            }
+
+            transition.set_signature(
+                owner
+                    .signer
+                    .sign(&owner.master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+            transition
+        }
+
+        /// Processes the transition as a block and commits it.
+        fn process_block(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            transition: &StateTransition,
+            platform_version: &PlatformVersion,
+        ) -> StateTransitionsProcessingResult {
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+            let result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &[transition
+                        .serialize_to_bytes()
+                        .expect("expected to serialize")],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transitions");
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+            result
+        }
+
+        /// The identity as stored: its balance, revision and keys.
+        fn stored_identity(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            owner: &Owner,
+            platform_version: &PlatformVersion,
+        ) -> Identity {
+            platform
+                .drive
+                .fetch_full_identity(owner.identity.id().to_buffer(), None, platform_version)
+                .expect("expected to fetch the identity")
+                .expect("expected the identity to exist")
+        }
+
+        fn stored_nonce(
+            platform: &TempPlatform<MockCoreRPCLike>,
+            owner: &Owner,
+            platform_version: &PlatformVersion,
+        ) -> Option<IdentityNonce> {
+            platform
+                .drive
+                .fetch_identity_nonce(
+                    owner.identity.id().to_buffer(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to fetch the identity nonce")
+        }
+
+        /// The identity's signature does not cover the proofs of possession of the keys it adds,
+        /// so a block refuses an update whose proof fails without charging the identity: its
+        /// balance, revision, keys and nonce are left as they were. An update with valid proofs
+        /// at the same nonce then adds the keys.
+        async fn assert_refused_unpaid_leaving_the_identity_untouched(fault: Fault) {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version.protocol_version);
+            let owner = owner(&platform, platform_version);
+            let identity_before = stored_identity(&platform, &owner, platform_version);
+            let nonce_before = stored_nonce(&platform, &owner, platform_version);
+
+            let refused = process_block(
+                &platform,
+                &update(&owner, Some(fault), 1, 1).await,
+                platform_version,
+            );
+            assert_matches!(
+                refused.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(error)]
+                    if fault.is_reported_by(error),
+                "{:?}",
+                refused.execution_results()
+            );
+            assert_eq!(
+                stored_identity(&platform, &owner, platform_version),
+                identity_before
+            );
+            assert_eq!(
+                stored_nonce(&platform, &owner, platform_version),
+                nonce_before
+            );
+
+            let added = process_block(
+                &platform,
+                &update(&owner, None, 1, 1).await,
+                platform_version,
+            );
+            assert_matches!(
+                added.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "{:?}",
+                added.execution_results()
+            );
+            let identity_after = stored_identity(&platform, &owner, platform_version);
+            assert_eq!(identity_after.revision(), 1);
+            assert!(identity_after
+                .public_keys()
+                .contains_key(&AUTHENTICATION_KEY_ID));
+            assert!(identity_after.public_keys().contains_key(&HASH_KEY_ID));
+        }
+
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_identity_update_whose_added_key_proof_of_possession_does_not_verify(
+        ) {
+            assert_refused_unpaid_leaving_the_identity_untouched(Fault::InvalidProofOfPossession)
+                .await;
+        }
+
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_identity_update_adding_a_bls_key_whose_data_does_not_decode(
+        ) {
+            assert_refused_unpaid_leaving_the_identity_untouched(Fault::UndecodableBlsKeyData)
+                .await;
+        }
+
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_identity_update_with_a_signature_on_an_added_hash_key() {
+            assert_refused_unpaid_leaving_the_identity_untouched(Fault::SignatureOnAHashKey).await;
+        }
+
+        /// The signature verifications of a valid update's added keys are charged, one per key,
+        /// at protocol version 14 and at the latest: the generation that refuses a failed proof
+        /// unpaid charges a valid update what the previous one does.
+        #[tokio::test]
+        async fn should_charge_a_signature_verification_for_each_key_a_valid_identity_update_adds()
+        {
+            for protocol_version in [14, LATEST_VERSION] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let platform = new_platform(protocol_version);
+                let owner = owner(&platform, platform_version);
+                let identity = PartialIdentity {
+                    id: owner.identity.id(),
+                    loaded_public_keys: BTreeMap::new(),
+                    balance: None,
+                    revision: Some(0),
+                    not_found_public_keys: BTreeSet::new(),
+                };
+                let mut execution_context =
+                    StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                        .expect("expected an execution context");
+
+                let result = update(&owner, None, 1, 1)
+                    .await
+                    .validate_advanced_structure(
+                        &identity,
+                        &mut execution_context,
+                        platform_version,
+                    )
+                    .expect("expected to validate the advanced structure");
+                assert!(
+                    result.is_valid(),
+                    "at protocol version {protocol_version}: {:?}",
+                    result.errors
+                );
+                assert_eq!(
+                    execution_context.operations_slice(),
+                    [
+                        ValidationOperation::SignatureVerification(
+                            SignatureVerificationOperation::new(ECDSA_SECP256K1)
+                        ),
+                        ValidationOperation::SignatureVerification(
+                            SignatureVerificationOperation::new(KeyType::ECDSA_HASH160)
+                        ),
+                    ],
+                    "at protocol version {protocol_version}"
+                );
+            }
+        }
+
+        /// Before protocol version 15 these faults are charged to the identity and use its nonce,
+        /// and the keys are not added, as advanced structure v0 does; those protocol versions keep
+        /// this so their history replays unchanged.
+        #[tokio::test]
+        async fn should_charge_an_identity_update_whose_added_key_proof_of_possession_does_not_verify_before_protocol_version_15(
+        ) {
+            for protocol_version in CHARGING_PROTOCOL_VERSIONS {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                for fault in FAULTS {
+                    let platform = new_platform(protocol_version);
+                    let owner = owner(&platform, platform_version);
+                    let identity_before = stored_identity(&platform, &owner, platform_version);
+                    let nonce_before = stored_nonce(&platform, &owner, platform_version);
+
+                    let charged = process_block(
+                        &platform,
+                        &update(&owner, Some(fault), 1, 1).await,
+                        platform_version,
+                    );
+                    let [StateTransitionExecutionResult::PaidConsensusError {
+                        error,
+                        actual_fees,
+                        ..
+                    }] = charged.execution_results().as_slice()
+                    else {
+                        panic!(
+                            "at protocol version {protocol_version} with {fault:?}: {:?}",
+                            charged.execution_results()
+                        );
+                    };
+                    assert!(
+                        fault.is_reported_by(error),
+                        "at protocol version {protocol_version} with {fault:?}: {error:?}"
+                    );
+                    assert!(actual_fees.processing_fee > 0);
+
+                    let identity_after = stored_identity(&platform, &owner, platform_version);
+                    assert_eq!(
+                        identity_after.balance(),
+                        identity_before.balance() - actual_fees.total_base_fee(),
+                        "at protocol version {protocol_version} with {fault:?}"
+                    );
+                    assert_eq!(identity_after.revision(), identity_before.revision());
+                    assert_eq!(identity_after.public_keys(), identity_before.public_keys());
+                    assert_ne!(
+                        stored_nonce(&platform, &owner, platform_version),
+                        nonce_before,
+                        "at protocol version {protocol_version} with {fault:?}"
+                    );
+                }
+            }
+        }
+
+        /// The revision is signed by the identity and checked before the added keys, so an
+        /// update at a wrong revision is charged whatever its added keys hold.
+        #[tokio::test]
+        async fn should_charge_an_identity_update_for_a_wrong_revision_whatever_its_added_keys() {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version.protocol_version);
+            let owner = owner(&platform, platform_version);
+            let identity_before = stored_identity(&platform, &owner, platform_version);
+            let nonce_before = stored_nonce(&platform, &owner, platform_version);
+
+            let charged = process_block(
+                &platform,
+                &update(&owner, Some(Fault::InvalidProofOfPossession), 2, 1).await,
+                platform_version,
+            );
+            assert_matches!(
+                charged.execution_results().as_slice(),
+                [StateTransitionExecutionResult::PaidConsensusError {
+                    error: ConsensusError::StateError(StateError::InvalidIdentityRevisionError(_)),
+                    ..
+                }],
+                "{:?}",
+                charged.execution_results()
+            );
+            let identity_after = stored_identity(&platform, &owner, platform_version);
+            assert!(identity_after.balance() < identity_before.balance());
+            assert_eq!(identity_after.revision(), identity_before.revision());
+            assert_eq!(identity_after.public_keys(), identity_before.public_keys());
+            assert_ne!(
+                stored_nonce(&platform, &owner, platform_version),
+                nonce_before
+            );
+        }
+
+        /// check_tx verifies the proofs of possession of an identity update's added keys at every
+        /// protocol version, so an update with the fault never enters the mempool, while the same
+        /// update with valid proofs is admitted.
+        async fn assert_refused_at_check_tx(fault: Fault) {
+            for protocol_version in CHECK_TX_PROTOCOL_VERSIONS {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let platform = new_platform(protocol_version);
+                let owner = owner(&platform, platform_version);
+
+                let errors = check_tx(&platform, &update(&owner, Some(fault), 1, 1).await);
+                assert_matches!(
+                    errors.as_slice(),
+                    [error] if fault.is_reported_by(error),
+                    "at protocol version {protocol_version}: {errors:?}"
+                );
+                assert_eq!(
+                    check_tx(&platform, &update(&owner, None, 1, 1).await),
+                    vec![],
+                    "at protocol version {protocol_version}"
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn should_refuse_at_check_tx_an_identity_update_whose_added_key_proof_of_possession_does_not_verify(
+        ) {
+            assert_refused_at_check_tx(Fault::InvalidProofOfPossession).await;
+        }
+
+        #[tokio::test]
+        async fn should_refuse_at_check_tx_an_identity_update_adding_a_bls_key_whose_data_does_not_decode(
+        ) {
+            assert_refused_at_check_tx(Fault::UndecodableBlsKeyData).await;
+        }
+
+        #[tokio::test]
+        async fn should_refuse_at_check_tx_an_identity_update_with_a_signature_on_an_added_hash_key(
+        ) {
+            assert_refused_at_check_tx(Fault::SignatureOnAHashKey).await;
+        }
+
+        /// check_tx's fee estimate for an identity update counts one signature verification per
+        /// added key after the identity signature's, as a block charges them.
+        #[tokio::test]
+        async fn should_count_the_added_keys_signature_verifications_in_the_check_tx_fee_estimate()
+        {
+            for protocol_version in CHECK_TX_PROTOCOL_VERSIONS {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let platform = new_platform(protocol_version);
+                let owner = owner(&platform, platform_version);
+                let state = platform.state.load();
+                let platform_ref = PlatformRef {
+                    drive: &platform.drive,
+                    state: &state,
+                    config: &platform.config,
+                    core_rpc: &platform.core_rpc,
+                };
+
+                let event = state_transition_to_execution_event_for_check_tx(
+                    &platform_ref,
+                    &update(&owner, None, 1, 1).await,
+                    CheckTxLevel::FirstTimeCheck,
+                    &platform.check_tx_proof_verifier,
+                    platform_version,
+                )
+                .expect("expected to check tx")
+                .into_data()
+                .expect("expected an execution event");
+                let Some(ExecutionEvent::Paid {
+                    execution_operations,
+                    ..
+                }) = event
+                else {
+                    panic!("at protocol version {protocol_version}: expected a paid event");
+                };
+                let signature_verifications: Vec<KeyType> = execution_operations
+                    .iter()
+                    .filter_map(|operation| match operation {
+                        ValidationOperation::SignatureVerification(verification) => {
+                            Some(verification.signature_type)
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(
+                    signature_verifications,
+                    [ECDSA_SECP256K1, ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
+                    "at protocol version {protocol_version}"
+                );
+            }
+        }
+
+        /// The identity's signature is verified before the proofs of possession of the added keys,
+        /// at check_tx and in a block, so an update whose identity signature does not verify is
+        /// refused unpaid for that signature whatever its added keys hold.
+        #[tokio::test]
+        async fn should_refuse_unpaid_an_identity_update_whose_identity_signature_does_not_verify_whatever_its_added_keys(
+        ) {
+            for protocol_version in [14, LATEST_VERSION] {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let platform = new_platform(protocol_version);
+                let owner = owner(&platform, platform_version);
+                let identity_before = stored_identity(&platform, &owner, platform_version);
+
+                let mut transition =
+                    update(&owner, Some(Fault::InvalidProofOfPossession), 1, 1).await;
+                let mut signature = transition
+                    .signature()
+                    .expect("expected a signature")
+                    .to_vec();
+                signature[32] ^= 0x01;
+                transition.set_signature(signature.into());
+
+                let errors = check_tx(&platform, &transition);
+                assert_matches!(
+                    errors.as_slice(),
+                    [ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError(_)
+                    )],
+                    "at protocol version {protocol_version}: {errors:?}"
+                );
+                let refused = process_block(&platform, &transition, platform_version);
+                assert_matches!(
+                    refused.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::SignatureError(
+                            SignatureError::InvalidStateTransitionSignatureError(_)
+                        )
+                    )],
+                    "at protocol version {protocol_version}: {:?}",
+                    refused.execution_results()
+                );
+                assert_eq!(
+                    stored_identity(&platform, &owner, platform_version),
+                    identity_before
+                );
+            }
+        }
+
+        /// check_tx verifies the proofs of an identity update's added keys under the node's
+        /// check_tx proof capacity. While that capacity is in use the update is answered busy, an
+        /// answer a client may retry, rather than refused; once it is free the update is admitted.
+        #[tokio::test]
+        async fn should_answer_busy_at_check_tx_an_identity_update_adding_keys_while_the_proof_capacity_is_in_use(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version.protocol_version);
+            let owner = owner(&platform, platform_version);
+            let transition = update(&owner, None, 1, 1).await;
+            let proof_verifier = CheckTxProofVerifier::new(1);
+
+            let in_use = proof_verifier
+                .try_acquire(1)
+                .expect("expected the proof capacity to be free");
+            assert_matches!(
+                check_tx_under(&platform, &transition, &proof_verifier),
+                Err(Error::Execution(
+                    ExecutionError::CheckTxProofVerificationBusy
+                ))
+            );
+            drop(in_use);
+
+            assert_eq!(
+                check_tx_under(&platform, &transition, &proof_verifier)
+                    .expect("expected to check tx"),
+                vec![]
+            );
+        }
+
+        /// The proof capacity an identity update's check takes is given back when the check is
+        /// done, whether it refuses or admits the update, so a node whose whole capacity one
+        /// update needs keeps admitting updates one after another.
+        #[tokio::test]
+        async fn should_give_back_the_proof_capacity_at_check_tx_after_verifying_an_identity_update_s_added_keys(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version.protocol_version);
+            let owner = owner(&platform, platform_version);
+            let proof_verifier = CheckTxProofVerifier::new(1);
+
+            let errors = check_tx_under(
+                &platform,
+                &update(&owner, Some(Fault::InvalidProofOfPossession), 1, 1).await,
+                &proof_verifier,
+            )
+            .expect("expected to check tx");
+            assert_matches!(
+                errors.as_slice(),
+                [error] if Fault::InvalidProofOfPossession.is_reported_by(error),
+                "{errors:?}"
+            );
+            let transition = update(&owner, None, 1, 1).await;
+            for submission in 0..2 {
+                assert_eq!(
+                    check_tx_under(&platform, &transition, &proof_verifier)
+                        .expect("expected to check tx"),
+                    vec![],
+                    "submission {submission}"
+                );
+            }
+            assert!(proof_verifier.try_acquire(usize::MAX).is_some());
+        }
+
+        /// An identity update adding no key verifies no proof of possession, so check_tx admits
+        /// it while the whole proof capacity is in use.
+        #[tokio::test]
+        async fn should_take_no_proof_capacity_at_check_tx_for_an_identity_update_adding_no_keys() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = new_platform(platform_version.protocol_version);
+            let (identity, signer, key_to_disable, master_key) =
+                setup_identity_return_master_key(&mut platform, 958, dash_to_credits!(0.1));
+            let update_transition: IdentityUpdateTransition = IdentityUpdateTransitionV0 {
+                identity_id: identity.id(),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![],
+                disable_public_keys: vec![key_to_disable.id()],
+                user_fee_increase: 0,
+                signature_public_key_id: master_key.id(),
+                signature: Default::default(),
+            }
+            .into();
+            let mut transition: StateTransition = update_transition.into();
+            let signable_bytes = transition
+                .signable_bytes()
+                .expect("expected signable bytes");
+            transition.set_signature(
+                signer
+                    .sign(&master_key, signable_bytes.as_slice())
+                    .await
+                    .expect("expected to sign"),
+            );
+            let proof_verifier = CheckTxProofVerifier::new(1);
+
+            let _in_use = proof_verifier
+                .try_acquire(usize::MAX)
+                .expect("expected the proof capacity to be free");
+            assert_eq!(
+                check_tx_under(&platform, &transition, &proof_verifier)
+                    .expect("expected to check tx"),
+                vec![]
+            );
+        }
+
+        /// The capacity an identity update's check takes is bounded by the node's whole proof
+        /// capacity, so an update adding the most keys an update may add is admitted even by a
+        /// node with the smallest capacity, rather than answered busy forever.
+        #[tokio::test]
+        async fn should_admit_at_check_tx_an_identity_update_adding_the_most_keys_allowed_under_the_smallest_proof_capacity(
+        ) {
+            let platform_version = PlatformVersion::latest();
+            let platform = new_platform(platform_version.protocol_version);
+            let owner = owner(&platform, platform_version);
+            let most_keys = platform_version
+                .dpp
+                .state_transitions
+                .identities
+                .max_public_keys_in_creation as usize;
+            let proof_verifier = CheckTxProofVerifier::new(1);
+
+            assert_eq!(
+                check_tx_under(
+                    &platform,
+                    &update_adding_ecdsa_keys(&owner, most_keys).await,
+                    &proof_verifier,
+                )
+                .expect("expected to check tx"),
+                vec![]
+            );
+            assert_matches!(
+                check_tx_under(
+                    &platform,
+                    &update_adding_ecdsa_keys(&owner, most_keys + 1).await,
+                    &proof_verifier,
+                )
+                .expect("expected to check tx")
+                .as_slice(),
+                [ConsensusError::StateError(
+                    StateError::MaxIdentityPublicKeyLimitReachedError(_)
+                )]
+            );
+        }
     }
 }

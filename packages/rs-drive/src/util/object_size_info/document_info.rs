@@ -1,3 +1,4 @@
+use crate::drive::document::index_level_tree_types::distinct_estimated_keys;
 use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -11,7 +12,7 @@ use crate::util::type_constants::{
 };
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-use dpp::data_contract::document_type::{DocumentTypeRef, IndexLevel};
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef, IndexLevel};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::version::PlatformVersion;
@@ -59,6 +60,17 @@ pub trait DocumentInfoV0Methods {
         size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<DriveKeyInfo<'_>>, Error>;
+    /// The keys an index naming the typed array at `key_path` enters the document under at
+    /// `size_info_with_base_event`'s level: one per distinct element, sorted, none for an
+    /// absent or empty list. A worst-case size holds `maxItems` distinct elements of the
+    /// element type's typical size, each a key of its own.
+    fn get_raw_array_elements_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: DocumentTypeRef,
+        size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<DriveKeyInfo<'_>>, Error>;
     /// Gets the borrowed document
     fn get_borrowed_document_and_storage_flags(&self)
         -> Option<(&Document, Option<&StorageFlags>)>;
@@ -66,6 +78,48 @@ pub trait DocumentInfoV0Methods {
     fn get_storage_flags_ref(&self) -> Option<&StorageFlags>;
     /// Gets storage flags
     fn get_document_id_as_slice(&self) -> Option<&[u8]>;
+}
+
+/// The type of the value an index keys `key_path` by: the document type's property at that
+/// path, the element type of a typed array, which an index keys by each element (protocol
+/// version 14), or the field a derived index property reads on the referenced document
+/// (protocol version 14), which no property of the type carries.
+fn indexed_property_type<'a>(
+    document_type: &'a DocumentTypeRef<'a>,
+    key_path: &str,
+) -> Option<&'a DocumentPropertyType> {
+    match document_type.flattened_properties().get(key_path) {
+        Some(property) => match &property.property_type {
+            DocumentPropertyType::TypedArray(typed_array) => Some(typed_array.item_type.as_ref()),
+            property_type => Some(property_type),
+        },
+        None => document_type.derived_index_property_type(key_path),
+    }
+}
+
+impl DocumentInfo<'_> {
+    /// The same document without storage flags: how the document of a type declaring a
+    /// `ttl` is written, since such a document refunds nothing. A worst-case size passes
+    /// through unchanged.
+    pub fn without_storage_flags(self) -> Self {
+        match self {
+            DocumentInfo::DocumentOwnedInfo((document, _)) => {
+                DocumentInfo::DocumentOwnedInfo((document, None))
+            }
+            DocumentInfo::DocumentRefInfo((document, _)) => {
+                DocumentInfo::DocumentRefInfo((document, None))
+            }
+            DocumentInfo::DocumentRefAndSerialization((document, serialization, _)) => {
+                DocumentInfo::DocumentRefAndSerialization((document, serialization, None))
+            }
+            DocumentInfo::DocumentAndSerialization((document, serialization, _)) => {
+                DocumentInfo::DocumentAndSerialization((document, serialization, None))
+            }
+            DocumentInfo::DocumentEstimatedAverageSize(size) => {
+                DocumentInfo::DocumentEstimatedAverageSize(size)
+            }
+        }
+    }
 }
 
 impl DocumentInfoV0Methods for DocumentInfo<'_> {
@@ -115,8 +169,8 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<u16, Error> {
         match key_path {
-            "$ownerId" | "$id" | "$creatorId" => Ok(DEFAULT_HASH_SIZE_U16),
-            "$createdAt" | "$updatedAt" | "$transferredAt" => Ok(U64_SIZE_U16),
+            "$ownerId" | "$id" | "$creatorId" | "$moderatedBy" => Ok(DEFAULT_HASH_SIZE_U16),
+            "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => Ok(U64_SIZE_U16),
             "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
                 Ok(U64_SIZE_U16)
             }
@@ -124,14 +178,13 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
             | "$updatedAtCoreBlockHeight"
             | "$transferredAtCoreBlockHeight" => Ok(U32_SIZE_U16),
             key_path => {
-                let property = document_type.flattened_properties().get(key_path).ok_or({
+                let property_type = indexed_property_type(&document_type, key_path).ok_or({
                     Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(format!(
                         "incorrect key path [{}] for document type for estimated sizes",
                         key_path
                     )))
                 })?;
-                let estimated_size = property
-                    .property_type
+                let estimated_size = property_type
                     .middle_byte_size_ceil(platform_version)?
                     .ok_or({
                         Error::Drive(DriveError::CorruptedCodeExecution(
@@ -184,13 +237,15 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
                     DriveError::CorruptedCodeExecution("size_info_with_base_event None but needed"),
                 ))?;
                 match key_path {
-                    "$ownerId" | "$id" | "$creatorId" => Ok(Some(KeySize(KeyInfo::MaxKeySize {
-                        unique_id: document_type
-                            .unique_id_for_document_field(index_level, base_event)
-                            .to_vec(),
-                        max_size: DEFAULT_HASH_SIZE_U8,
-                    }))),
-                    "$createdAt" | "$updatedAt" | "$transferredAt" => {
+                    "$ownerId" | "$id" | "$creatorId" | "$moderatedBy" => {
+                        Ok(Some(KeySize(KeyInfo::MaxKeySize {
+                            unique_id: document_type
+                                .unique_id_for_document_field(index_level, base_event)
+                                .to_vec(),
+                            max_size: DEFAULT_HASH_SIZE_U8,
+                        })))
+                    }
+                    "$createdAt" | "$updatedAt" | "$transferredAt" | "$moderatedAt" => {
                         Ok(Some(KeySize(KeyInfo::MaxKeySize {
                             unique_id: document_type
                                 .unique_id_for_document_field(index_level, base_event)
@@ -215,15 +270,14 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
                         max_size: U32_SIZE_U8,
                     }))),
                     key_path => {
-                        let property =
-                            document_type.flattened_properties().get(key_path).ok_or({
+                        let property_type = indexed_property_type(&document_type, key_path)
+                            .ok_or({
                                 Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
                                     format!("incorrect key path [{}] for document type for get_raw_for_document_type", key_path)
                                 ))
                             })?;
 
-                        let estimated_middle_size = property
-                            .property_type
+                        let estimated_middle_size = property_type
                             .middle_byte_size_ceil(platform_version)?
                             .ok_or({
                                 Error::Drive(DriveError::CorruptedCodeExecution(
@@ -245,6 +299,52 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
                     }
                 }
             }
+        }
+    }
+
+    fn get_raw_array_elements_for_document_type(
+        &self,
+        key_path: &str,
+        document_type: DocumentTypeRef,
+        size_info_with_base_event: Option<(&IndexLevel, [u8; 32])>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<DriveKeyInfo<'_>>, Error> {
+        if let Some(document) = self.get_borrowed_document() {
+            return Ok(document
+                .get_raw_array_elements_for_document_type(
+                    key_path,
+                    document_type,
+                    platform_version,
+                )?
+                .into_iter()
+                .map(Key)
+                .collect());
+        }
+        // The worst case holds `maxItems` distinct elements, each estimated as
+        // a key of the element's type is (`get_raw_for_document_type` reads a
+        // typed array as its element type), and each a key of its own
+        let (index_level, _) = size_info_with_base_event.ok_or(Error::Drive(
+            DriveError::CorruptedCodeExecution("size_info_with_base_event None but needed"),
+        ))?;
+        let max_items = index_level.indexed_array_max_items().ok_or(Error::Fee(
+            FeeError::DocumentTypeFieldNotFoundForEstimation(format!(
+                "key path [{}] does not reach a level of typed array elements",
+                key_path
+            )),
+        ))?;
+        match self.get_raw_for_document_type(
+            key_path,
+            document_type,
+            None,
+            size_info_with_base_event,
+            platform_version,
+        )? {
+            Some(KeySize(key_info)) => {
+                Ok(distinct_estimated_keys(&key_info, usize::from(max_items)))
+            }
+            _ => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "an estimated document estimates its keys",
+            ))),
         }
     }
 
@@ -304,6 +404,7 @@ mod tests {
     /// Helper: build a minimal Document (V0) with a given 32-byte id.
     fn make_document(id_bytes: [u8; 32]) -> Document {
         Document::V0(DocumentV0 {
+            contract_version: None,
             id: Identifier::new(id_bytes),
             owner_id: Identifier::new([0xAA; 32]),
             properties: BTreeMap::new(),
@@ -318,6 +419,8 @@ mod tests {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         })
     }
 

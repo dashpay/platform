@@ -41,11 +41,13 @@ use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
 
 /// DIP-15 child index for the `encToUserId` encryption key (2^16 —
 /// "to discount other potential derivations of this key in other
-/// applications").
-pub const ENC_TO_USER_ID_CHILD: u32 = 1 << 16;
+/// applications"). Canonical value lives in `key_wallet::dip9`; re-exposed
+/// under the local name this module's callers use.
+pub const ENC_TO_USER_ID_CHILD: u32 = key_wallet::dip9::DASHPAY_CONTACT_INFO_ENC_TO_USER_ID_CHILD;
 
 /// DIP-15 child index for the `privateData` encryption key (2^16 + 1).
-pub const PRIVATE_DATA_CHILD: u32 = (1 << 16) + 1;
+/// Canonical value lives in `key_wallet::dip9`.
+pub const PRIVATE_DATA_CHILD: u32 = key_wallet::dip9::DASHPAY_CONTACT_INFO_PRIVATE_DATA_CHILD;
 
 /// The deployed schema's `privateData` minimum length (bytes, IV included).
 const PRIVATE_DATA_MIN_LEN: usize = 48;
@@ -119,7 +121,7 @@ pub fn derive_contact_info_keys(
                 "Failed to derive contactInfo key: {e}"
             ))
         })?;
-        Ok(Zeroizing::new(ext.private_key.secret_bytes()))
+        Ok(Zeroizing::new(ext.private_key.to_secret_bytes()))
     };
 
     Ok(ContactInfoKeys {
@@ -135,8 +137,9 @@ pub struct ContactInfoPrivateData {
     pub alias_name: Option<String>,
     /// Free-form note.
     pub note: Option<String>,
-    /// Whether the contact is hidden / ignored (DIP-15 `displayHidden` — the
-    /// hide flag, also the cross-device ignore signal).
+    /// Whether the contact is hidden (DIP-15 `displayHidden`). This hides an
+    /// established contact; it is not the ignore feature, which is local to
+    /// each device and covers senders who are not contacts.
     pub display_hidden: bool,
     /// Accepted rotated account-references of an established contact (DIP-15
     /// `acceptedAccounts`). Empty until multi-account is populated.

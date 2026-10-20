@@ -30,6 +30,8 @@ use platform_wallet::AssetLockStatus;
 /// bincode-encoded with `dpp::bincode::config::standard()`. Both byte
 /// slices are Rust-owned for the lifetime of the callback and live in
 /// the matching [`AssetLockEntryStorage`].
+/// This unversioned row's layout is frozen. Operation UUIDs travel through
+/// the size-negotiated persistence extension, never by changing this stride.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct AssetLockEntryFFI {
@@ -41,7 +43,9 @@ pub struct AssetLockEntryFFI {
     /// for the callback window.
     pub transaction_bytes: *const u8,
     pub transaction_bytes_len: usize,
-    /// BIP44 account index that funded this asset lock.
+    /// Family-independent source index of the pooled funding (BIP44 and
+    /// BIP32 at this index plus DashPay receiving accounts; change
+    /// returns to BIP44). Not a BIP44-only selector.
     pub account_index: u32,
     /// Discriminant of [`key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType`]:
     /// 0 = IdentityRegistration, 1 = IdentityTopUp, 2 = IdentityTopUpNotBound,
@@ -53,7 +57,8 @@ pub struct AssetLockEntryFFI {
     /// Locked amount in duffs (1 DASH = 1e8 duffs).
     pub amount_duffs: u64,
     /// Discriminant of [`AssetLockStatus`]:
-    /// 0 = Built, 1 = Broadcast, 2 = InstantSendLocked, 3 = ChainLocked.
+    /// 0 = Built, 1 = Broadcast, 2 = InstantSendLocked, 3 = ChainLocked,
+    /// 4 = Consumed, 5 = RecoveredFromChain, 6 = DrainCompleted (proven owned output).
     pub status: u8,
     /// Bincode-encoded [`AssetLockProof`] (standard config). Rust-owned,
     /// `null` + `0` length when the entry has no proof yet (statuses
@@ -167,5 +172,54 @@ fn status_to_u8(status: &AssetLockStatus) -> u8 {
         AssetLockStatus::InstantSendLocked => 2,
         AssetLockStatus::ChainLocked => 3,
         AssetLockStatus::Consumed => 4,
+        AssetLockStatus::RecoveredFromChain => 5,
+        AssetLockStatus::DrainCompleted => 6,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_keep_the_published_asset_lock_row_layout() {
+        // A host compiled before drain UUID support still allocates and indexes
+        // this exact shape. Sidecars must not move any field or grow its stride.
+        #[repr(C)]
+        struct LegacyAssetLockEntry {
+            out_point: [u8; 36],
+            transaction_bytes: *const u8,
+            transaction_bytes_len: usize,
+            account_index: u32,
+            funding_type: u8,
+            identity_index: u32,
+            amount_duffs: u64,
+            status: u8,
+            proof_bytes: *const u8,
+            proof_bytes_len: usize,
+        }
+        assert_eq!(
+            std::mem::size_of::<AssetLockEntryFFI>(),
+            std::mem::size_of::<LegacyAssetLockEntry>()
+        );
+        assert_eq!(
+            std::mem::align_of::<AssetLockEntryFFI>(),
+            std::mem::align_of::<LegacyAssetLockEntry>()
+        );
+        macro_rules! same_offset {
+            ($($field:ident),+) => { $(assert_eq!(std::mem::offset_of!(AssetLockEntryFFI, $field), std::mem::offset_of!(LegacyAssetLockEntry, $field));)+ };
+        }
+        same_offset!(
+            out_point,
+            transaction_bytes,
+            transaction_bytes_len,
+            account_index,
+            funding_type,
+            identity_index,
+            amount_duffs,
+            status,
+            proof_bytes,
+            proof_bytes_len
+        );
     }
 }

@@ -35,8 +35,10 @@ struct TokenDetailsView: View {
                 // Control Rules
                 controlRulesSection
 
-                // Distribution Rules
-                if token.perpetualDistribution != nil || token.preProgrammedDistribution != nil {
+                // Distribution Rules. `hasDistribution` also covers the
+                // once-per-identity kind, which is derived from the
+                // contract JSON rather than stored on the token row.
+                if token.hasDistribution {
                     distributionSection
                 }
 
@@ -275,7 +277,10 @@ struct TokenDetailsView: View {
 
                         if let function = timeBased["function"] as? [String: Any],
                            let fixedAmount = function["FixedAmount"] as? [String: Any],
-                           let amount = fixedAmount["amount"] as? Int {
+                           let amount = UInt64(jsonValue: fixedAmount["amount"]) {
+                            // A token amount is a protocol `u64` on a
+                            // `#[json_safe_fields]` type, so one above
+                            // 2^53 - 1 arrives as a decimal string.
                             InfoRow(label: "Amount per interval:", value: "\(amount)")
                         }
                     }
@@ -300,6 +305,20 @@ struct TokenDetailsView: View {
                     InfoRow(label: "Events:", value: "\(preProgrammed.distributionSchedule.count)")
                     InfoRow(label: "Total distributed:", value: formatTokenAmount(preProgrammed.totalDistributed))
                     InfoRow(label: "Remaining:", value: formatTokenAmount(preProgrammed.remainingToDistribute))
+                }
+            }
+
+            if let oncePerIdentity = token.oncePerIdentityDistribution {
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Once-per-Identity Distribution")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+
+                    InfoRow(
+                        label: "Amount per identity:",
+                        value: formatTokenAmount(oncePerIdentity.amount)
+                    )
                 }
             }
 
@@ -340,14 +359,7 @@ struct TokenDetailsView: View {
     // MARK: - Helper Methods
 
     private func formatTokenAmount(_ amount: String) -> String {
-        guard let value = Double(amount) else { return amount }
-        let divisor = pow(10.0, Double(token.decimals))
-        let actualAmount = value / divisor
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = token.decimals
-        formatter.minimumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: actualAmount)) ?? amount
+        PersistentToken.formatSupply(amount, decimals: token.decimals)
     }
 
     private func formatDuration(_ seconds: Int64) -> String {

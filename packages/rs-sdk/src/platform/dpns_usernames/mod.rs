@@ -2,38 +2,30 @@ mod contested_queries;
 mod queries;
 
 pub use contested_queries::ContestedDpnsUsername;
+pub use dash_platform_queries::dpns_usernames::{
+    convert_to_homograph_safe_chars, is_contested_username, is_valid_username,
+};
 pub use queries::DpnsUsername;
 
 use crate::platform::transition::put_document::PutDocument;
-use crate::platform::{Document, Fetch, FetchMany};
+use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::{Document, FetchMany};
 use crate::{Error, Sdk};
-use dash_context_provider::ContextProvider;
 use dpp::dashcore::secp256k1::rand::rngs::StdRng;
 use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{DocumentV0, DocumentV0Getters};
+use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
-use dpp::platform_value::{Bytes32, Value};
+use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
+use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-
-/// Convert a string to homograph-safe characters by replacing 'o', 'i', and 'l'
-/// with '0', '1', and '1' respectively to prevent homograph attacks
-pub fn convert_to_homograph_safe_chars(input: &str) -> String {
-    input
-        .chars()
-        .map(|c| match c {
-            'o' | 'O' => '0',
-            'i' | 'I' => '1',
-            'l' | 'L' => '1',
-            _ => c.to_ascii_lowercase(),
-        })
-        .collect()
-}
+use tracing::debug;
+use tracing::warn;
 
 fn extract_dpns_label(name: &str) -> &str {
     if let Some(dot_pos) = name.rfind('.') {
@@ -54,85 +46,6 @@ fn extract_dpns_label(name: &str) -> &str {
 /// (e.g. `"a11ce"`).
 fn normalize_dpns_label(input: &str) -> String {
     convert_to_homograph_safe_chars(extract_dpns_label(input))
-}
-
-/// Check if a username is valid according to DPNS rules
-///
-/// A username is valid if:
-/// - It's between 3 and 63 characters long
-/// - It starts and ends with alphanumeric characters (a-zA-Z0-9)
-/// - It contains only alphanumeric characters and hyphens
-/// - It doesn't have consecutive hyphens (enforced by the pattern)
-///
-/// Pattern: `^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]$`
-///
-/// # Arguments
-///
-/// * `label` - The username label to check (e.g., "alice")
-///
-/// # Returns
-///
-/// Returns `true` if the username is valid, `false` otherwise
-pub fn is_valid_username(label: &str) -> bool {
-    // Check length
-    if label.len() < 3 || label.len() > 63 {
-        return false;
-    }
-
-    let chars: Vec<char> = label.chars().collect();
-
-    // Check first character (must be alphanumeric)
-    if !chars[0].is_ascii_alphanumeric() {
-        return false;
-    }
-
-    // Check last character (must be alphanumeric)
-    if !chars[chars.len() - 1].is_ascii_alphanumeric() {
-        return false;
-    }
-
-    // Check middle characters (can be alphanumeric or hyphen)
-    for &ch in &chars[1..chars.len() - 1] {
-        if !ch.is_ascii_alphanumeric() && ch != '-' {
-            return false;
-        }
-    }
-
-    // Additional check: no consecutive hyphens (good practice)
-    for i in 0..chars.len() - 1 {
-        if chars[i] == '-' && chars[i + 1] == '-' {
-            return false;
-        }
-    }
-
-    true
-}
-
-/// Check if a username is contested (requires masternode voting)
-///
-/// A username is contested if its normalized label:
-/// - Is between 3 and 19 characters long (inclusive)
-/// - Contains only lowercase letters a-z, digits 0-1, and hyphens
-///
-/// # Arguments
-///
-/// * `label` - The username label to check (e.g., "alice")
-///
-/// # Returns
-///
-/// Returns `true` if the username would be contested, `false` otherwise
-pub fn is_contested_username(label: &str) -> bool {
-    let normalized = convert_to_homograph_safe_chars(label);
-
-    // Check length
-    if normalized.len() < 3 || normalized.len() > 19 {
-        return false;
-    }
-
-    // Check if all characters match the pattern [a-z01-]
-    normalized
-        .chars()
-        .all(|c| matches!(c, 'a'..='z' | '0' | '1' | '-'))
 }
 
 /// Hash a buffer twice using SHA256 (double SHA256)
@@ -158,6 +71,11 @@ pub struct RegisterDpnsNameInput<S: Signer<IdentityPublicKey>> {
     pub signer: S,
     /// Optional callback to be called with the preorder document result
     pub preorder_callback: Option<PreorderCallback>,
+    /// The most the registration is willing to pay into the contest a contested name joins.
+    /// From protocol version 14 the fund to join doubles once a contest holds 250 contenders
+    /// and again for every 50 more, and a registration is charged it. The identity must hold
+    /// what it states. `None` states the fund to join read just before the domain is submitted.
+    pub contest_fund: Option<Credits>,
 }
 
 /// Result of a DPNS name registration
@@ -197,22 +115,9 @@ impl Sdk {
     /// Helper method to fetch the DPNS contract, checking context provider first
     async fn fetch_dpns_contract(&self) -> Result<Arc<dpp::data_contract::DataContract>, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
-
-        // First check if the contract is available in the context provider
-        let context_provider = self
-            .context_provider()
-            .ok_or_else(|| Error::Generic("Context provider not set".to_string()))?;
-
-        match context_provider.get_data_contract(&dpns_contract_id, self.version())? {
-            Some(contract) => Ok(contract),
-            None => {
-                // If not in context, fetch from platform
-                let contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
-                    .await?
-                    .ok_or_else(|| Error::Generic("DPNS contract not found".to_string()))?;
-                Ok(Arc::new(contract))
-            }
-        }
+        self.fetch_system_data_contract(dpns_contract_id)
+            .await?
+            .ok_or_else(|| Error::Generic("DPNS contract not found".to_string()))
     }
 
     /// Register a DPNS username in a single operation
@@ -249,25 +154,18 @@ impl Sdk {
             .document_type_for_name("domain")
             .map_err(|_| Error::Generic("DPNS domain document type not found".to_string()))?;
 
-        // Generate entropy and salt
-        let mut rng = StdRng::from_entropy();
-        let entropy = Bytes32::random_with_rng(&mut rng);
-        let salt: [u8; 32] = rng.gen();
+        // Generate the preorder salt
+        let mut rng = StdRng::from_os_rng();
+        let salt: [u8; 32] = rng.random();
 
-        // Generate document IDs
+        // The id of a new document commits to the identity contract nonce of
+        // its create transition, so it only exists once `put_to_platform` has
+        // fetched that nonce. The documents are built with a placeholder id;
+        // the confirmed documents carry the real one. Nothing here needs the
+        // ids up front: the domain is tied to its preorder by the salt.
         let identity_id = input.identity.id().to_owned();
-        let preorder_id = Document::generate_document_id_v0(
-            &dpns_contract.id(),
-            &identity_id,
-            preorder_document_type.name(),
-            entropy.as_slice(),
-        );
-        let domain_id = Document::generate_document_id_v0(
-            &dpns_contract.id(),
-            &identity_id,
-            domain_document_type.name(),
-            entropy.as_slice(),
-        );
+        let preorder_id = Identifier::default();
+        let domain_id = Identifier::default();
 
         // Create salted domain hash for preorder
         let normalized_label = convert_to_homograph_safe_chars(&input.label);
@@ -278,6 +176,7 @@ impl Sdk {
 
         // Create preorder document
         let preorder_document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: preorder_id,
             owner_id: identity_id,
             properties: BTreeMap::from([(
@@ -295,10 +194,13 @@ impl Sdk {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         // Create domain document
         let domain_document = Document::V0(DocumentV0 {
+            contract_version: None,
             id: domain_id,
             owner_id: identity_id,
             properties: BTreeMap::from([
@@ -342,20 +244,27 @@ impl Sdk {
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
             creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
         });
 
         // Submit preorder document first
+        debug!(%identity_id, stage = "preorder", "DPNS registration: submitting document");
         let platform_preorder_document = preorder_document
             .put_to_platform_and_wait_for_response(
                 self,
                 preorder_document_type.to_owned_document_type(),
-                Some(entropy.0),
+                None, // entropy: generated together with the id once the nonce is known
                 input.identity_public_key.clone(),
                 None, // token payment info
                 &input.signer,
                 None, // settings
             )
-            .await?;
+            .await
+            .inspect_err(|error| {
+                warn!(%identity_id, stage = "preorder", %error, "DPNS registration: document failed");
+            })?;
+        debug!(%identity_id, document_id = %platform_preorder_document.id(), stage = "preorder", "DPNS registration: document confirmed");
 
         // Call the preorder callback if provided
         if let Some(callback) = input.preorder_callback {
@@ -363,17 +272,29 @@ impl Sdk {
         }
 
         // Submit domain document after preorder
+        debug!(%identity_id, stage = "domain", "DPNS registration: submitting document");
+        let domain_settings = input.contest_fund.map(|contest_fund| PutSettings {
+            state_transition_creation_options: Some(StateTransitionCreationOptions {
+                contest_fund: Some(contest_fund),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
         let platform_domain_document = domain_document
             .put_to_platform_and_wait_for_response(
                 self,
                 domain_document_type.to_owned_document_type(),
-                Some(entropy.0),
+                None, // entropy: generated together with the id once the nonce is known
                 input.identity_public_key,
                 None, // token payment info
                 &input.signer,
-                None, // settings
+                domain_settings,
             )
-            .await?;
+            .await
+            .inspect_err(|error| {
+                warn!(%identity_id, stage = "domain", %error, "DPNS registration: document failed");
+            })?;
+        debug!(%identity_id, document_id = %platform_domain_document.id(), stage = "domain", "DPNS registration: document confirmed");
 
         Ok(RegisterDpnsNameResult {
             preorder_document: platform_preorder_document,
@@ -429,10 +350,14 @@ impl Sdk {
                     value: Value::Text(normalized_label),
                 },
             ],
+            time_range_clauses: vec![],
+            integer_range_clauses: vec![],
+            sub_queries: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![],
             limit: 1,
+            offset: None,
             start: None,
         };
 
@@ -487,45 +412,55 @@ impl Sdk {
                     value: Value::Text(normalized_label),
                 },
             ],
+            time_range_clauses: vec![],
+            integer_range_clauses: vec![],
+            sub_queries: vec![],
             group_by: vec![],
             having: vec![],
             order_by_clauses: vec![],
             limit: 1,
+            offset: None,
             start: None,
         };
 
         let documents = Document::fetch_many(self, query).await?;
 
-        if let Some((_, Some(doc))) = documents.into_iter().next() {
-            // Extract the identity from records.identity
-            if let Some(Value::Map(records)) = doc.properties().get("records") {
-                for (key, value) in records {
-                    if let (Value::Text(k), Value::Identifier(id_bytes)) = (key, value) {
-                        if k == "identity" {
-                            return Ok(Some(Identifier::from_bytes(id_bytes).map_err(|e| {
-                                Error::Generic(format!("Invalid identifier: {}", e))
-                            })?));
-                        }
-                    }
-                }
-            }
+        match documents.into_iter().next() {
+            Some((_, Some(doc))) => identity_from_domain_records(doc.properties()),
+            _ => Ok(None),
         }
-
-        Ok(None)
     }
+}
+
+/// Read the identity a `domain` document points at from its `records` map.
+///
+/// A document decoded from a proof carries the identifier as
+/// `Value::Identifier`, but the same document after a serde round trip
+/// (CBOR, JSON, mock fixtures) comes back as `Value::Bytes` or
+/// `Value::Bytes32`, because serde has no identifier type. Accept every
+/// representation `to_identifier` understands, and report a malformed value
+/// as an error rather than as an unresolved name.
+fn identity_from_domain_records(
+    properties: &BTreeMap<String, Value>,
+) -> Result<Option<Identifier>, Error> {
+    let Some(Value::Map(records)) = properties.get("records") else {
+        return Ok(None);
+    };
+
+    records
+        .iter()
+        .find(|(key, _)| key.as_text() == Some("identity"))
+        .map(|(_, value)| {
+            value
+                .to_identifier()
+                .map_err(|e| Error::Generic(format!("Invalid identifier: {e}")))
+        })
+        .transpose()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_convert_to_homograph_safe_chars() {
-        assert_eq!(convert_to_homograph_safe_chars("alice"), "a11ce");
-        assert_eq!(convert_to_homograph_safe_chars("bob"), "b0b");
-        assert_eq!(convert_to_homograph_safe_chars("COOL"), "c001");
-        assert_eq!(convert_to_homograph_safe_chars("test123"), "test123");
-    }
 
     #[test]
     fn test_normalize_dpns_label_strips_dash_suffix_case_insensitively() {
@@ -550,6 +485,56 @@ mod tests {
         assert_eq!(normalize_dpns_label(".DASH"), "");
     }
 
+    fn domain_properties(identity: Value) -> BTreeMap<String, Value> {
+        BTreeMap::from([(
+            "records".to_string(),
+            Value::Map(vec![(Value::Text("identity".to_string()), identity)]),
+        )])
+    }
+
+    #[test]
+    fn identity_from_domain_records_accepts_every_identifier_representation() {
+        // A proof-decoded document carries `Value::Identifier`; the same
+        // document after a serde round trip carries `Bytes` / `Bytes32`
+        // (serde has no identifier type), and JSON carries base58 text.
+        // Every one of them names the same identity.
+        let id = Identifier::new([7u8; 32]);
+        for value in [
+            Value::Identifier(id.to_buffer()),
+            Value::Bytes32(id.to_buffer()),
+            Value::Bytes(id.to_vec()),
+            Value::Text(id.to_string(dpp::platform_value::string_encoding::Encoding::Base58)),
+        ] {
+            let resolved = identity_from_domain_records(&domain_properties(value.clone()))
+                .unwrap_or_else(|e| panic!("{value:?} should resolve: {e}"));
+            assert_eq!(resolved, Some(id), "{value:?}");
+        }
+    }
+
+    #[test]
+    fn identity_from_domain_records_distinguishes_missing_from_malformed() {
+        // No records map, or a records map without an identity entry, is an
+        // unresolved name.
+        assert_eq!(
+            identity_from_domain_records(&BTreeMap::new()).unwrap(),
+            None
+        );
+        let no_identity = BTreeMap::from([("records".to_string(), Value::Map(vec![]))]);
+        assert_eq!(identity_from_domain_records(&no_identity).unwrap(), None);
+
+        // A present but malformed identity is an error, never "not found".
+        for malformed in [
+            Value::Bytes(vec![1u8; 31]),
+            Value::Text("not base58!".to_string()),
+            Value::U64(7),
+        ] {
+            assert!(
+                identity_from_domain_records(&domain_properties(malformed.clone())).is_err(),
+                "{malformed:?} should be rejected"
+            );
+        }
+    }
+
     #[test]
     fn test_extract_dpns_label() {
         assert_eq!(extract_dpns_label("alice.dash"), "alice");
@@ -559,90 +544,5 @@ mod tests {
         assert_eq!(extract_dpns_label("alice"), "alice");
         assert_eq!(extract_dpns_label("alice.eth"), "alice.eth");
         assert_eq!(extract_dpns_label(".dash"), "");
-    }
-
-    #[test]
-    fn test_is_valid_username() {
-        // Valid usernames
-        assert!(is_valid_username("abc"));
-        assert!(is_valid_username("alice"));
-        assert!(is_valid_username("Alice123"));
-        assert!(is_valid_username("dash-p2p"));
-        assert!(is_valid_username("test-name-123"));
-        assert!(is_valid_username("a-b-c"));
-        assert!(is_valid_username("user2024"));
-        assert!(is_valid_username("CryptoKing"));
-        assert!(is_valid_username("web3-developer"));
-        assert!(is_valid_username("a".repeat(63).as_str())); // Max length
-
-        // Invalid - too short
-        assert!(!is_valid_username("ab"));
-        assert!(!is_valid_username("a"));
-        assert!(!is_valid_username(""));
-
-        // Invalid - too long
-        assert!(!is_valid_username("a".repeat(64).as_str()));
-
-        // Invalid - starts with hyphen
-        assert!(!is_valid_username("-alice"));
-        assert!(!is_valid_username("-test"));
-
-        // Invalid - ends with hyphen
-        assert!(!is_valid_username("alice-"));
-        assert!(!is_valid_username("test-"));
-
-        // Invalid - starts and ends with hyphen
-        assert!(!is_valid_username("-alice-"));
-
-        // Invalid - contains invalid characters
-        assert!(!is_valid_username("alice_bob")); // underscore
-        assert!(!is_valid_username("alice.bob")); // dot
-        assert!(!is_valid_username("alice@dash")); // at sign
-        assert!(!is_valid_username("alice!")); // exclamation
-        assert!(!is_valid_username("alice bob")); // space
-        assert!(!is_valid_username("alice#1")); // hash
-        assert!(!is_valid_username("alice$")); // dollar
-        assert!(!is_valid_username("alice%20")); // percent
-
-        // Invalid - consecutive hyphens
-        assert!(!is_valid_username("alice--bob"));
-        assert!(!is_valid_username("test---name"));
-    }
-
-    #[test]
-    fn test_is_contested_username() {
-        // Contested usernames (3-19 chars, only [a-z01-])
-        assert!(is_contested_username("abc"));
-        assert!(is_contested_username("alice")); // becomes "a11ce"
-        assert!(is_contested_username("b0b"));
-        assert!(is_contested_username("cool")); // becomes "c001"
-        assert!(is_contested_username("a-b-c"));
-        assert!(is_contested_username("hello")); // becomes "he110"
-        assert!(is_contested_username("world")); // becomes "w0r1d"
-        assert!(is_contested_username("dash"));
-        assert!(is_contested_username("a11ce")); // already normalized
-        assert!(is_contested_username("dash-dao")); // becomes "dash-da0"
-
-        // Not contested - too short
-        assert!(!is_contested_username("ab"));
-        assert!(!is_contested_username("io")); // becomes "10" which is 2 chars
-        assert!(!is_contested_username("a"));
-
-        // Not contested - too long (20+ chars)
-        assert!(!is_contested_username("twenty-characters-ab")); // 20 chars
-        assert!(!is_contested_username(
-            "this-is-a-very-long-username-that-exceeds-limit"
-        ));
-
-        // Not contested - contains invalid characters after normalization
-        assert!(!is_contested_username("alice2")); // contains '2'
-        assert!(!is_contested_username("alice_bob")); // contains '_'
-        assert!(!is_contested_username("alice.bob")); // contains '.'
-        assert!(!is_contested_username("alice@dash")); // contains '@'
-        assert!(!is_contested_username("alice!")); // contains '!'
-        assert!(!is_contested_username("test123")); // contains '2' and '3'
-        assert!(!is_contested_username("dash-p2p")); // contains 'p' and '2'
-        assert!(!is_contested_username("user5")); // contains '5'
-        assert!(!is_contested_username("name_with_underscore")); // contains '_'
     }
 }

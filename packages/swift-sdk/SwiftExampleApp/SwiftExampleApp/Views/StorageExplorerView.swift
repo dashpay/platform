@@ -27,6 +27,13 @@ struct StorageExplorerView: View {
             modelRow("Identities", icon: "person.crop.circle", type: PersistentIdentity.self) {
                 IdentityStorageListView(network: network)
             }
+            modelRow(
+                "Identity Balance Metadata",
+                icon: "clock.badge.checkmark",
+                type: PersistentIdentityBalanceMetadata.self
+            ) {
+                IdentityBalanceMetadataStorageListView(network: network)
+            }
             // Identity-relationship caches: cascade-owned by
             // `PersistentIdentity`, surfaced as their own explorer
             // sections so the row counts and per-row drill-downs
@@ -68,6 +75,13 @@ struct StorageExplorerView: View {
                 type: PersistentDashpayIgnoredSender.self
             ) {
                 DashpayIgnoredSenderStorageListView(network: network)
+            }
+            modelRow(
+                "Sent Invitations",
+                icon: "paperplane",
+                type: PersistentInvitation.self
+            ) {
+                InvitationStorageListView(network: network)
             }
             modelRow("Documents", icon: "doc.text", type: PersistentDocument.self) {
                 DocumentStorageListView(network: network)
@@ -134,6 +148,12 @@ struct StorageExplorerView: View {
             modelRow("Asset Locks", icon: "lock.shield", type: PersistentAssetLock.self) {
                 AssetLockStorageListView(network: network)
             }
+            modelRow("Masternodes", icon: "server.rack", type: PersistentMasternode.self) {
+                MasternodeStorageListView(network: network)
+            }
+            modelRow("Tracked Masternodes", icon: "eye", type: PersistentTrackedMasternode.self) {
+                TrackedMasternodeStorageListView(network: network)
+            }
             modelRow("Manager Metadata", icon: "gearshape.2", type: PersistentWalletManagerMetadata.self) {
                 WalletManagerMetadataStorageListView(network: network)
             }
@@ -160,6 +180,13 @@ struct StorageExplorerView: View {
                 type: PersistentShieldedActivity.self
             ) {
                 ShieldedActivityStorageListView(network: network)
+            }
+            modelRow(
+                "Shielded Viewing Keys",
+                icon: "eye",
+                type: PersistentShieldedViewingKey.self
+            ) {
+                ShieldedViewingKeyStorageListView(network: network)
             }
         }
         .navigationTitle("Storage Explorer")
@@ -257,6 +284,7 @@ struct StorageExplorerView: View {
         // Models with a direct `networkRaw` column — predicate-friendly,
         // no in-memory pass needed.
         directCount(PersistentIdentity.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentIdentityBalanceMetadata.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDPNSName.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayProfile.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayContactRequest.self, predicate: #Predicate { $0.networkRaw == raw })
@@ -312,8 +340,22 @@ struct StorageExplorerView: View {
         filteredCount(PersistentShieldedActivity.self) {
             walletsOnNetwork.contains($0.walletId)
         }
+        filteredCount(PersistentShieldedViewingKey.self) {
+            walletsOnNetwork.contains($0.walletId)
+        }
         filteredCount(PersistentAssetLock.self) {
             walletsOnNetwork.contains($0.walletId)
+        }
+        filteredCount(PersistentInvitation.self) {
+            walletsOnNetwork.contains($0.walletId)
+        }
+        filteredCount(PersistentMasternode.self) {
+            walletsOnNetwork.contains($0.walletId)
+        }
+        // Tracked masternodes belong to no wallet — they carry their own
+        // network column.
+        filteredCount(PersistentTrackedMasternode.self) {
+            $0.networkRaw == raw
         }
 
         // Core / Platform addresses partition the same family of

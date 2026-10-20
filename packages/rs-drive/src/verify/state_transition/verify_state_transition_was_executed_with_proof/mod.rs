@@ -6,31 +6,46 @@ use crate::error::Error;
 use crate::query::ContractLookupFn;
 use crate::verify::RootHash;
 use dpp::block::block_info::BlockInfo;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::proof_result::StateTransitionProofOutcome;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 
 mod v0;
+mod v1;
 
 impl Drive {
-    /// Verifies the execution of a state transition using a provided proof.
+    /// Verifies a state transition against a provided proof, returning the
+    /// verified result tagged with the guarantee the proof establishes.
     ///
-    /// This method checks if the state transition has been executed and is included in the proof.
-    /// It supports different versions of the verification process, which are handled based on the
-    /// platform version specified.
+    /// For most transition types the proof binds the execution of this
+    /// specific transition and the outcome is
+    /// [`StateTransitionProofOutcome::ExecutionProved`]. For the transition
+    /// families whose proof format cannot establish request-specific
+    /// completion (balance top-ups, credit transfers and withdrawals,
+    /// address funds movements, shields, and no-history token
+    /// burn/mint/transfer), the proof only authenticates the affected keys'
+    /// state at the committed block, and the outcome is
+    /// [`StateTransitionProofOutcome::AffectedState`]: a height-pinned
+    /// snapshot (keys derived from the transition, values as of the proof's
+    /// block), **not** evidence that the transition executed.
+    ///
+    /// From protocol version 14 a document batch's proof also carries the
+    /// credit balance of the batch's owner, read from the same state as the
+    /// document; it is a snapshot at the proof's block whatever the outcome's
+    /// guarantee, and `None` for a proof made at an earlier version.
     ///
     /// # Parameters
     ///
     /// - `state_transition`: A reference to the `StateTransition` that needs to be verified.
     /// - `proof`: A byte slice representing the cryptographic proof to be verified.
-    /// - `known_contracts`: A `HashMap` mapping `Identifier`s to references of `DataContract`s that are known.
+    /// - `known_contracts_provider_fn`: A lookup returning known `DataContract`s by identifier.
     /// - `platform_version`: A reference to the `PlatformVersion` which dictates the verification method to be used.
     ///
     /// # Returns
     ///
     /// A `Result` containing either:
-    /// - On success: a tuple of `RootHash` and `StateTransitionProofResult`, where `RootHash` is the root hash of the
-    ///   proof and `StateTransitionProofResult` contains the result of the proof verification.
+    /// - On success: a tuple of `RootHash` and `StateTransitionProofOutcome`, where `RootHash` is the root hash of the
+    ///   proof and `StateTransitionProofOutcome` carries the verified result tagged with its guarantee.
     /// - On failure: an `Error` encapsulating the reason for failure, such as proof corruption or a database query error.
     ///
     /// # Errors
@@ -46,7 +61,7 @@ impl Drive {
         proof: &[u8],
         known_contracts_provider_fn: &ContractLookupFn,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, StateTransitionProofResult), Error> {
+    ) -> Result<(RootHash, StateTransitionProofOutcome), Error> {
         match platform_version
             .drive
             .methods
@@ -61,9 +76,16 @@ impl Drive {
                 known_contracts_provider_fn,
                 platform_version,
             ),
+            1 => Drive::verify_state_transition_was_executed_with_proof_v1(
+                state_transition,
+                block_info,
+                proof,
+                known_contracts_provider_fn,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_state_transition_was_executed_with_proof".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

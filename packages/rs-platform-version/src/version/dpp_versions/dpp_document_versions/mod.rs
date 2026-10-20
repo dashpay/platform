@@ -1,8 +1,9 @@
-use versioned_feature_core::{FeatureVersion, FeatureVersionBounds};
+use versioned_feature_core::{FeatureVersion, FeatureVersionBounds, OptionalFeatureVersion};
 
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPDocumentVersions {
@@ -22,4 +23,12 @@ pub struct DocumentMethodVersions {
     pub get_raw_for_contract: FeatureVersion,
     pub get_raw_for_document_type: FeatureVersion,
     pub try_into_asset_unlock_base_transaction_info: FeatureVersion,
+    /// How a new document's id is derived. 0 hashes the contract, owner,
+    /// document type and entropy; 1 also hashes the identity contract nonce
+    /// of the create transition, so an id can be produced at most once.
+    pub generate_document_id: FeatureVersion,
+    /// The distinct index keys of a typed array property's elements, which an index naming
+    /// the array keys the document by (protocol version 14). `None` before: no index can
+    /// name a typed array there.
+    pub get_raw_array_elements_for_document_type: OptionalFeatureVersion,
 }

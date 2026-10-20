@@ -14,6 +14,7 @@ struct TransitionCategoryView: View {
             return [
                 ("identityCreate", "Create Identity", "Create a new identity with initial credits"),
                 ("identityTopUp", "Top Up Identity", "Add credits to an existing identity"),
+                ("identityTopUpResume", "Top Up Identity (Resume)", "Recover a stuck top-up from a tracked asset lock"),
                 ("identityUpdate", "Update Identity", "Update identity properties and keys"),
                 ("identityCreditTransfer", "Transfer Credits", "Transfer credits between identities"),
                 ("identityCreditWithdrawal", "Withdraw Credits", "Withdraw credits to a Dash address")

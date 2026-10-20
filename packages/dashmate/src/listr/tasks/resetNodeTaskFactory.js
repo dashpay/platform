@@ -2,6 +2,8 @@ import { Listr } from 'listr2';
 import fs from 'fs';
 import path from 'path';
 import wait from '../../util/wait.js';
+import resolveConfigDirectory from '../../config/resolve-config-directory.js';
+import ensureTenderdashNodeKey from '../../tenderdash/ensureTenderdashNodeKey.js';
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -169,9 +171,9 @@ export default function resetNodeTaskFactory(
         title: `Remove config ${config.getName()}`,
         enabled: (ctx) => ctx.removeConfig,
         task: (_, task) => {
-          configFile.removeConfig(config.getName());
+          const serviceConfigsPath = resolveConfigDirectory(homeDir, config.getName());
 
-          const serviceConfigsPath = homeDir.joinPath(config.getName());
+          configFile.removeConfig(config.getName());
 
           removePathSafely(serviceConfigsPath, task);
         },
@@ -186,18 +188,23 @@ export default function resetNodeTaskFactory(
           if (defaultConfigs.has(defaultConfigName)) {
             // Reset config if the corresponding default config exists
             if (ctx.isPlatformOnlyReset) {
-              const defaultPlatformConfig = defaultConfigs.get(defaultConfigName).get('platform');
+              const defaultPlatformConfig = defaultConfigs.get(defaultConfigName).getStored('platform');
               config.set('platform', defaultPlatformConfig);
             } else {
-              const defaultConfigOptions = defaultConfigs.get(defaultConfigName).getOptions();
+              const defaultConfigOptions = defaultConfigs.get(defaultConfigName).getStoredOptions();
 
               config.setOptions(defaultConfigOptions);
             }
 
             config.set('group', groupName);
 
+            // Resetting platform options clears a fullnode's node identity.
+            // Give it a new one now, so it is saved with the reset config
+            // rather than generated later at render time.
+            ensureTenderdashNodeKey(config);
+
             // Remove service configs
-            let serviceConfigsPath = homeDir.joinPath(defaultConfigName);
+            let serviceConfigsPath = resolveConfigDirectory(homeDir, defaultConfigName);
 
             if (ctx.isPlatformOnlyReset) {
               serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
@@ -206,11 +213,11 @@ export default function resetNodeTaskFactory(
             removePathSafely(serviceConfigsPath, task);
           } else {
             // Delete config if no base config
+            const serviceConfigsPath = resolveConfigDirectory(homeDir, defaultConfigName);
+
             configFile.removeConfig(config.getName());
 
             // Remove service configs
-            const serviceConfigsPath = homeDir.joinPath(defaultConfigName);
-
             removePathSafely(serviceConfigsPath, task);
           }
         },

@@ -76,6 +76,7 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V8: DriveAbciMethodVersions = DriveAbciMeth
         verify_chain_lock_through_core: 0,
         make_sure_core_is_synced_to_chain_lock: 0,
         recent_block_count_amount: 2,
+        dkg_mining_schedules: None,
     },
     core_instant_send_lock: DriveAbciCoreInstantSendLockMethodVersions {
         verify_recent_signature_locally: 0,
@@ -98,7 +99,12 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V8: DriveAbciMethodVersions = DriveAbciMeth
         update_broadcasted_withdrawal_statuses: 0,
         rebroadcast_expired_withdrawal_documents: 1,
         append_signatures_and_broadcast_withdrawal_transactions: 0,
+        has_pending_withdrawal_work: 0,
         cleanup_expired_locks_of_withdrawal_amounts: 0,
+        record_credit_inflows_for_withdrawals: None,
+        record_total_credits_history_for_withdrawals: None,
+        scan_core_blocks_for_withdrawals: None,
+        calculate_core_anchored_withdrawal_limit: None,
     },
     voting: DriveAbciVotingMethodVersions {
         keep_record_of_finished_contested_resource_vote_poll: 0,
@@ -114,10 +120,12 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V8: DriveAbciMethodVersions = DriveAbciMeth
     state_transition_processing: DriveAbciStateTransitionProcessingMethodVersions {
         execute_event: 0,
         process_raw_state_transitions: 0,
+        process_validation_result: 0,
         decode_raw_state_transitions: 0,
         validate_fees_of_event: 0,
         store_address_balances_to_recent_block_storage: Some(0),
         cleanup_recent_block_storage_address_balances: Some(0),
+        record_added_balance_outputs: 0,
     },
     epoch: DriveAbciEpochMethodVersions {
         gather_epoch_info: 0,
@@ -134,6 +142,8 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V8: DriveAbciMethodVersions = DriveAbciMeth
         update_checkpoints: Some(0),
         record_shielded_pool_anchor: Some(0),
         prune_shielded_pool_anchors: Some(0),
+        record_token_shielded_pool_anchors: None,
+        expire_documents: None,
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 0,

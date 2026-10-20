@@ -15,6 +15,7 @@ use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_
 };
 use crate::drive::votes::ResourceVoteChoiceToKeyTrait;
 use crate::drive::RootTree;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::util::common::encode::encode_u64;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -158,21 +159,31 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfo {
         )
     }
 
-    fn contenders_path(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
+    fn contenders_path(&self, _platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
         let mut root = vote_contested_resource_contract_documents_indexes_path_vec(
             self.contract.as_ref().id_ref().as_slice(),
             self.document_type_name.as_str(),
         );
         let document_type = self.document_type()?;
+        let index = self.index()?;
+        if index.properties.len() != self.index_values.len() {
+            return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
+                "contested index expects {} values, received {}",
+                index.properties.len(),
+                self.index_values.len()
+            ))));
+        }
         root.append(
-            &mut self
-                .index()?
+            &mut index
                 .properties
                 .iter()
                 .zip(self.index_values.iter())
                 .map(|(IndexProperty { name, .. }, value)| {
+                    // A poll keeps its generation-0 keys at every protocol version. Edited
+                    // in place: before protocol version 14 this is what
+                    // `serialize_value_for_key` wrote, so the path is the same there
                     document_type
-                        .serialize_value_for_key(name, value, platform_version)
+                        .serialize_value_for_vote_poll_key(name, value)
                         .map_err(Error::from)
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?,
@@ -244,21 +255,31 @@ impl VotePollPaths for ContestedDocumentResourceVotePollWithContractInfoAllowBor
         )
     }
 
-    fn contenders_path(&self, platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
+    fn contenders_path(&self, _platform_version: &PlatformVersion) -> Result<Vec<Vec<u8>>, Error> {
         let mut root = vote_contested_resource_contract_documents_indexes_path_vec(
             self.contract.as_ref().id_ref().as_slice(),
             self.document_type_name.as_str(),
         );
         let document_type = self.document_type()?;
+        let index = self.index()?;
+        if index.properties.len() != self.index_values.len() {
+            return Err(Error::Query(QuerySyntaxError::InvalidParameter(format!(
+                "contested index expects {} values, received {}",
+                index.properties.len(),
+                self.index_values.len()
+            ))));
+        }
         root.append(
-            &mut self
-                .index()?
+            &mut index
                 .properties
                 .iter()
                 .zip(self.index_values.iter())
                 .map(|(IndexProperty { name, .. }, value)| {
+                    // A poll keeps its generation-0 keys at every protocol version. Edited
+                    // in place: before protocol version 14 this is what
+                    // `serialize_value_for_key` wrote, so the path is the same there
                     document_type
-                        .serialize_value_for_key(name, value, platform_version)
+                        .serialize_value_for_vote_poll_key(name, value)
                         .map_err(Error::from)
                 })
                 .collect::<Result<Vec<Vec<u8>>, Error>>()?,
@@ -534,8 +555,34 @@ pub fn vote_contested_resource_identity_votes_tree_path_for_identity_vec(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
+    use crate::util::object_size_info::DataContractOwnedResolvedInfo;
+    use dpp::tests::fixtures::get_dpns_data_contract_fixture;
+    use platform_version::version::PlatformVersion;
 
     const VOTES_BYTE: u8 = RootTree::Votes as u8;
+
+    #[test]
+    fn contenders_path_rejects_missing_index_values() {
+        let platform_version = PlatformVersion::latest();
+        let contract = get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let vote_poll = ContestedDocumentResourceVotePollWithContractInfo {
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract),
+            document_type_name: "domain".to_string(),
+            index_name: "parentNameAndLabel".to_string(),
+            index_values: vec![],
+        };
+
+        let error = vote_poll
+            .contenders_path(platform_version)
+            .expect_err("partial contested paths must be rejected");
+
+        assert!(matches!(
+            error,
+            Error::Query(QuerySyntaxError::InvalidParameter(_))
+        ));
+    }
 
     // ---------------------------------------------------------------
     // vote_root_path / vote_root_path_vec
