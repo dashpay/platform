@@ -92,7 +92,6 @@ impl ManagedIdentity {
             last_updated_balance_block_time: None,
             pending_balance_snapshot: None,
             pending_key_rows: BTreeMap::new(),
-            rowless_key_ids: Default::default(),
             last_synced_keys_block_time: None,
             status: Default::default(),
             dpns_names: Vec::new(),
@@ -115,7 +114,6 @@ impl ManagedIdentity {
             last_updated_balance_block_time: None,
             pending_balance_snapshot: None,
             pending_key_rows: BTreeMap::new(),
-            rowless_key_ids: Default::default(),
             last_synced_keys_block_time: None,
             status: Default::default(),
             dpns_names: Vec::new(),
@@ -442,25 +440,19 @@ impl ManagedIdentity {
     }
 
     /// Fold `fetched` (see [`Self::take_fetched_identity`]) and store the row
-    /// of every key the cache held that the fold changes (a disable, a raised
-    /// limit) with the identity's scalar snapshot as one changeset (see
-    /// `store_keys_and_balance`). Used where a fetch comes without derived
-    /// breadcrumbs (refresh), so the rows carry none and every persister
-    /// keeps the breadcrumb the row holds; a key's state reaches the store on
-    /// any refresh, a refresh after a restart included, which a queue held
-    /// in memory cannot.
+    /// of every key the fold adds or changes (a disable, a raised limit, a
+    /// key added at a newer revision) with the identity's scalar snapshot as
+    /// one changeset (see `store_keys_and_balance`), so any refresh, the
+    /// first after a restart included, brings the store up to the fetch.
     ///
-    /// A key the fold adds to a wallet-owned identity gets no row here, and
-    /// no later breadcrumb-less write gives it one (see `rowless_key_ids`).
-    /// Only a path that knows where a key came from creates its row: a load
-    /// or discovery, which derive its breadcrumb from the seed, or a landed
-    /// update, whose caller declares it. A row created here would have to
-    /// call the key watch-only, which the store would then keep for a
-    /// wallet-derived key until one of those paths ran. The key is in memory
-    /// meanwhile, and a refused row of one of those paths rides the next
-    /// store (see `store_with_queued_key_rows`). An out-of-wallet identity's
-    /// keys are all watch-only and no load or discovery runs for it, so its
-    /// added keys are stored here.
+    /// Used where a fetch comes without derived breadcrumbs (refresh), so the
+    /// rows carry none. A row without a breadcrumb says the key's origin is
+    /// not known here, not that the key is watch-only: every persister keeps
+    /// the breadcrumb a row already holds, and a load or discovery, which
+    /// verify a key against the seed, give a new key its breadcrumb. Until
+    /// one runs, a key a refresh adds is stored without one, rather than with
+    /// derivation coordinates inferred from the identity's wallet slot, or not
+    /// at all.
     ///
     /// A failed store is returned; memory holds the fold (the revision above
     /// all, which the next update is built from), and the refused key rows
@@ -476,15 +468,9 @@ impl ManagedIdentity {
         self.take_fetched_identity(fetched, block_time);
         let identity_id = self.id();
         let mut keys_cs = IdentityKeysChangeSet::default();
-        let in_wallet = self.identity_index.is_some();
         for (key_id, key) in self.identity.public_keys() {
-            match before.get(key_id) {
-                Some(held) if held == key => continue,
-                None if in_wallet => {
-                    self.rowless_key_ids.insert(*key_id);
-                    continue;
-                }
-                _ => {}
+            if before.get(key_id) == Some(key) {
+                continue;
             }
             keys_cs.upserts.insert(
                 (identity_id, *key_id),
@@ -539,12 +525,6 @@ impl ManagedIdentity {
         mut keys_cs: IdentityKeysChangeSet,
         persister: &WalletPersister,
     ) -> Result<(), PersistenceError> {
-        // A breadcrumb-less write of a key no row holds yet would create a
-        // watch-only row for it (see `rowless_key_ids`).
-        let rowless = &self.rowless_key_ids;
-        keys_cs.upserts.retain(|(_, key_id), entry| {
-            entry.derivation_indices.is_some() || !rowless.contains(key_id)
-        });
         for (id, mut entry) in std::mem::take(&mut self.pending_key_rows) {
             if let Some(own) = keys_cs.upserts.get_mut(&id) {
                 if own.derivation_indices.is_none() && entry.derivation_indices.is_some() {
@@ -666,8 +646,6 @@ impl ManagedIdentity {
     }
 
     /// Layer `keys` onto this identity in memory, returning their key rows.
-    /// A key layered here gets its row (the caller knows its origin), so it
-    /// leaves `rowless_key_ids`.
     fn layer_keys(&mut self, keys: Vec<KeyWithBreadcrumb>) -> IdentityKeysChangeSet {
         let identity_id = self.id();
         let mut current = self.identity.public_keys().clone();
@@ -678,7 +656,6 @@ impl ManagedIdentity {
         } in keys
         {
             let key_id = public_key.id();
-            self.rowless_key_ids.remove(&key_id);
             let public_key_hash = pubkey_hash_of(&public_key);
             current.insert(key_id, public_key.clone());
             let (wallet_id, derivation_indices) = match breadcrumb {
@@ -1367,13 +1344,10 @@ mod tests {
         assert_eq!(row(3), None);
     }
 
-    /// A key a refresh adds to a wallet-owned identity gets no row, not even
-    /// when a later refresh changes it: a row without a breadcrumb would
-    /// call a wallet-derived key watch-only. A load's row, which carries the
-    /// derived breadcrumb, creates it, and later changes then reach it. An
-    /// out-of-wallet identity's added keys are watch-only and get rows.
+    /// A key a refresh adds is stored without a breadcrumb, which a load's
+    /// row then gives it, and a later breadcrumb-less change keeps.
     #[test]
-    fn should_leave_a_key_a_refresh_adds_to_a_path_that_knows_its_origin() {
+    fn should_store_a_key_a_refresh_adds_and_keep_a_breadcrumb_a_load_gives_it() {
         let id = Identifier::from([1u8; 32]);
         let wallet_id: WalletId = [0xAB; 32];
         let identity = |revision, keys: Vec<IdentityPublicKey>| {
@@ -1385,22 +1359,20 @@ mod tests {
             })
         };
         let block = |height| BlockTime::new(height, 1, height);
-        let mut disabled = key(4);
-        disabled.set_disabled_at(5);
-        let row = |persister: &CapturingPersister, key_id: KeyID| {
+        let rows = |persister: &CapturingPersister, key_id: KeyID| -> Vec<IdentityKeyEntry> {
             persister
                 .stores
                 .lock()
                 .unwrap()
                 .iter()
-                .rev()
-                .find_map(|cs| {
+                .filter_map(|cs| {
                     cs.identity_keys
                         .as_ref()?
                         .upserts
                         .get(&(id, key_id))
                         .cloned()
                 })
+                .collect()
         };
 
         let persister = std::sync::Arc::new(CapturingPersister::default());
@@ -1410,43 +1382,33 @@ mod tests {
         managed
             .store_fetched_identity(&identity(7, vec![key(1), key(4)]), block(1), &p)
             .unwrap();
-        assert!(managed.identity.public_keys().contains_key(&4));
-        assert_eq!(row(&persister, 4), None);
-        managed
-            .store_fetched_identity(&identity(8, vec![key(1), disabled.clone()]), block(2), &p)
-            .unwrap();
-        assert_eq!(managed.identity.public_keys()[&4], disabled);
+        let added = rows(&persister, 4);
         assert_eq!(
-            row(&persister, 4),
-            None,
-            "a later change creates no row either"
+            added.len(),
+            1,
+            "the added key is stored, its origin unknown"
         );
+        assert_eq!(added[0].derivation_indices, None);
 
         managed
             .store_keys_with_snapshot(
                 vec![KeyWithBreadcrumb {
-                    key: disabled.clone(),
+                    key: key(4),
                     breadcrumb: Some((wallet_id, 0, 4)),
                 }],
                 &p,
             )
             .unwrap();
-        assert!(row(&persister, 4).unwrap().derivation_indices.is_some());
-        let mut later = disabled.clone();
-        later.set_disabled_at(6);
+        let mut disabled = key(4);
+        disabled.set_disabled_at(5);
         managed
-            .store_fetched_identity(&identity(9, vec![key(1), later.clone()]), block(3), &p)
+            .store_fetched_identity(&identity(8, vec![key(1), disabled.clone()]), block(2), &p)
             .unwrap();
-        assert_eq!(row(&persister, 4).map(|row| row.public_key), Some(later));
-
-        let persister = std::sync::Arc::new(CapturingPersister::default());
-        let p = WalletPersister::new(wallet_id, std::sync::Arc::clone(&persister) as _);
-        let mut watched = ManagedIdentity::new_out_of_wallet(identity(6, vec![key(1)]));
-        watched
-            .store_fetched_identity(&identity(7, vec![key(1), key(4)]), block(1), &p)
-            .unwrap();
-        let stored = row(&persister, 4).expect("an out-of-wallet key gets its row");
-        assert_eq!(stored.derivation_indices, None);
+        // The refresh's row carries no breadcrumb; the persisters keep the
+        // load's (SQLite: `should_keep_a_stored_breadcrumb_when_an_upsert_carries_none`).
+        let last = rows(&persister, 4).pop().unwrap();
+        assert_eq!(last.public_key, disabled);
+        assert_eq!(last.derivation_indices, None);
     }
 
     /// A batch of fetched names lands as one snapshot carrying every name,

@@ -454,11 +454,10 @@ impl IdentityWallet {
                                 })?;
                         let is_new = info_guard.identity_manager.identity(&identity_id).is_none();
                         if is_new {
-                            info_guard.identity_manager.add_identity(
+                            info_guard.identity_manager.add_identity_unstored(
                                 identity.clone(),
                                 identity_index,
                                 wallet_id,
-                                &self.persister,
                             )?;
                         }
 

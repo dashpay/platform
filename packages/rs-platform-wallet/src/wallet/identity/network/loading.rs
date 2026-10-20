@@ -248,11 +248,11 @@ impl IdentityWallet {
             })?;
             let is_new = info.identity_manager.identity(&identity_id).is_none();
             if is_new {
-                info.identity_manager.add_identity(
+                // Stored below, with its verified keys, as one changeset.
+                info.identity_manager.add_identity_unstored(
                     identity.clone(),
                     identity_index,
                     wallet_id,
-                    &self.persister,
                 )?;
             }
 
@@ -321,11 +321,10 @@ impl IdentityWallet {
     /// holds: the cache keeps its revision, key set and every disable, and
     /// takes only a disable or a raised limit the fetch shows
     /// ([`ManagedIdentity::take_fetched_identity`]). The row of every key the
-    /// cache held that the fold changes is stored with the scalar snapshot,
-    /// without a derivation breadcrumb (the persisters keep the one they
-    /// hold), and so are key rows an earlier refused store queued; a key the
-    /// fold adds gets its row from a load or discovery, which derive its
-    /// breadcrumb; when that store fails, the error
+    /// fold adds or changes is stored with the scalar snapshot, without a
+    /// derivation breadcrumb (the persisters keep the one they hold, and a
+    /// load or discovery gives a new key its own), and so are key rows an
+    /// earlier refused store queued; when that store fails, the error
     /// is returned, memory keeps the fold and the rows stay queued for the
     /// identity's next key store (a refresh, load, discovery or landed
     /// update; [`ManagedIdentity::store_fetched_identity`]).
@@ -769,6 +768,60 @@ mod tests {
         );
     }
 
+    /// A load that finds a new identity stores it and its keys, with the
+    /// breadcrumbs verified against the seed, as one changeset: there is no
+    /// breadcrumb-less snapshot of its keys that could commit on its own, so
+    /// a store that refuses the load leaves nothing of the identity behind.
+    #[tokio::test]
+    async fn should_store_a_newly_loaded_identity_with_its_keys_in_one_changeset() {
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &[7; 64]).unwrap();
+        let probe = derive_load_probe_hash(
+            ResolvedLoadKeyHashSource::Master(&master),
+            Network::Testnet,
+            0,
+        )
+        .unwrap();
+        for fails in [false, true] {
+            let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+            sdk.mock()
+                .expect_fetch(PublicKeyHash(probe), Some(answer_at(7)))
+                .await
+                .unwrap();
+            let store = Arc::new(FailingStore::default());
+            let wallet = wallet_with_signing_keys_on(sdk, store.clone()).await;
+            let wallet = wallet.identity();
+            {
+                let mut wm = wallet.wallet_manager.write().await;
+                wm.get_wallet_info_mut(&wallet.wallet_id)
+                    .unwrap()
+                    .identity_manager
+                    .remove_identity(&Identifier::default(), &wallet.persister)
+                    .unwrap();
+            }
+            store.taken().clear();
+            if fails {
+                store.arm();
+            }
+
+            let result = wallet.load_identity_by_index_from_master(0, &master).await;
+            assert_eq!(result.is_err(), fails, "{result:?}");
+            let stores = store.taken().changeset_count();
+            if fails {
+                assert_eq!(stores, 0, "nothing of a refused load is stored");
+                continue;
+            }
+            assert_eq!(stores, 1, "the identity and its keys go out together");
+            assert_eq!(
+                store.taken().stored_revision(Identifier::default()),
+                Some(7)
+            );
+            // The fixture's keys are not derived from this seed, so they
+            // carry no breadcrumb; what matters is that they ride the
+            // identity's changeset.
+            assert_eq!(store.taken().key_rows().len(), 3);
+        }
+    }
+
     /// A same-revision answer whose proof is not above the cache's balance
     /// watermark (mock answers are at height 0) takes the answer's keys but
     /// keeps the cache's balance, which the revision does not order.
@@ -803,9 +856,8 @@ mod tests {
     }
 
     /// A disable a refresh brings, from an answer older or newer than the
-    /// cache, is stored with its key row; a key a newer answer adds is not,
-    /// since only a load or discovery knows its breadcrumb. A store that
-    /// refuses them fails the
+    /// cache, is stored with its key row, as is a key a newer answer adds. A
+    /// store that refuses them fails the
     /// refresh and queues the row, which the next refresh stores although
     /// memory already holds the disable.
     #[tokio::test]
@@ -882,15 +934,11 @@ mod tests {
                     "key {key_id} answered at {revision}"
                 );
             }
-            // A key a newer answer adds is in memory, but gets no row: a
-            // refresh cannot know its breadcrumb, and a row without one
-            // would call it watch-only. A load or discovery stores it.
-            assert_eq!(
-                held(wallet).await.public_keys().contains_key(&4),
-                revision > 6,
-                "answered at {revision}"
-            );
-            assert!(store.stored_key(identity_id, 4).is_none());
+            // A key a newer answer adds is stored too, without the
+            // breadcrumb a refresh cannot know; an older answer adds none.
+            let key_4 = store.stored_key(identity_id, 4);
+            assert_eq!(key_4.is_some(), revision > 6, "answered at {revision}");
+            assert!(key_4.is_none_or(|row| row.derivation_indices.is_none()));
         }
     }
 

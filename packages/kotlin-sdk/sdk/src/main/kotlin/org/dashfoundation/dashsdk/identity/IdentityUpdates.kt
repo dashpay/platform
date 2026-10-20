@@ -242,15 +242,8 @@ class IdentityUpdates internal constructor(
         require(addPublicKeys.isNotEmpty() || disablePublicKeyIds.isNotEmpty()) {
             "updateIdentity needs at least one key to add or disable"
         }
-        require(disablePublicKeyIds.all { it >= 0 }) {
-            "every disabled key id must be non-negative, got $disablePublicKeyIds"
-        }
-        require(externalKeyIds.all { it >= 0 }) {
-            "every external key id must be non-negative, got $externalKeyIds"
-        }
-        require(revision == null || revision >= 0) {
-            "revision must be non-negative, got $revision"
-        }
+        // Key ids and the revision are range-checked where they become
+        // the native u32 / u64 (the JNI binding), and refused there.
         mapNativeErrors {
             TransactionsNative.updateIdentity(
                 walletHandle,

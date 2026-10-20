@@ -334,9 +334,9 @@ impl IdentityWallet {
         // A cache refreshed to the transition or past it already holds
         // this update's keys as Platform has them (on-chain `disabled_at`
         // included) and whatever later updates did to them: applying the
-        // payload would take those back. A refresh stores no row for a key
-        // it adds and the keys it changes without breadcrumbs, though, so
-        // the touched keys are stored here from the cache's own copies, with the breadcrumbs the
+        // payload would take those back. A refresh stores the keys it adds
+        // or changes without breadcrumbs, though, so the touched keys are
+        // stored here from the cache's own copies, with the breadcrumbs the
         // path below would give them: an added key its slot's unless the
         // caller declared it external, a disabled key none (the persisters
         // keep the one they hold).
@@ -761,7 +761,7 @@ mod update_identity_at_revision_tests {
     /// An update at 5 added key 3, a later one at 6 disabled it, and the
     /// cache was refreshed to 6 before the confirmation of 5 came back:
     /// key 3 stays disabled, and is stored that way with its breadcrumb (a
-    /// refresh gives a key it adds no row). A key the update disabled is
+    /// refresh stores its rows without one). A key the update disabled is
     /// stored as the refresh has it, with the on-chain `disabled_at` and no
     /// breadcrumb, which the persisters keep from the row they hold.
     #[tokio::test]
