@@ -22,14 +22,22 @@
 ))]
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+use crate::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use crate::prelude::AssetLockProof;
+use crate::serialization::PlatformSerializable;
 use crate::shielded::builder::build_shield_from_asset_lock_transition_with_signer;
+use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
 use crate::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
 use crate::state_transition::shield_from_asset_lock_transition::v1::ShieldFromAssetLockTransitionV1;
 use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use crate::state_transition::StateTransition;
-use dashcore::OutPoint;
+use dashcore::bls_sig_utils::BLSSignature;
+use dashcore::hash_types::CycleHash;
+use dashcore::hashes::Hash;
+use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+use dashcore::transaction::special_transaction::TransactionPayload;
+use dashcore::{InstantLock, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid};
 use platform_version::version::PlatformVersion;
 
 use async_trait::async_trait;
@@ -257,7 +265,6 @@ async fn build_shield_from_asset_lock_transition_with_signer_end_to_end() {
     // bundle (via the TestProver, which builds the proving key on
     // first call) and signs the outer ST with the external signer.
     // This is the codepath the wallet orchestration uses in production.
-    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
 
     let recipient = test_orchard_address();
     let signer = FixedKeySigner::new([7u8; 32]);
@@ -307,9 +314,6 @@ async fn seed_pool_batch_fits_max_state_transition_size() {
     // seeding batch under `system_limits.max_state_transition_size` so a
     // proof- or action-encoding size change that breaks seeding fails here
     // instead of on a devnet.
-    use crate::serialization::PlatformSerializable;
-    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
-
     let platform_version = PlatformVersion::latest();
     let recipient = test_orchard_address();
     let signer = FixedKeySigner::new([7u8; 32]);
@@ -349,5 +353,153 @@ async fn seed_pool_batch_fits_max_state_transition_size() {
     assert_eq!(
         v1.value_balance, 50_000,
         "dummy outputs are zero-value: value_balance must equal the real amount",
+    );
+}
+
+// ---------------------------------------------------------------------
+// Asset-lock proof size (dashwallet-ios#1042)
+//
+// An `InstantAssetLockProof` embeds the whole funding transaction and its
+// InstantLock, so it grows ~184 B per funding input (148 B signed P2PKH
+// input + 36 B outpoint repeated in the lock). A wallet fed by many small
+// payouts built an 83-input lock (raw tx 12,340 B) whose Type 18 transition
+// DAPI refused at 20,480 B. A ChainLock proof names only the outpoint and a
+// height, so the same lock fits once it is chainlocked — which is what the
+// wallet falls back to.
+// ---------------------------------------------------------------------
+
+/// Input count of the asset lock reported in dashwallet-ios#1042.
+const ISSUE_1042_INPUTS: usize = 83;
+
+/// Wire length of a signed P2PKH `script_sig` (72-byte DER signature with
+/// sighash byte + 33-byte key + two push opcodes): a 148-byte input.
+const P2PKH_SCRIPT_SIG_LEN: usize = 107;
+
+/// An asset-lock funding transaction with `n_inputs` signed P2PKH spends,
+/// the burn output and a change output — the shape the issue reports.
+fn make_asset_lock_tx(n_inputs: usize) -> Transaction {
+    let input = (0..n_inputs)
+        .map(|i| {
+            let mut raw = [0u8; 32];
+            raw[..8].copy_from_slice(&(i as u64).to_le_bytes());
+            TxIn {
+                previous_output: OutPoint::new(Txid::from_byte_array(raw), 0),
+                script_sig: ScriptBuf::from_bytes(vec![0u8; P2PKH_SCRIPT_SIG_LEN]),
+                sequence: 0xffff_ffff,
+                witness: Default::default(),
+            }
+        })
+        .collect();
+    let credit_output = TxOut {
+        value: 6_442_042_028,
+        script_pubkey: ScriptBuf::from_bytes(vec![0u8; 25]),
+    };
+    Transaction {
+        version: 3,
+        lock_time: 0,
+        input,
+        output: vec![
+            TxOut {
+                value: 6_442_042_028,
+                script_pubkey: ScriptBuf::new_op_return(&[]),
+            },
+            TxOut {
+                value: 6_366,
+                script_pubkey: ScriptBuf::from_bytes(vec![0u8; 25]),
+            },
+        ],
+        special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
+            AssetLockPayload::new(vec![credit_output]),
+        )),
+    }
+}
+
+fn make_instant_asset_lock_proof(n_inputs: usize) -> AssetLockProof {
+    let transaction = make_asset_lock_tx(n_inputs);
+    let instant_lock = InstantLock {
+        version: 1,
+        inputs: transaction
+            .input
+            .iter()
+            .map(|i| i.previous_output)
+            .collect(),
+        txid: transaction.txid(),
+        cyclehash: CycleHash::from_byte_array([9u8; 32]),
+        signature: BLSSignature::from([3u8; 96]),
+    };
+    AssetLockProof::Instant(InstantAssetLockProof::new(instant_lock, transaction, 0))
+}
+
+/// Serialized size of a `ShieldFromAssetLock` transition over `proof` on the
+/// wallet's single-recipient path (2 on-wire actions).
+async fn shield_transition_size(proof: AssetLockProof) -> usize {
+    build_shield_from_asset_lock_transition_with_signer(
+        &test_orchard_address(),
+        50_000u64,
+        proof,
+        &DerivationPath::default(),
+        &FixedKeySigner::new([7u8; 32]),
+        &TestProver,
+        [0u8; 36],
+        None, // sender_ovk
+        None, // surplus_output
+        0,    // dummy_outputs -> 2 on-wire actions
+        PlatformVersion::latest(),
+    )
+    .await
+    .expect("builder should succeed")
+    .serialize_to_bytes()
+    .expect("serialize")
+    .len()
+}
+
+#[tokio::test]
+async fn should_exceed_max_size_with_the_issue_1042_instant_proof() {
+    let max = PlatformVersion::latest()
+        .system_limits
+        .max_state_transition_size as usize;
+
+    let one_input = shield_transition_size(make_instant_asset_lock_proof(1)).await;
+    let issue = shield_transition_size(make_instant_asset_lock_proof(ISSUE_1042_INPUTS)).await;
+
+    assert!(
+        one_input <= max,
+        "a 1-input instant proof must fit: {one_input} > {max}"
+    );
+    // ~148 B of signed P2PKH input plus its 36-byte outpoint repeated in the
+    // InstantLock. A band, not an exact figure: length prefixes and the
+    // Orchard proof vary by a few bytes between builds.
+    let per_input = (issue - one_input) as f64 / (ISSUE_1042_INPUTS - 1) as f64;
+    assert!(
+        (180.0..=190.0).contains(&per_input),
+        "an instant proof should cost ~184 B per funding input, got {per_input:.1}",
+    );
+    assert!(
+        issue > max,
+        "the {ISSUE_1042_INPUTS}-input instant proof must overflow \
+         max_state_transition_size, or the wallet's chain fallback is never needed: \
+         {issue} <= {max}",
+    );
+}
+
+#[tokio::test]
+async fn should_fit_max_size_with_a_chain_proof_for_the_issue_1042_lock() {
+    let max = PlatformVersion::latest()
+        .system_limits
+        .max_state_transition_size as usize;
+
+    // The same 83-input lock, proven by its ChainLock: the proof names only
+    // the outpoint and a height, so its size does not depend on how many
+    // inputs funded the lock.
+    let chain_proof = AssetLockProof::Chain(ChainAssetLockProof {
+        core_chain_locked_height: 2_000_000,
+        out_point: OutPoint::new(make_asset_lock_tx(ISSUE_1042_INPUTS).txid(), 0),
+    });
+    let size = shield_transition_size(chain_proof).await;
+
+    assert!(
+        size <= max,
+        "the chain-proof fallback for an {ISSUE_1042_INPUTS}-input lock must fit \
+         max_state_transition_size: {size} > {max}",
     );
 }

@@ -32,6 +32,9 @@
 use std::time::Duration;
 
 use dashcore::OutPoint;
+use dpp::bincode;
+use dpp::bincode::enc::write::SizeWriter;
+use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::prelude::AssetLockProof;
 use key_wallet::bip32::DerivationPath;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -40,7 +43,8 @@ use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::{
-    as_asset_lock_proof_cl_height_too_low, is_asset_lock_already_consumed, PlatformWalletError,
+    as_asset_lock_proof_cl_height_too_low, as_state_transition_max_size_exceeded,
+    is_asset_lock_already_consumed, is_instant_lock_proof_invalid, PlatformWalletError,
 };
 use crate::wallet::asset_lock::manager::AssetLockManager;
 
@@ -433,6 +437,62 @@ pub(crate) fn out_point_from_proof(proof: &AssetLockProof) -> OutPoint {
     }
 }
 
+/// Whether a failed submit with `proof` should be retried with a ChainLock
+/// proof for the same outpoint: Platform could not verify the IS lock, or
+/// the IS proof made the transition too large and a ChainLock proof in its
+/// place brings it under the limit.
+///
+/// The size case is dashwallet-ios#1042. An InstantSend proof embeds the
+/// whole funding transaction and its InstantLock, ~184 B per funding input,
+/// while a ChainLock proof is ~40 B, so a lock funded by many small inputs
+/// can only be consumed once it is chainlocked. A transition that is too
+/// large for another reason (its own content) would still be too large
+/// with a ChainLock proof, so it is not retried: the retry waits for a
+/// ChainLock first, which would only delay the same error.
+pub(crate) fn needs_chain_lock_proof(error: &dash_sdk::Error, proof: &AssetLockProof) -> bool {
+    is_instant_lock_proof_invalid(error) || chain_lock_proof_fits(error, proof)
+}
+
+/// Bytes a transition sheds when it carries a ChainLock proof for the same
+/// outpoint instead of `proof`; `None` for a ChainLock proof, which has
+/// nothing smaller to give way to.
+fn chain_lock_proof_saving(proof: &AssetLockProof) -> Option<u64> {
+    if !matches!(proof, AssetLockProof::Instant(_)) {
+        return None;
+    }
+    // The largest ChainLock proof: the height and the outpoint's vout are
+    // varints, and `u32::MAX` (the null outpoint's vout too) takes their
+    // longest encoding.
+    let chain_proof = AssetLockProof::Chain(ChainAssetLockProof {
+        core_chain_locked_height: u32::MAX,
+        out_point: OutPoint::null(),
+    });
+    Some(encoded_len(proof)?.saturating_sub(encoded_len(&chain_proof)?))
+}
+
+/// Whether `error` is a size refusal that the same transition passes with a
+/// ChainLock proof in place of `proof`. The proof is only measured for a
+/// size refusal.
+fn chain_lock_proof_fits(error: &dash_sdk::Error, proof: &AssetLockProof) -> bool {
+    let Some(exceeded) = as_state_transition_max_size_exceeded(error) else {
+        return false;
+    };
+    chain_lock_proof_saving(proof).is_some_and(|saving| {
+        exceeded.actual_size_bytes().saturating_sub(saving) <= exceeded.max_size_bytes()
+    })
+}
+
+/// The proof's length in a serialized state transition, encoded with the
+/// bincode configuration `#[platform_serialize]` uses for `StateTransition`.
+fn encoded_len(proof: &AssetLockProof) -> Option<u64> {
+    let config = bincode::config::standard()
+        .with_big_endian()
+        .with_no_limit();
+    let mut writer = SizeWriter::default();
+    bincode::encode_into_writer(proof, &mut writer, config).ok()?;
+    Some(writer.bytes_written as u64)
+}
+
 // ---------------------------------------------------------------------------
 // Resolver on AssetLockManager
 // ---------------------------------------------------------------------------
@@ -780,7 +840,93 @@ fn validate_existing_asset_lock_role(
 
 #[cfg(test)]
 mod tests {
+    use dashcore::{InstantLock, ScriptBuf, Transaction, TxIn};
+    use dpp::consensus::basic::state_transition::StateTransitionMaxSizeExceededError;
+    use dpp::consensus::ConsensusError;
+    use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+
     use super::*;
+
+    /// An IS proof over a funding tx with `n_inputs` signed P2PKH inputs
+    /// (148 B each), each outpoint repeated in the InstantLock.
+    fn instant_proof(n_inputs: u8) -> AssetLockProof {
+        let input: Vec<TxIn> = (0..n_inputs)
+            .map(|i| TxIn {
+                previous_output: OutPoint::from([i; 36]),
+                script_sig: ScriptBuf::from_bytes(vec![0u8; 107]),
+                sequence: u32::MAX,
+                witness: Default::default(),
+            })
+            .collect();
+        AssetLockProof::Instant(InstantAssetLockProof::new(
+            InstantLock {
+                inputs: input.iter().map(|i| i.previous_output).collect(),
+                ..InstantLock::default()
+            },
+            Transaction {
+                version: 3,
+                lock_time: 0,
+                input,
+                output: Vec::new(),
+                special_transaction_payload: None,
+            },
+            0,
+        ))
+    }
+
+    fn chain_proof() -> AssetLockProof {
+        AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 100,
+            out_point: OutPoint::from([11u8; 36]),
+        })
+    }
+
+    /// The SDK's pre-broadcast refusal of a transition of `actual_size_bytes`.
+    fn oversized_error(actual_size_bytes: u64) -> dash_sdk::Error {
+        ConsensusError::from(StateTransitionMaxSizeExceededError::new(
+            actual_size_bytes,
+            20_480,
+        ))
+        .into()
+    }
+
+    /// dashwallet-ios#1042: a transition 2.7 KB over the limit with an IS
+    /// proof over an 80-input lock fits with a ChainLock proof, so it takes
+    /// the same IS→CL path as a rejected IS signature.
+    #[test]
+    fn should_retry_an_oversized_instant_proof_transition_with_a_chain_lock_proof() {
+        assert!(needs_chain_lock_proof(
+            &oversized_error(23_168),
+            &instant_proof(80)
+        ));
+    }
+
+    /// A transition too large by its own content stays too large with a
+    /// ChainLock proof, so it is not retried after a ChainLock wait.
+    #[test]
+    fn should_not_retry_when_a_chain_lock_proof_would_still_be_too_large() {
+        assert!(!needs_chain_lock_proof(
+            &oversized_error(23_168),
+            &instant_proof(1)
+        ));
+    }
+
+    /// A chain proof that is still too large cannot be shrunk by another
+    /// chain proof: the error is surfaced, not retried.
+    #[test]
+    fn should_not_retry_an_oversized_chain_proof_transition() {
+        assert!(!needs_chain_lock_proof(
+            &oversized_error(20_481),
+            &chain_proof()
+        ));
+    }
+
+    #[test]
+    fn should_not_retry_an_unrelated_error_with_a_chain_lock_proof() {
+        let error = dash_sdk::Error::Generic("transport failure".to_string());
+
+        assert!(!needs_chain_lock_proof(&error, &instant_proof(80)));
+    }
 
     #[test]
     fn existing_lock_role_validation_binds_identity_funding() {
@@ -1027,7 +1173,6 @@ mod tests {
     use crate::wallet::persister::WalletPersister;
     use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
     use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyConsumedError;
-    use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
     use std::sync::Arc;
 
     /// Shared fixture: a funded wallet with ONE tracked, IS-locked asset

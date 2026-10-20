@@ -28,11 +28,15 @@
 //!    and resubmit the same proof. See
 //!    [`submit_with_cl_height_retry`].
 //!
-//! 2. **IS-lock rejection** (`InvalidInstantAssetLockProofSignatureError`)
-//!    — Drive rejected because the IS-lock signing quorum has rotated
-//!    out. Detected via [`crate::error::is_instant_lock_proof_invalid`].
-//!    Upgrade IS→CL via `upgrade_to_chain_lock_proof` and retry. The
-//!    CL retry is itself wrapped in the CL-height-too-low loop.
+//! 2. **Unusable IS proof** — Drive rejected the IS lock because its
+//!    signing quorum has rotated out
+//!    (`InvalidInstantAssetLockProofSignatureError`), or the IS proof made
+//!    the transition larger than `max_state_transition_size`
+//!    (`StateTransitionMaxSizeExceededError`, refused by the SDK before
+//!    broadcast; dashwallet-ios#1042). Detected via
+//!    [`needs_chain_lock_proof`]. Upgrade IS→CL via
+//!    `upgrade_to_chain_lock_proof` and retry. The CL retry is itself
+//!    wrapped in the CL-height-too-low loop.
 //!
 //! On the funding-build side, a third recovery handles the
 //! Core-side IS timeout:
@@ -64,9 +68,10 @@ use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentityWithMetadata;
 
-use crate::error::{is_instant_lock_proof_invalid, PlatformWalletError};
+use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, submit_with_cl_height_retry, FundingResolution, ResolvedFunding,
+    needs_chain_lock_proof, out_point_from_proof, submit_with_cl_height_retry, FundingResolution,
+    ResolvedFunding,
 };
 use crate::wallet::asset_lock::AssetLockFunding;
 use crate::BlockTime;
@@ -216,9 +221,10 @@ impl IdentityWallet {
         // Step 3: submit, with two layers of Platform-side fallback:
         //   - **CL-height-too-low** (transient): bump `user_fee_increase`
         //     and retry the same proof. See [`submit_with_cl_height_retry`].
-        //   - **IS-lock rejection** (quorum rotated): upgrade IS→CL on
-        //     the same credit-output outpoint — no new asset lock built,
-        //     no new funding-tx broadcast.
+        //   - **Unusable IS proof** (quorum rotated, or the IS proof made
+        //     the transition too large): upgrade IS→CL on the same
+        //     credit-output outpoint — no new asset lock built, no new
+        //     funding-tx broadcast.
         //
         // Both retries share the original `placeholder` Identity; the
         // CL-height retry also iterates inside the IS→CL fallback branch
@@ -237,12 +243,13 @@ impl IdentityWallet {
         .await
         {
             Ok(identity) => (Ok(identity), proof.clone()),
-            Err(e) if is_instant_lock_proof_invalid(&e) => {
+            Err(e) if needs_chain_lock_proof(&e, &proof) => {
                 let out_point = proof_out_point;
                 tracing::warn!(
-                    "IS-lock proof rejected by Platform for identity registration (tx {}), \
+                    "IS-lock proof unusable for identity registration (tx {}): {}; \
                      retrying with ChainLock proof",
-                    out_point.txid
+                    out_point.txid,
+                    e
                 );
                 let chain_proof = self
                     .asset_locks
@@ -463,8 +470,8 @@ impl IdentityWallet {
         // Step 3: submit. Two Platform-side fallback layers (matches
         // `register_identity_with_funding`): CL-height-too-low retries
         // bump `user_fee_increase` to bypass Tenderdash's invalid-tx
-        // cache, and IS-lock rejection triggers an IS→CL upgrade on the
-        // same outpoint.
+        // cache, and an unusable IS proof triggers an IS→CL upgrade on
+        // the same outpoint.
         let proof_out_point = out_point_from_proof(&proof);
         let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
             identity.top_up_identity_with_signer_with_metadata(
@@ -478,12 +485,13 @@ impl IdentityWallet {
         .await
         {
             Ok(balance) => (Ok(balance), proof.clone()),
-            Err(e) if is_instant_lock_proof_invalid(&e) => {
+            Err(e) if needs_chain_lock_proof(&e, &proof) => {
                 let out_point = proof_out_point;
                 tracing::warn!(
-                    "IS-lock proof rejected by Platform for identity top-up (tx {}), \
+                    "IS-lock proof unusable for identity top-up (tx {}): {}; \
                      retrying with ChainLock proof",
-                    out_point.txid
+                    out_point.txid,
+                    e
                 );
                 let chain_proof = self
                     .asset_locks

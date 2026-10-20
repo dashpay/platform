@@ -1454,12 +1454,12 @@ mod tests {
     /// Test persister that answers `get_core_tx_record` from a
     /// configurable in-memory map. `store` / `flush` are no-ops; `load`
     /// returns the default state.
-    struct FakeRecordStore {
+    pub(super) struct FakeRecordStore {
         records: Mutex<HashMap<Txid, TransactionRecord>>,
     }
 
     impl FakeRecordStore {
-        fn with_records<I: IntoIterator<Item = TransactionRecord>>(records: I) -> Self {
+        pub(super) fn with_records<I: IntoIterator<Item = TransactionRecord>>(records: I) -> Self {
             let map = records.into_iter().map(|r| (r.txid, r)).collect();
             Self {
                 records: Mutex::new(map),
@@ -1750,6 +1750,7 @@ mod chain_lock_wait_tests {
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
     use tokio::sync::{Notify, RwLock};
 
+    use crate::changeset::PlatformWalletPersistence;
     use crate::error::PlatformWalletError;
     #[cfg(feature = "shielded")]
     use crate::test_support::AlwaysOkBroadcaster;
@@ -1954,6 +1955,19 @@ mod chain_lock_wait_tests {
         sdk_network: Network,
         locator: Option<Arc<dyn MinedHeightLocator>>,
     ) -> Ctx {
+        ctx_with_persister(context, sdk_network, locator, |_| {
+            Arc::new(NoopTestPersister)
+        })
+        .await
+    }
+
+    /// [`ctx`] over the persister `persister` builds from the funding record.
+    async fn ctx_with_persister(
+        context: TransactionContext,
+        sdk_network: Network,
+        locator: Option<Arc<dyn MinedHeightLocator>>,
+        persister: impl FnOnce(&TransactionRecord) -> Arc<dyn PlatformWalletPersistence>,
+    ) -> Ctx {
         let (wallet_manager, wallet_id, _generation, _signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
@@ -1963,17 +1977,6 @@ mod chain_lock_wait_tests {
                 .expect("mock sdk"),
         );
         let notify = Arc::new(Notify::new());
-        let mut manager = AssetLockManager::new(
-            sdk,
-            Arc::clone(&wallet_manager),
-            wallet_id,
-            Arc::clone(&notify),
-            Arc::new(AlwaysRejectedBroadcaster),
-            WalletPersister::new(wallet_id, Arc::new(NoopTestPersister)),
-        );
-        if let Some(locator) = locator {
-            manager = manager.with_mined_height_locator(locator);
-        }
 
         let transaction = Transaction {
             version: 1,
@@ -2004,6 +2007,17 @@ mod chain_lock_wait_tests {
             Vec::new(),
             0,
         );
+        let mut manager = AssetLockManager::new(
+            sdk,
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::clone(&notify),
+            Arc::new(AlwaysRejectedBroadcaster),
+            WalletPersister::new(wallet_id, persister(&record)),
+        );
+        if let Some(locator) = locator {
+            manager = manager.with_mined_height_locator(locator);
+        }
         {
             let mut wm = wallet_manager.write().await;
             let info = wm
@@ -3355,5 +3369,57 @@ mod chain_lock_wait_tests {
         .expect("resolves without waiting")
         .expect("proof");
         assert_eq!(chain_proof_height(proof), 100);
+    }
+
+    /// Without `keep-finalized-transactions` (the shipped default) a
+    /// chainlock promotion evicts the funding record from memory, and the
+    /// persisted copy stays `InBlock` (per-record promotions are not mirrored
+    /// to the store). The IS→CL fallback must still build the chain proof at
+    /// once from that copy: a stuck lock whose IS proof cannot be submitted
+    /// (dashwallet-ios#1042) is only consumable this way. With the feature the
+    /// record stays in memory and the same proof comes from it, so the test
+    /// runs in both configurations.
+    mod evicted_record {
+        use super::*;
+        use crate::wallet::asset_lock::sync::proof::funding_tx_record;
+        use crate::wallet::asset_lock::sync::proof::tests::FakeRecordStore;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        #[tokio::test]
+        async fn should_build_the_chain_proof_after_a_chain_lock_evicts_the_record() {
+            let in_block =
+                TransactionContext::InBlock(BlockInfo::new(100, BlockHash::all_zeros(), 0));
+            let ctx = ctx_with_persister(in_block, Network::Testnet, None, |record| {
+                Arc::new(FakeRecordStore::with_records([record.clone()]))
+            })
+            .await;
+            {
+                let mut wm = ctx.wallet_manager.write().await;
+                let info = wm
+                    .get_wallet_info_mut(&ctx.wallet_id)
+                    .expect("wallet must remain registered");
+                info.apply_chain_lock(ChainLock {
+                    block_height: 100,
+                    block_hash: BlockHash::all_zeros(),
+                    signature: BLSSignature::from([0u8; 96]),
+                });
+                assert_eq!(
+                    funding_tx_record(&info.core_wallet.accounts, 0, &ctx.out_point.txid).is_none(),
+                    cfg!(not(feature = "keep-finalized-transactions")),
+                    "the chainlock promotion evicts the record unless finalized records are kept",
+                );
+            }
+
+            let proof = tokio::time::timeout(
+                Duration::from_secs(5),
+                ctx.manager
+                    .upgrade_to_chain_lock_proof(&ctx.out_point, None),
+            )
+            .await
+            .expect("resolves without waiting for another chain lock")
+            .expect("upgrade");
+
+            assert_eq!(chain_proof_height(proof), 100);
+        }
     }
 }

@@ -17,8 +17,9 @@
 //! 3. **Submit** — `addresses.top_up_with_signers(...)` inside the
 //!    shared `submit_with_cl_height_retry` wrapper. IS→CL fallback
 //!    fires both on Core-side timeout (resolver returns `IsTimeout`)
-//!    and on Platform-side IS rejection
-//!    (`is_instant_lock_proof_invalid`).
+//!    and on an unusable IS proof (`needs_chain_lock_proof`: Platform
+//!    rejected the IS lock, or the IS proof made the transition too
+//!    large).
 //! 4. **Bookkeeping + cleanup** — write each recipient's new credit
 //!    balance into `ManagedPlatformAccount` and emit a
 //!    `PlatformAddressChangeSet`; then `consume_asset_lock` the
@@ -26,11 +27,11 @@
 //!    and dropped from the in-memory tracked-lock map.
 
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
-    ResolvedFunding,
+    needs_chain_lock_proof, out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding,
+    FundingResolution, ResolvedFunding,
 };
 use crate::wallet::PlatformAddressWallet;
-use crate::{error::is_instant_lock_proof_invalid, PlatformAddressChangeSet, PlatformWalletError};
+use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_address::TopUpAddress;
 use dash_sdk::query_types::AddressInfos;
@@ -352,7 +353,7 @@ impl PlatformAddressWallet {
         // Step 3: submit. Two Platform-side fallback layers (matches
         // `register_identity_with_funding`): CL-height-too-low retries
         // bump `user_fee_increase` to bypass Tenderdash's invalid-tx
-        // cache, and IS-lock rejection triggers an IS→CL upgrade on
+        // cache, and an unusable IS proof triggers an IS→CL upgrade on
         // the same outpoint.
         let proof_out_point = out_point_from_proof(&proof);
         // `proof_height` is the broadcast proof's committed block — the
@@ -371,12 +372,13 @@ impl PlatformAddressWallet {
         .await
         {
             Ok(infos) => (Ok(infos), proof.clone()),
-            Err(e) if is_instant_lock_proof_invalid(&e) => {
+            Err(e) if needs_chain_lock_proof(&e, &proof) => {
                 let out_point = proof_out_point;
                 tracing::warn!(
-                    "IS-lock proof rejected by Platform for platform-address top-up (tx {}), \
+                    "IS-lock proof unusable for platform-address top-up (tx {}): {}; \
                      retrying with ChainLock proof",
-                    out_point.txid
+                    out_point.txid,
+                    e
                 );
                 let chain_proof = self
                     .asset_locks
