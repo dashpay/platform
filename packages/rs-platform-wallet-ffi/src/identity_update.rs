@@ -520,8 +520,15 @@ unsafe fn update_identity_with_signer_unguarded(
             keys
         };
 
-    let external_ids: Vec<u32> = if external_key_ids.is_null() || external_key_ids_count == 0 {
+    // A null array with a count would silently store the caller's
+    // external keys as derived, so it is refused.
+    let external_ids: Vec<u32> = if external_key_ids_count == 0 {
         Vec::new()
+    } else if external_key_ids.is_null() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorNullPointer,
+            "external_key_ids is null with a non-zero count",
+        );
     } else {
         slice::from_raw_parts(external_key_ids, external_key_ids_count).to_vec()
     };

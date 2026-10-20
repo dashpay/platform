@@ -740,13 +740,11 @@ impl ManagedIdentity {
     /// `Identity` (so every signing / introspection path sees the
     /// disabled flag immediately) and a combined changeset is persisted
     /// so the client's `PersistentPublicKey.disabledAt` rows flip
-    /// without a network re-fetch. Each emitted entry reuses the same
-    /// `(wallet_id, identity_index, key_index)` derivation breadcrumb
-    /// `add_key` carries, so the client re-derives idempotently and
-    /// keeps the key's existing private-key linkage rather than
-    /// dropping it on the upsert. Out-of-wallet identities (no
-    /// derivation context) emit a breadcrumb-less entry, matching
-    /// their watch-only state.
+    /// without a network re-fetch. Each emitted entry carries no
+    /// derivation breadcrumb: a disable changes nothing about where the
+    /// key came from, every persister keeps the breadcrumb it already
+    /// holds for the key, and the identity's wallet slot does not say
+    /// whether this key was derived there or supplied from outside.
     ///
     /// `key_ids` not present on the identity are skipped (logged) and
     /// no changeset is emitted when nothing matched. `disabled_at` is
@@ -834,12 +832,6 @@ impl ManagedIdentity {
     ) -> IdentityKeysChangeSet {
         let identity_id = self.id();
 
-        // Reconstruct the derivation breadcrumb from the cached
-        // wallet/identity slot. Wallet-owned identities carry both
-        // halves; out-of-wallet ones have neither (and no private key
-        // to preserve), so they fall through to a watch-only entry.
-        let breadcrumb = self.wallet_slot();
-
         // Operate on a clone of the key map, mirroring `add_key`, then
         // write it back once all matching keys have been stamped.
         let mut keys = self.identity.public_keys().clone();
@@ -858,17 +850,6 @@ impl ManagedIdentity {
             public_key.set_disabled_at(disabled_at);
             let public_key_hash = pubkey_hash_of(public_key);
 
-            let (wallet_id, derivation_indices) = match breadcrumb {
-                Some((wallet_id, identity_index)) => (
-                    Some(wallet_id),
-                    Some(IdentityKeyDerivationIndices {
-                        identity_index,
-                        key_index: key_id,
-                    }),
-                ),
-                None => (None, None),
-            };
-
             keys_cs.upserts.insert(
                 (identity_id, key_id),
                 IdentityKeyEntry {
@@ -876,8 +857,8 @@ impl ManagedIdentity {
                     key_id,
                     public_key: public_key.clone(),
                     public_key_hash,
-                    wallet_id,
-                    derivation_indices,
+                    wallet_id: None,
+                    derivation_indices: None,
                 },
             );
         }

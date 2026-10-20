@@ -189,12 +189,20 @@ pub fn apply(
                         |row| row.get(0),
                     )
                     .optional()?;
-                if let Some(held) = held {
-                    let held: IdentityKeyWire = blob::decode(&held)?;
-                    if held.derivation_indices.is_some() {
+                // A stored row that does not decode holds no breadcrumb
+                // to keep; the write replaces it, as it did before rows
+                // kept their breadcrumbs.
+                match held.map(|held| blob::decode::<IdentityKeyWire>(&held)) {
+                    Some(Ok(held)) if held.derivation_indices.is_some() => {
                         wire.wallet_id = held.wallet_id;
                         wire.derivation_indices = held.derivation_indices;
                     }
+                    Some(Err(e)) => tracing::warn!(
+                        key_id = *key_id,
+                        error = %e,
+                        "identity_keys: stored row does not decode; replacing it",
+                    ),
+                    _ => {}
                 }
             }
             let entry_blob = blob::encode(&wire)?;

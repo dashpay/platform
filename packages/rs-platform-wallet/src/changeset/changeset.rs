@@ -1076,8 +1076,22 @@ impl Merge for IdentityKeysChangeSet {
         // Last-write-wins per composite key. Matches the discipline
         // used by other scalar-entry changesets in this module; the
         // "don't emit both upsert + remove for the same key in one
-        // mutation" invariant is enforced on the emitter side.
-        self.upserts.extend(other.upserts);
+        // mutation" invariant is enforced on the emitter side. A later
+        // entry without a derivation breadcrumb keeps the earlier one's,
+        // as every persister keeps a stored breadcrumb: a key's derivation
+        // never changes, and a buffered write that only knows the key's
+        // new state must not turn a wallet-derived key watch-only.
+        for (id, mut entry) in other.upserts {
+            if entry.derivation_indices.is_none() {
+                if let Some(earlier) = self.upserts.get(&id) {
+                    if earlier.derivation_indices.is_some() {
+                        entry.wallet_id = earlier.wallet_id;
+                        entry.derivation_indices = earlier.derivation_indices;
+                    }
+                }
+            }
+            self.upserts.insert(id, entry);
+        }
         self.removed.extend(other.removed);
     }
 
@@ -2524,6 +2538,42 @@ mod tests {
             contact_profiles: BTreeMap::new(),
             ignored_senders: BTreeSet::new(),
         }
+    }
+
+    /// A later key entry without a derivation breadcrumb keeps the earlier
+    /// one's and takes the rest; one with a breadcrumb replaces it whole.
+    #[test]
+    fn should_keep_an_earlier_breadcrumb_when_a_later_key_entry_has_none() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        let id = Identifier::from([0x54; 32]);
+        let entry = |disabled_at: Option<u64>, key_index: Option<u32>| IdentityKeyEntry {
+            identity_id: id,
+            key_id: 3,
+            public_key: IdentityPublicKeyV0 {
+                id: 3,
+                disabled_at,
+                ..Default::default()
+            }
+            .into(),
+            public_key_hash: [3; 20],
+            wallet_id: key_index.map(|_| [9; 32]),
+            derivation_indices: key_index.map(|key_index| IdentityKeyDerivationIndices {
+                identity_index: 0,
+                key_index,
+            }),
+        };
+        let changeset = |entry: IdentityKeyEntry| {
+            let mut cs = IdentityKeysChangeSet::default();
+            cs.upserts.insert((id, 3), entry);
+            cs
+        };
+
+        let mut merged = changeset(entry(None, Some(3)));
+        merged.merge(changeset(entry(Some(7), None)));
+        assert_eq!(merged.upserts[&(id, 3)], entry(Some(7), Some(3)));
+
+        merged.merge(changeset(entry(Some(8), Some(4))));
+        assert_eq!(merged.upserts[&(id, 3)], entry(Some(8), Some(4)));
     }
 
     #[test]

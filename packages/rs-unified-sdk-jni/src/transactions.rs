@@ -133,8 +133,8 @@ fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<CString> {
 // ── Identity update (add / disable keys) ──────────────────────────────
 
 /// Read a JVM `int[]` of key ids into `Vec<u32>`. A null or empty array is
-/// no ids; a negative entry throws (it would bit-cast to a bogus huge key
-/// id) and returns `None`. jni 0.21 has no `convert_int_array`, so the
+/// no ids; an array that cannot be read, or a negative entry (it would
+/// bit-cast to a bogus huge key id), throws and returns `None`. jni 0.21 has no `convert_int_array`, so the
 /// length is read first, then the region into an owned buffer.
 fn read_key_ids(env: &mut JNIEnv, ids: &jni::objects::JIntArray) -> Option<Vec<u32>> {
     if ids.is_null() {
@@ -145,7 +145,8 @@ fn read_key_ids(env: &mut JNIEnv, ids: &jni::objects::JIntArray) -> Option<Vec<u
             let mut buf = vec![0i32; len as usize];
             if env.get_int_array_region(ids, 0, &mut buf).is_err() {
                 let _ = env.exception_clear();
-                return Some(Vec::new());
+                throw_sdk_exception(env, 1, "keyIds could not be read");
+                return None;
             }
             if buf.iter().any(|&i| i < 0) {
                 throw_sdk_exception(env, 1, "keyIds must be non-negative");

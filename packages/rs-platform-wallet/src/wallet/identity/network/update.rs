@@ -334,11 +334,12 @@ impl IdentityWallet {
         // A cache refreshed to the transition or past it already holds
         // this update's keys as Platform has them (on-chain `disabled_at`
         // included) and whatever later updates did to them: applying the
-        // payload would take those back. A refresh stores no rows for
-        // added keys, though, so the touched keys are stored here from the
-        // cache's own copies, with the breadcrumbs the path below would give them: an
-        // added key the caller's, a disabled key the wallet slot's, as
-        // `disable_keys` builds it.
+        // payload would take those back. A refresh stores the rows it
+        // changes without breadcrumbs, though, so the touched keys are
+        // stored here from the cache's own copies, with the breadcrumbs the
+        // path below would give them: an added key its slot's unless the
+        // caller declared it external, a disabled key none (the persisters
+        // keep the one they hold).
         // A key the update both adds and disables is taken as added, on
         // both paths.
         let added_ids: Vec<u32> = added_keys.iter().map(|key| key.id()).collect();
@@ -348,7 +349,6 @@ impl IdentityWallet {
             .collect();
 
         if managed.identity.revision() >= transition_revision {
-            let slot = managed.wallet_slot();
             let mut keys = Vec::new();
             // An added key the cache lacks is stored, and taken into the
             // cache, as the update registered it.
@@ -375,7 +375,7 @@ impl IdentityWallet {
                 };
                 keys.push(KeyWithBreadcrumb {
                     key: key.clone(),
-                    breadcrumb: slot.map(|(wallet_id, idx)| (wallet_id, idx, id)),
+                    breadcrumb: None,
                 });
             }
             // Stored with the identity's snapshot even when no touched key
@@ -391,8 +391,8 @@ impl IdentityWallet {
 
         // The added and disabled keys and the landed revision go to the
         // store as one changeset, which holds the revision even when no key
-        // row matched. Disabled keys get the wallet slot's breadcrumb and a
-        // local wall-clock `disabled_at` placeholder: a later fetch brings
+        // row matched. Disabled keys get no breadcrumb (the persisters keep
+        // the one they hold) and a local wall-clock `disabled_at` placeholder: a later fetch brings
         // the on-chain block time into memory and the store. Memory holds
         // the whole update even when the store fails, and the rows stay
         // queued for the identity's next key store.
@@ -761,9 +761,9 @@ mod update_identity_at_revision_tests {
     /// An update at 5 added key 3, a later one at 6 disabled it, and the
     /// cache was refreshed to 6 before the confirmation of 5 came back:
     /// key 3 stays disabled, and is stored that way with its breadcrumb (a
-    /// refresh stores no keys). A key the update disabled is stored as the
-    /// refresh has it, with the on-chain `disabled_at` and the wallet
-    /// slot's breadcrumb.
+    /// refresh stores its rows without one). A key the update disabled is
+    /// stored as the refresh has it, with the on-chain `disabled_at` and no
+    /// breadcrumb, which the persisters keep from the row they hold.
     #[tokio::test]
     async fn should_store_the_newer_cache_keys_instead_of_an_older_landed_payload() {
         let identity_id = Identifier::default();
@@ -807,11 +807,8 @@ mod update_identity_at_revision_tests {
         let stored = store.stored_key(identity_id, 1).expect("key 1 stored");
         assert_eq!(stored.public_key.disabled_at(), Some(2));
         assert_eq!(
-            stored
-                .derivation_indices
-                .map(|indices| (indices.identity_index, indices.key_index)),
-            Some((0, 1)),
-            "the wallet slot's breadcrumb, as disable_keys gives it"
+            stored.derivation_indices, None,
+            "a disable says nothing about where the key came from"
         );
     }
 

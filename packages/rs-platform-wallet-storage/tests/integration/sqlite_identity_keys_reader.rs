@@ -68,7 +68,8 @@ fn should_keep_a_stored_breadcrumb_when_an_upsert_carries_none() {
     let store = |entries: Vec<IdentityKeyEntry>| {
         let mut keys = IdentityKeysChangeSet::default();
         for entry in entries {
-            keys.upserts.insert((entry.identity_id, entry.key_id), entry);
+            keys.upserts
+                .insert((entry.identity_id, entry.key_id), entry);
         }
         persister
             .store(

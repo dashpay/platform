@@ -320,9 +320,10 @@ impl IdentityWallet {
     /// than the cache's was answered before an update the cache already
     /// holds: the cache keeps its revision, key set and every disable, and
     /// takes only a disable or a raised limit the fetch shows
-    /// ([`ManagedIdentity::take_fetched_identity`]). The rows of keys the
-    /// fetch disables are stored with the scalar snapshot, and so are key
-    /// rows an earlier refused store queued; when that store fails, the error
+    /// ([`ManagedIdentity::take_fetched_identity`]). The row of every key the
+    /// fold adds or changes is stored with the scalar snapshot, without a
+    /// derivation breadcrumb, and so are key rows an earlier refused store
+    /// queued; when that store fails, the error
     /// is returned, memory keeps the fold and the rows stay queued for the
     /// identity's next key store (a refresh, load, discovery or landed
     /// update; [`ManagedIdentity::store_fetched_identity`]).
