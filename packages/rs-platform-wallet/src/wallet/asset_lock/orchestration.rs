@@ -460,12 +460,12 @@ fn chain_lock_proof_saving(proof: &AssetLockProof) -> Option<u64> {
     if !matches!(proof, AssetLockProof::Instant(_)) {
         return None;
     }
-    // The largest ChainLock proof: the height and the outpoint's vout are
-    // varints, and `u32::MAX` (the null outpoint's vout too) takes their
-    // longest encoding.
+    // The ChainLock proof for the same outpoint, at the height whose varint
+    // encoding is the longest, since the height it will carry is not known
+    // yet.
     let chain_proof = AssetLockProof::Chain(ChainAssetLockProof {
         core_chain_locked_height: u32::MAX,
-        out_point: OutPoint::null(),
+        out_point: out_point_from_proof(proof),
     });
     Some(encoded_len(proof)?.saturating_sub(encoded_len(&chain_proof)?))
 }
@@ -898,6 +898,45 @@ mod tests {
         assert!(needs_chain_lock_proof(
             &oversized_error(23_168),
             &instant_proof(80)
+        ));
+    }
+
+    /// The saving is measured against a ChainLock proof for the lock's own
+    /// outpoint: output 0's vout takes one varint byte where the null
+    /// outpoint's `u32::MAX` takes five, so a transition just over the limit
+    /// by the real saving is retried, and one byte more is not.
+    #[test]
+    fn should_measure_the_chain_lock_proof_with_the_locks_own_outpoint() {
+        let proof = instant_proof(1);
+        let AssetLockProof::Instant(instant) = &proof else {
+            unreachable!("instant_proof builds an InstantSend proof")
+        };
+        let chain_proof_for = |out_point| {
+            AssetLockProof::Chain(ChainAssetLockProof {
+                core_chain_locked_height: u32::MAX,
+                out_point,
+            })
+        };
+        let own_outpoint = OutPoint::new(instant.transaction().txid(), 0);
+        let saving = chain_lock_proof_saving(&proof).unwrap();
+        assert_eq!(
+            saving,
+            encoded_len(&proof).unwrap() - encoded_len(&chain_proof_for(own_outpoint)).unwrap()
+        );
+        assert!(
+            saving
+                > encoded_len(&proof).unwrap()
+                    - encoded_len(&chain_proof_for(OutPoint::null())).unwrap(),
+            "the null outpoint's vout encodes longer than output 0's"
+        );
+
+        assert!(needs_chain_lock_proof(
+            &oversized_error(20_480 + saving),
+            &proof
+        ));
+        assert!(!needs_chain_lock_proof(
+            &oversized_error(20_480 + saving + 1),
+            &proof
         ));
     }
 

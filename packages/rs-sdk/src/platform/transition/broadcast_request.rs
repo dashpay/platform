@@ -47,11 +47,15 @@ use crate::error::Error;
 /// As [`BroadcastRequestForStateTransition`] is a trait, it can be implemented for any type that represents
 /// a state transition, allowing for flexibility in how state transitions are broadcasted.
 pub trait BroadcastRequestForStateTransition: Send + Debug + Clone {
-    /// Serializes the state transition into a [`BroadcastStateTransitionRequest`] ready for broadcasting.
+    /// Serializes the state transition into a [`BroadcastStateTransitionRequest`].
+    ///
+    /// The request is not checked against `max_state_transition_size`: DAPI refuses an
+    /// oversized one with an untyped `InvalidArgument`. To build a request for sending, use
+    /// [`checked_broadcast_request`], which refuses it with the typed
+    /// `StateTransitionMaxSizeExceededError` first.
     ///
     /// # Returns
-    /// On success, this method yields a [`BroadcastStateTransitionRequest`] which can be sent to Platform.
-    /// On failure, it yields an [`Error`].
+    /// On success, the serialized request. On failure, an [`Error`].
     ///
     /// # Error Handling
     /// This method propagates any errors encountered during serialization.
@@ -92,11 +96,12 @@ impl BroadcastRequestForStateTransition for StateTransition {
 /// `StateTransitionMaxSizeExceededError` if the transition is over
 /// `max_state_transition_size` ([`validate_state_transition_size`]): DAPI
 /// would refuse it with an untyped `InvalidArgument`. Every SDK path that
-/// sends a transition builds its request through this;
+/// sends a transition builds its request through this, and so should a caller
+/// that sends one through the DAPI client directly;
 /// [`BroadcastRequestForStateTransition::broadcast_request_for_state_transition`]
 /// alone does not check the size, because the wait path rebuilds the request
 /// of a transition that has already executed.
-pub(crate) fn checked_broadcast_request(
+pub fn checked_broadcast_request(
     transition: &StateTransition,
     platform_version: &PlatformVersion,
 ) -> Result<BroadcastStateTransitionRequest, Error> {
