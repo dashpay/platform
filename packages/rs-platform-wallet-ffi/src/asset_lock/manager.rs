@@ -25,7 +25,8 @@ pub struct TrackedAssetLockFFI {
     pub amount: u64,
     /// Status (0=Built, 1=Broadcast, 2=InstantSendLocked, 3=ChainLocked,
     /// 4=Consumed, 5=RecoveredFromChain — Core finality proven by restore
-    /// reconstruction or live reconciliation, Platform-side consumption unknown).
+    /// reconstruction or live reconciliation, Platform-side consumption unknown;
+    /// 6=DrainCompleted — proven drain consumption and owned output recorded durably).
     pub status: u32,
     /// Whether a proof is attached.
     pub has_proof: bool,
@@ -81,6 +82,7 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
                         AssetLockStatus::ChainLocked => 3,
                         AssetLockStatus::Consumed => 4,
                         AssetLockStatus::RecoveredFromChain => 5,
+        AssetLockStatus::DrainCompleted => 6,
                     },
                     has_proof: lock.proof.is_some(),
                 }

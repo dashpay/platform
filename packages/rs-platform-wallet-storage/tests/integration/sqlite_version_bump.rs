@@ -366,6 +366,7 @@ fn asset_lock_changeset() -> AssetLockChangeSet {
             account_index: 0,
             funding_type: AssetLockFundingType::IdentityTopUp,
             identity_index: 0,
+            operation_id: None,
             amount_duffs: 1,
             status: AssetLockStatus::Built,
             proof: None,

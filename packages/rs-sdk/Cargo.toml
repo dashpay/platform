@@ -70,6 +70,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
   "client",
   "validation",
   "random-documents",
+  "dashpay-contract",
 ] }
 tokio-test = { version = "0.4.4" }
 clap = { version = "4.5.4", features = ["derive"] }

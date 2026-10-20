@@ -12,10 +12,17 @@
   rust-dashcore API, restoring native SDK builds while preserving canonical bytes.
 - **drive-abci:** preserve the fixed 48-byte quorum-key disk encoding independently
   of the BLS backend, with historical saved-state and checkpoint regression fixtures.
+- **platform-wallet (breaking):** `SpvRuntime::get_quorum_public_key`, the
+  quorum-key source for Platform proof verification, returns only keys dash-spv
+  verified. A quorum dash-spv holds unverified (`Unknown` or `Skipped`) fails with
+  the new `PlatformWalletError::QuorumNotVerified`, and
+  `PlatformWalletError::quorum_lookup_context_error` maps it to the SDK's non-ban
+  `ContextProviderError::QuorumSourceUnavailable`.
+  `get_quorum_public_key_with_status` still returns the key with its status.
 
 ### Changed
 
-- **Rust dependencies:** pin rust-dashcore to `dev` at `626c91d1`, which includes
+- **Rust dependencies:** pin rust-dashcore to `dev` at `280b3f2c`, which includes
   [rust-dashcore#1175](https://github.com/dashpay/rust-dashcore/pull/1175):
   every transaction payload keeps its stored serde variant index, so wallet rows
   written before the new payload types decode again;
@@ -30,11 +37,31 @@
   private-key hex decoding to the removal of `dashcore_hashes::hex`, compact
   ECDSA signatures to `dashcore::sign_message::MessageSignature` (the accepted
   signatures and the encoded bytes are unchanged), and masternode payload
-  handling to the version-3 ProRegTx / ProUpServTx types.
+  handling to the version-3 ProRegTx / ProUpServTx types. It also includes
+  [rust-dashcore#1179](https://github.com/dashpay/rust-dashcore/pull/1179):
+  masternode list diffs carry operator payout changes and keep the PoSe revived
+  height, which the masternode list updates of protocol versions 1 to 15 drop
+  and clear as before ([#5455](https://github.com/dashpay/platform/pull/5455));
+  [rust-dashcore#1187](https://github.com/dashpay/rust-dashcore/pull/1187):
+  the LLMQ parameters of the test and devnet quorum types match Dash Core's,
+  which changes how dash-spv tracks Platform quorums on local networks and
+  devnets; and dash-spv API changes:
+  [rust-dashcore#1176](https://github.com/dashpay/rust-dashcore/pull/1176)
+  makes its storage private (`DashSpvClient` opens its own storage and answers
+  header queries, which breaks code using `dash_spv::storage` through the
+  `dpp`/`dash-sdk` re-export),
+  [rust-dashcore#1177](https://github.com/dashpay/rust-dashcore/pull/1177)
+  makes `DashSpvClient::is_running` synchronous, and
+  [rust-dashcore#1183](https://github.com/dashpay/rust-dashcore/pull/1183)
+  runs the storage writer only between start and stop.
 - **platform-wallet:** a chain reorganization reported by key-wallet
   (`WalletEvent::ChainTruncated`) updates the in-memory balance but is not yet
   mirrored to persisted wallet state
   ([#5380](https://github.com/dashpay/platform/issues/5380)).
+- **platform-wallet:** the SPV broadcast-readiness wait (`SpvRuntime::wait_until_ready`)
+  wakes when the client starts or dash-spv reports a peer update, instead of
+  re-checking every 250 ms, so a broadcast held for readiness goes out as soon
+  as the first peer connects.
 - **Breaking (Rust features):** remove DPP's `core_key_wallet_bip_38` and SDK's
   `core_key_wallet_bip38` feature forwards because upstream removed BIP38 support.
 - **Breaking (C API):** the unified FFI no longer exports
