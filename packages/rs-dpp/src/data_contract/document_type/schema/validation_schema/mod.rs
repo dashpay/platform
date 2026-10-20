@@ -318,6 +318,19 @@ impl ValidationSchema {
                 nodes.entry(address).or_insert_with(|| Arc::new(node));
             }
             if let Some(node) = nodes.get(&address) {
+                // The validator compiles the schema a reference reaches, and the `$ref`s below
+                // it, against the reference's own URL, where the builder resolves those `$ref`s
+                // against the document schema's
+                if node.holds_a_reference()
+                    && reference_url(&root_url, &reference).map(|url| compile_url(&url))
+                        != Some(compile_url(&root_url))
+                {
+                    return Err(structure_error(format!(
+                        "`$ref` `{reference}` reaches a schema the JSON Schema validator \
+                         compiles against another URL than the document schema, with a `$ref` \
+                         below it, which the validation schema does not represent"
+                    )));
+                }
                 references
                     .entry(reference)
                     .or_insert_with(|| Arc::clone(node));
@@ -368,6 +381,28 @@ impl DataContract {
 }
 
 impl SchemaNode {
+    /// Whether the node, or a node below it, holds a `$ref`.
+    fn holds_a_reference(&self) -> bool {
+        self.reference.is_some()
+            || self
+                .object
+                .as_ref()
+                .and_then(|object| object.properties.as_ref())
+                .is_some_and(|properties| {
+                    properties.iter().any(|(_, node)| node.holds_a_reference())
+                })
+            || self.array.as_ref().is_some_and(|array| {
+                array
+                    .items
+                    .as_ref()
+                    .is_some_and(|node| node.holds_a_reference())
+                    || array
+                        .contains
+                        .as_ref()
+                        .is_some_and(|node| node.holds_a_reference())
+            })
+    }
+
     /// The node as a schema: the keywords it carries, in the order of
     /// [`SchemaKeyword::iter`].
     pub fn to_value(&self) -> Value {
@@ -1376,6 +1411,18 @@ fn build_node(
 /// that lead or trail it. `None` when the reference is not a URL reference.
 fn reference_url(base: &Url, reference: &str) -> Option<Url> {
     base.join(reference).ok()
+}
+
+/// The URL the JSON Schema validator compiles the schema it finds at `url` against: `url`
+/// without its fragment, the resource its resolver found the schema in, or the default URL
+/// for a `json-schema:` one, which it compiles as no URL at all.
+fn compile_url(url: &Url) -> String {
+    if url.scheme() == DEFAULT_ROOT_SCHEME {
+        return DEFAULT_ROOT_URL.to_string();
+    }
+    let mut resource = url.clone();
+    resource.set_fragment(None);
+    resource.into()
 }
 
 /// Resolves a `$ref` to the schema the JSON Schema validator reaches through it, from its URL

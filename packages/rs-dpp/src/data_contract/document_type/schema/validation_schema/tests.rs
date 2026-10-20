@@ -1421,6 +1421,60 @@ fn should_match_the_existing_validator_in_resolving_against_an_id_at_the_root() 
     assert!(!validator_accepts("ab"));
 }
 
+/// A document schema with an absolute `$id` whose `contains` reaches `helper` through the
+/// default URL written out: the validator compiles `helper`, and the `$ref` in it, against
+/// that URL, so the `$ref` reaches the definition `label`, not the `examples` entry an `$id`
+/// names under the document schema's own URL.
+fn a_reference_compiled_against_another_url() -> Value {
+    platform_value!({
+        "$id": "https://example.com/root",
+        "type": "object",
+        "properties": {
+            "note": {
+                "type": "string",
+                "maxLength": 8,
+                "examples": [{
+                    "$id": "https://example.com/root#/$defs/label",
+                    "type": "string",
+                    "maxLength": 1,
+                }],
+            },
+            "names": containing_reference("json-schema:///#/$defs/helper"),
+        },
+        "$defs": {
+            "helper": { "type": "string", "$ref": "#/$defs/label" },
+            "label": { "type": "string", "maxLength": 10 },
+        },
+    })
+}
+
+#[test]
+fn should_refuse_a_reference_whose_target_compiles_its_references_against_another_url() {
+    let message = refusal(a_reference_compiled_against_another_url());
+    assert!(
+        message.contains("compiles against another URL"),
+        "{message}"
+    );
+}
+
+/// What the test above rests on: the existing validator holds `helper` to the definition's
+/// maxLength of 10.
+#[cfg(feature = "validation")]
+#[test]
+fn should_match_the_existing_validator_on_a_reference_compiled_against_another_url() {
+    let schema = a_reference_compiled_against_another_url()
+        .try_to_validating_json()
+        .expect("expected the schema to convert");
+    assert!(existing_validator_accepts(
+        &schema,
+        &serde_json::json!({ "names": ["hello"] })
+    ));
+    assert!(!existing_validator_accepts(
+        &schema,
+        &serde_json::json!({ "names": ["hello world!"] })
+    ));
+}
+
 #[test]
 fn should_build_a_reference_whose_uncompiled_copy_sits_below_an_absolute_id() {
     // The validator never compiles `examples`, so the copy there names a schema but is
