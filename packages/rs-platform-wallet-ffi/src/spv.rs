@@ -2,7 +2,6 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
-use std::sync::Arc;
 
 use dashcore::hashes::Hash;
 use dashcore::sml::llmq_type::LlmqDevnetParams;
@@ -567,11 +566,6 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
         };
 
         if start_result.is_ok() {
-            if let Err(message) = manager.acquire_spv_source() {
-                let spv_to_stop = Arc::clone(&spv);
-                let _ = block_on_worker(async move { spv_to_stop.stop().await });
-                return Err(platform_wallet::PlatformWalletError::SpvError(message));
-            }
             let _guard = runtime().enter();
             spv.spawn_run_loop();
         }
@@ -601,9 +595,7 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_stop(
     // start issued after it is refused until a later stop joins the teardown.
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let spv = manager.spv_arc();
-        let result = block_on_worker(async move { spv.stop().await });
-        manager.release_spv_source();
-        result
+        block_on_worker(async move { spv.stop().await })
     });
     let result = unwrap_option_or_return!(option);
     unwrap_result_or_return!(result);

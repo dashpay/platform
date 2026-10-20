@@ -21,6 +21,7 @@ dash-sdk = { path = "../rs-sdk", features = ["wallet"] }
 # entry points can accept iOS-side keychain-backed signers without
 # duplicating the vtable plumbing. See `signer.rs` in rs-sdk-ffi.
 rs-sdk-ffi = { path = "../rs-sdk-ffi" }
+dash-context-provider = { path = "../rs-context-provider" }
 
 # FFI utilities
 once_cell = "1.19"

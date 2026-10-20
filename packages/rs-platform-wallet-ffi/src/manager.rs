@@ -20,6 +20,7 @@ use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 
+use dash_context_provider::routing::SpvSourceLease;
 use dash_sdk::Sdk;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use platform_wallet::PlatformWalletManager;
@@ -179,6 +180,75 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
     )
 }
 
+/// Create a manager from an owning SDK handle, with the persistence and event
+/// extensions of [`platform_wallet_manager_create_with_extensions`].
+///
+/// When the SDK was created with an SPV-capable context provider
+/// (`dash_sdk_create_spv` or `dash_sdk_create_adaptive`), the manager serves
+/// that provider's SPV quorum keys from its own SPV client for as long as the
+/// manager lives. Only one manager can serve an SDK; a second one fails here.
+///
+/// The SDK handle is borrowed only for this synchronous call. The manager
+/// retains an `Sdk` clone, never the raw handle. Context ownership follows
+/// [`platform_wallet_manager_create`].
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_with_sdk(
+    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
+    persistence: *const PersistenceCallbacks,
+    event_handler: *const EventHandlerCallbacks,
+    persistence_capabilities: *const PersistenceCapabilitiesFFI,
+    persistence_extension: *const PersistenceCallbacksExtension,
+    event_extension: *const EventHandlerCallbacksExtension,
+    out_handle: *mut Handle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(sdk_handle);
+    check_ptr!(persistence_capabilities);
+    check_ptr!(persistence_extension);
+    check_ptr!(event_extension);
+
+    let sdk_ptr = rs_sdk_ffi::dash_sdk_get_inner_sdk_ptr(sdk_handle);
+    if sdk_ptr.is_null() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "SDK has no inner SDK".to_string(),
+        );
+    }
+    // Claimed before the manager exists, so a refusal never takes ownership
+    // of the host's callback contexts.
+    let spv_quorum_lease = match rs_sdk_ffi::dash_sdk_spv_source_slot(sdk_handle) {
+        Ok(Some(slot)) => match slot.claim() {
+            Ok(lease) => Some(lease),
+            Err(error) => {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                    error.to_string(),
+                );
+            }
+        },
+        Ok(None) => None,
+        Err(message) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                message,
+            );
+        }
+    };
+
+    let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
+    let persistence_extensions = persistence_extension_callbacks(persistence_extension);
+    let dpns_event_callback = event_extension_dpns_callback(event_extension);
+    platform_wallet_manager_create_impl(
+        sdk_ptr,
+        spv_quorum_lease,
+        persistence,
+        event_handler,
+        declaration,
+        persistence_extensions,
+        dpns_event_callback,
+        out_handle,
+    )
+}
+
 /// Read one negotiated slot out of a size/version-tagged extension struct
 /// — the single authority for the gate every reader below applies. A slot
 /// is read only when the host's declared `struct_size` proves it was
@@ -322,7 +392,7 @@ unsafe fn event_extension_dpns_callback(
 #[allow(clippy::too_many_arguments)]
 unsafe fn platform_wallet_manager_create_impl(
     sdk_ptr: *const c_void,
-    spv_source_controller: Option<Arc<rs_sdk_ffi::SpvSourceController>>,
+    spv_quorum_lease: Option<SpvSourceLease>,
     persistence: *const PersistenceCallbacks,
     event_handler: *const EventHandlerCallbacks,
     declared_capabilities: PersistenceCapabilities,
@@ -385,80 +455,14 @@ unsafe fn platform_wallet_manager_create_impl(
     // return and leaves the spawned task running on that runtime.
     let _runtime_guard = runtime().enter();
 
-    let network = sdk.network;
     let manager = PlatformWalletManager::new(sdk, persister, handler);
-    let spv_source = spv_source_controller.as_ref().map(|_| {
-        Arc::new(platform_wallet::spv_context_provider::SpvQuorumSource::new(
-            manager.spv_arc(),
-            network,
-        ))
-    });
-    let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(PlatformWalletManagerHandle::new(
-        manager,
-        spv_source,
-        spv_source_controller,
-    ));
+    if let Some(lease) = spv_quorum_lease {
+        manager.serve_spv_quorums(lease);
+    }
+    let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
     *out_handle = handle;
 
     PlatformWalletFFIResult::ok()
-}
-
-/// Create a manager from an owning SDK handle, with the persistence and event
-/// extensions of [`platform_wallet_manager_create_with_extensions`].
-///
-/// When the SDK was created with an SPV-capable context provider
-/// (`dash_sdk_create_spv` or `dash_sdk_create_adaptive`), the manager also
-/// prepares an SPV quorum source for it. The SDK uses that source only while
-/// this manager's SPV client runs.
-///
-/// The SDK handle is borrowed only for this synchronous call. The manager
-/// retains an `Sdk` clone, never the raw handle. Context ownership follows
-/// [`platform_wallet_manager_create`].
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_manager_create_with_sdk(
-    sdk_handle: *mut rs_sdk_ffi::SDKHandle,
-    persistence: *const PersistenceCallbacks,
-    event_handler: *const EventHandlerCallbacks,
-    persistence_capabilities: *const PersistenceCapabilitiesFFI,
-    persistence_extension: *const PersistenceCallbacksExtension,
-    event_extension: *const EventHandlerCallbacksExtension,
-    out_handle: *mut Handle,
-) -> PlatformWalletFFIResult {
-    check_ptr!(sdk_handle);
-    check_ptr!(persistence_capabilities);
-    check_ptr!(persistence_extension);
-    check_ptr!(event_extension);
-
-    let sdk_ptr = rs_sdk_ffi::dash_sdk_get_inner_sdk_ptr(sdk_handle);
-    if sdk_ptr.is_null() {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "SDK has no inner SDK".to_string(),
-        );
-    }
-    let spv_source_controller = match rs_sdk_ffi::dash_sdk_spv_source_controller(sdk_handle) {
-        Ok(controller) => controller,
-        Err(message) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                message,
-            );
-        }
-    };
-
-    let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
-    let persistence_extensions = persistence_extension_callbacks(persistence_extension);
-    let dpns_event_callback = event_extension_dpns_callback(event_extension);
-    platform_wallet_manager_create_impl(
-        sdk_ptr,
-        spv_source_controller,
-        persistence,
-        event_handler,
-        declaration,
-        persistence_extensions,
-        dpns_event_callback,
-        out_handle,
-    )
 }
 
 /// Query the versioned persistence capabilities of a live manager.
@@ -817,9 +821,6 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     if let Some(manager) = PLATFORM_WALLET_MANAGER_STORAGE.remove(handle) {
-        // Detach this manager's SPV quorum source first, so the SDK stops
-        // reading a runtime that is shutting down.
-        manager.release_spv_source();
         // Run the full lifecycle shutdown to completion, not just the
         // platform-address sync. `shutdown()` is idempotent, so this is
         // safe even if the host already stopped some sync managers

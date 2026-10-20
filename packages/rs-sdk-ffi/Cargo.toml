@@ -16,6 +16,7 @@ dash-sdk = { path = "../rs-sdk", features = [
     "dashpay-contract",
 ] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
+dash-context-provider = { path = "../rs-context-provider" }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = [
     "dpns-contract",
     "dashpay-contract",
@@ -75,7 +76,6 @@ zeroize = "1.8"
 
 # Concurrency
 once_cell = "1.20"
-arc-swap = "1.7.1"
 
 [build-dependencies]
 cbindgen = "0.27"

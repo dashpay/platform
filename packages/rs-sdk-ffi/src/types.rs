@@ -83,12 +83,13 @@ pub struct DashSDKConfig {
     /// default endpoint derived from `network` (mainnet/testnet only — devnet
     /// needs an explicit URL, regtest defaults to the local sidecar).
     ///
-    /// **Only honored on the `dash_sdk_create_trusted` path** — that's the
-    /// path that builds a `TrustedHttpContextProvider`, which is the
-    /// component that actually performs quorum lookups. The callback-based
-    /// path (`dash_sdk_create_with_callbacks`) uses `CallbackContextProvider`
-    /// and ignores this field entirely; non-null values there are silently
-    /// dropped.
+    /// **Honored only by `dash_sdk_create_trusted` and
+    /// `dash_sdk_create_adaptive`**, the paths that build a
+    /// `TrustedHttpContextProvider`, the component that performs trusted
+    /// quorum lookups. `dash_sdk_create_spv` never contacts the trusted
+    /// quorum service, and the callback-based path
+    /// (`dash_sdk_create_with_callbacks`) uses `CallbackContextProvider`;
+    /// both ignore this field, and non-null values there are silently dropped.
     ///
     /// Same lifetime contract as `dapi_addresses`: borrowed, copied
     /// immediately, caller may free after the FFI call returns.

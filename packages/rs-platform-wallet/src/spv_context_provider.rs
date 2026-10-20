@@ -25,6 +25,7 @@
 use std::future::Future;
 use std::sync::Arc;
 
+use dash_context_provider::platform_activation_height;
 use dash_context_provider::ContextProvider;
 use dash_context_provider::ContextProviderError;
 use dashcore::sml::llmq_type::network::NetworkLLMQExt;
@@ -73,13 +74,15 @@ impl SpvQuorumSource {
     where
         F: Future<Output = T>,
     {
+        // Both refusals are this process's state, not the node's, so they are
+        // `QuorumSourceUnavailable`: the SDK must not ban a node for them.
         let handle = tokio::runtime::Handle::try_current().map_err(|_| {
-            ContextProviderError::Generic(
+            ContextProviderError::QuorumSourceUnavailable(
                 "SPV context provider called outside a Tokio runtime".to_string(),
             )
         })?;
         if handle.runtime_flavor() == RuntimeFlavor::CurrentThread {
-            return Err(ContextProviderError::Generic(
+            return Err(ContextProviderError::QuorumSourceUnavailable(
                 "SPV context provider requires a multi-threaded Tokio runtime".to_string(),
             ));
         }
@@ -126,7 +129,15 @@ impl ContextProvider for SpvQuorumSource {
                 quorum_hash,
                 core_chain_locked_height,
             ))?
-            .map_err(|e| e.quorum_lookup_context_error());
+            .map_err(|e| {
+                // A client that stopped or failed between the readiness check
+                // and this lookup is local state too.
+                if self.spv.is_running() {
+                    e.quorum_lookup_context_error()
+                } else {
+                    ContextProviderError::QuorumSourceUnavailable(e.to_string())
+                }
+            });
 
         // The quorum public key is the trust root of every Platform proof this
         // SDK verifies; tracing which provider served it lets an operator
@@ -152,15 +163,7 @@ impl ContextProvider for SpvQuorumSource {
     }
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
-        // Match the values the trusted HTTP provider ships (the L1 locked
-        // height per network) so proof verification behaves identically
-        // whether quorum keys come from SPV or the trusted service. See
-        // `rs-sdk-trusted-context-provider`'s `get_platform_activation_height`.
-        match self.network {
-            Network::Mainnet => Ok(2_132_092),
-            Network::Testnet => Ok(1_090_319),
-            Network::Devnet | Network::Regtest => Ok(1),
-        }
+        Ok(platform_activation_height(self.network))
     }
 
     fn get_data_contract(
@@ -220,7 +223,8 @@ mod tests {
     fn should_refuse_a_lookup_outside_a_tokio_runtime() {
         let error = unstarted_source().is_ready().unwrap_err();
         assert!(
-            error.to_string().contains("outside a Tokio runtime"),
+            matches!(error, ContextProviderError::QuorumSourceUnavailable(ref message)
+                if message.contains("outside a Tokio runtime")),
             "{error}"
         );
     }
@@ -237,7 +241,8 @@ mod tests {
         let source = unstarted_source();
         let error = runtime.block_on(async { source.is_ready() }).unwrap_err();
         assert!(
-            error.to_string().contains("multi-threaded Tokio runtime"),
+            matches!(error, ContextProviderError::QuorumSourceUnavailable(ref message)
+                if message.contains("multi-threaded Tokio runtime")),
             "{error}"
         );
     }
@@ -252,7 +257,11 @@ mod tests {
         let error = source
             .get_quorum_public_key(platform_quorum_type(), [7; 32], 1)
             .unwrap_err();
-        assert!(error.to_string().contains("not started"), "{error}");
+        assert!(
+            matches!(error, ContextProviderError::QuorumSourceUnavailable(ref message)
+                if message.contains("not started")),
+            "{error}"
+        );
     }
 
     /// The proof names its own quorum type, so only the network's Platform

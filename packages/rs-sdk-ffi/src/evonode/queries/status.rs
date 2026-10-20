@@ -419,7 +419,8 @@ mod tests {
             runtime: Arc::new(crate::runtime::BigStackRuntime::build_shared().expect("runtime")),
             trusted_provider: None,
             adaptive_provider: None,
-            spv_source_controller: None,
+            spv_source_slot: None,
+            local_contracts: None,
         });
         let handle = Box::into_raw(wrapper) as *mut SDKHandle;
 

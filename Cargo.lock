@@ -1814,12 +1814,14 @@ dependencies = [
 name = "dash-context-provider"
 version = "5.0.0-rc.4"
 dependencies = [
+ "arc-swap",
  "dash-async",
  "dpp",
  "drive",
  "hex",
  "serde_json",
  "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -5559,6 +5561,7 @@ dependencies = [
  "async-trait",
  "bs58",
  "cbindgen 0.27.0",
+ "dash-context-provider",
  "dash-network",
  "dash-sdk",
  "dashcore",
@@ -6709,11 +6712,11 @@ dependencies = [
 name = "rs-sdk-ffi"
 version = "5.0.0-rc.4"
 dependencies = [
- "arc-swap",
  "async-trait",
  "bs58",
  "cbindgen 0.27.0",
  "dash-async",
+ "dash-context-provider",
  "dash-network",
  "dash-sdk",
  "dotenvy",

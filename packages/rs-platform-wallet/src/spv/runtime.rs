@@ -260,9 +260,15 @@ impl SpvRuntime {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
     }
 
-    /// Whether dash-spv's current progress reports both header and
-    /// masternode-list synchronization complete.
+    /// Whether sync is running and dash-spv's current progress reports both
+    /// header and masternode-list synchronization complete.
+    ///
+    /// A failed sync keeps its last progress, so "synced" alone would vouch
+    /// for a masternode list that no longer follows the chain.
     pub async fn is_ready(&self) -> bool {
+        if !self.is_running() {
+            return false;
+        }
         self.sync_progress().await.is_some_and(|progress| {
             progress
                 .headers()

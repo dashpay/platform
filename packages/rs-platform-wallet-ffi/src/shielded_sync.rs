@@ -869,16 +869,14 @@ mod local_balance_tests {
             coordinator.mark_hydrated(wallet_id, true).await;
             (wallet_id, coordinator)
         });
-        let handle = PLATFORM_WALLET_MANAGER_STORAGE
-            .insert(PlatformWalletManagerHandle::new(manager, None, None));
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
         (handle, wallet_id, coordinator, path)
     }
 
     #[test]
     fn should_allow_registry_writer_and_stop_while_local_balance_snapshot_is_parked() {
         let (handle, wallet_id, coordinator, path) = bound_manager();
-        let unrelated_handle = PLATFORM_WALLET_MANAGER_STORAGE
-            .insert(PlatformWalletManagerHandle::new(mock_manager(), None, None));
+        let unrelated_handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
         // Model a scan owning the real store lock. Once the FFI snapshot has
         // cloned this coordinator, it cannot finish until this guard drops.
         let store_guard = runtime().block_on(coordinator.store().write());
