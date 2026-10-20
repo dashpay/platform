@@ -21,10 +21,14 @@
 //! network enforces.
 
 use crate::error::WasmSdkError;
-use crate::queries::document::{json_to_platform_value, parse_where_clause};
+use crate::queries::document::{
+    apply_integer_range_selections, json_to_platform_value, parse_time_range_clause,
+    parse_where_clause,
+};
 use crate::queries::utils::deserialize_required_query;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
+use dash_sdk::dash_platform_queries::documents::array_element_clauses::key_element_clauses;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dash_sdk::dpp::data_contract::document_type::DocumentTypeRef;
@@ -71,8 +75,8 @@ export type DocumentsAggregateSelect =
 
 /**
  * One pin on a compound ranked index's leading property, spelled like a
- * `DocumentsQuery` where clause: `[property, '==', value]`, or
- * `[property, 'in', values]`.
+ * `DocumentsQuery` where clause: `[property, '==', value]`,
+ * `[property, 'contains', element]`, or `[property, 'in', values]`.
  *
  * A compound ranked index keeps one ordered secondary per prefix value,
  * with no global ordering across prefixes — so a ranked read has to name
@@ -95,11 +99,17 @@ export type DocumentsAggregateSelect =
  * A `null` value is legal and addresses the subtree the write path
  * creates for an *absent* optional value.
  *
+ * `contains` pins a typed array property (protocol version 14+) whose
+ * index keys each element: it names the one element's prefix, as `==`
+ * names one value. `containsAny` is rejected: a ranking over several
+ * elements would count a document once per element it holds.
+ *
  * `>` / `<` / `between` / `startsWith` are all rejected: a range cannot
  * pin one prefix.
  */
 export type DocumentsIndexPin =
   | [string, '==' | '=', unknown]
+  | [string, 'contains' | 'Contains', unknown]
   | [string, 'in' | 'In', unknown[]];
 
 /** How a ranked / having-range walk runs along the aggregate axis. */
@@ -196,11 +206,39 @@ export interface DocumentsRankedQuery {
   offset?: number;
 
   /**
-   * Pins on the covering compound index's leading properties — `==`, or
-   * one bounded `in`. Omit entirely for a single-property ranked index.
+   * Pins on the covering compound index's leading properties — `==`
+   * (`contains` on a typed array), or one bounded `in`. Omit entirely
+   * for a single-property ranked index.
    * @default []
    */
   where?: DocumentsIndexPin[];
+
+  /**
+   * Optional time-range bucket selection — at most one entry, pinning the
+   * covering bucketed index's window (same shape and semantics as
+   * `DocumentsQuery.timeRange`). `"newest"`/`"oldest"` rank the current
+   * window; `"byStart"` ranks any window, current or historic, named by
+   * its grid-aligned start in milliseconds.
+   * @default []
+   */
+  timeRange?: {
+    field: string;
+    selector: "newest" | "oldest" | "byStart";
+    startMs?: number;
+    grid?: { range: number; step: number; phase?: number };
+  }[];
+
+  /**
+   * Optional integer-range window selection — at most one entry, pinning
+   * the covering bucketed index's window (same shape and semantics as
+   * `DocumentsQuery.integerRange`): the window starting at `start`.
+   * @default []
+   */
+  integerRange?: {
+    field: string;
+    start: number | string;
+    grid?: { range: number; step: number; phase?: number };
+  }[];
 }
 
 /**
@@ -288,12 +326,40 @@ export interface DocumentsHavingQuery {
   direction?: DocumentsRankDirection;
 
   /**
-   * Pins on the covering compound index's leading properties — `==`, or
-   * one bounded `in`. A having-range query has no `offset`, so the
-   * ranked surface's offset-versus-`in` exclusion does not arise here.
+   * Pins on the covering compound index's leading properties — `==`
+   * (`contains` on a typed array), or one bounded `in`. A having-range
+   * query has no `offset`, so the ranked surface's offset-versus-`in`
+   * exclusion does not arise here.
    * @default []
    */
   where?: DocumentsIndexPin[];
+
+  /**
+   * Optional time-range bucket selection — at most one entry, pinning the
+   * covering bucketed index's window (same shape and semantics as
+   * `DocumentsQuery.timeRange`). `"newest"`/`"oldest"` rank the current
+   * window; `"byStart"` ranks any window, current or historic, named by
+   * its grid-aligned start in milliseconds.
+   * @default []
+   */
+  timeRange?: {
+    field: string;
+    selector: "newest" | "oldest" | "byStart";
+    startMs?: number;
+    grid?: { range: number; step: number; phase?: number };
+  }[];
+
+  /**
+   * Optional integer-range window selection — at most one entry, pinning
+   * the covering bucketed index's window (same shape and semantics as
+   * `DocumentsQuery.integerRange`): the window starting at `start`.
+   * @default []
+   */
+  integerRange?: {
+    field: string;
+    start: number | string;
+    grid?: { range: number; step: number; phase?: number };
+  }[];
 }
 
 /** Which axis a returned aggregate value came from. */
@@ -499,6 +565,14 @@ struct DocumentsRankedQueryInput {
     /// `deny_unknown_fields` still holds).
     #[serde(rename = "where", default)]
     where_clauses: Option<Vec<JsonValue>>,
+    /// Time-range bucket selections — same shape as `DocumentsQuery`'s
+    /// `timeRange` member (`{ field, selector, startMs?, grid? }`).
+    #[serde(rename = "timeRange", default)]
+    time_range: Option<Vec<JsonValue>>,
+    /// Integer-range window selections — same shape as `DocumentsQuery`'s
+    /// `integerRange` member (`{ field, start, grid? }`).
+    #[serde(rename = "integerRange", default)]
+    integer_range: Option<Vec<JsonValue>>,
 }
 
 #[derive(Deserialize)]
@@ -514,6 +588,14 @@ struct DocumentsHavingQueryInput {
     direction: Option<String>,
     #[serde(rename = "where", default)]
     where_clauses: Option<Vec<JsonValue>>,
+    /// Time-range bucket selections — same shape as `DocumentsQuery`'s
+    /// `timeRange` member (`{ field, selector, startMs?, grid? }`).
+    #[serde(rename = "timeRange", default)]
+    time_range: Option<Vec<JsonValue>>,
+    /// Integer-range window selections — same shape as `DocumentsQuery`'s
+    /// `integerRange` member (`{ field, start, grid? }`).
+    #[serde(rename = "integerRange", default)]
+    integer_range: Option<Vec<JsonValue>>,
 }
 
 /// Translate the JS aggregate union into rs-drive's `SELECT` projection.
@@ -693,12 +775,21 @@ fn assert_ranked_shape(
     query: &DocumentQuery,
     platform_version: &PlatformVersion,
 ) -> Result<(), WasmSdkError> {
+    // The server keys a typed array's `contains` pin as an equality first.
+    let where_clauses = key_element_clauses(
+        &query.data_contract,
+        &query.document_type_name,
+        query.where_clauses.clone(),
+        false,
+        platform_version,
+    )
+    .map_err(|e| WasmSdkError::invalid_argument(format!("not a well-formed ranked query: {e}")))?;
     detect_ranked_mode(
         &query.select,
         &query.group_by,
         &query.having,
         &query.order_by_clauses,
-        &query.where_clauses,
+        &where_clauses,
         pagination_inputs(query),
         platform_version,
     )
@@ -707,8 +798,8 @@ fn assert_ranked_shape(
         WasmSdkError::invalid_argument(format!(
             "not a well-formed ranked query: {e}. A ranked query is \
              {{ groupBy, aggregate, limit }} plus optional {{ direction, offset, where }}; \
-             `where` entries must be `==` pins on the covering compound index's leading \
-             properties."
+             `where` entries pin the covering compound index's leading properties with \
+             `==` (`contains` on a typed array), or one bounded `in`."
         ))
     })
 }
@@ -718,12 +809,23 @@ fn assert_having_shape(
     query: &DocumentQuery,
     platform_version: &PlatformVersion,
 ) -> Result<(), WasmSdkError> {
+    // The server keys a typed array's `contains` pin as an equality first.
+    let where_clauses = key_element_clauses(
+        &query.data_contract,
+        &query.document_type_name,
+        query.where_clauses.clone(),
+        false,
+        platform_version,
+    )
+    .map_err(|e| {
+        WasmSdkError::invalid_argument(format!("not a well-formed having-range query: {e}"))
+    })?;
     detect_having_mode(
         &query.select,
         &query.group_by,
         &query.having,
         &query.order_by_clauses,
-        &query.where_clauses,
+        &where_clauses,
         pagination_inputs(query),
         platform_version,
     )
@@ -735,6 +837,26 @@ fn assert_having_shape(
              the bound must describe one contiguous range over the selected aggregate."
         ))
     })
+}
+
+/// Attach the (at most one) time-range selection to an already-built
+/// query. The selection stays pending — the server resolves it from
+/// committed block time, the proof verifier from the signed metadata
+/// time (or, for `byStart`, from the query itself) — and its resolved
+/// bucket-start equality becomes the pin on the covering bucketed
+/// index's first level.
+fn apply_time_range_selections(
+    mut query: DocumentQuery,
+    entries: Option<&[JsonValue]>,
+) -> Result<DocumentQuery, WasmSdkError> {
+    for entry in entries.unwrap_or(&[]) {
+        let (field, selector, grid) = parse_time_range_clause(entry)?;
+        query = match grid {
+            None => query.with_time_range(field, selector),
+            Some(grid) => query.with_time_range_grid(field, selector, grid),
+        };
+    }
+    Ok(query)
 }
 
 /// Turn a `where` list into pins on an already-built query.
@@ -786,6 +908,8 @@ fn apply_ranked_shape(
     }
 
     let query = apply_index_pins(query, input.where_clauses.as_deref())?;
+    let query = apply_time_range_selections(query, input.time_range.as_deref())?;
+    let query = apply_integer_range_selections(query, input.integer_range.as_deref())?;
 
     assert_ranked_shape(&query, platform_version)?;
     Ok(query)
@@ -824,6 +948,8 @@ fn apply_having_shape(
     }
 
     let query = apply_index_pins(query, input.where_clauses.as_deref())?;
+    let query = apply_time_range_selections(query, input.time_range.as_deref())?;
+    let query = apply_integer_range_selections(query, input.integer_range.as_deref())?;
 
     assert_having_shape(&query, platform_version)?;
     Ok(query)
@@ -1498,6 +1624,8 @@ mod tests {
         where_clauses: Option<Vec<JsonValue>>,
     ) -> DocumentsRankedQueryInput {
         DocumentsRankedQueryInput {
+            time_range: None,
+            integer_range: None,
             data_contract_id: any_contract_id(),
             document_type_name: DOC_TYPE.to_string(),
             group_by: group_by.to_string(),
@@ -1516,6 +1644,8 @@ mod tests {
         direction: Option<&str>,
     ) -> DocumentsHavingQueryInput {
         DocumentsHavingQueryInput {
+            time_range: None,
+            integer_range: None,
             data_contract_id: any_contract_id(),
             document_type_name: DOC_TYPE.to_string(),
             group_by: GROUP_BY.to_string(),
@@ -2263,6 +2393,29 @@ mod tests {
                  DocumentsAggregateKind union"
             );
         }
+    }
+
+    /// The ranked and having grammars key a typed array's `contains` pin as
+    /// an equality and refuse `containsAny`. The pin union has to say the
+    /// same, or TypeScript callers cast a working pin past it.
+    #[test]
+    fn index_pin_union_takes_contains_but_not_contains_any() {
+        const DECLARATION: &str = "export type DocumentsIndexPin =";
+        let source = typescript_source();
+        let start = source
+            .find(DECLARATION)
+            .expect("this module declares the pin union");
+        let union = &source[start..];
+        let union = &union[..union.find(';').expect("the pin union ends")];
+
+        assert!(
+            union.contains("'contains'"),
+            "a `contains` pin is answered but absent from DocumentsIndexPin"
+        );
+        assert!(
+            !union.contains("containsAny") && !union.contains("ContainsAny"),
+            "a `containsAny` pin is refused but present in DocumentsIndexPin"
+        );
     }
 
     /// `#[wasm_bindgen(typescript_custom_section)]` consumes the const it

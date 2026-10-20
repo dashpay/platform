@@ -45,6 +45,7 @@ describe('getCoreScopeFactory', () => {
       config.get.withArgs('core.rpc.port').returns('8080');
       config.get.withArgs('core.p2p.port').returns('8081');
       config.get.withArgs('externalIp').returns('127.0.0.1');
+      config.get.withArgs('core.tor.enabled').returns(false);
 
       network = config.get('network');
       rpcService = `127.0.0.1:${config.get('core.rpc.port')}`;
@@ -91,6 +92,8 @@ describe('getCoreScopeFactory', () => {
         network,
         p2pService: '127.0.0.1:8081',
         rpcService: '127.0.0.1:8080',
+        torEnabled: false,
+        onionService: null,
         version: '0.17.0.3',
         chain: 'test',
         latestVersion: 'v1337-dev',
@@ -119,6 +122,8 @@ describe('getCoreScopeFactory', () => {
         network,
         p2pService,
         rpcService,
+        torEnabled: false,
+        onionService: null,
         version: null,
         chain: null,
         latestVersion: null,
@@ -148,6 +153,8 @@ describe('getCoreScopeFactory', () => {
         network,
         p2pService,
         rpcService,
+        torEnabled: false,
+        onionService: null,
         version: null,
         chain: null,
         latestVersion: null,
@@ -178,6 +185,8 @@ describe('getCoreScopeFactory', () => {
         network,
         p2pService,
         rpcService,
+        torEnabled: false,
+        onionService: null,
         version: null,
         chain: null,
         latestVersion: null,
@@ -232,6 +241,8 @@ describe('getCoreScopeFactory', () => {
         network,
         p2pService,
         rpcService,
+        torEnabled: false,
+        onionService: null,
         version: null,
         chain: null,
         latestVersion: 'v1337-dev',
@@ -282,6 +293,8 @@ describe('getCoreScopeFactory', () => {
         network,
         p2pService: '127.0.0.1:8081',
         rpcService: '127.0.0.1:8080',
+        torEnabled: false,
+        onionService: null,
         version: '0.17.0.3',
         chain: 'test',
         latestVersion: null,
@@ -299,6 +312,42 @@ describe('getCoreScopeFactory', () => {
       };
 
       expect(scope).to.deep.equal(expectedScope);
+    });
+
+    it('should report the onion service Core published when Tor is enabled', async function it() {
+      config.get.withArgs('core.tor.enabled').returns(true);
+
+      mockDockerCompose.isServiceRunning.resolves(true);
+      mockDetermineDockerStatus.returns(DockerStatusEnum.running);
+
+      mockRpcClient.mnsync.returns({
+        result: { AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED },
+      });
+      mockRpcClient.getNetworkInfo.returns({
+        result: {
+          subversion: '/Dash Core:0.17.0.3/',
+          connections: 1,
+          localaddresses: [
+            { address: '1.2.3.4', port: 9999, score: 1 },
+            { address: 'yz5fl3xg2vhl5jldp7ncctolp7n5fpbwbc3enkzptuubn4lqm3q6xxad.onion', port: 9999, score: 4 },
+          ],
+        },
+      });
+      mockRpcClient.getBlockchainInfo.returns({
+        result: {
+          difficulty: 1, blocks: 2, headers: 3, chain: 'test', size_on_disk: 1337, verificationprogress: 1,
+        },
+      });
+
+      mockGithubProvider.rejects();
+      mockMNOWatchProvider.rejects();
+      mockInsightProvider.returns({ status: this.sinon.stub().rejects() });
+
+      const scope = await getCoreScope(config);
+
+      expect(scope.torEnabled).to.equal(true);
+      expect(scope.onionService)
+        .to.equal('yz5fl3xg2vhl5jldp7ncctolp7n5fpbwbc3enkzptuubn4lqm3q6xxad.onion:9999');
     });
   });
 });

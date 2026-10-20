@@ -13,6 +13,9 @@ pub mod document_transition;
 pub mod token_transition;
 
 /// token action
+// A short-lived value of one state transition's processing, like the document action it
+// holds
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, From)]
 pub enum BatchedTransitionAction {
     /// document

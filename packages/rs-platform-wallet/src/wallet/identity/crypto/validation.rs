@@ -401,6 +401,7 @@ pub fn pubkey_binds_expected_key_data(derived_pubkey: &[u8; 33], expected_key_da
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::{IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::Identifier;
@@ -482,7 +483,7 @@ mod tests {
     fn test_sender_wrong_purpose() {
         // VOTING, not AUTHENTICATION: the legacy dashj cohort pairs an
         // AUTHENTICATION sender key with an AUTHENTICATION recipient key and
-        // is now accepted on receive, so AUTHENTICATION no longer exercises
+        // is accepted on receive, so AUTHENTICATION does not exercise
         // the sender-side rejection this test is about.
         let sender = make_identity(vec![make_key(0, KeyType::ECDSA_SECP256K1, Purpose::VOTING)]);
         let recipient = make_identity(vec![make_key(
@@ -533,8 +534,7 @@ mod tests {
     #[test]
     fn test_disabled_sender_key() {
         let mut key = make_key(0, KeyType::ECDSA_SECP256K1, Purpose::ENCRYPTION);
-        let IdentityPublicKey::V0(ref mut k) = key;
-        k.disabled_at = Some(12345);
+        key.set_disabled_at(12345);
         let sender = make_identity(vec![key]);
         let recipient = make_identity(vec![make_key(
             0,
@@ -851,12 +851,11 @@ mod tests {
     /// Derive the compressed secp256k1 pubkey (`[u8; 33]`) for a fixed
     /// in-range scalar — the shape a breadcrumb re-derivation produces.
     fn fixed_scalar_and_compressed_pubkey() -> ([u8; 32], [u8; 33]) {
-        use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+        use dashcore::secp256k1::{PublicKey, SecretKey};
         let mut scalar = [0u8; 32];
         scalar[31] = 7;
-        let secp = Secp256k1::new();
-        let sk = SecretKey::from_slice(&scalar).expect("in-range scalar");
-        let pubkey = PublicKey::from_secret_key(&secp, &sk).serialize();
+        let sk = SecretKey::from_secret_bytes(scalar).expect("in-range scalar");
+        let pubkey = PublicKey::from_secret_key(&sk).serialize();
         (scalar, pubkey)
     }
 

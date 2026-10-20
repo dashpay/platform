@@ -24,10 +24,12 @@
 ## Checklist:
 <!--- Go over all the following points, and put an `x` in all the boxes that apply. -->
 - [ ] I have performed a self-review of my own code
+- [ ] My Rust, FFI, WASM, Swift or Kotlin changes follow [the coding conventions](https://github.com/dashpay/platform/blob/HEAD/book/src/contributing/coding-conventions.md)
 - [ ] I have commented my code, particularly in hard-to-understand areas
 - [ ] I have added or updated relevant unit/integration/functional/e2e tests
 - [ ] I have added "!" to the title and described breaking changes in the corresponding section if my code contains any
 - [ ] I have made corresponding changes to the documentation if needed
+- [ ] If I added or changed GroveDB structure, I described it in the area's `structure.rs`, regenerated `grovedb-structure.json`, and checked the structure viewer link posted on this pull request
 
 **For repository code-owners and collaborators only**
 - [ ] I have assigned this pull request to a milestone

@@ -15,6 +15,9 @@
     "getIdentityContractNonce": {
       "status": "implemented"
     },
+    "getIdentityKeysRemainingBudgets": {
+      "status": "implemented"
+    },
     "getIdentityBalance": {
       "status": "implemented"
     },
@@ -36,7 +39,22 @@
     "getDataContractHistory": {
       "status": "implemented"
     },
+    "getDataContractsLatestVersions": {
+      "status": "implemented"
+    },
+    "getContractGroupInfo": {
+      "status": "implemented"
+    },
+    "getContractGroupMembers": {
+      "status": "implemented"
+    },
+    "getContractGroupsForContract": {
+      "status": "implemented"
+    },
     "getDataContracts": {
+      "status": "implemented"
+    },
+    "getDataContractsByRange": {
       "status": "implemented"
     },
     "getDocuments": {

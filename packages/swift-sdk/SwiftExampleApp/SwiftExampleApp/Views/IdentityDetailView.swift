@@ -111,7 +111,7 @@ struct IdentityDetailView: View {
                         }
 
                     // Show the main name if selected, otherwise show first registered name
-                    if let mainName = identity.mainDpnsName {
+                    if let mainName = identity.ownedMainDpnsName {
                         HStack {
                             Label(mainName, systemImage: "star.fill")
                                 .font(.subheadline)
@@ -386,6 +386,23 @@ struct IdentityDetailView: View {
                         }
                     }
                     .padding(.vertical, 4)
+                }
+
+                // Bluetooth login-key sharing needs the wallet's
+                // MASTER key to sign the key registration, so it is
+                // only offered when the owning wallet is loaded.
+                if hasLoadedWallet(for: identity) {
+                    NavigationLink(destination: ShareLoginKeyView(identity: identity)
+                        .environmentObject(appState)
+                        .environmentObject(walletManager)
+                    ) {
+                        HStack {
+                            Image(systemName: "antenna.radiowaves.left.and.right")
+                            Text("Share Login Key with Browser")
+                                .fontWeight(.medium)
+                        }
+                        .padding(.vertical, 4)
+                    }
                 }
             }
 

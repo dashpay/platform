@@ -46,6 +46,11 @@ class AppState: ObservableObject {
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostPlatform")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhostCore")
             UserDefaults.standard.set(useDockerSetup, forKey: "useLocalhost")
+            // Docker endpoints only matter on regtest. The Options picker turns
+            // Docker off after it has published the next network, whose own
+            // `currentNetwork` rebuild then picks the flag up; rebuilding here
+            // too would race that rebuild.
+            guard currentNetwork == .regtest else { return }
             Task { await switchNetwork(to: currentNetwork) }
         }
     }
@@ -317,12 +322,15 @@ class AppState: ObservableObject {
                         NSLog("   Platform version: \(version)")
                     } else if let id = dict["id"] as? String {
                         NSLog("   ID: \(id)")
-                    } else if let balance = dict["balance"] as? UInt64 {
+                    } else if let balance = UInt64(jsonValue: dict["balance"]) {
+                        // Credits are a protocol `u64`: DPP writes one above
+                        // 2^53 - 1 as a decimal string, which a bare cast
+                        // dropped to the generic "Result:" line below.
                         NSLog("   Balance: \(balance)")
                     } else {
                         NSLog("   Result: \(dict.keys.prefix(3).joined(separator: ", "))...")
                     }
-                } else if let uint = result as? UInt64 {
+                } else if let uint = UInt64(jsonValue: result) {
                     NSLog("   Value: \(uint)")
                 } else if let bool = result as? Bool {
                     NSLog("   Available: \(bool)")

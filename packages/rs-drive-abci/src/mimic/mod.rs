@@ -8,18 +8,18 @@ use crate::execution::types::block_execution_context::v0::BlockExecutionContextV
 use crate::execution::types::block_state_info::v0::BlockStateInfoV0Getters;
 use crate::mimic::test_quorum::TestQuorumInfo;
 use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::{
-    make_extend_vote_request_id, UnsignedWithdrawalTxs,
+    tx_to_extend_vote_extension, UnsignedWithdrawalTxs,
 };
 use crate::rpc::core::CoreRPCLike;
 use ciborium::Value as CborValue;
 use dpp::block::block_info::BlockInfo;
-use dpp::bls_signatures::SignatureSchemes;
+
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::string_encoding::{decode, Encoding};
 use dpp::platform_value::Value;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializableUntrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::PlatformVersion;
@@ -29,14 +29,14 @@ use rand::{Rng, SeedableRng};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{
-    CommitInfo, ExecTxResult, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal,
-    RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal,
-    ValidatorSetUpdate,
+    CommitInfo, ExecTxResult, ExtendVoteExtension, RequestExtendVote, RequestFinalizeBlock,
+    RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension,
+    ResponsePrepareProposal, ValidatorSetUpdate,
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
     Block, BlockId, CanonicalVote, Data, EvidenceList, Header, PartSetHeader, SignedMsgType,
-    StateId, VoteExtension, VoteExtensionType,
+    StateId, VoteExtension,
 };
 use tenderdash_abci::proto::ToMillis;
 use tenderdash_abci::signatures::Hashable;
@@ -209,7 +209,7 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
                 let serialized_error = data_map.get_bytes("serializedError").unwrap();
 
                 // Deserialize the consensus error
-                let error = ConsensusError::deserialize_from_bytes(&serialized_error)
+                let error = ConsensusError::deserialize_from_bytes_untrusted(&serialized_error)
                     .expect("expected to deserialize consensus error");
 
                 Err(Error::Abci(AbciError::InvalidStateTransition(error)))
@@ -464,11 +464,15 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
             .unsigned_withdrawal_transactions
             .iter()
             .map(|tx| {
-                let sign_request_id = Some(make_extend_vote_request_id(tx));
+                let ExtendVoteExtension {
+                    r#type,
+                    extension,
+                    sign_request_id,
+                } = tx_to_extend_vote_extension(tx);
 
                 VoteExtension {
-                    r#type: VoteExtensionType::ThresholdRecoverRaw as i32,
-                    extension: tx.txid().to_byte_array().to_vec(),
+                    r#type,
+                    extension,
                     sign_request_id,
                     signature: vec![0; 96], //todo: signature
                 }
@@ -538,10 +542,10 @@ impl<C: CoreRPCLike> FullAbciApplication<'_, C> {
                     );
             let block_signature = current_quorum
                 .private_key
-                .sign(SignatureSchemes::Basic, digest.as_slice())
+                .sign(digest.as_slice())
                 .expect("expected to be able to sign");
 
-            commit_info.block_signature = block_signature.as_raw_value().to_compressed().to_vec();
+            commit_info.block_signature = block_signature.to_bytes().to_vec();
         } else {
             commit_info.block_signature = [0u8; 96].to_vec();
         }

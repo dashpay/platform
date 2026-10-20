@@ -13,12 +13,14 @@ use drive::grovedb::TransactionArg;
 
 pub mod v0;
 pub mod v1;
+pub mod v2;
 
 /// Validates the contract bounds attached to each public key in `identity_public_keys_with_witness`.
 ///
 /// `epoch` is used by v1+ to bill the underlying grovedb reads to `execution_context`; v0
 /// ignores it (v0 didn't bill these reads — pre-PROTOCOL_VERSION_12 behavior is preserved
 /// verbatim for chain replay).
+#[allow(clippy::too_many_arguments)] // Keep explicit versioned validation inputs.
 pub(crate) fn validate_identity_public_keys_contract_bounds(
     identity_id: Identifier,
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
@@ -55,9 +57,18 @@ pub(crate) fn validate_identity_public_keys_contract_bounds(
             execution_context,
             platform_version,
         ),
+        2 => v2::validate_identity_public_keys_contract_bounds_v2(
+            identity_id,
+            identity_public_keys_with_witness,
+            drive,
+            epoch,
+            transaction,
+            execution_context,
+            platform_version,
+        ),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "validate_identity_public_keys_contract_bounds".to_string(),
-            known_versions: vec![0, 1],
+            known_versions: vec![0, 1, 2],
             received: version,
         })),
     }
@@ -74,12 +85,15 @@ mod tests {
     //! v0's behavior is frozen for chain replay — the v0 assertion below pins it.
     use super::v0::validate_identity_public_keys_contract_bounds_v0;
     use super::v1::validate_identity_public_keys_contract_bounds_v1;
+    use super::v2::validate_identity_public_keys_contract_bounds_v2;
     use super::validate_identity_public_keys_contract_bounds;
     use crate::execution::types::execution_operation::ValidationOperation;
     use crate::execution::types::state_transition_execution_context::{
         StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
     };
-    use crate::test::helpers::setup::TestPlatformBuilder;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::contract_groups::{register_group, single_owner_info};
+    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
     use dpp::consensus::basic::BasicError;
@@ -438,14 +452,14 @@ mod tests {
     }
 
     /// Covers the integration this PR is wiring up — that the public dispatcher actually
-    /// routes to v1 under `PlatformVersion::latest()` (which sets the bounds-validator
-    /// version field to 1) and that the `epoch` parameter is forwarded through. If the
+    /// routes legacy bounds through v1 under `PlatformVersion::latest()` (which sets the bounds-validator
+    /// version field to 2) and that the `epoch` parameter is forwarded through. If the
     /// dispatcher were accidentally routing to v0 — which has the DECRYPTION-branch bug —
     /// the assertion below would flip from `is_valid` to invalid.
     #[test]
-    fn dispatcher_routes_to_v1_at_latest_platform_version() {
+    fn dispatcher_preserves_v1_encryption_rules_at_latest_platform_version() {
         let platform_version = PlatformVersion::latest();
-        // Sanity: `latest` should select v1 of the bounds validator.
+        // Sanity: `latest` should select v2 of the bounds validator.
         assert_eq!(
             platform_version
                 .drive_abci
@@ -453,8 +467,8 @@ mod tests {
                 .state_transitions
                 .common_validation_methods
                 .validate_identity_public_key_contract_bounds,
-            1,
-            "test premise: latest platform version is expected to select v1; \
+            2,
+            "test premise: latest platform version is expected to select v2; \
              update this test if the version field moves"
         );
 
@@ -510,5 +524,290 @@ mod tests {
             "dispatcher must forward epoch to v1 so reads get billed; got {} entries",
             billed_count
         );
+    }
+    #[test]
+    fn should_validate_bound_authentication_keys_against_contracts() {
+        use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+        let version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        // The contract declares no authentication opt-in: any contract may bind an
+        // authentication key, unlike encryption and decryption bounds.
+        let contract = build_contract_with_decryption_only_bounds(version);
+        platform
+            .drive
+            .apply_contract(&contract, BlockInfo::default(), true, None, None, version)
+            .unwrap();
+        for case in [
+            "valid_type",
+            "valid_contract",
+            "missing_type",
+            "missing_contract",
+            "wrong_purpose",
+            "master",
+        ] {
+            let id = if case == "missing_contract" {
+                Identifier::from([42; 32])
+            } else {
+                contract.id()
+            };
+            let bounds = match case {
+                "valid_contract" => ContractBounds::SingleContract { id },
+                "missing_type" => ContractBounds::SingleContractDocumentType {
+                    id,
+                    document_type_name: "absent".into(),
+                },
+                _ => ContractBounds::SingleContractDocumentType {
+                    id,
+                    document_type_name: "note".into(),
+                },
+            };
+            let mut key = make_decryption_key_bound_to_doc_type(contract.id(), "note".into());
+            key.set_contract_bounds(Some(bounds));
+            key.set_purpose(if case == "wrong_purpose" {
+                Purpose::TRANSFER
+            } else {
+                Purpose::AUTHENTICATION
+            });
+            key.set_security_level(if case == "master" {
+                SecurityLevel::MASTER
+            } else {
+                SecurityLevel::HIGH
+            });
+            let mut context =
+                StateTransitionExecutionContext::default_for_platform_version(version).unwrap();
+            let result = validate_identity_public_keys_contract_bounds(
+                Identifier::from([1; 32]),
+                &[key],
+                &platform.drive,
+                &Epoch::new(0).unwrap(),
+                None,
+                &mut context,
+                version,
+            )
+            .unwrap();
+            assert_eq!(
+                result.is_valid(),
+                case.starts_with("valid"),
+                "{case}: {:?}",
+                result.errors
+            );
+        }
+    }
+
+    // ---- contract group bounds (validation v2, protocol version 14) ----
+
+    fn key_bound_to_contract_group(
+        purpose: Purpose,
+        security_level: SecurityLevel,
+        contract_group_id: Identifier,
+    ) -> IdentityPublicKeyInCreation {
+        IdentityPublicKeyInCreationV0 {
+            id: 1,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose,
+            security_level,
+            contract_bounds: Some(ContractBounds::ContractGroup {
+                id: contract_group_id,
+            }),
+            read_only: false,
+            data: BinaryData::new(vec![1u8; 33]),
+            signature: BinaryData::default(),
+        }
+        .into()
+    }
+
+    fn platform_with_contract_group(
+        contract_group_id: Identifier,
+    ) -> TempPlatform<MockCoreRPCLike> {
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+        register_group(
+            &platform,
+            contract_group_id,
+            &single_owner_info(Identifier::from([0x60; 32]), None, None),
+            PlatformVersion::latest(),
+        );
+        platform
+    }
+
+    fn billed_reads(execution_context: &StateTransitionExecutionContext) -> usize {
+        execution_context
+            .operations_slice()
+            .iter()
+            .filter(|op| matches!(op, ValidationOperation::PrecalculatedOperation(_)))
+            .count()
+    }
+
+    #[test]
+    fn should_admit_an_authentication_key_bound_to_an_existing_contract_group_and_bill_one_read() {
+        let platform_version = PlatformVersion::latest();
+        let contract_group_id = Identifier::from([0x61; 32]);
+        let platform = platform_with_contract_group(contract_group_id);
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("execution context");
+        let result = validate_identity_public_keys_contract_bounds_v2(
+            Identifier::random(),
+            &[key_bound_to_contract_group(
+                Purpose::AUTHENTICATION,
+                SecurityLevel::HIGH,
+                contract_group_id,
+            )],
+            &platform.drive,
+            &Epoch::new(0).expect("epoch 0"),
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("v2 returns Ok");
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert_eq!(billed_reads(&execution_context), 1);
+    }
+
+    #[test]
+    fn should_reject_a_key_bound_to_an_unknown_contract_group_and_still_bill_the_read() {
+        use dpp::consensus::state::state_error::StateError;
+        let platform_version = PlatformVersion::latest();
+        let platform = platform_with_contract_group(Identifier::from([0x61; 32]));
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("execution context");
+        let result = validate_identity_public_keys_contract_bounds_v2(
+            Identifier::random(),
+            &[key_bound_to_contract_group(
+                Purpose::AUTHENTICATION,
+                SecurityLevel::HIGH,
+                Identifier::from([0x99; 32]),
+            )],
+            &platform.drive,
+            &Epoch::new(0).expect("epoch 0"),
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("v2 returns Ok");
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [ConsensusError::StateError(
+                    StateError::ContractGroupNotFoundError(_)
+                )]
+            ),
+            "{:?}",
+            result.errors
+        );
+        assert_eq!(billed_reads(&execution_context), 1);
+    }
+
+    #[test]
+    fn should_refuse_contract_group_bounds_on_other_purposes_and_on_master_keys_without_a_read() {
+        let platform_version = PlatformVersion::latest();
+        let contract_group_id = Identifier::from([0x61; 32]);
+        let platform = platform_with_contract_group(contract_group_id);
+        for purpose in [Purpose::ENCRYPTION, Purpose::DECRYPTION, Purpose::TRANSFER] {
+            let mut execution_context =
+                StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                    .expect("execution context");
+            let result = validate_identity_public_keys_contract_bounds_v2(
+                Identifier::random(),
+                &[key_bound_to_contract_group(
+                    purpose,
+                    SecurityLevel::MEDIUM,
+                    contract_group_id,
+                )],
+                &platform.drive,
+                &Epoch::new(0).expect("epoch 0"),
+                None,
+                &mut execution_context,
+                platform_version,
+            )
+            .expect("v2 returns Ok");
+            match result.errors.as_slice() {
+                [ConsensusError::BasicError(
+                    BasicError::InvalidKeyPurposeForContractBoundsError(error),
+                )] => {
+                    assert_eq!(error.given_key_purpose(), purpose);
+                    assert_eq!(error.allowed_key_purposes(), &vec![Purpose::AUTHENTICATION]);
+                }
+                other => panic!("{purpose}: expected the purpose to be refused, got {other:?}"),
+            }
+            assert_eq!(billed_reads(&execution_context), 0, "{purpose}");
+        }
+
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("execution context");
+        let result = validate_identity_public_keys_contract_bounds_v2(
+            Identifier::random(),
+            &[key_bound_to_contract_group(
+                Purpose::AUTHENTICATION,
+                SecurityLevel::MASTER,
+                contract_group_id,
+            )],
+            &platform.drive,
+            &Epoch::new(0).expect("epoch 0"),
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("v2 returns Ok");
+        assert!(
+            matches!(
+                result.errors.as_slice(),
+                [ConsensusError::BasicError(
+                    BasicError::InvalidIdentityPublicKeySecurityLevelError(_)
+                )]
+            ),
+            "{:?}",
+            result.errors
+        );
+        assert_eq!(billed_reads(&execution_context), 0);
+    }
+
+    #[test]
+    fn should_refuse_contract_group_bounds_under_the_earlier_validation_versions() {
+        let platform_version = PlatformVersion::latest();
+        let contract_group_id = Identifier::from([0x61; 32]);
+        let platform = platform_with_contract_group(contract_group_id);
+        let key = key_bound_to_contract_group(
+            Purpose::AUTHENTICATION,
+            SecurityLevel::HIGH,
+            contract_group_id,
+        );
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("execution context");
+        let v0 = validate_identity_public_keys_contract_bounds_v0(
+            Identifier::random(),
+            std::slice::from_ref(&key),
+            &platform.drive,
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("v0 returns Ok");
+        let v1 = validate_identity_public_keys_contract_bounds_v1(
+            Identifier::random(),
+            std::slice::from_ref(&key),
+            &platform.drive,
+            &Epoch::new(0).expect("epoch 0"),
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("v1 returns Ok");
+        for (version, result) in [("v0", v0), ("v1", v1)] {
+            match result.errors.as_slice() {
+                [ConsensusError::BasicError(
+                    BasicError::InvalidKeyPurposeForContractBoundsError(error),
+                )] => assert!(error.allowed_key_purposes().is_empty(), "{version}"),
+                other => panic!("{version}: expected the bounds to be refused, got {other:?}"),
+            }
+        }
+        assert_eq!(billed_reads(&execution_context), 0);
     }
 }

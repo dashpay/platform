@@ -2,13 +2,12 @@
 
 use std::ffi::CString;
 
-use dashcore::secp256k1::Secp256k1;
 use dashcore::PrivateKey as DashPrivateKey;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
 };
-use key_wallet::mnemonic::{Language, Mnemonic};
+use key_wallet::mnemonic::Mnemonic;
 use zeroize::Zeroizing;
 
 use crate::error::*;
@@ -55,24 +54,11 @@ pub(crate) unsafe fn zeroize_and_free_row(row: &mut IdentityKeyPreviewFFI) {
 
 /// Parse a BIP-39 mnemonic against every supported wordlist.
 pub(crate) fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
-    const LANGUAGES: [Language; 10] = [
-        Language::English,
-        Language::Spanish,
-        Language::French,
-        Language::Italian,
-        Language::Japanese,
-        Language::Korean,
-        Language::ChineseSimplified,
-        Language::ChineseTraditional,
-        Language::Czech,
-        Language::Portuguese,
-    ];
-    for lang in LANGUAGES {
-        if let Ok(m) = Mnemonic::from_phrase(phrase, lang) {
-            return Ok(m);
-        }
-    }
-    Err("phrase does not match any supported BIP-39 wordlist")
+    // Upstream's `from_phrase` IS the auto-detecting parse since
+    // rust-dashcore#981 — one path, English diagnostics preserved when
+    // nothing matches. This wrapper survives only to narrow the error to
+    // the `&'static str` its callers report.
+    Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
 }
 
 /// Resolve a wallet's BIP-39 mnemonic via a Swift-owned
@@ -332,7 +318,6 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
 
     let kw_network: Network = network.into();
     let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(kw_network, seed.as_ref()));
-    let secp = Secp256k1::new();
 
     let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(key_count as usize);
 
@@ -360,7 +345,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
             }
         };
 
-        let derived = match master.derive_priv(&secp, &path) {
+        let derived = match master.derive_priv(&path) {
             Ok(d) => d,
             Err(e) => {
                 cleanup(rows);
@@ -373,7 +358,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
                 );
             }
         };
-        let extended_pub = ExtendedPubKey::from_priv(&secp, &derived);
+        let extended_pub = ExtendedPubKey::from_priv(&derived);
         let public_key = extended_pub.public_key;
 
         let path_cstring = match CString::new(path.to_string()) {
@@ -417,7 +402,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
             public_key: pub_ptr,
             public_key_len: pub_len,
             private_key_wif: wif_cstring.into_raw(),
-            private_key_bytes: derived.private_key.secret_bytes(),
+            private_key_bytes: derived.private_key.to_secret_bytes(),
         });
     }
 
@@ -641,7 +626,7 @@ mod resolve_classification_tests {
     ) -> i32 {
         let phrase = b"not a bip39 phrase at all";
         assert!(cap >= phrase.len());
-        std::ptr::copy_nonoverlapping(phrase.as_ptr(), out as *mut u8, phrase.len());
+        std::ptr::copy_nonoverlapping(phrase.as_ptr(), out.cast::<u8>(), phrase.len());
         *out_len = phrase.len();
         mnemonic_resolver_result::SUCCESS
     }

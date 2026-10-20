@@ -27,7 +27,10 @@
 //!   order-independent (the two legacy wallets differ in param order).
 //! - `islock` is optional: a missing param **and** the literal string `"null"`
 //!   (which Android emits for chainlock-confirmed invites) both mean "no instant
-//!   lock" — the claim reconstructs a ChainLock proof instead.
+//!   lock" — the claim reconstructs a ChainLock proof instead. The hex decodes
+//!   as the deterministic InstantSend lock; a lock in the older
+//!   non-deterministic format does not decode, so the claim fails rather than
+//!   guessing (no live wallet emits that format).
 //! - `assetlocktx` is kept as the raw hex string; the claim tries it as-given
 //!   then byte-reversed on a fetch miss, mirroring the legacy endianness retry.
 //!
@@ -40,10 +43,32 @@
 //! force a large allocation; the WIF is decoded + compression-checked at parse,
 //! and its network is validated against the wallet at claim (a wrong-network WIF
 //! is a valid key on the wrong chain, caught before the funding fetch).
+//!
+//! What the design does and does not protect against:
+//! - Every theft reduces to "who holds the link". Platform checks the claim's
+//!   signature against the key of the asset-lock output, and the new identity's
+//!   id is derived from the funding outpoint, so someone who watches a claim in
+//!   flight but lacks the voucher key cannot redirect it, and two racing claims
+//!   target the same identity (exactly one commits).
+//! - The inviter can always re-derive the voucher key, so after handing over a
+//!   link it can still claim or reclaim the voucher first. Nothing is stolen
+//!   (the funds were the inviter's), but the invitee is denied onboarding with
+//!   no sign of why. For the same reason, reclaiming a leaked link is a race the
+//!   inviter can lose.
+//! - Nothing signs the link, so whoever controls the channel it travels over
+//!   can swap in a different invite. The worst outcome is the invitee sending a
+//!   contact request to the attacker's identity, which an ordinary contact
+//!   request achieves anyway. Signing would not help: the channel is the trust
+//!   root.
+//! - Because the identity id comes from the funding outpoint, the inviter knows
+//!   the invitee's identity id before the invitee claims it.
+//! - The legacy wallets wrapped the link in an AppsFlyer OneLink, which sends
+//!   the plaintext `pk` to AppsFlyer's servers. We parse that host but never
+//!   emit it.
 
-use dashcore::secp256k1::{PublicKey, Secp256k1, SecretKey};
+use dashcore::secp256k1::{PublicKey, SecretKey};
 use dashcore::transaction::special_transaction::TransactionPayload;
-use dashcore::{Network, PrivateKey, ScriptBuf, Transaction};
+use dashcore::{Network, PrivateKey, ScriptBuf, Transaction, TxOut};
 use dpp::prelude::AssetLockProof;
 
 use crate::error::PlatformWalletError;
@@ -160,8 +185,7 @@ fn invalid(msg: impl Into<String>) -> PlatformWalletError {
 /// is the selector that binds the voucher key to its funded credit output.
 /// `pub(crate)` so the claim-side proof-assembly tests can build a funding tx.
 pub(crate) fn voucher_credit_script(voucher_key: &SecretKey) -> ScriptBuf {
-    let secp = Secp256k1::new();
-    let pubkey = PublicKey::from_secret_key(&secp, voucher_key);
+    let pubkey = PublicKey::from_secret_key(voucher_key);
     let hash = dashcore::PublicKey::new(pubkey).pubkey_hash();
     ScriptBuf::new_p2pkh(&hash)
 }
@@ -514,6 +538,15 @@ pub fn voucher_output_index(
     transaction: &Transaction,
     voucher_key: &SecretKey,
 ) -> Result<u32, PlatformWalletError> {
+    voucher_credit_output(transaction, voucher_key).map(|(index, _)| index)
+}
+
+/// [`voucher_output_index`] plus the selected credit output itself, so a
+/// caller that needs the voucher's value reads it from the same match.
+pub fn voucher_credit_output<'a>(
+    transaction: &'a Transaction,
+    voucher_key: &SecretKey,
+) -> Result<(u32, &'a TxOut), PlatformWalletError> {
     let Some(TransactionPayload::AssetLockPayloadType(payload)) =
         &transaction.special_transaction_payload
     else {
@@ -525,8 +558,9 @@ pub fn voucher_output_index(
     payload
         .credit_outputs
         .iter()
-        .position(|out| out.script_pubkey == expected)
-        .map(|idx| idx as u32)
+        .enumerate()
+        .find(|(_, out)| out.script_pubkey == expected)
+        .map(|(index, out)| (index as u32, out))
         .ok_or_else(|| {
             invalid("voucher key does not control any credit output of the funding transaction")
         })
@@ -541,7 +575,7 @@ mod tests {
     use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 
     fn voucher() -> SecretKey {
-        SecretKey::from_slice(&[0x11u8; 32]).expect("valid scalar")
+        SecretKey::from_secret_bytes([0x11u8; 32]).expect("valid scalar")
     }
 
     fn inviter_info() -> InviterInfo {
@@ -555,7 +589,7 @@ mod tests {
     /// Build an asset-lock tx whose credit output at `index` pays the voucher
     /// key (and `index` decoy outputs before it that do not).
     fn asset_lock_tx_paying_voucher_at(key: &SecretKey, index: usize) -> Transaction {
-        let decoy = SecretKey::from_slice(&[0x22u8; 32]).unwrap();
+        let decoy = SecretKey::from_secret_bytes([0x22u8; 32]).unwrap();
         let mut credit_outputs = Vec::new();
         for _ in 0..index {
             credit_outputs.push(TxOut {
@@ -593,7 +627,7 @@ mod tests {
             let decoded = PrivateKey::from_wif(&wif).expect("wif decodes");
             assert!(decoded.compressed, "voucher WIF must be compressed");
             assert_eq!(decoded.network, network, "network preserved");
-            assert_eq!(decoded.inner.secret_bytes(), voucher().secret_bytes());
+            assert_eq!(decoded.inner.to_secret_bytes(), voucher().to_secret_bytes());
             // Network byte matches bitcoinj/legacy (0xCC mainnet, 0xEF testnet).
             let raw = bs58::decode(&wif).into_vec().unwrap();
             assert_eq!(raw[0], first_byte);
@@ -609,7 +643,10 @@ mod tests {
         assert!(uri.starts_with("dashpay://invite?"));
 
         let parsed = parse_invitation_uri(&uri).expect("parse");
-        assert_eq!(parsed.voucher_key.secret_bytes(), voucher().secret_bytes());
+        assert_eq!(
+            parsed.voucher_key.to_secret_bytes(),
+            voucher().to_secret_bytes()
+        );
         assert_eq!(parsed.inviter, Some(info));
         assert!(parsed.islock_hex.is_some());
         // The parsed txid matches the proof's transaction id (big-endian).
@@ -768,10 +805,22 @@ mod tests {
         assert_eq!(voucher_output_index(&tx, &key).unwrap(), 2);
     }
 
+    /// The credit output comes back with its index, so its value is the
+    /// voucher's, not a decoy's.
+    #[test]
+    fn should_return_the_voucher_credit_output_with_its_index() {
+        let key = voucher();
+        let tx = asset_lock_tx_paying_voucher_at(&key, 2);
+        let (index, output) = voucher_credit_output(&tx, &key).unwrap();
+        assert_eq!(index, 2);
+        assert_eq!(output.value, 100_000, "the decoys before it carry 50_000");
+        assert_eq!(output.script_pubkey, voucher_credit_script(&key));
+    }
+
     #[test]
     fn voucher_output_index_rejects_no_match() {
         let key = voucher();
-        let other = SecretKey::from_slice(&[0x33u8; 32]).unwrap();
+        let other = SecretKey::from_secret_bytes([0x33u8; 32]).unwrap();
         let tx = asset_lock_tx_paying_voucher_at(&other, 0);
         let err = voucher_output_index(&tx, &key).unwrap_err();
         assert!(err.to_string().contains("does not control"));
@@ -811,7 +860,7 @@ mod tests {
     fn parse_rejects_duplicate_required_keys() {
         let wif = PrivateKey::new(voucher(), Network::Testnet).to_wif();
         let other = PrivateKey::new(
-            SecretKey::from_slice(&[0x44u8; 32]).unwrap(),
+            SecretKey::from_secret_bytes([0x44u8; 32]).unwrap(),
             Network::Testnet,
         )
         .to_wif();

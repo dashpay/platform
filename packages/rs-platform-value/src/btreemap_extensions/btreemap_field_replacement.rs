@@ -1,3 +1,4 @@
+use crate::inner_value_at_path::is_array_path;
 use crate::value_map::ValueMapHelper;
 use crate::{Error, Value};
 use std::collections::BTreeMap;
@@ -118,43 +119,88 @@ pub trait BTreeValueMapReplacementPathHelper {
     ) -> Result<(), Error>;
 }
 
+/// Replaces one value in place with its `replacement_type` form. The
+/// fixed-size byte values keep their width; anything else is read as the
+/// bytes it holds in whatever encoding it currently has. Shared by the
+/// `Value` and the `BTreeMap<String, Value>` path replacers, so both give
+/// the same value kind for the same input.
+pub(crate) fn replace_leaf(
+    value: &mut Value,
+    replacement_type: ReplacementType,
+) -> Result<(), Error> {
+    match value {
+        Value::Bytes20(bytes) => {
+            *value = replacement_type.replace_for_bytes_20(*bytes)?;
+        }
+        Value::Bytes32(bytes) => {
+            *value = replacement_type.replace_for_bytes_32(*bytes)?;
+        }
+        Value::Bytes36(bytes) => {
+            *value = replacement_type.replace_for_bytes_36(*bytes)?;
+        }
+        _ => {
+            let bytes = match replacement_type {
+                ReplacementType::Identifier | ReplacementType::TextBase58 => {
+                    value.to_identifier_bytes()
+                }
+                ReplacementType::BinaryBytes | ReplacementType::TextBase64 => {
+                    value.to_binary_bytes()
+                }
+            }?;
+            *value = replacement_type.replace_for_bytes(bytes)?;
+        }
+    }
+    Ok(())
+}
+
+/// The members a `list[]` or `list[3]` component addresses in a list value:
+/// every element, or the one at the index.
+fn list_members(list: &mut Value, index: Option<usize>) -> Result<Vec<&mut Value>, Error> {
+    let list = list.to_array_mut()?;
+    match index {
+        Some(index) => match list.get_mut(index) {
+            Some(member) => Ok(vec![member]),
+            None => Err(Error::StructureError(format!(
+                "element at position {index} in array does not exist"
+            ))),
+        },
+        None => Ok(list.iter_mut().collect()),
+    }
+}
+
 fn replace_down(
     mut current_values: Vec<&mut Value>,
     mut split: Peekable<IntoIter<&str>>,
     replacement_type: ReplacementType,
 ) -> Result<(), Error> {
     if let Some(path_component) = split.next() {
+        let is_last_component = split.peek().is_none();
         let next_values = current_values
             .iter_mut()
             .map(|current_value| {
                 if current_value.is_map() {
                     let map = current_value.as_map_mut_ref()?;
+                    // `list[]` names the members of a list: the values to
+                    // replace when it ends the path, the values to descend
+                    // into otherwise. An absent list is nothing to replace.
+                    if let Some((list_name, index)) = is_array_path(path_component)? {
+                        let Some(list) = map.get_optional_key_mut(list_name) else {
+                            return Ok(None);
+                        };
+                        let members = list_members(list, index)?;
+                        if is_last_component {
+                            for member in members {
+                                replace_leaf(member, replacement_type)?;
+                            }
+                            return Ok(None);
+                        }
+                        return Ok(Some(members));
+                    }
                     let Some(new_value) = map.get_optional_key_mut(path_component) else {
                         return Ok(None);
                     };
-                    if split.peek().is_none() {
-                        match new_value {
-                            Value::Bytes20(bytes) => {
-                                *new_value = replacement_type.replace_for_bytes_20(*bytes)?;
-                            }
-                            Value::Bytes32(bytes) => {
-                                *new_value = replacement_type.replace_for_bytes_32(*bytes)?;
-                            }
-                            Value::Bytes36(bytes) => {
-                                *new_value = replacement_type.replace_for_bytes_36(*bytes)?;
-                            }
-                            _ => {
-                                let bytes = match replacement_type {
-                                    ReplacementType::Identifier | ReplacementType::TextBase58 => {
-                                        new_value.to_identifier_bytes()
-                                    }
-                                    ReplacementType::BinaryBytes | ReplacementType::TextBase64 => {
-                                        new_value.to_binary_bytes()
-                                    }
-                                }?;
-                                *new_value = replacement_type.replace_for_bytes(bytes)?;
-                            }
-                        }
+                    if is_last_component {
+                        replace_leaf(new_value, replacement_type)?;
                         Ok(None)
                     } else {
                         Ok(Some(vec![new_value]))
@@ -189,33 +235,26 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
         let Some(first_path_component) = first else {
             return Err(Error::PathError("path was empty".to_string()));
         };
+        // `list[]` first: the members of a top-level list
+        if let Some((list_name, index)) = is_array_path(first_path_component)? {
+            let Some(list) = self.get_mut(list_name) else {
+                return Ok(());
+            };
+            let members = list_members(list, index)?;
+            if split.len() == 1 {
+                for member in members {
+                    replace_leaf(member, replacement_type)?;
+                }
+                return Ok(());
+            }
+            split.remove(0);
+            return replace_down(members, split.into_iter().peekable(), replacement_type);
+        }
         let Some(current_value) = self.get_mut(first_path_component.to_owned()) else {
             return Ok(());
         };
         if split.len() == 1 {
-            match current_value {
-                Value::Bytes20(bytes) => {
-                    *current_value = replacement_type.replace_for_bytes_20(*bytes)?;
-                }
-                Value::Bytes32(bytes) => {
-                    *current_value = replacement_type.replace_for_bytes_32(*bytes)?;
-                }
-                Value::Bytes36(bytes) => {
-                    *current_value = replacement_type.replace_for_bytes_36(*bytes)?;
-                }
-                _ => {
-                    let bytes = match replacement_type {
-                        ReplacementType::Identifier | ReplacementType::TextBase58 => {
-                            current_value.to_identifier_bytes()
-                        }
-                        ReplacementType::BinaryBytes | ReplacementType::TextBase64 => {
-                            current_value.to_binary_bytes()
-                        }
-                    }?;
-                    *current_value = replacement_type.replace_for_bytes(bytes)?;
-                }
-            }
-            Ok(())
+            replace_leaf(current_value, replacement_type)
         } else {
             split.remove(0);
             let current_values = vec![current_value];
@@ -242,8 +281,9 @@ impl BTreeValueMapReplacementPathHelper for BTreeMap<String, Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::string_encoding::Encoding;
     use crate::value_map::ValueMapHelper;
-    use crate::{Error, Value};
+    use crate::{Error, Identifier, Value};
     use base64::prelude::BASE64_STANDARD;
     use base64::Engine;
     use std::collections::BTreeMap;
@@ -674,6 +714,97 @@ mod tests {
         } else {
             panic!("expected Map at wrapper");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // replace_at_path: `list[]` names the members of a list
+    // -----------------------------------------------------------------------
+
+    fn base58_id(seed: u8) -> Value {
+        Value::Text(Identifier::from([seed; 32]).to_string(Encoding::Base58))
+    }
+
+    #[test]
+    fn should_replace_the_members_of_a_top_level_list() {
+        let mut map = BTreeMap::new();
+        map.insert(
+            "ids".to_string(),
+            Value::Array(vec![base58_id(1), Value::Bytes32([2u8; 32])]),
+        );
+        map.replace_at_path("ids[]", ReplacementType::Identifier)
+            .unwrap();
+        assert_eq!(
+            map.get("ids").unwrap(),
+            &Value::Array(vec![
+                Value::Identifier([1u8; 32]),
+                Value::Identifier([2u8; 32])
+            ])
+        );
+
+        // One member by index; an index past the end is an error
+        map.insert(
+            "more".to_string(),
+            Value::Array(vec![base58_id(3), Value::Text("keep".into())]),
+        );
+        map.replace_at_path("more[0]", ReplacementType::Identifier)
+            .unwrap();
+        assert_eq!(
+            map.get("more").unwrap(),
+            &Value::Array(vec![
+                Value::Identifier([3u8; 32]),
+                Value::Text("keep".into())
+            ])
+        );
+        assert!(map
+            .replace_at_path("more[2]", ReplacementType::Identifier)
+            .is_err());
+    }
+
+    #[test]
+    fn should_replace_the_members_of_a_nested_list_and_descend_into_a_list_of_maps() {
+        let inner = Value::Map(vec![(
+            Value::Text("ids".into()),
+            Value::Array(vec![base58_id(4)]),
+        )]);
+        let mut map = BTreeMap::new();
+        map.insert("meta".to_string(), inner);
+        map.replace_at_path("meta.ids[]", ReplacementType::Identifier)
+            .unwrap();
+        let Some(Value::Map(meta)) = map.get("meta") else {
+            panic!("expected the map");
+        };
+        assert_eq!(
+            meta.get_optional_key("ids").unwrap(),
+            &Value::Array(vec![Value::Identifier([4u8; 32])])
+        );
+
+        let item = Value::Map(vec![(Value::Text("id".into()), base58_id(5))]);
+        map.insert("items".to_string(), Value::Array(vec![item]));
+        map.replace_at_path("items[].id", ReplacementType::Identifier)
+            .unwrap();
+        let Some(Value::Array(items)) = map.get("items") else {
+            panic!("expected the list");
+        };
+        let Value::Map(item) = &items[0] else {
+            panic!("expected a map member");
+        };
+        assert_eq!(
+            item.get_optional_key("id").unwrap(),
+            &Value::Identifier([5u8; 32])
+        );
+    }
+
+    #[test]
+    fn should_treat_an_absent_top_level_list_as_nothing_to_replace() {
+        let mut map = BTreeMap::new();
+        map.insert("a".to_string(), Value::U32(1));
+        assert!(map
+            .replace_at_path("ids[]", ReplacementType::Identifier)
+            .is_ok());
+        // Below a scalar there is no list to look in
+        assert!(map
+            .replace_at_path("a.ids[]", ReplacementType::Identifier)
+            .is_err());
     }
 
     // -----------------------------------------------------------------------

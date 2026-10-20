@@ -1,0 +1,279 @@
+{
+  "baseHeight": 1,
+  "blockHeight": 1250,
+  "addedMNs": [
+    {
+      "type": "Evo",
+      "proTxHash": "ca3d32c4f2ef62eaf736bf41bb3235a832ec1eb6d8dfaccd4d3555e70f6757b0",
+      "collateralHash": "5c1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8",
+      "collateralIndex": 0,
+      "collateralAddress": "yh6REqVqc88VTnJ5rCXPYnQNtrc72YmiXB",
+      "operatorReward": 0,
+      "state": {
+        "version": 2,
+        "service": "192.0.2.40:9999",
+        "addresses": {
+          "core_p2p": [
+            "192.0.2.40:9999"
+          ],
+          "platform_https": [
+            "192.0.2.40:443"
+          ],
+          "platform_p2p": [
+            "192.0.2.40:26656"
+          ]
+        },
+        "registeredHeight": 900,
+        "lastPaidHeight": 1190,
+        "consecutivePayments": 0,
+        "PoSePenalty": 0,
+        "PoSeRevivedHeight": -1,
+        "PoSeBanHeight": -1,
+        "revocationReason": 0,
+        "ownerAddress": "yPBWCdMRY5PsS3hJzs7csbdWQVRR85yxUz",
+        "votingAddress": "ySM11LUD65Bi4p1gm68XLkdWc65TBKRzvQ",
+        "platformNodeID": "9e391c2c041a122a779bafe09d6c47ea600dfcbe",
+        "platformP2PPort": 26656,
+        "platformHTTPPort": 443,
+        "payoutAddress": "yX4Ve7Q8Y4jscV4LZJD8HVCHKyePzR3MhA",
+        "pubKeyOperator": "8ed3f0c208efbcfc815cbfb94490dc68cf2e29d44dd9f8a91e20e06057aa110d7062c8ab7ccc85a9ff0c88760157f563"
+      }
+    },
+    {
+      "type": "Regular",
+      "proTxHash": "27978dd892b7c876c238be1a6141461c2824f3497dd0058e160979bc8f0a0bef",
+      "collateralHash": "6d2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809",
+      "collateralIndex": 1,
+      "collateralAddress": "yguoUwpMVtQCgq49SzH8r5QUuUmYJd89fR",
+      "operatorReward": 0,
+      "state": {
+        "version": 3,
+        "service": "192.0.2.41:9999",
+        "addresses": {
+          "core_p2p": [
+            "192.0.2.41:9999"
+          ]
+        },
+        "registeredHeight": 1100,
+        "lastPaidHeight": 1180,
+        "consecutivePayments": 0,
+        "PoSePenalty": 0,
+        "PoSeRevivedHeight": -1,
+        "PoSeBanHeight": -1,
+        "revocationReason": 0,
+        "ownerAddress": "yd2PwFoqtEJdnJVSEzBDMxVnFVgEvJyvyY",
+        "votingAddress": "ySM11LUD65Bi4p1gm68XLkdWc65TBKRzvQ",
+        "payouts": [
+          {
+            "address": "yi6ouEk1CRe5j27k3rsnQftoqRiD29vExs",
+            "script": "76a914eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee88ac",
+            "reward": 10000
+          }
+        ],
+        "pubKeyOperator": "a792ce1af5f7bb9281053b3934cb8b08d00d075a56498e1a525388ce467f188e8a80911fd96a20982baa9b9678452534"
+      }
+    },
+    {
+      "type": "Regular",
+      "proTxHash": "a4d26868017c0ccffe2efe50944ef4211834660cca834c6e9f86dec6a88246fa",
+      "collateralHash": "a4d26868017c0ccffe2efe50944ef4211834660cca834c6e9f86dec6a88246fa",
+      "collateralIndex": 1,
+      "operatorReward": 0,
+      "state": {
+        "version": 3,
+        "service": "192.0.2.30:9999",
+        "addresses": {
+          "core_p2p": [
+            "192.0.2.30:9999"
+          ]
+        },
+        "registeredHeight": 1210,
+        "lastPaidHeight": 0,
+        "consecutivePayments": 0,
+        "PoSePenalty": 0,
+        "PoSeRevivedHeight": -1,
+        "PoSeBanHeight": -1,
+        "revocationReason": 0,
+        "votingAddress": "ySM11LUD65Bi4p1gm68XLkdWc65TBKRzvQ",
+        "shares": [
+          {
+            "amount": 60000000000,
+            "refundAddress": "yMsgnH1xKGa85n4bq2imrZbG2KgrmGttAV",
+            "refundScript": "76a914111111111111111111111111111111111111111188ac",
+            "rewardAddress": "yPRviMJaEHGafsc5EKovpa5Nw2Jewo9mdj",
+            "rewardScript": "76a914222222222222222222222222222222222222222288ac",
+            "ownerAddress": "yQzAeRbC9Hy3Fy9Ydcu5naZVqivT95Ka2R"
+          },
+          {
+            "amount": 40000000000,
+            "refundAddress": "ySYQaVsp4JfVr4h22uzEkb3ckRYFHJwGq9",
+            "refundScript": "76a914444444444444444444444444444444444444444488ac",
+            "rewardAddress": "ySYQaVsp4JfVr4h22uzEkb3ckRYFHJwGq9",
+            "rewardScript": "76a914444444444444444444444444444444444444444488ac",
+            "ownerAddress": "yVetSeT3tL4R2FmxqWAYgc1rZpmqbMcFhL"
+          }
+        ],
+        "earlyPeriodBlocks": 1000,
+        "earlyPenalty": 100000000,
+        "pubKeyOperator": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1"
+      }
+    },
+    {
+      "type": "Regular",
+      "proTxHash": "813a7c3f28817988a8e6ce66e07e43e261e78398373bfbaae94c898645111d6b",
+      "collateralHash": "ff6226e6c97bfcf40b6d04e12e3f75678024988823bfba28cde2a9ac11b1a765",
+      "collateralIndex": 1,
+      "collateralAddress": "yNqYnF9sHURjwRmhZMLFGQ3WjC5DZNJMUi",
+      "operatorReward": 0,
+      "state": {
+        "version": 3,
+        "service": "192.0.2.31:9999",
+        "addresses": {
+          "core_p2p": [
+            "192.0.2.31:9999"
+          ]
+        },
+        "registeredHeight": 1220,
+        "lastPaidHeight": 0,
+        "consecutivePayments": 0,
+        "PoSePenalty": 0,
+        "PoSeRevivedHeight": -1,
+        "PoSeBanHeight": -1,
+        "revocationReason": 0,
+        "ownerAddress": "yMEXdf8kwSX7NSipRnrtQ66d4WFtBCi71e",
+        "votingAddress": "ySM11LUD65Bi4p1gm68XLkdWc65TBKRzvQ",
+        "payouts": [
+          {
+            "address": "yU6eWaARyKMxSAEVSD5PibXjf8A3TH4gqJ",
+            "script": "76a914555555555555555555555555555555555555555588ac",
+            "reward": 10000
+          }
+        ],
+        "pubKeyOperator": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+      }
+    },
+    {
+      "type": "Regular",
+      "proTxHash": "3023ffd989974768b0dfc347410ad923fa6d3f1eee90180bd0c435e81cb1a82f",
+      "collateralHash": "35215134107b5e423d327cab12d2b4c60a9b769301096e05a95916676d2f7867",
+      "collateralIndex": 0,
+      "collateralAddress": "yd2PwFoqtEJdnJVSEzBDMxVnFVgEvJyvyY",
+      "operatorReward": 0,
+      "state": {
+        "version": 3,
+        "service": "pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.onion:9999",
+        "addresses": {
+          "core_p2p": [
+            "pg6mmjiyjmcrsslvykfwnntlaru7p5svn6y2ymmju6nubxndf4pscryd.onion:9999",
+            "192.0.2.32:9999"
+          ]
+        },
+        "registeredHeight": 1230,
+        "lastPaidHeight": 0,
+        "consecutivePayments": 0,
+        "PoSePenalty": 0,
+        "PoSeRevivedHeight": -1,
+        "PoSeBanHeight": -1,
+        "revocationReason": 0,
+        "ownerAddress": "yLtkvxSueGSufQZQq8L9GVHch9QRqJqGkZ",
+        "votingAddress": "yLtkvxSueGSufQZQq8L9GVHch9QRqJqGkZ",
+        "payouts": [
+          {
+            "address": "yYmNJo2HiMTLCSrue6Lrccz6PE1S1ELq2T",
+            "script": "76a914888888888888888888888888888888888888888888ac",
+            "reward": 7000
+          },
+          {
+            "address": "8qK9EafotWgreuSxH2x8ySZnKVDVivy3Zf",
+            "script": "a914777777777777777777777777777777777777777787",
+            "reward": 3000
+          }
+        ],
+        "pubKeyOperator": "b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3"
+      }
+    },
+    {
+      "type": "Evo",
+      "proTxHash": "6f1757595185032c808321af3e2e8468fae10b8f91e2a657d7a4c7122f4b2706",
+      "collateralHash": "cbf3c744b1c18fe1866e79972818c98fb1a268736f1757595185032c808321af",
+      "collateralIndex": 0,
+      "collateralAddress": "ybhjexnMcGckdJCyUwFu3F25zPo4mqQg1k",
+      "operatorReward": 0,
+      "state": {
+        "version": 3,
+        "service": "[::]:0",
+        "addresses": {},
+        "registeredHeight": 1240,
+        "lastPaidHeight": 0,
+        "consecutivePayments": 0,
+        "PoSePenalty": 0,
+        "PoSeRevivedHeight": -1,
+        "PoSeBanHeight": -1,
+        "revocationReason": 0,
+        "ownerAddress": "yMKqWbyVzZPFkvLndPz1kSba4CBAbA9oZg",
+        "votingAddress": "ySM11LUD65Bi4p1gm68XLkdWc65TBKRzvQ",
+        "platformNodeID": "cbf3c744b1c18fe1866e79972818c98fb1a26873",
+        "platformP2PPort": -1,
+        "platformHTTPPort": -1,
+        "payouts": [
+          {
+            "address": "yaKcEsJudN9nnYQP3PS1adUDHvdE6sjNiQ",
+            "script": "76a914999999999999999999999999999999999999999988ac",
+            "reward": 10000
+          }
+        ],
+        "pubKeyOperator": "b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4"
+      }
+    },
+    {
+      "type": "Evo",
+      "proTxHash": "aecd2830b843e6a84283ba290492a213e355cea7c5026e6118a21e1bfbc36783",
+      "collateralHash": "59cd030a1a4cd43a53c3a600c20f64ed07399873aecd2830b843e6a84283ba29",
+      "collateralIndex": 0,
+      "collateralAddress": "yNqYnF9sHURjwRmhZMLFGQ3WjC5DZNJMUi",
+      "operatorReward": 0,
+      "state": {
+        "version": 3,
+        "service": "[2001:db8::4]:9999",
+        "addresses": {
+          "core_p2p": [
+            "[2001:db8::4]:9999"
+          ],
+          "platform_p2p": [
+            "[2001:db8::4]:26656"
+          ],
+          "platform_https": [
+            "[2001:db8::4]:443"
+          ]
+        },
+        "registeredHeight": 1250,
+        "lastPaidHeight": 0,
+        "consecutivePayments": 0,
+        "PoSePenalty": 0,
+        "PoSeRevivedHeight": -1,
+        "PoSeBanHeight": -1,
+        "revocationReason": 0,
+        "ownerAddress": "yMR9PYpF3gFQ9Pxkq1796o6X3t6SxnHXrq",
+        "votingAddress": "ySM11LUD65Bi4p1gm68XLkdWc65TBKRzvQ",
+        "platformNodeID": "4bcc85253e395ec272998a0722ac3ee1dd3965f7",
+        "platformP2PPort": 26656,
+        "platformHTTPPort": 443,
+        "payouts": [
+          {
+            "address": "ybsrAwbXYNrFNdwrSgXAYdxLCdF2GdFbqY",
+            "script": "76a914aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa88ac",
+            "reward": 5000
+          },
+          {
+            "address": "ydS671t9TPYhxjVKqycKWeST7KrpUM1c4t",
+            "script": "76a914bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb88ac",
+            "reward": 5000
+          }
+        ],
+        "pubKeyOperator": "b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5"
+      }
+    }
+  ],
+  "removedMNs": [],
+  "updatedMNs": []
+}

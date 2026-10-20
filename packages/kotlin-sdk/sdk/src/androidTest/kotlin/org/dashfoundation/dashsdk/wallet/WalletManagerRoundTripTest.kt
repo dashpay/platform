@@ -119,7 +119,7 @@ class WalletManagerRoundTripTest {
      *
      * Of the K1 getters, `searchDpnsNames` is deliberately untested here:
      * it is a live network query and belongs to the `-Ptestnet=true`
-     * tier (KOTLIN_MIGRATION_SPEC.md §7.4).
+     * tier.
      */
     @Test
     fun dashPayRestoreRoundTripsPaymentsContactProfilesAndSyncState() = runBlocking {

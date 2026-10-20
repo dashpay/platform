@@ -1,7 +1,9 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::drive::Drive;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use std::borrow::Cow;
 
@@ -180,20 +182,47 @@ impl Drive {
     ///
     /// # Errors
     ///
-    /// This function will return an error if the version of the Drive is unknown.
+    /// This function will return an error if the version of the Drive is unknown, or if the
+    /// request is not the one the selected generation takes.
     pub(in crate::drive::document::index_uniqueness) fn validate_uniqueness_of_data(
         &self,
         request: UniquenessOfDataRequest,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        match request {
-            UniquenessOfDataRequest::V0(v0) => {
+        // Each table pairs the generation with the request its callers build:
+        // tables selecting 0 select every caller at 0, which builds the V0
+        // request, and tables selecting 1 or 2 select every caller at 1 (or,
+        // for the restore, at a version only protocol version 14 on reaches),
+        // which builds the V1 request. Before this generation was read from
+        // the table the request alone picked v0 or v1, and those pairings
+        // keep that choice at every protocol version up to 13.
+        match (
+            platform_version
+                .drive
+                .methods
+                .document
+                .index_uniqueness
+                .validate_uniqueness_of_data,
+            request,
+        ) {
+            (0, UniquenessOfDataRequest::V0(v0)) => {
                 self.validate_uniqueness_of_data_v0(v0, transaction, platform_version)
             }
-            UniquenessOfDataRequest::V1(v1) => {
+            (1, UniquenessOfDataRequest::V1(v1)) => {
                 self.validate_uniqueness_of_data_v1(v1, transaction, platform_version)
             }
+            (2, UniquenessOfDataRequest::V1(v1)) => {
+                self.validate_uniqueness_of_data_v2(v1, transaction, platform_version)
+            }
+            (0..=2, _) => Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "the uniqueness request is not the one this uniqueness generation takes",
+            ))),
+            (version, _) => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "validate_uniqueness_of_data".to_string(),
+                known_versions: vec![0, 1, 2],
+                received: version,
+            })),
         }
     }
 }

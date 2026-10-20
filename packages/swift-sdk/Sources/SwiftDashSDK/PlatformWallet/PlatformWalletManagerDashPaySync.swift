@@ -80,6 +80,12 @@ extension PlatformWalletManager {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
         }
+        return try Self.readIsDashPaySyncing(handle)
+    }
+
+    /// The native read behind [`isDashPaySyncing()`] (an atomic load,
+    /// never parks); also what the progress poller runs.
+    nonisolated static func readIsDashPaySyncing(_ handle: Handle) throws -> Bool {
         var syncing = false
         try platform_wallet_manager_dashpay_sync_is_syncing(handle, &syncing).check()
         return syncing

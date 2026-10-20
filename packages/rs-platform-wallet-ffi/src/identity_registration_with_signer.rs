@@ -108,6 +108,32 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 ///     `contract_bounds_id` is the 32-byte contract id;
 ///     `contract_bounds_document_type` is a NUL-terminated UTF-8
 ///     document type name. Both must be non-null.
+///   - `contract_bounds_kind == 3` → `ContractGroup` (authentication
+///     keys only). `contract_bounds_id` is the 32-byte contract group
+///     id; the `contract_bounds_document_type` pointer is ignored.
+///
+/// A key may carry usage limits (protocol version 14): `total_budget`,
+/// the credits its transitions may take from the identity over its
+/// lifetime, when `has_total_budget`; `expires_at`, the block time in
+/// milliseconds from which it can no longer sign, when
+/// `has_expires_at`. A row with either flag set is registered as an
+/// `IdentityPublicKeyInCreation::V1` (the limits are part of the
+/// signable bytes, so the identity signs what it grants); a row with
+/// neither flag registers a version 0 key, the same bytes as ever. The
+/// `0` values behind an unset flag are ignored, so a caller that
+/// encodes "no limit" as `0` must leave the flag false: a budget of
+/// literally zero is refused by consensus
+/// (`InvalidIdentityPublicKeyBudgetError`, 10537).
+///
+/// Consensus rules the FFI deliberately does not duplicate (see
+/// `docs/protocol/authentication-key-limits.md`): limits are allowed
+/// only on AUTHENTICATION keys with a security level below MASTER
+/// (`IdentityPublicKeyLimitsNotAllowedError`, 10536), a budget must be
+/// non-zero (10537), and an expiry must lie after the registering
+/// block's time (`IdentityPublicKeyAlreadyExpiredError`, 40219, a paid
+/// failure; seconds instead of milliseconds is the usual way there).
+/// Platform enforces all three at validation; the FFI passes the row
+/// through so the error the caller sees is the chain's own.
 ///
 /// All pointers are borrowed for the call duration only — the
 /// FFI does not retain or free them.
@@ -127,6 +153,29 @@ pub struct IdentityPubkeyFFI {
     /// NUL-terminated UTF-8 document type name when
     /// `contract_bounds_kind == 2`. Null otherwise.
     pub contract_bounds_document_type: *const std::os::raw::c_char,
+    /// Whether `total_budget` is set.
+    pub has_total_budget: bool,
+    /// The key's total budget in credits when `has_total_budget`.
+    pub total_budget: u64,
+    /// Whether `expires_at` is set.
+    pub has_expires_at: bool,
+    /// The key's expiry in block time milliseconds when `has_expires_at`.
+    pub expires_at: u64,
+}
+
+/// Attach the usage limits of `row` to `key`. A row with neither limit
+/// leaves the key a version 0 key; either limit makes it a version 1 key.
+pub(crate) fn key_with_row_limits(
+    key: IdentityPublicKey,
+    row: &IdentityPubkeyFFI,
+) -> IdentityPublicKey {
+    match (
+        row.has_total_budget.then_some(row.total_budget),
+        row.has_expires_at.then_some(row.expires_at),
+    ) {
+        (None, None) => key,
+        (total_budget, expires_at) => key.with_limits(total_budget, expires_at),
+    }
 }
 
 /// Decode the optional `contract_bounds_*` payload off an
@@ -215,11 +264,31 @@ pub(crate) unsafe fn decode_contract_bounds(
                 document_type_name: doc_type,
             }))
         }
+        3 => {
+            if row.contract_bounds_id.is_null() {
+                return Err(PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorNullPointer,
+                    format!(
+                        "{field_label}[{row_index}].contract_bounds_id is null but kind == 3 \
+                         (ContractGroup)"
+                    ),
+                ));
+            }
+            let id_bytes: [u8; 32] =
+                match <[u8; 32]>::try_from(slice::from_raw_parts(row.contract_bounds_id, 32)) {
+                    Ok(b) => b,
+                    Err(_) => unreachable!("from_raw_parts(_, 32) always yields exactly 32 bytes"),
+                };
+            Ok(Some(ContractBounds::ContractGroup {
+                id: Identifier::from(id_bytes),
+            }))
+        }
         other => Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
             format!(
                 "{field_label}[{row_index}].contract_bounds_kind = {other} is not a valid \
-                 discriminant (0=none, 1=SingleContract, 2=SingleContractDocumentType)"
+                 discriminant (0=none, 1=SingleContract, 2=SingleContractDocumentType, \
+                 3=ContractGroup)"
             ),
         )),
     }
@@ -315,16 +384,19 @@ pub(crate) unsafe fn decode_identity_pubkeys(
         }
         keys_map.insert(
             row.key_id,
-            IdentityPublicKey::V0(IdentityPublicKeyV0 {
-                id: row.key_id,
-                purpose,
-                security_level,
-                contract_bounds,
-                key_type,
-                read_only: row.read_only,
-                data: BinaryData::new(pubkey_bytes),
-                disabled_at: None,
-            }),
+            key_with_row_limits(
+                IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                    id: row.key_id,
+                    purpose,
+                    security_level,
+                    contract_bounds,
+                    key_type,
+                    read_only: row.read_only,
+                    data: BinaryData::new(pubkey_bytes),
+                    disabled_at: None,
+                }),
+                row,
+            ),
         );
     }
     Ok(keys_map)
@@ -647,7 +719,7 @@ pub unsafe extern "C" fn platform_wallet_derive_identity_keys_for_index(
                 public_key: pub_ptr,
                 public_key_len: pub_len,
                 private_key_wif: wif_cstring.into_raw(),
-                private_key_bytes: ext_priv.private_key.secret_bytes(),
+                private_key_bytes: ext_priv.private_key.to_secret_bytes(),
             });
         }
         Ok(rows)
@@ -839,6 +911,10 @@ mod tests {
             contract_bounds_kind: 0,
             contract_bounds_id: ptr::null(),
             contract_bounds_document_type: ptr::null(),
+            has_total_budget: false,
+            total_budget: 0,
+            has_expires_at: false,
+            expires_at: 0,
         }
     }
 
@@ -888,6 +964,63 @@ mod tests {
         assert_eq!(map.len(), 2);
     }
 
+    /// A row with a budget, an expiry, or both decodes to a version 1 key
+    /// carrying exactly those limits; a row with neither flag stays version
+    /// 0 so identities that do not use limits keep their historical bytes.
+    /// The `0` behind an unset flag is not read.
+    #[test]
+    fn key_with_row_limits_builds_v1_only_when_a_limit_is_set() {
+        use dpp::identity::identity_public_key::accessors::v1::IdentityPublicKeyGettersV1;
+
+        let pk = [0x02u8; 33];
+        let base = || {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 7,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(pk.to_vec()),
+                disabled_at: None,
+            })
+        };
+
+        let mut unlimited = ffi_row(7, &pk);
+        unlimited.total_budget = 5; // ignored: has_total_budget is false
+        unlimited.expires_at = 5; // ignored: has_expires_at is false
+        let key = key_with_row_limits(base(), &unlimited);
+        assert!(matches!(key, IdentityPublicKey::V0(_)));
+        assert_eq!(key.total_budget(), None);
+        assert_eq!(key.expires_at(), None);
+
+        let mut budget_only = ffi_row(7, &pk);
+        budget_only.has_total_budget = true;
+        budget_only.total_budget = 10_000_000_000;
+        let key = key_with_row_limits(base(), &budget_only);
+        assert!(matches!(key, IdentityPublicKey::V1(_)));
+        assert_eq!(key.total_budget(), Some(10_000_000_000));
+        assert_eq!(key.expires_at(), None);
+
+        let mut expiry_only = ffi_row(7, &pk);
+        expiry_only.has_expires_at = true;
+        expiry_only.expires_at = 1_800_000_000_000;
+        let key = key_with_row_limits(base(), &expiry_only);
+        assert!(matches!(key, IdentityPublicKey::V1(_)));
+        assert_eq!(key.total_budget(), None);
+        assert_eq!(key.expires_at(), Some(1_800_000_000_000));
+
+        let mut both = ffi_row(7, &pk);
+        both.has_total_budget = true;
+        both.total_budget = 10_000_000_000;
+        both.has_expires_at = true;
+        both.expires_at = 1_800_000_000_000;
+        let key = key_with_row_limits(base(), &both);
+        assert!(matches!(key, IdentityPublicKey::V1(_)));
+        assert_eq!(key.total_budget(), Some(10_000_000_000));
+        assert_eq!(key.expires_at(), Some(1_800_000_000_000));
+    }
+
     #[test]
     fn decode_contract_bounds_accepts_none_for_authentication_encryption_and_decryption() {
         let pk = [0x02u8; 33];
@@ -902,6 +1035,40 @@ mod tests {
                 .expect("kind == 0 must decode to no bounds for every supported purpose");
             assert_eq!(bounds, None);
         }
+    }
+
+    #[test]
+    fn should_decode_kind_3_as_a_contract_group_and_reject_a_null_id() {
+        let pk = [0x02u8; 33];
+        let contract_group_id = [0x47u8; 32];
+        let mut row = ffi_row(0, &pk);
+        row.contract_bounds_kind = 3;
+        row.contract_bounds_id = contract_group_id.as_ptr();
+
+        let bounds =
+            unsafe { decode_contract_bounds(&row, Purpose::AUTHENTICATION, 0, "identity_pubkeys") }
+                .expect("kind == 3 must decode");
+        assert_eq!(
+            bounds,
+            Some(ContractBounds::ContractGroup {
+                id: Identifier::from(contract_group_id),
+            })
+        );
+
+        row.contract_bounds_id = ptr::null();
+        let mut err =
+            unsafe { decode_contract_bounds(&row, Purpose::AUTHENTICATION, 0, "identity_pubkeys") }
+                .expect_err("kind == 3 must reject a null contract group id");
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        unsafe { platform_wallet_ffi_result_free(&mut err) };
+
+        row.contract_bounds_kind = 4;
+        row.contract_bounds_id = contract_group_id.as_ptr();
+        let mut err =
+            unsafe { decode_contract_bounds(&row, Purpose::AUTHENTICATION, 0, "identity_pubkeys") }
+                .expect_err("kind == 4 names nothing");
+        assert_eq!(err.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        unsafe { platform_wallet_ffi_result_free(&mut err) };
     }
 
     #[test]

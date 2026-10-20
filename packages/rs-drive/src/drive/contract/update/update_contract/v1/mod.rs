@@ -123,7 +123,7 @@ impl Drive {
 
         self.cache
             .data_contracts
-            .insert(updated_contract_fetch_info, transaction.is_some());
+            .insert_rewritten(updated_contract_fetch_info, transaction.is_some());
 
         Drive::calculate_fee(
             None,
@@ -199,7 +199,7 @@ impl Drive {
 
     /// operations for updating a contract.
     #[allow(clippy::too_many_arguments)]
-    fn update_contract_operations_v1(
+    pub(in crate::drive::contract::update::update_contract) fn update_contract_operations_v1(
         &self,
         contract_element: Element,
         contract: &DataContract,

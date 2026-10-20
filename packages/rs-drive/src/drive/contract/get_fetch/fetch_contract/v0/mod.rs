@@ -8,7 +8,7 @@ use crate::fees::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalcul
 use crate::util::storage_flags::StorageFlags;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::DataContract;
-use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
+use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use grovedb_costs::{
@@ -78,7 +78,7 @@ impl Drive {
             Ok(Element::Item(stored_contract_bytes, element_flag)) => {
                 let contract = cost_return_on_error_no_add!(
                     cost,
-                    DataContract::versioned_deserialize(
+                    DataContract::versioned_deserialize_trusted(
                         &stored_contract_bytes,
                         false,
                         platform_version
@@ -135,7 +135,7 @@ impl Drive {
                     Ok(Element::Item(stored_contract_bytes, element_flag)) => {
                         let contract = cost_return_on_error_no_add!(
                             cost,
-                            DataContract::versioned_deserialize(
+                            DataContract::versioned_deserialize_trusted(
                                 &stored_contract_bytes,
                                 false,
                                 platform_version

@@ -36,8 +36,8 @@
           "refersTo": {
             "type": "permanentDocument",
             "documentType": "note",
-            "propertyAgreement": {
-              "topic": "nonexistent"
+            "where": {
+              "nonexistent": "topic"
             }
           }
         },

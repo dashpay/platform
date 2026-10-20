@@ -3,6 +3,21 @@ package org.dashfoundation.dashsdk.errors
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.json.JSONObject
 
+// Display text for the persister failures, whose native message is a nested
+// Rust error chain (operation, backend classification, the store's own
+// phrasing) that no user can act on. One string per outcome a person can
+// distinguish; a failed read and a failed write must not describe each other.
+private const val PERSISTER_BUSY_USER_MESSAGE =
+    "The wallet database is busy. Try again in a moment."
+private const val PERSISTER_UNREADABLE_USER_MESSAGE =
+    "The wallet data could not be read and may need to be restored."
+private const val PERSISTER_UNSAVED_USER_MESSAGE =
+    "The wallet data could not be saved and may need to be restored."
+
+// Display text for a panicked SPV teardown; the native message is the panic text.
+private const val SPV_PROCESS_RESTART_REQUIRED_USER_MESSAGE =
+    "Sync could not be stopped cleanly. Restart the app to use it again."
+
 /**
  * Public error hierarchy of the Kotlin SDK — the Android analog of the
  * Swift SDK's `UserFacingError`/`SDKError` split, keyed off the native
@@ -18,6 +33,22 @@ sealed class DashSdkError(
 
     /** Whether retrying the same operation can plausibly succeed. */
     open val isRetryable: Boolean get() = false
+
+    /**
+     * Text fit to show a person. Defaults to [message] — most native
+     * messages read as a sentence — but types whose message is a nested
+     * error chain override it, so a UI can display this unconditionally
+     * while logs keep [message].
+     */
+    open val userMessage: String get() = message.orEmpty()
+
+    /**
+     * The consensus error Platform rejected the operation with, when the
+     * native layer reported one; `null` for every other failure. Branch on
+     * its code instead of matching [message].
+     */
+    val consensusError: PlatformConsensusError?
+        get() = (cause as? DashSDKException)?.consensusError
 
     class InvalidParameter(message: String, cause: Throwable? = null) :
         DashSdkError(message, cause)
@@ -116,6 +147,69 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorAssetLockInputConflict` (native code 47). RESERVED — the
+         * native side has no code path that produces it today, so this class
+         * is never instantiated from a real result.
+         *
+         * It is the TERMINAL form of the double-spend verdict: the tracked
+         * asset-lock transaction spends an outpoint a different,
+         * already-confirmed transaction of the same wallet spent first, AND
+         * that spender's block is proven to be on the finalized chain. The
+         * proof is what is missing — chainlock contexts and the wallet's
+         * applied chainlock height are height-based promotion artifacts, not
+         * evidence of finalized ancestry — so every detection arrives as
+         * [AssetLockInputContested] (48) instead, chainlocked-looking
+         * spenders included.
+         *
+         * Kept (with its mapping arm) so the reserved code stays wired and
+         * hosts branching on it keep compiling. If it ever ships it keeps its
+         * meaning: NOT retryable, and the one code that lets a host discard
+         * the asset lock and rebuild it from currently-unspent inputs. Read
+         * nothing into its absence. The Android analog of Swift's
+         * `PlatformWalletError.assetLockInputConflict`.
+         */
+        class AssetLockInputConflict(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorAssetLockInputContested` (native code 48). A confirmed
+         * transaction of this wallet already spent one of the tracked lock's
+         * inputs — typically a restored wallet whose rescan resurrected a
+         * UTXO one of its own earlier asset locks had already consumed. Peers
+         * drop such a double spend without replying, so the lock cannot
+         * confirm while that spender stands and an unbounded proof wait would
+         * hang. The resume still attempts recovery. With a ready transport,
+         * the sighting bounds the proof wait and this is what that wait
+         * expired with. In the `Broadcast` arm, after a readiness miss and
+         * pre-dispatch rejection, a still-standing conflict returns
+         * immediately after refreshing local finality, and the
+         * readiness-deferred retry owns the next proof wait. A
+         * `Broadcast`-status lock may also represent an earlier attempt that
+         * sent the transaction.
+         *
+         * The ONLY double-spend verdict the native side emits, and it is
+         * PROVISIONAL. NO discard licence: keep the tracked lock and retry
+         * later (next launch, or after the next chainlock) — but note a
+         * chainlock does NOT upgrade this to code 47 today; what a retry can
+         * resolve is a reorg dropping the sibling. Repetition does not
+         * license a discard either: a conflict that survives session after
+         * session still proves nothing about finalized ancestry — the
+         * sighting can be a block record restored from a previous session
+         * whose block was reorganized out while the host was offline. Only
+         * code 47, or an independent finalized-ancestry proof, authorizes
+         * dropping the tracked state. Keeping the lock costs nothing: the
+         * confirmed spender is this wallet's own transaction, so the value
+         * lives on in it either way. Its absence is not proof of liveness —
+         * the native scan cannot see conflicts whose spender was already
+         * pruned. The Android analog of Swift's
+         * `PlatformWalletError.assetLockInputContested`.
+         */
+        class AssetLockInputContested(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * `ErrorAssetLockInsufficientFunds` (native code 29). Asset-lock coin
          * selection came up short over the build's *permitted funding set*.
          * What that set is depends on the funding form: an exact-amount build
@@ -129,8 +223,8 @@ sealed class DashSdkError(
          * Distinct from [CoreInsufficientFunds] (22), which is the atomic
          * Core-send selector rather than the asset-lock builder. The shortfall
          * figures travel in [message] as `available {n} duffs, required {n}
-         * duffs` — the native result is ABI-frozen to code + message, so there
-         * are no structured fields to read.
+         * duffs`: the native result has no fields for them, so there is
+         * nothing structured to read.
          *
          * Raised by
          * [shieldedFundFromCoinJoinDrain][org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedFundFromCoinJoinDrain]
@@ -140,6 +234,10 @@ sealed class DashSdkError(
          * when the pooled funding sources cannot cover the requested lock.
          */
         class AssetLockInsufficientFunds(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /** Code 60: the full drain exceeds the input cap; no partial drain was submitted. */
+        class AssetLockTooManyInputs(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
 
         /**
@@ -420,6 +518,132 @@ sealed class DashSdkError(
         )
 
         /**
+         * `ErrorPersisterLoadTransient` (native code 49). Reading persisted
+         * wallet state failed on a store that reported the failure as
+         * retryable (`SQLITE_BUSY` and friends). Nothing was mutated — a
+         * load is a read — so this is retryable. The Android analog of
+         * Swift's `PlatformWalletError.persisterLoadTransient`. [message] is
+         * the diagnostic chain; display [userMessage].
+         */
+        class PersisterLoadTransient(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+            override val userMessage: String get() = PERSISTER_BUSY_USER_MESSAGE
+        }
+
+        /**
+         * `ErrorPersisterLoadFatal` (native code 50). Reading persisted
+         * wallet state failed permanently — a corrupt or unreadable store,
+         * or a decode that will fail identically next time. Do NOT retry;
+         * the store needs repair or re-provisioning. Constraint-class read
+         * failures fold in here: a read cannot violate one, and neither is
+         * retryable. [message] is the diagnostic chain; display
+         * [userMessage].
+         */
+        class PersisterLoadFatal(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val userMessage: String get() = PERSISTER_UNREADABLE_USER_MESSAGE
+        }
+
+        /**
+         * `ErrorPersisterStoreTransient` (native code 51). Writing wallet
+         * state failed on a busy or momentarily unavailable store.
+         *
+         * **Nothing was committed.** The native side only emits this when
+         * the persister guarantees the failed changeset round was rolled
+         * back whole, so re-issuing the operation cannot double-apply part
+         * of it — which is why this, uniquely among the store failures, is
+         * retryable. A wallet registration against a locked database
+         * produces it (dashpay/platform#4365); the retry decision is the
+         * host's, not the wallet's. [message] is the diagnostic chain;
+         * display [userMessage].
+         */
+        class PersisterStoreTransient(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+            override val userMessage: String get() = PERSISTER_BUSY_USER_MESSAGE
+        }
+
+        /**
+         * `ErrorPersisterStoreFatal` (native code 52). Writing wallet state
+         * failed permanently — a full disk, a corrupt schema, an I/O error
+         * outside the retryable class. Do NOT retry; the wallet rolled its
+         * in-memory state back, so the operation may be re-attempted once
+         * the underlying fault is fixed. [message] is the diagnostic chain;
+         * display [userMessage].
+         */
+        class PersisterStoreFatal(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val userMessage: String get() = PERSISTER_UNSAVED_USER_MESSAGE
+        }
+
+        /**
+         * `ErrorPersisterStoreConstraint` (native code 53). A write violated
+         * a constraint / foreign key / integrity rule. Deliberately distinct
+         * from [PersisterStoreFatal]: this is "the data is wrong" (a caller
+         * or schema-mapping bug) rather than "the storage engine is unhappy"
+         * (an operator problem), and the two route to different people. Do
+         * NOT retry unchanged. [message] is the diagnostic chain; display
+         * [userMessage].
+         */
+        class PersisterStoreConstraint(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val userMessage: String get() = PERSISTER_UNSAVED_USER_MESSAGE
+        }
+
+        /**
+         * `ErrorPersisterRestore` (native code 54). Rehydrating persisted
+         * platform-address state into a freshly registered wallet failed.
+         * One code rather than three: it wraps a wallet error, not a store
+         * error, so it carries no retry classification. The wrapped error's
+         * rendering is in [message], which is diagnostic — display
+         * [userMessage].
+         */
+        class PersisterRestore(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val userMessage: String get() = PERSISTER_UNREADABLE_USER_MESSAGE
+        }
+
+        /**
+         * `ErrorShieldedIdentityDebitPending` (native code 55). An earlier
+         * identity-funded shield is unresolved. This request was not built
+         * or broadcast. Wait for shielded sync to reconcile the earlier
+         * debit before starting another shield from this identity.
+         * Mirrors Swift's `PlatformWalletError.shieldedIdentityDebitPending`
+         * in `PlatformWalletResult.swift`.
+         */
+        class ShieldedIdentityDebitPending(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /** Native code 56: a durable recovery record is malformed or invalid. Retain it for diagnosis. */
+        class ShieldedRecoveryCorrupted(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /** Native code 57: recovery needs its account and compatible keys; damaged ciphertext can look the same. */
+        class ShieldedRecoveryKeysRequired(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShutdownIncomplete` (native code 27). A sync pass or an SPV
+         * teardown was still running; nothing was wiped. Retry the stop or
+         * clear. An SPV start refused with this needs an SPV stop first.
+         */
+        class ShutdownIncomplete(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorSpvProcessRestartRequired` (native code 59). SPV startup or
+         * teardown panicked. Not retryable: restart the app process.
+         * [message] is the panic detail; display [userMessage].
+         */
+        class SpvProcessRestartRequired(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val userMessage: String get() = SPV_PROCESS_RESTART_REQUIRED_USER_MESSAGE
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -541,7 +765,9 @@ sealed class DashSdkError(
             24 -> PlatformWallet.AssetLockAlreadyConsumed(message, cause) // ErrorAssetLockAlreadyConsumed
             25 -> PlatformWallet.AssetLockFundingMismatch(message, cause) // ErrorAssetLockFundingMismatch
             26 -> PlatformWallet.TransactionBroadcastRejected(message, cause) // ErrorTransactionBroadcastRejected
+            27 -> PlatformWallet.ShutdownIncomplete(message, cause) // ErrorShutdownIncomplete
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
+            60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds
@@ -582,6 +808,13 @@ sealed class DashSdkError(
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
             41 -> PlatformWallet.PlatformShieldCapacityExceeded(message, cause)
+            // ErrorAssetLockInputConflict — RESERVED, no native emitter yet;
+            // the arm stays so the code would not fall through to Generic if
+            // a finalized-ancestry proof ever starts raising it.
+            47 -> PlatformWallet.AssetLockInputConflict(message, cause)
+            // ErrorAssetLockInputContested — the double-spend verdict the
+            // native side actually emits.
+            48 -> PlatformWallet.AssetLockInputContested(message, cause)
             // ErrorSigningKeyUnavailable — the STRUCTURED signer
             // discriminator (dashpay/platform#4060 finding 7): the typed
             // completion code rides the whole Rust round-trip, no message
@@ -591,6 +824,21 @@ sealed class DashSdkError(
             // the deferred-token trio sits at 34-36 above. See
             // PlatformWalletFFIResultCode for the authoritative map.)
             31 -> PlatformWallet.SigningKeyUnavailable(message, cause)
+            // Persister failures, operation x retry classification. These are
+            // exactly the "retry-semantics-bearing" codes this mapping exists
+            // for: only the two transients are retryable, and a constraint is
+            // kept apart from a fatal so hosts can route "your data is wrong"
+            // differently from "the storage engine is unhappy".
+            49 -> PlatformWallet.PersisterLoadTransient(message, cause)
+            50 -> PlatformWallet.PersisterLoadFatal(message, cause)
+            51 -> PlatformWallet.PersisterStoreTransient(message, cause)
+            52 -> PlatformWallet.PersisterStoreFatal(message, cause)
+            53 -> PlatformWallet.PersisterStoreConstraint(message, cause)
+            54 -> PlatformWallet.PersisterRestore(message, cause)
+            55 -> PlatformWallet.ShieldedIdentityDebitPending(message, cause)
+            56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
+            57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
+            59 -> PlatformWallet.SpvProcessRestartRequired(message, cause) // ErrorSpvProcessRestartRequired
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

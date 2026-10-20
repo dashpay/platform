@@ -67,7 +67,10 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::error::query::QuerySyntaxError;
-use drive::query::{resolve_time_range_bucket_clause, CountMode, SelectProjection};
+use drive::query::{
+    resolve_integer_range_bucket_clause, resolve_time_range_bucket_clause, CountMode,
+    SelectProjection,
+};
 use std::sync::Arc;
 
 /// Build a `QuerySyntaxError::Unsupported` carrying a stable
@@ -162,7 +165,7 @@ impl<C> Platform<C> {
     /// error to hand back to the wire caller
     /// (`check_validation_result_with_data!` unwraps the nesting).
     #[allow(clippy::type_complexity)]
-    fn fetch_contract_for_document_query_v1(
+    pub(in crate::query::document_query::v1) fn fetch_contract_for_document_query_v1(
         &self,
         data_contract_id: Vec<u8>,
         platform_version: &PlatformVersion,
@@ -229,7 +232,62 @@ impl<C> Platform<C> {
             group_by,
             having,
             offset,
+            chained,
+            sub_queries,
         } = request_v1;
+
+        // Composite mode owns its own shape and routes before the
+        // SELECT machinery: the request's clauses describe the PAGE,
+        // and the sub-queries are derived from it.
+        if !sub_queries.is_empty() {
+            if chained.is_some() {
+                return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                    QuerySyntaxError::Unsupported(
+                        "a request carries either `chained` or `sub_queries`, not both: a \
+                         chained join is one sub-query shape"
+                            .to_string(),
+                    ),
+                )));
+            }
+            return self.dispatch_composite_v1(
+                data_contract_id,
+                document_type,
+                sub_queries,
+                proto_where_clauses,
+                proto_order_by,
+                limit,
+                start,
+                prove,
+                proto_selects,
+                group_by,
+                having,
+                offset,
+                platform_state,
+                platform_version,
+            );
+        }
+
+        // Chained mode owns its own (deliberately narrow) shape and
+        // routes before the SELECT machinery: the request's clauses
+        // describe the INNER indexOnly query of a provable semi-join.
+        if let Some(chained_join) = chained {
+            return self.dispatch_chained_v1(
+                data_contract_id,
+                document_type,
+                chained_join,
+                proto_where_clauses,
+                proto_order_by,
+                limit,
+                start,
+                prove,
+                proto_selects,
+                group_by,
+                having,
+                offset,
+                platform_state,
+                platform_version,
+            );
+        }
 
         // NOTE: the OFFSET gate is no longer here. Whether an offset is
         // acceptable depends on where the request routes — the ranked
@@ -262,18 +320,24 @@ impl<C> Platform<C> {
         // ordinary equality lookups. The verifier re-derives the same bucket
         // from the quorum-signed response metadata time, so the proof
         // matches.
+        // Integer-range (IN_INTEGER_RANGE) clauses ride the same partition:
+        // they name their window absolutely, so they resolve to a
+        // window-start equality from the query alone, with no clock.
         // The `.any()` pre-check skips the two-Vec partition on the
-        // overwhelmingly common clause set with no time-range operator.
-        let (time_range_proto, normal_proto): (Vec<_>, Vec<_>) = if proto_where_clauses
+        // overwhelmingly common clause set with no window selection.
+        let (window_selection_proto, normal_proto): (Vec<_>, Vec<_>) = if proto_where_clauses
             .iter()
-            .any(conversions::is_time_range_clause)
+            .any(conversions::is_window_selection_clause)
         {
             proto_where_clauses
                 .into_iter()
-                .partition(conversions::is_time_range_clause)
+                .partition(conversions::is_window_selection_clause)
         } else {
             (Vec::new(), proto_where_clauses)
         };
+        let (time_range_proto, integer_range_proto): (Vec<_>, Vec<_>) = window_selection_proto
+            .into_iter()
+            .partition(conversions::is_time_range_clause);
 
         let mut where_clauses = match conversions::where_clauses_from_proto(normal_proto) {
             Ok(c) => c,
@@ -284,7 +348,7 @@ impl<C> Platform<C> {
         // aggregate dispatchers below so a request fetches at most once.
         let mut prefetched_contract: PrefetchedContract = None;
 
-        if !time_range_proto.is_empty() {
+        if !time_range_proto.is_empty() || !integer_range_proto.is_empty() {
             // LOAD-BEARING TIME SOURCE: the verifier re-derives the bucket
             // from the response metadata's `time_ms`, which
             // `response_metadata_v0` stamps from the state selected by
@@ -294,9 +358,12 @@ impl<C> Platform<C> {
             // from a checkpoint, this resolution must read the SAME state
             // the response metadata will be built from, or every time-range
             // proof will fail client-side verification.
+            // An integer-range selection reads no clock, so only a time
+            // selection needs a committed block time.
             let block_time_ms =
                 match platform_state.last_committed_block_time_ms() {
                     Some(t) => t,
+                    None if time_range_proto.is_empty() => 0,
                     None => return Ok(QueryValidationResult::new_with_error(QueryError::Query(
                         QuerySyntaxError::Unsupported(
                             "a time range (IN_TIME_RANGE) query requires a committed block time"
@@ -336,6 +403,26 @@ impl<C> Platform<C> {
                         // matched against bucket starts of the resolved
                         // grid rather than raw timestamps (or another
                         // grid's starts), so it travels with the request.
+                        resolved_time_ranges.push(resolved);
+                    }
+                    Err(drive::error::Error::Query(qe)) => {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)))
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            for proto_wc in integer_range_proto {
+                let (field, start, grid) =
+                    match conversions::integer_range_clause_from_proto(proto_wc) {
+                        Ok(parsed) => parsed,
+                        Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+                    };
+                match resolve_integer_range_bucket_clause(&field, &start, grid, doc_type) {
+                    Ok((clause, resolved)) => {
+                        where_clauses.push(clause);
+                        // Same provenance rule as a time selection: the
+                        // equality must be matched against the grid's
+                        // window starts, never raw values.
                         resolved_time_ranges.push(resolved);
                     }
                     Err(drive::error::Error::Query(qe)) => {

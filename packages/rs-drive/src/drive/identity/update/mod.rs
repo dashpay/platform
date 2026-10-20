@@ -397,6 +397,101 @@ mod tests {
         }
     }
 
+    mod add_new_keys_to_masternode_identity {
+        use super::*;
+        use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+        use crate::util::batch::IdentityOperationType;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::{IdentityV0, KeyID, KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        use dpp::version::PlatformVersion;
+        use std::collections::{BTreeMap, HashMap};
+
+        const MASTERNODE_IDENTITY_ID: [u8; 32] = [1; 32];
+
+        fn masternode_key(id: KeyID, key_type: KeyType, purpose: Purpose) -> IdentityPublicKey {
+            IdentityPublicKeyV0 {
+                id,
+                key_type,
+                purpose,
+                security_level: SecurityLevel::CRITICAL,
+                read_only: true,
+                data: BinaryData::new(vec![(id + 2) as u8; 20]),
+                disabled_at: None,
+                contract_bounds: None,
+            }
+            .into()
+        }
+
+        #[test]
+        fn should_emit_the_operations_of_add_new_keys_to_identity_at_every_protocol_version() {
+            for protocol_version in 1..=PlatformVersion::latest().protocol_version {
+                let platform_version =
+                    PlatformVersion::get(protocol_version).expect("expected a platform version");
+                let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+                let masternode_identity: Identity = IdentityV0 {
+                    id: MASTERNODE_IDENTITY_ID.into(),
+                    public_keys: BTreeMap::from([(
+                        0,
+                        masternode_key(0, KeyType::ECDSA_HASH160, Purpose::TRANSFER),
+                    )]),
+                    balance: 0,
+                    revision: 0,
+                }
+                .into();
+                drive
+                    .add_new_identity(
+                        masternode_identity,
+                        true,
+                        &BlockInfo::default(),
+                        true,
+                        None,
+                        platform_version,
+                    )
+                    .expect("expected to insert the masternode identity");
+
+                let keys = vec![
+                    masternode_key(1, KeyType::ECDSA_HASH160, Purpose::TRANSFER),
+                    masternode_key(2, KeyType::EDDSA_25519_HASH160, Purpose::SYSTEM),
+                ];
+                let operations = |operation: IdentityOperationType, estimate: bool| {
+                    let mut estimated_costs = estimate.then(HashMap::new);
+                    let operations = operation
+                        .into_low_level_drive_operations(
+                            &drive,
+                            &mut estimated_costs,
+                            &BlockInfo::default(),
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected operations");
+                    (operations, estimated_costs)
+                };
+                for estimate in [false, true] {
+                    assert_eq!(
+                        operations(
+                            IdentityOperationType::AddNewKeysToMasternodeIdentity {
+                                identity_id: MASTERNODE_IDENTITY_ID,
+                                non_unique_keys_to_add: keys.clone(),
+                            },
+                            estimate
+                        ),
+                        operations(
+                            IdentityOperationType::AddNewKeysToIdentity {
+                                identity_id: MASTERNODE_IDENTITY_ID,
+                                unique_keys_to_add: vec![],
+                                non_unique_keys_to_add: keys.clone(),
+                            },
+                            estimate
+                        ),
+                        "protocol version {protocol_version}, estimate {estimate}"
+                    );
+                }
+            }
+        }
+    }
+
     mod disable_identity_keys {
         use super::*;
         use chrono::Utc;
@@ -443,11 +538,25 @@ mod tests {
         }
 
         #[test]
-        fn should_disable_a_few_keys_latest_version_estimated() {
-            let platform_version = PlatformVersion::latest();
+        fn should_disable_a_few_keys_protocol_version_13_estimated() {
+            // Protocol 13 estimates with a maximal stand-in key (disable_identity_keys v0).
+            let platform_version = PlatformVersion::get(13).expect("protocol 13");
             let expected_fee_result = FeeResult {
                 storage_fee: 486000,
                 processing_fee: 3216860,
+                ..Default::default()
+            };
+            do_should_disable_a_few_keys(false, platform_version, expected_fee_result);
+        }
+
+        #[test]
+        fn should_disable_a_few_keys_latest_version_estimated() {
+            // Protocol 14 estimates from the stored keys (disable_identity_keys v1), so the
+            // storage estimate matches the applied cost exactly.
+            let platform_version = PlatformVersion::latest();
+            let expected_fee_result = FeeResult {
+                storage_fee: 513000,
+                processing_fee: 3195760,
                 ..Default::default()
             };
             do_should_disable_a_few_keys(false, platform_version, expected_fee_result);
@@ -548,11 +657,32 @@ mod tests {
         }
 
         #[test]
-        fn estimated_costs_should_have_same_storage_cost_latest_version() {
-            let platform_version = PlatformVersion::latest();
+        fn estimated_costs_should_have_same_storage_cost_protocol_version_13() {
+            let platform_version = PlatformVersion::get(13).expect("protocol 13");
             let expected_estimated_fee_result = FeeResult {
                 storage_fee: 486000,
                 processing_fee: 3216860,
+                ..Default::default()
+            };
+            let expected_fee_result = FeeResult {
+                storage_fee: 486000,
+                processing_fee: 794720,
+                ..Default::default()
+            };
+            estimated_costs_should_have_same_storage_cost(
+                platform_version,
+                expected_estimated_fee_result,
+                expected_fee_result,
+            );
+        }
+
+        #[test]
+        fn estimated_costs_should_have_same_storage_cost_latest_version() {
+            let platform_version = PlatformVersion::latest();
+            // disable_identity_keys v1 also reads the stored keys during estimation.
+            let expected_estimated_fee_result = FeeResult {
+                storage_fee: 486000,
+                processing_fee: 3251060,
                 ..Default::default()
             };
             let expected_fee_result = FeeResult {

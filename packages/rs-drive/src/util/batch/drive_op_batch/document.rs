@@ -94,8 +94,40 @@ pub enum DocumentOperationType<'a> {
         /// Document type
         document_type_info: DocumentTypeInfo<'a>,
     },
+    /// Adds a document and deletes the documents its create consumed: the commitments a
+    /// `refersTo` lookup found for a reference declaring `consume` (protocol version 14),
+    /// each a document of the same contract. One conversion builds the add first and then
+    /// each delete against the operations already built, so a tree the new document writes
+    /// into (an index bucket shared with a consumed document, an expirations tree of the
+    /// same millisecond) is not taken for empty and deleted from under the insert.
+    AddDocumentAndDeleteConsumed {
+        /// The document and contract info, also may contain the owner_id
+        owned_document_info: OwnedDocumentInfo<'a>,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+        /// The consumed documents, by id and document type name
+        consumed_documents: Vec<(Identifier, String)>,
+    },
     /// Deletes a document
     DeleteDocument {
+        /// The document id
+        document_id: Identifier,
+        /// Data Contract info to potentially be resolved if needed
+        contract_info: DataContractInfo<'a>,
+        /// Document type
+        document_type_info: DocumentTypeInfo<'a>,
+    },
+    /// Deletes a document without consulting `canBeDeleted`, which rules what the document's
+    /// own owner may do. Used for a deletion on behalf of the contract's moderators (the
+    /// caller has checked that the document type sets `moderatorAbilities.delete`), for a
+    /// document a contested create consumes (the consume rules admitted it, protocol version
+    /// 14), and for the platform's deletion of a document whose type declares a `ttl` once it
+    /// has passed (protocol version 14), which also removes the document's expirations tree
+    /// entry. A document type that keeps history is still refused, as both keywords are on
+    /// such a type.
+    ForceDeleteDocument {
         /// The document id
         document_id: Identifier,
         /// Data Contract info to potentially be resolved if needed
@@ -159,6 +191,173 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        if estimated_costs_only_with_layer_info.is_none() {
+            self.prepare_time_range_ttl(drive, block_info, transaction, platform_version)?;
+        }
+        self.into_low_level_drive_operations_after_ttl_drain(
+            drive,
+            estimated_costs_only_with_layer_info,
+            block_info,
+            transaction,
+            platform_version,
+        )
+    }
+}
+
+impl DocumentOperationType<'_> {
+    /// Run all direct TTL cleanup before any operation in this batch is built.
+    pub(crate) fn prepare_time_range_ttl(
+        &self,
+        drive: &Drive,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        if platform_version
+            .system_limits
+            .min_time_range_ttl_drop_operations_per_write
+            .is_none()
+        {
+            return Ok(());
+        }
+        // Each document earns a drainage budget, but all budgets are spent
+        // before the first document's low-level ops are queued.
+        self.for_each_document_type(
+            drive,
+            block_info,
+            transaction,
+            |contract, document_type, _| {
+                drive.prepare_document_time_range_ttl(
+                    contract,
+                    document_type,
+                    block_info.time_ms,
+                    transaction,
+                    platform_version,
+                )
+            },
+            platform_version,
+        )
+    }
+
+    /// Calls `visit` with the contract and document type of every document
+    /// this operation writes or deletes, once per document, the consumed
+    /// documents of an `AddDocumentAndDeleteConsumed` included, and whether
+    /// the write may preallocate referring types' trees: a plain insert, the
+    /// one write that does (a contested insert never does; an overriding insert
+    /// that turns out an update is counted conservatively). Withdrawals and
+    /// document history write system types and are not visited. Resolution reads are unbilled
+    /// maintenance; normal conversion still resolves and bills the contract
+    /// through its usual path.
+    pub(crate) fn for_each_document_type(
+        &self,
+        drive: &Drive,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        mut visit: impl FnMut(&DataContract, DocumentTypeRef, bool) -> Result<(), Error>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        match self {
+            Self::AddDocument {
+                contract_info,
+                document_type_info,
+                ..
+            }
+            | Self::AddContestedDocument {
+                contract_info,
+                document_type_info,
+                ..
+            }
+            | Self::UpdateDocument {
+                contract_info,
+                document_type_info,
+                ..
+            }
+            | Self::DeleteDocument {
+                contract_info,
+                document_type_info,
+                ..
+            }
+            | Self::ForceDeleteDocument {
+                contract_info,
+                document_type_info,
+                ..
+            }
+            | Self::DeleteIndexOnlyDocument {
+                contract_info,
+                document_type_info,
+                ..
+            } => {
+                let resolved = contract_info.clone().resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut vec![],
+                    platform_version,
+                )?;
+                let contract = resolved.as_ref();
+                visit(
+                    contract,
+                    document_type_info.clone().resolve(contract)?,
+                    matches!(self, Self::AddDocument { .. }),
+                )
+            }
+            Self::MultipleDocumentOperationsForSameContractDocumentType {
+                document_operations,
+            } => {
+                for operation in &document_operations.operations {
+                    visit(
+                        document_operations.contract,
+                        document_operations.document_type,
+                        matches!(operation, DocumentOperation::AddOperation { .. }),
+                    )?;
+                }
+                Ok(())
+            }
+            // The new document's type and every consumed document's type
+            Self::AddDocumentAndDeleteConsumed {
+                contract_info,
+                document_type_info,
+                consumed_documents,
+                ..
+            } => {
+                let resolved = contract_info.clone().resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut vec![],
+                    platform_version,
+                )?;
+                let contract = resolved.as_ref();
+                visit(
+                    contract,
+                    document_type_info.clone().resolve(contract)?,
+                    true,
+                )?;
+                for (_, document_type_name) in consumed_documents {
+                    visit(
+                        contract,
+                        DocumentTypeInfo::DocumentTypeName(document_type_name.clone())
+                            .resolve(contract)?,
+                        false,
+                    )?;
+                }
+                Ok(())
+            }
+            // These write to system contracts.
+            Self::AddWithdrawalDocument { .. } | Self::DocumentHistory { .. } => Ok(()),
+        }
+    }
+
+    pub(crate) fn into_low_level_drive_operations_after_ttl_drain(
+        self,
+        drive: &Drive,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             DocumentOperationType::AddDocument {
                 owned_document_info,
@@ -182,7 +381,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     contract,
                     document_type,
                 };
-                let mut operations = drive.add_document_for_contract_operations(
+                let mut operations = drive.add_document_for_contract_operations_without_ttl_drain(
                     document_and_contract_info,
                     override_document,
                     block_info,
@@ -249,7 +448,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     contract: &contract,
                     document_type,
                 };
-                drive.add_document_for_contract_operations(
+                drive.add_document_for_contract_operations_without_ttl_drain(
                     document_and_contract_info,
                     false,
                     block_info,
@@ -280,14 +479,15 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     contract,
                     document_type,
                 };
-                let mut operations = drive.update_document_for_contract_operations(
-                    document_and_contract_info,
-                    block_info,
-                    &mut None,
-                    estimated_costs_only_with_layer_info,
-                    transaction,
-                    platform_version,
-                )?;
+                let mut operations = drive
+                    .update_document_for_contract_operations_without_ttl_drain(
+                        document_and_contract_info,
+                        block_info,
+                        &mut None,
+                        estimated_costs_only_with_layer_info,
+                        transaction,
+                        platform_version,
+                    )?;
                 drive_operations.append(&mut operations);
                 Ok(drive_operations)
             }
@@ -313,6 +513,60 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 )?;
                 Ok(batch_operations)
             }
+            DocumentOperationType::AddDocumentAndDeleteConsumed {
+                owned_document_info,
+                contract_info,
+                document_type_info,
+                consumed_documents,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+
+                let document_and_contract_info = DocumentAndContractInfo {
+                    owned_document_info,
+                    contract,
+                    document_type,
+                };
+                let mut operations = drive.add_document_for_contract_operations_without_ttl_drain(
+                    document_and_contract_info,
+                    false,
+                    block_info,
+                    &mut None,
+                    estimated_costs_only_with_layer_info,
+                    transaction,
+                    platform_version,
+                )?;
+                drive_operations.append(&mut operations);
+                // Each delete sees the add and the earlier deletes as pending: a tree
+                // holding a pending insert is not empty. A consumed document is deleted
+                // without its owner's `canBeDeleted` guard: the consume rules admitted it,
+                // and a type whose documents only a consume deletes
+                // (`canBeDeleted: "onlyWhenConsumed"`) refuses its owner's delete
+                for (document_id, document_type_name) in consumed_documents {
+                    let consumed_document_type =
+                        DocumentTypeInfo::DocumentTypeName(document_type_name).resolve(contract)?;
+                    let mut operations = drive.force_delete_document_for_contract_operations(
+                        document_id,
+                        contract,
+                        consumed_document_type,
+                        Some(&mut drive_operations),
+                        estimated_costs_only_with_layer_info,
+                        block_info.time_ms,
+                        transaction,
+                        platform_version,
+                    )?;
+                    drive_operations.append(&mut operations);
+                }
+                Ok(drive_operations)
+            }
             DocumentOperationType::DeleteDocument {
                 document_id,
                 contract_info,
@@ -329,12 +583,42 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 let contract = contract_resolved_info.as_ref();
                 let document_type = document_type_info.resolve(contract)?;
 
-                drive.delete_document_for_contract_operations(
+                drive.delete_document_for_contract_operations_without_ttl_drain(
                     document_id,
                     contract,
                     document_type,
                     None,
                     estimated_costs_only_with_layer_info,
+                    block_info.time_ms,
+                    transaction,
+                    platform_version,
+                )
+            }
+            DocumentOperationType::ForceDeleteDocument {
+                document_id,
+                contract_info,
+                document_type_info,
+            } => {
+                let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+                let contract_resolved_info = contract_info.resolve(
+                    drive,
+                    block_info,
+                    transaction,
+                    &mut drive_operations,
+                    platform_version,
+                )?;
+                let contract = contract_resolved_info.as_ref();
+                let document_type = document_type_info.resolve(contract)?;
+
+                // The deletion a document's own owner runs, without its `canBeDeleted` guard;
+                // it removes the expirations tree entry of a type with a `ttl` itself.
+                drive.force_delete_document_for_contract_operations(
+                    document_id,
+                    contract,
+                    document_type,
+                    None,
+                    estimated_costs_only_with_layer_info,
+                    block_info.time_ms,
                     transaction,
                     platform_version,
                 )
@@ -360,12 +644,13 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 // Reconstruct the document the entries were written from.
                 let document = Drive::index_only_document_from_values(document_id, owner_id, data)?;
 
-                drive.delete_index_only_document_for_contract_operations(
+                drive.delete_index_only_document_for_contract_operations_without_ttl_drain(
                     document,
                     contract,
                     document_type,
                     None,
                     estimated_costs_only_with_layer_info,
+                    block_info.time_ms,
                     transaction,
                     platform_version,
                 )
@@ -391,15 +676,16 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                                 contract,
                                 document_type,
                             };
-                            let mut operations = drive.add_document_for_contract_operations(
-                                document_and_contract_info,
-                                override_document,
-                                block_info,
-                                &mut Some(&mut drive_operations),
-                                estimated_costs_only_with_layer_info,
-                                transaction,
-                                platform_version,
-                            )?;
+                            let mut operations = drive
+                                .add_document_for_contract_operations_without_ttl_drain(
+                                    document_and_contract_info,
+                                    override_document,
+                                    block_info,
+                                    &mut Some(&mut drive_operations),
+                                    estimated_costs_only_with_layer_info,
+                                    transaction,
+                                    platform_version,
+                                )?;
                             drive_operations.append(&mut operations);
                         }
                         DocumentOperation::UpdateOperation(update_operation) => {
@@ -428,14 +714,15 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                                 contract,
                                 document_type,
                             };
-                            let mut operations = drive.update_document_for_contract_operations(
-                                document_and_contract_info,
-                                block_info,
-                                &mut Some(&mut drive_operations),
-                                estimated_costs_only_with_layer_info,
-                                transaction,
-                                platform_version,
-                            )?;
+                            let mut operations = drive
+                                .update_document_for_contract_operations_without_ttl_drain(
+                                    document_and_contract_info,
+                                    block_info,
+                                    &mut Some(&mut drive_operations),
+                                    estimated_costs_only_with_layer_info,
+                                    transaction,
+                                    platform_version,
+                                )?;
                             drive_operations.append(&mut operations);
                         }
                     }

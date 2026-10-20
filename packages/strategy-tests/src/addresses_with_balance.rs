@@ -518,7 +518,7 @@ impl AddressesWithBalance {
                 let mut entries: Vec<_> = mem::take(&mut self.addresses_in_block_with_new_balance)
                     .into_iter()
                     .collect();
-                entries.sort_by(|a, b| b.1 .1.cmp(&a.1 .1)); // Sort by balance descending
+                entries.sort_by_key(|entry| std::cmp::Reverse(entry.1 .1)); // Sort by balance descending
                 entries.truncate(keep_top_n as usize);
 
                 // Rebuild the map with only top N

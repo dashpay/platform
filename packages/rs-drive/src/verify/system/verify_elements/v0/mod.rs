@@ -37,7 +37,9 @@ impl Drive {
         keys: Vec<Vec<u8>>,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, BTreeMap<Vec<u8>, Option<Element>>), Error> {
-        let mut query = Query::new();
+        // Match prove_elements_v0: Query::default() emits a right-to-left proof.
+        // GroveDB verifies that the proof operation family matches this direction.
+        let mut query = Query::new_with_direction(false);
         query.insert_keys(keys);
         let path_query = PathQuery::new(path, SizedQuery::new(query, None, None));
 

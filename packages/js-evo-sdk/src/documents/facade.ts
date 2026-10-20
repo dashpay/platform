@@ -23,6 +23,56 @@ export class DocumentsFacade {
     return w.getDocumentsWithProofInfo(query);
   }
 
+  /**
+   * Chained document query — a provable semi-join:
+   * `SELECT * FROM <outerDocumentType> WHERE $id IN
+   *   (SELECT <joinProperty> FROM <innerDocumentType> WHERE ...)`.
+   *
+   * "Posts I liked" in one verified round trip: inner `like` through
+   * its byLiker-style index, join `postId`, outer `post`. Both halves
+   * ride ONE merged proof — a single quorum-signed state root by
+   * construction — and the outer query is re-derived and checked
+   * against the proven inner values, so the responding node cannot
+   * steer the join. Paginate on the inner query with a range clause on
+   * the join property.
+   */
+  async chained(query: wasm.ChainedDocumentsQuery): Promise<wasm.ChainedDocumentsResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getChainedDocuments(query);
+  }
+
+  async chainedWithProof(
+    query: wasm.ChainedDocumentsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.ChainedDocumentsResult>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getChainedDocumentsWithProofInfo(query);
+  }
+
+  /**
+   * Composite document query: a page plus the sub-queries derived from
+   * it (by-id joins, indexed lookups, grouped counts, siblings), in ONE
+   * verified round trip.
+   *
+   * A feed page in a single call: the posts, their like counts, the
+   * posts they quote, their authors' profiles, and the viewer's own
+   * likes on them. Everything rides ONE merged proof under one
+   * quorum-signed state root, and every sub-query is re-derived from
+   * the proven page, so the responding node cannot substitute, omit,
+   * or inject a sub-result. Paginate with a range clause on the page's
+   * ordering property.
+   */
+  async composite(query: wasm.CompositeDocumentsQuery): Promise<wasm.CompositeDocumentsResult> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getCompositeDocuments(query);
+  }
+
+  async compositeWithProof(
+    query: wasm.CompositeDocumentsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<wasm.CompositeDocumentsResult>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getCompositeDocumentsWithProofInfo(query);
+  }
+
   async history(query: wasm.DocumentHistoryQuery): Promise<Map<bigint, wasm.Document>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentHistory(query);
@@ -54,11 +104,31 @@ export class DocumentsFacade {
    * Creates a document and resolves to the confirmed Document as Platform
    * committed it, consensus-populated system fields included — keep this
    * instance when you later intend to delete an indexOnly document whose
-   * type requires `$createdAt`.
+   * type requires `$createdAt`. A document of a contested index joins a
+   * contest: `options.contestFund` is the most, in credits, it pays into it.
+   * For an indexOnly type the proof shows the document's entry at the proof's
+   * block, not that this create wrote it: no stronger proof exists for one.
    */
   async create(options: wasm.DocumentCreateOptions): Promise<wasm.Document> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentCreate(options);
+  }
+
+  /**
+   * The prefunded voting balance a create of `document` states to join the
+   * contest it enters (a DPNS name, a moderation charter): the contested index
+   * and the fund to join it now, which from protocol version 14 doubles once
+   * the contest holds 250 contenders and again for every 50 more. Undefined
+   * when the document joins no contest. {@link create} states it itself; a
+   * transition built by hand passes it as `prefundedVotingBalance` to
+   * `new DocumentCreateTransition`. Its `credits` alone is what the Rust SDK's
+   * `contest_fund_to_join` returns; this is its `prefunded_voting_balance_to_join`.
+   */
+  async contestFundToJoin(
+    document: wasm.Document,
+  ): Promise<wasm.PrefundedVotingBalance | undefined> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getContestFundToJoin(document);
   }
 
   async replace(options: wasm.DocumentReplaceOptions): Promise<void> {
@@ -66,6 +136,11 @@ export class DocumentsFacade {
     return w.documentReplace(options);
   }
 
+  /**
+   * Deletes a document and resolves once the proof shows it gone. For an
+   * indexOnly type the proof shows the document's entry gone at the proof's
+   * block, not that this delete removed it: no stronger proof exists for one.
+   */
   async delete(options: wasm.DocumentDeleteOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentDelete(options);

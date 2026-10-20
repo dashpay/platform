@@ -147,7 +147,10 @@ extension PlatformWalletManager {
         // pass drained by `resetPlatformAddressSyncState` (Clear) repaints
         // chain-tip height, last-sync time, and metrics over the freshly
         // cleared UI. Mirrors the shielded guard.
-        guard generation == platformAddressSyncGeneration.current() else { return }
+        // Early shielded stop retains the handle/generation while shutdown
+        // drains admitted reads, but callbacks must stop publishing immediately.
+        guard !shutdownRequested,
+              generation == platformAddressSyncGeneration.current() else { return }
         lastPlatformAddressSyncEvent = event
     }
 
@@ -225,7 +228,12 @@ extension PlatformWalletManager {
                 "PlatformWalletManager not configured"
             )
         }
+        return try Self.readIsPlatformAddressSyncing(handle)
+    }
 
+    /// The native read behind [`isPlatformAddressSyncing()`] (an atomic
+    /// load, never parks); also what the progress poller runs.
+    nonisolated static func readIsPlatformAddressSyncing(_ handle: Handle) throws -> Bool {
         var syncing = false
         try platform_wallet_manager_platform_address_sync_is_syncing(handle, &syncing).check()
         return syncing

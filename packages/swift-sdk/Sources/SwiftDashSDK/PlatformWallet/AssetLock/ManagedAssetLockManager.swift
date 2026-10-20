@@ -64,6 +64,8 @@ public final class ManagedAssetLockManager: @unchecked Sendable {
         /// explicit resume may consume one; Platform rejects an
         /// already-spent outpoint with a typed error.
         case recoveredFromChain = 5
+        /// The wallet drain was proven and its owned output recorded durably.
+        case drainCompleted = 6
     }
 
     /// A tracked asset lock.

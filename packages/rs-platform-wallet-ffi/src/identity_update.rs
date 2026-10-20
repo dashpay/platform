@@ -12,23 +12,31 @@ use std::slice;
 
 use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+use dpp::identity::KeyID;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
-use dpp::serialization::PlatformDeserializable;
+use dpp::prelude::Identifier;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::state_transition::public_key_in_creation::accessors::{
+    IdentityPublicKeyInCreationV0Getters, IdentityPublicKeyInCreationV1Getters,
+};
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::{StateTransition, StateTransitionType};
+use platform_wallet::wallet::identity::network::{
+    check_document_type_name, decode_state_transition,
+};
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
-use crate::identity_registration_with_signer::{decode_contract_bounds, IdentityPubkeyFFI};
+use crate::identity_registration_with_signer::{
+    decode_contract_bounds, key_with_row_limits, IdentityPubkeyFFI,
+};
 use crate::runtime::block_on_worker;
 use crate::types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
-
-const IDENTITY_UPDATE_VARIANT_TAG: u8 = 6;
 
 /// Owned C representation of one public key carried by a parsed
 /// `IdentityUpdateTransition`.
@@ -45,10 +53,22 @@ pub struct ParsedIdentityUpdatePublicKeyFFI {
     pub read_only: bool,
     pub data_ptr: *mut u8,
     pub data_len: usize,
-    /// 0 = none, 1 = SingleContract, 2 = SingleContractDocumentType.
+    /// 0 = none, 1 = SingleContract, 2 = SingleContractDocumentType,
+    /// 3 = ContractGroup (the id is the contract group id).
     pub contract_bounds_kind: u8,
     pub contract_bounds_id: [u8; 32],
     pub contract_bounds_document_type: *mut c_char,
+    /// Whether the key is registered with a `total_budget` (protocol
+    /// version 14, `IdentityPublicKeyInCreation::V1`).
+    pub has_total_budget: bool,
+    /// Credits the key may take from the identity over its lifetime, when
+    /// `has_total_budget`.
+    pub total_budget: u64,
+    /// Whether the key is registered with an `expires_at`.
+    pub has_expires_at: bool,
+    /// Block time in milliseconds from which the key can no longer sign,
+    /// when `has_expires_at`.
+    pub expires_at: u64,
 }
 
 /// Owned C representation of the inspectable parts of a parsed
@@ -76,55 +96,26 @@ impl Default for ParsedIdentityUpdateFFI {
 
 fn parse_identity_update_transition_bytes(
     bytes: &[u8],
-) -> Result<
-    dpp::state_transition::identity_update_transition::IdentityUpdateTransition,
-    PlatformWalletFFIResult,
-> {
-    let mut prefixed = Vec::with_capacity(bytes.len() + 1);
-    prefixed.push(IDENTITY_UPDATE_VARIANT_TAG);
-    prefixed.extend_from_slice(bytes);
-
-    // A leading variant tag usually means the payload is already framed as a
-    // state transition, and Yappr's tagless framing needs the tag prepended.
-    // Neither test is conclusive — a tagless body can start with the tag byte
-    // by coincidence — so the likelier framing is only tried first, and the
-    // other one is still tried before the payload is rejected.
-    let (first, first_label, second, second_label) =
-        if bytes.first().copied() == Some(IDENTITY_UPDATE_VARIANT_TAG) {
-            (bytes, "as-is", prefixed.as_slice(), "variant tag prepended")
-        } else {
-            (prefixed.as_slice(), "variant tag prepended", bytes, "as-is")
-        };
-
-    let state_transition = match StateTransition::deserialize_from_bytes(first) {
-        Ok(state_transition) => state_transition,
-        Err(first_error) => match StateTransition::deserialize_from_bytes(second) {
-            Ok(state_transition) => state_transition,
-            Err(second_error) => {
-                return Err(PlatformWalletFFIResult::err(
-                    PlatformWalletFFIResultCode::ErrorDeserialization,
-                    format!(
-                        "Failed to deserialize IdentityUpdateTransition in either framing \
-                         ({first_label}: {first_error}; {second_label}: {second_error})"
-                    ),
-                ));
-            }
-        },
-    };
+) -> Result<IdentityUpdateTransition, PlatformWalletFFIResult> {
+    // Tolerates Yappr's untagged identity updates next to standard tagged bytes.
+    let (state_transition, _tagged_bytes) =
+        decode_state_transition(bytes, &[StateTransitionType::IdentityUpdate])
+            .map_err(crate::parse_state_transition::deserialization_error)?;
 
     match state_transition {
         StateTransition::IdentityUpdate(identity_update) => Ok(identity_update),
         other => Err(PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            format!("Expected IdentityUpdateTransition, got {other:?}"),
+            format!("Expected IdentityUpdateTransition, got {}", other.name()),
         )),
     }
 }
 
 /// Reporting a narrower bound than the transition declares would let the user
 /// approve a broader scope than the one they were shown, so a document type
-/// that cannot cross the FFI as a C string is an error rather than a fallback
-/// to the contract-only bound.
+/// that cannot be shown as is is an error rather than a fallback to the
+/// contract-only bound. The name is the approval sheet's own field, so it must
+/// pass the same consensus-pattern check the state transition summary applies.
 fn encode_contract_bounds(
     bounds: Option<&ContractBounds>,
 ) -> Result<(u8, [u8; 32], *mut c_char), PlatformWalletFFIResult> {
@@ -133,16 +124,23 @@ fn encode_contract_bounds(
         Some(ContractBounds::SingleContractDocumentType {
             id,
             document_type_name,
-        }) => match CString::new(document_type_name.as_str()) {
-            Ok(value) => Ok((2u8, id.to_buffer(), value.into_raw())),
-            Err(error) => Err(PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!(
-                    "Contract-bounds document type name cannot be represented as a C string: \
-                     {error}"
-                ),
-            )),
-        },
+        }) => {
+            // The consensus pattern excludes NUL, so a name that passes it is
+            // always a valid C string.
+            let value = check_document_type_name(document_type_name)
+                .map_err(|error| error.to_string())
+                .and_then(|()| {
+                    CString::new(document_type_name.as_str()).map_err(|error| error.to_string())
+                })
+                .map_err(|error| {
+                    PlatformWalletFFIResult::err(
+                        PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                        format!("Contract-bounds document type: {error}"),
+                    )
+                })?;
+            Ok((2u8, id.to_buffer(), value.into_raw()))
+        }
+        Some(ContractBounds::ContractGroup { id }) => Ok((3u8, id.to_buffer(), ptr::null_mut())),
         None => Ok((0u8, [0u8; 32], ptr::null_mut())),
     }
 }
@@ -170,12 +168,13 @@ unsafe fn free_parsed_public_keys(keys: &mut [ParsedIdentityUpdatePublicKeyFFI])
     }
 }
 
-fn project_parsed_identity_update(
-    transition: &dpp::state_transition::identity_update_transition::IdentityUpdateTransition,
+pub(crate) fn project_parsed_identity_update(
+    identity_id: &Identifier,
+    public_keys_to_add: &[IdentityPublicKeyInCreation],
+    public_key_ids_to_disable: &[KeyID],
 ) -> Result<ParsedIdentityUpdateFFI, PlatformWalletFFIResult> {
-    let identity_id = transition.identity_id().to_buffer();
+    let identity_id = identity_id.to_buffer();
 
-    let public_keys_to_add = transition.public_keys_to_add();
     let mut add_public_keys_vec: Vec<ParsedIdentityUpdatePublicKeyFFI> =
         Vec::with_capacity(public_keys_to_add.len());
 
@@ -208,6 +207,10 @@ fn project_parsed_identity_update(
             contract_bounds_kind,
             contract_bounds_id,
             contract_bounds_document_type,
+            has_total_budget: public_key.total_budget().is_some(),
+            total_budget: public_key.total_budget().unwrap_or_default(),
+            has_expires_at: public_key.expires_at().is_some(),
+            expires_at: public_key.expires_at().unwrap_or_default(),
         });
     }
 
@@ -219,7 +222,7 @@ fn project_parsed_identity_update(
             as *mut ParsedIdentityUpdatePublicKeyFFI
     };
 
-    let disable_public_key_ids_vec = transition.public_key_ids_to_disable().to_vec();
+    let disable_public_key_ids_vec = public_key_ids_to_disable.to_vec();
     let disable_public_key_ids_count = disable_public_key_ids_vec.len();
     let disable_public_key_ids = if disable_public_key_ids_count == 0 {
         ptr::null_mut()
@@ -239,9 +242,9 @@ fn project_parsed_identity_update(
 /// Deserializes a raw `IdentityUpdateTransition` (as carried by a DashConnect
 /// `dash-st:` QR) into its inspectable parts.
 ///
-/// Accepts both normal tagged DPP state-transition bytes and Yappr's tagless
-/// framing, where the positional bincode enum variant tag `6` has to be
-/// prepended before deserialization.
+/// Accepts both normal tagged DPP state-transition bytes and an identity update
+/// serialized without the `StateTransition` variant tag (Yappr's framing);
+/// trailing bytes are refused.
 ///
 /// Does NOT sign and does NOT broadcast — the caller validates the result and
 /// rebuilds the transition through the normal signing path.
@@ -258,7 +261,11 @@ pub unsafe extern "C" fn platform_wallet_parse_identity_update_transition(
 
     let bytes = slice::from_raw_parts(transition_bytes, transition_len);
     let transition = unwrap_result_or_return!(parse_identity_update_transition_bytes(bytes));
-    *out = unwrap_result_or_return!(project_parsed_identity_update(&transition));
+    *out = unwrap_result_or_return!(project_parsed_identity_update(
+        &transition.identity_id(),
+        transition.public_keys_to_add(),
+        transition.public_key_ids_to_disable(),
+    ));
     PlatformWalletFFIResult::ok()
 }
 
@@ -337,16 +344,19 @@ pub unsafe extern "C" fn platform_wallet_update_identity_with_signer(
                     "add_public_keys"
                 ));
 
-                keys.push(IdentityPublicKey::V0(IdentityPublicKeyV0 {
-                    id: row.key_id,
-                    purpose,
-                    security_level,
-                    contract_bounds,
-                    key_type,
-                    read_only: row.read_only,
-                    data: BinaryData::new(pubkey_bytes),
-                    disabled_at: None,
-                }));
+                keys.push(key_with_row_limits(
+                    IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                        id: row.key_id,
+                        purpose,
+                        security_level,
+                        contract_bounds,
+                        key_type,
+                        read_only: row.read_only,
+                        data: BinaryData::new(pubkey_bytes),
+                        disabled_at: None,
+                    }),
+                    row,
+                ));
             }
             keys
         };
@@ -556,27 +566,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_tagless_framing_by_prepending_the_variant_tag() {
-        let tagged = fixture_transition_bytes();
-        let tagless = tagged[1..].to_vec();
-        let mut out = ParsedIdentityUpdateFFI::default();
-
-        let result = unsafe {
-            platform_wallet_parse_identity_update_transition(
-                tagless.as_ptr(),
-                tagless.len(),
-                &mut out,
-            )
-        };
-
-        assert_eq!(result.code, PlatformWalletFFIResultCode::Success);
-        assert_eq!(out.identity_id, [0x11; 32]);
-        assert_eq!(out.add_public_keys_count, 2);
-
-        unsafe { platform_wallet_parse_identity_update_transition_free(&mut out) };
-    }
-
-    #[test]
     fn rejects_malformed_identity_update_transition_bytes() {
         let bytes = [0xde, 0xad, 0xbe, 0xef];
         let mut out = ParsedIdentityUpdateFFI::default();
@@ -652,7 +641,11 @@ mod tests {
 
         // `ParsedIdentityUpdateFFI` is a raw-pointer C struct with no `Debug`,
         // so the success case is rejected by hand rather than with `expect_err`.
-        let error = match project_parsed_identity_update(&transition) {
+        let error = match project_parsed_identity_update(
+            &transition.identity_id(),
+            transition.public_keys_to_add(),
+            transition.public_key_ids_to_disable(),
+        ) {
             Ok(_) => panic!("a document type with an interior NUL must not be narrowed"),
             Err(error) => error,
         };
@@ -661,6 +654,52 @@ mod tests {
             error.code,
             PlatformWalletFFIResultCode::ErrorInvalidParameter
         );
+    }
+
+    /// The legacy parser shows a document-type bound in its own field, so a
+    /// name outside the consensus pattern is refused through the public entry
+    /// point, as the state transition summary refuses it.
+    #[test]
+    fn rejects_contract_bounds_document_type_outside_the_consensus_pattern() {
+        for name in ["a\nb", "post\u{202e}", "", &"x".repeat(65)] {
+            let transition: StateTransition = IdentityUpdateTransitionV0 {
+                identity_id: Identifier::from([0x11; 32]),
+                revision: 1,
+                nonce: 1,
+                add_public_keys: vec![IdentityPublicKeyInCreationV0 {
+                    id: 17,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    purpose: Purpose::ENCRYPTION,
+                    security_level: SecurityLevel::MEDIUM,
+                    read_only: false,
+                    data: BinaryData::new(vec![0x02; 33]),
+                    signature: BinaryData::new(vec![0xaa; 65]),
+                    contract_bounds: Some(ContractBounds::SingleContractDocumentType {
+                        id: Identifier::from([0x44; 32]),
+                        document_type_name: name.to_string(),
+                    }),
+                }
+                .into()],
+                ..Default::default()
+            }
+            .into();
+            let bytes = transition.serialize_to_bytes().unwrap();
+            let mut out = ParsedIdentityUpdateFFI::default();
+
+            let result = unsafe {
+                platform_wallet_parse_identity_update_transition(
+                    bytes.as_ptr(),
+                    bytes.len(),
+                    &mut out,
+                )
+            };
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "{name:?}"
+            );
+            assert!(out.add_public_keys.is_null(), "{name:?}");
+        }
     }
 
     #[test]

@@ -30,6 +30,39 @@ struct IdentityStorageListView: View {
     }
 }
 
+// MARK: - PersistentIdentityBalanceMetadata
+
+struct IdentityBalanceMetadataStorageListView: View {
+    let network: Network
+    @Query private var records: [PersistentIdentityBalanceMetadata]
+
+    private var filtered: [PersistentIdentityBalanceMetadata] {
+        records.filter { $0.networkRaw == network.rawValue }.sorted {
+            // Stored Int64 values carry unsigned bit patterns, so sort the decoded heights.
+            UInt64(bitPattern: $0.platformHeight) > UInt64(bitPattern: $1.platformHeight)
+        }
+    }
+
+    var body: some View {
+        let visible = filtered
+        List(visible) { record in
+            NavigationLink(destination: IdentityBalanceMetadataStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.identityId.toHexString())
+                        .font(.body).lineLimit(1).truncationMode(.middle)
+                    Text("Wallet: \(record.walletId.toHexString())")
+                        .font(.caption).foregroundColor(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                    Text("Platform height \(UInt64(bitPattern: record.platformHeight))")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Balance Metadata (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "clock.badge.checkmark") } }
+    }
+}
+
 // MARK: - PersistentDocument
 
 struct DocumentStorageListView: View {
@@ -288,7 +321,7 @@ struct PublicKeyStorageListView: View {
     /// name, then alias, then a short identity id — avoids the
     /// generic "Identity" placeholder except for truly empty rows.
     private func identityDisplayName(_ identity: PersistentIdentity) -> String {
-        if let name = identity.mainDpnsName, !name.isEmpty {
+        if let name = identity.ownedMainDpnsName, !name.isEmpty {
             return name
         }
         if let name = identity.dpnsName, !name.isEmpty {

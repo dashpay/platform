@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::state_transition::address_credit_withdrawal::transform_into_action::v0::AddressCreditWithdrawalStateTransitionTransformIntoActionValidationV0;
+use crate::execution::validation::state_transition::address_credit_withdrawal::transform_into_action::v1::AddressCreditWithdrawalStateTransitionTransformIntoActionValidationV1;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
@@ -52,9 +53,14 @@ impl StateTransitionAddressCreditWithdrawalTransitionActionTransformer
                 inputs_with_remaining_balance,
                 platform_version,
             ),
+            1 => self.transform_into_action_v1(
+                block_info,
+                inputs_with_remaining_balance,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "address credit withdrawal transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

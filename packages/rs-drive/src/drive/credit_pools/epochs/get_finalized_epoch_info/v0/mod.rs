@@ -3,7 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::block::epoch::{EpochIndex, EPOCH_KEY_OFFSET};
 use dpp::block::finalized_epoch_info::FinalizedEpochInfo;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::TransactionArg;
@@ -48,6 +48,7 @@ impl Drive {
     /// - `start_epoch_index_included` (`bool`): If `true`, the epoch at `start_epoch_index` is included.
     /// - `end_epoch_index` (`u16`): The ending epoch index for the query.
     /// - `end_epoch_index_included` (`bool`): If `true`, the epoch at `end_epoch_index` is included.
+    /// - `limit` (`u16`): The most epochs returned.
     /// - `transaction` (`TransactionArg`): The current GroveDB transaction.
     /// - `platform_version` (`&PlatformVersion`): The platform version to use for method dispatch.
     ///
@@ -61,6 +62,7 @@ impl Drive {
     /// - Returns errors from the underlying storage query if the query fails.
     /// - Returns an empty vector if the range is empty due to exclusion of boundaries.
     ///
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn get_finalized_epoch_infos_v0<
         T: FromIterator<(EpochIndex, FinalizedEpochInfo)>,
     >(
@@ -69,6 +71,7 @@ impl Drive {
         start_epoch_index_included: bool,
         end_epoch_index: u16,
         end_epoch_index_included: bool,
+        limit: u16,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<T, Error> {
@@ -77,7 +80,7 @@ impl Drive {
             start_epoch_index_included,
             end_epoch_index,
             end_epoch_index_included,
-            platform_version.drive_abci.query.max_returned_elements,
+            limit,
         )?
         else {
             return Ok(T::from_iter(std::iter::empty()));
@@ -118,7 +121,7 @@ impl Drive {
 
                 let item_bytes = element.as_item_bytes()?;
 
-                let epoch_info = FinalizedEpochInfo::deserialize_from_bytes(item_bytes)?;
+                let epoch_info = FinalizedEpochInfo::deserialize_from_bytes_trusted(item_bytes)?;
 
                 Ok((epoch_index, epoch_info))
             })

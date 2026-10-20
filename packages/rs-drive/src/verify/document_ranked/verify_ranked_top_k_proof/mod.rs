@@ -29,6 +29,15 @@ impl DriveDocumentRankedQuery<'_> {
     /// # Arguments
     /// * `proof` — raw grovedb proof bytes.
     /// * `platform_version` — selects the method version.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok((RootHash, RankedPage))` with the proof's root hash, at most `k` entries in ranking
+    ///   order, and the attested number of ranks skipped (below the offset, with no entries,
+    ///   when the walk ran out during the skip).
+    /// * `Err(Error)` when the method version is unknown, a non-zero offset meets an `IN`
+    ///   prefix pin, the index path cannot be resolved, the proof does not verify against the
+    ///   rebuilt traversal, or its entries have the wrong axis shape or exceed `k`.
     pub fn verify_ranked_top_k_proof(
         &self,
         proof: &[u8],

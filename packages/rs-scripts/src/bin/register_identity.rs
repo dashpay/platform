@@ -88,7 +88,6 @@ use dash_sdk::platform::types::epoch::Epoch;
 use dash_sdk::{Sdk, SdkBuilder};
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::dashcore::consensus::encode::{deserialize, serialize};
-use dpp::dashcore::secp256k1::Secp256k1;
 use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::{
@@ -515,11 +514,10 @@ async fn run() -> Result<(), String> {
     } else {
         // FRESH: generate a one-time key, build + Core-sign + broadcast the
         // asset lock, capturing all recovery credentials BEFORE broadcast.
-        let secp = Secp256k1::new();
-        let mut secp_rng = dpp::dashcore::secp256k1::rand::thread_rng();
+        let mut secp_rng = dpp::dashcore::secp256k1::rand::rng();
         let one_time_secret = dpp::dashcore::secp256k1::SecretKey::new(&mut secp_rng);
         let one_time_private_key = PrivateKey::new(one_time_secret, network);
-        let one_time_public_key = one_time_private_key.public_key(&secp);
+        let one_time_public_key = one_time_private_key.public_key();
         let one_time_key_hash = one_time_public_key.pubkey_hash();
         let one_time_address = Address::p2pkh(&one_time_public_key, network);
 
@@ -784,7 +782,7 @@ fn build_asset_lock_transaction(
         .list_unspent(Some(1), None, None, None, None)
         .map_err(|e| format!("listunspent failed: {e}"))?;
     // Largest first, so we cover the target with as few inputs as possible.
-    utxos.sort_by(|a, b| b.amount.to_sat().cmp(&a.amount.to_sat()));
+    utxos.sort_by_key(|utxo| std::cmp::Reverse(utxo.amount.to_sat()));
 
     let mut inputs = Vec::new();
     let mut change_script: Option<ScriptBuf> = None;

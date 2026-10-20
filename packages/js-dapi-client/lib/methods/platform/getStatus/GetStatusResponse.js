@@ -5,14 +5,32 @@ const TimeStatus = require('./TimeStatus');
 const StateSyncStatus = require('./StateSyncStatus');
 const NetworkStatus = require('./NetworkStatus');
 
+/**
+ * Read a value out of an optional protobuf sub-message.
+ *
+ * Every message-typed field in `GetStatusResponseV0` is optional on the wire, and DAPI
+ * omits whole sections when the underlying data is unavailable: `state_sync` is absent
+ * unless the node is state syncing, `chain`/`node`/`network` are absent when Tenderdash
+ * is unreachable, and `protocol.drive` is absent when Drive is unreachable. The generated
+ * getters return `undefined` for an absent sub-message, so they must never be chained
+ * without a guard.
+ *
+ * @param {object|undefined} message - protobuf sub-message, possibly absent
+ * @param {function(object): *} read - reader invoked when the sub-message is present
+ * @returns {*} the read value, or `undefined` when the sub-message is absent
+ */
+function readOptional(message, read) {
+  return message ? read(message) : undefined;
+}
+
 class GetStatusResponse {
   /**
    * @param {VersionStatus} version - status versions
-   * @param {NodeStatus} node - node status
-   * @param {ChainStatus} chain - chain status
-   * @param {NetworkStatus} network - network status
-   * @param {StateSyncStatus} stateSync - state sync status
-   * @param {TimeStatus} time - time status
+   * @param {NodeStatus|null} node - node status, null if unavailable
+   * @param {ChainStatus|null} chain - chain status, null if unavailable
+   * @param {NetworkStatus|null} network - network status, null if unavailable
+   * @param {StateSyncStatus|null} stateSync - state sync status, null if not state syncing
+   * @param {TimeStatus|null} time - time status, null if unavailable
    */
   constructor(version, node, chain, network, stateSync, time) {
     this.version = version;
@@ -31,35 +49,35 @@ class GetStatusResponse {
   }
 
   /**
-   * @returns {NodeStatus} node info status
+   * @returns {NodeStatus|null} node info status, null if unavailable
    */
   getNodeStatus() {
     return this.node;
   }
 
   /**
-   * @returns {ChainStatus} chain status
+   * @returns {ChainStatus|null} chain status, null if unavailable
    */
   getChainStatus() {
     return this.chain;
   }
 
   /**
-   * @returns {NetworkStatus} network status
+   * @returns {NetworkStatus|null} network status, null if unavailable
    */
   getNetworkStatus() {
     return this.network;
   }
 
   /**
-   * @returns {StateSyncStatus} state sync status
+   * @returns {StateSyncStatus|null} state sync status, null if not state syncing
    */
   getStateSyncStatus() {
     return this.stateSync;
   }
 
   /**
-   * @returns {TimeStatus} time status
+   * @returns {TimeStatus|null} time status, null if unavailable
    */
   getTimeStatus() {
     return this.time;
@@ -72,85 +90,75 @@ class GetStatusResponse {
   static createFromProto(proto) {
     const v0 = proto.getV0();
 
-    const dapiVersion = v0.getVersion().getSoftware().getDapi();
-    const driveVersion = v0.getVersion().getSoftware().getDrive();
-    const tenderdashVersion = v0.getVersion().getSoftware().getTenderdash();
-    const tenderdashP2pProtocol = v0.getVersion().getProtocol().getTenderdash().getP2p();
-    const tenderdashBlockProtocol = v0.getVersion().getProtocol().getTenderdash().getBlock();
-    const driveCurrentProtocol = v0.getVersion().getProtocol().getDrive().getCurrent();
-    const driveLatestProtocol = v0.getVersion().getProtocol().getDrive().getLatest();
-    const driveNextEpochProtocol = v0.getVersion().getProtocol().getDrive().getNextEpoch();
+    const versionProto = v0.getVersion();
+    const softwareProto = readOptional(versionProto, (v) => v.getSoftware());
+    const protocolProto = readOptional(versionProto, (v) => v.getProtocol());
+    const tenderdashProtocolProto = readOptional(protocolProto, (p) => p.getTenderdash());
+    const driveProtocolProto = readOptional(protocolProto, (p) => p.getDrive());
 
     const version = new VersionStatus(
-      dapiVersion,
-      driveVersion,
-      tenderdashVersion,
-      tenderdashP2pProtocol,
-      tenderdashBlockProtocol,
-      driveCurrentProtocol,
-      driveLatestProtocol,
-      driveNextEpochProtocol,
+      readOptional(softwareProto, (s) => s.getDapi()),
+      readOptional(softwareProto, (s) => s.getDrive()),
+      readOptional(softwareProto, (s) => s.getTenderdash()),
+      readOptional(tenderdashProtocolProto, (t) => t.getP2p()),
+      readOptional(tenderdashProtocolProto, (t) => t.getBlock()),
+      readOptional(driveProtocolProto, (d) => d.getCurrent()),
+      readOptional(driveProtocolProto, (d) => d.getLatest()),
+      readOptional(driveProtocolProto, (d) => d.getNextEpoch()),
     );
 
-    const nodeId = Buffer.from(v0.getNode().getId()).toString('hex');
-    const proTxHash = Buffer.from(v0.getNode().getProTxHash()).toString('hex');
+    const nodeProto = v0.getNode();
 
-    const node = new NodeStatus(nodeId, proTxHash);
+    const node = nodeProto ? new NodeStatus(
+      Buffer.from(nodeProto.getId()).toString('hex'),
+      Buffer.from(nodeProto.getProTxHash()).toString('hex'),
+    ) : null;
 
-    const catchingUp = v0.getChain().getCatchingUp();
-    const latestBlockHash = Buffer.from(v0.getChain().getLatestBlockHash()).toString('hex');
-    const latestAppHash = Buffer.from(v0.getChain().getLatestAppHash()).toString('hex');
-    const latestBlockHeight = BigInt(v0.getChain().getLatestBlockHeight());
-    const earliestBlockHash = Buffer.from(v0.getChain().getEarliestBlockHash()).toString('hex');
-    const earliestAppHash = Buffer.from(v0.getChain().getEarliestAppHash()).toString('hex');
-    const earliestBlockHeight = BigInt(v0.getChain().getEarliestBlockHeight());
-    const maxPeerBlockHeight = BigInt(v0.getChain().getMaxPeerBlockHeight());
-    const coreChainLockedHeight = v0.getChain().getCoreChainLockedHeight();
+    const chainProto = v0.getChain();
 
-    const chain = new ChainStatus(
-      catchingUp,
-      latestBlockHash,
-      latestAppHash,
-      latestBlockHeight,
-      earliestBlockHash,
-      earliestAppHash,
-      earliestBlockHeight,
-      maxPeerBlockHeight,
-      coreChainLockedHeight,
-    );
+    const chain = chainProto ? new ChainStatus(
+      chainProto.getCatchingUp(),
+      Buffer.from(chainProto.getLatestBlockHash()).toString('hex'),
+      Buffer.from(chainProto.getLatestAppHash()).toString('hex'),
+      BigInt(chainProto.getLatestBlockHeight()),
+      Buffer.from(chainProto.getEarliestBlockHash()).toString('hex'),
+      Buffer.from(chainProto.getEarliestAppHash()).toString('hex'),
+      BigInt(chainProto.getEarliestBlockHeight()),
+      BigInt(chainProto.getMaxPeerBlockHeight()),
+      chainProto.getCoreChainLockedHeight(),
+    ) : null;
 
-    const chainId = v0.getNetwork().getChainId();
-    const peersCount = v0.getNetwork().getPeersCount();
-    const isListening = v0.getNetwork().getListening();
+    const networkProto = v0.getNetwork();
 
-    const network = new NetworkStatus(chainId, peersCount, isListening);
+    const network = networkProto ? new NetworkStatus(
+      networkProto.getChainId(),
+      networkProto.getPeersCount(),
+      networkProto.getListening(),
+    ) : null;
 
-    const totalSyncedTime = BigInt(v0.getStateSync().getTotalSyncedTime());
-    const remainingTime = BigInt(v0.getStateSync().getRemainingTime());
-    const totalSnapshots = v0.getStateSync().getTotalSnapshots();
-    const chunkProcessAverageTime = BigInt(v0.getStateSync().getChunkProcessAvgTime());
-    const snapshotHeight = BigInt(v0.getStateSync().getSnapshotHeight());
-    const snapshotChunksCount = BigInt(v0.getStateSync().getSnapshotChunksCount());
-    const backfilledBlocks = BigInt(v0.getStateSync().getBackfilledBlocks());
-    const backfillBlocksTotal = BigInt(v0.getStateSync().getBackfillBlocksTotal());
+    // DAPI omits the whole state sync section on nodes that are not state syncing,
+    // so an absent section means "no state sync information", not "all zeroes".
+    const stateSyncProto = v0.getStateSync();
 
-    const stateSync = new StateSyncStatus(
-      totalSyncedTime,
-      remainingTime,
-      totalSnapshots,
-      chunkProcessAverageTime,
-      snapshotHeight,
-      snapshotChunksCount,
-      backfilledBlocks,
-      backfillBlocksTotal,
-    );
+    const stateSync = stateSyncProto ? new StateSyncStatus(
+      BigInt(stateSyncProto.getTotalSyncedTime()),
+      BigInt(stateSyncProto.getRemainingTime()),
+      stateSyncProto.getTotalSnapshots(),
+      BigInt(stateSyncProto.getChunkProcessAvgTime()),
+      BigInt(stateSyncProto.getSnapshotHeight()),
+      BigInt(stateSyncProto.getSnapshotChunksCount()),
+      BigInt(stateSyncProto.getBackfilledBlocks()),
+      BigInt(stateSyncProto.getBackfillBlocksTotal()),
+    ) : null;
 
-    const local = BigInt(v0.getTime().getLocal());
-    const block = BigInt(v0.getTime().getBlock());
-    const genesis = BigInt(v0.getTime().getGenesis());
-    const epoch = v0.getTime().getEpoch();
+    const timeProto = v0.getTime();
 
-    const time = new TimeStatus(local, block, genesis, epoch);
+    const time = timeProto ? new TimeStatus(
+      BigInt(timeProto.getLocal()),
+      BigInt(timeProto.getBlock()),
+      BigInt(timeProto.getGenesis()),
+      timeProto.getEpoch(),
+    ) : null;
 
     return new GetStatusResponse(
       version,

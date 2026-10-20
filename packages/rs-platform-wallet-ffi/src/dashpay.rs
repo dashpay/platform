@@ -589,6 +589,75 @@ pub unsafe extern "C" fn platform_wallet_fetch_sent_contact_requests(
 // Send payment
 // ---------------------------------------------------------------------------
 
+/// Reserve a fresh contact Core address for a Platform or shielded withdrawal.
+/// The address is durably consumed before success; callers must not reuse it.
+/// This does not submit a payment or record payment history.
+///
+/// # Safety
+/// - Identity pointers must each reference 32 readable bytes.
+/// - `core_signer_handle` must remain valid throughout this synchronous call.
+/// - `out_address` must point to writable pointer storage. On success, free
+///   the returned string with `platform_wallet_string_free`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_reserve_dashpay_payment_address(
+    wallet_handle: Handle,
+    from_identity_id: *const u8,
+    to_contact_identity_id: *const u8,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_address: *mut *mut c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_address);
+    // Sentinel first, before any other fallible check, so every early return
+    // leaves `*out_address` null for a cleanup-on-error caller.
+    *out_address = std::ptr::null_mut();
+    check_ptr!(core_signer_handle);
+    let from_id = unwrap_result_or_return!(read_identifier(from_identity_id));
+    let to_id = unwrap_result_or_return!(read_identifier(to_contact_identity_id));
+    let signer_addr = core_signer_handle as usize;
+    // Look the identity up under the registry guard, but wait outside it:
+    // the reservation waits on the manager write lock, the contact-payment
+    // gate, and the host store + flush, and a registry read guard held
+    // across those would stall `platform_wallet_destroy` and, through
+    // parking_lot's writer preference, every other registry reader.
+    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
+        (
+            wallet.identity().clone(),
+            wallet.wallet_id(),
+            wallet.network(),
+        )
+    });
+    let (identity, wallet_id, network) = unwrap_option_or_return!(option);
+    // SAFETY: `signer_addr` came from `core_signer_handle`, which the caller
+    // pins alive for the duration of this synchronous call; the provider is
+    // dropped when the worker task completes, before this call returns.
+    let provider = unsafe {
+        resolver_contact_crypto_provider(
+            signer_addr as *mut MnemonicResolverHandle,
+            wallet_id,
+            network,
+        )
+    };
+    let result = block_on_worker(async move {
+        identity
+            .dashpay()
+            .reserve_payment_address(&from_id, &to_id, &provider)
+            .await
+    });
+    let address = match result {
+        Ok(address) => address,
+        Err(e @ platform_wallet::PlatformWalletError::SeedMismatch { .. }) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                e.to_string(),
+            );
+        }
+        Err(e) => return e.into(),
+    };
+    let c_str = unwrap_result_or_return!(std::ffi::CString::new(address.to_string()));
+    *out_address = c_str.into_raw();
+    PlatformWalletFFIResult::ok()
+}
+
 /// Send a Dash payment from `from_identity_id` to `to_contact_identity_id`.
 ///
 /// The funding inputs are signed through the supplied
@@ -769,7 +838,7 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
             .map_err(|e| {
                 platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string())
             })?;
-        dashcore::secp256k1::SecretKey::from_slice(scalar.as_ref())
+        dashcore::secp256k1::SecretKey::from_secret_bytes(*scalar)
             .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
     }
 
@@ -783,7 +852,7 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
             .map_err(|e| {
                 platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string())
             })?;
-        dashcore::secp256k1::SecretKey::from_slice(scalar.as_ref())
+        dashcore::secp256k1::SecretKey::from_secret_bytes(*scalar)
             .map_err(|e| platform_wallet::PlatformWalletError::InvalidIdentityData(e.to_string()))
     }
 
@@ -990,11 +1059,17 @@ pub unsafe extern "C" fn platform_wallet_pending_contact_crypto_count(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_count);
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.dashpay().pending_contact_crypto_count().await })
-    });
-    let count = unwrap_option_or_return!(option);
+    // Look the identity up under the registry guard, but wait outside it:
+    // the count needs `wallet_manager.read()`, which parks behind any writer
+    // (measured in minutes behind a slow host persistence round), and a
+    // registry read guard held across that wait would stall
+    // `platform_wallet_destroy` (a registry write) and, through parking_lot's
+    // writer preference, every other registry reader.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity = unwrap_option_or_return!(option);
+    let count =
+        block_on_worker(async move { identity.dashpay().pending_contact_crypto_count().await });
     unsafe {
         *out_count = count as u32;
     }
@@ -1264,11 +1339,16 @@ pub unsafe extern "C" fn platform_wallet_drainable_contact_crypto_count(
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_count);
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity = wallet.identity().clone();
-        block_on_worker(async move { identity.dashpay().drainable_contact_crypto_count().await })
-    });
-    let count = unwrap_option_or_return!(option);
+    // Waited on outside the registry guard — see
+    // `platform_wallet_pending_contact_crypto_count`. This one is called
+    // inline from the host's unlock path, so a guard held across the wait
+    // would freeze that caller AND every other registry user for the
+    // duration of whatever holds `wallet_manager`.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity = unwrap_option_or_return!(option);
+    let count =
+        block_on_worker(async move { identity.dashpay().drainable_contact_crypto_count().await });
     unsafe {
         *out_count = count as u32;
     }
@@ -1360,6 +1440,26 @@ mod tests {
             out_marker.is_null(),
             "out_marker is zero-initialized before the lookup"
         );
+    }
+
+    /// A null `core_signer_handle` is rejected with `ErrorNullPointer`, and
+    /// `*out_address` is already nulled when it is, so a cleanup-on-error
+    /// caller that did not pre-initialize the slot never frees garbage.
+    #[test]
+    fn reserve_dashpay_payment_address_null_signer_nulls_out_address() {
+        let id = [0u8; 32];
+        let mut out_address: *mut c_char = std::ptr::dangling_mut();
+        let r = unsafe {
+            platform_wallet_reserve_dashpay_payment_address(
+                1,
+                id.as_ptr(),
+                id.as_ptr(),
+                std::ptr::null_mut(),
+                &mut out_address,
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert!(out_address.is_null());
     }
 
     /// A null `out_count` is rejected with `ErrorNullPointer` (the `check_ptr!`

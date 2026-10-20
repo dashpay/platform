@@ -28,26 +28,13 @@ use dash_async::block_on;
 pub(crate) fn parse_mnemonic_any_language(
     phrase: &str,
 ) -> Result<key_wallet::mnemonic::Mnemonic, &'static str> {
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
 
-    const LANGUAGES: [Language; 10] = [
-        Language::English,
-        Language::Spanish,
-        Language::French,
-        Language::Italian,
-        Language::Japanese,
-        Language::Korean,
-        Language::ChineseSimplified,
-        Language::ChineseTraditional,
-        Language::Czech,
-        Language::Portuguese,
-    ];
-    for lang in LANGUAGES {
-        if let Ok(m) = Mnemonic::from_phrase(phrase, lang) {
-            return Ok(m);
-        }
-    }
-    Err("phrase does not match any supported BIP-39 wordlist")
+    // Upstream's `from_phrase` IS the auto-detecting parse since
+    // rust-dashcore#981 — one path, English diagnostics preserved when
+    // nothing matches. This wrapper survives only to narrow the error to
+    // the `&'static str` its callers report.
+    Mnemonic::from_phrase(phrase).map_err(|_| "phrase does not match any supported BIP-39 wordlist")
 }
 
 /// Create a signer from a private key.
@@ -324,7 +311,6 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
     out_signature_len: *mut usize,
     out_error: *mut u8,
 ) -> i32 {
-    use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
     use dash_sdk::dpp::identity::KeyType;
     use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
     use std::ffi::CStr;
@@ -409,8 +395,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
         Ok(m) => m,
         Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_DERIVATION),
     };
-    let secp = Secp256k1::new();
-    let derived = match master.derive_priv(&secp, &path) {
+    let derived = match master.derive_priv(&path) {
         Ok(d) => d,
         Err(_) => return fail(SIGN_WITH_MNEMONIC_ERR_DERIVATION),
     };
@@ -419,7 +404,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_and_path(
     // returns. `derived` self-wipes separately: `ExtendedPrivKey`
     // zeroizes on `Drop`.
     let secret_bytes: zeroize::Zeroizing<[u8; 32]> =
-        zeroize::Zeroizing::new(derived.private_key.secret_bytes());
+        zeroize::Zeroizing::new(derived.private_key.to_secret_bytes());
 
     // ---- Sign ---------------------------------------------------------------
     // `dashcore::signer::sign` returns a 65-byte compact recoverable

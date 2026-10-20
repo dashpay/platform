@@ -166,7 +166,6 @@ impl IdentityWallet {
         identity_index: u32,
         source: LoadKeyHashSource<'_>,
     ) -> Result<Option<Identity>, PlatformWalletError> {
-        use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
         use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
@@ -278,12 +277,8 @@ impl IdentityWallet {
         }
 
         // Query DPNS names for the discovered identity.
-        match self
-            .sdk
-            .get_dpns_usernames_by_identity(identity_id, None)
-            .await
-        {
-            Ok(usernames) => {
+        match self.fetch_owned_dpns_names(identity_id, None).await {
+            Ok((names, fetch)) => {
                 let mut wm = self.wallet_manager.write().await;
                 let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
                     crate::error::PlatformWalletError::WalletNotFound(
@@ -291,15 +286,7 @@ impl IdentityWallet {
                     )
                 })?;
                 if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) {
-                    for username in usernames {
-                        managed.add_dpns_name(
-                            DpnsNameInfo {
-                                label: username.label,
-                                acquired_at: None,
-                            },
-                            &self.persister,
-                        );
-                    }
+                    managed.apply_fetched_dpns_names(names, fetch, &self.persister);
                 }
             }
             Err(e) => {
@@ -408,11 +395,13 @@ impl IdentityWallet {
     /// Refresh DPNS names for all identities in the manager.
     ///
     /// Iterates every identity in the [`IdentityManager`], queries Platform
-    /// for its current DPNS usernames, and replaces the stored
-    /// `dpns_names` list with the fresh results.
+    /// for its current DPNS usernames, and reconciles the stored
+    /// `dpns_names` list with them, persisting at most one snapshot per
+    /// identity: for an identity the wallet only watches, a complete result
+    /// replaces the list (departed names drop out); wallet-owned identities
+    /// and a possibly truncated result only add — see
+    /// `ManagedIdentity::apply_fetched_dpns_names`.
     pub async fn refresh_dpns_names(&self) -> Result<(), PlatformWalletError> {
-        use crate::wallet::identity::state::managed_identity::key_storage::DpnsNameInfo;
-
         // Collect identity IDs so we don't hold the lock during network calls.
         let identity_ids: Vec<Identifier> = {
             let wm = self.wallet_manager.read().await;
@@ -429,12 +418,8 @@ impl IdentityWallet {
         };
 
         for identity_id in identity_ids {
-            match self
-                .sdk
-                .get_dpns_usernames_by_identity(identity_id, None)
-                .await
-            {
-                Ok(usernames) => {
+            match self.fetch_owned_dpns_names(identity_id, None).await {
+                Ok((names, fetch)) => {
                     let mut wm = self.wallet_manager.write().await;
                     let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
                         crate::error::PlatformWalletError::WalletNotFound(
@@ -443,13 +428,7 @@ impl IdentityWallet {
                     })?;
                     if let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id)
                     {
-                        managed.dpns_names = usernames
-                            .into_iter()
-                            .map(|u| DpnsNameInfo {
-                                label: u.label,
-                                acquired_at: None,
-                            })
-                            .collect();
+                        managed.apply_fetched_dpns_names(names, fetch, &self.persister);
                     }
                 }
                 Err(e) => {
@@ -527,7 +506,7 @@ mod tests {
     };
     use super::{derive_load_probe_hash, ResolvedLoadKeyHashSource};
     use key_wallet::bip32::ExtendedPrivKey;
-    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::Wallet;
     use key_wallet::Network;
@@ -545,8 +524,7 @@ mod tests {
     /// never touches — it walks the master xpriv, not the per-account
     /// collection, so no accounts are needed.
     fn mnemonic_wallet(network: Network) -> Wallet {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
-            .expect("valid English test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid English test mnemonic");
         Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::None)
             .expect("from_mnemonic should build a Mnemonic wallet")
     }
@@ -554,8 +532,7 @@ mod tests {
     /// The BIP-32 master node for [`TEST_MNEMONIC`] on `network` — the
     /// same node `derive_extended_private_key` reconstructs internally.
     fn master_for(network: Network) -> ExtendedPrivKey {
-        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC, Language::English)
-            .expect("valid English test mnemonic");
+        let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("valid English test mnemonic");
         let seed = mnemonic.to_seed("");
         ExtendedPrivKey::new_master(network, &seed).expect("master xpriv from test seed")
     }

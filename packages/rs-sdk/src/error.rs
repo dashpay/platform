@@ -1,4 +1,5 @@
 //! Definitions of errors
+use crate::platform::encrypted_for::EncryptedForError;
 use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBroadcastErrorProto;
 use dapi_grpc::tonic::Code;
 pub use dash_context_provider::ContextProviderError;
@@ -9,7 +10,7 @@ use dpp::consensus::basic::state_transition::{
 };
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError};
 use dpp::consensus::ConsensusError;
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersionError;
 use dpp::{dashcore_rpc, ProtocolError};
@@ -37,7 +38,7 @@ pub enum Error {
     Protocol(#[from] ProtocolError),
     /// Proof verification error
     #[error("Proof verification error: {0}")]
-    Proof(#[from] drive_proof_verifier::Error),
+    Proof(#[source] drive_proof_verifier::Error),
     /// Invalid Proved Response error
     #[error("Invalid Proved Response error: {0}")]
     InvalidProvedResponse(String),
@@ -131,6 +132,44 @@ pub enum Error {
     /// Contains the last meaningful error that caused addresses to be banned.
     #[error("no available addresses to retry, last error: {0}")]
     NoAvailableAddressesToRetry(Box<Error>),
+
+    /// A property declared `encryptedFor` could not be encrypted or decrypted
+    #[error(transparent)]
+    EncryptedFor(#[from] EncryptedForError),
+}
+
+impl Error {
+    /// Whether this error is a trusted quorum-source failure, looking through
+    /// nested retry-exhaustion wrappers. This is distinct from
+    /// [`CanRetry::can_retry`] and does not affect node-ban attribution.
+    pub fn is_quorum_source_unavailable(&self) -> bool {
+        match self {
+            Self::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(_)) => true,
+            Self::NoAvailableAddressesToRetry(last_error) => {
+                last_error.is_quorum_source_unavailable()
+            }
+            _ => false,
+        }
+    }
+}
+
+/// A trusted source outage is not the responding node's fault. Preserve that
+/// attribution and quorum context; every other verifier failure stays `Proof`.
+impl From<drive_proof_verifier::Error> for Error {
+    fn from(value: drive_proof_verifier::Error) -> Self {
+        match value {
+            drive_proof_verifier::Error::QuorumKeyUnavailable {
+                quorum_type,
+                quorum_hash,
+                core_chain_locked_height,
+                error: ContextProviderError::QuorumSourceUnavailable(reason),
+            } => Self::ContextProviderError(ContextProviderError::QuorumSourceUnavailable(format!(
+                "quorum {quorum_type}:{} at Core chain-locked height {core_chain_locked_height}: {reason}",
+                hex::encode(quorum_hash)
+            ))),
+            error => Self::Proof(error),
+        }
+    }
 }
 
 impl From<dash_platform_queries::Error> for Error {
@@ -160,8 +199,8 @@ impl TryFrom<StateTransitionBroadcastErrorProto> for StateTransitionBroadcastErr
 
     fn try_from(value: StateTransitionBroadcastErrorProto) -> Result<Self, Self::Error> {
         let cause = if !value.data.is_empty() {
-            let consensus_error =
-                ConsensusError::deserialize_from_bytes(&value.data).map_err(|e| {
+            let consensus_error = ConsensusError::deserialize_from_bytes_untrusted(&value.data)
+                .map_err(|e| {
                     tracing::debug!("Failed to deserialize consensus error: {}", e);
 
                     Error::Protocol(e)
@@ -192,7 +231,7 @@ impl From<DapiClientError> for Error {
                 return consensus_error_value
                     .to_bytes()
                     .map(|bytes| {
-                        ConsensusError::deserialize_from_bytes(&bytes)
+                        ConsensusError::deserialize_from_bytes_untrusted(&bytes)
                             .map(|consensus_error| {
                                 Self::Protocol(ProtocolError::ConsensusError(Box::new(
                                     consensus_error,
@@ -415,6 +454,30 @@ pub enum StaleNodeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Only the typed source failure, including nested retry exhaustion,
+    /// receives source attribution; sibling variants and messages do not.
+    #[test]
+    fn should_identify_only_typed_quorum_source_failures_through_retry_exhaustion() {
+        let mut source = Error::ContextProviderError(
+            ContextProviderError::QuorumSourceUnavailable("offline".to_string()),
+        );
+        assert!(source.is_quorum_source_unavailable());
+        for _ in 0..2 {
+            source = Error::NoAvailableAddressesToRetry(Box::new(source));
+            assert!(source.is_quorum_source_unavailable());
+        }
+        for unrelated in [
+            Error::ContextProviderError(ContextProviderError::InvalidQuorum(
+                "quorum source unavailable".to_string(),
+            )),
+            Error::Generic("QuorumSourceUnavailable: quorum source unavailable".to_string()),
+        ] {
+            assert!(!unrelated.is_quorum_source_unavailable());
+            let wrapped = Error::NoAvailableAddressesToRetry(Box::new(unrelated));
+            assert!(!wrapped.is_quorum_source_unavailable());
+        }
+    }
 
     mod from_dapi_client_error {
         use super::*;

@@ -296,6 +296,26 @@ class WalletStorageUpgradeMatrixTest {
      * auth-gated KEYS_ALIAS RSA key that would open the blob after auth reports
      * recoverable when the window is closed (UserNotAuth), rather than stranded.
      */
+    /**
+     * The counterpart of [authGatedFormerRsaKeyReportsRecoverable]: same closed
+     * window on the former RSA key, but the alias has since been REGENERATED so
+     * the stored fingerprint no longer matches. `UserNotAuthenticatedException`
+     * is thrown at cipher.init, before the ciphertext is examined, so it says
+     * nothing about ownership — and defaulting it to "recoverable" reported a
+     * blob the current key can never open as healthy, suppressing the
+     * key-health repair flow.
+     */
+    @Test
+    fun authGatedFormerRsaKeyWithRotatedFingerprintIsNotRecoverable() = runBlocking {
+        fake.keysAliasKind = FakeKeystoreManager.KeysAliasKind.RSA
+        fake.scheme = FakeKeystoreManager.Scheme.FORMER_RSA
+        storage.storePrivateKey(pub, secret)
+
+        fake.legacyRsaFingerprintSuffix = "-regenerated"
+        fake.throwAuthOnLegacyRsaDecrypt = true
+        assertFalse(storage.probeIdentityKeyRecoverability(pub))
+    }
+
     @Test
     fun authGatedFormerRsaKeyReportsRecoverable() = runBlocking {
         fake.keysAliasKind = FakeKeystoreManager.KeysAliasKind.RSA
@@ -628,6 +648,9 @@ private class FakeKeystoreManager :
      * the alias stays present (and, being auth-gated, usually locked).
      */
     var policyFingerprintSuffix: String = ""
+
+    /** Set to model the former KEYS_ALIAS keypair having been regenerated. */
+    var legacyRsaFingerprintSuffix: String = ""
     var throwAuthOnLegacyRsaDecrypt: Boolean = false
     var throwInvalidatedOnLegacyRsaDecrypt: Boolean = false
     var throwInvalidatedOnPolicyDecrypt: Boolean = false
@@ -659,6 +682,12 @@ private class FakeKeystoreManager :
         POLICY_ALIAS ->
             if (policyKeyProvisioned) fpOf(POLICY_ALIAS) + policyFingerprintSuffix else null
         KEYS_ALIAS_DEVICE_BOUND -> if (deviceBoundKeyPresent) fpOf(KEYS_ALIAS_DEVICE_BOUND) else null
+        // The retained former RSA keypair has a certificate too, so the real
+        // implementation returns a fingerprint for it. Modelling that is what
+        // lets the legacy rung prove (or disprove) ownership.
+        KeystoreManager.KEYS_ALIAS ->
+            if (keysAliasKind == KeysAliasKind.RSA) FP_FORMER_RSA + legacyRsaFingerprintSuffix
+            else null
         else -> null
     }
 

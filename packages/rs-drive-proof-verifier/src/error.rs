@@ -1,5 +1,6 @@
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::ProtocolError;
+use drive::error::proof::ProofError;
 use drive::grovedb::Error as GroveError;
 use drive::query::PathQuery;
 
@@ -43,6 +44,19 @@ pub enum Error {
     /// No proof in response
     #[error("no proof in result")]
     NoProofInResult,
+
+    /// GroveDB proof envelope older than Drive's
+    /// `MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION`; the payload is refused before
+    /// Drive verifies it.
+    #[error(
+        "unsupported GroveDB proof envelope version {version} in the {proof}: at least version {minimum} is required"
+    )]
+    UnsupportedGroveDBProofVersion {
+        /// Which proof was being read: "proof", "predecessor proof", "forward proof"
+        proof: &'static str,
+        version: u32,
+        minimum: u32,
+    },
 
     /// Requested object not found
     #[error("requested object not found")]
@@ -95,12 +109,43 @@ pub enum Error {
     /// Context provider error
     #[error("context provider error: {0}")]
     ContextProviderError(#[from] dash_context_provider::ContextProviderError),
+
+    /// The context provider could not supply the public key of the quorum
+    /// that signed the proof. The quorum fields come from the response, which
+    /// is not verified yet; they say which key to look for, not that the
+    /// quorum exists.
+    #[error(
+        "quorum key unavailable for quorum {quorum_type}:{}: {error}",
+        hex::encode(.quorum_hash)
+    )]
+    QuorumKeyUnavailable {
+        /// Quorum type named by the proof
+        quorum_type: u32,
+        /// Quorum hash named by the proof
+        quorum_hash: [u8; 32],
+        /// Core chain locked height from the response metadata
+        core_chain_locked_height: u32,
+        /// Why the provider could not supply the key
+        #[source]
+        error: dash_context_provider::ContextProviderError,
+    },
 }
 
 impl From<drive::error::Error> for Error {
     fn from(error: drive::error::Error) -> Self {
-        Self::DriveError {
-            error: error.to_string(),
+        match error {
+            drive::error::Error::Proof(ProofError::UnsupportedGroveDBProofEnvelopeVersion {
+                proof,
+                version,
+                minimum,
+            }) => Self::UnsupportedGroveDBProofVersion {
+                proof,
+                version,
+                minimum,
+            },
+            error => Self::DriveError {
+                error: error.to_string(),
+            },
         }
     }
 }

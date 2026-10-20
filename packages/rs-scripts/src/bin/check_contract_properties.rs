@@ -146,20 +146,21 @@ fn fetch_all_contract_ids_from_explorer(
 }
 
 fn parse_contract_id(raw: &str) -> Identifier {
-    Identifier::from_string(raw, dpp::platform_value::string_encoding::Encoding::Base58)
-        .or_else(|_| {
-            let bytes = hex::decode(raw).unwrap_or_else(|e| {
-                eprintln!("Cannot parse '{raw}' as base58 or hex: {e}");
-                std::process::exit(1);
-            });
-            if bytes.len() != 32 {
-                eprintln!("ID '{raw}' decoded to {} bytes, expected 32", bytes.len());
-                std::process::exit(1);
-            }
-            let arr: [u8; 32] = bytes.try_into().unwrap();
-            Ok::<_, dpp::ProtocolError>(Identifier::new(arr))
-        })
-        .unwrap()
+    if let Ok(id) =
+        Identifier::from_string(raw, dpp::platform_value::string_encoding::Encoding::Base58)
+    {
+        return id;
+    }
+    let bytes = hex::decode(raw).unwrap_or_else(|e| {
+        eprintln!("Cannot parse '{raw}' as base58 or hex: {e}");
+        std::process::exit(1);
+    });
+    if bytes.len() != 32 {
+        eprintln!("ID '{raw}' decoded to {} bytes, expected 32", bytes.len());
+        std::process::exit(1);
+    }
+    let arr: [u8; 32] = bytes.try_into().unwrap();
+    Identifier::new(arr)
 }
 
 #[tokio::main]

@@ -8,15 +8,18 @@ use crate::error::Error;
 
 use crate::drive::identity::contract_info::ContractInfoStructure;
 use crate::drive::identity::contract_info::ContractInfoStructure::IdentityContractNonceKey;
+use crate::drive::identity::identity_key_budgets_path_vec;
 use crate::drive::identity::IdentityRootStructure::{IdentityTreeNonce, IdentityTreeRevision};
 use crate::drive::identity::{
     identity_contract_info_group_path_vec, identity_path_vec, IdentityRootStructure,
 };
+use crate::error::proof::ProofError;
 use crate::error::query::QuerySyntaxError;
-use dpp::identity::Purpose;
+use dpp::identity::{KeyID, Purpose};
 use grovedb::query_result_type::Key;
 use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 use grovedb_version::version::GroveVersion;
+use integer_encoding::VarInt;
 
 /// An enumeration representing the types of identity prove requests.
 ///
@@ -231,16 +234,31 @@ impl Drive {
         .map_err(Error::from)
     }
 
-    /// This query gets the full identity and the public key hash
+    /// Proves the full identity and every eligible index entry up to its ID.
+    /// Exactly one index result establishes that this is the first ID after the cursor.
+    /// This read-only proof builder does not change persisted state or block execution.
     pub fn full_identity_with_non_unique_public_key_hash_query(
         public_key_hash: [u8; 20],
         identity_id: [u8; 32],
         after: Option<[u8; 32]>,
         grove_version: &GroveVersion,
     ) -> Result<PathQuery, Error> {
+        if after.is_some_and(|after| after >= identity_id) {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "non-unique identity proof endpoint must follow the cursor".to_string(),
+            )));
+        }
         let full_identity_query = Self::full_identity_query(&identity_id, grove_version)?;
-        let identity_id_by_public_key_hash_query =
+        let mut identity_id_by_public_key_hash_query =
             Self::identity_id_by_non_unique_public_key_hash_query(public_key_hash, after);
+        let range = match after {
+            Some(after) => QueryItem::RangeAfterToInclusive(after.to_vec()..=identity_id.to_vec()),
+            None => QueryItem::RangeToInclusive(..=identity_id.to_vec()),
+        };
+        identity_id_by_public_key_hash_query
+            .query
+            .query
+            .set_subquery(Query::new_single_query_item(range));
         PathQuery::merge(
             vec![&full_identity_query, &identity_id_by_public_key_hash_query],
             grove_version,
@@ -377,6 +395,22 @@ impl Drive {
     pub fn balance_for_identity_id_query(identity_id: [u8; 32]) -> PathQuery {
         let balance_path = balance_path_vec();
         PathQuery::new_single_key(balance_path, identity_id.to_vec())
+    }
+
+    /// The query for what is left of the budgets of several keys of one identity. Keys without a
+    /// budget, and an identity that was never given a budgeted key, prove as absent.
+    pub fn identity_keys_remaining_budgets_query(
+        identity_id: [u8; 32],
+        key_ids: &[KeyID],
+    ) -> PathQuery {
+        let mut query = Query::new();
+        for key_id in key_ids {
+            query.insert_key(key_id.encode_var_vec());
+        }
+        PathQuery::new(
+            identity_key_budgets_path_vec(identity_id.as_slice()),
+            SizedQuery::new(query, Some(key_ids.len() as u16), None),
+        )
     }
 
     /// The query for proving an identity's nonce.
@@ -633,7 +667,7 @@ mod tests {
         fn should_build_full_identity_with_non_unique_public_key_hash_query_with_after() {
             let public_key_hash = [23u8; 20];
             let identity_id = [24u8; 32];
-            let after = [25u8; 32];
+            let after = [23u8; 32];
             let grove_version = GroveVersion::latest();
             let pq = Drive::full_identity_with_non_unique_public_key_hash_query(
                 public_key_hash,
@@ -643,6 +677,22 @@ mod tests {
             )
             .expect("should build query");
             assert!(pq.query.limit.is_none());
+        }
+
+        #[test]
+        fn should_reject_nonunique_endpoint_not_after_the_cursor() {
+            let version = GroveVersion::latest();
+            for after in [[24; 32], [25; 32]] {
+                assert!(matches!(
+                    Drive::full_identity_with_non_unique_public_key_hash_query(
+                        [23; 20],
+                        [24; 32],
+                        Some(after),
+                        version,
+                    ),
+                    Err(Error::Proof(ProofError::CorruptedProof(_)))
+                ));
+            }
         }
 
         #[test]

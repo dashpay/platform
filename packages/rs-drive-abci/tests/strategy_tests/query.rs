@@ -9,13 +9,13 @@ use dapi_grpc::platform::v0::{
     get_identity_by_public_key_hash_request, get_identity_by_public_key_hash_response,
     GetIdentityByPublicKeyHashRequest, Proof,
 };
-use dpp::bls_signatures::{Bls12381G2Impl, BlsError, Pairing, Signature};
+use dpp::bls::{BlsError, Signature};
 use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
 use dpp::identity::{Identity, PartialIdentity};
-use dpp::serialization::PlatformDeserializable;
+use dpp::serialization::PlatformDeserializableUntrusted;
 use dpp::validation::SimpleValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -74,7 +74,7 @@ pub struct ProofVerification<'a> {
     pub signature: &'a [u8; 96],
 
     /// Threshold key used to verify the signature
-    pub public_key: &'a dpp::bls_signatures::PublicKey<Bls12381G2Impl>,
+    pub public_key: &'a dpp::bls::PublicKey,
 }
 
 impl ProofVerification<'_> {
@@ -111,20 +111,17 @@ impl ProofVerification<'_> {
             Err(e) => return SimpleValidationResult::new_with_error(e.into()),
         };
         // We could have received a fake commit, so signature validation needs to be returned if error as a simple validation result
-        let signature =
-            match <Bls12381G2Impl as Pairing>::Signature::from_compressed(self.signature)
-                .into_option()
-            {
-                Some(signature) => Signature::Basic(signature),
-                None => {
-                    return SimpleValidationResult::new_with_error(
-                        AbciError::BlsErrorOfTenderdashThresholdMechanism(
-                            BlsError::InvalidSignature,
-                            format!("malformed signature data: {}", hex::encode(self.signature)),
-                        ),
-                    );
-                }
-            };
+        let signature = match Signature::from_compressed(self.signature) {
+            Some(signature) => signature,
+            None => {
+                return SimpleValidationResult::new_with_error(
+                    AbciError::BlsErrorOfTenderdashThresholdMechanism(
+                        BlsError::InvalidSignature,
+                        format!("malformed signature data: {}", hex::encode(self.signature)),
+                    ),
+                );
+            }
+        };
         tracing::trace!(
             digest=hex::encode(&digest),
             ?state_id,
@@ -286,7 +283,7 @@ impl QueryStrategy {
                                 assert_eq!(identity, expected_identity);
                             }
                             get_identity_by_public_key_hash_response::get_identity_by_public_key_hash_response_v0::Result::Identity(data) => {
-                                let identity_id = Identity::deserialize_from_bytes(&data)
+                                let identity_id = Identity::deserialize_from_bytes_untrusted(&data)
                                     .expect("expected to deserialize identity").id();
 
                                 assert_eq!(identity_id, expected_identity.id);

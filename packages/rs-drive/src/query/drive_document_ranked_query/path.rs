@@ -43,14 +43,13 @@ pub(crate) fn ranked_level_split(
         )));
     };
     let is_at_level = index
-        .ranked_countable_at
-        .iter()
+        .ranked_at_levels()
         .any(|at| at == &ranked_property.name);
     let is_terminal = pin_count + 1 == index.properties.len();
     if !is_at_level && !is_terminal {
         return Err(Error::Drive(DriveError::NotSupported(
             "ranked and having-range queries must land on a level hosting a ranking \
-             secondary — the index's rankedCountable.at property or its terminal property; \
+             secondary — one of the index's ranking `at` properties or its terminal property; \
              the resolved pin set addresses an intermediate level",
         )));
     }
@@ -88,11 +87,24 @@ pub(crate) fn indexed_property_name_tree_path_for_index(
     path.push(contract_id.to_vec());
     path.push(vec![1u8]);
     path.push(document_type_name.as_bytes().to_vec());
-    for (property, value) in leading_properties.iter().zip(equality_prefix_values) {
-        path.push(property.name.as_bytes().to_vec());
+    // Level segments go through `Index::level_key`, the single source of
+    // the level-key rule: a bucketed (timeRange) first level is keyed by
+    // the grid-qualified `storage_key`, every other level by its bare
+    // property name. The pinned value under a bucketed level is the
+    // resolved bucket start, encoded exactly like the timestamp itself.
+    for (position, (property, value)) in leading_properties
+        .iter()
+        .zip(equality_prefix_values)
+        .enumerate()
+    {
+        path.push(index.level_key(position, &property.name).into_bytes());
         path.push(value.clone());
     }
-    path.push(terminal_property.name.as_bytes().to_vec());
+    path.push(
+        index
+            .level_key(leading_properties.len(), &terminal_property.name)
+            .into_bytes(),
+    );
     Ok(path)
 }
 

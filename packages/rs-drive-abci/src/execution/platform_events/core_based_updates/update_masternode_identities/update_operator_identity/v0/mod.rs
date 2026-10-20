@@ -24,7 +24,7 @@ use drive::grovedb::Transaction;
 use drive::util::batch::DriveOperation;
 use drive::util::batch::DriveOperation::IdentityOperation;
 use drive::util::batch::IdentityOperationType::{
-    AddNewIdentity, AddNewKeysToIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
+    AddNewIdentity, AddNewKeysToMasternodeIdentity, DisableIdentityKeys, ReEnableIdentityKeys,
 };
 
 impl<C> Platform<C>
@@ -128,17 +128,17 @@ where
                             }
                         }
                     }
-                    if needs_change_platform_node_id
-                        && old_masternode.state.platform_node_id.is_some()
-                    {
-                        if key.data().as_slice()
-                            == old_masternode.state.platform_node_id.as_ref().unwrap()
+                    if needs_change_platform_node_id {
+                        if let Some(old_platform_node_id) =
+                            old_masternode.state.platform_node_id.as_ref()
                         {
-                            return Some(key_id);
-                        } else if platform_node_id_change.as_ref().unwrap().as_slice()
-                            == key.data().as_slice()
-                        {
-                            old_operator_node_id_to_re_enable = Some(key_id);
+                            if key.data().as_slice() == old_platform_node_id {
+                                return Some(key_id);
+                            } else if platform_node_id_change.as_ref().unwrap().as_slice()
+                                == key.data().as_slice()
+                            {
+                                old_operator_node_id_to_re_enable = Some(key_id);
+                            }
                         }
                     }
                     None
@@ -212,9 +212,8 @@ where
             }
 
             if !non_unique_keys_to_add.is_empty() {
-                drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
+                drive_operations.push(IdentityOperation(AddNewKeysToMasternodeIdentity {
                     identity_id: operator_identifier.to_buffer(),
-                    unique_keys_to_add: vec![],
                     non_unique_keys_to_add,
                 }));
             }
@@ -374,9 +373,8 @@ where
 
                 if !non_unique_keys_to_add.is_empty() {
                     // We should add keys that didn't exist before
-                    drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
+                    drive_operations.push(IdentityOperation(AddNewKeysToMasternodeIdentity {
                         identity_id: operator_identifier.to_buffer(),
-                        unique_keys_to_add: vec![],
                         non_unique_keys_to_add,
                     }));
                 }
@@ -391,7 +389,7 @@ mod tests {
     use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
     use dpp::block::block_info::BlockInfo;
-    use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
+    use dpp::bls::SecretKey as BlsPrivateKey;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::ProTxHash;
     use dpp::dashcore::Txid;
@@ -433,11 +431,13 @@ mod tests {
             .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
-        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        let private_key_operator = BlsPrivateKey::from_be_bytes(
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
-        let pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+        .expect("Core fixture secret key must decode");
+        let pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         let operator_key: IdentityPublicKey = IdentityPublicKeyV0 {
             id: 0,
@@ -528,7 +528,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -536,14 +536,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -605,7 +609,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -613,14 +617,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -665,7 +673,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -673,14 +681,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(new_operator_payout_address),
                 platform_node_id: Some(node_id),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -738,7 +750,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -746,14 +758,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -815,7 +831,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -823,14 +839,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(original_node_id),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -876,7 +896,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -884,14 +904,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(new_platform_node_id),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -952,11 +976,13 @@ mod tests {
             .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
-        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        let private_key_operator = BlsPrivateKey::from_be_bytes(
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
-        let new_pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+        .expect("Core fixture secret key must decode");
+        let new_pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         // Create an old masternode state
         let masternode_list_item = MasternodeListItem {
@@ -964,7 +990,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -972,14 +998,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: original_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -1044,15 +1074,13 @@ mod tests {
             .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
-        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
+        let private_key_operator = BlsPrivateKey::from_be_bytes(
             &private_key_operator_bytes
                 .try_into()
                 .expect("expected the secret key to be 32 bytes"),
         )
-        .expect(
-            "expected the conversion between bls signatures library and blsful to happen without failing",
-        );
-        let new_pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+        .expect("Core fixture secret key must decode");
+        let new_pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         let new_operator_identifier = Identifier::create_operator_identifier(
             pro_tx_hash.as_byte_array(),
@@ -1094,7 +1122,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -1102,14 +1130,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: original_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -1140,7 +1172,7 @@ mod tests {
 
         let added_platform_node_key = drive_operations.iter().any(|operation| {
             if let drive::util::batch::DriveOperation::IdentityOperation(
-                drive::util::batch::IdentityOperationType::AddNewKeysToIdentity {
+                drive::util::batch::IdentityOperationType::AddNewKeysToMasternodeIdentity {
                     identity_id,
                     non_unique_keys_to_add,
                     ..
@@ -1183,11 +1215,13 @@ mod tests {
             .expect("expected to generate a private key")
             .to_bytes()
             .to_vec();
-        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
-            &private_key_operator_bytes.try_into().expect("expected the secret key to be 32 bytes"),
+        let private_key_operator = BlsPrivateKey::from_be_bytes(
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
         )
-            .expect("expected the conversion between bls signatures library and blsful to happen without failing");
-        let new_pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+        .expect("Core fixture secret key must decode");
+        let new_pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         // Create an old masternode state with original public key operator
         let masternode_list_item = MasternodeListItem {
@@ -1195,7 +1229,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -1203,14 +1237,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: original_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 
@@ -1256,7 +1294,7 @@ mod tests {
             pro_tx_hash,
             collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
-            collateral_address: [0; 20],
+            collateral_address: Some([0; 20]),
             operator_reward: 0.0,
             state: DMNState {
                 service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
@@ -1264,14 +1302,18 @@ mod tests {
                 pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
-                owner_address: rng.gen::<[u8; 20]>(),
+                owner_address: Some(rng.gen::<[u8; 20]>()),
                 voting_address: rng.gen::<[u8; 20]>(),
-                payout_address: rng.gen::<[u8; 20]>(),
+                payout_address: Some(rng.gen::<[u8; 20]>()),
+                payouts: None,
                 pub_key_operator: new_pub_key_operator.clone(),
                 operator_payout_address: Some(operator_payout_address),
                 platform_node_id: Some(node_id_bytes),
-                platform_p2p_port: None,
-                platform_http_port: None,
+                #[allow(deprecated)]
+                legacy_platform_p2p_port: None,
+                #[allow(deprecated)]
+                legacy_platform_http_port: None,
+                addresses: None,
             },
         };
 

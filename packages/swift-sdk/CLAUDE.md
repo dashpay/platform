@@ -69,6 +69,16 @@ possible:
   add a single FFI entry point that does the whole thing and returns the
   bytes ready to persist.
 
+Keep the two signer handles separate. The document signer (`VTableSigner`
+/ `SignerHandle`) is a vtable that calls back into Swift to sign state
+transitions. The wallet-HD signer (`MnemonicResolverHandle`) lets Rust
+fetch the mnemonic for one operation, derive, and wipe. Raw-secret DashPay
+operations (ECDH, `accountReference`, `contactInfo` encryption) run on the
+wallet-HD side inside the FFI crate's Rust and return only results.
+Merging the handles would either route the mnemonic through the
+document-signing path or move DIP-15 crypto into Swift. What the Keychain
+protection does and does not guarantee is written on `WalletStorage`.
+
 ## Concrete precedent
 
 The correct shape is `platform_wallet_discover_identities` (and its
@@ -93,3 +103,9 @@ If it's deciding anything — how many, which index, which path, which
 key, which order — move the decision to Rust. If you find a decision
 that Rust doesn't currently let you ask for by a single call, add the
 helper in the Rust library first.
+
+## Parity with the Kotlin SDK
+
+Capability parity between the two SDKs and example apps is tracked in
+`docs/sdk/sdk-parity-manifest.json`. See "Keeping parity with iOS" in
+`packages/kotlin-sdk/CLAUDE.md` for the rules and the regeneration command.

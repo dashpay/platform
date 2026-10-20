@@ -222,9 +222,9 @@ pub enum WalletStartupStatus {
     /// The distinction from [`Self::Ready`] is the whole point: an identity
     /// hiding at an unanswered index is invisible to everything that consults
     /// local state, so calling this launch `Ready` promises an identity set
-    /// that was never established. That is #4365's exact shape, one level up —
-    /// the wallet has *an* identity, so the warm-launch shortcut and every
-    /// tally signal read clean while a second identity stays lost.
+    /// that was never established. The lost-second-identity shape recurs one
+    /// level up: the wallet has *an* identity, so the warm-launch shortcut
+    /// and every tally signal read clean while a second identity stays lost.
     ///
     /// Not terminal: the verdict stays on record, so the next launch re-opens
     /// the question instead of taking the shortcut. Nothing about the contact
@@ -242,10 +242,9 @@ impl WalletStartupStatus {
     /// the failure is local and will still be there next time, or the scan
     /// answered everything it probed.
     ///
-    /// This is the distinction platform#4352 made expressible: before it, "no
-    /// identity exists" and "we never got through" both arrived as an empty
-    /// success, so clients either retried a proven-empty scan forever or cached
-    /// a network failure as fact.
+    /// The distinction matters: if "no identity exists" and "we never got
+    /// through" both arrived as an empty success, clients would either retry a
+    /// proven-empty scan forever or cache a network failure as fact.
     pub fn discovery_worth_retrying(self) -> bool {
         matches!(self, Self::PartialNoIdentity | Self::IdentityScanIncomplete)
     }
@@ -412,12 +411,10 @@ impl StartupTally {
     /// identity there is nothing to have drained.
     pub(crate) fn status(&self) -> WalletStartupStatus {
         // Both of these say "the identity question is still open", so neither
-        // may decide the verdict once an identity is known. That used to be
-        // structurally impossible — discovery ran only when nothing was on
-        // file, and every branch that found something returned early — but a
-        // rescan forced by an incomplete prior scan reaches them with an
-        // identity already recorded, and reporting *that* launch as
-        // `DiscoveryFailed` would hide a sync and drain that both ran.
+        // may decide the verdict once an identity is known. A rescan forced
+        // by an incomplete prior scan reaches them with an identity already
+        // recorded, and reporting *that* launch as `DiscoveryFailed` would
+        // hide a sync and drain that both ran.
         //
         // A local fault outranks unreachability: both leave the question open,
         // but only this one tells the client not to bother asking again.
@@ -451,11 +448,11 @@ impl StartupTally {
         // Last, and deliberately so: every check above describes work this
         // launch did, while this one describes an identity set the wallet is
         // on record as not having fully established. Ranking it here is what
-        // makes the fix additive — the only run whose status changes is the
-        // one that used to come back `Ready`, which is precisely the run that
-        // was lying. Everything else keeps the status a client already
-        // handles, and reads `identity_scan_incomplete` on the outcome if it
-        // cares.
+        // keeps the check additive — the only run it reclassifies is the one
+        // that would otherwise come back `Ready`, which is precisely the run
+        // that would be lying. Everything else keeps the status a client
+        // already handles, and reads `identity_scan_incomplete` on the outcome
+        // if it cares.
         //
         // `Ready` is the promise that a contact payment has everything it
         // needs. An unanswered index can hide a whole identity from every
@@ -550,10 +547,10 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
         //    scan it does not need — unless the scan that produced those
         //    identities is on record as having left indices unanswered, in
         //    which case "we already have one" is not evidence that we have
-        //    them all. A wallet whose second identity was hidden by a failed
-        //    probe used to stay that way for the life of the installation,
-        //    because this shortcut is the only thing that would have looked
-        //    again (dashpay/platform#4365).
+        //    them all. Without that exception a wallet whose second identity
+        //    was hidden by a failed probe stays that way for the life of the
+        //    installation, because this shortcut is the only thing that would
+        //    look again.
         //
         //    Only a recorded incomplete scan re-opens the question. An absent
         //    verdict keeps the shortcut, so hosts that do not persist it are
@@ -751,6 +748,47 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             );
         }
 
+        // The DashPay sync above ran its rescan sweep BEFORE the drain created
+        // the receival accounts, so it saw none of them. Run it once more now:
+        // with `synced_height == 0` (this sequence runs before SPV starts) the
+        // sweep marks every registered receival contact as covered by the
+        // coming full scan, instead of leaving it for the first post-scan
+        // sweep to rewind for.
+        //
+        // Budgeted, because it is not free: it waits for the cursor and
+        // manager locks, and on a backend that persists backfill coverage it
+        // stores the record inline. `within_budget` is safe here: the sweep's
+        // only await points are those two lock acquisitions, taken before it
+        // changes anything, and everything after them (the store included)
+        // runs to completion without yielding, so a drop can only land before
+        // the pass begins. Skipping it costs a scan, never a payment: the
+        // contact stays uncovered, and the first sweep after SPV starts
+        // rewinds to its funding height instead.
+        if drained > 0 {
+            match within_budget(
+                deadline,
+                identity_wallet.dashpay().reconcile_dashpay_rescan(),
+            )
+            .await
+            {
+                Some(Ok(_)) => {}
+                Some(Err(e)) => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "startup: post-drain DashPay rescan sweep failed"
+                    );
+                }
+                None => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        "startup: budget spent before the post-drain DashPay rescan sweep; \
+                         the first sweep after SPV starts will backfill the drained contacts"
+                    );
+                }
+            }
+        }
+
         Ok(tally.into_outcome(started.elapsed()))
     }
 
@@ -783,8 +821,8 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
     /// An `Ok` result ends the loop whether or not it found anything: Platform
     /// answered, and an empty answer is a proof of absence that rescanning
     /// cannot overturn. Only [`PlatformWalletError::IdentityDiscoveryIncomplete`]
-    /// — the error platform#4352 introduced for a scan that never got through
-    /// — is worth another attempt.
+    /// — the error for a scan that never got through — is worth another
+    /// attempt.
     async fn discover_identity_with_backoff(
         &self,
         wallet_id: &WalletId,
@@ -863,9 +901,9 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
                 // prefix of the index space and answered the rest of it not at
                 // all, which is exactly the state a later launch must not
                 // mistake for a settled identity set. Without this the
-                // budget-expiry path reproduces #4365 in its own right — it
-                // consults local state, finds the sighting that was persisted
-                // before cancellation, and records a warm launch.
+                // budget-expiry path hides a second identity in its own right
+                // — it consults local state, finds the sighting that was
+                // persisted before cancellation, and records a warm launch.
                 self.record_identity_scan_cut_off(wallet_id).await;
                 // Sightings persist incrementally, so an abandoned scan may
                 // still have folded an identity in before it was cut off.
@@ -969,8 +1007,10 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
 
     /// Record that a scan was abandoned before it could answer every index.
     ///
-    /// Mirrors what `discover` publishes for itself; needed separately because
-    /// a scan dropped mid-await never reaches its own bookkeeping.
+    /// Mirrors what `discover` publishes for itself, retry policy included;
+    /// needed separately because a scan dropped mid-await never reaches its own
+    /// bookkeeping. This is the verdict least affordable to lose — the one that
+    /// re-opens the identity question on the next launch.
     async fn record_identity_scan_cut_off(&self, wallet_id: &WalletId) {
         // Coverage of nothing: the scan was dropped mid-await, so it answered
         // no index and may not clear one an earlier scan left open.
@@ -988,12 +1028,15 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             identity_scan_state: Some(recorded),
             ..Default::default()
         };
+        // Single attempt, not retried — the outcome is logged and swallowed
+        // either way: an abandoned scan must not turn a shutdown into an error.
         if let Err(e) = self.persister.store(*wallet_id, changeset) {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
+                transient = e.is_transient(),
                 error = %e,
-                "failed to persist an abandoned scan's verdict; the next launch may take the \
-                 warm shortcut over an incomplete identity set"
+                "abandoned scan's verdict could not be persisted; the next launch will take \
+                 the warm shortcut over an identity set nothing proved complete"
             );
         }
     }
@@ -1022,8 +1065,8 @@ mod tests {
         );
     }
 
-    /// The opposite case, and the reason the distinction is expressible at all
-    /// (platform#4352): never reaching Platform is not evidence of absence.
+    /// The opposite case, and the reason the distinction exists at all: never
+    /// reaching Platform is not evidence of absence.
     #[test]
     fn unreachable_discovery_is_not_settled() {
         let mut tally = StartupTally::default();
@@ -1213,11 +1256,11 @@ mod tests {
     /// the rescan failing is not nothing either: it means the scan gap that
     /// forced it is still there.
     ///
-    /// This test previously asserted `Ready` for the unreachable half, pinning
-    /// the very defect the `identity_scan_incomplete` signal exists to close —
-    /// a launch that knows its identity set is partial reporting the status
-    /// that promises it is complete. Both halves keep their real subject (the
-    /// identity must not be re-opened) and now assert the gap is reported.
+    /// Asserting `Ready` for the unreachable half would pin the very defect
+    /// the `identity_scan_incomplete` signal exists to close — a launch that
+    /// knows its identity set is partial reporting the status that promises it
+    /// is complete. Both halves keep their real subject (the identity must not
+    /// be re-opened) and assert the gap is reported.
     #[test]
     fn a_failed_rescan_reports_the_scan_gap_without_reopening_the_identity() {
         // The scenario the name describes: the prior verdict said incomplete,
@@ -1378,8 +1421,8 @@ mod tests {
     }
 
     fn seed_for(phrase: &str) -> [u8; 64] {
-        use key_wallet::mnemonic::{Language, Mnemonic};
-        Mnemonic::from_phrase(phrase, Language::English)
+        use key_wallet::mnemonic::Mnemonic;
+        Mnemonic::from_phrase(phrase)
             .expect("valid test mnemonic")
             .to_seed("")
     }
@@ -1402,12 +1445,26 @@ mod tests {
         std::sync::Arc<crate::PlatformWalletManager<crate::test_support::NoopTestPersister>>,
         WalletId,
     ) {
+        manager_with_queued_contact_crypto_on(std::sync::Arc::new(
+            crate::test_support::NoopTestPersister,
+        ))
+        .await
+    }
+
+    /// [`manager_with_queued_contact_crypto`] over a caller-supplied backend.
+    async fn manager_with_queued_contact_crypto_on<P>(
+        backend: std::sync::Arc<P>,
+    ) -> (std::sync::Arc<crate::PlatformWalletManager<P>>, WalletId)
+    where
+        P: crate::changeset::PlatformWalletPersistence + 'static,
+    {
         use crate::changeset::{
             upsert_pending_contact_crypto, PendingContactCrypto, PendingContactCryptoOp,
         };
         use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
 
-        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let (manager, wallet_id) =
+            crate::test_support::test_platform_wallet_manager_with(backend).await;
         let persister = WalletPersister::new(wallet_id, std::sync::Arc::new(NoPlatformPersistence));
 
         let mut wm = manager.wallet_manager.write().await;
@@ -1541,6 +1598,307 @@ mod tests {
         );
     }
 
+    /// The drain creates the receival accounts AFTER the DashPay sync has
+    /// already run its rescan sweep, so that sweep saw none of them. Startup
+    /// therefore runs the sweep once more once the drain has produced
+    /// something. This pins the consequence: the freshly drained contact is
+    /// marked covered while `synced_height` is still 0, so when the full
+    /// historical scan later advances past its funding height the recurring
+    /// sweep does not rewind mid-session to backfill a contact the scan had
+    /// already covered.
+    #[tokio::test]
+    async fn the_post_drain_sweep_marks_the_drained_contact_covered() {
+        use crate::wallet::identity::network::SeedCryptoProvider;
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        let owner = Identifier::from([1u8; 32]);
+        let contact = Identifier::from([2u8; 32]);
+        let (manager, wallet_id) = manager_with_queued_contact_crypto().await;
+        establish_queued_contact(&manager, wallet_id).await;
+        let owning =
+            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+
+        let outcome = manager
+            .start_wallet_subsystems(
+                &wallet_id,
+                None,
+                Some(&owning),
+                None::<&UnusedSigner>,
+                WalletStartupOptions::default(),
+            )
+            .await
+            .expect("bring-up reports rather than raises");
+        assert_eq!(outcome.contact_accounts_drained, 1);
+
+        {
+            let wm = manager.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("wallet info");
+            assert_eq!(
+                info.core_wallet.synced_height(),
+                0,
+                "bring-up runs before SPV starts; the sweep must not have rewound anything"
+            );
+            assert!(
+                info.identity_manager
+                    .managed_identity(&owner)
+                    .expect("managed identity")
+                    .dashpay()
+                    .rescan_triggered
+                    .contains(&contact),
+                "the post-drain sweep must mark the drained contact covered by the coming scan"
+            );
+        }
+
+        // Advance the scan past the contact's funding height. The mark must
+        // hold: no rewind, because the full scan already covered it.
+        {
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.core_wallet.update_synced_height(200);
+        }
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        assert_eq!(
+            wallet
+                .identity()
+                .dashpay()
+                .reconcile_dashpay_rescan()
+                .await
+                .expect("sweep"),
+            None,
+            "a contact covered by the full historical scan must never trigger a rewind"
+        );
+        let wm = manager.wallet_manager.read().await;
+        assert_eq!(
+            wm.get_wallet_info(&wallet_id)
+                .expect("wallet info")
+                .core_wallet
+                .synced_height(),
+            200
+        );
+    }
+
+    /// Give the queued contact both requests, ours and its reply (funded at
+    /// 100), so the pair auto-establishes the relationship. The rescan sweep
+    /// only handles an ESTABLISHED contact, from its request pair's height.
+    async fn establish_queued_contact<P>(
+        manager: &crate::PlatformWalletManager<P>,
+        wallet_id: WalletId,
+    ) where
+        P: crate::changeset::PlatformWalletPersistence + 'static,
+    {
+        use crate::wallet::identity::ContactRequest;
+        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+
+        let owner = Identifier::from([1u8; 32]);
+        let contact = Identifier::from([2u8; 32]);
+        let persister = WalletPersister::new(wallet_id, std::sync::Arc::new(NoPlatformPersistence));
+        let mut wm = manager.wallet_manager.write().await;
+        let managed = wm
+            .get_wallet_info_mut(&wallet_id)
+            .expect("wallet info")
+            .identity_manager
+            .managed_identity_mut(&owner)
+            .expect("managed identity");
+        managed
+            .add_sent_contact_request(
+                ContactRequest::new(owner, contact, 0, 0, 0, vec![0u8; 96], 100, 0),
+                &persister,
+            )
+            .expect("sent request persists");
+        managed
+            .add_incoming_contact_request(
+                ContactRequest::new(contact, owner, 0, 0, 0, vec![0u8; 96], 100, 0),
+                &persister,
+            )
+            .expect("incoming request persists");
+        assert!(
+            managed
+                .dashpay()
+                .established_contacts()
+                .contains_key(&contact),
+            "the request pair establishes the contact the sweep handles"
+        );
+    }
+
+    /// A backend that persists backfill coverage, so the post-drain sweep
+    /// stores inline rather than staying in memory: inline commits, atomic
+    /// rounds and account writers, plus the backfill slot. Records the
+    /// coverage each round carried, and can hold the drain's account round
+    /// past the startup deadline — a slow host transaction.
+    #[derive(Default)]
+    struct DurableStartupBackend {
+        /// Coverage carried by each stored round that had a backfill record.
+        backfill_rounds: std::sync::Mutex<Vec<crate::changeset::DashPayBackfillRecord>>,
+        /// Whether a round carrying an account registration was stored.
+        account_round_stored: std::sync::atomic::AtomicBool,
+        /// When set, the next account round blocks this long before
+        /// committing.
+        stall_account_round: std::sync::Mutex<Option<Duration>>,
+    }
+
+    impl crate::changeset::PlatformWalletPersistence for DurableStartupBackend {
+        fn store_commits_inline(&self) -> bool {
+            true
+        }
+
+        fn stores_dashpay_backfill(&self) -> bool {
+            true
+        }
+
+        fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
+            use crate::changeset::PersistenceCapabilities as C;
+            C::ATOMIC_CHANGESETS.union(C::ACCOUNT_ADDRESS_POOLS)
+        }
+
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            if !changeset.account_registrations.is_empty() {
+                if let Some(stall) = self.stall_account_round.lock().unwrap().take() {
+                    std::thread::sleep(stall);
+                }
+                self.account_round_stored
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+            if let Some(record) = changeset.dashpay_backfill {
+                self.backfill_rounds.lock().unwrap().push(record);
+            }
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(crate::changeset::ClientStartState::default())
+        }
+    }
+
+    fn rounds_covering(backend: &DurableStartupBackend, contact: Identifier) -> usize {
+        backend
+            .backfill_rounds
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|record| {
+                record
+                    .covered()
+                    .iter()
+                    .any(|entry| entry.contact == contact)
+            })
+            .count()
+    }
+
+    /// On a backend that persists coverage, the post-drain sweep is a real
+    /// store, not a memory-only pass: the drained contact reaches the host as
+    /// covered on the same bring-up.
+    #[tokio::test]
+    async fn the_post_drain_sweep_stores_coverage_on_a_durable_backend() {
+        use crate::wallet::identity::network::SeedCryptoProvider;
+
+        let contact = Identifier::from([2u8; 32]);
+        let backend = std::sync::Arc::new(DurableStartupBackend::default());
+        let (manager, wallet_id) = manager_with_queued_contact_crypto_on(backend.clone()).await;
+        establish_queued_contact(&manager, wallet_id).await;
+        let owning =
+            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+
+        let outcome = manager
+            .start_wallet_subsystems(
+                &wallet_id,
+                None,
+                Some(&owning),
+                None::<&UnusedSigner>,
+                WalletStartupOptions::default(),
+            )
+            .await
+            .expect("bring-up reports rather than raises");
+
+        assert_eq!(outcome.contact_accounts_drained, 1);
+        assert_eq!(
+            rounds_covering(&backend, contact),
+            1,
+            "the post-drain sweep must store the drained contact's coverage"
+        );
+    }
+
+    /// The post-drain sweep stores inline on a durable backend, so it must
+    /// respect the startup budget like every other step that can block. A
+    /// drain whose last host write ran past the deadline still completes and
+    /// is counted, but no further store is started: bring-up returns, and the
+    /// contact is left for the first sweep after SPV starts.
+    #[tokio::test]
+    async fn the_post_drain_sweep_starts_no_store_once_the_budget_is_spent() {
+        use crate::wallet::identity::network::SeedCryptoProvider;
+
+        let owner = Identifier::from([1u8; 32]);
+        let contact = Identifier::from([2u8; 32]);
+        let budget = Duration::from_secs(1);
+        let backend = std::sync::Arc::new(DurableStartupBackend::default());
+        let (manager, wallet_id) = manager_with_queued_contact_crypto_on(backend.clone()).await;
+        establish_queued_contact(&manager, wallet_id).await;
+        *backend.stall_account_round.lock().unwrap() = Some(budget + Duration::from_millis(500));
+        let owning =
+            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+
+        let outcome = manager
+            .start_wallet_subsystems(
+                &wallet_id,
+                None,
+                Some(&owning),
+                None::<&UnusedSigner>,
+                WalletStartupOptions {
+                    budget,
+                    ..WalletStartupOptions::default()
+                },
+            )
+            .await
+            .expect("bring-up reports rather than raises");
+
+        assert!(
+            backend
+                .account_round_stored
+                .load(std::sync::atomic::Ordering::SeqCst),
+            "the drain's account round is the write held past the deadline"
+        );
+        assert_eq!(outcome.contact_accounts_drained, 1);
+        assert_eq!(
+            rounds_covering(&backend, contact),
+            0,
+            "no coverage store may start once the budget is spent"
+        );
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        {
+            let wm = manager.wallet_manager.read().await;
+            assert!(
+                !wm.get_wallet_info(&wallet_id)
+                    .expect("wallet info")
+                    .identity_manager
+                    .managed_identity(&owner)
+                    .expect("managed identity")
+                    .dashpay()
+                    .rescan_triggered
+                    .contains(&contact),
+                "a skipped sweep leaves the contact unhandled"
+            );
+        }
+
+        // The next sweep picks it up.
+        wallet
+            .identity()
+            .dashpay()
+            .reconcile_dashpay_rescan()
+            .await
+            .expect("sweep");
+        assert_eq!(rounds_covering(&backend, contact), 1);
+    }
+
     /// The gate is paid for only when there is something to protect. An empty
     /// queue means the drain would derive nothing, so no key material is
     /// resolved — which is what keeps this affordable on a warm launch.
@@ -1617,7 +1975,7 @@ mod tests {
         assert!(!report.is_complete());
         assert!(report.is_fully_degraded());
 
-        // The back-compat return shape can no longer render this as success.
+        // The back-compat return shape must not render this as success.
         let err = wallet
             .identity()
             .dashpay()
@@ -1687,10 +2045,11 @@ mod tests {
     ///
     /// Driven with a zero budget so no branch depends on network timing: every
     /// step is abandoned at its deadline and what is asserted is purely which
-    /// verdict came out. ("No verdict at all" is not reachable here — the
-    /// harness's mock SDK answers no probe, so creating the wallet already
-    /// leaves one — and it is the accessor's own documented contract that an
-    /// absent verdict reads as unknown rather than incomplete.)
+    /// verdict came out. The incomplete verdict is planted through the same
+    /// `record_identity_scan` the scans use: registration records none (the
+    /// wallet is external-signable by then, so the resident-key probe never
+    /// runs), and it is the accessor's own documented contract that an absent
+    /// verdict reads as unknown rather than incomplete.
     #[tokio::test]
     async fn a_recorded_incomplete_scan_reaches_the_outcome() {
         use crate::changeset::IdentityScanStateEntry;
@@ -1705,19 +2064,20 @@ mod tests {
         let owning =
             SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
 
-        // The wallet arrives with an unanswered index on record — a real
-        // incomplete scan, produced by the mock SDK refusing every probe
-        // during wallet creation, not a hand-planted flag.
+        // The wallet arrives with an unanswered index on record — the verdict
+        // an abandoned scan leaves behind (index 0 probed, unanswered),
+        // recorded the way the scans record theirs.
         let covered_through;
         {
-            let wm = manager.wallet_manager.read().await;
-            let verdict = wm
-                .get_wallet_info(&wallet_id)
-                .expect("wallet info")
+            let mut wm = manager.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
+            info.identity_manager
+                .record_identity_scan(wallet_id, IdentityScanStateEntry::incomplete(0, 1, vec![0]));
+            let verdict = info
                 .identity_manager
                 .identity_scan_state(&wallet_id)
                 .cloned()
-                .expect("precondition: the creation scan recorded a verdict");
+                .expect("precondition: the planted verdict is on record");
             assert!(
                 !verdict.complete,
                 "precondition: that verdict must be the incomplete one"
@@ -1759,7 +2119,7 @@ mod tests {
             let info = wm.get_wallet_info_mut(&wallet_id).expect("wallet info");
             // Coverage matters: a verdict only clears the gaps it walked, so
             // this stand-in for a clean rescan has to span the same indices
-            // the creation scan left unanswered.
+            // the planted verdict left unanswered.
             info.identity_manager.record_identity_scan(
                 wallet_id,
                 IdentityScanStateEntry::completed(0, covered_through),
@@ -1837,6 +2197,8 @@ mod tests {
                     wallet_info: self.managed.clone(),
                     identity_manager: crate::changeset::IdentityManagerStartState::default(),
                     unused_asset_locks: std::collections::BTreeMap::new(),
+                    unconfirmed_outgoing_txs: Vec::new(),
+                    dashpay_backfill: Default::default(),
                 },
             );
             Ok(crate::changeset::ClientStartState {
