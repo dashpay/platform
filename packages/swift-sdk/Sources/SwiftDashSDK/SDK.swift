@@ -403,8 +403,13 @@ public final class SDK: @unchecked Sendable {
     case trusted = 2
   }
 
-  /// The quorum source selected at the most recent mode application.
-  public private(set) var quorumSource: QuorumSource = .trusted
+  /// The quorum source proof verification uses right now: fixed for a
+  /// Trusted or SPV SDK, and following SPV readiness for an Adaptive SDK in
+  /// Auto mode.
+  public var quorumSource: QuorumSource {
+    guard let handle else { return .trusted }
+    return dash_sdk_get_context_provider_source(handle) == 1 ? .spv : .trusted
+  }
 
   /// Update quorum routing policy without replacing the SDK context provider.
   public func setQuorumMode(_ mode: QuorumMode) throws {
@@ -418,7 +423,6 @@ public final class SDK: @unchecked Sendable {
       defer { dash_sdk_error_free(result.error) }
       throw SDKError.internalError("Failed to set quorum mode: \(message)")
     }
-    quorumSource = dash_sdk_get_context_provider_source(handle) == 1 ? .spv : .trusted
   }
 
   /// Offline SDK over the FFI mock (`dash_sdk_create_handle_with_mock`), for
