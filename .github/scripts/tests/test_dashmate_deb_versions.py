@@ -19,7 +19,7 @@ Priority: standard
 Architecture: {arch}
 Maintainer: undefined
 Description: Distribution package for Dash node installation
-Aliases:
+Aliases: undefined
 '''
 
 
@@ -77,8 +77,9 @@ class RewriteDebVersionsTests(unittest.TestCase):
         (workspace / 'usr/bin').mkdir(parents=True)
         os.symlink('../lib/dashmate/bin/dashmate', workspace / 'usr/bin/dashmate')
         deb = self.dist / f'dashmate_{version}_{arch}.deb'
-        subprocess.run(['dpkg-deb', '--root-owner-group', '--build', str(workspace), str(deb)],
-                       check=True, capture_output=True)
+        built = subprocess.run(['dpkg-deb', '--root-owner-group', '--build', str(workspace), str(deb)],
+                               capture_output=True, text=True)
+        self.assertEqual(built.returncode, 0, built.stderr)
         return deb
 
     def rewrite(self, semver, revision='1'):
