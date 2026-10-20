@@ -538,11 +538,11 @@ abstract class NativePersistenceBridge {
 
     /**
      * One `IdentityKeyEntryFFI` upsert. Descriptor
-     * `([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJ)I`.
+     * `([B[BIBBBZZJ[B[BZ[BZIIB[BLjava/lang/String;ZJZJZ)I`.
      * `contractBoundsKind`: 0 none, 1 SingleContract, 2 SingleContractDocumentType,
      * 3 ContractGroup (`contractBoundsId` is then the contract group id and
-     * `contractBoundsDocumentType` is null). The last four arguments are the
-     * key's usage limits (protocol version 14): the credits it may spend over
+     * `contractBoundsDocumentType` is null). The four arguments before
+     * [derivationRejected] are the key's usage limits (protocol version 14): the credits it may spend over
      * its lifetime when [totalBudgetIsSome], and the block time in milliseconds
      * from which it can no longer sign when [expiresAtIsSome].
      *

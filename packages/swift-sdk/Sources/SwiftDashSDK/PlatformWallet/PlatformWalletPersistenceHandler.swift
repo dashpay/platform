@@ -5241,9 +5241,11 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         let publicKeyHash: Data
         /// Owning wallet if this key is derivable from one we control.
         let walletId: Data?
-        /// DIP-9 `(identity_index, key_index)` pair. Present iff the key is
-        /// wallet-derivable; the client derives it on demand from the Keychain
-        /// seed at this path when it needs to sign (no secret crosses the FFI).
+        /// DIP-9 `(identity_index, key_index)` pair, present when Rust
+        /// verified the key as wallet-derivable; the client derives it on
+        /// demand from the Keychain seed at this path when it needs to sign
+        /// (no secret crosses the FFI). `nil` gives none, its meaning set by
+        /// `derivationRejected`.
         let derivationIndices: (identityIndex: UInt32, keyIndex: UInt32)?
         /// Full ContractBounds projection mirrored from Rust:
         /// `nil` when the key has no bounds; `.singleContract` for

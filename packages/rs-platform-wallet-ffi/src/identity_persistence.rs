@@ -260,8 +260,9 @@ pub struct IdentityKeyEntryFFI {
     // re-derive the 32-byte ECDSA scalar from the named wallet's
     // mnemonic at the DIP-9 identity authentication path
     // `m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'` and
-    // persist it locally. When either flag is false the key is
-    // watch-only.
+    // persist it locally. When either flag is false the entry gives no
+    // breadcrumb: `derivation_rejected` then says whether the client clears
+    // the one it holds (settled as not derived) or keeps it (unknown).
     pub wallet_id_is_some: bool,
     pub wallet_id: [u8; 32],
     pub derivation_indices_is_some: bool,

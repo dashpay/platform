@@ -514,9 +514,9 @@ impl ManagedIdentity {
     /// Store `keys_cs` with the key rows a refused store queued (see
     /// `pending_key_rows`) and the identity's scalar snapshot as one
     /// changeset. A queued row `keys_cs` carries itself gives way to it (its
-    /// own row is newer) but lends it its breadcrumb when that row leaves the
-    /// origin of the same public key unknown, as a persister keeps a stored
-    /// breadcrumb (see [`IdentityKeyEntry::takes_breadcrumb_of`]). Every other one is stored with
+    /// own row is newer) but lends it what it settled about the same public
+    /// key's origin (a breadcrumb or a rejection) when that row leaves it
+    /// unknown (see [`IdentityKeyEntry::inherit_origin`]). Every other one is stored with
     /// the key as memory holds it now, so a row queued before a later change
     /// to the key (a landed disable, a raised limit) does not take that
     /// change back; a queued key memory no longer holds is dropped. When the
@@ -530,10 +530,7 @@ impl ManagedIdentity {
     ) -> Result<(), PersistenceError> {
         for (id, mut entry) in std::mem::take(&mut self.pending_key_rows) {
             if let Some(own) = keys_cs.upserts.get_mut(&id) {
-                if own.takes_breadcrumb_of(&entry) {
-                    own.wallet_id = entry.wallet_id;
-                    own.derivation_indices = entry.derivation_indices;
-                }
+                own.inherit_origin(&entry);
                 continue;
             }
             let Some(key) = self.identity.public_keys().get(&entry.key_id) else {
@@ -607,7 +604,9 @@ impl ManagedIdentity {
     /// `wallet_id` and `(identity_index, key_index)` together let the
     /// client (iOS Keychain) re-derive the matching private key from
     /// the wallet seed at the DIP-9 identity authentication path.
-    /// Pass `None` for a watch-only key the wallet didn't derive.
+    /// Pass `None` for a key the wallet didn't derive (the row then keeps
+    /// a breadcrumb the persister holds; see
+    /// [`KeyWithBreadcrumb::derivation_rejected`]).
     pub fn add_key(
         &mut self,
         public_key: dpp::identity::IdentityPublicKey,
@@ -629,7 +628,9 @@ impl ManagedIdentity {
     /// Layer several `IdentityPublicKey`s onto this identity and emit ONE
     /// batched [`IdentityKeysChangeSet`] carrying each key's derivation
     /// breadcrumb (`Some((wallet_id, identity_index, key_index))`) or
-    /// `None` for a watch-only key the wallet can't re-derive.
+    /// `None` for a key the wallet can't re-derive (set
+    /// `derivation_rejected` when that is settled, so a stored breadcrumb is
+    /// cleared).
     ///
     /// The single-write batch form of [`Self::add_key`], used by discovery
     /// to materialize every re-derivable key of a freshly found identity in
@@ -1522,6 +1523,32 @@ mod tests {
         let settled = row(4).unwrap();
         assert_eq!(settled.derivation_indices, None);
         assert!(settled.derivation_rejected);
+
+        // A refused rejection is kept by the next store's own row for the
+        // same key that leaves its origin unknown (a disable).
+        persister
+            .armed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert!(managed
+            .add_keys(
+                vec![KeyWithBreadcrumb {
+                    key: key(5),
+                    breadcrumb: None,
+                    derivation_rejected: true,
+                }],
+                &p,
+            )
+            .is_err());
+        persister
+            .armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        managed.disable_keys(&[5], 9, &p);
+        let disabled = row(5).unwrap();
+        assert_eq!(disabled.public_key.disabled_at(), Some(9));
+        assert!(
+            disabled.derivation_rejected,
+            "the queued rejection survives"
+        );
     }
 
     /// A key row `add_keys` could not store, breadcrumb included, rides the
