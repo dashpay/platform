@@ -313,6 +313,14 @@ jobs:
     needs: release-npm
     permissions:
       contents: read
+    # Read by packages/dashmate/scripts/deb-version.mjs when the deb is packed. Set them
+    # as repository variables, not here, so that a re-run of an existing release can use
+    # them: DASHMATE_DEB_REVISION to rebuild a version that was already published, and
+    # DASHMATE_DEB_EPOCH only to re-release a version that was published under oclif's
+    # git sha scheme. An epoch can never be removed again once a package carries it.
+    env:
+      DASHMATE_DEB_REVISION: ${{ vars.DASHMATE_DEB_REVISION || '1' }}
+      DASHMATE_DEB_EPOCH: ${{ vars.DASHMATE_DEB_EPOCH }}
     strategy:
       fail-fast: false
       matrix:
