@@ -7,13 +7,14 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
+use dashcore::blockdata::transaction::special_transaction::coinbase::CoinbasePayload;
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::sml::masternode_list::MasternodeList;
 use dashcore::sml::masternode_list_entry::MasternodeListEntry;
 use dashcore::{PubkeyHash, QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
-use dash_spv::storage::{BlockHeaderStorage, BlockHeaderTip, DiskStorageManager, StorageManager};
+use dash_spv::storage::{DiskStorageManager, StorageManager};
 use dash_spv::sync::SyncProgress;
 use dash_spv::{BroadcastResult, ClientConfig, DashSpvClient, EventHandler, Hash};
 
@@ -634,6 +635,24 @@ impl SpvRuntime {
         )
     }
 
+    /// The coinbase payload of the highest block whose masternode list diff
+    /// was applied with one this session, as dash-spv's masternode list
+    /// engine keeps it. Unauthenticated: the pinned dash-spv checks neither the
+    /// diff's merkle proof of the coinbase nor the payload's merkle roots, so
+    /// the peer that served the diff chooses it. `None` when the SPV client
+    /// isn't running, masternode sync is off, or no diff with a coinbase
+    /// payload has been applied since the client started; same lock order as
+    /// [`Self::masternode_list_summaries`].
+    pub(crate) async fn latest_coinbase(&self) -> Option<CoinbasePayload> {
+        let engine = {
+            let client_guard = self.client.read().await;
+            let client = client_guard.as_ref()?;
+            client.masternode_list_engine().ok()?
+        };
+        let engine_guard = engine.read().await;
+        engine_guard.latest_coinbase().cloned()
+    }
+
     /// Blocking twin of [`Self::masternode_list_summaries`] for FFI threads
     /// (`blocking_read`; never call from the async runtime).
     pub fn masternode_list_summaries_blocking(&self) -> Option<Vec<MasternodeListSummary>> {
@@ -667,14 +686,8 @@ impl SpvRuntime {
     /// have been stored yet, or the tip header isn't readable for
     /// any reason.
     pub async fn tip_block_time(&self) -> Option<u32> {
-        self.tip().await.map(|tip| tip.header().time)
-    }
+        use dash_spv::storage::{BlockHeaderStorage, StorageManager};
 
-    /// The header chain's tip.
-    ///
-    /// Returns `None` if the SPV client isn't running or no headers have
-    /// been stored yet.
-    pub(crate) async fn tip(&self) -> Option<BlockHeaderTip> {
         let client_guard = self.client.read().await;
         let client = client_guard.as_ref()?;
         let storage_arc = client.storage();
@@ -682,7 +695,8 @@ impl SpvRuntime {
         let block_headers = StorageManager::block_headers(&*storage);
         drop(storage);
         let bh = block_headers.read().await;
-        BlockHeaderStorage::get_tip(&*bh).await
+        let tip = BlockHeaderStorage::get_tip(&*bh).await?;
+        Some(tip.header().time)
     }
 
     /// Hash of the stored header at `height`.
