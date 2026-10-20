@@ -13519,6 +13519,205 @@ mod tests {
         );
     }
 
+    /// Broadcaster that, while it holds the transaction, checks whether a
+    /// teardown of the funding generation could start, then accepts it.
+    struct TeardownProbeBroadcaster {
+        generation: Arc<crate::wallet::core::WalletGeneration>,
+        teardown_blocked: Arc<Mutex<Option<bool>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::broadcaster::TransactionBroadcaster for TeardownProbeBroadcaster {
+        async fn broadcast(
+            &self,
+            transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, crate::broadcaster::BroadcastError> {
+            let blocked = tokio::time::timeout(
+                std::time::Duration::from_millis(200),
+                self.generation.teardown_guard(),
+            )
+            .await
+            .is_err();
+            *self.teardown_blocked.lock().unwrap() = Some(blocked);
+            Ok(transaction.txid())
+        }
+    }
+
+    /// The native send holds the generation's lifecycle gate through the
+    /// broadcast, so a wallet removal cannot complete while its payment is on
+    /// the way to the network — without relying on a host wrapper to take it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn prepared_payment_holds_the_lifecycle_gate_through_the_broadcast() {
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let iw = wallet_arc.identity();
+        fund_bip44_account_0(&manager, wallet_id, 0xDE, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        let teardown_blocked = Arc::new(Mutex::new(None));
+        let core = core_with(
+            wallet_arc.core(),
+            TeardownProbeBroadcaster {
+                generation: Arc::clone(wallet_arc.core().generation()),
+                teardown_blocked: Arc::clone(&teardown_blocked),
+            },
+        );
+
+        let prepared = iw
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+        iw.dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect("send");
+        assert_eq!(
+            *teardown_blocked.lock().unwrap(),
+            Some(true),
+            "a teardown could start while the payment was being broadcast"
+        );
+    }
+
+    /// A payment whose wallet was removed after it was prepared is refused
+    /// by the liveness check as `WalletRemovedBeforeSend` — the error hosts
+    /// read as "nothing was sent" — and never reaches the broadcaster.
+    #[tokio::test]
+    async fn prepared_payment_of_a_removed_wallet_is_refused_before_the_network() {
+        let (manager, _persister, wallet_id, owner_id, contact_id) =
+            register_sender_and_external_account().await;
+        let wallet_arc = manager.get_wallet(&wallet_id).await.expect("wallet");
+        fund_bip44_account_0(&manager, wallet_id, 0xDF, 120_000).await;
+        let (signer, provider) = test_signer_and_provider();
+        // Rejecting, so a send that reached the broadcaster would surface as
+        // `TransactionBroadcast` rather than the refusal.
+        let core = core_with(wallet_arc.core(), RejectingBroadcaster);
+        let prepared = wallet_arc
+            .identity()
+            .dashpay()
+            .prepare_payment(
+                &core,
+                &owner_id,
+                &contact_id,
+                50_000,
+                None,
+                &signer,
+                &provider,
+            )
+            .await
+            .expect("prepare");
+
+        manager.remove_wallet(&wallet_id).await.expect("remove");
+        let err = wallet_arc
+            .identity()
+            .dashpay()
+            .send_prepared_payment(prepared)
+            .await
+            .expect_err("a removed wallet's payment is not sent");
+        assert!(
+            matches!(err, PlatformWalletError::WalletRemovedBeforeSend(_)),
+            "got {err:?}"
+        );
+    }
+
+    /// A prepared send parked inside the host store of its reservation holds
+    /// the contact-payment gate, so a competing reservation for the same
+    /// contact cannot store its snapshot first and then be overwritten by
+    /// the older one. Removing the gate from `send_prepared_payment` lets the
+    /// competing reservation complete while the send is parked.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reserve_payment_address_cannot_persist_ahead_of_a_paused_prepared_send() {
+        use crate::wallet::identity::network::contact_requests::SeedCryptoProvider;
+        let persister = Arc::new(PausingPoolPersister::new());
+        let (manager, wallet_id) = make_wallet_with(Arc::clone(&persister)).await;
+        let owner = Identifier::from([0xAE; 32]);
+        let contact = Identifier::from([0xBE; 32]);
+        install_external_account(&manager, wallet_id, owner, contact).await;
+        fund_bip44_account_0(&manager, wallet_id, 0xE0, 120_000).await;
+        let wallet = manager.get_wallet(&wallet_id).await.unwrap();
+        let (signer, provider) = test_signer_and_provider();
+        let core = core_with(wallet.core(), AcceptingBroadcaster);
+        let prepared = wallet
+            .identity()
+            .dashpay()
+            .prepare_payment(&core, &owner, &contact, 50_000, None, &signer, &provider)
+            .await
+            .expect("prepare");
+        assert!(
+            persister.external_pool_snapshots().is_empty(),
+            "prepare stores no pool"
+        );
+
+        let sending = Arc::clone(&wallet);
+        let mut send = tokio::spawn(async move {
+            sending
+                .identity()
+                .dashpay()
+                .send_prepared_payment(prepared)
+                .await
+        });
+        let entered = Arc::clone(&persister);
+        assert!(
+            tokio::task::spawn_blocking(move || PausingPoolPersister::wait_for(&entered.entered))
+                .await
+                .unwrap(),
+            "the send never reached the host store of its reservation"
+        );
+
+        let reserving = Arc::clone(&wallet);
+        let mut reserve = tokio::spawn(async move {
+            let provider = SeedCryptoProvider::from_seed(
+                Mnemonic::from_phrase(TEST_MNEMONIC).unwrap().to_seed(""),
+                Network::Testnet,
+            );
+            reserving
+                .identity()
+                .dashpay()
+                .reserve_payment_address(&owner, &contact, &provider)
+                .await
+        });
+        let raced = tokio::time::timeout(std::time::Duration::from_millis(500), &mut reserve).await;
+        let leaked = persister.external_pool_snapshots();
+        // Unpark before asserting, so a failure reports instead of wedging
+        // runtime shutdown on the parked worker.
+        PausingPoolPersister::signal(&persister.release);
+        assert!(
+            raced.is_err(),
+            "a competing reservation completed while the send's reservation store was \
+             parked: {raced:?}"
+        );
+        assert!(
+            leaked.is_empty(),
+            "nothing may reach the host while the reservation store is parked"
+        );
+
+        (&mut send).await.unwrap().expect("send");
+        let reserved = reserve.await.unwrap().expect("reserve");
+        let snapshots = persister.external_pool_snapshots();
+        let taken = |snapshot: &[key_wallet::AddressInfo]| {
+            snapshot
+                .iter()
+                .filter(|info| !info.is_available())
+                .map(|info| info.address.clone())
+                .collect::<Vec<_>>()
+        };
+        let last = taken(snapshots.last().expect("snapshots"));
+        assert_eq!(
+            last.len(),
+            2,
+            "both payments' addresses persist as taken: {last:?}"
+        );
+        assert!(last.contains(&reserved));
+    }
+
     /// Another device pays the contact at this payment's address while the
     /// send is in flight, and the ChainLock evicts that record before the
     /// network rejects this send. Releasing the reservation must not erase

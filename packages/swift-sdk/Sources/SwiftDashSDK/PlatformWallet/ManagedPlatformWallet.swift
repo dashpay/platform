@@ -3149,6 +3149,10 @@ extension ManagedPlatformWallet {
             var paymentHandle: Handle = 0
             var feeDuffs: UInt64 = 0
             var totalDuffs: UInt64 = 0
+            var txidTuple: FFIByteTuple32 = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
             let result = Self.withContactPaymentArguments(
                 from: fromBytes, to: toBytes, memo: memoCopy, coreSigner: coreSigner
             ) { fromPtr, toPtr, memoPtr in
@@ -3161,7 +3165,8 @@ extension ManagedPlatformWallet {
                     coreSigner.handle,
                     &paymentHandle,
                     &feeDuffs,
-                    &totalDuffs
+                    &totalDuffs,
+                    &txidTuple
                 )
             }
             try result.check()
@@ -3169,7 +3174,8 @@ extension ManagedPlatformWallet {
                 handle: paymentHandle,
                 amountDuffs: amountDuffs,
                 feeDuffs: feeDuffs,
-                totalDuffs: totalDuffs
+                totalDuffs: totalDuffs,
+                txid: hashData(txidTuple)
             )
         }.value
     }
@@ -3179,7 +3185,10 @@ extension ManagedPlatformWallet {
     /// fee, which is the one the prepared payment showed.
     ///
     /// Throws, nothing sent, when another payment to the same contact took
-    /// this payment's address while it waited: prepare it again.
+    /// this payment's address while it waited: prepare it again. Throws
+    /// `.transactionBroadcastUnconfirmed` when the transaction may have
+    /// reached the network: `payment.txid` names it, to watch for instead of
+    /// paying again.
     @discardableResult
     public func sendPreparedDashPayPayment(
         _ payment: PreparedDashPayPayment

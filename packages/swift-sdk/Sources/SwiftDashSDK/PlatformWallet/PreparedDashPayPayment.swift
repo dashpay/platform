@@ -19,12 +19,16 @@ public final class PreparedDashPayPayment: @unchecked Sendable {
     public let feeDuffs: UInt64
     /// What leaves the wallet: amount plus fee, in duffs.
     public let totalDuffs: UInt64
+    /// The signed transaction's 32-byte id, in the byte order the send
+    /// returns. It identifies the payment when a send's outcome is unknown.
+    public let txid: Data
 
-    init(handle: Handle, amountDuffs: UInt64, feeDuffs: UInt64, totalDuffs: UInt64) {
+    init(handle: Handle, amountDuffs: UInt64, feeDuffs: UInt64, totalDuffs: UInt64, txid: Data) {
         self.nativeHandle = handle
         self.amountDuffs = amountDuffs
         self.feeDuffs = feeDuffs
         self.totalDuffs = totalDuffs
+        self.txid = txid
     }
 
     deinit {

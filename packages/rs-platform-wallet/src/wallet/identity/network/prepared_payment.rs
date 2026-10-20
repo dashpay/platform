@@ -140,10 +140,36 @@ impl<B: TransactionBroadcaster + ?Sized> PreparedDashPayPayment<B> {
         &self.to_contact_id
     }
 
-    /// The core wallet the payment was funded from — the one whose
-    /// generation gate a host takes before sending it.
+    /// The core wallet the payment was funded from. A host compares its
+    /// generation with its own handle's; it must not take that generation's
+    /// lifecycle gate around [`DashPayView::send_prepared_payment`], which
+    /// takes it itself.
     pub fn core_wallet(&self) -> &CoreWallet<B> {
         &self.core
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl<B: TransactionBroadcaster + ?Sized> PreparedDashPayPayment<B> {
+    /// A prepared payment around an already signed transaction, for tests
+    /// that need a payment to hand over without funding and signing one.
+    pub fn new_for_test(
+        core: CoreWallet<B>,
+        signed: SignedCoreTransaction,
+        payment_address: Address,
+        from_identity_id: Identifier,
+        to_contact_id: Identifier,
+        amount_duffs: u64,
+    ) -> Self {
+        Self {
+            core,
+            signed,
+            payment_address,
+            from_identity_id,
+            to_contact_id,
+            amount_duffs,
+            memo: None,
+        }
     }
 }
 
@@ -234,6 +260,12 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// the sender (that failure is logged): the entry is then not in the
     /// wallet's payment map until the reconstruction from transaction history
     /// rebuilds it, without the memo.
+    ///
+    /// Takes the funding generation's lifecycle gate itself: a caller must
+    /// not hold it, since a teardown queued between the two reads would wait
+    /// on the outer one forever. A wallet removed or re-created since the
+    /// payment was prepared fails it with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], nothing sent.
     pub async fn send_prepared_payment<Bc>(
         &self,
         prepared: PreparedDashPayPayment<Bc>,
@@ -255,6 +287,27 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             amount_duffs,
             memo,
         } = prepared;
+
+        // The generation's lifecycle gate, held across the liveness check and
+        // everything after it: a teardown cannot complete between the check
+        // and the broadcast, so a removed wallet's payment never reaches the
+        // network. Taken here rather than by each host wrapper, so a native
+        // caller gets the same exclusion.
+        let _lifecycle = core.generation_payment_guard().await;
+        if !core.is_current_generation().await {
+            core.abandon_transaction(&signed).await;
+            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                self.wallet_id,
+            )));
+        }
+
+        // Every contact-pool snapshot below is taken and stored under the
+        // contact-payment gate, which `send_payment` and
+        // `reserve_payment_address` take as well: two sends to one contact
+        // store their snapshots in the order they took them, so an older
+        // snapshot never overwrites a newer reservation. The gate is not held
+        // across the broadcast.
+        let contact_gate = self.persister.lock_contact_payments().await;
 
         // Reserve under the write guard; store after it drops — a host
         // persistence callback must never run under the manager lock.
@@ -283,7 +336,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 return Err(refusal.error);
             }
         };
-        if let Err(e) = self.store_durably(reserved) {
+        let stored = self.store_durably(reserved);
+        // `settle_payment_address` takes the gate itself.
+        drop(contact_gate);
+        if let Err(e) = stored {
             // Nothing is on the wire: release the address first, so a build
             // that takes the freed inputs never sees it still reserved.
             self.settle_payment_address(
@@ -549,6 +605,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         payment_address: &Address,
         outcome: AddressOutcome,
     ) {
+        // Held from the snapshot through its store, like the reservation.
+        let _contact_gate = self.persister.lock_contact_payments().await;
         let settled = {
             let mut wm = self.wallet_manager.write().await;
             let Ok(info) = self.generation_info_mut(&mut wm, generation) else {
