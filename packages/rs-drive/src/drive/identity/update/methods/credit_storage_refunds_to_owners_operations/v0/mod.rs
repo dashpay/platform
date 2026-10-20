@@ -3,7 +3,6 @@ use crate::drive::identity::update::storage_refund_credit_outcome::StorageRefund
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::util::estimated_layers::EstimatedLayers;
 use dpp::fee::fee_result::refunds::FeeRefunds;
 use dpp::fee::Credits;
 use dpp::prelude::Identifier;
@@ -75,10 +74,11 @@ impl Drive {
                 }
 
                 if let Some(new_negative_balance) = outcome.negative_credit_balance_modified() {
-                    drive_operations.push(self.update_identity_negative_credit_operation_v0(
+                    drive_operations.push(self.update_identity_negative_credit_operation(
                         *owner_id,
                         new_negative_balance,
-                    ));
+                        platform_version,
+                    )?);
                 }
 
                 // From a zero balance the helper clears negative credit first and only
