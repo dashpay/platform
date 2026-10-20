@@ -143,7 +143,8 @@ export default function collectSamplesTaskFactory(
                 task: async () => {
                   // The private key permissions are collected for every provider,
                   // since a key readable by other users is a problem regardless
-                  // of how it was obtained
+                  // of how it was obtained. Windows reports a writable file as
+                  // 0666 whatever its ACL allows, so its mode says nothing there.
                   const privateKeyFilePath = homeDir.joinPath(
                     config.getName(),
                     'platform',
@@ -152,7 +153,7 @@ export default function collectSamplesTaskFactory(
                     'private.key',
                   );
 
-                  if (fs.existsSync(privateKeyFilePath)) {
+                  if (process.platform !== 'win32' && fs.existsSync(privateKeyFilePath)) {
                     ctx.samples.setServiceInfo(
                       'gateway',
                       'sslPrivateKeyMode',

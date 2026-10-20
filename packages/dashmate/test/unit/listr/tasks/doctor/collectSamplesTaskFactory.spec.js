@@ -396,5 +396,22 @@ describe('collectSamplesTaskFactory', () => {
 
       expect(samples.getServiceInfo('gateway', 'sslPrivateKeyMode')).to.be.undefined();
     });
+
+    // Windows reports a writable file as 0666 whatever its ACL allows, so the mode
+    // bits would make doctor report an exposed key that is not exposed
+    it('should collect nothing on Windows, where file modes are not permissions', async () => {
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+
+      fs.chmodSync(keyFilePath(), 0o644);
+      Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+
+      try {
+        await collectSamples();
+      } finally {
+        Object.defineProperty(process, 'platform', platform);
+      }
+
+      expect(samples.getServiceInfo('gateway', 'sslPrivateKeyMode')).to.be.undefined();
+    });
   });
 });
