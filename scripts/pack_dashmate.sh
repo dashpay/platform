@@ -97,10 +97,10 @@ rewrite_deb_versions() {
     dpkg-deb --raw-extract "$DEB_PATH" "$WORKSPACE_PATH"
 
     # The sha is appended to the end of the description, after any lines continuing it.
-    # It is the only record of which commit the package was built from now that it is out
-    # of the version, so a control file without a description to attach it to is an error
-    # rather than something to skip quietly. The description is closed before any other
-    # field is matched, so the sha cannot end up under a field that follows it.
+    # It is the only record of which commit the package was built from, since the version
+    # does not carry it, so a control file without a description to attach it to is an
+    # error rather than something to skip quietly. The description is closed before any
+    # other field is matched, so the sha cannot end up under a field that follows it.
     if ! awk -v version="$DEB_VERSION" -v sha="$GIT_SHA" '
       in_description && /^[ \t]/ { print; next }
       in_description { print " Built from git commit " sha "."; in_description = 0 }
@@ -121,7 +121,16 @@ rewrite_deb_versions() {
 
     # oclif builds the payload as root, so restore that after extracting and rebuilding
     # it as the current user.
-    dpkg-deb --root-owner-group --build "$WORKSPACE_PATH" "$STAGING_PATH/${PACKAGE}_${DEB_FILE_VERSION}_${ARCH}.deb"
+    REWRITTEN_PATH="$STAGING_PATH/${PACKAGE}_${DEB_FILE_VERSION}_${ARCH}.deb"
+    dpkg-deb --root-owner-group --build "$WORKSPACE_PATH" "$REWRITTEN_PATH"
+
+    # A control file whose Version line the rewrite does not recognise would otherwise ship
+    # oclif's version under the new file name.
+    if [ "$(dpkg-deb --field "$REWRITTEN_PATH" Version)" != "$DEB_VERSION" ]
+    then
+      echo "Could not rewrite the Version field of $DEB_PATH to $DEB_VERSION"
+      exit 1
+    fi
 
     rm -rf "$WORKSPACE_PATH"
   done
