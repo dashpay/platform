@@ -1,6 +1,6 @@
+use crate::version::drive_versions::drive_group_method_versions::v1::DRIVE_GROUP_METHOD_VERSIONS_V1;
 use crate::version::drive_versions::drive_group_method_versions::{
-    DriveGroupCostEstimationMethodVersions, DriveGroupFetchMethodVersions,
-    DriveGroupInsertMethodVersions, DriveGroupMethodVersions, DriveGroupProveMethodVersions,
+    DriveGroupInsertMethodVersions, DriveGroupMethodVersions,
 };
 
 /// Drive group methods for protocol version 15.
@@ -12,29 +12,9 @@ use crate::version::drive_versions::drive_group_method_versions::{
 /// from this version, and generation 0 committed a closing action before that error surfaced.
 /// The operation builders are unchanged.
 pub const DRIVE_GROUP_METHOD_VERSIONS_V2: DriveGroupMethodVersions = DriveGroupMethodVersions {
-    fetch: DriveGroupFetchMethodVersions {
-        fetch_action_id_signers_power: 0,
-        fetch_active_action_info: 0,
-        fetch_action_id_info_keep_serialized: 0,
-        fetch_action_id_has_signer: 0,
-        fetch_group_info: 0,
-        fetch_group_infos: 0,
-        fetch_action_infos: 0,
-        fetch_action_signers: 0,
-        fetch_action_is_closed: 0,
-    },
-    prove: DriveGroupProveMethodVersions {
-        prove_group_info: 0,
-        prove_group_infos: 0,
-        prove_action_infos: 0,
-        prove_action_signers: 0,
-    },
     insert: DriveGroupInsertMethodVersions {
-        add_new_groups: 0,
         add_group_action: 1, // changed in v15: the fee-returning wrapper prices before it commits its owned transaction
+        ..DRIVE_GROUP_METHOD_VERSIONS_V1.insert
     },
-    cost_estimation: DriveGroupCostEstimationMethodVersions {
-        for_add_group_action: 0,
-        for_add_group: 0,
-    },
+    ..DRIVE_GROUP_METHOD_VERSIONS_V1
 };
