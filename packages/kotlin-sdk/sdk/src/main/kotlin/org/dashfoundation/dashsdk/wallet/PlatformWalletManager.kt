@@ -1381,7 +1381,12 @@ class PlatformWalletManager(
         return try {
             teardownGate.withOp {
                 val tipOut = IntArray(1)
-                val gate = withContext(Dispatchers.IO) {
+                // NonCancellable: a RUN return holds a native claim that only
+                // the `finally` below releases. A cancellable withContext would
+                // discard that result and throw before the `try` is entered,
+                // leaking the claim for the rest of the session. Cancellation
+                // is still observed at the first suspension inside the `try`.
+                val gate = withContext(NonCancellable + Dispatchers.IO) {
                     mapNativeErrors {
                         WalletManagerNative.walletManagerTxoReconcileBegin(managerHandle, walletId, tipOut)
                     }
