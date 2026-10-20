@@ -120,6 +120,22 @@ describe('Group restart command', () => {
     expect(buildServicesTask).to.have.been.calledOnce();
   });
 
+  // The nodes share one local image per service, so only one of two different
+  // builds could exist, and some node would run an image it was not configured for
+  it('should not stop any node when two nodes build the same image differently', async () => {
+    configGroup.forEach(buildDriveFromSources);
+    configGroup[0].get.withArgs('platform.drive.abci.docker.build').returns({ enabled: true, target: 'drive-abci' });
+    configGroup[1].get.withArgs('platform.drive.abci.docker.build').returns({ enabled: true, target: 'drive-abci-debug' });
+
+    const error = await run().then(() => null, (e) => e);
+
+    expect(error, 'restart must fail instead of stopping the group').to.not.equal(null);
+    expect(error.message).to.include('build the drive image differently');
+
+    expect(buildServicesTask).to.have.not.been.called();
+    expect(stopNodeTask).to.have.not.been.called();
+  });
+
   it('should not stop any node when a local image can not be built', async () => {
     buildDriveFromSources(configGroup[0]);
 
