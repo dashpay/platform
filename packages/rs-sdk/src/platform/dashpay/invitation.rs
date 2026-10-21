@@ -905,8 +905,9 @@ impl Sdk {
             revision: 0,
         });
 
-        // Submit the primary proof first and — only on Platform's stale-islock
-        // rejection — the ChainLock fallback over the SAME credit output. Each
+        // Submit the primary proof first and — only when the IS proof is
+        // unusable (a stale islock, or a claim too large to submit with it) —
+        // the ChainLock fallback over the SAME credit output. Each
         // submission is wrapped in the CL-height-too-low retry (Platform's
         // observed Core tip briefly behind the proof's chain-locked height;
         // harmless for an IS proof, which never triggers it).
