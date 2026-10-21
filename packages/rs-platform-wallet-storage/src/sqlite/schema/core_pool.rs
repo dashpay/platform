@@ -558,7 +558,7 @@ fn derive_towards(
 /// Such a key leaves the wallet — an invitation exports it — and never shows
 /// up as a coin, so the `used` flag or reservation on its pool row is the
 /// only record that it is gone. The set is the one the wallet snapshots after
-/// an asset-lock build (`persist_asset_lock_account_pools` in
+/// an asset-lock build (`asset_lock_account_pool_entries` in
 /// `rs-platform-wallet`'s `wallet/asset_lock/build.rs`), which this crate
 /// cannot name from there; `one_time_funding_labels_match_the_asset_lock_writer`
 /// holds the two together.
@@ -1441,7 +1441,7 @@ mod tests {
         ))
         .expect("the asset-lock writer's source");
         let writer = source
-            .split_once("async fn persist_asset_lock_account_pools")
+            .split_once("fn asset_lock_account_pool_entries")
             .and_then(|(_, body)| body.split_once("matches!("))
             .and_then(|(_, filter)| filter.split_once(".flat_map("))
             .map(|(filter, _)| filter)

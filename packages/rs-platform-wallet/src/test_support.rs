@@ -10,8 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSignature};
 use dashcore::hashes::Hash;
-use dashcore::secp256k1::{ecdsa, Message, PublicKey};
 use dashcore::BlockHash;
 #[cfg(test)]
 use dashcore::Txid;
@@ -136,13 +136,18 @@ impl Signer for WalletSigner {
         &self,
         path: &DerivationPath,
         sighash: [u8; 32],
-    ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+    ) -> Result<(EcdsaSignature, PublicKey), Self::Error> {
         let key = self
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
-        let message = Message::from_digest(sighash);
-        Ok((key.sign_ecdsa(message), PublicKey::from_secret_key(&key)))
+        // Match message-signing vectors without low-R nonce grinding.
+        Ok((
+            key.sign_recoverable(&sighash)
+                .signature()
+                .map_err(|e| e.to_string())?,
+            key.public_key(),
+        ))
     }
 
     async fn public_key(&self, path: &DerivationPath) -> Result<PublicKey, Self::Error> {
@@ -150,7 +155,7 @@ impl Signer for WalletSigner {
             .wallet
             .derive_private_key(path)
             .map_err(|e| e.to_string())?;
-        Ok(PublicKey::from_secret_key(&key))
+        Ok(key.public_key())
     }
 }
 
@@ -175,6 +180,106 @@ impl ExtendedPubKeySigner for WalletSigner {
 /// own accounting (the SQLite repair) against the live path.
 pub fn fold_wallet_records(records: &mut Vec<TransactionRecord>) {
     fold_same_txid_records(records);
+}
+
+/// Core transaction and wallet fixtures shared by the history tests of this
+/// crate and of `platform-wallet-storage`.
+pub mod core_fixtures {
+    use dashcore::address::Payload;
+    use dashcore::hashes::Hash;
+    use dashcore::{
+        Address, BlockHash, Network, OutPoint, PubkeyHash, Transaction, TxIn, TxOut, Txid,
+    };
+    use key_wallet::managed_account::transaction_record::TransactionRecord;
+    use key_wallet::transaction_checking::{
+        BlockInfo, TransactionCheckResult, TransactionContext, WalletTransactionChecker,
+    };
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::ManagedWalletInfo;
+    use key_wallet::{Utxo, Wallet};
+
+    /// A version-1 transaction spending `inputs` into `outputs`.
+    pub fn spend_of(inputs: &[OutPoint], outputs: Vec<TxOut>) -> Transaction {
+        let input = inputs.iter().map(|&previous_output| TxIn {
+            previous_output,
+            ..Default::default()
+        });
+        Transaction {
+            version: 1,
+            lock_time: 0,
+            input: input.collect(),
+            output: outputs,
+            special_transaction_payload: None,
+        }
+    }
+
+    /// An output paying `value` to `address`.
+    pub fn pay(value: u64, address: &Address) -> TxOut {
+        TxOut {
+            value,
+            script_pubkey: address.script_pubkey(),
+        }
+    }
+
+    /// Output 0 of a transaction outside the wallet, named by `byte`.
+    pub fn outside(byte: u8) -> OutPoint {
+        OutPoint::new(Txid::from_byte_array([byte; 32]), 0)
+    }
+
+    /// A testnet P2PKH address no test wallet derives.
+    pub fn foreign_address(marker: u8) -> Address {
+        let hash = PubkeyHash::from_byte_array([marker; 20]);
+        Address::new(Network::Testnet, Payload::PubkeyHash(hash))
+    }
+
+    /// A block at `height`, hashed `[height as u8; 32]`.
+    pub fn block(height: u32) -> TransactionContext {
+        let hash = BlockHash::from_byte_array([height as u8; 32]);
+        TransactionContext::InBlock(BlockInfo::new(height, hash, height))
+    }
+
+    /// Output `vout` of `tx` as a sync stores it: confirmed at height 100.
+    pub fn stored_utxo(tx: &Transaction, vout: u32, address: Address) -> Utxo {
+        let (outpoint, output) = (
+            OutPoint::new(tx.txid(), vout),
+            tx.output[vout as usize].clone(),
+        );
+        let mut utxo = Utxo::new(outpoint, output, address, 100, false);
+        utxo.is_confirmed = true;
+        utxo
+    }
+
+    /// A fresh random testnet wallet and its first BIP44 receive address.
+    pub fn wallet_with_receive_address() -> (Wallet, ManagedWalletInfo, Address) {
+        let wallet =
+            Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let xpub = wallet.accounts.standard_bip44_accounts[&0].account_xpub;
+        let account = info.accounts.standard_bip44_accounts.get_mut(&0).unwrap();
+        let address = account.next_receive_address(Some(&xpub), true).unwrap();
+        (wallet, info, address)
+    }
+
+    /// What the live checker reports for `tx` in `context`, state updated.
+    pub async fn check(
+        info: &mut ManagedWalletInfo,
+        wallet: &mut Wallet,
+        tx: &Transaction,
+        context: TransactionContext,
+    ) -> TransactionCheckResult {
+        info.check_core_transaction(tx, context, wallet, true, true)
+            .await
+    }
+
+    /// The records the live checker produces for `tx` in `context`.
+    pub async fn records_of(
+        info: &mut ManagedWalletInfo,
+        wallet: &mut Wallet,
+        tx: &Transaction,
+        context: TransactionContext,
+    ) -> Vec<TransactionRecord> {
+        check(info, wallet, tx, context).await.new_records
+    }
 }
 
 /// Builds a testnet wallet manager whose `account_type`/index-0 account
@@ -260,6 +365,8 @@ pub async fn funded_wallet_manager_with_outputs(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -387,6 +494,8 @@ pub(crate) async fn funded_wallet_manager_dual_standard(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -490,6 +599,8 @@ pub(crate) async fn funded_wallet_manager_with_contact(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
@@ -567,6 +678,8 @@ pub(crate) async fn funded_coinjoin_wallet_manager() -> (
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
@@ -670,6 +783,17 @@ pub async fn test_platform_wallet_manager() -> (
     Arc<crate::PlatformWalletManager<NoopTestPersister>>,
     WalletId,
 ) {
+    test_platform_wallet_manager_with(Arc::new(NoopTestPersister)).await
+}
+
+/// [`test_platform_wallet_manager`] over a caller-supplied persister, for tests
+/// whose behaviour depends on what the backend attests.
+pub async fn test_platform_wallet_manager_with<P>(
+    persister: Arc<P>,
+) -> (Arc<crate::PlatformWalletManager<P>>, WalletId)
+where
+    P: crate::changeset::PlatformWalletPersistence + 'static,
+{
     use key_wallet::mnemonic::Mnemonic;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
@@ -678,7 +802,6 @@ pub async fn test_platform_wallet_manager() -> (
          abandon abandon abandon abandon abandon about";
 
     let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-    let persister = Arc::new(NoopTestPersister);
     let event_handler: Arc<dyn crate::events::PlatformEventHandler> =
         Arc::new(NoopTestEventHandler);
     let manager = Arc::new(crate::PlatformWalletManager::new(
@@ -772,6 +895,8 @@ pub(crate) async fn mnemonic_wallet_manager(
         identity_manager: IdentityManager::new(),
         tracked_asset_locks: BTreeMap::new(),
         dpns_name_states: BTreeMap::new(),
+        dashpay_backfill: Default::default(),
+        rewind_barrier: Default::default(),
     };
 
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);

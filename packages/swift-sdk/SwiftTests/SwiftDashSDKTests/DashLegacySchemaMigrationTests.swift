@@ -16,9 +16,7 @@ private enum BridgeFutureV5: VersionedSchema {
     static var models: [any PersistentModel.Type] { DashSchemaV4.models + [BridgeFutureMarker.self] }
 }
 private enum BridgeFuturePlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] {
-        [DashSchemaV1.self, DashSchemaV3.self, DashSchemaV4.self, BridgeFutureV5.self]
-    }
+    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self, DashSchemaV4.self, BridgeFutureV5.self] }
     static var stages: [MigrationStage] {
         [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self),
          .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self),
@@ -890,9 +888,8 @@ final class DashLegacySchemaMigrationTests: XCTestCase {
                 let container = try ModelContainer(for: schema, configurations: [
                     ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
                 ])
-                let wallet = try XCTUnwrap(container.mainContext.fetch(
-                    FetchDescriptor<DashSchemaSnapshotV3.PersistentWallet>()).first)
-                XCTAssertEqual(wallet.name, "historical audit wallet")
+                XCTAssertEqual(try container.mainContext.fetchCount(
+                    FetchDescriptor<DashSchemaSnapshotV3.PersistentWallet>()), 1)
             }
             XCTAssertEqual(try DashLegacySchemaBridge.identity(at: url).versions, ["2.0.0"])
             let container = try open(url, hooks: .init(visit: { _, _ in

@@ -141,11 +141,16 @@ impl Drive {
     /// write of the counter that this conversion's operations, or the
     /// `previous_batch_operations` a caller hands in (a multi-document
     /// operation passes the earlier documents' operations), already hold.
+    ///
+    /// `counter_keys` are the group's values of the last property: one, or
+    /// each distinct element of a typed array a `where` equality fixes, a
+    /// counter per element. The layer is registered, and `estimated_key_size`
+    /// called, once for all of them.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn add_summable_off_count_counter_operations(
+    pub(crate) fn add_summable_off_count_counter_operations<'k>(
         &self,
-        counter_path_info: PathInfo<0>,
-        counter_key: DriveKeyInfo,
+        mut counter_path_info: PathInfo<0>,
+        counter_keys: impl IntoIterator<Item = DriveKeyInfo<'k>>,
         counter_tree_type: TreeType,
         change: CounterChange,
         storage_flags: Option<&StorageFlags>,
@@ -158,10 +163,6 @@ impl Drive {
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let drive_version = &platform_version.drive;
-        let flags_len = storage_flags.map_or(0, |flags| flags.serialized_size());
-        let element_flags = StorageFlags::map_to_some_element_flags(storage_flags);
-
         if let Some(layers) = estimated_costs_only_with_layer_info.as_mut() {
             insert_summable_off_count_counter_layer(
                 layers,
@@ -170,6 +171,55 @@ impl Drive {
                 estimated_key_size()?,
                 storage_flags,
             )?;
+        }
+        // The last key takes the path; earlier ones (only a typed array's
+        // elements are several) clone it
+        let mut counter_keys = counter_keys.into_iter().peekable();
+        while let Some(counter_key) = counter_keys.next() {
+            let path_info = if counter_keys.peek().is_some() {
+                counter_path_info.clone()
+            } else {
+                std::mem::replace(&mut counter_path_info, PathInfo::PathAsVec(Vec::new()))
+            };
+            self.add_summable_off_count_counter_key_operations(
+                path_info,
+                counter_key,
+                counter_tree_type,
+                change,
+                storage_flags,
+                estimated_costs_only_with_layer_info,
+                previous_batch_operations,
+                transaction,
+                batch_operations,
+                platform_version,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// One counter's move for [`Self::add_summable_off_count_counter_operations`],
+    /// which registered its layer.
+    #[allow(clippy::too_many_arguments)]
+    fn add_summable_off_count_counter_key_operations(
+        &self,
+        counter_path_info: PathInfo<0>,
+        counter_key: DriveKeyInfo,
+        counter_tree_type: TreeType,
+        change: CounterChange,
+        storage_flags: Option<&StorageFlags>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
+        transaction: TransactionArg,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        let drive_version = &platform_version.drive;
+        let flags_len = storage_flags.map_or(0, |flags| flags.serialized_size());
+        let element_flags = StorageFlags::map_to_some_element_flags(storage_flags);
+
+        if estimated_costs_only_with_layer_info.is_some() {
             let key_info_path = counter_path_info.convert_to_key_info_path();
             let key_info = counter_key.to_key_info();
             // The read of the counter, priced at its fixed size. The removal
@@ -345,28 +395,31 @@ impl Drive {
         }
         Ok(())
     }
-    /// Adds the operations that preallocate one group's counter of a
+    /// Adds the operations that preallocate a group's counter of a
     /// `summableOffCountIndex` index at zero, as the referenced document's
-    /// insert creates it: `counter_path_info`, `counter_key` and
-    /// `counter_tree_type` as for
+    /// insert creates it, one per key of `counter_keys` (one, or each distinct
+    /// element of a typed array a `where` equality fixes):
+    /// `counter_path_info` and `counter_tree_type` as for
     /// [`Self::add_summable_off_count_counter_operations`]. It inserts the
     /// counter when absent and keeps it as it stands when a
     /// `moderatedDocument` restore finds it kept, never moving it.
     /// `cannot_exist` skips the stateful existence read: under a tree this
     /// walk just created, or through a `permanentDocument` reference, whose
-    /// key is the inserted document's `$id`, inserted once and never
-    /// restored. An estimation call registers the counter's layer and prices
-    /// the existence read either way, so it bounds every stateful write.
-    /// `previous_batch_operations` are the operations the batch already
-    /// queued, the document's earlier bindings' among them: two bindings of
-    /// one index can resolve the same counter (their `where` agreements
-    /// meeting at one path), and a counter an earlier binding queued is
-    /// neither read nor queued again, estimated or not.
+    /// counter paths all hold the inserted document's `$id` (its key, or a
+    /// level above it), a document inserted once and never restored. An
+    /// estimation call registers the counter's layer, sizing its keys once with
+    /// `estimated_key_size`, and prices the existence read either way, so it
+    /// bounds every stateful write. `previous_batch_operations` are the
+    /// operations the batch already queued, the document's earlier bindings'
+    /// among them: two bindings of one index can resolve the same counter
+    /// (their `where` agreements meeting at one path), and a counter an
+    /// earlier binding queued is neither read nor queued again, estimated or
+    /// not.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn add_summable_off_count_zero_counter_operations(
+    pub(crate) fn add_summable_off_count_zero_counter_operations<'k>(
         &self,
         counter_path_info: PathInfo<0>,
-        counter_key: DriveKeyInfo,
+        counter_keys: impl IntoIterator<Item = DriveKeyInfo<'k>>,
         counter_tree_type: TreeType,
         cannot_exist: bool,
         storage_flags: Option<&StorageFlags>,
@@ -380,55 +433,63 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let drive_version = &platform_version.drive;
-        if previous_batch_operations
-            .as_deref()
-            .is_some_and(|operations| {
-                counter_queued(
-                    operations,
-                    &counter_path_info.clone().convert_to_key_info_path(),
-                    &counter_key.to_key_info(),
-                )
-            })
-        {
-            return Ok(());
-        }
         let element_flags = StorageFlags::map_to_some_element_flags(storage_flags);
         let estimating = estimated_costs_only_with_layer_info.is_some();
-        if let Some(layers) = estimated_costs_only_with_layer_info.as_mut() {
-            insert_summable_off_count_counter_layer(
-                layers,
-                counter_path_info.clone().convert_to_key_info_path(),
-                counter_tree_type,
-                estimated_key_size()?,
-                storage_flags,
+        let counter_key_info_path = counter_path_info.clone().convert_to_key_info_path();
+        // Registered with the first counter not queued yet, sized once
+        let mut estimated_key_size = Some(estimated_key_size);
+        for counter_key in counter_keys {
+            if previous_batch_operations
+                .as_deref()
+                .is_some_and(|operations| {
+                    counter_queued(
+                        operations,
+                        &counter_key_info_path,
+                        &counter_key.to_key_info(),
+                    )
+                })
+            {
+                continue;
+            }
+            if let (Some(layers), Some(estimated_key_size)) = (
+                estimated_costs_only_with_layer_info.as_mut(),
+                estimated_key_size.take(),
+            ) {
+                insert_summable_off_count_counter_layer(
+                    layers,
+                    counter_key_info_path.clone(),
+                    counter_tree_type,
+                    estimated_key_size()?,
+                    storage_flags,
+                )?;
+            }
+            let path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
+                counter_path_info.clone(),
+                zero_counter_key_element(&counter_key, element_flags.clone()),
             )?;
-        }
-        let path_key_element_info = PathKeyElementInfo::from_path_info_and_key_element(
-            counter_path_info,
-            zero_counter_key_element(&counter_key, element_flags),
-        )?;
-        if estimating {
-            let flags_len = storage_flags.map_or(0, |flags| flags.serialized_size());
-            self.batch_insert_if_not_exists(
-                path_key_element_info,
-                BatchInsertApplyType::StatelessBatchInsert {
-                    in_tree_type: counter_tree_type,
-                    target: QueryTargetValue(SUM_ITEM_COST_SIZE + flags_len),
-                },
-                transaction,
-                batch_operations,
-                drive_version,
-            )?;
-        } else if cannot_exist {
-            self.batch_insert(path_key_element_info, batch_operations, drive_version)?;
-        } else {
-            self.batch_insert_if_not_exists(
-                path_key_element_info,
-                BatchInsertApplyType::StatefulBatchInsert,
-                transaction,
-                batch_operations,
-                drive_version,
-            )?;
+            if estimating {
+                let flags_len = storage_flags.map_or(0, |flags| flags.serialized_size());
+                self.batch_insert_if_not_exists(
+                    path_key_element_info,
+                    BatchInsertApplyType::StatelessBatchInsert {
+                        in_tree_type: counter_tree_type,
+                        target: QueryTargetValue(SUM_ITEM_COST_SIZE + flags_len),
+                    },
+                    transaction,
+                    batch_operations,
+                    drive_version,
+                )?;
+            } else if cannot_exist {
+                self.batch_insert(path_key_element_info, batch_operations, drive_version)?;
+            } else {
+                self.batch_insert_if_not_exists(
+                    path_key_element_info,
+                    BatchInsertApplyType::StatefulBatchInsert,
+                    transaction,
+                    batch_operations,
+                    drive_version,
+                )?;
+            }
         }
         Ok(())
     }

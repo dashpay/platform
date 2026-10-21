@@ -5,6 +5,10 @@ pub mod v4;
 
 #[derive(Clone, Debug, Default)]
 pub struct SystemLimits {
+    /// Maximum ordered note page read by the CREDIT nullifier activation migration.
+    pub credit_pool_nullifier_backfill_page_size: u16,
+    /// Maximum insert operations per batch in the CREDIT nullifier activation migration.
+    pub credit_pool_nullifier_backfill_batch_size: u16,
     pub estimated_contract_max_serialized_size: u16,
     pub max_field_value_size: u32,
     /// Maximum number of nested map/array containers in document properties.
@@ -59,7 +63,8 @@ pub struct SystemLimits {
     /// `not`, `ifThen` or `ifThenElse`, every arithmetic operator (`min`, `max` and `abs`
     /// included) and every operand: an integer value, a `const`, a property, a size
     /// (`length`, `byteLength`, `count`) or a system time or height. An `ifAbsent` operand
-    /// is one node, the default it gives included.
+    /// is one node, the default it gives included, and a `countPresent` one plus one for
+    /// each property it tests.
     /// Refused under full validation only, like `max_property_constraints`. Read by document
     /// type parser generation 3 (protocol version 14) and never reached before.
     pub max_property_constraint_nodes: u16,
@@ -124,20 +129,15 @@ pub struct SystemLimits {
     ///   across the documents of a batch (one read and one write per counter) in place of
     ///   that refusal.
     ///
-    /// * A token shielded pool leans on the cap twice, and neither is visible from the pool's
-    ///   own code. Its balance write is absolute rather than a delta, so two pool operations in
-    ///   one batch would silently discard the first — value lost on every node, no disagreement
-    ///   to notice. And an outputs-only bundle's sighash binds the owner, but nothing that
-    ///   tells one of that owner's transitions from another, while its anchor is never checked
-    ///   against a pool at all — so the same authorized bytes can sit in two shields of one
-    ///   batch: state validation runs per transition against the transaction before any
-    ///   operation applies, so the second cannot see the first's pending insert, and the
-    ///   within-bundle check is scoped to one action set. The two inserts are then byte-identical
-    ///   in path, key and value, which a node running the shipped batching default folds in
-    ///   silence while a node verifying batch
-    ///   consistency refuses — the two disagree on one block and neither shows why. Raising the
-    ///   cap means batch-scoped nullifier deduplication and a delta-based pool balance write,
-    ///   not just making the ignored cases above pass.
+    /// * Token shielded pool validation runs against the pre-batch transaction. Its accepted-action
+    ///   tracker refuses cross-candidate `(token_id, nullifier)` overlap for spends, outputs-only
+    ///   dummy nullifiers and shielded document payments, before document triggers. Only finally
+    ///   accepted pool writers reserve nullifiers; a non-closing group action is checked but
+    ///   reserves nothing. This closes the nullifier dependency on the cap, including pure
+    ///   shielded transfers whose pool total never changes. Pool balance writes remain absolute:
+    ///   repeated pool-total writes are refused by `refuse_repeated_token_balance_writes` as an
+    ///   internal error. Raising the cap still requires delta-based pool balance writes and a
+    ///   review of the other balance, nonce, counter and group dependencies above.
     ///
     /// * The batch minimum balance pre-check reserves the compute fee of every shielded pool
     ///   bundle a batch carries, on top of `document_batch_sub_transition` per sub-transition.
@@ -370,7 +370,9 @@ pub struct SystemLimits {
     /// The most work the document expiry cleanup does in one block, beside
     /// `max_document_expirations_per_block`: each deleted document weighs 1 plus the weighted
     /// index levels of its type (every index counts its properties, times the overlapping
-    /// windows of a `timeRange` index), the measure its prepaid deletion fee is sized by.
+    /// windows of a `timeRange` or `integerRange` index, an index naming a typed array its
+    /// levels from the array on once per element `maxItems` allows), the measure its prepaid
+    /// deletion fee is sized by.
     /// The cleanup stops before a document that would pass it, except the block's first, so
     /// the backlog always drains.
     ///
@@ -387,6 +389,70 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions whose parsers do not read it.
     pub max_contested_summed_value_magnitude: Option<u64>,
+    /// The largest magnitude a summed property whose values may be negative may admit on a
+    /// document type with a `ttl`, enforced when a contract is registered or updated (full
+    /// validation only, like `max_document_ttl_seconds`): unless the property's schema
+    /// declares a `minimum` of at least 0, it must declare a `maximum` of at most this and a
+    /// `minimum` of at least its negation. The platform deletes expired documents at the end
+    /// of a block with no transition to refuse, and removing a negative value raises every
+    /// sum it was in, so the values must be small enough that the sums stay in `i64`: with
+    /// every value this small, a sum of fewer than 2^36 documents does. Removing values that
+    /// are never negative only lowers sums. Read by document type parser generation 3
+    /// (protocol version 14).
+    ///
+    /// `None` preserves the behavior of protocol versions whose parsers do not read it.
+    pub max_expiring_signed_summed_value_magnitude: Option<u64>,
+    /// The highest `maxItems` a typed array may declare when an index keys the document by
+    /// its elements, enforced when a contract is registered or updated (full validation only,
+    /// like `max_typed_array_items`). Each distinct element is one index entry, so this is the
+    /// write amplification one index takes from the array. Read by document type parser
+    /// generation 3 (protocol version 14).
+    ///
+    /// `None` preserves the behavior of protocol versions whose parsers refuse an index on a
+    /// typed array.
+    pub max_indexed_array_items: Option<u16>,
+    /// The highest `maxItems` of an indexed typed array when the same index also groups
+    /// documents into `timeRange` or `integerRange` windows: the document is entered once per
+    /// window and element, so the array is held lower than `max_indexed_array_items`. Same
+    /// enforcement and generation as `max_indexed_array_items`.
+    ///
+    /// `None` preserves the behavior of protocol versions whose parsers refuse an index on a
+    /// typed array.
+    pub max_windowed_indexed_array_items: Option<u16>,
+    /// The most index entries one document of a type with an indexed typed array can write
+    /// across all of the type's indexes: an index counts 1, times the windows of a
+    /// `timeRange` or `integerRange` grid, times the `maxItems` of its typed array. Enforced
+    /// when a contract is registered or updated (full validation only), on document types with
+    /// an indexed typed array: a type without one writes at most 10 indexes of 24 windows, 240
+    /// entries. Same generation as `max_indexed_array_items`.
+    ///
+    /// `None` preserves the behavior of protocol versions whose parsers refuse an index on a
+    /// typed array.
+    pub max_index_entries_per_document: Option<u16>,
+    /// The most documents a create reads for a `refersTo` `chooseFirst`, the competitors of
+    /// the commitment its `findBy` found: the documents of the referenced type holding the found
+    /// commitment's value at `among`, read in the order its `by` lists through the type's index
+    /// over that property and the ordered properties, in one query, as far as the found
+    /// commitment. The create is refused at the first valid one before the found commitment,
+    /// and stands when none of the first this many is one, so documents that are no valid
+    /// competitor can make a create cost more, never refuse it. `findBy` finds through a
+    /// unique index over the referenced type's `$ownerId` and `among`, so each of them is
+    /// another identity's, and ordering this many before a valid commitment takes this many
+    /// identities. Read by
+    /// document reference validation 0 (protocol version 14); the earlier tables carry the
+    /// same number, which nothing reads there.
+    pub max_choose_first_candidates: u16,
+    /// How many key moves the rewrite of unsigned integer index value keys on the first block
+    /// of protocol version 14 (`Drive::rekey_unsigned_integer_index_values`) gathers into one
+    /// GroveDB batch, across trees and contracts, and how many keys it reads in one page: one
+    /// batch per moved key, or per tree with moved keys, would propagate to the root once per
+    /// key or tree. Two values that trade keys always move in the same batch, so a batch can
+    /// hold one move more, and a batch is applied early when a tree is to move its own keys
+    /// while it holds moves below them. Part of what that block writes, since the batch
+    /// boundaries shape the Merk trees holding the moved keys.
+    ///
+    /// `None` in the tables of protocol versions that never run the rewrite.
+    pub max_rekey_batch_moves: Option<u32>,
 }
 
 #[cfg(test)]

@@ -12,8 +12,8 @@
 //! `&dyn Signer<IdentityPublicKey>`.
 //!
 //! `IdentityWallet` keeps doing all of the derivation (key-index
-//! resolution, ECDH-key derivation, xpub derivation, avatar hashing,
-//! document construction); this helper receives the already-derived
+//! resolution, ECDH-key derivation, xpub derivation, document
+//! construction); this helper receives the already-derived
 //! primitives and performs the final SDK call.
 
 use std::sync::Arc;
@@ -31,8 +31,8 @@ use dash_sdk::platform::dashpay::{
 
 use crate::error::PlatformWalletError;
 
-// Borrowed-signer adapter — same pattern used by `contact_requests.rs`
-// / `profile.rs`. Lets a `&dyn Signer<IdentityPublicKey>` satisfy the
+// Borrowed-signer adapter — same pattern used by `contact_requests.rs`.
+// Lets a `&dyn Signer<IdentityPublicKey>` satisfy the
 // owned, `Sized` `S: Signer<IdentityPublicKey>` bound the SDK input
 // types require, so the helper methods below can take a borrowed signer
 // while still threading the host's signer to the SDK.
@@ -115,7 +115,7 @@ pub(crate) struct SendContactRequestParams<'a> {
     /// secret — the client-side equivalent of the old SdkSide key-id
     /// guard, so a recipient-key mismatch fails loudly instead of
     /// silently encrypting with the wrong secret.
-    pub expected_recipient_pubkey: dashcore::secp256k1::PublicKey,
+    pub expected_recipient_pubkey: dpp::secp256k1::PublicKey,
     /// DashPay receiving-account xpub to share with the recipient, in the
     /// **69-byte DIP-15 compact form** (`parentFingerprint ‖ chainCode ‖
     /// pubKey`) — NOT `ExtendedPubKey::encode()`. The SDK validates len == 69
@@ -129,7 +129,7 @@ pub(crate) struct SendContactRequestParams<'a> {
 
 /// Pre-built inputs for a single DashPay document put.
 ///
-/// `IdentityWallet` builds the [`Document`] (profile create/update) and
+/// `IdentityWallet` builds the [`Document`] (contact info) and
 /// resolves the signing key + document type; the helper performs the
 /// `put_to_platform_and_wait_for_response` broadcast.
 pub(crate) struct PutDocumentParams<'a> {
@@ -149,12 +149,12 @@ pub(crate) struct PutDocumentParams<'a> {
 /// forwarding to the real SDK. Its two methods erase the SDK's
 /// generic write signatures (`send_contact_request`'s seven type
 /// params, the signer-generic `PutDocument`) behind concrete, by-value
-/// inputs so the call sites in `contact_requests.rs` / `profile.rs` /
+/// inputs so the call sites in `contact_requests.rs` /
 /// `contact_info.rs` stay simple.
 ///
 /// The methods' returned futures are `Send`: the write paths this
-/// helper serves (`send_contact_request_with_external_signer`, profile
-/// create/update) are driven through the FFI's `block_on_worker`, which
+/// helper serves (`send_contact_request_with_external_signer`, the
+/// contact-info put) are driven through the FFI's `block_on_worker`, which
 /// requires `Future: Send`. (The DashPay *read*/sync path, which is
 /// `!Send` and runs on a dedicated thread, does not go through this
 /// helper.)
@@ -223,10 +223,10 @@ impl SdkWriter {
             &IdentityPublicKey,
             u32,
         ) -> std::future::Ready<
-            Result<dashcore::secp256k1::SecretKey, dash_sdk::Error>,
+            Result<dpp::secp256k1::SecretKey, dash_sdk::Error>,
         >;
         let ecdh_provider: EcdhProvider<UnusedSdkSideEcdh, _, _, _> = EcdhProvider::ClientSide {
-            get_shared_secret: move |peer: &dashcore::secp256k1::PublicKey| {
+            get_shared_secret: move |peer: &dpp::secp256k1::PublicKey| {
                 let peer_matches = *peer == expected_recipient_pubkey;
                 async move {
                     if !peer_matches {

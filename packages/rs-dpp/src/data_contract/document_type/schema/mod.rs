@@ -2,6 +2,8 @@ pub mod allowed_top_level_properties;
 
 mod enrich_with_base_schema;
 
+mod expand_property_type_shorthands;
+
 mod find_identifier_and_binary_paths;
 
 #[cfg(feature = "validation")]

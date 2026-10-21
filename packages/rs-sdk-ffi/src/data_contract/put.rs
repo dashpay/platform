@@ -29,7 +29,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_put_to_platform(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let data_contract = &*(data_contract_handle as *const DataContract);
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const VTableSigner);
@@ -86,7 +86,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_put_to_platform_and_wait(
         ));
     }
 
-    let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
     let data_contract = &*(data_contract_handle as *const DataContract);
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
     let signer = &*(signer_handle as *const VTableSigner);

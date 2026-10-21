@@ -209,8 +209,8 @@ mod tests {
 
     use super::*;
     use dashcore::consensus::serialize;
+    use dashcore::ecdsa::EcdsaSecretKey;
     use dashcore::hashes::Hash;
-    use dashcore::secp256k1::SecretKey;
     use dashcore::{
         Address, Network, OutPoint, PublicKey, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness,
     };
@@ -247,7 +247,7 @@ mod tests {
     }
 
     fn test_pubkey() -> PublicKey {
-        let sk = SecretKey::from_secret_bytes([0x42u8; 32]).expect("valid secret key");
+        let sk = EcdsaSecretKey::from_bytes(&[0x42u8; 32]).expect("valid secret key");
         PublicKey::new(sk.public_key())
     }
 

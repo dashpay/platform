@@ -56,7 +56,8 @@ impl ReferencedDocumentRequirementNotMetError {
         &self.document_id
     }
 
-    /// The `refersTo` key of the requirement, declared beside the lookup: `minimumAgeBlocks`
+    /// The `refersTo` key of the requirement, declared in the lookup's `constraints`:
+    /// `minimumAgeBlocks`
     pub fn field(&self) -> &str {
         &self.field
     }

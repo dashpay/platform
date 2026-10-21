@@ -247,7 +247,7 @@ public enum DashModelContainer {
         // probe stays fatal here: the open fails with the probe's own error
         // instead of an inapplicable plan, and the store is untouched.
         if versions == ["1.0.0"], try matches(DashSchemaV1.self) {
-            logRoute("accepted-v1-to-v4")
+            logRoute("accepted-v1-to-v3")
             return DashAcceptedV1MigrationPlan.self
         }
         if versions == ["2.0.0"] {
@@ -261,13 +261,13 @@ public enum DashModelContainer {
                 throw DashLegacyStoreSQLite.Failure.unsupported(
                     "The database identifies itself as schema 2.0.0 but its model does not match the supported historical or current schema. The original database has not been replaced. Contact support; do not delete the app.")
             }
-            logRoute(historical ? "historical-v2-to-v4" : "previous-live-v2-v3-shape")
+            logRoute(historical ? "historical-v2-to-v3" : "previous-live-v2-current-shape")
         } else if versions == ["3.0.0"] {
-            logRoute("published-v3-to-v4")
-        } else if versions == ["4.0.0"] {
             // Same plan either way. Opening a current store must neither wait
             // on nor fail with a schema probe that could only refine this line;
             // `source_checksum` above already identifies the exact graph.
+            logRoute("published-v3-to-v4")
+        } else if versions == ["4.0.0"] {
             logRoute("labelled-current-v4")
         } else {
             logRoute("ordinary-current-plan")
@@ -303,9 +303,10 @@ public enum DashMigrationPlan: SchemaMigrationPlan {
 /// Separate compatibility route: V1 has fields missing from historical V2.
 /// Never insert V2 between this baseline and the current schema.
 enum DashAcceptedV1MigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV4.self] }
+    static var schemas: [any VersionedSchema.Type] { [DashSchemaV1.self, DashSchemaV3.self, DashSchemaV4.self] }
     static var stages: [MigrationStage] {
-        [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV4.self)]
+        [.lightweight(fromVersion: DashSchemaV1.self, toVersion: DashSchemaV3.self),
+         .lightweight(fromVersion: DashSchemaV3.self, toVersion: DashSchemaV4.self)]
     }
 }
 
@@ -375,13 +376,13 @@ public enum DashSchemaV2: VersionedSchema {
     }
 }
 
-/// Frozen released graph and fixed target of the legacy-store bridge.
+/// Published V3 and fixed legacy-bridge target. Its complete model graph is frozen.
 public enum DashSchemaV3: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(3, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashSchemaSnapshotV3.models }
 }
 
-/// Live schema adds an optional accounting-availability marker; existing rows keep nil.
+/// Current schema: optional asset-lock operation IDs correlate drain recovery.
 public enum DashSchemaV4: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(4, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }

@@ -49,6 +49,37 @@ const identityResult = await verifyFullIdentityByIdentityId(proof, identityId, p
 const contractResult = await verifyContract(proof, contractId, platformVersion);
 ```
 
+### Non-unique public key hash lookup
+
+```javascript
+// Use the generated web binding at the path where your build serves pkg/.
+import init, { verifyFullIdentityByNonUniquePublicKeyHash } from './pkg/wasm_drive_verify.js';
+await init();
+const result = verifyFullIdentityByNonUniquePublicKeyHash(
+  proofBytes, publicKeyHashBytes, startAfterBytes, producerProtocolVersion, verificationProtocolVersion,
+);
+```
+
+This direct verifier accepts one complete GroveDB proof blob. It proves the first
+matching identity after the exclusive cursor, including its keys, balance and
+revision, or complete absence. It replaces the earlier two-blob signature;
+callers must migrate together with the server's standard `Proof` response.
+The producer version is the authenticated response metadata protocol version.
+The verification version is the caller's security table, normally latest supported
+and never below its verification floor. Authenticate the returned root and
+metadata against a trusted signed block separately; this
+standalone function does not verify the quorum signature. High-level SDK proof
+verification also authenticates the root and metadata.
+
+The package identity facade still has unrelated imports that do not match the
+generated binding names. Use the directly built binding for this API; the
+package exports do not expose a `pkg` subpath.
+
+The targeted identity-wrapper test runs locally with
+`node --test packages/wasm-drive-verify/tests/identity-wrapper.test.mjs` from the
+repository root, or `node --test tests/identity-wrapper.test.mjs` from this package.
+It mocks unrelated bindings and does not validate the whole facade.
+
 ### Dynamic Imports
 
 Load modules on-demand for code splitting:
