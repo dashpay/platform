@@ -69,6 +69,9 @@ const MAX_RETRY_DOUBLINGS: u32 = 3;
 /// Answers a source may give that it cannot serve the quorum before a fetch
 /// stops asking it: one for the height and one for the tip.
 const MAX_CANNOT_SERVE: u32 = 2;
+/// How long a fetch waits before trying again to take a place to prove its
+/// quorum.
+const PLACE_RETRY: Duration = Duration::from_millis(250);
 /// How `bootstrap::verify` reports a target below the minimum height, which
 /// it checks before any signature.
 const STALE_TARGET: ProofError = ProofError("stale target");
@@ -132,8 +135,8 @@ enum Slot {
     Running {
         id: u64,
         height: u32,
-        /// Set while the fetch only waits out a relay's backoff.
-        waiting: Arc<AtomicBool>,
+        /// Set while the fetch holds one of the places to prove a quorum.
+        holding: Arc<AtomicBool>,
         fetch: SharedFetch,
     },
     Failed {
@@ -221,9 +224,11 @@ struct Attempt {
     quorum: QuorumId,
     height: u32,
     id: u64,
-    /// Earlier failures of this quorum, for its cooldown.
+    /// Earlier failures of this quorum, for its cooldown, and when the last
+    /// one was.
     failures: u32,
-    waiting: Arc<AtomicBool>,
+    failed_at: Option<Instant>,
+    holding: Arc<AtomicBool>,
 }
 
 /// What one fetch knows about one source.
@@ -421,7 +426,7 @@ impl ProofFetches {
                 return Ok(future::ready(Ok(())).boxed().shared());
             }
         }
-        let failures = match proven.fetches.get(&quorum) {
+        let (failures, failed_at) = match proven.fetches.get(&quorum) {
             Some(Slot::Running {
                 fetch,
                 height: running,
@@ -453,17 +458,11 @@ impl ProofFetches {
                         wait.as_millis().div_ceil(1000)
                     ));
                 }
-                *failures
+                (*failures, Some(*at))
             }
-            Some(Slot::Failed { .. }) | None => 0,
+            Some(Slot::Failed { .. }) | None => (0, None),
         };
-        // A fetch only waiting out a relay's backoff sends nothing, so it
-        // does not hold one of the places.
-        let running = proven
-            .fetches
-            .values()
-            .filter(|slot| matches!(slot, Slot::Running { waiting, .. } if !waiting.load(Ordering::Relaxed)))
-            .count();
+        let running = places_taken(&proven);
         if running >= MAX_QUORUMS_IN_FLIGHT {
             return Err(format!(
                 "{running} other quorums are being proven; not starting another"
@@ -487,13 +486,14 @@ impl ProofFetches {
         }
         proven.next_fetch_id += 1;
         let id = proven.next_fetch_id;
-        let waiting = Arc::new(AtomicBool::new(false));
+        let holding = Arc::new(AtomicBool::new(true));
         let attempt = Attempt {
             quorum,
             height,
             id,
             failures,
-            waiting: Arc::clone(&waiting),
+            failed_at,
+            holding: Arc::clone(&holding),
         };
         // Built under the lock, so it must do nothing until it is polled.
         let fetch = Arc::clone(self).start(attempt);
@@ -502,7 +502,7 @@ impl ProofFetches {
             Slot::Running {
                 id,
                 height,
-                waiting,
+                holding,
                 fetch: fetch.clone(),
             },
         );
@@ -533,8 +533,9 @@ impl ProofFetches {
 
     /// Record how a fetch ended, if its slot is still its own. A failure
     /// without a single request asked nothing, so it does not cool the
-    /// quorum down.
+    /// quorum down further; the earlier failures are kept.
     fn finish(&self, attempt: &Attempt, result: &Result<(), String>, asked: bool) {
+        attempt.holding.store(false, Ordering::Relaxed);
         let mut proven = self.lock();
         let ours = matches!(
             proven.fetches.get(&attempt.quorum),
@@ -543,16 +544,40 @@ impl ProofFetches {
         if !ours {
             return;
         }
-        if result.is_err() && asked {
-            let failed = Slot::Failed {
-                at: Instant::now(),
-                failures: attempt.failures.saturating_add(1),
-                height: attempt.height,
-            };
-            proven.fetches.insert(attempt.quorum, failed);
-        } else {
-            proven.fetches.remove(&attempt.quorum);
+        let failed = match (result, asked, attempt.failed_at) {
+            (Ok(()), _, _) => None,
+            (Err(_), true, _) => Some((Instant::now(), attempt.failures.saturating_add(1))),
+            (Err(_), false, Some(at)) => Some((at, attempt.failures)),
+            (Err(_), false, None) => None,
+        };
+        match failed {
+            Some((at, failures)) => {
+                let failed = Slot::Failed {
+                    at,
+                    failures,
+                    height: attempt.height,
+                };
+                proven.fetches.insert(attempt.quorum, failed);
+            }
+            None => {
+                proven.fetches.remove(&attempt.quorum);
+            }
         }
+    }
+
+    /// Take one of the places to prove a quorum, unless the fetch holds one
+    /// already. A fetch gives its place up while it only waits, so the limit
+    /// holds for fetches that send.
+    fn take_place(&self, attempt: &Attempt) -> bool {
+        if attempt.holding.load(Ordering::Relaxed) {
+            return true;
+        }
+        let proven = self.lock();
+        let free = places_taken(&proven) < MAX_QUORUMS_IN_FLIGHT;
+        if free {
+            attempt.holding.store(true, Ordering::Relaxed);
+        }
+        free
     }
 
     /// Ask the sources for a proof of a quorum until one verifies, the
@@ -567,6 +592,7 @@ impl ProofFetches {
         let mut sent = 0;
         let mut hedge_at = started;
         let mut failures = Vec::new();
+        let mut waited_for_place = false;
         loop {
             let now = Instant::now();
             if now >= deadline {
@@ -579,6 +605,13 @@ impl ProofFetches {
                     wake = hedge_at;
                 } else {
                     match self.pick_source(now, &sources) {
+                        Pick::Ready(_) if !self.take_place(attempt) => {
+                            if !waited_for_place {
+                                waited_for_place = true;
+                                failures.push("waited for other quorums' proofs".to_string());
+                            }
+                            wake = (now + PLACE_RETRY).min(deadline);
+                        }
                         Pick::Ready(source) => {
                             let ask = choose_ask(
                                 &self.lock().states,
@@ -606,21 +639,27 @@ impl ProofFetches {
                         }
                         Pick::At(at) => wake = at.min(deadline),
                         Pick::Nothing if requests.is_empty() => {
-                            failures.push("no source left to ask".to_string());
+                            failures.push(
+                                "every source is cooling down or out of this fetch".to_string(),
+                            );
                             break;
                         }
                         Pick::Nothing => {}
                     }
                 }
             } else if requests.is_empty() {
+                failures.push(format!("all {MAX_REQUESTS_PER_FETCH} requests used"));
                 break;
             }
 
-            let wait = wake.saturating_duration_since(now);
+            // Browser timers round short waits down to zero.
+            let wait = wake
+                .saturating_duration_since(now)
+                .max(Duration::from_millis(1));
             if requests.is_empty() {
-                attempt.waiting.store(true, Ordering::Relaxed);
+                // Nothing is in flight: let another quorum be proven meanwhile.
+                attempt.holding.store(false, Ordering::Relaxed);
                 sleep(wait).await;
-                attempt.waiting.store(false, Ordering::Relaxed);
                 continue;
             }
             let answered = match select(requests.next(), pin!(sleep(wait))).await {
@@ -868,6 +907,15 @@ impl ProofFetches {
         }
     }
 
+    /// Which sources are cooling down.
+    #[cfg(test)]
+    pub(crate) fn cooling(&self) -> Vec<bool> {
+        let now = Instant::now();
+        let proven = self.lock();
+        let cooling = |health: &SourceHealth| health.failed_until.is_some_and(|until| until > now);
+        proven.sources.iter().map(cooling).collect()
+    }
+
     fn source_failed(&self, source: usize) {
         let first = self.timing.source_cooldown;
         let max = self.timing.max_source_cooldown;
@@ -882,6 +930,17 @@ impl ProofFetches {
             *health = SourceHealth::default();
         }
     }
+}
+
+/// How many fetches hold one of the places to prove a quorum.
+fn places_taken(proven: &Proven) -> usize {
+    proven
+        .fetches
+        .values()
+        .filter(
+            |slot| matches!(slot, Slot::Running { holding, .. } if holding.load(Ordering::Relaxed)),
+        )
+        .count()
 }
 
 /// Whether a commitment's leading bytes (version, type, hash) name `quorum`.
@@ -1115,15 +1174,35 @@ mod tests {
     }
 
     #[test]
-    fn should_not_count_fetches_waiting_out_a_backoff_against_the_limit() {
+    fn should_let_only_fetches_holding_a_place_send() {
         let fetches = Arc::new(fetches());
         let _first = fetches.join_or_start(6, [1; 32], 150).expect("first");
         let _second = fetches.join_or_start(6, [2; 32], 150).expect("second");
         assert!(fetches.join_or_start(6, [3; 32], 150).is_err());
-        if let Some(Slot::Running { waiting, .. }) = fetches.lock().fetches.get(&(6, [1; 32])) {
-            waiting.store(true, Ordering::Relaxed);
-        }
-        assert!(fetches.join_or_start(6, [3; 32], 150).is_ok());
+        let holding = |quorum: QuorumId| match fetches.lock().fetches.get(&quorum) {
+            Some(Slot::Running { holding, .. }) => Some(Arc::clone(holding)),
+            _ => None,
+        };
+        // The first gives its place up while it waits out a backoff.
+        let first = holding((6, [1; 32])).expect("running");
+        first.store(false, Ordering::Relaxed);
+        let _third = fetches
+            .join_or_start(6, [3; 32], 150)
+            .expect("a place is free");
+        // Back from the wait, the first must wait for a place again.
+        let attempt = Attempt {
+            quorum: (6, [1; 32]),
+            height: 150,
+            id: 1,
+            failures: 0,
+            failed_at: None,
+            holding: first,
+        };
+        assert!(!fetches.take_place(&attempt));
+        holding((6, [2; 32]))
+            .expect("running")
+            .store(false, Ordering::Relaxed);
+        assert!(fetches.take_place(&attempt));
     }
 
     #[test]

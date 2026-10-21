@@ -170,8 +170,9 @@ Behaviour:
   an unavailable quorum source, so the SDK tries another node without banning
   the one that named the quorum. A quorum of another type than the network's
   Platform quorum type is rejected as invalid.
-- Fetches of one quorum are shared and at most two quorums are proven at
-  once. A relay that cannot serve a quorum for the height and for its tip is
+- Fetches of one quorum are shared, and requests for at most two quorums
+  are in flight at once (a fetch waiting out a backoff gives its place up).
+  A relay that cannot serve a quorum for the height and for its tip is
   not asked again in that fetch; a busy relay (503) is retried after a
   backoff; relays that fail otherwise, and quorums whose fetch failed, cool
   down. A fetch gives up after 70 s. Redirects are refused and responses are
