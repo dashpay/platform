@@ -15,6 +15,14 @@ use assert_matches::assert_matches;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
+use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
+use dpp::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Setters;
+use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
@@ -429,6 +437,56 @@ pub(in crate::execution) fn assert_unpaid_internal_error(outcome: &Outcome, need
     assert_matches!(
         &outcome.block,
         StateTransitionExecutionResult::InternalError(message) if message.contains(needle),
+        "block: {:?}",
+        outcome.block
+    );
+    assert_eq!(outcome.nonce_after, outcome.nonce_before);
+    assert_eq!(outcome.balance_after, outcome.balance_before);
+}
+
+/// Gives the contract a token at position 0, in configuration format version 0: the most
+/// restrictive configuration with an English name and `trade_mode`, the one part of it the frozen
+/// contract basic structure generations of protocol versions 9 to 13 never read.
+pub(in crate::execution) fn add_token_with_trade_mode(
+    contract: &mut DataContractInSerializationFormat,
+    trade_mode: TokenTradeMode,
+) {
+    let DataContractInSerializationFormat::V1(contract) = contract else {
+        panic!("expected a contract serialization format that carries tokens");
+    };
+    let mut configuration = TokenConfigurationV0::default_most_restrictive();
+    configuration.marketplace_rules.set_trade_mode(trade_mode);
+    let mut configuration = TokenConfiguration::V0(configuration);
+    configuration.conventions_mut().localizations_mut().insert(
+        "en".to_string(),
+        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+            should_capitalize: true,
+            singular_form: "test".to_string(),
+            plural_form: "tests".to_string(),
+        }),
+    );
+    contract.tokens.insert(0, configuration);
+}
+
+/// An unpaid refusal as not active: `check_tx` and the block refuse the transition with
+/// `StateTransitionNotActiveError` under `state_transition_type`, and the owner's nonce and
+/// balance stay as they were.
+pub(in crate::execution) fn assert_refused_unpaid_as_not_active(
+    outcome: &Outcome,
+    state_transition_type: &str,
+) {
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))])
+            if error.state_transition_type() == state_transition_type,
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(
+            BasicError::StateTransitionNotActiveError(error)
+        )) if error.state_transition_type() == state_transition_type,
         "block: {:?}",
         outcome.block
     );

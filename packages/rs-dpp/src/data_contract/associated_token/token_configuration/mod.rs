@@ -9,6 +9,7 @@ use crate::data_contract::associated_token::token_configuration::accessors::v1::
 use crate::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use crate::data_contract::associated_token::token_configuration::v1::TokenConfigurationV1;
 use crate::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Getters;
+use crate::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::ChangeControlRules;
 use crate::data_contract::errors::DataContractError;
@@ -158,15 +159,30 @@ impl TokenConfiguration {
     /// version 15 (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`): below it the mode is refused as
     /// not active, the refusal software that predates the marketplace gives by failing to decode
     /// it. A tradeable token must also be transferable, since filling a listing or an offer moves
-    /// the token from one identity to another. Checked on contract create and update and on the
-    /// configuration a `TokenConfigUpdate` proposes; `transferable` is fixed at creation, so only
-    /// the trade mode can change.
+    /// the token from one identity to another. Checked on contract create and update.
     pub fn validate_marketplace_rules(
         &self,
         token_contract_position: TokenContractPosition,
         platform_version: &PlatformVersion,
     ) -> SimpleConsensusValidationResult {
-        if !self.is_tradeable() {
+        self.validate_trade_mode(
+            self.as_cow_v0().marketplace_rules.trade_mode(),
+            token_contract_position,
+            platform_version,
+        )
+    }
+
+    /// The rules of [`Self::validate_marketplace_rules`] for `trade_mode` as this token's trade
+    /// mode: its own, or the one a `TokenConfigUpdate` proposes (`MarketplaceTradeMode`, the only
+    /// item that changes it; `transferable` is fixed at creation). Borrowing the proposed mode
+    /// spares building the proposed configuration.
+    pub fn validate_trade_mode(
+        &self,
+        trade_mode: &TokenTradeMode,
+        token_contract_position: TokenContractPosition,
+        platform_version: &PlatformVersion,
+    ) -> SimpleConsensusValidationResult {
+        if !trade_mode.is_tradeable() {
             return SimpleConsensusValidationResult::new();
         }
         if platform_version.protocol_version < TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION {
@@ -1266,20 +1282,39 @@ mod marketplace_rules_tests {
     }
 
     /// A configuration update that makes a non-transferable token tradeable proposes the same
-    /// configuration a contract update would, and is refused by the same check.
+    /// configuration a contract update would, and is refused by the same check: whether the
+    /// trade mode is the token's own or only proposed.
     #[test]
     fn should_refuse_making_a_non_transferable_token_tradeable_through_its_configuration_item() {
         let mut configuration = not_tradeable();
         configuration.set_transferable(false);
-        configuration.apply_token_configuration_item(
-            TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::Tradeable),
+
+        let proposed = configuration.validate_trade_mode(
+            &TokenTradeMode::Tradeable,
+            0,
+            PlatformVersion::latest(),
         );
-        let result = configuration.validate_marketplace_rules(0, PlatformVersion::latest());
         assert!(matches!(
-            result.errors.as_slice(),
+            proposed.errors.as_slice(),
             [ConsensusError::BasicError(
                 BasicError::NonTransferableTokenTradeableError(_)
             )]
         ));
+
+        configuration.apply_token_configuration_item(
+            TokenConfigurationChangeItem::MarketplaceTradeMode(TokenTradeMode::Tradeable),
+        );
+        let applied = configuration.validate_marketplace_rules(0, PlatformVersion::latest());
+        assert_eq!(applied.errors, proposed.errors);
+    }
+
+    /// Proposing the mode every token may have is never refused.
+    #[test]
+    fn should_accept_proposing_not_tradeable_for_a_non_transferable_token() {
+        let mut configuration = not_tradeable();
+        configuration.set_transferable(false);
+        assert!(configuration
+            .validate_trade_mode(&TokenTradeMode::NotTradeable, 0, protocol_version_14())
+            .is_valid());
     }
 }

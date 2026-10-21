@@ -18,9 +18,9 @@ use super::{
 /// - the data trigger `bindings` 3, which refuse a document transition's replace or delete of a
 ///   token market contract order (`ask` and `bid`): only the token marketplace transitions write
 ///   them.
-/// - `token_config_update_transition_state_validation` 2, which also checks the marketplace rules
-///   of the configuration an update proposes: a token can be made tradeable only if it is
-///   transferable.
+/// - the batch `advanced_structure` 2: v1, then the structure checks of token actions protocol
+///   v15 introduces, which read only the contract the action carries and so run in check_tx too.
+///   A `TokenConfigUpdate` can make a token tradeable only if it is transferable.
 ///
 /// v10 remains unchanged for `PROTOCOL_VERSION_14` chain replay.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
@@ -33,7 +33,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V11: DriveAbciValidationVersions =
                     .identity_update_state_transition
             },
             batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions {
-                token_config_update_transition_state_validation: 2, // a tradeable token must be transferable
+                advanced_structure: 2, // a tradeable token must be transferable, checked in check_tx too
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 3, // the token market contract's orders are written by the marketplace transitions only
                     triggers: DriveAbciValidationDataTriggerVersions {
