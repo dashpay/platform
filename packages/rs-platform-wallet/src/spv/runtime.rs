@@ -3,7 +3,6 @@
 use std::future::Future;
 use std::pin::pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use tokio::sync::{Notify, RwLock};
@@ -15,7 +14,6 @@ use dashcore::sml::masternode_list::MasternodeList;
 use dashcore::{PubkeyHash, QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
-use dash_spv::storage::{DiskStorageManager, StorageManager};
 use dash_spv::sync::SyncProgress;
 use dash_spv::{BroadcastResult, ClientConfig, DashSpvClient, EventHandler, Hash};
 
@@ -28,8 +26,7 @@ use crate::masternode::list::MasternodeListSummary;
 use crate::spv::peers::{classify_peers, PeerTracker, SpvPeerInfo};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
-type SpvClient =
-    DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager, DiskStorageManager>;
+type SpvClient = DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager>;
 
 /// A quorum public key from the SPV masternode state, see
 /// [`SpvRuntime::get_quorum_public_key_with_status`].
@@ -150,12 +147,6 @@ impl SpvRuntime {
         let network_manager = PeerNetworkManager::new(&config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        let mut storage_manager = DiskStorageManager::new(&config)
-            .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        // Upstream starts the storage writer here and again in `run`, but
-        // stops it only for a client that ran.
-        StorageManager::stop(&mut storage_manager).await;
 
         // PlatformEventManager implements `EventHandler`; the peer tracker
         // rides alongside it so `connected_peers` can answer from the latest
@@ -176,7 +167,6 @@ impl SpvRuntime {
         let spv_client = DashSpvClient::new(
             config,
             network_manager,
-            storage_manager,
             Arc::clone(&self.wallet_manager),
             event_handlers,
         )
@@ -255,19 +245,7 @@ impl SpvRuntime {
             .task_slot()
             .as_ref()
             .is_some_and(|task| !task.is_finished());
-        if starting {
-            return true;
-        }
-        let mut running = pin!(tokio::task::unconstrained(client.is_running()));
-        match running
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop()))
-        {
-            Poll::Ready(running) => running,
-            // Upstream holds this lock while it cleans up after a failed sync
-            // and, briefly, while it recovers from a fork.
-            Poll::Pending => false,
-        }
+        starting || client.is_running()
     }
 
     /// Whether a broadcast issued right now could reach the network: the
@@ -688,16 +666,8 @@ impl SpvRuntime {
     /// have been stored yet, or the tip header isn't readable for
     /// any reason.
     pub async fn tip_block_time(&self) -> Option<u32> {
-        use dash_spv::storage::{BlockHeaderStorage, StorageManager};
-
         let client_guard = self.client.read().await;
-        let client = client_guard.as_ref()?;
-        let storage_arc = client.storage();
-        let storage = storage_arc.lock().await;
-        let block_headers = StorageManager::block_headers(&*storage);
-        drop(storage);
-        let bh = block_headers.read().await;
-        let tip = BlockHeaderStorage::get_tip(&*bh).await?;
+        let tip = client_guard.as_ref()?.tip_header().await?;
         Some(tip.header().time)
     }
 
@@ -711,18 +681,12 @@ impl SpvRuntime {
         height: u32,
     ) -> crate::wallet::asset_lock::sync::locate::HeaderLookup {
         use crate::wallet::asset_lock::sync::locate::HeaderLookup;
-        use dash_spv::storage::{BlockHeaderStorage, StorageManager};
 
         let client_guard = self.client.read().await;
         let Some(client) = client_guard.as_ref() else {
             return HeaderLookup::Unreadable("SPV client not running".to_string());
         };
-        let storage_arc = client.storage();
-        let storage = storage_arc.lock().await;
-        let block_headers = StorageManager::block_headers(&*storage);
-        drop(storage);
-        let bh = block_headers.read().await;
-        match BlockHeaderStorage::get_header(&*bh, height).await {
+        match client.header_at(height).await {
             Ok(Some(header)) => HeaderLookup::Found(*header.hash()),
             // The store is readable and the chain has nothing there.
             Ok(None) => HeaderLookup::Absent,
@@ -756,15 +720,27 @@ impl SpvRuntime {
             )
         })?;
 
-        let mut storage = DiskStorageManager::new(&config)
+        // dash-spv clears its storage only through a client. This one never
+        // runs and has no event handlers, and dropping it releases the
+        // storage. Clearing removes the whole storage directory, so the client
+        // needs neither filters nor masternodes; without them it does not
+        // replay the stored masternode state only to delete it.
+        let config = config.without_filters().without_masternodes();
+        let network_manager = PeerNetworkManager::new(&config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        StorageManager::clear(&mut storage)
+        let client: SpvClient = DashSpvClient::new(
+            config,
+            network_manager,
+            Arc::clone(&self.wallet_manager),
+            Vec::new(),
+        )
+        .await
+        .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        client
+            .clear_storage()
             .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
-        StorageManager::stop(&mut storage).await;
-
-        Ok(())
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
     }
 
     /// Update the running SPV client's configuration.
@@ -1209,24 +1185,14 @@ mod tests {
         );
     }
 
-    /// Upstream starts a storage writer at construction and stops it only for
-    /// a client whose sync loop ran. Left behind, it keeps writing into a
-    /// directory that was cleared or handed to the next client.
+    /// A storage writer that outlives its client keeps writing into a
+    /// directory that was cleared or handed to the next client. Neither a
+    /// client that never ran nor the client that clears the storage may leave
+    /// one behind.
     #[tokio::test(start_paused = true)]
     async fn should_leave_no_storage_writer_after_clearing_a_client_that_never_ran() {
         let (runtime, storage) = offline_runtime().await;
         runtime.clear_storage().await.unwrap();
-        assert_no_storage_writer_survives(&storage).await;
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn should_leave_no_storage_writer_after_client_construction_fails() {
-        let storage = tempfile::tempdir().unwrap();
-        let mut config = ClientConfig::testnet()
-            .with_storage_path(storage.path())
-            .with_restrict_to_configured_peers(true);
-        config.max_peers = 0;
-        assert!(unstarted_runtime().start(config).await.is_err());
         assert_no_storage_writer_survives(&storage).await;
     }
 
@@ -1631,6 +1597,63 @@ mod tests {
         runtime.stop().await.unwrap();
     }
 
+    /// Clearing a running client must drop the chain it persisted. A client
+    /// finding stored headers resumes from their tip, so only a cleared
+    /// storage lets the restart below anchor at genesis instead of at the
+    /// checkpoint the first run stored.
+    #[tokio::test]
+    async fn should_drop_the_persisted_chain_when_clearing_a_running_client() {
+        use crate::wallet::asset_lock::sync::locate::HeaderLookup;
+
+        let storage = tempfile::tempdir().unwrap();
+        let starting_at = |height| {
+            let mut config = offline_config(&storage);
+            config.start_from_height = Some(height);
+            config
+        };
+        let genesis = dashcore::blockdata::constants::genesis_block(Network::Testnet).header;
+
+        let runtime = Arc::new(unstarted_runtime());
+        runtime.start(starting_at(u32::MAX)).await.unwrap();
+        run_offline(&runtime).await;
+        let checkpoint_time = runtime.tip_block_time().await;
+        assert!(
+            checkpoint_time.is_some_and(|time| time > genesis.time),
+            "the first run must anchor at a checkpoint, got tip time {checkpoint_time:?}"
+        );
+        assert_eq!(
+            runtime.header_hash_at(0).await,
+            HeaderLookup::Absent,
+            "a chain anchored at a checkpoint holds nothing below it"
+        );
+        runtime.stop().await.unwrap();
+
+        runtime.start(starting_at(0)).await.unwrap();
+        assert_eq!(
+            runtime.tip_block_time().await,
+            checkpoint_time,
+            "a restart must resume from the persisted checkpoint"
+        );
+        run_offline(&runtime).await;
+        assert!(runtime.is_running());
+        runtime.clear_storage().await.unwrap();
+        assert!(!runtime.is_started());
+        assert!(!runtime.is_running());
+
+        runtime.start(starting_at(0)).await.unwrap();
+        assert_eq!(
+            runtime.tip_block_time().await,
+            Some(genesis.time),
+            "after clearing, a restart must anchor at genesis"
+        );
+        assert_eq!(
+            runtime.header_hash_at(0).await,
+            HeaderLookup::Found(genesis.block_hash())
+        );
+        assert_eq!(runtime.header_hash_at(1).await, HeaderLookup::Absent);
+        runtime.stop().await.unwrap();
+    }
+
     #[tokio::test]
     async fn should_keep_teardown_tracked_when_a_clear_storage_caller_is_cancelled() {
         let (runtime, storage) = offline_runtime().await;
@@ -1683,6 +1706,10 @@ mod tests {
             let _ = pending.await;
             completed.store(true, std::sync::atomic::Ordering::SeqCst);
         }));
+        assert!(
+            runtime.is_running(),
+            "a client whose startup is in progress counts as running"
+        );
         let stopping = {
             let runtime = Arc::clone(&runtime);
             tokio::spawn(async move {
@@ -1930,8 +1957,8 @@ mod tests {
         use dash_spv::{ClientConfig, EventHandler};
         use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-        // `DiskStorageManager` locks the directory it opens, so the client
-        // gets one of its own and the stop below releases it.
+        // dash-spv locks the storage directory it opens, so the client gets
+        // one of its own and the stop below releases it.
         let storage = std::env::temp_dir().join(format!(
             "platform-wallet-spv-readiness-{}",
             std::process::id()
