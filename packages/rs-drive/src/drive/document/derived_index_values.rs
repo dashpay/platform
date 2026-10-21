@@ -27,6 +27,7 @@ use crate::drive::document::paths::{
     contract_documents_primary_key_path,
 };
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::drive::document::uses_current_document_history_layout;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -308,13 +309,7 @@ impl Drive {
             )?;
             return Ok(ReferencedValues::Estimate);
         }
-        let current_history_layout = platform_version
-            .drive
-            .methods
-            .document
-            .insert
-            .add_document_to_primary_storage
-            == 1;
+        let current_history_layout = uses_current_document_history_layout(platform_version)?;
         let element = if referenced_type.documents_keep_history() && !current_history_layout {
             // The `0` of a document keeping history is a reference to its current version
             let path = contract_documents_keeping_history_primary_key_path_for_document_id(
@@ -432,13 +427,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         let document_size = referenced_type.estimated_size(platform_version)? as u32;
-        let current_history_layout = platform_version
-            .drive
-            .methods
-            .document
-            .insert
-            .add_document_to_primary_storage
-            == 1;
+        let current_history_layout = uses_current_document_history_layout(platform_version)?;
         if referenced_type.documents_keep_history() && !current_history_layout {
             let path = contract_documents_keeping_history_primary_key_path_for_document_id(
                 contract.id_ref().as_bytes(),

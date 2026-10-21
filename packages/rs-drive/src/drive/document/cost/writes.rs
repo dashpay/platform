@@ -18,6 +18,7 @@ use crate::drive::document::index_level_tree_types::{
 use crate::drive::document::layout::{index_ending_at, index_paths, indexes_through, LayoutRole};
 use crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::drive::document::uses_current_document_history_layout;
 use crate::drive::document::{
     bound_value_fits_referring_property, encode_index_only_entry_payload, index_only_member_key,
     index_only_row_commitment, make_document_reference, make_document_reference_v1,
@@ -466,15 +467,7 @@ impl Context<'_> {
             return Ok(());
         }
 
-        if self
-            .platform_version
-            .drive
-            .methods
-            .document
-            .insert
-            .add_document_to_primary_storage
-            == 1
-        {
+        if uses_current_document_history_layout(self.platform_version)? {
             self.push(Write {
                 path: vec![vec![DOCUMENT_HISTORY_TREE_KEY]],
                 key: id.clone(),

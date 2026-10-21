@@ -49,6 +49,28 @@ use grovedb::EstimatedLayerSizes;
 #[cfg(any(feature = "server", feature = "verify"))]
 use std::collections::BTreeSet;
 
+/// Whether current documents use pointers into the separate retained-history tree.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub(crate) fn uses_current_document_history_layout(
+    platform_version: &PlatformVersion,
+) -> Result<bool, Error> {
+    match platform_version
+        .drive
+        .methods
+        .document
+        .insert
+        .add_document_to_primary_storage
+    {
+        0 => Ok(false),
+        1 => Ok(true),
+        received => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+            method: "document_history_storage_layout".to_string(),
+            known_versions: vec![0, 1],
+            received,
+        })),
+    }
+}
+
 #[cfg(feature = "server")]
 mod delete;
 /// The values of derived index properties, read from the documents the references point at

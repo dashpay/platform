@@ -28,6 +28,7 @@ use crate::drive::document::expiration::pricing::{
 };
 use crate::drive::document::layout::LayoutRole;
 use crate::drive::document::sdk_value::{map, number, text, texts};
+use crate::drive::document::uses_current_document_history_layout;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -683,13 +684,7 @@ fn processing_costs(
     let type_entries = u64::from(!document_type.index_only())
         + u64::from(
             document_type.documents_keep_history()
-                && platform_version
-                    .drive
-                    .methods
-                    .document
-                    .insert
-                    .add_document_to_primary_storage
-                    == 1,
+                && uses_current_document_history_layout(platform_version)?,
         )
         + document_type.index_structure().sub_levels().len() as u64;
     let exact = |credits: Credits| Scenarios {

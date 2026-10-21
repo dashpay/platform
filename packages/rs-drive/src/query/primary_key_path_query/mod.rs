@@ -3,7 +3,7 @@
 mod v0;
 mod v1;
 
-use crate::error::drive::DriveError;
+use crate::drive::document::uses_current_document_history_layout;
 use crate::error::Error;
 use dpp::version::PlatformVersion;
 
@@ -19,19 +19,9 @@ pub(in crate::query) enum PrimaryKeyPathQueryTarget {
 pub(in crate::query) fn primary_key_path_query_target(
     platform_version: &PlatformVersion,
 ) -> Result<PrimaryKeyPathQueryTarget, Error> {
-    match platform_version
-        .drive
-        .methods
-        .document
-        .insert
-        .add_document_to_primary_storage
-    {
-        0 => Ok(v0::primary_key_path_query_target_v0()),
-        1 => Ok(v1::primary_key_path_query_target_v1()),
-        received => Err(Error::Drive(DriveError::UnknownVersionMismatch {
-            method: "primary_key_path_query".to_string(),
-            known_versions: vec![0, 1],
-            received,
-        })),
+    if uses_current_document_history_layout(platform_version)? {
+        Ok(v1::primary_key_path_query_target_v1())
+    } else {
+        Ok(v0::primary_key_path_query_target_v0())
     }
 }

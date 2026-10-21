@@ -27,6 +27,7 @@ use crate::drive::document::index_level_tree_types::{
 use crate::drive::document::paths::DOCUMENT_HISTORY_TREE_KEY;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
 use crate::drive::document::sdk_value::{map, number, text, texts};
+use crate::drive::document::uses_current_document_history_layout;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
@@ -477,13 +478,7 @@ pub fn document_type_layout(
     if !document_type.index_only() {
         children.push(primary_key_node(document_type, platform_version)?);
         if document_type.documents_keep_history()
-            && platform_version
-                .drive
-                .methods
-                .document
-                .insert
-                .add_document_to_primary_storage
-                == 1
+            && uses_current_document_history_layout(platform_version)?
         {
             children.push(history_node());
         }
@@ -594,13 +589,7 @@ fn primary_key_node(
     platform_version: &PlatformVersion,
 ) -> Result<LayoutNode, Error> {
     let summable = document_type.documents_summable().is_some();
-    let current_history_layout = platform_version
-        .drive
-        .methods
-        .document
-        .insert
-        .add_document_to_primary_storage
-        == 1;
+    let current_history_layout = uses_current_document_history_layout(platform_version)?;
     let document = if document_type.documents_keep_history() && current_history_layout {
         leaf(
             LayoutKey::DocumentId,
@@ -1528,6 +1517,28 @@ mod tests {
             "legacy layout differs from stored state: {:?}",
             walk.mismatches
         );
+    }
+
+    #[test]
+    fn should_reject_an_unknown_primary_writer_instead_of_describing_legacy_history() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = apply(&drive, 0, CONTRACTS[3], platform_version);
+        let person = contract.document_type_for_name("person").expect("person");
+        let mut unknown = platform_version.clone();
+        unknown
+            .drive
+            .methods
+            .document
+            .insert
+            .add_document_to_primary_storage = 2;
+        assert!(matches!(
+            document_type_layout(person, &unknown),
+            Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                received: 2,
+                ..
+            }))
+        ));
     }
 
     #[test]

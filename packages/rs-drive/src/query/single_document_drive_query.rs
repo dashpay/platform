@@ -250,7 +250,7 @@ mod tests {
                 method,
                 known_versions,
                 received: 2,
-            }) if method == "primary_key_path_query" && known_versions == vec![0, 1]
+            }) if method == "document_history_storage_layout" && known_versions == vec![0, 1]
         ));
     }
 }
