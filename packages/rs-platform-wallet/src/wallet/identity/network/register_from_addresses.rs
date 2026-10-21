@@ -88,7 +88,6 @@ impl IdentityWallet {
         input_address_signer: &AS,
         settings: Option<PutSettings>,
     ) -> Result<(Identity, dash_sdk::query_types::AddressInfos, u64), PlatformWalletError> {
-        self.sdk.ensure_platform_write_compatible()?;
         if inputs.is_empty() {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "At least one input address is required".to_string(),

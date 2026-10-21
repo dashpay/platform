@@ -1,4 +1,3 @@
-use super::broadcast::BroadcastStateTransition;
 use crate::platform::query::VoteQuery;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
@@ -72,7 +71,6 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(), Error> {
-        let sdk = &sdk.platform_write_context()?;
         let voting_identity_id = get_voting_identity_id(voter_pro_tx_hash, voting_public_key)?;
 
         let new_masternode_voting_nonce = sdk
@@ -87,25 +85,17 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
             voter_pro_tx_hash,
             voting_public_key,
             new_masternode_voting_nonce,
-            sdk.platform_version_for_write()?,
+            sdk.version(),
             None,
         )
         .await?;
-        ensure_valid_state_transition_structure(
-            &masternode_vote_transition,
-            sdk.platform_version_for_write()?,
-        )?;
-        if sdk.requires_verified_protocol_compatibility() {
-            masternode_vote_transition
-                .broadcast(sdk, Some(settings))
-                .await?;
-        } else {
-            let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
-            request
-                .execute(sdk, settings.request_settings)
-                .await
-                .into_inner()?;
-        }
+        ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
+        let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
+
+        request
+            .execute(sdk, settings.request_settings)
+            .await // TODO: We need better way to handle execution errors
+            .into_inner()?;
 
         Ok(())
     }
@@ -118,7 +108,6 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Vote, Error> {
-        let sdk = &sdk.platform_write_context()?;
         let voting_identity_id = get_voting_identity_id(voter_pro_tx_hash, voting_public_key)?;
 
         let new_masternode_voting_nonce = sdk
@@ -136,27 +125,17 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
             voter_pro_tx_hash,
             voting_public_key,
             new_masternode_voting_nonce,
-            sdk.platform_version_for_write()?,
+            sdk.version(),
             None,
         )
         .await?;
-        ensure_valid_state_transition_structure(
-            &masternode_vote_transition,
-            sdk.platform_version_for_write()?,
-        )?;
-        let response_result = if sdk.requires_verified_protocol_compatibility() {
-            masternode_vote_transition
-                .broadcast(sdk, Some(settings))
-                .await
-        } else {
-            let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
-            request
-                .execute(sdk, settings.request_settings)
-                .await
-                .into_inner()
-                .map(|_| ())
-                .map_err(Error::from)
-        };
+        ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
+        let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
+        // TODO: Implement retry logic
+        let response_result = request
+            .execute(sdk, settings.request_settings)
+            .await
+            .into_inner();
 
         match response_result {
             Ok(_) => {}
@@ -169,7 +148,7 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
                         "vote was proved to not exist but was said to exist".to_string(),
                     ))
                 } else {
-                    Err(e)
+                    Err(e.into())
                 }
             }
         }

@@ -37,7 +37,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions,
         >,
     ) -> Result<dash_sdk::platform::tokens::transitions::SetPriceResult, dash_sdk::Error> {
-        self.sdk.ensure_platform_write_compatible()?;
         use dash_sdk::platform::tokens::builders::set_price::TokenChangeDirectPurchasePriceTransitionBuilder;
 
         let mut builder = TokenChangeDirectPurchasePriceTransitionBuilder::new(
@@ -81,7 +80,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         group_info: Option<dpp::group::GroupStateTransitionInfoStatus>,
         signer: &S,
     ) -> Result<dash_sdk::platform::tokens::transitions::SetPriceResult, PlatformWalletError> {
-        self.sdk.ensure_platform_write_compatible()?;
         use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
 
         let data_contract = self.token_fetch_data_contract(token_contract_id).await?;

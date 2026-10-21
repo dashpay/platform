@@ -147,7 +147,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        let protocol_permit = self.sdk.platform_write_permit()?;
         // 1. Owner identity + signing key from the wallet manager.
         use dpp::identity::accessors::IdentityGettersV0;
         let signing_key = {
@@ -192,7 +191,7 @@ impl IdentityWallet {
         // config we build with the protocol's
         // `default_current_version` (which equals `min_version` here)
         // rather than a hardcoded "0".
-        let platform_version = self.sdk.platform_version_for_write()?;
+        let platform_version = self.sdk.version();
         let config_format_version = platform_version
             .dpp
             .contract_versions
@@ -294,16 +293,13 @@ impl IdentityWallet {
         //    overwrites the contract id with the canonical
         //    `(owner, nonce)` derivation; the placeholder id we
         //    set above is intentionally discarded.
-        self.sdk.validate_platform_write_permit(&protocol_permit)?;
         let confirmed = data_contract
             .put_to_platform_and_wait_for_response(&self.sdk, signing_key, &SignerRef(signer), None)
             .await
             .map_err(|e| {
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to put data contract to platform: {e}"
-                    ))
-                })
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to put data contract to platform: {e}"
+                ))
             })?;
 
         Ok(confirmed)
@@ -375,7 +371,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        let protocol_permit = self.sdk.platform_write_permit()?;
         // 1. Owner identity + signing key from the wallet manager.
         use dpp::identity::accessors::IdentityGettersV0;
         let signing_key = {
@@ -454,7 +449,7 @@ impl IdentityWallet {
         //    gives us a base that carries every live field (config keeps
         //    its on-chain version, document/token/group sets are
         //    complete). We then overlay only what the caller supplied.
-        let platform_version = self.sdk.platform_version_for_write()?;
+        let platform_version = self.sdk.version();
         let base_format = DataContractInSerializationFormat::try_from_platform_versioned(
             &existing,
             platform_version,
@@ -546,7 +541,6 @@ impl IdentityWallet {
             ))
         })?;
 
-        self.sdk.validate_platform_write_permit(&protocol_permit)?;
         transition
             .broadcast(&self.sdk, None)
             .await

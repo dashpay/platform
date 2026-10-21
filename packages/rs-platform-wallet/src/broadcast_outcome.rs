@@ -91,9 +91,7 @@ pub(crate) fn broadcast_definitely_failed(e: &dash_sdk::Error) -> bool {
         )
     }
 
-    // Local admission failed before any network request. This applies to a
-    // fresh send only; recovery must retain previously-broadcast records.
-    if e.protocol_compatibility_error().is_some() || carries_consensus_rejection(e) {
+    if carries_consensus_rejection(e) {
         return true;
     }
     match e {
@@ -105,24 +103,5 @@ pub(crate) fn broadcast_definitely_failed(e: &dash_sdk::Error) -> bool {
         }
         dash_sdk::Error::NoAvailableAddressesToRetry(inner) => broadcast_definitely_failed(inner),
         _ => false,
-    }
-}
-
-#[cfg(test)]
-mod protocol_compatibility_tests {
-    use super::*;
-
-    #[test]
-    fn should_release_only_for_protocol_compatibility_refused_before_dispatch() {
-        let reason = dash_sdk::ProtocolCompatibilityError::Checking;
-        assert!(broadcast_definitely_failed(
-            &dash_sdk::Error::ProtocolCompatibility(reason.clone())
-        ));
-        let after = dash_sdk::Error::ProtocolCompatibilityAfterBroadcast(reason);
-        assert!(!broadcast_definitely_failed(&after));
-        assert!(!carries_consensus_rejection(&after));
-        assert!(!broadcast_definitely_failed(
-            &dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(after))
-        ));
     }
 }

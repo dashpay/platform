@@ -175,9 +175,6 @@ fn address_not_enough_funds(
 /// available/required diagnostic while the typed variant lets the host refresh
 /// preflight instead of retrying the stale amount unchanged.
 fn map_shield_input_fetch_error(e: &dash_sdk::Error) -> PlatformWalletError {
-    if let Some(compatibility) = crate::error::promote_protocol_compatibility_error(e) {
-        return compatibility;
-    }
     match address_not_enough_funds(e) {
         Some(short) => PlatformWalletError::PlatformShieldCapacityExceeded {
             available: short.balance(),
@@ -576,8 +573,6 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
     signer: &Sig,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    let protocol_permit = sdk.platform_write_permit()?;
-    let platform_version = sdk.platform_version_for_write()?;
     let ShieldRecipient {
         address: recipient_addr,
         counterparty: external_counterparty,
@@ -604,7 +599,7 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
     // single hard balance check below validate the fee-inclusive claim
     // against the on-chain balance in one shot — no second round-trip and
     // no claim that outruns its balance check.
-    let fee = compute_minimum_shielded_fee(SHIELD_NUM_ACTIONS, platform_version)
+    let fee = compute_minimum_shielded_fee(SHIELD_NUM_ACTIONS, sdk.version())
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
     let inputs = reserve_shield_fee_on_input_0(inputs, fee)?;
 
@@ -658,7 +653,7 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
         // shielded sync can recover this send (recipient, value, memo)
         // from chain data alone.
         Some(keys.outgoing_viewing_key.clone()),
-        platform_version,
+        sdk.version(),
     )
     .await
     .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
@@ -724,17 +719,12 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
                 format_addresses_with_info(rich.addresses_with_info(), network),
             ))
         } else {
-            crate::error::promote_protocol_compatibility_error(e)
-                .or_else(|| crate::error::promote_address_nonce_error(e))
+            crate::error::promote_address_nonce_error(e)
                 .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))
         }
     };
 
-    let broadcast_result = match sdk.validate_platform_write_permit(&protocol_permit) {
-        Ok(()) => state_transition.broadcast(sdk, None).await,
-        Err(error) => Err(error),
-    };
-    match broadcast_result {
+    match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
         Err(e) if broadcast_definitely_failed(&e) => {
             record_activity_status(
@@ -949,8 +939,6 @@ pub(in crate::wallet) async fn shield_from_identity_to<
     signer: &Sig,
     prover: &P,
 ) -> Result<(Credits, ResponseMetadata), PlatformWalletError> {
-    let protocol_permit = sdk.platform_write_permit()?;
-    let platform_version = sdk.platform_version_for_write()?;
     let ShieldRecipient {
         address: recipient_addr,
         counterparty: external_counterparty,
@@ -1011,7 +999,7 @@ pub(in crate::wallet) async fn shield_from_identity_to<
         prover,
         memo,
         Some(keys.outgoing_viewing_key.clone()),
-        platform_version,
+        sdk.version(),
     )
     .await
     .map_err(map_shield_from_identity_build_error)?;
@@ -1038,15 +1026,10 @@ pub(in crate::wallet) async fn shield_from_identity_to<
     )
     .await;
 
-    sdk.validate_platform_write_permit(&protocol_permit)?;
     let activity_id =
         arm_identity_shield_redrive(store, id, &pending_entry, &state_transition).await?;
 
-    let broadcast_result = match sdk.validate_platform_write_permit(&protocol_permit) {
-        Ok(()) => state_transition.broadcast(sdk, None).await,
-        Err(error) => Err(error),
-    };
-    match broadcast_result {
+    match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
         Err(e) if broadcast_definitely_failed(&e) => {
             // Unauthenticated verdict: settle it against the proven nonce.
@@ -1212,12 +1195,6 @@ async fn settle_identity_shield_failure<S: ShieldedStore>(
     nonce: IdentityNonce,
     verdict: dash_sdk::Error,
 ) -> PlatformWalletError {
-    if let Some(compatibility) = crate::error::promote_protocol_compatibility_error(&verdict) {
-        // Keep the durable signed-byte recovery guard. A concurrent sync may
-        // already have attempted this debit; a local refusal is not proof
-        // that the earlier attempt never reached Platform.
-        return compatibility;
-    }
     let reason = match IdentityNonceFetcher::fetch(sdk, identity_id).await {
         Ok(fetched) => {
             let mut store = store.write().await;
@@ -1416,8 +1393,6 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     amount: u64,
     prover: &P,
 ) -> Result<(Option<Credits>, ResponseMetadata), PlatformWalletError> {
-    let protocol_permit = sdk.platform_write_permit()?;
-    let platform_version = sdk.platform_version_for_write()?;
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
@@ -1437,9 +1412,6 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
 
     let mut pending_entry = None;
     let result = async {
-        // Note reservation may have awaited across a verified protocol change.
-        // Reject inside this rollback scope, before building with a stale fee.
-        sdk.validate_platform_write_permit(&protocol_permit)?;
         let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
         let anchor_bytes = anchor.to_bytes();
 
@@ -1453,7 +1425,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
             anchor,
             prover,
             [0u8; 36],
-            platform_version,
+            sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         debug_assert_eq!(
@@ -1490,7 +1462,6 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
         // still proves the reserved notes are consumed and authenticates the
         // credited identity's balance; the shield, shield-from-identity and
         // identity-create paths accept the same class of outcome.
-        sdk.validate_platform_write_permit(&protocol_permit)?;
         broadcast_shielded_spend_with_redrive_with_metadata(
             sdk,
             store,
@@ -1603,8 +1574,6 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     amount: u64,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    let protocol_permit = sdk.platform_write_permit()?;
-    let platform_version = sdk.platform_version_for_write()?;
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
@@ -1640,9 +1609,6 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     // it. A build failure leaves it `None` and records nothing.
     let mut pending_entry = None;
     let result = async {
-        // Note reservation may have awaited across a verified protocol change.
-        // Reject inside this rollback scope, before building with a stale fee.
-        sdk.validate_platform_write_permit(&protocol_permit)?;
         let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
@@ -1661,7 +1627,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             anchor,
             prover,
             [0u8; 36],
-            platform_version,
+            sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         // The builder's fee and the wallet's reserved `exact_fee` both come from
@@ -1695,7 +1661,6 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("Unshield: state transition built, broadcasting...");
-        sdk.validate_platform_write_permit(&protocol_permit)?;
         broadcast_shielded_spend_with_redrive(
             sdk,
             store,
@@ -1802,8 +1767,6 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     memo: [u8; 36],
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    let protocol_permit = sdk.platform_write_permit()?;
-    let platform_version = sdk.platform_version_for_write()?;
     let recipient_addr = payment_address_to_orchard(to_address)?;
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
@@ -1825,9 +1788,6 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 
     let mut pending_entry = None;
     let result = async {
-        // Note reservation may have awaited across a verified protocol change.
-        // Reject inside this rollback scope, before building with a stale fee.
-        sdk.validate_platform_write_permit(&protocol_permit)?;
         let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
@@ -1846,7 +1806,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             anchor,
             prover,
             memo,
-            platform_version,
+            sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         // The builder's fee and the wallet's reserved `exact_fee` both come from
@@ -1880,7 +1840,6 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
         arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("Shielded transfer: state transition built, broadcasting...");
-        sdk.validate_platform_write_permit(&protocol_permit)?;
         broadcast_shielded_spend_with_redrive(
             sdk,
             store,
@@ -1964,8 +1923,6 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     core_fee_per_byte: u32,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
-    let protocol_permit = sdk.platform_write_permit()?;
-    let platform_version = sdk.platform_version_for_write()?;
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
@@ -1998,9 +1955,6 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 
     let mut pending_entry = None;
     let result = async {
-        // Note reservation may have awaited across a verified protocol change.
-        // Reject inside this rollback scope, before building with a stale fee.
-        sdk.validate_platform_write_permit(&protocol_permit)?;
         let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
@@ -2022,7 +1976,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             anchor,
             prover,
             [0u8; 36],
-            platform_version,
+            sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         // The builder's fee and the wallet's reserved `exact_fee` both come from
@@ -2055,7 +2009,6 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         arm_pending_release(store, id, anchor_bytes, &pending_entry, &selected_notes).await;
 
         trace!("Shielded withdrawal: state transition built, broadcasting...");
-        sdk.validate_platform_write_permit(&protocol_permit)?;
         broadcast_shielded_spend_with_redrive(
             sdk,
             store,
@@ -2162,8 +2115,6 @@ where
     P: OrchardProver,
     IS: Signer<IdentityPublicKey>,
 {
-    let protocol_permit = sdk.platform_write_permit()?;
-    let platform_version = sdk.platform_version_for_write()?;
     if public_keys.is_empty() {
         return Err(PlatformWalletError::ShieldedBuildError(
             "identity-create-from-shielded-pool requires at least one public key".to_string(),
@@ -2210,9 +2161,6 @@ where
     // outer match; it lives here so the flip can see it.
     let mut pending_entry = None;
     let result = async {
-        // Note reservation may have awaited across a verified protocol change.
-        // Reject inside this rollback scope, before building with a stale fee.
-        sdk.validate_platform_write_permit(&protocol_permit)?;
         let (spends, anchor) = extract_spends_and_anchor(sdk, store, &selected_notes).await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed create can be auto-released once
@@ -2231,7 +2179,7 @@ where
             prover,
             identity_signer,
             [0u8; 36],
-            platform_version,
+            sdk.version(),
         )
         .await
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
@@ -2284,9 +2232,7 @@ where
                 send_to_address_on_creation_failure,
                 build.bundle,
             )
-            .map_err(|e| preserve_signer_key_unavailable_or(e, |e| {
-                PlatformWalletError::ShieldedBuildError(e.to_string())
-            }))?;
+            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
         // Broadcast (relay-ACK only). Definitive failures — a consensus-verdict CheckTx
         // rejection, or a transport failure that proves nothing was delivered (see
@@ -2297,12 +2243,10 @@ where
         // the result wait below, whose ambiguous arm already owns the fetch-by-derived-id
         // fallback — so the in-flight tx gets confirmed (or held as unconfirmed) instead of
         // being reported as failed.
-        sdk.validate_platform_write_permit(&protocol_permit)?;
         match st.broadcast(sdk, None).await {
             Ok(()) => {}
             Err(e) if broadcast_definitely_failed(&e) => {
-                return Err(crate::error::promote_protocol_compatibility_error(&e)
-                    .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string())));
+                return Err(PlatformWalletError::ShieldedBroadcastFailed(e.to_string()));
             }
             Err(e) => {
                 warn!(
@@ -2432,7 +2376,7 @@ where
                 Identity::new_with_id_and_keys(
                     identity_id,
                     submitted_public_keys,
-                    platform_version,
+                    sdk.version(),
                 )
                 .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?
             }
@@ -2852,14 +2796,8 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     let unspent = store
         .get_unspent_notes(id)
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-    let (selected, total_input, exact_fee) = select_notes_with_fee(
-        &unspent,
-        amount,
-        outputs,
-        fee_kind,
-        sdk.platform_version_for_write()?,
-    )?
-    .into_owned();
+    let (selected, total_input, exact_fee) =
+        select_notes_with_fee(&unspent, amount, outputs, fee_kind, sdk.version())?.into_owned();
     for note in &selected {
         store
             .mark_pending(id, &note.nullifier)
@@ -2891,7 +2829,7 @@ async fn reserve_unspent_notes_for_denomination<S: ShieldedStore>(
         denomination,
         min_actions,
         num_keys,
-        sdk.platform_version_for_write()?,
+        sdk.version(),
     )?
     .into_owned();
     for note in &selected {
@@ -3243,16 +3181,10 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
         if !still_active {
             continue;
         }
-        if sdk.ensure_platform_write_compatible().is_err() {
-            continue;
-        }
         // Unused or unverified state permits only the original signed bytes.
         // Even an apparently definitive rejection cannot release the guard:
         // this request, or an earlier relay, may deliver the debit afterward.
         if let Err(e) = state_transition.broadcast(sdk, None).await {
-            if e.protocol_compatibility_error().is_some() {
-                continue;
-            }
             debug!(error = %e, "identity redrive: original payment remains pending");
         }
         bump_redrive_attempts_logged(store, id, &redrive.activity_id).await;
@@ -3322,17 +3254,7 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 continue;
             }
         };
-        if sdk.ensure_platform_write_compatible().is_err() {
-            continue;
-        }
         let broadcast_result = st.broadcast(sdk, None).await;
-        if broadcast_result
-            .as_ref()
-            .err()
-            .is_some_and(|e| e.protocol_compatibility_error().is_some())
-        {
-            continue;
-        }
         let err_display = broadcast_result
             .as_ref()
             .err()
@@ -3454,8 +3376,7 @@ async fn broadcast_shielded_spend(
     match state_transition.broadcast(sdk, None).await {
         Ok(()) => {}
         Err(e) if broadcast_definitely_failed(&e) => {
-            return Err(crate::error::promote_protocol_compatibility_error(&e)
-                .or_else(|| crate::error::promote_address_nonce_error(&e))
+            return Err(crate::error::promote_address_nonce_error(&e)
                 .unwrap_or_else(|| PlatformWalletError::ShieldedBroadcastFailed(e.to_string())));
         }
         Err(e) => {

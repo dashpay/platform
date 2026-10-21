@@ -434,7 +434,7 @@ extension ManagedPlatformWallet {
             startAfter,
             parameter: "startAfter"
         )
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> [DpnsMarketplaceName] in
+        return try await Task.detached(priority: .userInitiated) { () -> [DpnsMarketplaceName] in
             var outPtr: UnsafeMutablePointer<DpnsMarketplaceNameFFI>? = nil
             var outCount: UInt = 0
             let result = prefix.withCString { prefixPtr -> PlatformWalletFFIResult in
@@ -467,7 +467,7 @@ extension ManagedPlatformWallet {
     /// not.
     public func dpnsMarketplaceNameState(name: String) async throws -> DpnsMarketplaceName? {
         let handle = self.handle
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> DpnsMarketplaceName? in
+        return try await Task.detached(priority: .userInitiated) { () -> DpnsMarketplaceName? in
             var outPtr: UnsafeMutablePointer<DpnsMarketplaceNameFFI>? = nil
             let result = name.withCString { namePtr in
                 platform_wallet_dpns_marketplace_name_state(handle, namePtr, &outPtr)
@@ -494,7 +494,7 @@ extension ManagedPlatformWallet {
             identityId,
             parameter: "identityId"
         )
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> [DpnsNameStateRow] in
+        return try await Task.detached(priority: .userInitiated) { () -> [DpnsNameStateRow] in
             var outPtr: UnsafeMutablePointer<DpnsNameStateRowFFI>? = nil
             var outCount: UInt = 0
             let result = Self.withOptionalBytes(idBytes) { idPtr in
@@ -516,7 +516,7 @@ extension ManagedPlatformWallet {
     /// values, so the returned array can be shorter than the FFI's.
     public func dpnsNameHistory(name: String) async throws -> [DpnsNameHistoryEvent] {
         let handle = self.handle
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> [DpnsNameHistoryEvent] in
+        return try await Task.detached(priority: .userInitiated) { () -> [DpnsNameHistoryEvent] in
             var outPtr: UnsafeMutablePointer<DpnsNameHistoryEventFFI>? = nil
             var outCount: UInt = 0
             let result = name.withCString { namePtr in
@@ -554,7 +554,7 @@ extension ManagedPlatformWallet {
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> DpnsMarketplaceName in
+        return try await Task.detached(priority: .userInitiated) { () -> DpnsMarketplaceName in
             var outPtr: UnsafeMutablePointer<DpnsMarketplaceNameFFI>? = nil
             let result = withExtendedLifetime(signer) {
                 ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
@@ -596,7 +596,7 @@ extension ManagedPlatformWallet {
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> DpnsMarketplaceName in
+        return try await Task.detached(priority: .userInitiated) { () -> DpnsMarketplaceName in
             var outPtr: UnsafeMutablePointer<DpnsMarketplaceNameFFI>? = nil
             let result = withExtendedLifetime(signer) {
                 ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
@@ -640,7 +640,7 @@ extension ManagedPlatformWallet {
         let recipientBytes: [UInt8] = recipientId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> DpnsMarketplaceName in
+        return try await Task.detached(priority: .userInitiated) { () -> DpnsMarketplaceName in
             var outPtr: UnsafeMutablePointer<DpnsMarketplaceNameFFI>? = nil
             let result = withExtendedLifetime(signer) {
                 ownerBytes.withUnsafeBufferPointer { ownerBp -> PlatformWalletFFIResult in
@@ -690,7 +690,7 @@ extension ManagedPlatformWallet {
         let purchaserBytes: [UInt8] = purchaserIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> DpnsMarketplaceName in
+        return try await Task.detached(priority: .userInitiated) { () -> DpnsMarketplaceName in
             var outPtr: UnsafeMutablePointer<DpnsMarketplaceNameFFI>? = nil
             let result = withExtendedLifetime(signer) {
                 purchaserBytes.withUnsafeBufferPointer { buyerBp -> PlatformWalletFFIResult in
@@ -722,7 +722,7 @@ extension ManagedPlatformWallet {
     @discardableResult
     public func syncDpnsMarketplace() async throws -> DpnsMarketplaceSyncSummary {
         let handle = self.handle
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             () -> DpnsMarketplaceSyncSummary in
             var ffi = DpnsMarketplaceSyncSummaryFFI()
             try platform_wallet_dpns_marketplace_sync_detailed(handle, &ffi).check()

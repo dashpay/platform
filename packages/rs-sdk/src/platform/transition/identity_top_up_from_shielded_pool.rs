@@ -46,7 +46,6 @@ impl IdentityTopUpFromShieldedPool for Sdk {
         top_up_amount: u64,
         bundle: OrchardBundleParams,
     ) -> Result<StateTransition, Error> {
-        let write_sdk = self.platform_write_context()?;
         let OrchardBundleParams {
             actions,
             anchor,
@@ -61,12 +60,9 @@ impl IdentityTopUpFromShieldedPool for Sdk {
             anchor,
             proof,
             binding_signature,
-            write_sdk.platform_version_for_write()?,
+            self.version(),
         )?;
-        ensure_valid_state_transition_structure(
-            &state_transition,
-            write_sdk.platform_version_for_write()?,
-        )?;
+        ensure_valid_state_transition_structure(&state_transition, self.version())?;
 
         Ok(state_transition)
     }
@@ -78,16 +74,10 @@ impl IdentityTopUpFromShieldedPool for Sdk {
         bundle: OrchardBundleParams,
         settings: Option<PutSettings>,
     ) -> Result<StateTransitionProofResult, Error> {
-        let write_sdk = self.platform_write_context()?;
-        let state_transition = write_sdk.identity_top_up_from_shielded_pool_transition(
-            identity_id,
-            top_up_amount,
-            bundle,
-        )?;
+        let state_transition =
+            self.identity_top_up_from_shielded_pool_transition(identity_id, top_up_amount, bundle)?;
         let proof_result = state_transition
-            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
-                &write_sdk, settings,
-            )
+            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(self, settings)
             .await?;
         Ok(proof_result)
     }

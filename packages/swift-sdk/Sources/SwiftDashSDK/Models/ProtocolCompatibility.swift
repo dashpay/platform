@@ -1,22 +1,16 @@
 import Foundation
 
-/// Opt-in write policy enforced by the shared Rust SDK.
-public enum ProtocolCompatibilityPolicy: UInt32, Sendable {
-    case legacy = 0
-    case requireVerified = 1
-}
-
-/// A snapshot of Rust's verified protocol compatibility state.
+/// An informational snapshot of Rust's verified protocol observations.
 ///
 /// `effectiveProtocolVersion` is the supported table used by this SDK.
-/// `verifiedProtocolVersion` is authenticated network evidence, which can
-/// exceed that table. Only `status` describes write readiness.
+/// `verifiedProtocolVersion` is the highest accepted verified network version
+/// observed by this SDK, retained even when a later check fails. `status` describes only
+/// the latest check; it never grants or denies permission to write.
 public struct ProtocolCompatibility: Codable, Equatable, Sendable {
     public enum Status: String, Codable, Sendable {
         case unavailable
         case checking
-        case supported
-        case unsupported
+        case checked
     }
 
     public enum UnavailableReason: String, Codable, Sendable {
@@ -33,6 +27,12 @@ public struct ProtocolCompatibility: Codable, Equatable, Sendable {
     public let maximumSupportedProtocolVersion: UInt32
     public let unavailableReason: UnavailableReason?
 
+    /// True only when authenticated evidence exceeds this SDK's supported tables.
+    public var newerProtocolAvailable: Bool {
+        guard let verifiedProtocolVersion else { return false }
+        return verifiedProtocolVersion > maximumSupportedProtocolVersion
+    }
+
     public init(
         generation: UInt64,
         status: Status,
@@ -47,19 +47,5 @@ public struct ProtocolCompatibility: Codable, Equatable, Sendable {
         self.effectiveProtocolVersion = effectiveProtocolVersion
         self.maximumSupportedProtocolVersion = maximumSupportedProtocolVersion
         self.unavailableReason = unavailableReason
-    }
-}
-
-/// Rust-issued context for work prepared against a particular SDK and check.
-/// Retain it with a preparation and ask Rust to validate it before use.
-public struct PlatformWritePermit: Codable, Equatable, Sendable {
-    public let instanceID: UInt64
-    public let generation: UInt64
-    public let protocolVersion: UInt32
-
-    public init(instanceID: UInt64, generation: UInt64, protocolVersion: UInt32) {
-        self.instanceID = instanceID
-        self.generation = generation
-        self.protocolVersion = protocolVersion
     }
 }

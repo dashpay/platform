@@ -144,7 +144,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::document::Document;
         use dpp::document::DocumentV0;
@@ -276,7 +275,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::document::Document;
         use dpp::document::DocumentV0;

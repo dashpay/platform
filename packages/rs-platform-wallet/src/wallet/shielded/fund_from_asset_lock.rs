@@ -41,7 +41,7 @@ use std::time::Duration;
 
 use crate::error::is_instant_lock_proof_invalid;
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, submit_with_cl_height_retry_guarded, AssetLockFunding, FundingResolution,
+    out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
     ResolvedFunding,
 };
 use crate::wallet::PlatformWallet;
@@ -145,7 +145,6 @@ impl PlatformWallet {
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
         P: OrchardProver,
     {
-        let protocol_permit = self.sdk.platform_write_permit()?;
         // On-wire Orchard action count = max(1 real + dummy_outputs, 2). Consensus
         // prices the flat shielded fee from this count, so the wallet's fee
         // reservation below is derived from the SAME value (any mismatch is rejected).
@@ -228,7 +227,6 @@ impl PlatformWallet {
         // derivation, and `manager/accessors.rs` for the
         // persistence/UI tag (`fundingTypeRaw == 5`).
         // `destination_index = 0` is unused for this funding type.
-        self.sdk.validate_platform_write_permit(&protocol_permit)?;
         let ResolvedFunding {
             proof,
             path,
@@ -377,72 +375,64 @@ impl PlatformWallet {
         // bundle, so only the landed attempt's actions are the ones a
         // later scan will recover; `build_and_broadcast_shielded` returns
         // them on success.
-        let (submit_result, effective_proof) =
-            match submit_with_cl_height_retry_guarded(&self.sdk, &protocol_permit, settings, |s| {
-                build_and_broadcast_shielded(
-                    sdk.clone(),
-                    &protocol_permit,
-                    recipient,
-                    shield_amount,
-                    proof.clone(),
-                    path.clone(),
-                    asset_lock_signer,
-                    &prover,
-                    sender_ovk.clone(),
-                    surplus_output,
-                    dummy_outputs,
-                    s,
-                )
-            })
-            .await
-            {
-                Ok(actions) => (Ok(actions), proof.clone()),
-                Err(e) if is_instant_lock_proof_invalid(&e) => {
-                    let out_point = proof_out_point;
-                    tracing::warn!(
-                        "IS-lock proof rejected by Platform for shielded fund-from-asset-lock \
+        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
+            build_and_broadcast_shielded(
+                sdk.clone(),
+                recipient,
+                shield_amount,
+                proof.clone(),
+                path.clone(),
+                asset_lock_signer,
+                &prover,
+                sender_ovk.clone(),
+                surplus_output,
+                dummy_outputs,
+                s,
+            )
+        })
+        .await
+        {
+            Ok(actions) => (Ok(actions), proof.clone()),
+            Err(e) if is_instant_lock_proof_invalid(&e) => {
+                let out_point = proof_out_point;
+                tracing::warn!(
+                    "IS-lock proof rejected by Platform for shielded fund-from-asset-lock \
                      (tx {}), retrying with ChainLock proof",
-                        out_point.txid
-                    );
-                    let chain_proof = self
-                        .asset_locks
-                        .upgrade_to_chain_lock_proof(&out_point, cl_wait)
-                        .await?;
-                    let cs = self
-                        .asset_locks
-                        .advance_asset_lock_status(
-                            &out_point,
-                            crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
-                            Some(chain_proof.clone()),
-                        )
-                        .await?;
-                    self.asset_locks.queue_asset_lock_changeset(cs);
-                    let submit_result = submit_with_cl_height_retry_guarded(
-                        &self.sdk,
-                        &protocol_permit,
-                        settings,
-                        |s| {
-                            build_and_broadcast_shielded(
-                                sdk.clone(),
-                                &protocol_permit,
-                                recipient,
-                                shield_amount,
-                                chain_proof.clone(),
-                                path.clone(),
-                                asset_lock_signer,
-                                &prover,
-                                sender_ovk.clone(),
-                                surplus_output,
-                                dummy_outputs,
-                                s,
-                            )
-                        },
+                    out_point.txid
+                );
+                let chain_proof = self
+                    .asset_locks
+                    .upgrade_to_chain_lock_proof(&out_point, cl_wait)
+                    .await?;
+                let cs = self
+                    .asset_locks
+                    .advance_asset_lock_status(
+                        &out_point,
+                        crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
+                        Some(chain_proof.clone()),
                     )
-                    .await;
-                    (submit_result, chain_proof)
-                }
-                Err(e) => (Err(e), proof.clone()),
-            };
+                    .await?;
+                self.asset_locks.queue_asset_lock_changeset(cs);
+                let submit_result = submit_with_cl_height_retry(settings, |s| {
+                    build_and_broadcast_shielded(
+                        sdk.clone(),
+                        recipient,
+                        shield_amount,
+                        chain_proof.clone(),
+                        path.clone(),
+                        asset_lock_signer,
+                        &prover,
+                        sender_ovk.clone(),
+                        surplus_output,
+                        dummy_outputs,
+                        s,
+                    )
+                })
+                .await;
+                (submit_result, chain_proof)
+            }
+            Err(e) => (Err(e), proof.clone()),
+        };
 
         // Whichever proof was submitted, a persisted Chain proof Platform
         // places the transaction outside of must come off the row — including
@@ -541,7 +531,7 @@ impl PlatformWallet {
         &self,
         num_actions: usize,
     ) -> Result<Credits, PlatformWalletError> {
-        let pv = self.sdk.platform_version_for_write()?;
+        let pv = self.sdk.version();
         let albc_duffs = pv
             .dpp
             .state_transitions
@@ -716,7 +706,6 @@ async fn lookup_asset_lock_value_credits(
 #[allow(clippy::too_many_arguments)]
 async fn build_and_broadcast_shielded<AS, P>(
     sdk: std::sync::Arc<dash_sdk::Sdk>,
-    protocol_permit: &dash_sdk::PlatformWritePermit,
     recipient: OrchardAddress,
     shield_amount: Credits,
     proof: AssetLockProof,
@@ -746,7 +735,7 @@ where
         sender_ovk,
         surplus_output,
         dummy_outputs,
-        sdk.platform_version_for_write()?,
+        sdk.version(),
     )
     .await?;
 
@@ -763,7 +752,6 @@ where
     // cannot bind this exact Orchard request, so the outcome is an
     // affected-state snapshot; a consensus rejection still surfaces as
     // an error on this wait.
-    sdk.validate_platform_write_permit(protocol_permit)?;
     st.broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(&sdk, settings)
         .await?;
     Ok(actions)

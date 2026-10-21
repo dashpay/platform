@@ -1688,7 +1688,7 @@ impl PlatformWallet {
             })
             .collect();
 
-        let platform_version = self.sdk.platform_version_for_write()?;
+        let platform_version = self.sdk.version();
         let state_transition_version = &platform_version.dpp.state_transitions;
         plan_shield_inputs(
             candidates,

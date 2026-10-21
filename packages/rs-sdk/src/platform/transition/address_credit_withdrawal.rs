@@ -89,7 +89,6 @@ impl<S: Signer<PlatformAddress>> WithdrawAddressFunds<S> for Sdk {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(AddressInfos, u64), Error> {
-        let write_sdk = self.platform_write_context()?;
         let user_fee_increase = settings
             .as_ref()
             .and_then(|settings| settings.user_fee_increase)
@@ -104,19 +103,16 @@ impl<S: Signer<PlatformAddress>> WithdrawAddressFunds<S> for Sdk {
             output_script,
             signer,
             user_fee_increase,
-            write_sdk.platform_version_for_write()?,
+            self.version(),
         )
         .await?;
-        ensure_valid_state_transition_structure(
-            &state_transition,
-            write_sdk.platform_version_for_write()?,
-        )?;
+        ensure_valid_state_transition_structure(&state_transition, self.version())?;
 
         // `metadata.height` is the proof's committed block — the height
         // pin for these absolutes (`AddressFunds::as_of_height`).
         let (st_result, metadata) = state_transition
             .broadcast_and_wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
-                &write_sdk, settings,
+                self, settings,
             )
             .await?;
         match st_result {

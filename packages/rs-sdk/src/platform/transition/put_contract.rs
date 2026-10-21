@@ -48,7 +48,6 @@ impl<S: Signer<IdentityPublicKey>> PutContract<S> for DataContract {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        let sdk = &sdk.platform_write_context()?;
         let new_identity_nonce = sdk
             .get_identity_nonce(self.owner_id(), true, settings)
             .await?;
@@ -68,11 +67,11 @@ impl<S: Signer<IdentityPublicKey>> PutContract<S> for DataContract {
             &partial_identity,
             key_id,
             signer,
-            sdk.platform_version_for_write()?,
+            sdk.version(),
             None,
         )
         .await?;
-        ensure_valid_state_transition_structure(&transition, sdk.platform_version_for_write()?)?;
+        ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
         transition.broadcast(sdk, settings).await?;
         // response is empty for a broadcast, result comes from the stream wait for state transition result

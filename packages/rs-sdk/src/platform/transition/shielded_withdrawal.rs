@@ -37,7 +37,6 @@ impl WithdrawShielded for Sdk {
         output_script: CoreScript,
         settings: Option<PutSettings>,
     ) -> Result<(), Error> {
-        let write_sdk = self.platform_write_context()?;
         let OrchardBundleParams {
             actions,
             anchor,
@@ -54,14 +53,11 @@ impl WithdrawShielded for Sdk {
             core_fee_per_byte,
             pooling,
             output_script,
-            write_sdk.platform_version_for_write()?,
+            self.version(),
         )?;
-        ensure_valid_state_transition_structure(
-            &state_transition,
-            write_sdk.platform_version_for_write()?,
-        )?;
+        ensure_valid_state_transition_structure(&state_transition, self.version())?;
 
-        state_transition.broadcast(&write_sdk, settings).await?;
+        state_transition.broadcast(self, settings).await?;
         Ok(())
     }
 }

@@ -1,6 +1,5 @@
 //! Definitions of errors
 use crate::platform::encrypted_for::EncryptedForError;
-use crate::ProtocolCompatibilityError;
 use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBroadcastErrorProto;
 use dapi_grpc::tonic::Code;
 pub use dash_context_provider::ContextProviderError;
@@ -25,13 +24,6 @@ use std::time::Duration;
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// Opt-in write readiness or preparation validity failure.
-    #[error(transparent)]
-    ProtocolCompatibility(#[from] ProtocolCompatibilityError),
-    /// Compatibility stopped retries after a transport dispatch. The earlier
-    /// attempt may have executed; retain spend reservations and recovery data.
-    #[error("Platform broadcast outcome is unknown; compatibility stopped retries: {0}")]
-    ProtocolCompatibilityAfterBroadcast(#[source] ProtocolCompatibilityError),
     /// SDK is not configured properly
     #[error("SDK misconfigured: {0}")]
     Config(String),
@@ -147,28 +139,6 @@ pub enum Error {
 }
 
 impl Error {
-    /// Identify definitive pre-dispatch compatibility refusals, including
-    /// retry envelopes. Deliberately excludes `ProtocolCompatibilityAfterBroadcast`:
-    /// that error must not release possibly-spent reservations.
-    pub fn protocol_compatibility_error(&self) -> Option<&ProtocolCompatibilityError> {
-        match self {
-            Self::ProtocolCompatibility(error) => Some(error),
-            Self::NoAvailableAddressesToRetry(error) => error.protocol_compatibility_error(),
-            _ => None,
-        }
-    }
-
-    /// Compatibility interrupted retries after an attempt may have executed.
-    pub fn is_protocol_compatibility_after_broadcast(&self) -> bool {
-        match self {
-            Self::ProtocolCompatibilityAfterBroadcast(_) => true,
-            Self::NoAvailableAddressesToRetry(error) => {
-                error.is_protocol_compatibility_after_broadcast()
-            }
-            _ => false,
-        }
-    }
-
     /// Whether this error is a trusted quorum-source failure, looking through
     /// nested retry-exhaustion wrappers. This is distinct from
     /// [`CanRetry::can_retry`] and does not affect node-ban attribution.

@@ -75,7 +75,6 @@ impl TopUpIdentity for Identity {
         asset_lock_proof_private_key: &PrivateKey,
         settings: Option<PutSettings>,
     ) -> Result<u64, Error> {
-        let sdk = &sdk.platform_write_context()?;
         let user_fee_increase = settings
             .and_then(|s| s.user_fee_increase)
             .unwrap_or_default();
@@ -84,13 +83,10 @@ impl TopUpIdentity for Identity {
             asset_lock_proof,
             asset_lock_proof_private_key.inner.as_ref(),
             user_fee_increase,
-            sdk.platform_version_for_write()?,
+            sdk.version(),
             None,
         )?;
-        ensure_valid_state_transition_structure(
-            &state_transition,
-            sdk.platform_version_for_write()?,
-        )?;
+        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
         let identity: PartialIdentity = state_transition
             .broadcast_and_wait_for_affected_state(sdk, settings)
             .await?;
@@ -138,7 +134,6 @@ impl TopUpIdentityWithMetadata for Identity {
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
-        let sdk = &sdk.platform_write_context()?;
         let user_fee_increase = settings
             .and_then(|s| s.user_fee_increase)
             .unwrap_or_default();
@@ -148,14 +143,11 @@ impl TopUpIdentityWithMetadata for Identity {
             asset_lock_proof_path,
             asset_lock_signer,
             user_fee_increase,
-            sdk.platform_version_for_write()?,
+            sdk.version(),
             None,
         )
         .await?;
-        ensure_valid_state_transition_structure(
-            &state_transition,
-            sdk.platform_version_for_write()?,
-        )?;
+        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
         let (identity, metadata): (PartialIdentity, _) = state_transition
             .broadcast_and_wait_for_affected_state_with_metadata(sdk, settings)
             .await?;

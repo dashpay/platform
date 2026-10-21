@@ -88,10 +88,8 @@ pub mod sdk;
 
 pub use error::Error;
 pub use sdk::{
-    with_platform_write_permit, with_platform_write_permits, PlatformWritePermit,
-    ProtocolCompatibility, ProtocolCompatibilityError, ProtocolCompatibilityPolicy,
-    ProtocolCompatibilityState, ProtocolCompatibilityUnavailableReason, RequestSettings, Sdk,
-    SdkBuilder,
+    ProtocolCompatibility, ProtocolCompatibilityState, ProtocolCompatibilityUnavailableReason,
+    RequestSettings, Sdk, SdkBuilder,
 };
 
 pub use dapi_grpc;

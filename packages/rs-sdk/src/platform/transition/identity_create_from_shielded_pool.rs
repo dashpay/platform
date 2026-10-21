@@ -71,7 +71,6 @@ impl IdentityCreateFromShieldedPool for Sdk {
         send_to_address_on_creation_failure: PlatformAddress,
         bundle: OrchardBundleParams,
     ) -> Result<StateTransition, Error> {
-        let write_sdk = self.platform_write_context()?;
         let OrchardBundleParams {
             actions,
             anchor,
@@ -87,12 +86,9 @@ impl IdentityCreateFromShieldedPool for Sdk {
             anchor,
             proof,
             binding_signature,
-            write_sdk.platform_version_for_write()?,
+            self.version(),
         )?;
-        ensure_valid_state_transition_structure(
-            &state_transition,
-            write_sdk.platform_version_for_write()?,
-        )?;
+        ensure_valid_state_transition_structure(&state_transition, self.version())?;
 
         Ok(state_transition)
     }
@@ -105,7 +101,6 @@ impl IdentityCreateFromShieldedPool for Sdk {
         bundle: OrchardBundleParams,
         settings: Option<PutSettings>,
     ) -> Result<StateTransitionProofResult, Error> {
-        let write_sdk = self.platform_write_context()?;
         // Build + structurally validate via the shared builder, then wait for proven inclusion
         // (parity with `unshield`/`shielded_transfer`/`withdraw`), so the wallet's post-broadcast
         // `finalize_pending` only runs once the spend is proven — a Platform-level rejection after
@@ -113,16 +108,14 @@ impl IdentityCreateFromShieldedPool for Sdk {
         // distinguish broadcast-time from post-broadcast failures should instead drive the two
         // `BroadcastStateTransition` stages themselves off the transition returned by
         // `identity_create_from_shielded_pool_transition`.
-        let state_transition = write_sdk.identity_create_from_shielded_pool_transition(
+        let state_transition = self.identity_create_from_shielded_pool_transition(
             public_keys,
             denomination,
             send_to_address_on_creation_failure,
             bundle,
         )?;
         let proof_result = state_transition
-            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
-                &write_sdk, settings,
-            )
+            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(self, settings)
             .await?;
         Ok(proof_result)
     }

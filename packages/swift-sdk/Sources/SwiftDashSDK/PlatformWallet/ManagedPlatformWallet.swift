@@ -33,7 +33,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         guard identityId.count == 32 else {
             throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { [self] in
+        return try await Task.detached(priority: .userInitiated) { [self] in
             try withExtendedLifetime(self) {
                 var balance: UInt64 = 0
                 let result = identityId.withUnsafeBytes { bytes in
@@ -399,7 +399,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         let identitySignerHandle = identitySigner.handle
         let addressSignerHandle = addressSigner.handle
 
-        let (idData, identityHandle): (Data, Handle) = try await PlatformWalletTask.detached(
+        let (idData, identityHandle): (Data, Handle) = try await Task.detached(
             priority: .userInitiated
         ) { () -> (Data, Handle) in
             // Keepalive — KeychainSigner now uses
@@ -597,7 +597,7 @@ public final class ManagedPlatformWallet: @unchecked Sendable {
         let handle = self.handle
         let addressSignerHandle = addressSigner.handle
 
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> UInt64 in
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
             // Keepalive — see `registerIdentityFromAddresses` for
             // rationale. The trampoline ctx pointer dangles unless
             // the Swift owner stays alive across this detached work.
@@ -1567,7 +1567,7 @@ extension ManagedPlatformWallet {
         // `passUnretained` pointer — see the type's "Lifetime
         // contract").
         let resolver = MnemonicResolver(storage: storage)
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             () -> [Identifier] in
             try withExtendedLifetime(resolver) {
                 var found = DiscoveredIdentityIdsFFI()
@@ -1647,7 +1647,7 @@ extension ManagedPlatformWallet {
         // `passUnretained` pointer — see the type's "Lifetime
         // contract").
         let resolver = MnemonicResolver(storage: storage)
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             () -> Identifier? in
             try withExtendedLifetime(resolver) {
                 var found = false
@@ -1739,7 +1739,7 @@ extension ManagedPlatformWallet {
         }
         // `0` asks the Rust side for the current fund to join.
         let contestFund = maxContestFund ?? 0
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> String in
+        return try await Task.detached(priority: .userInitiated) { () -> String in
             _ = signer
             var outPtr: UnsafeMutablePointer<CChar>? = nil
             let result = idBytes.withUnsafeBufferPointer { idBp in
@@ -1769,7 +1769,7 @@ extension ManagedPlatformWallet {
     /// identity id. Returns `nil` when the name is unregistered.
     public func resolveDpnsName(_ name: String) async throws -> Identifier? {
         let handle = self.handle
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> Identifier? in
+        return try await Task.detached(priority: .userInitiated) { () -> Identifier? in
             var buf = [UInt8](repeating: 0, count: 32)
             var found = false
             let result = buf.withUnsafeMutableBufferPointer { bp -> PlatformWalletFFIResult in
@@ -1796,7 +1796,7 @@ extension ManagedPlatformWallet {
         limit: UInt32 = 0
     ) async throws -> [DpnsSearchResult] {
         let handle = self.handle
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> [DpnsSearchResult] in
+        return try await Task.detached(priority: .userInitiated) { () -> [DpnsSearchResult] in
             var outPtr: UnsafeMutablePointer<DpnsSearchResultFFI>? = nil
             var outCount: UInt = 0
             let result = prefix.withCString { prefixPtr in
@@ -1846,7 +1846,7 @@ extension ManagedPlatformWallet {
         let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> UInt32 in
+        return try await Task.detached(priority: .userInitiated) { () -> UInt32 in
             var added: UInt32 = 0
             let result = idBytes.withUnsafeBufferPointer { bp in
                 platform_wallet_sync_dpns_names(handle, bp.baseAddress!, &added)
@@ -1875,7 +1875,7 @@ extension ManagedPlatformWallet {
         let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             () -> ContestVoteState? in
             var state = ContestVoteStateFFI()
             var found = false
@@ -1914,7 +1914,7 @@ extension ManagedPlatformWallet {
         let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> UInt32 in
+        return try await Task.detached(priority: .userInitiated) { () -> UInt32 in
             var count: UInt32 = 0
             let result = idBytes.withUnsafeBufferPointer { bp in
                 platform_wallet_sync_contested_dpns_names(
@@ -1960,7 +1960,7 @@ extension ManagedPlatformWallet {
     @discardableResult
     public func syncContactRequests() async throws -> [ContactRequest] {
         let handle = self.handle
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> [ContactRequest] in
+        return try await Task.detached(priority: .userInitiated) { () -> [ContactRequest] in
             var array = ContactRequestHandleArray()
             let result = platform_wallet_sync_contact_requests(handle, &array)
             try result.check()
@@ -2013,7 +2013,7 @@ extension ManagedPlatformWallet {
         let accountLabel = accountLabel
         let autoAcceptProof = autoAcceptProof
 
-        let requestHandle: Handle = try await PlatformWalletTask.detached(priority: .userInitiated) {
+        let requestHandle: Handle = try await Task.detached(priority: .userInitiated) {
             () -> Handle in
             var outHandle: Handle = NULL_HANDLE
             // `withExtendedLifetime` keeps both the document signer and the
@@ -2087,7 +2087,7 @@ extension ManagedPlatformWallet {
         let ownerBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> String in
+        return try await Task.detached(priority: .userInitiated) { () -> String in
             var outURI: UnsafeMutablePointer<CChar>?
             let result: PlatformWalletFFIResult = withExtendedLifetime(coreSigner) {
                 ownerBytes.withUnsafeBufferPointer { ownerBp in
@@ -2127,7 +2127,7 @@ extension ManagedPlatformWallet {
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
 
-        let requestHandle: Handle = try await PlatformWalletTask.detached(priority: .userInitiated) {
+        let requestHandle: Handle = try await Task.detached(priority: .userInitiated) {
             () -> Handle in
             var outHandle: Handle = NULL_HANDLE
             let result: PlatformWalletFFIResult = withExtendedLifetime((signer, coreSigner)) {
@@ -2241,7 +2241,7 @@ extension ManagedPlatformWallet {
             id.withFFIBytes { ptr in Array(UnsafeBufferPointer(start: ptr, count: 32)) }
         }
         let username = inviterUsername
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> String in
+        return try await Task.detached(priority: .userInitiated) { () -> String in
             var outURI: UnsafeMutablePointer<CChar>?
             // `out_outpoint` is required by the FFI but the funding outpoint is
             // not surfaced through this wrapper (the persistence layer tracks it
@@ -2316,7 +2316,7 @@ extension ManagedPlatformWallet {
         let handle = self.handle
         let signerHandle = signer.handle
         let pubkeys = identityPubkeys
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> ManagedIdentity in
+        return try await Task.detached(priority: .userInitiated) { () -> ManagedIdentity in
             var idTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -2378,7 +2378,7 @@ extension ManagedPlatformWallet {
     /// "proceed", never as an answer either way.
     public func invitationProspectiveIdentityId(uri: String) async throws -> Data {
         let handle = self.handle
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> Data in
+        return try await Task.detached(priority: .userInitiated) { () -> Data in
             var idTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -2448,7 +2448,7 @@ extension ManagedPlatformWallet {
         // (ECDH + external-account registration) is derived through the Keychain
         // mnemonic resolver Rust-side, so no resident seed is needed.
         let coreSigner = MnemonicResolver()
-        let establishedHandle: Handle = try await PlatformWalletTask.detached(
+        let establishedHandle: Handle = try await Task.detached(
             priority: .userInitiated
         ) { () -> Handle in
             var outHandle: Handle = NULL_HANDLE
@@ -2487,7 +2487,7 @@ extension ManagedPlatformWallet {
         let contactBytes: [UInt8] = contactIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        try await PlatformWalletTask.detached(priority: .userInitiated) {
+        try await Task.detached(priority: .userInitiated) {
             let result = ourBytes.withUnsafeBufferPointer {
                 ourBp -> PlatformWalletFFIResult in
                 contactBytes.withUnsafeBufferPointer { contactBp in
@@ -2519,7 +2519,7 @@ extension ManagedPlatformWallet {
         let contactBytes: [UInt8] = contactIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        try await PlatformWalletTask.detached(priority: .userInitiated) {
+        try await Task.detached(priority: .userInitiated) {
             let result = ourBytes.withUnsafeBufferPointer {
                 ourBp -> PlatformWalletFFIResult in
                 contactBytes.withUnsafeBufferPointer { contactBp in
@@ -2542,7 +2542,7 @@ extension ManagedPlatformWallet {
         let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> [ContactRequest] in
+        return try await Task.detached(priority: .userInitiated) { () -> [ContactRequest] in
             var array = ContactRequestHandleArray(handles: nil, count: 0)
             let result = idBytes.withUnsafeBufferPointer { idBp in
                 platform_wallet_fetch_sent_contact_requests(
@@ -2598,7 +2598,7 @@ extension ManagedPlatformWallet {
         // derived, digest signed, buffers zeroed) — the seed never becomes
         // resident and no private key leaves Swift.
         let coreSigner = MnemonicResolver()
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> (txid: Data, feeDuffs: UInt64) in
+        return try await Task.detached(priority: .userInitiated) { () -> (txid: Data, feeDuffs: UInt64) in
             var feeDuffs: UInt64 = 0
             var txidTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -2741,7 +2741,7 @@ extension ManagedPlatformWallet {
     @discardableResult
     public func syncDashPayProfiles() async throws -> UInt32 {
         let handle = self.handle
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> UInt32 in
+        return try await Task.detached(priority: .userInitiated) { () -> UInt32 in
             var syncedCount: UInt32 = 0
             let result = platform_wallet_sync_dashpay_profiles(
                 handle,
@@ -2806,7 +2806,7 @@ extension ManagedPlatformWallet {
         let avatarUrl = update.avatarUrl
         let avatarBytes = update.avatarBytes
 
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> DashPayProfile in
+        return try await Task.detached(priority: .userInitiated) { () -> DashPayProfile in
             var outProfile = DashPayProfileFFI()
 
             // Pin the KeychainSigner across the whole synchronous FFI call:
@@ -2908,7 +2908,7 @@ extension ManagedPlatformWallet {
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
 
-        let outcomeRaw: UInt8 = try await PlatformWalletTask.detached(priority: .userInitiated) {
+        let outcomeRaw: UInt8 = try await Task.detached(priority: .userInitiated) {
             var outcomeRaw: UInt8 = 0
             // Keep both signers alive across the FFI call (vtable callbacks fire
             // during it); a bare `_ = ...` lets the optimizer drop them.
@@ -3136,7 +3136,7 @@ extension ManagedPlatformWallet {
         let toBytes: [UInt8] = toIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        try await PlatformWalletTask.detached(priority: .userInitiated) {
+        try await Task.detached(priority: .userInitiated) {
             _ = signer
             let result = fromBytes.withUnsafeBufferPointer { fromBp -> PlatformWalletFFIResult in
                 toBytes.withUnsafeBufferPointer { toBp in
@@ -3200,7 +3200,7 @@ extension ManagedPlatformWallet {
             )
         }
         let rows = ffiRows
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> UInt64 in
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
             _ = signer
             var newBalance: UInt64 = 0
             let result = fromBytes.withUnsafeBufferPointer {
@@ -3235,7 +3235,7 @@ extension ManagedPlatformWallet {
         let idBytes: [UInt8] = identityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        try await PlatformWalletTask.detached(priority: .userInitiated) {
+        try await Task.detached(priority: .userInitiated) {
             _ = signer
             let result = idBytes.withUnsafeBufferPointer {
                 idBp -> PlatformWalletFFIResult in
@@ -3276,7 +3276,7 @@ extension ManagedPlatformWallet {
         }
         let addPubkeys = addPublicKeys
         let disableIds = disablePublicKeyIds
-        try await PlatformWalletTask.detached(priority: .userInitiated) {
+        try await Task.detached(priority: .userInitiated) {
             _ = signer
             // Mirror the registration FFI's pubkey-pinning pattern via
             // `withPubkeyFFIArray` so each `pubkey_bytes` pointer the
@@ -3352,7 +3352,7 @@ extension ManagedPlatformWallet {
         }
         let budgetToAdd = addBudget
         let newExpiresAt = expiresAt
-        try await PlatformWalletTask.detached(priority: .userInitiated) {
+        try await Task.detached(priority: .userInitiated) {
             _ = signer
             let result = idBytes.withUnsafeBufferPointer {
                 idBp -> PlatformWalletFFIResult in
@@ -3635,7 +3635,7 @@ extension ManagedPlatformWallet {
         let idBytes: [UInt8] = ownerIdentityId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             // Pin every borrowed payload across the FFI call: the
             // owner-id bytes, the required documents string, and
             // each optional JSON / description string. The Rust
@@ -3716,7 +3716,7 @@ extension ManagedPlatformWallet {
         let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             // Pin every borrowed payload across the FFI call: the
             // owner-id + contract-id bytes, the required documents
             // string, and each optional JSON / description string.
@@ -3827,7 +3827,7 @@ extension ManagedPlatformWallet {
         let contractBytes: [UInt8] = contractId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             // Pin every borrowed payload across the FFI call: the
             // owner-id + contract-id bytes, the document-type name,
             // and the properties JSON. Rust dereferences the
@@ -3931,7 +3931,7 @@ extension ManagedPlatformWallet {
         let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             var documentIdBytes = [UInt8](repeating: 0, count: 32)
             var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
 
@@ -4005,7 +4005,7 @@ extension ManagedPlatformWallet {
         let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             var documentIdBytes = [UInt8](repeating: 0, count: 32)
 
             let result = withExtendedLifetime(signer) {
@@ -4071,7 +4071,7 @@ extension ManagedPlatformWallet {
         let recipientBytes: [UInt8] = recipientId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             var documentIdBytes = [UInt8](repeating: 0, count: 32)
             var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
 
@@ -4146,7 +4146,7 @@ extension ManagedPlatformWallet {
         let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             var documentIdBytes = [UInt8](repeating: 0, count: 32)
             var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
 
@@ -4220,7 +4220,7 @@ extension ManagedPlatformWallet {
         let documentBytes: [UInt8] = documentId.withFFIBytes { ptr in
             Array(UnsafeBufferPointer(start: ptr, count: 32))
         }
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             var documentIdBytes = [UInt8](repeating: 0, count: 32)
             var documentJsonPtr: UnsafeMutablePointer<CChar>? = nil
 
@@ -4317,7 +4317,7 @@ extension ManagedPlatformWallet {
         // signs the digest, and zeroes — atomic per call. No priv
         // key ever lives in Rust memory across operations.
         let coreSigner = MnemonicResolver()
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             () -> (Identifier, ManagedIdentity) in
             var idTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -4432,7 +4432,7 @@ extension ManagedPlatformWallet {
         // is fetched per-call from Keychain, signed, zeroed; no priv
         // key ever lives in Rust memory across operations.
         let coreSigner = MnemonicResolver()
-        return try await PlatformWalletTask.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             () -> (Identifier, ManagedIdentity) in
             var idTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -4537,7 +4537,7 @@ extension ManagedPlatformWallet {
         // signed, and zeroed — no private key ever lives in Rust memory
         // across operations.
         let coreSigner = MnemonicResolver()
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> UInt64 in
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
             var idTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -4619,7 +4619,7 @@ extension ManagedPlatformWallet {
         let handle = self.handle
         // Same `MnemonicResolver` rationale as `topUpIdentityWithFunding`.
         let coreSigner = MnemonicResolver()
-        return try await PlatformWalletTask.detached(priority: .userInitiated) { () -> UInt64 in
+        return try await Task.detached(priority: .userInitiated) { () -> UInt64 in
             var idTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,

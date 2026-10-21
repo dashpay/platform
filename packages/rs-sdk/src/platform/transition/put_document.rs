@@ -96,14 +96,12 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        let sdk = &sdk.platform_write_context()?;
         // A local failure after the nonce is reserved would leave the cached nonce ahead of
         // Platform's, so what can be refused without it is refused first.
         let creation_options =
             settings.and_then(|settings| settings.state_transition_creation_options);
         if let Some(creation_options) = creation_options {
-            creation_options
-                .validate_base_carries_action_fee_agreement(sdk.platform_version_for_write()?)?;
+            creation_options.validate_base_carries_action_fee_agreement(sdk.version())?;
         }
 
         let document = prepare_document_for_transition(self, &document_type);
@@ -137,7 +135,7 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
                 settings.user_fee_increase.unwrap_or_default(),
                 token_payment_info,
                 signer,
-                sdk.platform_version_for_write()?,
+                sdk.version(),
                 creation_options,
             )
             .await?
@@ -152,9 +150,7 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
                         // (no wasted nonce/fee). Once the id also commits to the identity
                         // contract nonce, the id the caller set is only a placeholder and
                         // the transition is built with the id derived below.
-                        if !Document::document_id_depends_on_nonce(
-                            sdk.platform_version_for_write()?,
-                        )? {
+                        if !Document::document_id_depends_on_nonce(sdk.version())? {
                             ensure_entropy_matches_document_id(
                                 &document_type.data_contract_id(),
                                 &document.owner_id(),
@@ -175,7 +171,7 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
                             document_type.name(),
                             entropy.as_slice(),
                             new_identity_contract_nonce,
-                            sdk.platform_version_for_write()?,
+                            sdk.version(),
                         )?);
                         (document, entropy)
                     }
@@ -189,12 +185,12 @@ impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
                 settings.user_fee_increase.unwrap_or_default(),
                 token_payment_info,
                 signer,
-                sdk.platform_version_for_write()?,
+                sdk.version(),
                 creation_options,
             )
             .await?
         };
-        ensure_valid_state_transition_structure(&transition, sdk.platform_version_for_write()?)?;
+        ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
         transition.broadcast(sdk, Some(settings)).await?;

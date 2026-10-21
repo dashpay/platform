@@ -52,17 +52,12 @@ impl Sdk {
         document_type: DocumentTypeRef<'_>,
         document: &Document,
     ) -> Result<Option<(String, Credits)>, Error> {
-        let write_sdk = self.platform_write_context()?;
-        let sdk = &write_sdk;
         // The contest is resolved on the document the transition builder sends, with every
         // `generatedFrom` property generated from its params as the platform generates it
         let mut document = document.clone();
-        document_type.regenerate_generated_properties(
-            document.properties_mut(),
-            sdk.platform_version_for_write()?,
-        )?;
-        let Some(VotePoll::ContestedDocumentResourceVotePoll(vote_poll)) = document_type
-            .contested_vote_poll_for_document(&document, sdk.platform_version_for_write()?)?
+        document_type.regenerate_generated_properties(document.properties_mut(), self.version())?;
+        let Some(VotePoll::ContestedDocumentResourceVotePoll(vote_poll)) =
+            document_type.contested_vote_poll_for_document(&document, self.version())?
         else {
             return Ok(None);
         };
@@ -71,7 +66,7 @@ impl Sdk {
         let mut start_at = None;
         loop {
             let page = ContenderWithSerializedDocument::fetch_many(
-                sdk,
+                self,
                 ContestedDocumentVotePollDriveQuery {
                     vote_poll: vote_poll.clone(),
                     result_type: ContestedDocumentVotePollDriveQueryResultType::VoteTally,
@@ -86,10 +81,7 @@ impl Sdk {
             contenders = contenders.saturating_add(u16::try_from(read).unwrap_or(u16::MAX));
             // A contest accepts at most `max_contenders_per_contest`, and a join past it is
             // refused whatever it states, so counting stops there
-            let max_contenders = sdk
-                .platform_version_for_write()?
-                .system_limits
-                .max_contenders_per_contest;
+            let max_contenders = self.version().system_limits.max_contenders_per_contest;
             match page.contenders.keys().next_back() {
                 Some(last)
                     if read >= DEFAULT_QUERY_LIMIT as usize && contenders < max_contenders =>
@@ -100,8 +92,8 @@ impl Sdk {
             }
         }
 
-        let contest_fund = vote_poll
-            .required_vote_resolution_fund_to_join(contenders, sdk.platform_version_for_write()?);
+        let contest_fund =
+            vote_poll.required_vote_resolution_fund_to_join(contenders, self.version());
         Ok(Some((vote_poll.index_name, contest_fund)))
     }
 }
@@ -260,22 +252,6 @@ mod tests {
                 .expect("expected to read the prefunded voting balance to join"),
             Some(("parentNameAndLabel".to_string(), 2 * fund))
         );
-    }
-
-    #[tokio::test]
-    async fn should_refuse_fee_preparation_before_reading_contenders() {
-        let sdk = SdkBuilder::new_mock().build().expect("mock SDK");
-        sdk.set_protocol_compatibility_policy(crate::ProtocolCompatibilityPolicy::RequireVerified);
-        let contract = dpns_contract();
-        let document_type = contract.document_type_for_name("domain").expect("domain");
-        let error = sdk
-            .contest_fund_to_join(document_type, &domain("quantum"))
-            .await
-            .expect_err("fee preparation requires verified compatibility");
-        assert!(matches!(
-            error,
-            Error::ProtocolCompatibility(crate::ProtocolCompatibilityError::Unavailable)
-        ));
     }
 
     /// Nothing is read for a create joining no contest (its type has no contested index, or its

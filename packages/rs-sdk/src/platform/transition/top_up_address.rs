@@ -15,6 +15,7 @@ use dpp::state_transition::address_funding_from_asset_lock_transition::methods::
 use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
+use dpp::ProtocolError;
 use drive_proof_verifier::types::AddressInfos;
 
 /// Trait for topping up Platform addresses using various funding sources.
@@ -147,7 +148,6 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(AddressInfos, u64), Error> {
-        let sdk = &sdk.platform_write_context()?;
         if self.is_empty() {
             return Err(Error::from(TransitionNoOutputsError::new()));
         }
@@ -187,7 +187,6 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
     where
         AS: dpp::key_wallet::signer::Signer + Send + Sync,
     {
-        let sdk = &sdk.platform_write_context()?;
         if self.is_empty() {
             return Err(Error::from(TransitionNoOutputsError::new()));
         }
@@ -213,7 +212,7 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
                 signer,
                 asset_lock_signer,
                 user_fee_increase,
-                sdk.platform_version_for_write()?,
+                sdk.version(),
             )
             .await?;
 
@@ -237,8 +236,7 @@ async fn broadcast_and_collect_address_infos(
     sdk: &Sdk,
     settings: Option<PutSettings>,
 ) -> Result<(AddressInfos, u64), Error> {
-    let sdk = &sdk.platform_write_context()?;
-    ensure_valid_state_transition_structure(&state_transition, sdk.platform_version_for_write()?)?;
+    ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
     let (st_result, metadata) = state_transition
         .broadcast_and_wait_for_affected_state_with_metadata::<StateTransitionProofResult>(
             sdk, settings,
@@ -270,8 +268,7 @@ async fn create_address_funding_from_asset_lock_transition<S: Signer<PlatformAdd
     signer: &S,
     user_fee_increase: UserFeeIncrease,
     sdk: &Sdk,
-) -> Result<StateTransition, Error> {
-    let sdk = &sdk.platform_write_context()?;
+) -> Result<StateTransition, ProtocolError> {
     AddressFundingFromAssetLockTransition::try_from_asset_lock_with_signer_and_private_key(
         asset_lock_proof,
         asset_lock_private_key,
@@ -280,8 +277,7 @@ async fn create_address_funding_from_asset_lock_transition<S: Signer<PlatformAdd
         fee_strategy,
         signer,
         user_fee_increase,
-        sdk.platform_version_for_write()?,
+        sdk.version(),
     )
     .await
-    .map_err(Error::from)
 }

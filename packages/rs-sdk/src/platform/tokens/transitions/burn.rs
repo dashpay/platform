@@ -64,13 +64,12 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<BurnResult, Error> {
-        let write_sdk = self.platform_write_context()?;
-        let platform_version = write_sdk.platform_version_for_write()?;
+        let platform_version = self.version();
 
         let put_settings = burn_tokens_transition_builder.settings;
 
         let state_transition = burn_tokens_transition_builder
-            .sign(&write_sdk, signing_key, signer, platform_version)
+            .sign(self, signing_key, signer, platform_version)
             .await?;
 
         let proof_result = state_transition
@@ -78,10 +77,7 @@ impl Sdk {
             // keeps-history configuration (and group usage), which the SDK cannot
             // know statically: accept the affected-state tag and treat no-history
             // results as height-pinned snapshots, not execution evidence.
-            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(
-                &write_sdk,
-                put_settings,
-            )
+            .broadcast_and_wait_for_affected_state::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
         BurnResult::from_proof_result(proof_result)

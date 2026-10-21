@@ -147,7 +147,6 @@ impl IdentityWallet {
         contest_fund: Option<Credits>,
         signer: S,
     ) -> Result<String, dash_sdk::Error> {
-        self.sdk.ensure_platform_write_compatible()?;
         use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
 
         let input = RegisterDpnsNameInput {
@@ -196,7 +195,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
 
         // Ensure the on-chain DPNS contract is fetched and registered

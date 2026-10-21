@@ -72,7 +72,6 @@ impl<S: Signer<PlatformAddress>> ShieldFunds<S> for Sdk {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(), Error> {
-        let write_sdk = self.platform_write_context()?;
         let user_fee_increase = settings
             .as_ref()
             .and_then(|s| s.user_fee_increase)
@@ -95,15 +94,12 @@ impl<S: Signer<PlatformAddress>> ShieldFunds<S> for Sdk {
             fee_strategy,
             signer,
             user_fee_increase,
-            write_sdk.platform_version_for_write()?,
+            self.version(),
         )
         .await?;
-        ensure_valid_state_transition_structure(
-            &state_transition,
-            write_sdk.platform_version_for_write()?,
-        )?;
+        ensure_valid_state_transition_structure(&state_transition, self.version())?;
 
-        state_transition.broadcast(&write_sdk, settings).await?;
+        state_transition.broadcast(self, settings).await?;
         Ok(())
     }
 }

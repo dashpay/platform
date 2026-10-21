@@ -187,53 +187,43 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
     The script executes matching tests with `--features generate-test-vectors` against the running devnet,
     saving responses as test vectors in `packages/rs-sdk/tests/vectors/`.
 
-## Verified protocol compatibility for writes
+## Advisory protocol compatibility checks
 
-`refresh_protocol_version()` retains its best-effort behavior. Applications that
-must refuse Platform spending until a network version is authenticated can opt
-into `ProtocolCompatibilityPolicy::RequireVerified` on their SDK before cloning
-it into a wallet manager. Reads and Core operations remain available.
+`refresh_protocol_version()` retains its existing best-effort behavior. The
+compatibility API provides authenticated observations for an application update
+notice. Its check status never enables or disables wallet operations.
 
 ```rust,no_run
-# async fn example(sdk: &dash_sdk::Sdk) -> Result<(), dash_sdk::Error> {
-use dash_sdk::{ProtocolCompatibilityPolicy, ProtocolCompatibilityState};
-
-sdk.set_protocol_compatibility_policy(ProtocolCompatibilityPolicy::RequireVerified);
-let attempt = sdk.begin_protocol_compatibility_check(); // immediately closes writes
+# async fn example(sdk: &dash_sdk::Sdk) {
+let attempt = sdk.begin_protocol_compatibility_check();
 let compatibility = sdk.refresh_protocol_compatibility(attempt).await;
-match compatibility.state {
-    ProtocolCompatibilityState::Supported => { /* enable Platform actions */ }
-    ProtocolCompatibilityState::Unsupported => { /* explain SDK/app update needed */ }
-    _ => { /* allow retry; do not claim an update is available */ }
+let newer_protocol_available = compatibility
+    .verified_protocol_version
+    .is_some_and(|version| version > compatibility.maximum_supported_protocol_version);
+if newer_protocol_available {
+    // Show an informational update notice; wallet operations remain available.
 }
-# Ok(())
 # }
 ```
 
+`state` describes the latest explicit check: `Checking`, `Checked`, or
+`Unavailable { reason }`. `verified_protocol_version` is the highest accepted
+verified version observed during this SDK instance's lifetime, including normal
+proved reads. It remains available after a later failed or in-progress check.
+`effective_protocol_version` identifies the supported version currently used by
+the SDK; it is separate from the observed network version. SDK clones share the
+observations and check status.
+
 The total check budget is 20 seconds from `begin`, including worker-queue delay.
 One proved genesis-epoch query supplies the network version through the normal
-proof, quorum-signature and freshness verification path. Transport retries keep
-the configured budget. A superseded attempt cannot change readiness, and a
-verified unsupported version stays blocking for the lifetime of that SDK.
-Ordinary proved reads can discover a newer version but cannot reopen a failed
-or in-progress explicit check. SDK clones share the state.
+proof, quorum-signature and freshness verification path. Transport retries use
+the existing configuration within that total budget. A superseded attempt's
+late result is discarded. Applications can coalesce duplicate refresh requests
+and check at startup, foreground return, or manual retry; operations do not need
+a compatibility refresh before each request.
 
-For operations prepared separately from submission, capture
-`platform_write_permit()` before fee estimation, signing or allocating funds,
-use `platform_version_for_write()` for protocol-dependent construction, and call
-`validate_platform_write_permit()` immediately before submission. A permit is
-bound to the SDK instance, check generation and construction version; a changed
-permit requires renewed preparation and user confirmation. Returning a raw
-`StateTransition` does not attach a permit to it, so callers must retain the
-permit alongside their prepared operation. SDK write helpers retain their
-preparation context internally, and broadcast checks it on every retry.
-Pass that original permit across every queue boundary and run the worker's actual
-future inside `with_platform_write_permit(permit, future)`. Its task-local scope
-prevents helpers from silently accepting a newer generation when queued work
-starts after another successful check. Spawned tasks need their own explicit
-scope; nested scopes preserve the original confirmation constraint.
-
-A failed proof, unavailable quorum key or timeout means compatibility is
-unavailable, not that the network necessarily runs a newer protocol. Applications
-should retain recovery records for any asset lock already broadcast; these
-checks cannot make a Core asset lock and a later Platform transition atomic.
+A failed proof, unavailable quorum key or timeout only makes the latest check
+unavailable. An update notice requires an accepted verified version numerically
+higher than `maximum_supported_protocol_version`; a failed check alone provides
+no such evidence. Normal operation-specific validation and error reporting are
+unchanged.

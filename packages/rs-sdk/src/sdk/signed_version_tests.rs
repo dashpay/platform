@@ -625,7 +625,6 @@ async fn should_leave_compatibility_unavailable_for_missing_quorum_key_and_malfo
         .with_height_tolerance(None)
         .build()
         .expect("SDK");
-    sdk.set_protocol_compatibility_policy(super::ProtocolCompatibilityPolicy::RequireVerified);
     let generation = sdk.begin_protocol_compatibility_check();
     let (request, response) = recorded_epoch_response();
     let error = sdk
@@ -661,5 +660,4 @@ async fn should_leave_compatibility_unavailable_for_missing_quorum_key_and_malfo
     .expect_err("unverifiable format");
     assert_eq!(sdk.protocol_compatibility().generation, generation);
     assert_eq!(sdk.protocol_compatibility().verified_protocol_version, None);
-    assert!(sdk.ensure_platform_write_compatible().is_err());
 }

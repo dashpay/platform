@@ -2,7 +2,7 @@ use super::broadcast_request::BroadcastRequestForStateTransition;
 use super::put_settings::PutSettings;
 use crate::error::StateTransitionBroadcastError;
 use crate::sync::retry;
-use crate::sync::retry_with_additional_error_and_transport;
+use crate::sync::retry_with_additional_error;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
 use dapi_grpc::platform::v0::BroadcastStateTransitionResponse;
@@ -30,8 +30,8 @@ use rs_dapi_client::ExecutionResult;
 use rs_dapi_client::WrapToExecutionResult;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
 use std::future::Future;
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-use std::sync::atomic::{AtomicBool, AtomicUsize};
 use tracing::{debug, trace, warn};
 
 const DPNS_REGISTRATION_BROADCAST_RETRIES: usize = 2;
@@ -122,7 +122,6 @@ pub trait BroadcastStateTransition {
 #[async_trait::async_trait]
 impl BroadcastStateTransition for StateTransition {
     async fn broadcast(&self, sdk: &Sdk, settings: Option<PutSettings>) -> Result<(), Error> {
-        let permit = sdk.platform_write_permit()?;
         trace!(
             state_transition = %self.name(),
             transaction_id = %self
@@ -137,26 +136,8 @@ impl BroadcastStateTransition for StateTransition {
             None => sdk.dapi_client_settings,
         };
 
-        let permit = &permit;
-        let dispatched = AtomicBool::new(false);
-        let dispatched = &dispatched;
-        let guard_transport_retries = sdk.requires_verified_protocol_compatibility();
-        let execute = |request: BroadcastStateTransitionRequest,
-                       mut request_settings: RequestSettings| async move {
-            sdk.validate_platform_write_permit(permit)
-                .map_err(|inner| ExecutionError {
-                    inner,
-                    address: None,
-                    retries: 0,
-                })?;
+        let execute = |request: BroadcastStateTransitionRequest, request_settings| async move {
             trace!("broadcast: executing request");
-            // The outer retry loop owns the existing budget. Strict writes
-            // dispatch one transport attempt at a time so every retry crosses
-            // the permit gate, including a foreground refresh during timeout.
-            if guard_transport_retries {
-                request_settings.retries = Some(0);
-            }
-            dispatched.store(true, Ordering::Release);
             let result = request
                 .execute(sdk, request_settings)
                 .await
@@ -171,17 +152,10 @@ impl BroadcastStateTransition for StateTransition {
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
         trace!("broadcast: starting retry mechanism");
-        let result = broadcast_with_retries_guarded(
-            self,
-            sdk.address_list(),
-            retry_settings,
-            execute,
-            guard_transport_retries,
-        )
-        .await
-        .into_inner()
-        .map(|_| ())
-        .map_err(|error| preserve_ambiguous_broadcast(error, dispatched.load(Ordering::Acquire)));
+        let result = broadcast_with_retries(self, sdk.address_list(), retry_settings, execute)
+            .await
+            .into_inner()
+            .map(|_| ());
 
         match &result {
             Ok(_) => trace!("broadcast: completed successfully"),
@@ -323,9 +297,7 @@ fn broadcast_may_have_been_accepted(error: &Error) -> bool {
     use rs_dapi_client::DapiClientError;
 
     let status = match error {
-        Error::AlreadyExists(_)
-        | Error::TimeoutReached(..)
-        | Error::ProtocolCompatibilityAfterBroadcast(_) => return true,
+        Error::AlreadyExists(_) | Error::TimeoutReached(..) => return true,
         Error::NoAvailableAddressesToRetry(inner) => {
             return broadcast_may_have_been_accepted(inner);
         }
@@ -349,40 +321,14 @@ fn broadcast_may_have_been_accepted(error: &Error) -> bool {
     )
 }
 
-/// A later readiness refusal cannot prove an earlier transport attempt did
-/// not execute. Preserve that distinction for wallet reservation/recovery code.
-fn preserve_ambiguous_broadcast(error: Error, dispatched: bool) -> Error {
-    if dispatched {
-        if let Some(compatibility) = error.protocol_compatibility_error() {
-            return Error::ProtocolCompatibilityAfterBroadcast(compatibility.clone());
-        }
-    }
-    error
-}
-
 /// DPNS registration has two separate creates. Fail over each signed create,
 /// never restart the registration (which would generate a new preorder salt).
 /// This applies only to the immediate CheckTx rejection, not wait outcomes.
-#[cfg(test)]
 async fn broadcast_with_retries<Fut, Execute>(
-    transition: &StateTransition,
-    addresses: &AddressList,
-    settings: RequestSettings,
-    execute: Execute,
-) -> ExecutionResult<BroadcastStateTransitionResponse, Error>
-where
-    Fut: Future<Output = ExecutionResult<BroadcastStateTransitionResponse, Error>> + Send,
-    Execute: FnMut(BroadcastStateTransitionRequest, RequestSettings) -> Fut + Send,
-{
-    broadcast_with_retries_guarded(transition, addresses, settings, execute, false).await
-}
-
-async fn broadcast_with_retries_guarded<Fut, Execute>(
     transition: &StateTransition,
     addresses: &AddressList,
     mut settings: RequestSettings,
     mut execute: Execute,
-    guard_transport_retries: bool,
 ) -> ExecutionResult<BroadcastStateTransitionResponse, Error>
 where
     Fut: Future<Output = ExecutionResult<BroadcastStateTransitionResponse, Error>> + Send,
@@ -452,13 +398,9 @@ where
             result
         }
     };
-    retry_with_additional_error_and_transport(
-        addresses,
-        settings,
-        factory,
-        |error| is_dpns_registration && is_missing_transition_owner(transition, error),
-        guard_transport_retries,
-    )
+    retry_with_additional_error(addresses, settings, factory, |error| {
+        is_dpns_registration && is_missing_transition_owner(transition, error)
+    })
     .await
 }
 
@@ -708,7 +650,6 @@ mod tests {
                 Status::deadline_exceeded("relay timed out"),
             ))),
             Error::NoAvailableAddressesToRetry(Box::new(Error::AlreadyExists("cached".into()))),
-            Error::ProtocolCompatibilityAfterBroadcast(crate::ProtocolCompatibilityError::Checking),
         ];
         for error in errors {
             let result = wait_after_broadcast(Err(error), async { Ok(42) }).await;
@@ -740,7 +681,6 @@ mod tests {
     async fn definite_broadcast_rejection_does_not_poll_result_wait() {
         for error in [
             missing_owner(owner_id()),
-            Error::ProtocolCompatibility(crate::ProtocolCompatibilityError::Checking),
             Error::DapiClientError(DapiClientError::NoAvailableAddresses),
             Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(
                 Status::invalid_argument("invalid transition"),
@@ -981,24 +921,16 @@ mod tests {
         }
     }
 
-    #[test_case::test_case(None, 3, false)]
-    #[test_case::test_case(Some(0), 1, false)]
-    #[test_case::test_case(Some(1), 2, false)]
-    #[test_case::test_case(Some(9), 3, false)]
-    #[test_case::test_case(None, 3, true)]
-    #[test_case::test_case(Some(0), 1, true)]
-    #[test_case::test_case(Some(1), 2, true)]
-    #[test_case::test_case(Some(9), 3, true)]
+    #[test_case::test_case(None, 3)]
+    #[test_case::test_case(Some(0), 1)]
+    #[test_case::test_case(Some(1), 2)]
+    #[test_case::test_case(Some(9), 3)]
     #[tokio::test]
-    async fn should_bound_dpns_broadcast_attempts(
-        retries: Option<usize>,
-        expected: usize,
-        strict: bool,
-    ) {
+    async fn should_bound_dpns_broadcast_attempts(retries: Option<usize>, expected: usize) {
         let transition = document_create(SystemDataContract::DPNS.id(), "preorder");
         let addresses = addresses();
         let mut attempts = 0;
-        let error = broadcast_with_retries_guarded(
+        let error = broadcast_with_retries(
             &transition,
             &addresses,
             RequestSettings {
@@ -1014,7 +946,6 @@ mod tests {
                     retries: 0,
                 }))
             },
-            strict,
         )
         .await
         .expect_err("all nodes reject the owner");
@@ -1022,76 +953,6 @@ mod tests {
         assert_eq!(error.retries, expected);
         assert!(is_missing_transition_owner(&transition, &error.inner));
         assert_eq!(addresses.get_live_addresses().len(), 4 - (expected - 1));
-    }
-
-    #[tokio::test]
-    async fn should_keep_transport_retry_budget_without_node_exclusion() {
-        let transition = document_create(SystemDataContract::DPNS.id(), "domain");
-        let addresses = addresses();
-        let mut attempts = 0;
-        let error = broadcast_with_retries_guarded(
-            &transition,
-            &addresses,
-            RequestSettings {
-                retries: Some(2),
-                ban_failed_address: Some(false),
-                ..Default::default()
-            },
-            |_, _| {
-                attempts += 1;
-                ready(Err(ExecutionError {
-                    inner: Error::from(DapiClientError::Transport(TransportError::Grpc(
-                        Status::unavailable("temporary transport failure"),
-                    ))),
-                    address: addresses.get_live_addresses().into_iter().next(),
-                    retries: 0,
-                }))
-            },
-            true,
-        )
-        .await
-        .expect_err("transport budget is exhausted");
-        assert_eq!(attempts, 3);
-        assert_eq!(error.retries, 3);
-        assert_eq!(addresses.get_live_addresses().len(), 4);
-    }
-
-    #[tokio::test]
-    async fn should_stop_transport_retry_when_preparation_is_invalidated() {
-        let transition = document_create(SystemDataContract::DPNS.id(), "domain");
-        let addresses = addresses();
-        let mut attempts = 0;
-        let error = broadcast_with_retries_guarded(
-            &transition,
-            &addresses,
-            RequestSettings {
-                retries: Some(2),
-                ban_failed_address: Some(false),
-                ..Default::default()
-            },
-            |_, _| {
-                attempts += 1;
-                let inner = if attempts == 1 {
-                    Error::from(DapiClientError::Transport(TransportError::Grpc(
-                        Status::unavailable("initial dispatch has unknown outcome"),
-                    )))
-                } else {
-                    crate::ProtocolCompatibilityError::Checking.into()
-                };
-                ready(Err(ExecutionError {
-                    inner,
-                    address: addresses.get_live_addresses().into_iter().next(),
-                    retries: 0,
-                }))
-            },
-            true,
-        )
-        .await
-        .expect_err("compatibility stops the second dispatch");
-        assert_eq!(attempts, 2);
-        let error = preserve_ambiguous_broadcast(error.inner, true);
-        assert!(error.protocol_compatibility_error().is_none());
-        assert!(error.is_protocol_compatibility_after_broadcast());
     }
 
     #[tokio::test]
@@ -1245,46 +1106,5 @@ mod tests {
             StateTransitionProofResult::VerifiedTokenBalanceAbsence(Identifier::from([1u8; 32]));
         require_execution_proved(StateTransitionProofOutcome::execution_proved(proved))
             .expect("execution-proved outcomes must pass the strict wait");
-    }
-    #[tokio::test]
-    async fn should_refuse_unverified_broadcast_before_serialization_or_transport() {
-        let sdk = crate::SdkBuilder::new_mock().build().expect("SDK");
-        sdk.set_protocol_compatibility_policy(crate::ProtocolCompatibilityPolicy::RequireVerified);
-        let transition = document_create(SystemDataContract::DPNS.id(), "preorder");
-        let error = transition
-            .broadcast(&sdk, None)
-            .await
-            .expect_err("no write readiness");
-        assert!(matches!(
-            error,
-            Error::ProtocolCompatibility(crate::ProtocolCompatibilityError::Unavailable)
-        ));
-        sdk.begin_protocol_compatibility_check();
-        let error = transition
-            .broadcast(&sdk, None)
-            .await
-            .expect_err("check in progress");
-        assert!(matches!(
-            error,
-            Error::ProtocolCompatibility(crate::ProtocolCompatibilityError::Checking)
-        ));
-        // No mock transport expectation was registered; any send would fail
-        // with a different error.
-    }
-    #[test]
-    fn should_never_classify_a_compatibility_interruption_after_dispatch_as_safe_to_release() {
-        let error = preserve_ambiguous_broadcast(
-            crate::ProtocolCompatibilityError::PreparationExpired.into(),
-            true,
-        );
-        assert!(error.protocol_compatibility_error().is_none());
-        assert!(error.is_protocol_compatibility_after_broadcast());
-        let wrapped = Error::NoAvailableAddressesToRetry(Box::new(error));
-        assert!(wrapped.protocol_compatibility_error().is_none());
-        assert!(wrapped.is_protocol_compatibility_after_broadcast());
-        let before_dispatch =
-            preserve_ambiguous_broadcast(crate::ProtocolCompatibilityError::Checking.into(), false);
-        assert!(before_dispatch.protocol_compatibility_error().is_some());
-        assert!(!before_dispatch.is_protocol_compatibility_after_broadcast());
     }
 }

@@ -419,7 +419,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         // 1. Retrieve the sender identity and its HD index from the
         //    local manager.
         let (sender_identity, identity_index) = {
@@ -777,7 +776,6 @@ impl DashPayView<'_> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         use crate::wallet::identity::crypto::auto_accept::{
             decode_auto_accept_key_blob, parse_dashpay_contact_uri,
         };
@@ -3412,7 +3410,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         S: Signer<IdentityPublicKey> + Send + Sync,
         C: ContactCryptoProvider + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         let our_identity_id = request.recipient_id;
         let sender_id = request.sender_id;
 

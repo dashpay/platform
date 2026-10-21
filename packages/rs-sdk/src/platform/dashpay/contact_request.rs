@@ -502,13 +502,12 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
-        let sdk = &self.platform_write_context()?;
         // Save values we need before moving contact_request
         let recipient_id = input.contact_request.recipient.id();
         let account_reference = input.contact_request.account_reference;
 
         // Create the contact request document (handles ECDH encryption internally)
-        let result = sdk
+        let result = self
             .create_contact_request(
                 input.contact_request,
                 ecdh_provider,
@@ -517,7 +516,7 @@ impl Sdk {
             .await?;
 
         // Get the DashPay contract for the document type
-        let dashpay_contract = sdk.fetch_dashpay_contract().await?;
+        let dashpay_contract = self.fetch_dashpay_contract().await?;
         let contact_request_document_type = dashpay_contract
             .document_type_for_name("contactRequest")
             .map_err(|_| {
@@ -554,7 +553,7 @@ impl Sdk {
         // Submit the document to the platform
         let platform_document = document
             .put_to_platform_and_wait_for_response(
-                sdk,
+                self,
                 contact_request_document_type.to_owned_document_type(),
                 Some(entropy.0),
                 input.identity_public_key,

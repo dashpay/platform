@@ -27,7 +27,6 @@ impl TransferShielded for Sdk {
         value_balance: u64,
         settings: Option<PutSettings>,
     ) -> Result<(), Error> {
-        let write_sdk = self.platform_write_context()?;
         let OrchardBundleParams {
             actions,
             anchor,
@@ -41,14 +40,11 @@ impl TransferShielded for Sdk {
             anchor,
             proof,
             binding_signature,
-            write_sdk.platform_version_for_write()?,
+            self.version(),
         )?;
-        ensure_valid_state_transition_structure(
-            &state_transition,
-            write_sdk.platform_version_for_write()?,
-        )?;
+        ensure_valid_state_transition_structure(&state_transition, self.version())?;
 
-        state_transition.broadcast(&write_sdk, settings).await?;
+        state_transition.broadcast(self, settings).await?;
         Ok(())
     }
 }

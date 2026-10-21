@@ -2,16 +2,8 @@ import Foundation
 import DashSDKFFI
 
 extension SDK {
-    /// Select the Rust-owned write policy without making a network request.
-    public func setProtocolCompatibilityPolicy(_ policy: ProtocolCompatibilityPolicy) throws {
-        guard let handle else { throw SDKError.invalidState("SDK not initialized") }
-        try Self.checkProtocolCompatibilityResult(
-            dash_sdk_set_protocol_compatibility_policy(handle, policy.rawValue)
-        )
-    }
-
-    /// Immediately invalidate readiness, before queuing a lifecycle check.
-    /// This call is local and synchronous.
+    /// Mark an informational check as pending before queuing its refresh.
+    /// This local, synchronous call never restricts wallet operations.
     public func beginProtocolCompatibilityCheck() throws -> UInt64 {
         guard let handle else { throw SDKError.invalidState("SDK not initialized") }
         var generation: UInt64 = 0
@@ -21,7 +13,7 @@ extension SDK {
         return generation
     }
 
-    /// Perform/join Rust's bounded check. This blocks; call off the main actor.
+    /// Perform Rust's bounded check. This blocks; call off the main actor.
     /// A superseded check returns a snapshot with the newer generation.
     public func refreshProtocolCompatibility(generation: UInt64) throws -> ProtocolCompatibility {
         guard let handle else { throw SDKError.invalidState("SDK not initialized") }
@@ -35,24 +27,6 @@ extension SDK {
         guard let handle else { throw SDKError.invalidState("SDK not initialized") }
         return try Self.decodeProtocolCompatibilityResult(
             dash_sdk_get_protocol_compatibility(handle)
-        )
-    }
-
-    /// Ask Rust for a preparation context. No network refresh is performed.
-    public func platformWritePermit() throws -> PlatformWritePermit {
-        guard let handle else { throw SDKError.invalidState("SDK not initialized") }
-        return try Self.decodeProtocolCompatibilityResult(
-            dash_sdk_get_platform_write_permit(handle)
-        )
-    }
-
-    /// Ask Rust to reject stale preparations or unavailable compatibility.
-    public func validatePlatformWritePermit(_ permit: PlatformWritePermit) throws {
-        guard let handle else { throw SDKError.invalidState("SDK not initialized") }
-        try Self.checkProtocolCompatibilityResult(
-            dash_sdk_validate_platform_write_permit(
-                handle, permit.instanceID, permit.generation, permit.protocolVersion
-            )
         )
     }
 

@@ -118,7 +118,6 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddressesWithMetadata<S> for I
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<(AddressInfos, Credits, ResponseMetadata), Error> {
-        let sdk = &sdk.platform_write_context()?;
         let user_fee_increase = settings
             .as_ref()
             .and_then(|settings| settings.user_fee_increase)
@@ -132,14 +131,11 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddressesWithMetadata<S> for I
             inputs,
             signer,
             user_fee_increase,
-            sdk.platform_version_for_write()?,
+            sdk.version(),
             None,
         )
         .await?;
-        ensure_valid_state_transition_structure(
-            &state_transition,
-            sdk.platform_version_for_write()?,
-        )?;
+        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
         // `metadata.height` is the proof's committed block — the height
         // pin for these absolutes (`AddressFunds::as_of_height`).

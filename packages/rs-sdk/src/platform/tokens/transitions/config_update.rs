@@ -54,17 +54,16 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<ConfigUpdateResult, Error> {
-        let write_sdk = self.platform_write_context()?;
-        let platform_version = write_sdk.platform_version_for_write()?;
+        let platform_version = self.version();
 
         let put_settings = config_update_transition_builder.settings;
 
         let state_transition = config_update_transition_builder
-            .sign(&write_sdk, signing_key, signer, platform_version)
+            .sign(self, signing_key, signer, platform_version)
             .await?;
 
         let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(&write_sdk, put_settings)
+            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
         match proof_result {

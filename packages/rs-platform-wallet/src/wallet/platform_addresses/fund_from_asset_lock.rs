@@ -26,7 +26,7 @@
 //!    and dropped from the in-memory tracked-lock map.
 
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, submit_with_cl_height_retry_guarded, AssetLockFunding, FundingResolution,
+    out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
     ResolvedFunding,
 };
 use crate::wallet::PlatformAddressWallet;
@@ -286,7 +286,6 @@ impl PlatformAddressWallet {
         S: Signer<PlatformAddress> + Send + Sync,
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
-        let protocol_permit = self.sdk.platform_write_permit()?;
         // Step 1: pre-flight. Failing fast here avoids broadcasting
         // an unfundable asset-lock tx.
         validate_recipient_addresses(self, platform_account_index, &addresses, ownership).await?;
@@ -304,7 +303,7 @@ impl PlatformAddressWallet {
         let funding = enforce_asset_lock_amount_covers_address_funding_floor(
             funding,
             addresses.len(),
-            self.sdk.platform_version_for_write()?,
+            self.sdk.version(),
         )?;
 
         // Step 2: resolve funding. `AssetLockAddressTopUp` selects the
@@ -312,7 +311,6 @@ impl PlatformAddressWallet {
         // `destination_index = 0` argument is unused by this funding
         // type (the resolver only consults it for `IdentityTopUp`),
         // so any value is fine.
-        self.sdk.validate_platform_write_permit(&protocol_permit)?;
         let ResolvedFunding {
             proof,
             path,
@@ -359,71 +357,65 @@ impl PlatformAddressWallet {
         let proof_out_point = out_point_from_proof(&proof);
         // `proof_height` is the broadcast proof's committed block — the
         // height pin for the reconciled absolutes below.
-        let (submit_result, effective_proof) =
-            match submit_with_cl_height_retry_guarded(&self.sdk, &protocol_permit, settings, |s| {
-                addresses.top_up_with_signers(
-                    &self.sdk,
-                    proof.clone(),
-                    &path,
-                    fee_strategy.clone(),
-                    address_signer,
-                    asset_lock_signer,
-                    s,
-                )
-            })
-            .await
-            {
-                Ok(infos) => (Ok(infos), proof.clone()),
-                Err(e) if is_instant_lock_proof_invalid(&e) => {
-                    let out_point = proof_out_point;
-                    tracing::warn!(
-                        "IS-lock proof rejected by Platform for platform-address top-up (tx {}), \
+        let (submit_result, effective_proof) = match submit_with_cl_height_retry(settings, |s| {
+            addresses.top_up_with_signers(
+                &self.sdk,
+                proof.clone(),
+                &path,
+                fee_strategy.clone(),
+                address_signer,
+                asset_lock_signer,
+                s,
+            )
+        })
+        .await
+        {
+            Ok(infos) => (Ok(infos), proof.clone()),
+            Err(e) if is_instant_lock_proof_invalid(&e) => {
+                let out_point = proof_out_point;
+                tracing::warn!(
+                    "IS-lock proof rejected by Platform for platform-address top-up (tx {}), \
                      retrying with ChainLock proof",
-                        out_point.txid
-                    );
-                    let chain_proof = self
-                        .asset_locks
-                        .upgrade_to_chain_lock_proof(&out_point, None)
-                        .await?;
-                    // Advance the tracked status from `InstantSendLocked`
-                    // to `ChainLocked` with the upgraded proof attached
-                    // BEFORE the second submit. If the next call fails
-                    // (transport blip, fresh CL-height race that
-                    // exhausts the retry budget), the row accurately
-                    // reflects the lock's CL-attached state instead of
-                    // the stale IS proof Platform just rejected. The
-                    // catch-up scanner / Resume path then has a
-                    // truthful status to work from.
-                    let cs = self
-                        .asset_locks
-                        .advance_asset_lock_status(
-                            &out_point,
-                            crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
-                            Some(chain_proof.clone()),
-                        )
-                        .await?;
-                    self.asset_locks.queue_asset_lock_changeset(cs);
-                    let submit_result = submit_with_cl_height_retry_guarded(
-                        &self.sdk,
-                        &protocol_permit,
-                        settings,
-                        |s| {
-                            addresses.top_up_with_signers(
-                                &self.sdk,
-                                chain_proof.clone(),
-                                &path,
-                                fee_strategy.clone(),
-                                address_signer,
-                                asset_lock_signer,
-                                s,
-                            )
-                        },
+                    out_point.txid
+                );
+                let chain_proof = self
+                    .asset_locks
+                    .upgrade_to_chain_lock_proof(&out_point, None)
+                    .await?;
+                // Advance the tracked status from `InstantSendLocked`
+                // to `ChainLocked` with the upgraded proof attached
+                // BEFORE the second submit. If the next call fails
+                // (transport blip, fresh CL-height race that
+                // exhausts the retry budget), the row accurately
+                // reflects the lock's CL-attached state instead of
+                // the stale IS proof Platform just rejected. The
+                // catch-up scanner / Resume path then has a
+                // truthful status to work from.
+                let cs = self
+                    .asset_locks
+                    .advance_asset_lock_status(
+                        &out_point,
+                        crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
+                        Some(chain_proof.clone()),
                     )
-                    .await;
-                    (submit_result, chain_proof)
-                }
-                Err(e) => (Err(e), proof.clone()),
-            };
+                    .await?;
+                self.asset_locks.queue_asset_lock_changeset(cs);
+                let submit_result = submit_with_cl_height_retry(settings, |s| {
+                    addresses.top_up_with_signers(
+                        &self.sdk,
+                        chain_proof.clone(),
+                        &path,
+                        fee_strategy.clone(),
+                        address_signer,
+                        asset_lock_signer,
+                        s,
+                    )
+                })
+                .await;
+                (submit_result, chain_proof)
+            }
+            Err(e) => (Err(e), proof.clone()),
+        };
         let (address_infos, proof_height) = self
             .asset_locks
             .reconcile_asset_lock_submit_result(

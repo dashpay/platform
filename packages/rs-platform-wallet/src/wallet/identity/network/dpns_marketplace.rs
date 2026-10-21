@@ -1132,7 +1132,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         // Ahead of the operation gate and the domain fetch: nothing about
         // the on-chain state can make a zero-credit listing valid, so no
         // lock is worth holding and no round-trip is worth spending.
@@ -1249,7 +1248,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         let _operation = self.dpns_operation_gate.lock().await;
         if recipient_id == owner_identity_id {
             return Err(PlatformWalletError::InvalidParameter(
@@ -1349,7 +1347,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         let _operation = self.dpns_operation_gate.lock().await;
         let state = self.fetch_dpns_domain_state_required(name).await?;
         if state.owner_id == *purchaser_identity_id {

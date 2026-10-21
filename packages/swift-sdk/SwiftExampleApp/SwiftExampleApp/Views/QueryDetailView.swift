@@ -203,9 +203,6 @@ struct QueryDetailView: View {
                         self.error = "Internal Error: \(message)"
                     case .consensusRejection(let consensus, let message):
                         self.error = "Rejected by Platform (code \(consensus.code)): \(message)"
-                    case .protocolCompatibilityUnavailable, .protocolCompatibilityChecking,
-                         .unsupportedProtocolVersion, .platformPreparationExpired:
-                        self.error = sdkError.localizedDescription
                     case .unknown(let message):
                         self.error = "Unknown Error: \(message)"
                     }

@@ -84,7 +84,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         let identity = {
             let wm = self.wallet_manager.read().await;
             let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
@@ -158,7 +157,6 @@ impl IdentityWallet {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<(u64, u64), dash_sdk::Error> {
-        self.sdk.ensure_platform_write_compatible()?;
         identity
             .transfer_credits(
                 &self.sdk,

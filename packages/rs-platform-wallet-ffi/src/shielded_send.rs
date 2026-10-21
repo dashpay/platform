@@ -205,7 +205,7 @@ fn shielded_fee_formula(
 /// `num_actions` is the Orchard action count of the bundle the host will
 /// build (a single-note spend with change is 2 actions). The fee is
 /// computed at `handle`'s manager's network-tracked platform version
-/// (`sdk.platform_version_for_write()`) — the same version the shielded builders in
+/// (`sdk.version()`) — the same version the shielded builders in
 /// `platform-wallet` resolve — so the estimate can't drift from the fee
 /// the builder carves and the consensus gate validates, even when the
 /// connected network hasn't activated the client's latest protocol
@@ -235,17 +235,13 @@ pub unsafe extern "C" fn platform_wallet_shielded_estimate_fee(
             format!("unknown shielded fee kind {kind} (expected 0/1/2/3/4)"),
         );
     };
-    let Some(platform_version) = PLATFORM_WALLET_MANAGER_STORAGE
-        .with_item(handle, |manager| manager.sdk().platform_version_for_write())
+    let Some(platform_version) =
+        PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.sdk().version())
     else {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidHandle,
             format!("invalid manager handle: {handle}"),
         );
-    };
-    let platform_version = match platform_version {
-        Ok(version) => version,
-        Err(error) => return PlatformWalletError::Sdk(error).into(),
     };
     match formula(num_actions, platform_version) {
         Ok(credits) => {
@@ -667,12 +663,6 @@ fn map_spend_result(
             PlatformWalletFFIResultCode::ErrorSigningKeyUnavailable,
             format!("{operation} failed: {e}"),
         ),
-        Err(e)
-            if protocol_compatibility_error_of(&e).is_some()
-                || protocol_write_outcome_unconfirmed(&e) =>
-        {
-            e.into()
-        }
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
@@ -859,12 +849,6 @@ fn map_asset_lock_funding_result(
             | PlatformWalletError::AssetLockInputContested { .. }),
         ) => e.into(),
         Err(e @ PlatformWalletError::AssetLockInsufficientFunds { .. }) => e.into(),
-        Err(e)
-            if protocol_compatibility_error_of(&e).is_some()
-                || protocol_write_outcome_unconfirmed(&e) =>
-        {
-            e.into()
-        }
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("{operation} failed: {e}"),
@@ -1072,12 +1056,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("shielded identity-create-from-pool failed: {e}"),
         ),
-        Err(e)
-            if protocol_compatibility_error_of(&e).is_some()
-                || protocol_write_outcome_unconfirmed(&e) =>
-        {
-            e.into()
-        }
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded identity-create-from-pool failed: {e}"),
@@ -2116,12 +2094,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_seed_pool_notes(
 
     match result {
         Ok(_outcome) => PlatformWalletFFIResult::ok(),
-        Err(e)
-            if protocol_compatibility_error_of(&e).is_some()
-                || protocol_write_outcome_unconfirmed(&e) =>
-        {
-            e.into()
-        }
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded seed-pool-notes failed: {e}"),
@@ -2312,48 +2284,6 @@ fn resolve_wallet_and_coordinator(
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn should_preserve_protocol_compatibility_unknown_outcome_in_result_adapters() {
-        let error = || {
-            PlatformWalletError::Sdk(dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
-                dash_sdk::Error::ProtocolCompatibilityAfterBroadcast(
-                    dash_sdk::ProtocolCompatibilityError::Checking,
-                ),
-            )))
-        };
-        let spend = map_spend_result(Err(error()), "shield");
-        assert_eq!(
-            spend.code,
-            PlatformWalletFFIResultCode::ErrorPlatformWriteUnconfirmed
-        );
-        let funding = map_asset_lock_funding_result(Err(error()), "fund");
-        assert_eq!(
-            funding.code,
-            PlatformWalletFFIResultCode::ErrorPlatformWriteUnconfirmed
-        );
-    }
-
-    #[test]
-    fn should_preserve_compatibility_in_shielded_and_asset_lock_result_adapters() {
-        use super::{map_asset_lock_funding_result, map_spend_result};
-        use crate::error::PlatformWalletFFIResultCode;
-        use dash_sdk::{Error, ProtocolCompatibilityError};
-        use platform_wallet::PlatformWalletError;
-
-        for map in [map_spend_result, map_asset_lock_funding_result] {
-            let result = map(
-                Err(PlatformWalletError::Sdk(Error::ProtocolCompatibility(
-                    ProtocolCompatibilityError::Checking,
-                ))),
-                "operation",
-            );
-            assert_eq!(
-                result.code,
-                PlatformWalletFFIResultCode::ErrorProtocolCompatibilityChecking
-            );
-        }
-    }
-
     use super::*;
     use crate::event_handler::EventHandlerCallbacks;
     use crate::manager::{platform_wallet_manager_create, platform_wallet_manager_destroy};
@@ -2782,24 +2712,6 @@ mod tests {
                 fee, expected_transfer_fee,
                 "2-action transfer fee quoted through a protocol-{protocol_version} manager"
             );
-
-            sdk.set_protocol_compatibility_policy(
-                dash_sdk::ProtocolCompatibilityPolicy::RequireVerified,
-            );
-            fee = 42;
-            let denied = unsafe { platform_wallet_shielded_estimate_fee(handle, 0, 2, &mut fee) };
-            assert_eq!(
-                denied.code,
-                PlatformWalletFFIResultCode::ErrorProtocolCompatibilityUnavailable
-            );
-            assert_eq!(fee, 42, "a denied estimate must not publish a quote");
-            sdk.begin_protocol_compatibility_check();
-            let pending = unsafe { platform_wallet_shielded_estimate_fee(handle, 0, 2, &mut fee) };
-            assert_eq!(
-                pending.code,
-                PlatformWalletFFIResultCode::ErrorProtocolCompatibilityChecking
-            );
-            assert_eq!(fee, 42);
 
             let destroy = unsafe { crate::manager::platform_wallet_manager_destroy(handle) };
             assert_eq!(destroy.code, PlatformWalletFFIResultCode::Success);

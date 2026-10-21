@@ -198,8 +198,7 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
-        let platform_version = self.sdk.platform_version_for_write()?;
+        let platform_version = self.sdk.version();
 
         // 1. Fetch the on-chain contract + resolve the document type.
         let data_contract = DataContract::fetch(&self.sdk, *contract_id)
@@ -492,7 +491,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         let data_contract = self
             .fetch_contract_arc_for_document_op(contract_id, document_type_name)
             .await?;
@@ -584,7 +582,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         let data_contract = self
             .fetch_contract_arc_for_document_op(contract_id, document_type_name)
             .await?;
@@ -640,7 +637,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         let data_contract = self
             .fetch_contract_arc_for_document_op(contract_id, document_type_name)
             .await?;
@@ -704,7 +700,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         let data_contract = self
             .fetch_contract_arc_for_document_op(contract_id, document_type_name)
             .await?;
@@ -771,7 +766,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        self.sdk.ensure_platform_write_compatible()?;
         let data_contract = self
             .fetch_contract_arc_for_document_op(contract_id, document_type_name)
             .await?;

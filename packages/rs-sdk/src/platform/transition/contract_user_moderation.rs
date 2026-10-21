@@ -667,7 +667,6 @@ impl ModerateContractUser for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<ContractDocumentRemoval, Error> {
-        let sdk = &sdk.platform_write_context()?;
         let document_type = contract
             .document_type_for_name(&document_type_name)
             .map_err(dpp::ProtocolError::from)?;
@@ -676,8 +675,7 @@ impl ModerateContractUser for Identity {
         // against the document as it was serialized when deleted, so a type whose layout
         // changed inside the restore window leaves the record unrestorable whatever the
         // caller serializes with.
-        let document_bytes =
-            document.serialize(document_type, contract, sdk.platform_version_for_write()?)?;
+        let document_bytes = document.serialize(document_type, contract, sdk.version())?;
         // The verifier reads the document's id out of the bytes under the contract's document
         // type, through the context provider: what the caller serialized with is what it must
         // resolve.
@@ -753,12 +751,11 @@ pub(super) async fn ensure_provider_resolves_contract(
     contract_id: Identifier,
     refresh: bool,
 ) -> Result<(), Error> {
-    let sdk = &sdk.platform_write_context()?;
     let Some(provider) = sdk.context_provider() else {
         return Ok(());
     };
     let resolved = provider
-        .get_data_contract(&contract_id, sdk.platform_version_for_write()?)
+        .get_data_contract(&contract_id, sdk.version())
         .ok()
         .flatten()
         .is_some();
@@ -786,7 +783,6 @@ async fn broadcast_moderation<S: Signer<IdentityPublicKey> + Send, R>(
 where
     R: TryFrom<StateTransitionProofResult> + Send,
 {
-    let sdk = &sdk.platform_write_context()?;
     let signing_key_id = match signing_key_to_use {
         Some(key) => key.id(),
         None => signing_key_for_moderation(identity, &signer)?,
@@ -825,11 +821,11 @@ where
         identity_contract_nonce,
         user_fee_increase.unwrap_or_default(),
         &signer,
-        sdk.platform_version_for_write()?,
+        sdk.version(),
         None,
     )
     .await?;
-    ensure_valid_state_transition_structure(&state_transition, sdk.platform_version_for_write()?)?;
+    ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
     state_transition
         .broadcast_and_wait_for_affected_state(sdk, settings)

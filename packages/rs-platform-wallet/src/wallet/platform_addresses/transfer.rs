@@ -196,7 +196,6 @@ impl PlatformAddressWallet {
         platform_version: Option<&PlatformVersion>,
         address_signer: &S,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
-        let protocol_permit = self.sdk.platform_write_permit()?;
         if outputs.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
                 "Transfer requires at least one output address".to_string(),
@@ -213,7 +212,7 @@ impl PlatformAddressWallet {
         // (`min_input_amount`, `max_address_inputs`, and `estimate_min_fee`)
         // against the SAME version. Defaulting to LATEST here would let the
         // gate and the spend path diverge on a non-latest-pinned SDK.
-        let version = platform_version.unwrap_or(self.sdk.platform_version_for_write()?);
+        let version = platform_version.unwrap_or_else(|| self.sdk.version());
 
         // `proof_height` is the broadcast proof's committed block — the
         // height pin for the reconciled absolutes below. Transfer outputs
@@ -228,7 +227,6 @@ impl PlatformAddressWallet {
                         "Transfer requires at least one input address".to_string(),
                     ));
                 }
-                self.sdk.validate_platform_write_permit(&protocol_permit)?;
                 self.sdk
                     .transfer_address_funds(inputs, outputs, fee_strategy, address_signer, None)
                     .await
@@ -240,7 +238,6 @@ impl PlatformAddressWallet {
                         "Transfer requires at least one input address".to_string(),
                     ));
                 }
-                self.sdk.validate_platform_write_permit(&protocol_permit)?;
                 self.sdk
                     .transfer_address_funds_with_nonce(
                         inputs,
@@ -269,7 +266,6 @@ impl PlatformAddressWallet {
                 let inputs = self
                     .auto_select_inputs(account_index, &outputs, &fee_strategy, version)
                     .await?;
-                self.sdk.validate_platform_write_permit(&protocol_permit)?;
                 self.sdk
                     .transfer_address_funds(inputs, outputs, fee_strategy, address_signer, None)
                     .await
@@ -347,7 +343,6 @@ impl PlatformAddressWallet {
         platform_version: Option<&PlatformVersion>,
         address_signer: &S,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
-        let protocol_permit = self.sdk.platform_write_permit()?;
         if fee_strategy.0.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
                 "fee_strategy must contain at least one step".to_string(),
@@ -387,7 +382,7 @@ impl PlatformAddressWallet {
         // in depth keeps both `transfer` entry points sizing every
         // version-keyed value against the SAME version. An explicit `Some(v)`
         // is honored as given.
-        let version = platform_version.unwrap_or(self.sdk.platform_version_for_write()?);
+        let version = platform_version.unwrap_or_else(|| self.sdk.version());
 
         let final_outputs = match output_change_address {
             Some(change_addr) => {
@@ -451,7 +446,6 @@ impl PlatformAddressWallet {
             }
         }
 
-        self.sdk.validate_platform_write_permit(&protocol_permit)?;
         self.transfer(
             account_index,
             input_selection,

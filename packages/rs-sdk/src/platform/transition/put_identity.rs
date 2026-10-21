@@ -290,7 +290,6 @@ async fn put_identity_with_asset_lock_and_private_key<S: Signer<IdentityPublicKe
     signer: &S,
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
-    let sdk = &sdk.platform_write_context()?;
     // `broadcast_request_for_new_identity_with_private_key` reads
     // `PutSettings::user_fee_increase` internally; threading
     // `settings` straight through honours that knob without the
@@ -303,11 +302,11 @@ async fn put_identity_with_asset_lock_and_private_key<S: Signer<IdentityPublicKe
             asset_lock_proof,
             asset_lock_proof_private_key,
             signer,
-            sdk.platform_version_for_write()?,
+            sdk.version(),
             settings,
         )
         .await?;
-    ensure_valid_state_transition_structure(&state_transition, sdk.platform_version_for_write()?)?;
+    ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
     state_transition.broadcast(sdk, settings).await?;
     Ok(state_transition)
 }
@@ -327,7 +326,6 @@ where
     IS: Signer<IdentityPublicKey>,
     AS: dpp::key_wallet::signer::Signer + Send + Sync,
 {
-    let sdk = &sdk.platform_write_context()?;
     // `broadcast_request_for_new_identity_with_signer` reads
     // `PutSettings::user_fee_increase` internally; thread `settings`
     // through to honour the CL-height retry's hash-bumping mechanism
@@ -338,11 +336,11 @@ where
             asset_lock_proof_path,
             asset_lock_signer,
             identity_signer,
-            sdk.platform_version_for_write()?,
+            sdk.version(),
             settings,
         )
         .await?;
-    ensure_valid_state_transition_structure(&state_transition, sdk.platform_version_for_write()?)?;
+    ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
     state_transition.broadcast(sdk, settings).await?;
     Ok(state_transition)
 }
@@ -359,7 +357,6 @@ async fn put_identity_with_address_funding<
     input_signer: &AS,
     settings: Option<PutSettings>,
 ) -> Result<(Identity, AddressInfos, u64), Error> {
-    let sdk = &sdk.platform_write_context()?;
     let expected_addresses: BTreeSet<PlatformAddress> =
         inputs.keys().copied().collect::<BTreeSet<_>>();
 
@@ -385,11 +382,11 @@ async fn put_identity_with_address_funding<
         identity_signer,
         input_signer,
         user_fee_increase,
-        sdk.platform_version_for_write()?,
+        sdk.version(),
     )
     .await?;
 
-    ensure_valid_state_transition_structure(&state_transition, sdk.platform_version_for_write()?)?;
+    ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
     // `metadata.height` is the proof's committed block — the height
     // pin for these absolutes (`AddressFunds::as_of_height`).

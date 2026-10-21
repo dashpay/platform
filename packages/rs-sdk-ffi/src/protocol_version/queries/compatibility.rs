@@ -4,8 +4,7 @@ use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::{
-    PlatformWritePermit, ProtocolCompatibility, ProtocolCompatibilityPolicy,
-    ProtocolCompatibilityState, ProtocolCompatibilityUnavailableReason,
+    ProtocolCompatibility, ProtocolCompatibilityState, ProtocolCompatibilityUnavailableReason,
 };
 use serde::Serialize;
 use std::ffi::CString;
@@ -34,8 +33,7 @@ impl From<ProtocolCompatibility> for CompatibilitySnapshot {
                 }),
             ),
             ProtocolCompatibilityState::Checking => ("checking", None),
-            ProtocolCompatibilityState::Supported => ("supported", None),
-            ProtocolCompatibilityState::Unsupported => ("unsupported", None),
+            ProtocolCompatibilityState::Checked => ("checked", None),
         };
         Self {
             generation: value.generation,
@@ -65,31 +63,8 @@ fn invalid_parameter(message: &str) -> DashSDKResult {
     ))
 }
 
-/// Select compatibility policy: 0 retains legacy behavior; 1 requires a
-/// verified lifecycle check before Platform writes. This does not contact the network.
-///
-/// # Safety
-/// `sdk_handle` must be a live SDK handle. It must not be destroyed during this call.
-#[no_mangle]
-pub unsafe extern "C" fn dash_sdk_set_protocol_compatibility_policy(
-    sdk_handle: *const SDKHandle,
-    policy: u32,
-) -> DashSDKResult {
-    if sdk_handle.is_null() {
-        return invalid_parameter("SDK handle is null");
-    }
-    let policy = match policy {
-        0 => ProtocolCompatibilityPolicy::Legacy,
-        1 => ProtocolCompatibilityPolicy::RequireVerified,
-        _ => return invalid_parameter("Unknown protocol compatibility policy"),
-    };
-    let wrapper = &*(sdk_handle as *const SDKWrapper);
-    wrapper.sdk.set_protocol_compatibility_policy(policy);
-    DashSDKResult::success(std::ptr::null_mut())
-}
-
-/// Immediately invalidate Platform write readiness and return a new check generation.
-/// This is synchronous and makes no network request; call before queuing refresh work.
+/// Mark an informational check as pending and return its generation.
+/// This is synchronous, makes no network request, and never restricts operations.
 ///
 /// # Safety
 /// `sdk_handle` must be live and `out_generation` must point to writable u64 storage.
@@ -106,7 +81,7 @@ pub unsafe extern "C" fn dash_sdk_begin_protocol_compatibility_check(
     DashSDKResult::success(std::ptr::null_mut())
 }
 
-/// Run/join the Rust-owned bounded check for `generation`.
+/// Run the Rust-owned bounded informational check for `generation`.
 /// The returned snapshot can have a newer generation if this check was superseded.
 /// Network/check failures are represented by the snapshot, not fabricated success.
 ///
@@ -146,56 +121,6 @@ pub unsafe extern "C" fn dash_sdk_get_protocol_compatibility(
     ))
 }
 
-/// Obtain a permit for a local Platform preparation; this never refreshes the network.
-///
-/// # Safety
-/// `sdk_handle` must be live. Free the successful JSON string with
-/// `dash_sdk_string_free`, or the error with `dash_sdk_error_free`.
-#[no_mangle]
-pub unsafe extern "C" fn dash_sdk_get_platform_write_permit(
-    sdk_handle: *const SDKHandle,
-) -> DashSDKResult {
-    if sdk_handle.is_null() {
-        return invalid_parameter("SDK handle is null");
-    }
-    let wrapper = &*(sdk_handle as *const SDKWrapper);
-    match wrapper.sdk.platform_write_permit() {
-        Ok(permit) => json_result(&serde_json::json!({
-            "instanceID": permit.instance_id,
-            "generation": permit.generation,
-            "protocolVersion": permit.protocol_version,
-        })),
-        Err(error) => DashSDKResult::error(FFIError::SDKError(error).into()),
-    }
-}
-
-/// Validate a permit immediately before using a prepared Platform operation.
-/// Rust rejects another SDK instance, a superseded check, and changed protocol rules.
-///
-/// # Safety
-/// `sdk_handle` must be live throughout this call.
-#[no_mangle]
-pub unsafe extern "C" fn dash_sdk_validate_platform_write_permit(
-    sdk_handle: *const SDKHandle,
-    instance_id: u64,
-    generation: u64,
-    protocol_version: u32,
-) -> DashSDKResult {
-    if sdk_handle.is_null() {
-        return invalid_parameter("SDK handle is null");
-    }
-    let wrapper = &*(sdk_handle as *const SDKWrapper);
-    let permit = PlatformWritePermit {
-        instance_id,
-        generation,
-        protocol_version,
-    };
-    match wrapper.sdk.validate_platform_write_permit(&permit) {
-        Ok(()) => DashSDKResult::success(std::ptr::null_mut()),
-        Err(error) => DashSDKResult::error(FFIError::SDKError(error).into()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,7 +130,7 @@ mod tests {
     fn should_preserve_snapshot_status_versions_and_string_ownership() {
         let result = json_result(&CompatibilitySnapshot::from(ProtocolCompatibility {
             generation: 7,
-            state: ProtocolCompatibilityState::Unsupported,
+            state: ProtocolCompatibilityState::Checked,
             verified_protocol_version: Some(99),
             effective_protocol_version: 13,
             maximum_supported_protocol_version: 14,
@@ -213,7 +138,7 @@ mod tests {
         assert!(result.error.is_null());
         let text = unsafe { CStr::from_ptr(result.data.cast()) };
         let value: serde_json::Value = serde_json::from_slice(text.to_bytes()).expect("snapshot");
-        assert_eq!(value["status"], "unsupported");
+        assert_eq!(value["status"], "checked");
         assert_eq!(value["verifiedProtocolVersion"], 99);
         assert_eq!(value["generation"], 7);
         unsafe { crate::dash_sdk_string_free(result.data.cast()) };
@@ -224,12 +149,9 @@ mod tests {
         let mut generation = 42;
         let results = unsafe {
             [
-                dash_sdk_set_protocol_compatibility_policy(std::ptr::null(), 1),
                 dash_sdk_begin_protocol_compatibility_check(std::ptr::null(), &mut generation),
                 dash_sdk_refresh_protocol_compatibility(std::ptr::null(), 0),
                 dash_sdk_get_protocol_compatibility(std::ptr::null()),
-                dash_sdk_get_platform_write_permit(std::ptr::null()),
-                dash_sdk_validate_platform_write_permit(std::ptr::null(), 0, 0, 0),
             ]
         };
         assert_eq!(generation, 42);
@@ -244,31 +166,14 @@ mod tests {
     }
 
     #[test]
-    fn should_block_writes_synchronously_when_strict_check_begins() {
+    fn should_publish_pending_check_generation_synchronously() {
         use crate::test_utils::test_utils::{create_mock_sdk_handle, destroy_mock_sdk_handle};
         let handle = create_mock_sdk_handle();
         unsafe {
-            let policy = dash_sdk_set_protocol_compatibility_policy(handle, 1);
-            assert!(policy.error.is_null());
-            let denied = dash_sdk_get_platform_write_permit(handle);
-            assert!(!denied.error.is_null());
-            assert_eq!(
-                (*denied.error).code,
-                DashSDKErrorCode::ProtocolCompatibilityUnavailable
-            );
-            crate::dash_sdk_error_free(denied.error);
-
             let mut generation = 0;
             let begin = dash_sdk_begin_protocol_compatibility_check(handle, &mut generation);
             assert!(begin.error.is_null());
             assert!(generation > 0);
-            let denied = dash_sdk_get_platform_write_permit(handle);
-            assert!(!denied.error.is_null());
-            assert_eq!(
-                (*denied.error).code,
-                DashSDKErrorCode::ProtocolCompatibilityChecking
-            );
-            crate::dash_sdk_error_free(denied.error);
 
             let snapshot = dash_sdk_get_protocol_compatibility(handle);
             assert!(snapshot.error.is_null());
@@ -279,7 +184,7 @@ mod tests {
             assert_eq!(json["status"], "checking");
             crate::dash_sdk_string_free(snapshot.data.cast());
 
-            let invalid = dash_sdk_set_protocol_compatibility_policy(handle, 2);
+            let invalid = dash_sdk_begin_protocol_compatibility_check(handle, std::ptr::null_mut());
             assert!(!invalid.error.is_null());
             assert_eq!((*invalid.error).code, DashSDKErrorCode::InvalidParameter);
             crate::dash_sdk_error_free(invalid.error);

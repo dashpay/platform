@@ -143,8 +143,7 @@ impl Sdk {
         &self,
         input: RegisterDpnsNameInput<S>,
     ) -> Result<RegisterDpnsNameResult, Error> {
-        let sdk = &self.platform_write_context()?;
-        let dpns_contract = sdk.fetch_dpns_contract().await?;
+        let dpns_contract = self.fetch_dpns_contract().await?;
 
         // Get document types
         let preorder_document_type = dpns_contract
@@ -253,7 +252,7 @@ impl Sdk {
         debug!(%identity_id, stage = "preorder", "DPNS registration: submitting document");
         let platform_preorder_document = preorder_document
             .put_to_platform_and_wait_for_response(
-                sdk,
+                self,
                 preorder_document_type.to_owned_document_type(),
                 None, // entropy: generated together with the id once the nonce is known
                 input.identity_public_key.clone(),
@@ -283,7 +282,7 @@ impl Sdk {
         });
         let platform_domain_document = domain_document
             .put_to_platform_and_wait_for_response(
-                sdk,
+                self,
                 domain_document_type.to_owned_document_type(),
                 None, // entropy: generated together with the id once the nonce is known
                 input.identity_public_key,

@@ -611,10 +611,6 @@ public enum SDKError: Error {
   case timeout(String)
   case notImplemented(String)
   case internalError(String)
-  case protocolCompatibilityUnavailable(String)
-  case protocolCompatibilityChecking(String)
-  case unsupportedProtocolVersion(String)
-  case platformPreparationExpired(String)
   /// Platform refused the state transition. Carries the rs-dpp consensus
   /// code and family, so a host can branch on the exact rule that refused it
   /// (`error.consensusError?.code == 10422` is a violated propertyConstraints
@@ -641,14 +637,6 @@ public enum SDKError: Error {
     }
 
     switch error.code {
-    case DashSDKErrorCode(rawValue: 11):
-      return .protocolCompatibilityUnavailable(message)
-    case DashSDKErrorCode(rawValue: 12):
-      return .protocolCompatibilityChecking(message)
-    case DashSDKErrorCode(rawValue: 13):
-      return .unsupportedProtocolVersion(message)
-    case DashSDKErrorCode(rawValue: 14):
-      return .platformPreparationExpired(message)
     case DashSDKErrorCode(rawValue: 1): // Invalid parameter
       return .invalidParameter(message)
     case DashSDKErrorCode(rawValue: 2): // Invalid state
@@ -684,9 +672,6 @@ public enum SDKError: Error {
     ffiError: DashSDKError?,
     otherwise fallback: (String) -> SDKError = SDKError.internalError
   ) -> SDKError {
-    if let ffiError, (11...14).contains(ffiError.code.rawValue) {
-      return fromDashSDKError(ffiError)
-    }
     if let ffiError, let consensus = PlatformConsensusError(ffi: ffiError) {
       return .consensusRejection(consensus, message)
     }
@@ -717,30 +702,10 @@ extension SDKError: LocalizedError {
       return "Feature Not Implemented: \(message)"
     case .internalError(let message):
       return "Internal Error: \(message)"
-    case .protocolCompatibilityUnavailable:
-      return "Platform compatibility could not be verified. Check your connection and try again."
-    case .protocolCompatibilityChecking:
-      return "Platform compatibility is being checked. Please wait."
-    case .unsupportedProtocolVersion:
-      return "This network requires a newer version of the app. Update the app to continue."
-    case .platformPreparationExpired:
-      return "Platform rules changed while this operation was prepared. Review and confirm it again."
     case .consensusRejection(_, let message):
       return "Rejected by Platform: \(message)"
     case .unknown(let message):
       return "Unknown Error: \(message)"
-    }
-  }
-
-  public var failureReason: String? {
-    switch self {
-    case .protocolCompatibilityUnavailable(let message),
-         .protocolCompatibilityChecking(let message),
-         .unsupportedProtocolVersion(let message),
-         .platformPreparationExpired(let message):
-      return message
-    default:
-      return nil
     }
   }
 }

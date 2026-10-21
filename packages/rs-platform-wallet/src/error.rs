@@ -1371,12 +1371,7 @@ pub const SIGNER_KEY_UNAVAILABLE_PREFIX: &str = "signer_error:key_unavailable: "
 /// and hands every other error to `wrap`, the caller's stringifying wrapper,
 /// unchanged.
 ///
-/// Protocol compatibility failures are also preserved, including retry
-/// envelopes, so hosts can distinguish a required update from an unavailable
-/// check or an expired preparation, and distinguish those pre-send refusals
-/// from an unknown outcome after a broadcast attempt.
-///
-/// The signer check is **structural and position-0 only** (the marker must start the
+/// The check is **structural and position-0 only** (the marker must start the
 /// nested `ProtocolError::Generic` payload); it is never a substring sniff of
 /// the rendered error, so a foreign signer that merely mentions the token is
 /// not misrouted into key repair. This mirrors
@@ -1385,87 +1380,14 @@ pub fn preserve_signer_key_unavailable_or(
     error: dash_sdk::Error,
     wrap: impl FnOnce(dash_sdk::Error) -> PlatformWalletError,
 ) -> PlatformWalletError {
-    if error.protocol_compatibility_error().is_some()
-        || error.is_protocol_compatibility_after_broadcast()
-        || matches!(
-            &error,
-            dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))
-                if s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
-        )
-    {
+    if matches!(
+        &error,
+        dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))
+            if s.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)
+    ) {
         PlatformWalletError::Sdk(error)
     } else {
         wrap(error)
-    }
-}
-
-/// Keep compatibility failures typed even on older operation-specific error
-/// paths, preserving the distinction between admission refusal and an unknown
-/// outcome after broadcast.
-pub(crate) fn promote_protocol_compatibility_error(
-    error: &dash_sdk::Error,
-) -> Option<PlatformWalletError> {
-    let preserved = match error {
-        dash_sdk::Error::ProtocolCompatibility(cause) => {
-            dash_sdk::Error::ProtocolCompatibility(cause.clone())
-        }
-        dash_sdk::Error::ProtocolCompatibilityAfterBroadcast(cause) => {
-            dash_sdk::Error::ProtocolCompatibilityAfterBroadcast(cause.clone())
-        }
-        dash_sdk::Error::NoAvailableAddressesToRetry(source) => {
-            return promote_protocol_compatibility_error(source);
-        }
-        _ => return None,
-    };
-    Some(PlatformWalletError::Sdk(preserved))
-}
-
-#[cfg(test)]
-mod protocol_compatibility_tests {
-    use super::*;
-
-    #[test]
-    fn should_preserve_compatibility_errors_through_legacy_error_wrappers() {
-        let original = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
-            dash_sdk::Error::ProtocolCompatibility(
-                dash_sdk::ProtocolCompatibilityError::PreparationExpired,
-            ),
-        ));
-        let error = preserve_signer_key_unavailable_or(original, |error| {
-            PlatformWalletError::ShieldedBuildError(error.to_string())
-        });
-        match error {
-            PlatformWalletError::Sdk(error) => assert_eq!(
-                error.protocol_compatibility_error(),
-                Some(&dash_sdk::ProtocolCompatibilityError::PreparationExpired),
-            ),
-            other => panic!("compatibility was flattened: {other}"),
-        }
-    }
-
-    #[test]
-    fn should_preserve_unknown_broadcast_outcomes_through_compatibility_wrappers() {
-        let original = dash_sdk::Error::NoAvailableAddressesToRetry(Box::new(
-            dash_sdk::Error::ProtocolCompatibilityAfterBroadcast(
-                dash_sdk::ProtocolCompatibilityError::Checking,
-            ),
-        ));
-        let promoted = promote_protocol_compatibility_error(&original).expect("preserved unknown");
-        let wrapped = preserve_signer_key_unavailable_or(original, |error| {
-            PlatformWalletError::ShieldedBuildError(error.to_string())
-        });
-        for result in [promoted, wrapped] {
-            match result {
-                PlatformWalletError::Sdk(error) => {
-                    assert!(error.is_protocol_compatibility_after_broadcast());
-                    assert!(error.protocol_compatibility_error().is_none());
-                    assert!(!crate::broadcast_outcome::broadcast_definitely_failed(
-                        &error
-                    ));
-                }
-                other => panic!("unknown broadcast outcome was flattened: {other}"),
-            }
-        }
     }
 }
 

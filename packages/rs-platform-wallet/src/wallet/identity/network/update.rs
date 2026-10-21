@@ -97,7 +97,6 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        let protocol_permit = self.sdk.platform_write_permit()?;
         use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
         use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
         use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
@@ -174,7 +173,7 @@ impl IdentityWallet {
             identity_nonce,
             user_fee_increase,
             &SignerRef(signer),
-            self.sdk.platform_version_for_write()?,
+            self.sdk.version(),
             None,
         )
         .await
@@ -185,16 +184,14 @@ impl IdentityWallet {
             ))
         })?;
 
-        self.sdk.validate_platform_write_permit(&protocol_permit)?;
         state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(&self.sdk, settings)
             .await
             .map_err(|e| {
-                crate::error::preserve_signer_key_unavailable_or(e, |e| {
-                    PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to broadcast identity update: {e}"
-                    ))
-                })
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to broadcast identity update: {}",
+                    e
+                ))
             })?;
 
         // Post-broadcast local apply.
@@ -286,7 +283,6 @@ impl IdentityWallet {
         settings: Option<PutSettings>,
     ) -> Result<dpp::state_transition::proof_result::StateTransitionProofResult, dash_sdk::Error>
     {
-        let protocol_permit = self.sdk.platform_write_permit()?;
         use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
         use dpp::state_transition::identity_update_transition::methods::IdentityUpdateTransitionMethodsV0;
         use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
@@ -310,14 +306,13 @@ impl IdentityWallet {
             identity_nonce,
             user_fee_increase,
             signer,
-            self.sdk.platform_version_for_write()?,
+            self.sdk.version(),
             None,
         )
         .await
         .map_err(dash_sdk::Error::Protocol)?;
 
         // Broadcast and wait for confirmation.
-        self.sdk.validate_platform_write_permit(&protocol_permit)?;
         let result = state_transition
             .broadcast_and_wait(&self.sdk, settings)
             .await?;

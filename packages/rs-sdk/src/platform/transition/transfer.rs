@@ -86,7 +86,6 @@ impl TransferToIdentityWithMetadata for Identity {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<((u64, u64), ResponseMetadata), Error> {
-        let sdk = &sdk.platform_write_context()?;
         let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let user_fee_increase = settings.and_then(|settings| settings.user_fee_increase);
         let state_transition = IdentityCreditTransferTransition::try_from_identity(
@@ -97,14 +96,11 @@ impl TransferToIdentityWithMetadata for Identity {
             signer,
             signing_transfer_key_to_use,
             new_identity_nonce,
-            sdk.platform_version_for_write()?,
+            sdk.version(),
             None,
         )
         .await?;
-        ensure_valid_state_transition_structure(
-            &state_transition,
-            sdk.platform_version_for_write()?,
-        )?;
+        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
         let ((sender, receiver), metadata): ((PartialIdentity, PartialIdentity), _) =
             state_transition
