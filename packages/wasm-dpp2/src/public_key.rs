@@ -1,7 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_type_info;
-use dpp::dashcore::key::constants;
 use dpp::dashcore::PublicKey;
+use dpp::dashcore::key::constants;
 use dpp::secp256k1;
 use std::convert::TryInto;
 use wasm_bindgen::prelude::wasm_bindgen;
