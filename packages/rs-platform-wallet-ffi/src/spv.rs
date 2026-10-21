@@ -516,65 +516,73 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
         }
     }
 
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        let mut config = ClientConfig::default();
-        config.network = net;
-        config.storage_path = std::path::PathBuf::from(&data_dir_str);
-        if let Some(ua) = user_agent_str.clone() {
-            config.user_agent = Some(ua);
+    let mut config = ClientConfig::default();
+    config.network = net;
+    config.storage_path = std::path::PathBuf::from(&data_dir_str);
+    if let Some(ua) = user_agent_str.clone() {
+        config.user_agent = Some(ua);
+    }
+    if start_from_height > 0 {
+        config.start_from_height = Some(start_from_height);
+    }
+    // Asset-lock proof acquisition (`AssetLockManager::wait_for_proof`)
+    // depends on `CLSig` / `ISLock` P2P messages reaching the wallet,
+    // which only happens when `ChainLockManager` + `InstantSendManager`
+    // are spawned (see dash-spv/src/client/lifecycle.rs). Hardcode
+    // here so trusted-SDK callers (who'd otherwise disable masternode
+    // sync) don't silently break asset-lock-funded identity
+    // registration.
+    config.enable_masternodes = true;
+    config.restrict_to_configured_peers = restrict_to_configured_peers;
+    for p in &peer_list {
+        if let Ok(addr) = p.parse() {
+            config.peers.push(addr);
         }
-        if start_from_height > 0 {
-            config.start_from_height = Some(start_from_height);
+    }
+    if let Some(name) = devnet_name_str.as_deref() {
+        let mut devnet = DevnetConfig::new(name);
+        if llmq_devnet_size > 0 {
+            devnet.llmq_params = Some(LlmqDevnetParams {
+                size: llmq_devnet_size,
+                threshold: llmq_devnet_threshold,
+            });
         }
-        // Asset-lock proof acquisition (`AssetLockManager::wait_for_proof`)
-        // depends on `CLSig` / `ISLock` P2P messages reaching the wallet,
-        // which only happens when `ChainLockManager` + `InstantSendManager`
-        // are spawned (see dash-spv/src/client/lifecycle.rs). Hardcode
-        // here so trusted-SDK callers (who'd otherwise disable masternode
-        // sync) don't silently break asset-lock-funded identity
-        // registration.
-        config.enable_masternodes = true;
-        config.restrict_to_configured_peers = restrict_to_configured_peers;
-        for p in &peer_list {
-            if let Ok(addr) = p.parse() {
-                config.peers.push(addr);
-            }
-        }
-        if let Some(name) = devnet_name_str.as_deref() {
-            let mut devnet = DevnetConfig::new(name);
-            if llmq_devnet_size > 0 {
-                devnet.llmq_params = Some(LlmqDevnetParams {
-                    size: llmq_devnet_size,
-                    threshold: llmq_devnet_threshold,
-                });
-            }
-            config.devnet = Some(devnet);
-        }
+        config.devnet = Some(devnet);
+    }
 
-        // Deliberately UNDER the registry guard, unlike the read-only
-        // exports: this one mutates the manager's runtime. Dropping the
-        // guard would let `platform_wallet_manager_destroy` remove the
-        // handle, join the workers and fire the host's `release_fn` while
-        // the start is in flight — and the run loop below would then
-        // deliver block events into released host contexts. Holding the
-        // guard makes the destroy wait, which is the whole point of the
-        // registry.
-        let spv = manager.spv_arc();
-        let start_result = {
-            let spv = spv.clone();
-            block_on_worker(async move { spv.start(config).await })
-        };
-
-        if start_result.is_ok() {
-            let _guard = runtime().enter();
-            spv.spawn_run_loop();
-        }
-
-        start_result
-    });
-
-    let start_result = unwrap_option_or_return!(option);
+    // Look the runtime up under the registry guard, but run the start
+    // outside it — see `platform_wallet_manager_sync_progress`. The start
+    // opens the SPV disk store, which can run a one-time storage migration
+    // taking many seconds; a registry read guard held across it would stall
+    // every `platform_wallet_manager_create` (a registry write) and, through
+    // parking_lot's writer preference, every other registry reader for that
+    // long — a host that frees its main thread during the start would park
+    // it again on the first other manager it configures.
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| manager.spv_arc());
+    let spv = unwrap_option_or_return!(option);
+    let start_result = {
+        let spv = spv.clone();
+        block_on_worker(async move { spv.start(config).await })
+    };
     unwrap_result_or_return!(start_result);
+
+    // Spawn the run loop under the guard again: with the guard dropped
+    // during the start, `platform_wallet_manager_destroy` may have removed
+    // the handle, joined the workers and fired the host's `release_fn`
+    // meanwhile, and a run loop spawned now would deliver block events into
+    // released host contexts. A destroyed handle means the started client
+    // has no owner: stop it instead of running it.
+    let spawned = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |_manager| {
+        let _guard = runtime().enter();
+        spv.spawn_run_loop();
+    });
+    if spawned.is_none() {
+        let _ = block_on_worker(async move { spv.stop().await });
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            "manager was destroyed while SPV was starting",
+        );
+    }
 
     PlatformWalletFFIResult::ok()
 }
