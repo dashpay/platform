@@ -1520,7 +1520,75 @@ pub struct AssetLockEntry {
     pub proof: Option<AssetLockProof>,
 }
 
+/// Whether an accepted asset-lock snapshot changes durable state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetLockPersistenceAction {
+    /// Persist the snapshot, retaining the previous UUID if this snapshot omits it.
+    Apply,
+    /// Preserve the stronger terminal evidence without changing any columns.
+    Ignore,
+}
+
+/// A snapshot cannot replace the durable operation evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum AssetLockPersistenceError {
+    /// An existing UUID association is immutable.
+    #[error("asset lock operation ID cannot change")]
+    OperationIdConflict,
+    /// The snapshot does not follow or exactly repeat the stored generation.
+    #[error("stale asset lock operation revision")]
+    OperationRevisionConflict,
+    /// A conflict/recovery transition has no durable starting row.
+    #[error("operation transition has no durable predecessor")]
+    MissingOperationPredecessor,
+}
+
+impl AssetLockPersistenceError {
+    /// Stable diagnostic for storage adapters that retain their error taxonomy.
+    pub const fn reason(self) -> &'static str {
+        match self {
+            Self::OperationIdConflict => "asset lock operation ID cannot change",
+            Self::OperationRevisionConflict => "stale asset lock operation revision",
+            Self::MissingOperationPredecessor => "operation transition has no durable predecessor",
+        }
+    }
+}
+
 impl AssetLockEntry {
+    /// Decide a durable upsert before any backend mutation. The predecessor must
+    /// be the stored row for this wallet/outpoint. Apply retains a stored UUID
+    /// when the incoming snapshot omits it; Ignore preserves the entire row.
+    pub fn persistence_action(
+        &self,
+        previous: Option<&Self>,
+    ) -> Result<AssetLockPersistenceAction, AssetLockPersistenceError> {
+        let Some(previous) = previous else {
+            if self.operation_revision != 0
+                || self.expected_operation_revision.is_some()
+                || self.status == AssetLockStatus::Conflicted
+            {
+                return Err(AssetLockPersistenceError::MissingOperationPredecessor);
+            }
+            return Ok(AssetLockPersistenceAction::Apply);
+        };
+        if previous.operation_id.is_some()
+            && self.operation_id.is_some()
+            && previous.operation_id != self.operation_id
+        {
+            return Err(AssetLockPersistenceError::OperationIdConflict);
+        }
+        if !self.accepts_operation_snapshot(previous) {
+            return Err(AssetLockPersistenceError::OperationRevisionConflict);
+        }
+        if (previous.status == AssetLockStatus::DrainCompleted
+            && self.status != AssetLockStatus::DrainCompleted)
+            || (previous.status.is_consumed() && !self.status.is_consumed())
+        {
+            return Ok(AssetLockPersistenceAction::Ignore);
+        }
+        Ok(AssetLockPersistenceAction::Apply)
+    }
+
     /// Whether this snapshot can replace the current operation generation.
     /// Lifecycle updates within a generation cannot enter or leave conflict.
     pub fn follows_operation(&self, revision: u64, status: &AssetLockStatus) -> bool {
@@ -2662,6 +2730,90 @@ mod tests {
             .as_object()
             .expect("changeset serializes as an object")
             .contains_key("shielded"));
+    }
+
+    #[test]
+    fn should_share_asset_lock_persistence_decisions_across_backends() {
+        let entry = AssetLockEntry {
+            operation_id: Some([0x42; 16]),
+            operation_revision: 0,
+            expected_operation_revision: None,
+            out_point: OutPoint::default(),
+            transaction: Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 0,
+            funding_type: AssetLockFundingType::IdentityRegistration,
+            identity_index: 0,
+            amount_duffs: 1000,
+            status: AssetLockStatus::Broadcast,
+            proof: None,
+        };
+        assert_eq!(
+            entry.persistence_action(None),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        let mut conflict = entry.clone();
+        conflict.status = AssetLockStatus::Conflicted;
+        conflict.advance_operation_revision();
+        assert_eq!(
+            conflict.persistence_action(None),
+            Err(AssetLockPersistenceError::MissingOperationPredecessor)
+        );
+        assert_eq!(
+            conflict.persistence_action(Some(&entry)),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        assert_eq!(
+            conflict.persistence_action(Some(&conflict)),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        assert_eq!(
+            entry.persistence_action(Some(&conflict)),
+            Err(AssetLockPersistenceError::OperationRevisionConflict)
+        );
+        let mut mutated = conflict.clone();
+        mutated.amount_duffs += 1;
+        assert_eq!(
+            mutated.persistence_action(Some(&conflict)),
+            Err(AssetLockPersistenceError::OperationRevisionConflict)
+        );
+        let mut legacy = entry.clone();
+        legacy.operation_id = None;
+        assert_eq!(
+            legacy.persistence_action(Some(&entry)),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        for status in [AssetLockStatus::Consumed, AssetLockStatus::DrainCompleted] {
+            let mut terminal = entry.clone();
+            terminal.status = status;
+            assert_eq!(
+                entry.persistence_action(Some(&terminal)),
+                Ok(AssetLockPersistenceAction::Ignore)
+            );
+            let mut wrong_uuid = entry.clone();
+            wrong_uuid.operation_id = Some([0x43; 16]);
+            assert_eq!(
+                wrong_uuid.persistence_action(Some(&terminal)),
+                Err(AssetLockPersistenceError::OperationIdConflict)
+            );
+        }
+        let mut consumed = entry.clone();
+        consumed.status = AssetLockStatus::Consumed;
+        let mut completed = entry;
+        completed.status = AssetLockStatus::DrainCompleted;
+        assert_eq!(
+            completed.persistence_action(Some(&consumed)),
+            Ok(AssetLockPersistenceAction::Apply)
+        );
+        assert_eq!(
+            consumed.persistence_action(Some(&completed)),
+            Ok(AssetLockPersistenceAction::Ignore)
+        );
     }
 
     /// Asset-lock merge is last-write-wins EXCEPT for the Consumed

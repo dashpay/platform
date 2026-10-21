@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-use platform_wallet::changeset::AssetLockChangeSet;
+use platform_wallet::changeset::{AssetLockChangeSet, AssetLockPersistenceAction};
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -136,8 +136,9 @@ pub fn apply(
     cs: &AssetLockChangeSet,
 ) -> Result<(), WalletStorageError> {
     if !cs.asset_locks.is_empty() {
-        // Compare revisions before updating the row. SQL additionally retains
-        // consumed tombstones; the blob distinguishes DrainCompleted receipts.
+        // The wallet owner decides UUID, revision, and terminal-state policy
+        // before this backend mutates either lifecycle or recovery columns.
+        // SQL also protects a consumed column if its blob has drifted.
         let mut stmt = tx.prepare_cached(
             "INSERT INTO asset_locks \
                 (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob, operation_id, operation_revision) \
@@ -164,55 +165,31 @@ pub fn apply(
                     operation_revision: row.get(2)?,
                 }),
             ).optional()?;
-            // The operation UUID is immutable once stored. Reject the whole
-            // snapshot before any lifecycle or sidecar write.
-            if let (Some(incoming), Some(stored)) = (
-                entry.operation_id.as_ref(),
-                existing
-                    .as_ref()
-                    .and_then(|row| row.operation_id.as_deref()),
-            ) {
-                if incoming.as_slice() != stored {
-                    return Err(WalletStorageError::blob_decode(
-                        "asset lock operation ID cannot change",
-                    ));
-                }
-            }
-            // Both terminal variants project to SQL `consumed`, but the blob
-            // retains stronger proof-gated completion and must never regress.
-            if let Some(stored) = &existing {
-                let old: AssetLockEntryWire = blob::decode(&stored.lifecycle_blob)?;
-                let mut previous = old.into_entry()?;
-                previous.operation_revision = u64::try_from(stored.operation_revision)
-                    .map_err(|_| WalletStorageError::blob_decode("negative operation revision"))?;
-                previous.operation_id = stored
-                    .operation_id
-                    .as_ref()
-                    .map(|id| {
-                        id.as_slice()
-                            .try_into()
-                            .map_err(|_| WalletStorageError::blob_decode("invalid operation UUID"))
-                    })
-                    .transpose()?;
-                if !entry.accepts_operation_snapshot(&previous) {
-                    return Err(WalletStorageError::blob_decode(
-                        "stale asset lock operation revision",
-                    ));
-                }
-                if previous.status == AssetLockStatus::DrainCompleted
-                    && entry.status != AssetLockStatus::DrainCompleted
-                {
-                    continue;
-                }
-            }
-            if existing.is_none()
-                && (entry.operation_revision != 0
-                    || entry.expected_operation_revision.is_some()
-                    || entry.status == AssetLockStatus::Conflicted)
+            let previous = existing
+                .map(|stored| -> Result<_, WalletStorageError> {
+                    let old: AssetLockEntryWire = blob::decode(&stored.lifecycle_blob)?;
+                    let mut previous = old.into_entry()?;
+                    previous.operation_revision = u64::try_from(stored.operation_revision)
+                        .map_err(|_| {
+                            WalletStorageError::blob_decode("negative operation revision")
+                        })?;
+                    previous.operation_id = stored
+                        .operation_id
+                        .map(|id| {
+                            id.try_into().map_err(|_| {
+                                WalletStorageError::blob_decode("invalid operation UUID")
+                            })
+                        })
+                        .transpose()?;
+                    Ok(previous)
+                })
+                .transpose()?;
+            match entry
+                .persistence_action(previous.as_ref())
+                .map_err(|error| WalletStorageError::blob_decode(error.reason()))?
             {
-                return Err(WalletStorageError::blob_decode(
-                    "operation transition has no durable predecessor",
-                ));
+                AssetLockPersistenceAction::Apply => {}
+                AssetLockPersistenceAction::Ignore => continue,
             }
             stmt.execute(params![
                 wallet_id.as_slice(),
