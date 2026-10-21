@@ -8,6 +8,7 @@ pub use dash_platform_queries::dpns_usernames::{
 pub use queries::DpnsUsername;
 
 use crate::platform::documents::document_query::DocumentQuery;
+use crate::platform::documents::transitions::DocumentDeleteTransitionBuilder;
 use crate::platform::transition::put_document::PutDocument;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::{DataContract, Document, Fetch, FetchMany};
@@ -59,6 +60,36 @@ fn normalize_dpns_label(input: &str) -> String {
 /// names it, which the `ownerAndNameHash` index keys with its owner. Spelled here rather than
 /// read from the bundled DPNS contract, which the SDK builds only with that contract's feature.
 const NAME_HASH: &str = "nameHash";
+
+/// How long before a pending preorder expires the registration stops revealing it: a domain
+/// create broadcast now lands in a later block, and a preorder expired at that block's time
+/// is not found (40120). One minute covers the blocks a broadcast waits for.
+const DPNS_PREORDER_REVEAL_MARGIN_MS: u64 = 60_000;
+
+/// A preorder of the name its owner already holds ([`Sdk::pending_dpns_preorder`]).
+#[derive(Debug, Clone, PartialEq)]
+enum PendingDpnsPreorder {
+    /// It lives long enough for a domain create broadcast now to reveal it.
+    Revealable(Document),
+    /// It has expired, or expires before a domain create broadcast now would land, but is
+    /// still stored: the cleanup of expired documents has not reached it. A reveal of it is
+    /// refused (40120), and so is another preorder of the name while it holds the owner's
+    /// `ownerAndNameHash` entry (40105), so its owner deletes it and preorders anew.
+    Expiring(Document),
+}
+
+/// Whether `preorder`, of a type whose documents live `ttl_seconds`, can still be revealed by
+/// a domain create broadcast at `now_ms`, the time of the newest block a proof reports: the
+/// network counts it expired from `$createdAt` plus the time to live, so it must not reach that
+/// within [`DPNS_PREORDER_REVEAL_MARGIN_MS`]. A preorder of a type with no time to live, or
+/// with no `$createdAt`, never expires.
+fn preorder_revealable(preorder: &Document, ttl_seconds: Option<u32>, now_ms: u64) -> bool {
+    let (Some(ttl_seconds), Some(created_at)) = (ttl_seconds, preorder.created_at()) else {
+        return true;
+    };
+    let expires_at = created_at.saturating_add(u64::from(ttl_seconds).saturating_mul(1_000));
+    now_ms.saturating_add(DPNS_PREORDER_REVEAL_MARGIN_MS) < expires_at
+}
 
 /// Hash a buffer twice using SHA256 (double SHA256)
 fn hash_double(data: Vec<u8>) -> [u8; 32] {
@@ -464,14 +495,34 @@ impl Sdk {
 
         // From DPNS v3 an identity holds one pending preorder of a name: one an earlier
         // registration left behind, whose domain create failed, is revealed again rather
-        // than preordered anew, which the platform would refuse as a duplicate
+        // than preordered anew, which the platform would refuse as a duplicate. One that
+        // expires before a reveal could land is deleted, then the name is preordered anew
         let pending_preorder = self
-            .pending_dpns_preorder(dpns_contract, identity_id, &preorder_document)
+            .pending_dpns_preorder(&dpns_contract, identity_id, &preorder_document)
             .await?;
-        let platform_preorder_document = if let Some(pending_preorder) = pending_preorder {
+        let platform_preorder_document = if let Some(PendingDpnsPreorder::Revealable(
+            pending_preorder,
+        )) = pending_preorder
+        {
             debug!(%identity_id, document_id = %pending_preorder.id(), stage = "preorder", "DPNS registration: revealing a pending preorder");
             pending_preorder
         } else {
+            if let Some(PendingDpnsPreorder::Expiring(expiring)) = pending_preorder {
+                debug!(%identity_id, document_id = %expiring.id(), stage = "preorder", "DPNS registration: deleting an expiring preorder");
+                self.document_delete(
+                    DocumentDeleteTransitionBuilder::from_document(
+                        Arc::new(dpns_contract),
+                        "preorder".to_string(),
+                        &expiring,
+                    ),
+                    &input.identity_public_key,
+                    &input.signer,
+                )
+                .await
+                .inspect_err(|error| {
+                    warn!(%identity_id, stage = "preorder", %error, "DPNS registration: deleting the expiring preorder failed");
+                })?;
+            }
             // Submit preorder document first
             debug!(%identity_id, stage = "preorder", "DPNS registration: submitting document");
             let platform_preorder_document = preorder_document
@@ -531,24 +582,36 @@ impl Sdk {
 
     /// The preorder `owner_id` already holds of the name `preorder_document` commits to,
     /// found by its owner and its `nameHash` (the `ownerAndNameHash` index), when
-    /// `dpns_contract` is DPNS v3 or later; `None` when there is none, and before v3,
-    /// whose preorders hash a fresh salt and so never repeat. A failed query is an error.
+    /// `dpns_contract` is DPNS v3 or later, revealable or expiring as the time of the block
+    /// the proof reports says ([`preorder_revealable`]); `None` when there is none, and
+    /// before v3, whose preorders hash a fresh salt and so never repeat. A failed query is an
+    /// error.
     async fn pending_dpns_preorder(
         &self,
-        dpns_contract: DataContract,
+        dpns_contract: &DataContract,
         owner_id: Identifier,
         preorder_document: &Document,
-    ) -> Result<Option<Document>, Error> {
+    ) -> Result<Option<PendingDpnsPreorder>, Error> {
         let Some(name_hash) = preorder_document.properties().get(NAME_HASH).cloned() else {
             return Ok(None);
         };
-        let query = pending_preorder_query(Arc::new(dpns_contract), owner_id, name_hash);
+        let ttl_seconds = dpns_contract
+            .document_type_for_name("preorder")
+            .map_err(|_| Error::Generic("DPNS preorder document type not found".to_string()))?
+            .documents_ttl_seconds();
+        let query = pending_preorder_query(Arc::new(dpns_contract.clone()), owner_id, name_hash);
+        let (preorders, metadata) = Document::fetch_many_with_metadata(self, query, None).await?;
         // A proven absence comes back as entries holding `None`
-        Ok(Document::fetch_many(self, query)
-            .await?
-            .into_values()
-            .flatten()
-            .next())
+        let Some(preorder) = preorders.into_values().flatten().next() else {
+            return Ok(None);
+        };
+        Ok(Some(
+            if preorder_revealable(&preorder, ttl_seconds, metadata.time_ms) {
+                PendingDpnsPreorder::Revealable(preorder)
+            } else {
+                PendingDpnsPreorder::Expiring(preorder)
+            },
+        ))
     }
 
     /// Check if a DPNS name is available
@@ -1091,11 +1154,14 @@ mod tests {
             .await
             .expect("the expectation is set");
 
-        let found = sdk
-            .pending_dpns_preorder(dpns_v3(), owner, &bob_v3_preorder(owner))
+        // It records no `$createdAt`, so it never expires
+        let Some(PendingDpnsPreorder::Revealable(found)) = sdk
+            .pending_dpns_preorder(&dpns_v3(), owner, &bob_v3_preorder(owner))
             .await
             .expect("the query answers")
-            .expect("the pending preorder is found");
+        else {
+            panic!("the pending preorder is found, revealable");
+        };
         // The response is decoded as a proof is, so compare what identifies the preorder
         assert_eq!(found.id(), pending.id());
         assert_eq!(found.owner_id(), owner);
@@ -1127,7 +1193,7 @@ mod tests {
             .expect("the expectation is set");
 
         assert_eq!(
-            sdk.pending_dpns_preorder(dpns_v3(), owner, &preorder)
+            sdk.pending_dpns_preorder(&dpns_v3(), owner, &preorder)
                 .await
                 .expect("the query answers"),
             None
@@ -1141,9 +1207,48 @@ mod tests {
         // No expectation: the mock fails the request
         let sdk = mock_sdk();
         assert!(sdk
-            .pending_dpns_preorder(dpns_v3(), owner, &bob_v3_preorder(owner))
+            .pending_dpns_preorder(&dpns_v3(), owner, &bob_v3_preorder(owner))
             .await
             .is_err());
+    }
+
+    /// A pending preorder is revealed only while a domain create broadcast now would land before
+    /// it expires: the network counts it expired from `$createdAt` plus the type's time to live,
+    /// and the registration keeps a minute's margin. Without a time to live, or a `$createdAt`,
+    /// it never expires.
+    #[test]
+    fn should_reveal_a_pending_preorder_only_while_a_reveal_lands_before_it_expires() {
+        let created_at = 1_700_000_000_000u64;
+        let mut preorder = bob_v3_preorder(Identifier::new([1u8; 32]));
+        let Document::V0(ref mut v0) = preorder;
+        v0.created_at = Some(created_at);
+        let ttl = dpns_v3()
+            .document_type_for_name("preorder")
+            .expect("the preorder type")
+            .documents_ttl_seconds();
+        assert_eq!(ttl, Some(3600));
+        let expires_at = created_at + 3_600_000;
+
+        assert!(preorder_revealable(&preorder, ttl, created_at));
+        assert!(preorder_revealable(
+            &preorder,
+            ttl,
+            expires_at - DPNS_PREORDER_REVEAL_MARGIN_MS - 1
+        ));
+        assert!(!preorder_revealable(
+            &preorder,
+            ttl,
+            expires_at - DPNS_PREORDER_REVEAL_MARGIN_MS
+        ));
+        assert!(!preorder_revealable(&preorder, ttl, expires_at));
+        assert!(!preorder_revealable(&preorder, ttl, expires_at + 1));
+
+        assert!(preorder_revealable(&preorder, None, expires_at + 1));
+        assert!(preorder_revealable(
+            &bob_v3_preorder(Identifier::new([1u8; 32])),
+            ttl,
+            expires_at + 1
+        ));
     }
 
     /// Before DPNS v3 a preorder hashes a fresh salt, so none repeats: nothing is queried
@@ -1157,7 +1262,7 @@ mod tests {
         // No expectation: a query would fail the call
         let sdk = mock_sdk();
         assert_eq!(
-            sdk.pending_dpns_preorder(dpns_v3(), owner, &salted)
+            sdk.pending_dpns_preorder(&dpns_v3(), owner, &salted)
                 .await
                 .expect("nothing is queried"),
             None

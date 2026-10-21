@@ -5,6 +5,28 @@ import convertToHomographSafeChars from '../../../../../utils/convertToHomograph
 const crypto = require('crypto');
 const { hash } = require('@dashevo/wasm-dpp/lib/utils/hash');
 
+// How long before a pending preorder expires a registration stops revealing it: a domain
+// create broadcast now lands in a later block, and a preorder expired at that block's time
+// is not found. One minute covers the blocks a broadcast waits for.
+const PREORDER_REVEAL_MARGIN_MS = 60_000;
+
+/**
+ * Whether a domain create broadcast now can still reveal `preorder`, of a type whose
+ * documents live `ttlSeconds`: the platform counts it expired from its $createdAt plus
+ * the time to live, at the time of the block the reveal lands in. Now is the time of the
+ * block the query that found it reports, or the local clock when it reports none. A
+ * preorder of a type with no time to live, or with no $createdAt, never expires.
+ */
+function isRevealable(preorder: any, ttlSeconds: number | undefined): boolean {
+  const createdAt = preorder.getCreatedAt?.();
+  if (typeof ttlSeconds !== 'number' || !createdAt) {
+    return true;
+  }
+  const reportedTimeMs = preorder.getMetadata?.()?.getTimeMs();
+  const nowMs = reportedTimeMs !== undefined ? Number(reportedTimeMs) : Date.now();
+  return nowMs + PREORDER_REVEAL_MARGIN_MS < createdAt.getTime() + ttlSeconds * 1000;
+}
+
 /**
  * Register names to the platform
  *
@@ -136,7 +158,22 @@ export async function register(
     })
     : [];
 
-  if (!pendingPreorder) {
+  // One that expires before a reveal could land is not found by the reveal. While the
+  // cleanup of expired documents has not reached it, it still holds the owner's entry
+  // of the name, which refuses a new preorder as a duplicate: its owner deletes it
+  // and preorders the name anew.
+  const revealable = pendingPreorder
+    && isRevealable(pendingPreorder, dpnsContract?.getDocumentSchema('preorder')?.ttl);
+  if (pendingPreorder && !revealable) {
+    await this.documents.broadcast(
+      {
+        delete: [pendingPreorder],
+      },
+      identity,
+    );
+  }
+
+  if (!revealable) {
     const preorderDocument = await this.documents.create(
       'dpns.preorder',
       identity,
