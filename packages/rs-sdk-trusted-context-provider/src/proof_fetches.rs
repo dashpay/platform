@@ -27,7 +27,7 @@ use crate::quorum_refresh::panic_message;
 use crate::quorum_refresh::sleep;
 use dash_context_provider::ContextProviderError;
 use dash_core_proof::bootstrap::{self, RecordKind};
-use dash_core_proof::{parse_commitment, rpc_hex, State};
+use dash_core_proof::{parse_commitment, rpc_hex, Error as ProofError, State};
 use futures::future::{self, select, BoxFuture, Either, FutureExt, Shared};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -40,6 +40,7 @@ use std::num::NonZeroUsize;
 #[cfg(not(target_arch = "wasm32"))]
 use std::panic::AssertUnwindSafe;
 use std::pin::pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use url::Url;
@@ -50,7 +51,7 @@ pub(crate) type QuorumKey = [u8; 48];
 
 /// A quorum: its LLMQ type and its hash in the order the SDK uses (Core's RPC
 /// display order).
-type QuorumId = (u32, [u8; 32]);
+pub(crate) type QuorumId = (u32, [u8; 32]);
 
 /// Most requests one fetch sends, across sources and retries.
 const MAX_REQUESTS_PER_FETCH: usize = 8;
@@ -63,8 +64,14 @@ const MAX_QUORUMS_IN_FLIGHT: usize = 2;
 const MAX_FETCH_SLOTS: usize = 64;
 /// Verified states kept besides the checkpoint, to start later proofs from.
 const MAX_RECENT_STATES: usize = 16;
-/// The retry delay after a relay's 502 doubles this many times.
+/// The delay before asking a busy relay again doubles this many times.
 const MAX_RETRY_DOUBLINGS: u32 = 3;
+/// Answers a source may give that it cannot serve the quorum before a fetch
+/// stops asking it: one for the height and one for the tip.
+const MAX_CANNOT_SERVE: u32 = 2;
+/// How `bootstrap::verify` reports a target below the minimum height, which
+/// it checks before any signature.
+const STALE_TARGET: ProofError = ProofError("stale target");
 /// How much of an error response's body goes into the failure reason.
 const MAX_REASON_BODY_CHARS: usize = 120;
 
@@ -78,7 +85,8 @@ pub(crate) struct Timing {
     /// How long a request may go unanswered before the next source is asked
     /// as well.
     pub(crate) hedge_after: Duration,
-    /// First delay before asking again after a relay's 502.
+    /// Delay before asking a relay again after it could not serve a quorum,
+    /// and the first delay after it was busy.
     pub(crate) first_retry: Duration,
     /// First wait before a quorum whose fetch failed is fetched again.
     pub(crate) quorum_cooldown: Duration,
@@ -124,6 +132,8 @@ enum Slot {
     Running {
         id: u64,
         height: u32,
+        /// Set while the fetch only waits out a relay's backoff.
+        waiting: Arc<AtomicBool>,
         fetch: SharedFetch,
     },
     Failed {
@@ -193,17 +203,63 @@ fn choose_ask(
 /// How one answer from a relay counts.
 enum Verdict {
     Proven,
-    /// The relay could not serve the proof yet; ask again after `after`, for
-    /// the other height.
-    Retry {
-        reason: String,
-        after: Duration,
-    },
-    /// The source failed and cools down.
+    /// The relay cannot serve this quorum for the height asked: a 502, or a
+    /// valid proof that does not serve the request. Asked again once, for the
+    /// other height, after a delay; then left out of the fetch.
+    CannotServe(String),
+    /// The relay's workers are busy: ask again after a backoff.
+    Busy(String),
+    /// The source failed and cools down for every fetch.
     SourceFailed(String),
-    /// A valid proof of the relay's latest ChainLock does not reach the
-    /// height: asking again cannot help until the chain grows.
+    /// A proof of the relay's latest ChainLock does not reach the height:
+    /// the relay is left out of this fetch.
     BeyondTip(String),
+}
+
+/// One fetch: which quorum, for which height, and its slot.
+struct Attempt {
+    quorum: QuorumId,
+    height: u32,
+    id: u64,
+    /// Earlier failures of this quorum, for its cooldown.
+    failures: u32,
+    waiting: Arc<AtomicBool>,
+}
+
+/// What one fetch knows about one source.
+#[derive(Clone)]
+struct SourceAttempts {
+    asked: u32,
+    in_flight: bool,
+    ready_at: Instant,
+    cannot_serve: u32,
+    busy: u32,
+    /// Ask for the tip rather than the height next time.
+    ask_tip: bool,
+    dropped: bool,
+}
+
+impl SourceAttempts {
+    fn new(now: Instant) -> Self {
+        Self {
+            asked: 0,
+            in_flight: false,
+            ready_at: now,
+            cannot_serve: 0,
+            busy: 0,
+            ask_tip: false,
+            dropped: false,
+        }
+    }
+}
+
+/// The source a fetch asks next.
+enum Pick {
+    Ready(usize),
+    /// None is ready before this time.
+    At(Instant),
+    /// None is left: all are cooling down, left out or already asked.
+    Nothing,
 }
 
 /// Proves quorum keys and caches them, for a provider and its clones.
@@ -350,10 +406,13 @@ impl ProofFetches {
         let now = Instant::now();
         let forgotten_after = self.timing.max_quorum_cooldown.saturating_mul(2);
         let mut proven = self.lock();
-        // A fetch every waiter dropped is not running natively; it is
-        // replaced rather than joined or counted.
         proven.fetches.retain(|_, slot| match slot {
-            Slot::Running { fetch, .. } => fetch.strong_count() != Some(1),
+            // A native fetch every waiter dropped no longer runs, so it is
+            // replaced rather than joined or counted. A browser fetch runs on
+            // the local executor until it frees its own slot.
+            Slot::Running { fetch, .. } => {
+                cfg!(target_arch = "wasm32") || fetch.strong_count() != Some(1)
+            }
             Slot::Failed { at, .. } => now.saturating_duration_since(*at) < forgotten_after,
         });
         // A fetch that finished since the caller's lookup has nothing to add.
@@ -367,9 +426,7 @@ impl ProofFetches {
                 fetch,
                 height: running,
                 ..
-            }) if near(*running) => {
-                return Ok(fetch.clone());
-            }
+            }) if near(*running) => return Ok(fetch.clone()),
             Some(Slot::Running {
                 height: running, ..
             }) => {
@@ -400,10 +457,12 @@ impl ProofFetches {
             }
             Some(Slot::Failed { .. }) | None => 0,
         };
+        // A fetch only waiting out a relay's backoff sends nothing, so it
+        // does not hold one of the places.
         let running = proven
             .fetches
             .values()
-            .filter(|slot| matches!(slot, Slot::Running { .. }))
+            .filter(|slot| matches!(slot, Slot::Running { waiting, .. } if !waiting.load(Ordering::Relaxed)))
             .count();
         if running >= MAX_QUORUMS_IN_FLIGHT {
             return Err(format!(
@@ -411,17 +470,39 @@ impl ProofFetches {
             ));
         }
         if !proven.fetches.contains_key(&quorum) && proven.fetches.len() >= MAX_FETCH_SLOTS {
-            return Err("too many quorums were asked for recently".to_string());
+            // Forget the oldest failure rather than lock new quorums out.
+            let oldest = proven
+                .fetches
+                .iter()
+                .filter_map(|(quorum, slot)| match slot {
+                    Slot::Failed { at, .. } => Some((*at, *quorum)),
+                    Slot::Running { .. } => None,
+                })
+                .min_by_key(|(at, _)| *at)
+                .map(|(_, quorum)| quorum);
+            match oldest {
+                Some(oldest) => proven.fetches.remove(&oldest),
+                None => return Err("too many quorums are being proven".to_string()),
+            };
         }
         proven.next_fetch_id += 1;
         let id = proven.next_fetch_id;
+        let waiting = Arc::new(AtomicBool::new(false));
+        let attempt = Attempt {
+            quorum,
+            height,
+            id,
+            failures,
+            waiting: Arc::clone(&waiting),
+        };
         // Built under the lock, so it must do nothing until it is polled.
-        let fetch = Arc::clone(self).start(quorum, height, id, failures);
+        let fetch = Arc::clone(self).start(attempt);
         proven.fetches.insert(
             quorum,
             Slot::Running {
                 id,
                 height,
+                waiting,
                 fetch: fetch.clone(),
             },
         );
@@ -429,69 +510,62 @@ impl ProofFetches {
     }
 
     /// A fetch every waiter of this quorum shares.
-    fn start(
-        self: Arc<Self>,
-        quorum: QuorumId,
-        height: u32,
-        id: u64,
-        failures: u32,
-    ) -> SharedFetch {
+    fn start(self: Arc<Self>, attempt: Attempt) -> SharedFetch {
+        let attempt = Arc::new(attempt);
         async move {
             let prover = Arc::clone(&self);
+            let inner = Arc::clone(&attempt);
             let result = contained(move || async move {
-                let result = prover.prove(quorum, height).await;
+                let (result, asked) = prover.prove(&inner).await;
                 // Recorded here too, so a browser fetch that outlives its
                 // waiters still frees its slot.
-                prover.finish(quorum, height, id, failures, &result);
+                prover.finish(&inner, &result, asked);
                 result
             })
             .await;
             // Covers a fetch that panicked; a no-op otherwise.
-            self.finish(quorum, height, id, failures, &result);
+            self.finish(&attempt, &result, true);
             result
         }
         .boxed()
         .shared()
     }
 
-    /// Record how fetch `id` of a quorum ended, if its slot is still its own.
-    fn finish(
-        &self,
-        quorum: QuorumId,
-        height: u32,
-        id: u64,
-        failures: u32,
-        result: &Result<(), String>,
-    ) {
+    /// Record how a fetch ended, if its slot is still its own. A failure
+    /// without a single request asked nothing, so it does not cool the
+    /// quorum down.
+    fn finish(&self, attempt: &Attempt, result: &Result<(), String>, asked: bool) {
         let mut proven = self.lock();
         let ours = matches!(
-            proven.fetches.get(&quorum),
-            Some(Slot::Running { id: running, .. }) if *running == id
+            proven.fetches.get(&attempt.quorum),
+            Some(Slot::Running { id, .. }) if *id == attempt.id
         );
-        if ours && result.is_ok() {
-            proven.fetches.remove(&quorum);
-        } else if ours {
+        if !ours {
+            return;
+        }
+        if result.is_err() && asked {
             let failed = Slot::Failed {
                 at: Instant::now(),
-                failures: failures.saturating_add(1),
-                height,
+                failures: attempt.failures.saturating_add(1),
+                height: attempt.height,
             };
-            proven.fetches.insert(quorum, failed);
+            proven.fetches.insert(attempt.quorum, failed);
+        } else {
+            proven.fetches.remove(&attempt.quorum);
         }
     }
 
-    /// Ask the sources for a proof of `quorum` until one verifies, the
-    /// request budget is spent or the deadline passes.
-    async fn prove(&self, quorum: QuorumId, height: u32) -> Result<(), String> {
+    /// Ask the sources for a proof of a quorum until one verifies, the
+    /// request budget is spent, every source is out or the deadline passes.
+    /// Also returns whether any request was sent.
+    async fn prove(&self, attempt: &Attempt) -> (Result<(), String>, bool) {
+        let (quorum, height) = (attempt.quorum, attempt.height);
         let started = Instant::now();
         let deadline = started + self.timing.deadline;
         let mut requests = FuturesUnordered::new();
-        let mut asked = vec![0u32; self.endpoints.len()];
-        let mut busy = Vec::new();
+        let mut sources = vec![SourceAttempts::new(started); self.endpoints.len()];
         let mut sent = 0;
-        let mut retries = 0;
-        let mut alternate = false;
-        let mut next_start = started;
+        let mut hedge_at = started;
         let mut failures = Vec::new();
         loop {
             let now = Instant::now();
@@ -501,38 +575,42 @@ impl ProofFetches {
             }
             let mut wake = deadline;
             if requests.len() < MAX_REQUESTS_IN_FLIGHT && sent < MAX_REQUESTS_PER_FETCH {
-                if now < next_start {
-                    wake = next_start.min(deadline);
-                } else if let Some(source) = self.pick_source(now, &asked, &busy) {
-                    let ask = choose_ask(
-                        &self.lock().states,
-                        self.checkpoint.height,
-                        height,
-                        alternate,
-                    )
-                    .unwrap_or_else(|| Ask {
-                        checkpoint: self.checkpoint.clone(),
-                        height,
-                    });
-                    let body = request_body(&ask, quorum);
-                    let remaining = deadline.saturating_duration_since(now);
-                    let timeout = self.timing.request_timeout.min(remaining);
-                    // A request cut short by the deadline says nothing about
-                    // its source.
-                    let cut_short = timeout < self.timing.request_timeout;
-                    asked[source] += 1;
-                    busy.push(source);
-                    sent += 1;
-                    next_start = now + self.timing.hedge_after;
-                    let endpoint = &self.endpoints[source];
-                    requests.push(async move {
-                        let reply = self.transport.post(endpoint, body, timeout).await;
-                        (source, ask, now, cut_short, reply)
-                    });
-                    continue;
-                } else if requests.is_empty() {
-                    failures.push("every source is cooling down after failures".to_string());
-                    break;
+                if !requests.is_empty() && now < hedge_at {
+                    wake = hedge_at;
+                } else {
+                    match self.pick_source(now, &sources) {
+                        Pick::Ready(source) => {
+                            let ask = choose_ask(
+                                &self.lock().states,
+                                self.checkpoint.height,
+                                height,
+                                sources[source].ask_tip,
+                            )
+                            .unwrap_or_else(|| Ask {
+                                checkpoint: self.checkpoint.clone(),
+                                height,
+                            });
+                            let body = request_body(&ask, quorum);
+                            let remaining = deadline.saturating_duration_since(now);
+                            let timeout = self.timing.request_timeout.min(remaining);
+                            sources[source].asked += 1;
+                            sources[source].in_flight = true;
+                            sent += 1;
+                            hedge_at = now + self.timing.hedge_after;
+                            let endpoint = &self.endpoints[source];
+                            requests.push(async move {
+                                let reply = self.transport.post(endpoint, body, timeout).await;
+                                (source, ask, now, timeout, reply)
+                            });
+                            continue;
+                        }
+                        Pick::At(at) => wake = at.min(deadline),
+                        Pick::Nothing if requests.is_empty() => {
+                            failures.push("no source left to ask".to_string());
+                            break;
+                        }
+                        Pick::Nothing => {}
+                    }
                 }
             } else if requests.is_empty() {
                 break;
@@ -540,23 +618,30 @@ impl ProofFetches {
 
             let wait = wake.saturating_duration_since(now);
             if requests.is_empty() {
+                attempt.waiting.store(true, Ordering::Relaxed);
                 sleep(wait).await;
+                attempt.waiting.store(false, Ordering::Relaxed);
                 continue;
             }
             let answered = match select(requests.next(), pin!(sleep(wait))).await {
                 Either::Left((Some(answered), _)) => answered,
                 Either::Left((None, _)) | Either::Right(_) => continue,
             };
-            let (source, ask, asked_at, cut_short, reply) = answered;
-            busy.retain(|busy| *busy != source);
+            let (source, ask, asked_at, timeout, reply) = answered;
             let origin = self.endpoints[source].origin().ascii_serialization();
-            let elapsed = asked_at.elapsed().as_millis();
+            let elapsed = asked_at.elapsed();
+            let state = &mut sources[source];
+            state.in_flight = false;
+            let note =
+                |reason: &str| format!("{origin}: {reason} after {} ms", elapsed.as_millis());
+            // A request the deadline cut short says nothing about its source.
+            let cut_short = timeout < self.timing.request_timeout && elapsed >= timeout;
             let verdict = match reply {
-                Err(PostError::Failed(reason)) if cut_short => Verdict::Retry {
-                    reason,
-                    after: Duration::ZERO,
-                },
-                reply => self.judge(quorum, height, &ask, reply, retries),
+                Err(PostError::Failed(reason)) if cut_short => {
+                    failures.push(note(&reason));
+                    continue;
+                }
+                reply => self.judge(quorum, height, &ask, reply),
             };
             match verdict {
                 Verdict::Proven => {
@@ -566,25 +651,40 @@ impl ProofFetches {
                         quorum_hash = %hex::encode(quorum.1),
                         height,
                         %origin,
-                        elapsed_ms = elapsed,
+                        elapsed_ms = elapsed.as_millis(),
                         "proved quorum key"
                     );
-                    return Ok(());
+                    return (Ok(()), true);
                 }
-                Verdict::Retry { reason, after } => {
-                    failures.push(format!("{origin}: {reason} after {elapsed} ms"));
-                    retries += 1;
-                    alternate = !alternate;
-                    next_start = Instant::now() + after;
+                Verdict::CannotServe(reason) => {
+                    state.cannot_serve += 1;
+                    // Next time, ask this source for the other height.
+                    state.ask_tip = ask.height != 0;
+                    if state.cannot_serve >= MAX_CANNOT_SERVE {
+                        state.dropped = true;
+                        failures.push(note(&format!("{reason}; not asked again")));
+                    } else {
+                        state.ready_at = Instant::now() + self.timing.first_retry;
+                        failures.push(note(&reason));
+                    }
+                }
+                Verdict::Busy(reason) => {
+                    state.busy += 1;
+                    let max = self
+                        .timing
+                        .first_retry
+                        .saturating_mul(1 << MAX_RETRY_DOUBLINGS);
+                    state.ready_at =
+                        Instant::now() + backoff(self.timing.first_retry, max, state.busy);
+                    failures.push(note(&reason));
                 }
                 Verdict::SourceFailed(reason) => {
-                    failures.push(format!("{origin}: {reason} after {elapsed} ms"));
                     self.source_failed(source);
-                    next_start = Instant::now();
+                    failures.push(note(&reason));
                 }
                 Verdict::BeyondTip(reason) => {
-                    failures.push(format!("{origin}: {reason}"));
-                    break;
+                    state.dropped = true;
+                    failures.push(note(&reason));
                 }
             }
         }
@@ -596,31 +696,22 @@ impl ProofFetches {
             failures.join("; ")
         );
         tracing::warn!(%reason, "quorum proof fetch failed");
-        Err(reason)
+        (Err(reason), sent > 0)
     }
 
     /// Judge a relay's answer, publishing the key if it proves one.
     ///
     /// Only what an honest relay never does cools a source down: failed or
-    /// oversized transfers, redirects, error statuses other than 502, and
-    /// proofs that do not verify. A valid proof that does not serve the
-    /// request may be the fault of the unverified height or quorum, so it is
-    /// retried instead.
+    /// oversized transfers, redirects, error statuses other than 502 and
+    /// 503, and proofs that do not verify. A valid proof that does not serve
+    /// the request may be the fault of the unverified height or quorum hash.
     fn judge(
         &self,
         quorum: QuorumId,
         height: u32,
         ask: &Ask,
         reply: Result<Reply, PostError>,
-        retries: u32,
     ) -> Verdict {
-        let retry = |reason: String| Verdict::Retry {
-            reason,
-            after: self
-                .timing
-                .first_retry
-                .saturating_mul(1 << retries.min(MAX_RETRY_DOUBLINGS)),
-        };
         let reply = match reply {
             Ok(reply) => reply,
             Err(PostError::TooLarge) => {
@@ -631,29 +722,27 @@ impl ProofFetches {
         let body = &reply.body;
         match reply.status {
             200 => {}
-            // The relay's Core could not serve this proof (yet): worth asking
-            // again, for the other height.
-            502 => return retry(format!("HTTP 502{}", body_excerpt(body))),
-            // Anything else, 503 (workers busy) included, cools the source down.
+            // The relay's Core cannot serve this quorum for this height.
+            502 => return Verdict::CannotServe(format!("HTTP 502{}", body_excerpt(body))),
+            // The relay's workers are busy, which is normal under load.
+            503 => return Verdict::Busy(format!("HTTP 503{}", body_excerpt(body))),
             status => return Verdict::SourceFailed(format!("HTTP {status}{}", body_excerpt(body))),
         }
-        let verified = match bootstrap::verify(body, &ask.checkpoint, 0) {
+        let needed = height.saturating_sub(self.window);
+        // The target height is checked before any signature, so a bogus
+        // height costs no BLS work. Only this source is affected if it lies.
+        let verified = match bootstrap::verify(body, &ask.checkpoint, needed) {
             Ok(verified) => verified,
+            Err(error) if error == STALE_TARGET && ask.height == 0 => {
+                return Verdict::BeyondTip(format!(
+                    "its latest ChainLock is below the core height {needed} that {height} needs"
+                ));
+            }
+            Err(error) if error == STALE_TARGET => {
+                return Verdict::CannotServe(format!("proof ends below core height {needed}"));
+            }
             Err(error) => return Verdict::SourceFailed(format!("invalid proof: {error}")),
         };
-        let target = verified.state().height;
-        let needed = height.saturating_sub(self.window);
-        if target < needed && ask.height == 0 {
-            return Verdict::BeyondTip(format!(
-                "its latest ChainLock, at core height {target}, is below the {needed} that core \
-                 height {height} needs"
-            ));
-        }
-        if target < needed {
-            return retry(format!(
-                "proof ends at core height {target}, below {needed}"
-            ));
-        }
         let mut keys = Vec::new();
         // EvoNode records are not asked for; any that come back are ignored.
         for record in verified.records() {
@@ -671,26 +760,45 @@ impl ProofFetches {
                 // Records of other quorums do not matter; one that names the
                 // requested quorum must parse.
                 Err(error) if names(record.leaf, quorum) => {
-                    return retry(format!("unparsable record of the quorum: {error}"));
+                    return Verdict::CannotServe(format!(
+                        "unparsable record of the quorum: {error}"
+                    ));
                 }
                 Err(_) => {}
             }
         }
         let [key] = keys.as_slice() else {
-            return retry(format!(
+            return Verdict::CannotServe(format!(
                 "proof opens the requested quorum {} times, not once",
                 keys.len()
             ));
         };
         match self.publish(quorum, *key, verified.state()) {
             Ok(()) => Verdict::Proven,
-            Err(reason) => retry(reason),
+            Err(reason) => Verdict::CannotServe(reason),
         }
     }
 
-    /// Cache a proven key and remember the state that proved it.
-    fn publish(&self, quorum: QuorumId, key: QuorumKey, target: &State) -> Result<(), String> {
+    /// Cache a proven key and remember the state that proved it. Nothing is
+    /// cached if either conflicts with what is already known.
+    pub(crate) fn publish(
+        &self,
+        quorum: QuorumId,
+        key: QuorumKey,
+        target: &State,
+    ) -> Result<(), String> {
         let mut proven = self.lock();
+        if let Some(known) = proven.states.get(&target.height) {
+            if known != target {
+                tracing::error!(
+                    height = target.height,
+                    known = %rpc_hex(&known.block_hash),
+                    proven = %rpc_hex(&target.block_hash),
+                    "two proofs verified different blocks at one height; keeping the first"
+                );
+                return Err("proves a different block than one already verified".to_string());
+            }
+        }
         match proven.keys.get_mut(&quorum) {
             Some(cached) if cached.key != key => {
                 tracing::error!(
@@ -713,45 +821,51 @@ impl ProofFetches {
                 );
             }
         }
-        match proven.states.get(&target.height) {
-            Some(known) if known != target => tracing::error!(
-                height = target.height,
-                known = %rpc_hex(&known.block_hash),
-                proven = %rpc_hex(&target.block_hash),
-                "two proofs verified different blocks at one height; keeping the first"
-            ),
-            Some(_) => {}
-            None => {
-                proven.states.insert(target.height, target.clone());
-                // One state is added at a time, so one removal keeps the bound.
-                if proven.states.len() > MAX_RECENT_STATES + 1 {
-                    let oldest = proven
-                        .states
-                        .keys()
-                        .copied()
-                        .find(|height| *height != self.checkpoint.height);
-                    if let Some(height) = oldest {
-                        proven.states.remove(&height);
-                    }
+        if proven
+            .states
+            .insert(target.height, target.clone())
+            .is_none()
+        {
+            // One state is added at a time, so one removal keeps the bound.
+            if proven.states.len() > MAX_RECENT_STATES + 1 {
+                let oldest = proven
+                    .states
+                    .keys()
+                    .copied()
+                    .find(|height| *height != self.checkpoint.height);
+                if let Some(height) = oldest {
+                    proven.states.remove(&height);
                 }
             }
         }
         Ok(())
     }
 
-    /// The source to ask next: a healthy one with no request of this fetch
-    /// in flight, asked the fewest times so far.
-    fn pick_source(&self, now: Instant, asked: &[u32], busy: &[usize]) -> Option<usize> {
+    /// The source to ask next: one that is not cooling down, left out of
+    /// this fetch or already asked, and is ready; among those the one asked
+    /// the fewest times.
+    fn pick_source(&self, now: Instant, sources: &[SourceAttempts]) -> Pick {
         let proven = self.lock();
-        proven
-            .sources
+        let candidates: Vec<_> = sources
             .iter()
+            .zip(&proven.sources)
             .enumerate()
-            .filter(|(source, health)| {
-                !busy.contains(source) && health.failed_until.is_none_or(|until| until <= now)
+            .filter(|(_, (attempts, health))| {
+                !attempts.dropped
+                    && !attempts.in_flight
+                    && health.failed_until.is_none_or(|until| until <= now)
             })
-            .min_by_key(|(source, _)| asked[*source])
-            .map(|(source, _)| source)
+            .map(|(source, (attempts, _))| (source, attempts))
+            .collect();
+        let ready = candidates
+            .iter()
+            .filter(|(_, attempts)| attempts.ready_at <= now)
+            .min_by_key(|(_, attempts)| attempts.asked);
+        match (ready, candidates.iter().map(|(_, a)| a.ready_at).min()) {
+            (Some((source, _)), _) => Pick::Ready(*source),
+            (None, Some(at)) => Pick::At(at),
+            (None, None) => Pick::Nothing,
+        }
     }
 
     fn source_failed(&self, source: usize) {
@@ -789,8 +903,12 @@ fn request_body(ask: &Ask, (quorum_type, quorum_hash): QuorumId) -> String {
     .to_string()
 }
 
-/// The start of an error body, for the failure reason.
+/// The start of a plain-text error body, for the failure reason. Markup,
+/// such as a CDN's error page, is left out.
 fn body_excerpt(body: &[u8]) -> String {
+    if body.contains(&b'<') {
+        return String::new();
+    }
     let text: String = String::from_utf8_lossy(body)
         .chars()
         .filter(|c| !c.is_control())
@@ -932,6 +1050,80 @@ mod tests {
             ProofTransport::new().expect("a client"),
             Timing::default(),
         )
+    }
+
+    fn running_id(fetches: &ProofFetches, quorum: QuorumId) -> Option<u64> {
+        match fetches.lock().fetches.get(&quorum) {
+            Some(Slot::Running { id, .. }) => Some(*id),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn should_evict_the_oldest_failure_when_the_slot_table_is_full() {
+        let fetches = Arc::new(fetches());
+        let now = Instant::now();
+        let earlier = now.checked_sub(Duration::from_secs(1)).unwrap_or(now);
+        {
+            let mut proven = fetches.lock();
+            for n in 0..MAX_FETCH_SLOTS {
+                let at = if n == 0 { earlier } else { now };
+                let failed = Slot::Failed {
+                    at,
+                    failures: 1,
+                    height: 150,
+                };
+                proven.fetches.insert((6, [n as u8; 32]), failed);
+            }
+        }
+        let _fetch = fetches
+            .join_or_start(6, [0xff; 32], 150)
+            .expect("a new quorum is not locked out");
+        let proven = fetches.lock();
+        assert_eq!(proven.fetches.len(), MAX_FETCH_SLOTS);
+        assert!(
+            !proven.fetches.contains_key(&(6, [0; 32])),
+            "the oldest goes"
+        );
+    }
+
+    #[test]
+    fn should_join_a_fetch_only_for_a_height_it_covers() {
+        let fetches = Arc::new(fetches());
+        let _first = fetches.join_or_start(6, [1; 32], 150).expect("starts");
+        let id = running_id(&fetches, (6, [1; 32]));
+        let _joined = fetches.join_or_start(6, [1; 32], 750).expect("joins");
+        assert_eq!(running_id(&fetches, (6, [1; 32])), id);
+        let far = fetches.join_or_start(6, [1; 32], 751).map(|_| ());
+        assert!(
+            far.as_ref()
+                .is_err_and(|reason| reason.contains("being proven for core height 150")),
+            "{far:?}"
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn should_replace_a_fetch_every_waiter_dropped() {
+        let fetches = Arc::new(fetches());
+        let first = fetches.join_or_start(6, [1; 32], 150).expect("starts");
+        let id = running_id(&fetches, (6, [1; 32]));
+        drop(first);
+        let _second = fetches.join_or_start(6, [1; 32], 150).expect("restarts");
+        let replaced = running_id(&fetches, (6, [1; 32]));
+        assert!(replaced.is_some() && replaced != id);
+    }
+
+    #[test]
+    fn should_not_count_fetches_waiting_out_a_backoff_against_the_limit() {
+        let fetches = Arc::new(fetches());
+        let _first = fetches.join_or_start(6, [1; 32], 150).expect("first");
+        let _second = fetches.join_or_start(6, [2; 32], 150).expect("second");
+        assert!(fetches.join_or_start(6, [3; 32], 150).is_err());
+        if let Some(Slot::Running { waiting, .. }) = fetches.lock().fetches.get(&(6, [1; 32])) {
+            waiting.store(true, Ordering::Relaxed);
+        }
+        assert!(fetches.join_or_start(6, [3; 32], 150).is_ok());
     }
 
     #[test]

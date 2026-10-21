@@ -786,7 +786,7 @@ mod tests {
         assert!(again.contains("retry in 5 s"), "{again}");
         let other =
             unavailable_reason(fetch(&provider, f.quorum_type, [0x11; 32], f.target.height).await);
-        assert!(other.contains("cooling down"), "{other}");
+        assert!(other.contains("no source left"), "{other}");
         assert_eq!(relay.requests().len(), 1, "cooling down sends nothing");
     }
 
@@ -848,15 +848,124 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_bound_requests_to_a_relay_that_keeps_failing() {
+    async fn should_stop_asking_relays_that_cannot_serve_a_fake_quorum() {
         let f = fixture(Network::Testnet);
-        let relay = MockRelay::spawn((0..12).map(|_| reply(502, Vec::new())).collect());
+        let gateway = || (0..6).map(|_| reply(502, Vec::new())).collect::<Vec<_>>();
+        let relays = [MockRelay::spawn(gateway()), MockRelay::spawn(gateway())];
+        let sources = relays.iter().map(|relay| relay.url.clone()).collect();
+        let provider = provider_for(&f, sources, quick());
+        let started = Instant::now();
+        let reason =
+            unavailable_reason(fetch(&provider, f.quorum_type, [0x11; 32], f.target.height).await);
+        assert!(reason.contains("not asked again"), "{reason}");
+        assert!(started.elapsed() < Duration::from_secs(20), "{reason}");
+        for relay in &relays {
+            let heights: Vec<_> = relay
+                .requests()
+                .iter()
+                .map(|r| r["height"].clone())
+                .collect();
+            assert_eq!(heights, [json!(f.target.height), json!(0)], "{reason}");
+        }
+    }
+
+    #[tokio::test]
+    async fn should_hedge_to_another_source_while_one_hangs() {
+        let f = fixture(Network::Testnet);
+        let hung = MockRelay::spawn(vec![Answer::Hang(Duration::from_secs(20))]);
+        let answering = MockRelay::spawn(vec![reply(200, f.bootstrap.clone())]);
+        let timing = Timing {
+            hedge_after: Duration::from_millis(200),
+            ..quick()
+        };
+        let sources = vec![hung.url.clone(), answering.url.clone()];
+        let provider = provider_for(&f, sources, timing);
+        let key = fetch(&provider, f.quorum_type, f.quorum_hash, f.target.height).await;
+        assert_eq!(key.expect("the second source proves it"), Some(f.key));
+        assert_eq!(hung.requests().len(), 1);
+        assert_eq!(answering.requests().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn should_prove_with_another_source_after_one_fails() {
+        let f = fixture(Network::Testnet);
+        let failing = MockRelay::spawn(vec![reply(403, Vec::new())]);
+        let answering = MockRelay::spawn(vec![reply(200, f.bootstrap.clone())]);
+        let sources = vec![failing.url.clone(), answering.url.clone()];
+        let provider = provider_for(&f, sources, quick());
+        let key = fetch(&provider, f.quorum_type, f.quorum_hash, f.target.height).await;
+        assert_eq!(key.expect("the second source proves it"), Some(f.key));
+        assert_eq!(failing.requests().len(), 1);
+        assert_eq!(answering.requests().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn should_ask_the_other_sources_when_one_is_behind() {
+        let f = fixture(Network::Testnet);
+        let behind = || vec![reply(502, Vec::new()), reply(200, f.bootstrap.clone())];
+        let relays = [MockRelay::spawn(behind()), MockRelay::spawn(behind())];
+        let sources = relays.iter().map(|relay| relay.url.clone()).collect();
+        let provider = provider_for(&f, sources, quick());
+        let reason = unavailable_reason(
+            fetch(&provider, f.quorum_type, f.quorum_hash, i32::MAX as u32).await,
+        );
+        // Each relay's tip proof falls short; the first does not end the fetch.
+        assert_eq!(reason.matches("latest ChainLock").count(), 2, "{reason}");
+        for relay in &relays {
+            assert_eq!(relay.requests().len(), 2, "{reason}");
+        }
+    }
+
+    #[tokio::test]
+    async fn should_retry_a_busy_relay_without_cooling_it_down() {
+        let f = fixture(Network::Testnet);
+        let relay = MockRelay::spawn(vec![
+            reply(503, b"busy".to_vec()),
+            reply(200, f.bootstrap.clone()),
+        ]);
+        let provider = provider_for(&f, vec![relay.url.clone()], quick());
+        let key = fetch(&provider, f.quorum_type, f.quorum_hash, f.target.height).await;
+        assert_eq!(key.expect("proven after the retry"), Some(f.key));
+        assert_eq!(relay.requests().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn should_cool_down_a_relay_that_times_out_upstream() {
+        let f = fixture(Network::Testnet);
+        let relay = MockRelay::spawn(vec![reply(504, Vec::new())]);
         let provider = provider_for(&f, vec![relay.url.clone()], quick());
         let reason = unavailable_reason(
             fetch(&provider, f.quorum_type, f.quorum_hash, f.target.height).await,
         );
-        assert!(reason.contains("HTTP 502"), "{reason}");
-        assert_eq!(relay.requests().len(), 8);
+        assert!(reason.contains("HTTP 504"), "{reason}");
+        let other =
+            unavailable_reason(fetch(&provider, f.quorum_type, [0x11; 32], f.target.height).await);
+        assert!(other.contains("no source left"), "{other}");
+        assert_eq!(relay.requests().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn should_keep_the_first_key_when_a_proof_opens_another() {
+        let f = fixture(Network::Testnet);
+        let relay = MockRelay::spawn(vec![reply(200, f.bootstrap.clone())]);
+        let provider = provider_for(&f, vec![relay.url.clone()], quick());
+        let quorum = (f.quorum_type, f.quorum_hash);
+        // A key proven long ago, too long for the requested height.
+        provider
+            .inner
+            .fetches
+            .publish(quorum, [1; 48], &f.checkpoint)
+            .expect("an earlier proof");
+        let reason = unavailable_reason(
+            fetch(&provider, f.quorum_type, f.quorum_hash, f.target.height).await,
+        );
+        assert!(reason.contains("different key"), "{reason}");
+        let cached =
+            provider.get_quorum_public_key(f.quorum_type, f.quorum_hash, f.checkpoint.height);
+        assert_eq!(cached.expect("still cached"), [1; 48]);
+        assert!(provider
+            .get_quorum_public_key(f.quorum_type, f.quorum_hash, f.target.height)
+            .is_err());
     }
 
     #[tokio::test]
