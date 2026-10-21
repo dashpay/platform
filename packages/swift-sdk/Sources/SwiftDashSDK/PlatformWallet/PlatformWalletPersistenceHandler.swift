@@ -4218,8 +4218,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 }
             } else if !entry.derivationRejected.isEmpty,
                 // The rejection was checked under this wallet's seed: a path
-                // another wallet derived is not refuted by it.
-                (row.walletId ?? walletId) == walletId,
+                // another wallet derived is not refuted by it, and neither is
+                // one whose owner was never recorded (a legacy row), as in
+                // the Kotlin persister.
+                row.walletId == walletId,
                 let heldPath = row.identityDerivationPath,
                 entry.derivationRejected.contains(where: { rejected in
                     identityAuthPath(walletId: walletId, indices: rejected) == heldPath
