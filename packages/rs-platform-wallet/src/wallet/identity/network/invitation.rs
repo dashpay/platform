@@ -491,7 +491,7 @@ mod tests {
             async fn public_key(
                 &self,
                 _path: &key_wallet::DerivationPath,
-            ) -> Result<key_wallet::bip32::PublicKey, Self::Error> {
+            ) -> Result<dashcore::crypto::ecdsa::EcdsaPublicKey, Self::Error> {
                 unreachable!("the durability gate must fire before any key derivation")
             }
         }

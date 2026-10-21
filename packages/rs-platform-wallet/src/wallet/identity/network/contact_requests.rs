@@ -3011,7 +3011,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 }
             };
             let valid = verify_auto_accept_proof_with_pubkey(
-                &pubkey,
+                &pubkey.into(),
                 proof,
                 &request.sender_id,
                 &owner,

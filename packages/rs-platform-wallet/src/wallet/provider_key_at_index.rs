@@ -74,7 +74,7 @@
 //! are scrubbed when dropped.
 
 use dashcore::bls_sig_utils::BlsScheme;
-use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash};
+use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash, EddsaSecretKey};
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{AccountType, BLSAccount, EdDSAAccount};
 use key_wallet::bip32::{ChildNumber, ExtendedPrivKey};
@@ -156,7 +156,7 @@ pub fn derive_platform_node_public_keys(
                     "failed to derive Ed25519 platform-node key at index {index}: {e}"
                 ))
             })?;
-        let public_key: [u8; 32] = signing_key.public_key().to_bytes();
+        let public_key: [u8; 32] = EddsaSecretKey::from(&signing_key).public_key().to_bytes();
         // The 20-byte platform node id = SHA256(ed25519 pubkey)[..20] — the
         // Tenderdash/CometBFT convention (rust-dashcore #884) that a ProRegTx
         // `platform_node_id` field carries, NOT a hash160.
@@ -567,7 +567,8 @@ impl PlatformWallet {
                             "failed to derive Ed25519 platform-node key at index {index}: {e}"
                         ))
                     })?;
-                let verifying_bytes: [u8; 32] = signing_key.public_key().to_bytes();
+                let verifying_bytes: [u8; 32] =
+                    EddsaSecretKey::from(&signing_key).public_key().to_bytes();
                 let public_key_bytes = verifying_bytes.to_vec();
 
                 // The 20-byte platform node id = SHA256(ed25519 pubkey)[..20]
@@ -781,7 +782,7 @@ mod tests {
                 .expect("platform_node_key_at");
             assert_eq!(
                 k.public_key,
-                via_api.public_key().to_bytes(),
+                EddsaSecretKey::from(&via_api).public_key().to_bytes(),
                 "snapshot pubkey must equal platform_node_key_at at {i}"
             );
         }
@@ -806,7 +807,7 @@ mod tests {
         // The snapshot's index-0 public key corresponds to that golden secret.
         assert_eq!(
             keys[0].public_key,
-            sk0.public_key().to_bytes(),
+            EddsaSecretKey::from(&sk0).public_key().to_bytes(),
             "snapshot index-0 pubkey must match the golden secret's public key"
         );
         // Golden pubkey + Tenderdash node-id (SHA256[..20]) for mainnet
