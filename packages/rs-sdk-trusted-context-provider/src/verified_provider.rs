@@ -77,8 +77,8 @@ pub enum VerifiedContextProviderError {
 /// * A quorum of a type other than the network's Platform type is rejected
 ///   as invalid and never fetched.
 ///
-/// Fetches are shared per quorum, at most two quorums are proven at once,
-/// relays that cannot serve a quorum are left out of its fetch, failed
+/// Fetches are shared per quorum, requests for at most two quorums are in
+/// flight at once, relays that cannot serve a quorum are left out of its fetch, failed
 /// quorums and failing relays cool down, and each fetch has a 70 s deadline.
 /// Freshness of responses is the SDK's concern, not the provider's.
 ///
@@ -488,6 +488,9 @@ mod tests {
         Chunked { size: usize, chunks: usize },
         /// Read the request, then hold the connection open without answering.
         Hang(Duration),
+        /// Answer 200 with this body after a delay, without holding up
+        /// later connections.
+        Late(Duration, Vec<u8>),
     }
 
     fn reply(status: u16, body: Vec<u8>) -> Answer {
@@ -564,6 +567,18 @@ mod tests {
                             thread::spawn(move || {
                                 thread::sleep(duration);
                                 drop(stream);
+                            });
+                        }
+                        Answer::Late(delay, body) => {
+                            thread::spawn(move || {
+                                thread::sleep(delay);
+                                let head = format!(
+                                    "HTTP/1.1 200 OK\r\nConnection: close\r\n\
+                                     Content-Length: {}\r\n\r\n",
+                                    body.len()
+                                );
+                                let _ = stream.write_all(head.as_bytes());
+                                let _ = stream.write_all(&body);
                             });
                         }
                     }
@@ -798,7 +813,7 @@ mod tests {
         assert!(again.contains("retry in 5 s"), "{again}");
         let other =
             unavailable_reason(fetch(&provider, f.quorum_type, [0x11; 32], f.target.height).await);
-        assert!(other.contains("no source left"), "{other}");
+        assert!(other.contains("cooling down"), "{other}");
         assert_eq!(relay.requests().len(), 1, "cooling down sends nothing");
     }
 
@@ -912,7 +927,40 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_ask_the_other_sources_when_one_is_behind() {
+    async fn should_leave_out_only_the_source_that_is_behind() {
+        let f = fixture(Network::Testnet);
+        // A proof from another checkpoint whose target is two blocks below
+        // the fixture's: its height is judged before anything else.
+        let behind: Value =
+            serde_json::from_str(include_str!("../tests/data/proof-testnet-no-links.json"))
+                .expect("fixture JSON");
+        let behind = hex::decode(behind["bootstrap_hex"].as_str().expect("bootstrap_hex"))
+            .expect("bootstrap hex");
+        let lagging = MockRelay::spawn(vec![reply(502, Vec::new()), reply(200, behind)]);
+        let proving = MockRelay::spawn(vec![Answer::Late(
+            Duration::from_millis(500),
+            f.bootstrap.clone(),
+        )]);
+        let timing = Timing {
+            hedge_after: Duration::from_millis(50),
+            ..quick()
+        };
+        let provider = provider_for(&f, vec![lagging.url.clone(), proving.url.clone()], timing);
+        // The fixture's target is exactly the lowest one this height accepts.
+        let height = f.target.height + 600;
+        let key = fetch(&provider, f.quorum_type, f.quorum_hash, height).await;
+        assert_eq!(key.expect("the other source proves it"), Some(f.key));
+        let heights: Vec<_> = lagging
+            .requests()
+            .iter()
+            .map(|r| r["height"].clone())
+            .collect();
+        assert_eq!(heights, [json!(height), json!(0)]);
+        assert_eq!(proving.requests().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn should_end_a_fetch_once_every_source_is_behind() {
         let f = fixture(Network::Testnet);
         let behind = || vec![reply(502, Vec::new()), reply(200, f.bootstrap.clone())];
         let relays = [MockRelay::spawn(behind()), MockRelay::spawn(behind())];
@@ -921,11 +969,29 @@ mod tests {
         let reason = unavailable_reason(
             fetch(&provider, f.quorum_type, f.quorum_hash, i32::MAX as u32).await,
         );
-        // Each relay's tip proof falls short; the first does not end the fetch.
         assert_eq!(reason.matches("latest ChainLock").count(), 2, "{reason}");
         for relay in &relays {
             assert_eq!(relay.requests().len(), 2, "{reason}");
         }
+        assert_eq!(provider.inner.fetches.cooling(), [false, false]);
+    }
+
+    #[tokio::test]
+    async fn should_cool_down_a_hedged_source_that_refuses_near_the_deadline() {
+        let f = fixture(Network::Testnet);
+        let hung = MockRelay::spawn(vec![Answer::Hang(Duration::from_secs(20))]);
+        let closed = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let refused = format!("http://{}", closed.local_addr().expect("address"));
+        drop(closed);
+        let timing = Timing {
+            deadline: Duration::from_secs(2),
+            hedge_after: Duration::from_millis(100),
+            ..quick()
+        };
+        let provider = provider_for(&f, vec![hung.url.clone(), refused], timing);
+        unavailable_reason(fetch(&provider, f.quorum_type, f.quorum_hash, f.target.height).await);
+        // The hung request was cut short by the deadline; the refusal was not.
+        assert_eq!(provider.inner.fetches.cooling(), [false, true]);
     }
 
     #[tokio::test]
@@ -952,7 +1018,7 @@ mod tests {
         assert!(reason.contains("HTTP 504"), "{reason}");
         let other =
             unavailable_reason(fetch(&provider, f.quorum_type, [0x11; 32], f.target.height).await);
-        assert!(other.contains("no source left"), "{other}");
+        assert!(other.contains("cooling down"), "{other}");
         assert_eq!(relay.requests().len(), 1);
     }
 
