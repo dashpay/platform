@@ -1,10 +1,13 @@
 //! Read and persist a managed identity's current Platform credit balance.
 
+use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::Fetch;
 use dash_sdk::query_types::IdentityBalance;
+use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 
+use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::state::managed_identity::ManagedIdentity;
 use crate::BlockTime;
@@ -75,6 +78,39 @@ impl IdentityWallet {
         block_time: BlockTime,
     ) -> Result<(), PlatformWalletError> {
         managed.persist_refreshed_balance(balance, block_time, &self.persister)
+    }
+}
+
+impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+    /// Keep the balance a document write's proof carried for the document's
+    /// owner. From protocol version 14 that proof holds the owner's balance
+    /// after the write, a snapshot at the block of `metadata`; `None`, a proof
+    /// made at an earlier version, leaves the balance as it is.
+    ///
+    /// Only an identity of this wallet takes it: the persister keeps the
+    /// balance watermark only for wallet-owned identities, and an identity
+    /// removed while the write was in flight is not recreated. The write has
+    /// already happened on Platform, so a cache failure is logged and the
+    /// snapshot retained for a retry, never returned as an error.
+    pub(super) async fn persist_proven_owner_balance(
+        &self,
+        owner_id: &Identifier,
+        owner_balance: Option<Credits>,
+        metadata: ResponseMetadata,
+    ) {
+        let Some(balance) = owner_balance else {
+            return;
+        };
+        let mut wm = self.wallet_manager.write().await;
+        let Some(managed) = wm.get_wallet_info_mut(&self.wallet_id).and_then(|info| {
+            info.identity_manager
+                .wallet_identity_mut(&self.wallet_id, owner_id)
+        }) else {
+            tracing::debug!(identity = %owner_id,
+                "Proven owner balance ignored: identity is not owned by this wallet");
+            return;
+        };
+        managed.persist_confirmed_balance(balance, BlockTime::from(metadata), &self.persister);
     }
 }
 
@@ -745,5 +781,74 @@ mod tests {
                 assert_eq!(reload_balance(&backend, &id), (200, watermark));
             }
         }
+    }
+
+    fn document_proof_metadata(height: u64) -> ResponseMetadata {
+        ResponseMetadata {
+            height,
+            core_chain_locked_height: 42,
+            time_ms: 1000,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn should_persist_a_proven_owner_balance_with_its_block_watermark() {
+        let (iw, id, backend) = fixture(None).await;
+        iw.persist_proven_owner_balance(&id, Some(AFTER_DPNS), document_proof_metadata(10))
+            .await;
+        assert_eq!(local_balance(&iw, &id).await, AFTER_DPNS);
+        assert_eq!(
+            reload_balance(&backend, &id),
+            (AFTER_DPNS, Some(BlockTime::new(10, 42, 1000)))
+        );
+    }
+
+    #[tokio::test]
+    async fn should_leave_balance_and_storage_untouched_when_the_proof_carries_no_owner_balance() {
+        let (iw, id, backend) = fixture(None).await;
+        iw.persist_proven_owner_balance(&id, None, document_proof_metadata(10))
+            .await;
+        assert_eq!(local_balance(&iw, &id).await, OLD_BALANCE);
+        assert!(backend.queued.lock().unwrap().is_empty());
+        assert!(backend.committed.lock().unwrap().is_empty());
+        assert_eq!(backend.flush_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn should_not_overwrite_a_newer_balance_with_an_older_document_write_proof() {
+        let (iw, id, backend) = fixture(None).await;
+        iw.persist_proven_owner_balance(&id, Some(AFTER_DPNS), document_proof_metadata(11))
+            .await;
+        iw.persist_proven_owner_balance(&id, Some(OLD_BALANCE), document_proof_metadata(10))
+            .await;
+        assert_eq!(local_balance(&iw, &id).await, AFTER_DPNS);
+        assert_eq!(
+            reload_balance(&backend, &id),
+            (AFTER_DPNS, Some(BlockTime::new(11, 42, 1000)))
+        );
+    }
+
+    #[tokio::test]
+    async fn should_ignore_a_proven_owner_balance_of_an_observed_identity() {
+        let (iw, id, backend) = fixture(None).await;
+        {
+            let mut wm = iw.wallet_manager.write().await;
+            let manager = &mut wm
+                .get_wallet_info_mut(&iw.wallet_id)
+                .unwrap()
+                .identity_manager;
+            let identity = manager.remove_identity(&id, &iw.persister).unwrap();
+            manager
+                .add_out_of_wallet_identity(identity, &iw.persister)
+                .unwrap();
+        }
+        backend.queued.lock().unwrap().clear();
+        let flushes = backend.flush_count.load(Ordering::SeqCst);
+        iw.persist_proven_owner_balance(&id, Some(AFTER_DPNS), document_proof_metadata(10))
+            .await;
+        assert_eq!(local_balance(&iw, &id).await, OLD_BALANCE);
+        assert!(backend.queued.lock().unwrap().is_empty());
+        assert_eq!(backend.flush_count.load(Ordering::SeqCst), flushes);
     }
 }
