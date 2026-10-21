@@ -217,7 +217,7 @@ fn should_keep_every_validation_keyword_of_a_node() {
     assert_eq!(array(tags).unique_items, Some(true));
 
     let key = property(root, "key");
-    assert!(format(key).byte_array);
+    assert!(array(key).byte_array);
     // `contentMediaType` makes it an identifier, which constrains no value
     assert!(!key
         .to_value()
@@ -494,7 +494,7 @@ fn should_keep_platform_keywords_where_consensus_checks_them() {
         Some(2)
     );
     // The JSON Schema validator checks `byteArray` beside a `$ref`
-    assert!(format(property(root, "blob")).byte_array);
+    assert!(array(property(root, "blob")).byte_array);
 }
 
 #[test]
@@ -1754,7 +1754,7 @@ fn should_name_every_keyword_once_and_read_it_back() {
     }
     for (keyword, name) in [
         (SchemaKeyword::Any(AnyKeyword::Ref), "$ref"),
-        (SchemaKeyword::Meta(MetaKeyword::Id), "$id"),
+        (SchemaKeyword::Resolution(ResolutionKeyword::Id), "$id"),
         (
             SchemaKeyword::Object(ObjectKeyword::AdditionalProperties),
             "additionalProperties",
@@ -1764,19 +1764,47 @@ fn should_name_every_keyword_once_and_read_it_back() {
             "multipleOf",
         ),
         (
-            SchemaKeyword::Meta(MetaKeyword::ContentMediaType),
+            SchemaKeyword::Storage(StorageKeyword::ContentMediaType),
             "contentMediaType",
         ),
         (
-            SchemaKeyword::Meta(MetaKeyword::RequiredSince),
+            SchemaKeyword::Storage(StorageKeyword::RequiredSince),
             "requiredSince",
         ),
         (
             SchemaKeyword::Relationship(RelationshipKeyword::DistinctFrom),
             "distinctFrom",
         ),
+        (SchemaKeyword::Array(ArrayKeyword::ByteArray), "byteArray"),
     ] {
         assert_eq!(keyword.name(), name);
+    }
+}
+
+#[test]
+fn should_say_what_checks_each_keyword() {
+    // The validator's keyword table is tied to the pinned validator by the probes below;
+    // `byteArray` is the keyword Platform registers with it
+    for keyword in SchemaKeyword::iter() {
+        let name = keyword.name();
+        let expected = if VALIDATOR_KEYWORDS.contains(&name) || name == "byteArray" {
+            CheckedBy::JsonSchemaValidator
+        } else if matches!(name, "maxBytes" | "encryptedFor") {
+            CheckedBy::DocumentTypeParser
+        } else if matches!(keyword, SchemaKeyword::Relationship(_)) {
+            CheckedBy::Relationship
+        } else {
+            CheckedBy::Nothing
+        };
+        assert_eq!(keyword.checked_by(), expected, "{name}");
+        assert_eq!(
+            keyword.constrains_a_value(),
+            matches!(
+                expected,
+                CheckedBy::JsonSchemaValidator | CheckedBy::DocumentTypeParser
+            ),
+            "{name}"
+        );
     }
 }
 

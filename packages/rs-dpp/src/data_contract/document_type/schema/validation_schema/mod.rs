@@ -19,7 +19,8 @@
 //! its own, both kinds, one typed field per keyword, so the schema can be read without the
 //! raw `Value` it came from.
 //! The keywords it leaves out are grouped in [`SchemaKeyword`]: relationships, which
-//! consensus checks against more than the value, meta keywords and annotations. Neither are
+//! consensus checks against more than the value, resolution and storage keywords, and
+//! annotations. Neither are
 //! the rules a document type declares beside its schema, such as `propertyConstraints`,
 //! which document validation checks in a step of its own.
 //!
@@ -78,8 +79,9 @@ mod keyword;
 mod tests;
 
 pub use keyword::{
-    AnnotationKeyword, AnyKeyword, ArrayKeyword, FormatKeyword, MetaKeyword, NumberKeyword,
-    ObjectKeyword, RelationshipKeyword, SchemaKeyword, StringKeyword,
+    AnnotationKeyword, AnyKeyword, ArrayKeyword, CheckedBy, FormatKeyword, NumberKeyword,
+    ObjectKeyword, RelationshipKeyword, ResolutionKeyword, SchemaKeyword, StorageKeyword,
+    StringKeyword,
 };
 
 /// A JSON Schema simple type.
@@ -209,6 +211,11 @@ pub struct ArrayConstraints {
     /// numbers whatever their JSON type, and those of a longer one by their JSON form: `[1,
     /// 1.0]` repeats an element, but `1` and `1.0` among 16 elements do not.
     pub unique_items: Option<bool>,
+    /// `byteArray`, Platform's keyword for an array of bytes: whether the node carries it.
+    /// The validator refuses any value that is not an array of integers from 0 to 255,
+    /// whatever `type` says. It checks a byte array whatever value is written, so the
+    /// builder refuses `false`. Never inside `contains`.
+    pub byte_array: bool,
 }
 
 /// The [`StringKeyword`]s of a node.
@@ -254,11 +261,6 @@ pub struct NumberConstraints {
 pub struct FormatConstraints {
     /// `format`.
     pub format: Option<String>,
-    /// `byteArray`, Platform's keyword for an array of bytes: whether the node carries it.
-    /// Unlike `format`, it also fixes the JSON type: the validator refuses any value that is
-    /// not an array of integers from 0 to 255, whatever `type` says. It checks a byte array
-    /// whatever value is written, so the builder refuses `false`. Never inside `contains`.
-    pub byte_array: bool,
     /// `encryptedFor`, held only on a schema the document type parser reads as a property.
     pub encrypted_for: Option<EncryptedFor>,
 }
@@ -289,7 +291,7 @@ impl ValidationSchema {
     /// or `byteArray` where consensus does not check it (see the module documentation); a
     /// property, or `required`, repeated where the document type parser reads another entry
     /// than the validator; a document schema `$id`, and any other `$id` that is not a plain
-    /// name (see [`MetaKeyword::Id`]); a `$ref` that is not a JSON pointer into the document
+    /// name (see [`ResolutionKeyword::Id`]); a `$ref` that is not a JSON pointer into the document
     /// schema, or that does not resolve there; and a property's `$ref` the document type
     /// parser does not resolve, or resolves to another schema.
     pub(crate) fn try_from_root(root: &Value) -> Result<Self, DataContractError> {
@@ -451,6 +453,7 @@ impl SchemaNode {
                     ArrayKeyword::MinItems => array.min_items.map(Value::U64),
                     ArrayKeyword::MaxItems => array.max_items.map(Value::U64),
                     ArrayKeyword::UniqueItems => array.unique_items.map(Value::Bool),
+                    ArrayKeyword::ByteArray => array.byte_array.then_some(Value::Bool(true)),
                 }
             }
             SchemaKeyword::String(keyword) => {
@@ -476,14 +479,14 @@ impl SchemaNode {
                 let format = self.format.as_deref()?;
                 match keyword {
                     FormatKeyword::Format => format.format.clone().map(Value::Text),
-                    FormatKeyword::ByteArray => format.byte_array.then_some(Value::Bool(true)),
                     FormatKeyword::EncryptedFor => {
                         format.encrypted_for.as_ref().map(encrypted_for_value)
                     }
                 }
             }
             SchemaKeyword::Relationship(_)
-            | SchemaKeyword::Meta(_)
+            | SchemaKeyword::Resolution(_)
+            | SchemaKeyword::Storage(_)
             | SchemaKeyword::Annotation(_) => None,
         }
     }
@@ -694,8 +697,10 @@ impl Reading {
     fn checks(self, keyword: SchemaKeyword, has_reference: bool) -> bool {
         match keyword {
             SchemaKeyword::String(StringKeyword::MaxBytes) if self == Reading::Items => true,
-            keyword if read_into_a_property(keyword) => self.parsed_as_property(has_reference),
-            SchemaKeyword::Format(FormatKeyword::ByteArray) => self != Reading::Contains,
+            keyword if keyword.checked_by() == CheckedBy::DocumentTypeParser => {
+                self.parsed_as_property(has_reference)
+            }
+            SchemaKeyword::Array(ArrayKeyword::ByteArray) => self != Reading::Contains,
             _ => true,
         }
     }
@@ -813,15 +818,6 @@ fn last_wins(map: &[(Value, Value)]) -> Result<Vec<(&str, &Value)>, DataContract
     Ok(entries)
 }
 
-/// Whether the document type parser reads `keyword` into the property it builds.
-fn read_into_a_property(keyword: SchemaKeyword) -> bool {
-    matches!(
-        keyword,
-        SchemaKeyword::String(StringKeyword::MaxBytes)
-            | SchemaKeyword::Format(FormatKeyword::EncryptedFor)
-    )
-}
-
 /// Whether `schema`, read by the document type parser as a property, carries where the
 /// parser reads it a keyword it reads into a property, or a `$ref`, through which it may
 /// reach one: on the schema itself, and down its `properties` and `items`, the only schemas
@@ -838,7 +834,8 @@ fn carries_parser_keywords(schema: &Value) -> bool {
             key => key
                 .and_then(SchemaKeyword::from_name)
                 .is_some_and(|keyword| {
-                    read_into_a_property(keyword) || keyword == SchemaKeyword::Any(AnyKeyword::Ref)
+                    keyword.checked_by() == CheckedBy::DocumentTypeParser
+                        || keyword == SchemaKeyword::Any(AnyKeyword::Ref)
                 }),
         })
     })
@@ -1244,6 +1241,16 @@ fn build_node(
                     ArrayKeyword::MinItems => array.min_items = Some(count(value, name)?),
                     ArrayKeyword::MaxItems => array.max_items = Some(count(value, name)?),
                     ArrayKeyword::UniqueItems => array.unique_items = Some(boolean(value, name)?),
+                    ArrayKeyword::ByteArray => {
+                        if !boolean(value, name)? {
+                            return Err(structure_error(
+                                "`byteArray: false` is checked as `true`: the JSON Schema \
+                                 validator checks a byte array whatever value is written"
+                                    .to_string(),
+                            ));
+                        }
+                        array.byte_array = true
+                    }
                 }
             }
             SchemaKeyword::String(keyword) => {
@@ -1288,16 +1295,6 @@ fn build_node(
                         }
                         format.format = Some(format_name.to_string())
                     }
-                    FormatKeyword::ByteArray => {
-                        if !boolean(value, name)? {
-                            return Err(structure_error(
-                                "`byteArray: false` is checked as `true`: the JSON Schema \
-                                 validator checks a byte array whatever value is written"
-                                    .to_string(),
-                            ));
-                        }
-                        format.byte_array = true
-                    }
                     FormatKeyword::EncryptedFor => {
                         format.encrypted_for = Some(
                             platform_value::from_value(as_validated(value, name)?).map_err(
@@ -1308,7 +1305,8 @@ fn build_node(
                 }
             }
             SchemaKeyword::Relationship(_)
-            | SchemaKeyword::Meta(_)
+            | SchemaKeyword::Resolution(_)
+            | SchemaKeyword::Storage(_)
             | SchemaKeyword::Annotation(_) => {}
         }
     }

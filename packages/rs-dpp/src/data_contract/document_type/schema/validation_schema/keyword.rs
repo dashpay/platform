@@ -5,9 +5,10 @@ use strum::IntoEnumIterator;
 /// A keyword a document meta-schema admits on a schema node.
 ///
 /// The first six groups constrain a value on its own, and
-/// [`SchemaNode`](super::SchemaNode) holds them. The last three do not: a relationship is
-/// checked against more than the value, and meta keywords and annotations constrain no
-/// value at all.
+/// [`SchemaNode`](super::SchemaNode) holds them. The last four do not: a relationship is
+/// checked against more than the value, and resolution and storage keywords and
+/// annotations constrain no value at all. [`SchemaKeyword::checked_by`] says what checks a
+/// value against each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SchemaKeyword {
     /// Applies to a value of any type.
@@ -20,14 +21,15 @@ pub enum SchemaKeyword {
     String(StringKeyword),
     /// Applies to a number.
     Number(NumberKeyword),
-    /// Says what kind of string, number or byte array a value is: beyond its JSON type, but
-    /// for `byteArray`, which also requires an array.
+    /// Says what kind of string or byte array a value is, beyond its JSON type.
     Format(FormatKeyword),
     /// Ties the value to something outside it: another document, identity or key, or
     /// other properties of the same document.
     Relationship(RelationshipKeyword),
-    /// Describes the property within the schema rather than its value.
-    Meta(MetaKeyword),
+    /// Changes how the JSON Schema validator resolves a `$ref`.
+    Resolution(ResolutionKeyword),
+    /// Says how the document type parser stores the property.
+    Storage(StorageKeyword),
     /// Annotates, and constrains nothing.
     Annotation(AnnotationKeyword),
 }
@@ -86,6 +88,11 @@ pub enum ArrayKeyword {
     MaxItems,
     /// `uniqueItems`.
     UniqueItems,
+    /// `byteArray`: Platform's keyword for an array whose elements are bytes, integers from
+    /// 0 to 255. The JSON Schema validator checks it as a keyword of its own, refusing a
+    /// value of any other JSON type whatever `type` says, but inside `contains`, where it
+    /// constrains nothing.
+    ByteArray,
 }
 
 /// Keywords that apply to a string.
@@ -123,8 +130,7 @@ pub enum NumberKeyword {
     MultipleOf,
 }
 
-/// Keywords that say what kind of string, number or byte array a value is, beyond its JSON
-/// type, but for `byteArray`, which also fixes it.
+/// Keywords that say what kind of string or byte array a value is, beyond its JSON type.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, strum::EnumIter, strum::IntoStaticStr,
 )]
@@ -132,9 +138,6 @@ pub enum NumberKeyword {
 pub enum FormatKeyword {
     /// `format`: a named format, such as `uri` or `date-time`, that a value must follow.
     Format,
-    /// `byteArray`: Platform's keyword for an array whose elements are bytes. Unlike
-    /// `format`, it refuses a value of any other JSON type, whatever `type` says.
-    ByteArray,
     /// `encryptedFor`: the byte array is ciphertext made with a named scheme, for a
     /// recipient other properties name. JSON Schema leaves it unchecked; the validation of a
     /// create or replace checks that the bytes have a length the scheme produces.
@@ -173,14 +176,13 @@ pub enum RelationshipKeyword {
     GeneratedFrom,
 }
 
-/// Keywords that describe a property within the schema rather than its value. Not JSON
-/// Schema's meta-data vocabulary (`description`, `examples`), which is
-/// [`AnnotationKeyword`]: these carry meaning consensus depends on.
+/// Keywords that change how the JSON Schema validator resolves a `$ref`, and constrain no
+/// value.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, strum::EnumIter, strum::IntoStaticStr,
 )]
 #[strum(serialize_all = "camelCase")]
-pub enum MetaKeyword {
+pub enum ResolutionKeyword {
     /// `$id`: names the schema. The JSON Schema validator resolves a `$ref` through the
     /// schemas named this way before it follows the pointer, and against the `$id`s above
     /// it, which the validation schema does not represent. The builder refuses a document
@@ -188,16 +190,45 @@ pub enum MetaKeyword {
     /// and `.`), which leaves every `$ref` resolving to the schema at its pointer.
     #[strum(serialize = "$id")]
     Id,
+}
+
+/// Keywords that say how the document type parser stores the property. Consensus depends on
+/// them, but none bounds a value: the parser stores what validation has accepted.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, strum::EnumIter, strum::IntoStaticStr,
+)]
+#[strum(serialize_all = "camelCase")]
+pub enum StorageKeyword {
     /// `position`: the property's place in the stored document, whose values are written
     /// one after another without names.
     Position,
-    /// `requiredSince`: the contract version from which the property is required.
+    /// `requiredSince`: the contract version from which the property is required. A document
+    /// whose contract version has reached it stores the property without a presence flag;
+    /// an earlier one stores the flag. A new document is validated against `required`, which
+    /// must list the property.
     RequiredSince,
     /// `contentMediaType`: on a byte array, `application/x.dash.dpp.identifier` makes the
-    /// property an identifier, a type the document type parser reads. JSON Schema draft
+    /// property an identifier, a type the document type parser reads; the meta-schemas then
+    /// require `byteArray` and exactly 32 items, which bound the value. JSON Schema draft
     /// 2020-12, which the document validator compiles, holds it an annotation and checks
     /// nothing for it.
     ContentMediaType,
+}
+
+/// What checks a document value against a keyword.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckedBy {
+    /// The JSON Schema validator, wherever it compiles the keyword.
+    JsonSchemaValidator,
+    /// Consensus, on the property the document type parser builds from the schema: only
+    /// where the parser reads a schema as a property, and for `maxBytes` also on its
+    /// `items`.
+    DocumentTypeParser,
+    /// Consensus, against more than the value: other properties of the document, other
+    /// documents, identities or keys.
+    Relationship,
+    /// Nothing: the keyword bounds no value.
+    Nothing,
 }
 
 impl SchemaKeyword {
@@ -211,7 +242,8 @@ impl SchemaKeyword {
             .chain(NumberKeyword::iter().map(SchemaKeyword::Number))
             .chain(FormatKeyword::iter().map(SchemaKeyword::Format))
             .chain(RelationshipKeyword::iter().map(SchemaKeyword::Relationship))
-            .chain(MetaKeyword::iter().map(SchemaKeyword::Meta))
+            .chain(ResolutionKeyword::iter().map(SchemaKeyword::Resolution))
+            .chain(StorageKeyword::iter().map(SchemaKeyword::Storage))
             .chain(AnnotationKeyword::iter().map(SchemaKeyword::Annotation))
     }
 
@@ -225,7 +257,8 @@ impl SchemaKeyword {
             SchemaKeyword::Number(keyword) => keyword.into(),
             SchemaKeyword::Format(keyword) => keyword.into(),
             SchemaKeyword::Relationship(keyword) => keyword.into(),
-            SchemaKeyword::Meta(keyword) => keyword.into(),
+            SchemaKeyword::Resolution(keyword) => keyword.into(),
+            SchemaKeyword::Storage(keyword) => keyword.into(),
             SchemaKeyword::Annotation(keyword) => keyword.into(),
         }
     }
@@ -235,12 +268,31 @@ impl SchemaKeyword {
         SchemaKeyword::iter().find(|keyword| keyword.name() == name)
     }
 
+    /// What checks a document value against the keyword.
+    pub fn checked_by(self) -> CheckedBy {
+        match self {
+            SchemaKeyword::String(StringKeyword::MaxBytes)
+            | SchemaKeyword::Format(FormatKeyword::EncryptedFor) => CheckedBy::DocumentTypeParser,
+            SchemaKeyword::Any(_)
+            | SchemaKeyword::Object(_)
+            | SchemaKeyword::Array(_)
+            | SchemaKeyword::String(_)
+            | SchemaKeyword::Number(_)
+            | SchemaKeyword::Format(_) => CheckedBy::JsonSchemaValidator,
+            SchemaKeyword::Relationship(_) => CheckedBy::Relationship,
+            SchemaKeyword::Resolution(_)
+            | SchemaKeyword::Storage(_)
+            | SchemaKeyword::Annotation(_) => CheckedBy::Nothing,
+        }
+    }
+
     /// Whether the keyword constrains a value on its own, so that
-    /// [`SchemaNode`](super::SchemaNode) holds it.
+    /// [`SchemaNode`](super::SchemaNode) holds it: whether the JSON Schema validator or the
+    /// document type parser checks it.
     pub fn constrains_a_value(self) -> bool {
-        !matches!(
-            self,
-            SchemaKeyword::Relationship(_) | SchemaKeyword::Meta(_) | SchemaKeyword::Annotation(_)
+        matches!(
+            self.checked_by(),
+            CheckedBy::JsonSchemaValidator | CheckedBy::DocumentTypeParser
         )
     }
 }
