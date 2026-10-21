@@ -2233,10 +2233,10 @@ impl StateTransition {
         // stores a 65-byte recoverable compact signature, so we brute-force
         // the recovery id (0..3) by reconstructing a `RecoverableSignature`
         // and comparing the recovered public key with the one the signer
-        // returned. secp256k1 normalises both `sign_ecdsa` and
-        // `sign_ecdsa_recoverable` outputs to low-s form, so the 64-byte
-        // `r||s` payload is bit-identical to what `dashcore::signer::sign`
-        // produces.
+        // returned. Byte parity with `dashcore::signer::sign` requires the
+        // same deterministic nonce without low-R grinding, as well as low-S
+        // normalization. Core `sign_recoverable` meets that contract; `sign`
+        // performs low-R grinding and may produce different bytes.
         let compact_64 = signature.to_bytes();
         let msg = Message::from_digest(digest);
 

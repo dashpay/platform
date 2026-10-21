@@ -7,7 +7,10 @@ mod vectors;
 
 use dpp::address_funds::{AddressWitness, AddressWitnessVerificationOperations, PlatformAddress};
 use dpp::consensus::codes::ErrorWithCode;
+use dpp::dashcore::crypto::ecdsa::EcdsaError;
 use dpp::dashcore::hashes::{hash160, Hash};
+use dpp::dashcore::key::Error as KeyError;
+use dpp::dashcore::sign_message::MessageSignatureError;
 use dpp::dashcore::signer::{sign, verify_data_signature, verify_hash_signature};
 use dpp::dashcore::{sign_message, PublicKey};
 use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
@@ -123,8 +126,8 @@ fn should_preserve_all_compact_header_acceptance_rules() {
             assert_eq!(result.unwrap().to_bytes().as_slice(), &signature[1..]);
         } else {
             assert_eq!(
-                result.unwrap_err().to_string(),
-                "recovery id out of range (must be 0..4)",
+                result.unwrap_err(),
+                EcdsaError::InvalidRecoveryId,
                 "header {header}"
             );
         }
@@ -135,10 +138,8 @@ fn should_preserve_all_compact_header_acceptance_rules() {
 fn should_preserve_compact_length_and_scalar_errors() {
     for len in [0, 1, 64, 66] {
         assert_eq!(
-            sign_message::from_slice(&vec![0; len])
-                .unwrap_err()
-                .to_string(),
-            "length not 65 bytes"
+            sign_message::from_slice(&vec![0; len]).unwrap_err(),
+            MessageSignatureError::InvalidLength
         );
     }
     let order =
@@ -151,9 +152,8 @@ fn should_preserve_compact_length_and_scalar_errors() {
                 sign_message::from_slice(&signature)
                     .unwrap()
                     .signature()
-                    .unwrap_err()
-                    .to_string(),
-                "signature bytes are malformed"
+                    .unwrap_err(),
+                EcdsaError::InvalidSignature
             );
         }
     }
@@ -168,14 +168,14 @@ fn should_preserve_compact_length_and_scalar_errors() {
     assert_eq!(
         verify_data_signature(&data, &zero, &public_key)
             .unwrap_err()
-            .to_string(),
-        "signature verification failed"
+            .downcast_ref::<EcdsaError>(),
+        Some(&EcdsaError::VerifyFailed)
     );
     assert_eq!(
         verify_hash_signature(&[0; 32], &zero, &[0; 20])
             .unwrap_err()
-            .to_string(),
-        "recovery failed; no valid public key"
+            .downcast_ref::<EcdsaError>(),
+        Some(&EcdsaError::RecoveryFailed)
     );
 }
 
@@ -191,25 +191,21 @@ fn should_preserve_public_key_encodings() {
     for prefix in [0, 2, 3, 6, 7] {
         uncompressed[0] = prefix;
         assert_eq!(
-            PublicKey::from_slice(&uncompressed)
-                .unwrap_err()
-                .to_string(),
-            format!("key prefix invalid: {prefix}")
+            PublicKey::from_slice(&uncompressed).unwrap_err(),
+            KeyError::InvalidKeyPrefix(prefix)
         );
     }
     for len in [0, 32, 34, 64, 66] {
         assert_eq!(
-            PublicKey::from_slice(&vec![0; len])
-                .unwrap_err()
-                .to_string(),
-            format!("length {len} invalid for this base58 type")
+            PublicKey::from_slice(&vec![0; len]).unwrap_err(),
+            KeyError::InvalidBase58PayloadLength(len)
         );
     }
     let mut invalid = [0xff; 33];
     invalid[0] = 2;
     assert_eq!(
-        PublicKey::from_slice(&invalid).unwrap_err().to_string(),
-        "key ECDSA error"
+        PublicKey::from_slice(&invalid).unwrap_err(),
+        KeyError::Ecdsa(EcdsaError::InvalidPublicKey)
     );
 }
 
@@ -255,8 +251,8 @@ fn should_reject_high_s_verification_but_accept_high_s_recovery() {
     assert_eq!(
         verify_data_signature(&data, &signature, &public_key)
             .unwrap_err()
-            .to_string(),
-        "signature verification failed"
+            .downcast_ref::<EcdsaError>(),
+        Some(&EcdsaError::VerifyFailed)
     );
     verify_hash_signature(
         &hex::decode(TRANSFER_HASH).unwrap(),
